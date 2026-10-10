@@ -90,6 +90,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enablePipelines: false,
     enableCases: false,
     enableDeepDive: false,
+    enableStrategyBoard: false,
     enableAgentChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,

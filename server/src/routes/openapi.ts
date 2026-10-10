@@ -121,6 +121,10 @@ import {
   createGoalSchema,
   createGoalCheckInSchema,
   createGoalKpiReadingSchema,
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
   updateGoalSchema,
   // Secret
   createSecretSchema,
@@ -5697,6 +5701,100 @@ registry.registerPath({
     body: jsonBody(createGoalKpiReadingSchema),
   },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+// Board control panel (GRE-1135). Every path answers 403 not_entitled while enableStrategyBoard is off.
+const companyParams = z.object({ companyId: z.string() });
+const idParams = z.object({ id: z.string() });
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board",
+  tags: ["strategy-board"],
+  summary: "The board's view: KPI counts, slippages biggest first, areas, changes since the last board pack, and the caller's board rights",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/alerts",
+  tags: ["strategy-board"],
+  summary: "KPI red spells and who the slippage alert went to, newest first",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/members",
+  tags: ["strategy-board"],
+  summary: "Company members with their board member and chair rights (company owners only)",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/strategy-board/members",
+  tags: ["strategy-board"],
+  summary: "Set the board: viewers become board members, one member or owner is chair (company owners only)",
+  request: { params: companyParams, body: jsonBody(setStrategyBoardMembersSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/strategy-board/packs",
+  tags: ["strategy-board"],
+  summary: "List board packs, newest first",
+  request: { params: companyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/strategy-board/packs",
+  tags: ["strategy-board"],
+  summary: "Make a board pack for a period: a frozen snapshot and a Markdown document (board members, owners, admins)",
+  request: { params: companyParams, body: jsonBody(createStrategyBoardPackSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/strategy-board/packs/{id}",
+  tags: ["strategy-board"],
+  summary: "Get a board pack with its snapshot and Markdown body",
+  request: { params: idParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/goals/{id}/why-requests",
+  tags: ["strategy-board"],
+  summary: "List a KPI's \"Why?\" requests and answers, newest first",
+  request: { params: idParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/goals/{id}/why-requests",
+  tags: ["strategy-board"],
+  summary: "Ask the KPI owner to explain a slippage; the owner gets a task (board members, owners, admins)",
+  request: { params: idParams, body: jsonBody(createGoalWhyRequestSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/why-requests/{id}/answer",
+  tags: ["strategy-board"],
+  summary: "Answer a \"Why?\" request (the KPI owner, the lead agent, or a company owner or admin); logged on the KPI",
+  request: { params: idParams, body: jsonBody(answerGoalWhyRequestSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

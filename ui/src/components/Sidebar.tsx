@@ -3,6 +3,7 @@ import {
   ListChecks,
   CircleCheck,
   Target,
+  Landmark,
   LayoutDashboard,
   DollarSign,
   History,
@@ -163,6 +164,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const tasksItem = <SidebarNavItem to="/issues" label="Agent tasks" icon={CircleCheck} />;
   // Greatstone (GRE-191): Goals graduated from Experimental; always shown.
   const goalsItem = <SidebarNavItem to="/goals" label="Goals" icon={Target} />;
+  // GRE-1135: board control panel, behind enableStrategyBoard.
+  const boardItem = experimentalSettings?.enableStrategyBoard === true ? (
+    <SidebarNavItem to="/strategy-board" label="Board" icon={Landmark} />
+  ) : null;
   const routinesItem = <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />;
   const workflowsItem = <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />;
   const artifactsItem = <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />;
@@ -272,6 +277,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               {decisionsItem}
               {tasksItem}
               {goalsItem}
+              {boardItem}
             </SidebarSection>
 
             <SidebarSection label="Team" collapsible={{ open: teamOpen, onOpenChange: setTeamOpen }}>
@@ -314,6 +320,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
             {deepDiveItem}
             {pipelinesItem}
             {goalsItem}
+            {boardItem}
             {workspacesItem}
             {pluginNavOutlets}
           </SidebarSection>
