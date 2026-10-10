@@ -21,13 +21,16 @@ import {
   GOAL_KIND_DEFAULT_LEVEL,
   STRATEGIC_PLAN_TEMPLATE,
   computeKpiStatus,
+  extractEvidenceBullets,
   goalKindParentError,
+  isPackReferenceSection,
   rollUpKpiStatus,
   type GoalKind,
 } from "@greatstone/shared";
 import type {
   CreateGoalCheckIn,
   CreateGoalKpiReading,
+  CreateKpiDraftsFromPack,
   GoalCheckIn,
   GoalKpiReading,
   GoalRagRollup,
@@ -54,7 +57,8 @@ import {
   type GoalDependent,
   type GoalIssueCounts,
 } from "./goal-progress.js";
-import { badRequest, unprocessable } from "../errors.js";
+import { badRequest, notFound, unprocessable } from "../errors.js";
+import { documentService } from "./documents.js";
 
 type GoalReader = Pick<Db, "select">;
 
@@ -150,6 +154,21 @@ function assertValidThresholds(amber: number | null | undefined, red: number | n
   if (redPct < amberPct) {
     throw unprocessable(`The red line (${redPct}%) must not be below the amber line (${amberPct}%)`);
   }
+}
+
+/**
+ * True when a patch moves a draft KPI (pre-filled from a research pack) into a
+ * live status. Cancelling a draft is not accepting it.
+ */
+export function isAcceptingDraftKpi(
+  existing: Pick<GoalRow, "kind" | "status">,
+  nextStatus: string | null | undefined,
+): boolean {
+  return existing.kind === "kpi"
+    && existing.status === "draft"
+    && nextStatus != null
+    && nextStatus !== "draft"
+    && nextStatus !== "cancelled";
 }
 
 export function goalService(db: Db) {
@@ -388,7 +407,7 @@ export function goalService(db: Db) {
     const ragById = new Map<string, KpiRagStatus | null>();
     for (const kpi of kpis) {
       const status = computeKpiStatus(
-        { ...kpi, kpiDirection: kpi.kpiDirection as KpiDirection | null },
+        { ...kpi, kpiDirection: kpi.kpiDirection as KpiDirection | null, status: kpi.status },
         latest.get(kpi.id) ?? null,
         first.get(kpi.id) ?? null,
         today,
@@ -630,6 +649,92 @@ export function goalService(db: Db) {
         return toReading(row);
       }),
 
+    /**
+     * Pre-fills draft KPIs under `parent` from slide-5 rows of a research pack
+     * document (GRE-1161). Each draft gets the baseline, unit, benchmark note
+     * and a link to its bullet; the target stays empty and the status is
+     * "draft", so it has no RAG status until a person sets the target and
+     * accepts it. Each draft's first reading is the baseline: `system` when an
+     * agent runs the pre-fill, `owner_reported` when a person does, never
+     * `agent_verified`. All rows are written in one transaction or none are.
+     */
+    createKpiDraftsFromPack: async (
+      parent: GoalRow,
+      input: CreateKpiDraftsFromPack,
+      actor: { agentId: string | null; userId: string | null },
+    ): Promise<GoalRow[]> => {
+      const parentError = goalKindParentError("kpi", true, (parent.kind as GoalKind | null) ?? null);
+      if (parentError) throw unprocessable(parentError);
+
+      const sourceIssue = await db
+        .select({ id: issues.id, identifier: issues.identifier })
+        .from(issues)
+        .where(and(eq(issues.id, input.sourceIssueId), eq(issues.companyId, parent.companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!sourceIssue) throw notFound("Research pack issue not found in this company");
+      const doc = await documentService(db).getIssueDocumentByKey(sourceIssue.id, input.documentKey);
+      if (!doc) throw notFound(`Document "${input.documentKey}" not found on the research pack issue`);
+
+      const sectionByBullet = new Map<string, string | null>();
+      for (const bullet of extractEvidenceBullets(doc.body ?? "")) {
+        if (!sectionByBullet.has(bullet.bulletId)) sectionByBullet.set(bullet.bulletId, bullet.section);
+      }
+      const notOnSlideFive = input.rows
+        .map((row) => row.bulletId)
+        .filter((id) => !isPackReferenceSection(sectionByBullet.get(id)));
+      if (notOnSlideFive.length > 0) {
+        throw unprocessable(
+          `Bullet ${notOnSlideFive.join(", ")} is not a slide 5 reference point in this document`,
+          { bulletIds: notOnSlideFive },
+        );
+      }
+
+      const ownerAgentId = await getCompanyLeadAgentId(db, parent.companyId);
+      const source: KpiReadingSource = actor.userId ? "owner_reported" : "system";
+      const packLabel = sourceIssue.identifier ?? sourceIssue.id;
+      return db.transaction(async (tx) => {
+        const created: GoalRow[] = [];
+        for (const row of input.rows) {
+          const goal = await tx
+            .insert(goals)
+            .values({
+              companyId: parent.companyId,
+              parentId: parent.id,
+              title: row.title,
+              kind: "kpi",
+              level: GOAL_KIND_DEFAULT_LEVEL.kpi,
+              status: "draft",
+              ownerAgentId,
+              unit: row.unit ?? null,
+              baselineValue: row.baselineValue,
+              baselineDate: row.baselineDate,
+              currentValue: row.baselineValue,
+              kpiDirection: row.kpiDirection ?? null,
+              targetValue: null,
+              targetDate: null,
+              benchmarkNote: row.benchmarkNote ?? null,
+              sourceIssueId: sourceIssue.id,
+              sourceDocumentKey: doc.key,
+              sourceBulletId: row.bulletId,
+            })
+            .returning()
+            .then((rows) => rows[0]);
+          await tx.insert(goalKpiReadings).values({
+            companyId: parent.companyId,
+            goalId: goal.id,
+            value: row.baselineValue,
+            readingDate: row.baselineDate,
+            note: `Baseline from research pack ${packLabel} (${doc.key}, ${row.bulletId})`,
+            source,
+            recordedByAgentId: actor.agentId,
+            recordedByUserId: actor.userId,
+          });
+          created.push(goal);
+        }
+        return created;
+      });
+    },
+
     getById: (id: string) =>
       db
         .select()
@@ -677,6 +782,15 @@ export function goalService(db: Db) {
         },
         existing,
       );
+      if (isAcceptingDraftKpi(existing, patch.status)) {
+        const targetValue = patch.targetValue !== undefined ? patch.targetValue : existing.targetValue;
+        const targetDate = patch.targetDate !== undefined ? patch.targetDate : existing.targetDate;
+        if (targetValue == null || !targetDate) {
+          throw unprocessable("Set the target value and target date before accepting a draft KPI", {
+            code: "kpi_draft_needs_target",
+          });
+        }
+      }
       if (patch.amberThresholdPct !== undefined || patch.redThresholdPct !== undefined) {
         assertValidThresholds(
           patch.amberThresholdPct !== undefined ? patch.amberThresholdPct : existing.amberThresholdPct,
