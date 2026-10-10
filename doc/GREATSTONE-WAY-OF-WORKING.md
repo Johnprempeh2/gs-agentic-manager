@@ -641,17 +641,20 @@ on a throwaway sandbox, in both modes.
 (`~/.cache/ms-playwright` on Linux, `~/Library/Caches/ms-playwright` on macOS),
 not in `$HOME`. Set `PLAYWRIGHT_BROWSERS_PATH` to use another folder.
 
-The host needs this once. John runs it in the dev checkout, as his own user:
+The browser is installed once, by anyone, in the dev checkout:
 
 ```sh
 npx playwright install chromium-headless-shell   # the browser, in ~/.cache/ms-playwright
-sudo npx playwright install-deps chromium        # system libraries (libnss3, libnspr4, libasound2, ...)
 ```
 
-The second line needs `sudo`, so only John can run it. Until both are done,
-`shot` stops and names the missing step: "The browser is not installed" (any
-agent may run the first line) or "The host is missing system libraries" (John
-must run the second). After a Playwright upgrade, run the first line again.
+Chromium also needs system libraries (libnss3, libnspr4, libasound2). When the
+host lacks them, `shot` fetches them without root (`apt-get download` and
+`dpkg-deb -x`) into `~/.cache/ms-playwright/gs-chromium-libs`, one folder
+shared by every worktree, and loads them from there (GRE-1065). To fetch them
+by hand, run `node scripts/chromium-libs.mjs`. Only when that fetch fails does
+`shot` say "The no-root fetch failed"; then John runs
+`sudo npx playwright install-deps chromium` once. After a Playwright upgrade,
+install the browser again.
 
 ### Sandbox test of the scripts
 

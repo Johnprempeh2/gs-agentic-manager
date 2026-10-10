@@ -7,9 +7,11 @@
 // "console errors: N", so a page that looks fine but throws is seen (GRE-691).
 // Only http://localhost:3200 is allowed: never the live app on 3100.
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 import { browserFix } from "./preview-browser-fix.mjs";
+import { ensureChromiumLibs, headlessShell } from "./chromium-libs.mjs";
 
 const [, , url, laptopOut, phoneOut, consoleOut] = process.argv;
 if (!url || !laptopOut || !phoneOut || !consoleOut) {
@@ -27,9 +29,23 @@ const views = [
   { name: "phone", out: phoneOut, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true },
 ];
 
-const browser = await chromium.launch({ headless: true }).catch((error) => {
+// Load Chromium's system libraries from the shared no-root fetch, so a host
+// without them needs no sudo (GRE-1065).
+let libEnv = {};
+let fetchError;
+const binary = process.platform === "linux"
+  ? headlessShell(process.env.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), ".cache", "ms-playwright"))
+  : undefined;
+if (binary) {
+  try {
+    libEnv = ensureChromiumLibs(binary);
+  } catch (error) {
+    fetchError = error.message;
+  }
+}
+const browser = await chromium.launch({ headless: true, env: { ...process.env, ...libEnv } }).catch((error) => {
   console.error(`preview-shot: could not start the browser: ${error.message.split("\n")[0]}`);
-  console.error(browserFix(error.message, process.env.PLAYWRIGHT_BROWSERS_PATH));
+  console.error(browserFix(error.message, process.env.PLAYWRIGHT_BROWSERS_PATH, fetchError));
   process.exit(1);
 });
 const errors = [];
