@@ -160,3 +160,29 @@ describe("company routes", () => {
     expect(applyCompanyPrefix("/PAP/artifacts", "PAP")).toBe("/PAP/artifacts");
   });
 });
+
+describe("board route roots", () => {
+  // Global top-level routes that also appear inside boardRoutes; they must stay unprefixed.
+  const GLOBAL_TOO = new Set(["instance", "onboarding", "tests"]);
+
+  it("recognises every root mounted under /:companyPrefix, so links get the prefix", async () => {
+    const { readFileSync } = await import("node:fs");
+    const source = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+    const body = source.slice(source.indexOf("function boardRoutes"), source.indexOf("\nfunction ", source.indexOf("function boardRoutes") + 1));
+    const roots = new Set(
+      [...body.matchAll(/path="([a-z][a-z0-9-]*)/g)].map((m) => m[1]!).filter((root) => !GLOBAL_TOO.has(root)),
+    );
+    expect(roots.size).toBeGreaterThan(30);
+    expect(roots.has("strategy-board")).toBe(true);
+    const missing = [...roots].filter((root) => !isBoardPathWithoutPrefix(`/${root}`));
+    expect(missing).toEqual([]);
+  });
+
+  it("prefixes sidebar links from the Board page instead of treating it as a company", () => {
+    expect(extractCompanyPrefixFromPath("/strategy-board")).toBeNull();
+    expect(applyCompanyPrefix("/strategy-board", "GRE")).toBe("/GRE/strategy-board");
+    expect(applyCompanyPrefix("/strategy-board/ask/agent-1", "GRE")).toBe("/GRE/strategy-board/ask/agent-1");
+    expect(extractCompanyPrefixFromPath("/GRE/strategy-board")).toBe("GRE");
+    expect(toCompanyRelativePath("/GRE/strategy-board")).toBe("/strategy-board");
+  });
+});

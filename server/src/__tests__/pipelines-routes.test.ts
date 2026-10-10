@@ -361,6 +361,41 @@ describeEmbeddedPostgres("pipeline routes", () => {
     expect(new Date(byKey.get("legacy")!.stageEnteredAt).toISOString()).toBe(legacyCreatedAt.toISOString());
   });
 
+  it("lists open items per stage in the pipeline list response", async () => {
+    const company = await seedCompany();
+    const http = request(app(boardActor));
+    const pipeline = await http
+      .post(`/api/companies/${company.id}/pipelines`)
+      .send({
+        key: "clients",
+        name: "Client journey",
+        stages: [
+          { key: "lead", name: "First contact", kind: "working", position: 100 },
+          { key: "gita", name: "GITA", kind: "working", position: 200 },
+          { key: "live", name: "Live", kind: "done", position: 900 },
+          { key: "lost", name: "Lost", kind: "cancelled", position: 1000 },
+        ],
+      })
+      .expect(201);
+    const pipelineId = pipeline.body.id;
+    for (const caseKey of ["a", "b", "c"]) {
+      await http.post(`/api/pipelines/${pipelineId}/cases`).send({ caseKey, title: caseKey }).expect(201);
+    }
+    const cases = await db.select().from(pipelineCases).where(eq(pipelineCases.pipelineId, pipelineId));
+    const gita = await db.select().from(pipelineStages).where(eq(pipelineStages.key, "gita"));
+    await db.update(pipelineCases).set({ stageId: gita[0]!.id }).where(eq(pipelineCases.id, cases[0]!.id));
+    await db.update(pipelineCases).set({ terminalKind: "done" }).where(eq(pipelineCases.id, cases[1]!.id));
+
+    const list = await http.get(`/api/companies/${company.id}/pipelines`).expect(200);
+    const stages = list.body[0].stages as Array<{ key: string; openCaseCount: number }>;
+    expect(stages.map((stage) => [stage.key, stage.openCaseCount])).toEqual([
+      ["lead", 1],
+      ["gita", 1],
+      ["live", 0],
+      ["lost", 0],
+    ]);
+  });
+
   it("patches case content and workspaceRef in one service transaction", async () => {
     const company = await seedCompany();
     const http = request(app(boardActor));

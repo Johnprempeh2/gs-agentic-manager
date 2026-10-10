@@ -79,6 +79,8 @@ export interface PipelineStage {
   kind: string;
   position: number;
   config?: Record<string, unknown> | null;
+  /** Open items sitting in this stage; sent by the pipelines list endpoint only. */
+  openCaseCount?: number | null;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
