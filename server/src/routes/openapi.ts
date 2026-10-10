@@ -4,6 +4,7 @@ import {
   experimentalApiQueries,
 } from "./experimental-api-paths.js";
 import { Router } from "express";
+import { markTourSeenSchema } from "./tour-dismissals.js";
 import { z } from "zod";
 import {
   createAiConnectionSchema,
@@ -1361,6 +1362,7 @@ const PUBLIC_OPERATIONS = new Set([
 
 const BOARD_ONLY_PREFIXES = [
   "/api/announcements/",
+  "/api/tour-dismissals/",
   "/api/auth/",
   "/api/admin/",
   "/api/plugins",
@@ -7329,6 +7331,51 @@ registry.registerPath({
   summary: "Update current user sidebar preferences",
   request: { body: jsonBody(upsertSidebarOrderPreferenceSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+const privateNoStoreHeaders = {
+  "Cache-Control": { schema: { type: "string", enum: ["private, no-store"] } },
+};
+
+registry.registerPath({
+  method: "get",
+  path: "/api/tour-dismissals/me",
+  tags: ["sidebar"],
+  summary: "List the guided tours the current user has finished or skipped",
+  description: "Personal preference that follows the board user across devices. Agents cannot call it.",
+  responses: {
+    200: { ...r.ok(z.array(z.object({ tourKey: z.string(), tourVersion: z.number().int(), seenAt: z.string() }))), headers: privateNoStoreHeaders },
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/tour-dismissals/me",
+  tags: ["sidebar"],
+  summary: "Mark a guided tour as seen for the current user",
+  description: "Idempotent: repeating it keeps the first seenAt. Replaying a tour does not reset it.",
+  request: { body: jsonBody(markTourSeenSchema) },
+  responses: {
+    204: { ...r.noContent, headers: privateNoStoreHeaders },
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/tour-dismissals/me",
+  tags: ["sidebar"],
+  summary: "Show every guided tour again for the current user",
+  description: "Clears only the caller's own seen records, on every device.",
+  responses: {
+    204: { ...r.noContent, headers: privateNoStoreHeaders },
+    401: r.unauthorized,
+    403: r.forbidden,
+  },
 });
 
 registry.registerPath({

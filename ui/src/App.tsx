@@ -59,6 +59,7 @@ import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
 import { GoalDetail } from "./pages/GoalDetail";
 import { StrategyBoard } from "./pages/StrategyBoard";
+import { Tutorials } from "./pages/Tutorials";
 import { BoardAgentChat } from "./pages/BoardAgentChat";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
 import { Approvals } from "./pages/Approvals";
@@ -415,6 +416,7 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       />
       <Route path="deliverables" element={<Deliverables />} />
       <Route path="website" element={<Website />} />
+      <Route path="tutorials" element={<Tutorials />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
@@ -835,6 +837,7 @@ export function App() {
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
+          <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />

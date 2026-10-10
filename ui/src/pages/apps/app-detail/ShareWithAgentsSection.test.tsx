@@ -2,6 +2,7 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import type { Agent, ConnectionGrant } from "@greatstone/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ShareWithAgentsSection } from "./ShareWithAgentsSection";
@@ -17,7 +18,7 @@ async function render(status = "active", shared = ["keystone"]) {
   const agents = [{ id: "keystone", name: "Keystone", status: "idle" }, { id: "ridge", name: "Ridge", status: "idle" },
     { id: "gone", name: "Gone", status: "terminated" }] as unknown as Agent[];
   await act(async () => root!.render(<QueryClientProvider client={new QueryClient({ defaultOptions: { mutations: { retry: false } } })}>
-    <ShareWithAgentsSection connectionId="connection" grant={grant} agents={agents} />
+    <MemoryRouter><ShareWithAgentsSection connectionId="connection" grant={grant} agents={agents} /></MemoryRouter>
   </QueryClientProvider>));
 }
 const button = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === text);

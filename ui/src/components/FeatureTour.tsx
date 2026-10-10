@@ -1,38 +1,16 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleHelp } from "lucide-react";
-import { authApi } from "@/api/auth";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
 import { useIsPhone } from "@/hooks/useIsPhone";
+import { useTourSeen } from "@/hooks/useTourSeen";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import type { TourDefinition, TourStep } from "@/lib/feature-tours";
 import { queryKeys } from "@/lib/queryKeys";
+import { useSearchParams } from "@/lib/router";
 import { cn } from "@/lib/utils";
-
-// ponytail: "seen" lives in this browser's localStorage, keyed per user and tour
-// version. There is no general per-user preferences table; add one (and read it
-// here) if tours must stay dismissed across devices.
-export function tourSeenKey(tour: Pick<TourDefinition, "id" | "version">, userId: string) {
-  return `gsam.tour.${tour.id}.v${tour.version}.${userId}`;
-}
-
-function hasSeen(key: string) {
-  try {
-    return window.localStorage.getItem(key) === "1";
-  } catch {
-    return true; // Storage blocked: never nag on every visit. Replay still works.
-  }
-}
-
-function markSeen(key: string) {
-  try {
-    window.localStorage.setItem(key, "1");
-  } catch {
-    // Storage blocked; nothing to remember.
-  }
-}
 
 /** The first visible element for a step, or null when the page does not show it. */
 export function findTourTarget(target: string): HTMLElement | null {
@@ -54,13 +32,12 @@ export function FeatureTour({ tour, className }: { tour: TourDefinition; classNa
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const { data: session, isFetched: sessionFetched } = useQuery({
-    queryKey: queryKeys.auth.session,
-    queryFn: () => authApi.getSession(),
-  });
   const enabled = settings?.[tour.flag] === true;
-  const userId = session?.user?.id ?? session?.session?.userId ?? "local";
-  const seenKey = tourSeenKey(tour, userId);
+  const { isSeen, markSeen } = useTourSeen();
+  const seen = isSeen(tour);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requested = searchParams.get("tour") === tour.id;
+  const autoStarted = useRef(false);
 
   const [steps, setSteps] = useState<ShownStep[] | null>(null);
   const [index, setIndex] = useState(0);
@@ -82,14 +59,34 @@ export function FeatureTour({ tour, className }: { tour: TourDefinition; classNa
     return true;
   }, [tour]);
 
-  // First visit: wait a tick so the page's own content has rendered.
+  // Started from Tutorials (?tour=<id>): start now, seen or not, giving the page's
+  // content a moment to load, then drop the parameter so a reload does not replay it.
   useEffect(() => {
-    if (!flagsFetched || !sessionFetched || !enabled || hasSeen(seenKey)) return;
+    if (!flagsFetched || !enabled || !requested) return;
+    autoStarted.current = true;
+    let tries = 0;
+    let timer = 0;
+    const attempt = () => {
+      if (start() || ++tries >= 20) {
+        setSearchParams((params) => { params.delete("tour"); return params; }, { replace: true });
+        return;
+      }
+      timer = window.setTimeout(attempt, 150);
+    };
+    timer = window.setTimeout(attempt, 0);
+    return () => window.clearTimeout(timer);
+  }, [flagsFetched, enabled, requested, start, setSearchParams]);
+
+  // First visit: once the seen state is known (never while loading, so no flash),
+  // wait a tick so the page's own content has rendered.
+  useEffect(() => {
+    if (!flagsFetched || !enabled || requested || seen !== false || autoStarted.current) return;
     const timer = window.setTimeout(() => {
-      if (start()) markSeen(seenKey);
+      autoStarted.current = true;
+      start();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [flagsFetched, sessionFetched, enabled, seenKey, start]);
+  }, [flagsFetched, enabled, requested, seen, start]);
 
   const step = steps?.[index] ?? null;
   const last = steps ? index === steps.length - 1 : false;
@@ -112,7 +109,11 @@ export function FeatureTour({ tour, className }: { tour: TourDefinition; classNa
     },
   }), [isPhone, step]);
 
-  const close = () => setSteps(null);
+  // Done, Skip, Escape or a click away all count as seen. Replaying never resets it.
+  const close = () => {
+    if (steps) markSeen(tour);
+    setSteps(null);
+  };
   const go = (delta: number) => {
     if (!steps) return;
     const next = index + delta;
