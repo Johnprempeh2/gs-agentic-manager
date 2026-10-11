@@ -7316,7 +7316,7 @@ describeEmbeddedPostgres("tool access service", () => {
     ).toBe(false);
   });
 
-  it.each(["none", "event", "same-time-refresh", "one-conflict"])(
+  it.each(["none", "event", "same-time-refresh", "one-conflict", "company-pause"])(
     "binds a managed GitHub identity and protects refresh from concurrent access changes (%s)",
     async (concurrentChange) => {
       const company = await createCompany(db);
@@ -7513,6 +7513,38 @@ describeEmbeddedPostgres("tool access service", () => {
             ),
         ).resolves.toHaveLength(1);
         vi.mocked(connector.setWebhookBinding).mockClear();
+        if (concurrentChange === "company-pause") {
+          // GRE-1364: the company is paused while the refresh's GitHub requests
+          // are in flight. The refresh must not write the suspended grant back to active.
+          const { companyService } = await import("../services/companies.js");
+          beforeRepositoryResponse = async () => {
+            beforeRepositoryResponse = async () => {};
+            await companyService(db).pause(company.id, actor, {});
+          };
+          await expect(
+            service.checkHealth(connected.connectionId, actor),
+          ).rejects.toThrow("This GitHub authorization is suspended while the company is paused.");
+          const [latest] = await db
+            .select()
+            .from(connectionGrants)
+            .where(eq(connectionGrants.id, grant!.id));
+          expect(latest?.status).toBe("suspended");
+          expect(connector.setWebhookBinding).not.toHaveBeenCalled();
+          // A later refresh (continuity sweep, webhook follow-up) changes nothing either.
+          await expect(
+            service.refreshManagedGitHubGrantAccess(
+              (await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId)))[0]!,
+              latest!,
+              actor,
+            ),
+          ).rejects.toMatchObject({ status: 409, details: { code: "grant_suspended" } });
+          const [after] = await db
+            .select()
+            .from(connectionGrants)
+            .where(eq(connectionGrants.id, grant!.id));
+          expect(after?.status).toBe("suspended");
+          return;
+        }
         if (concurrentChange !== "none") {
           beforeRepositoryResponse = async () => {
             if (concurrentChange === "one-conflict")

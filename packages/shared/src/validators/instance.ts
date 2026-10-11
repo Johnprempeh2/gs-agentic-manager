@@ -93,7 +93,12 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableCases: z.boolean().default(false),
   // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.
   enableDeepDive: z.boolean().default(false),
+  // Greatstone: Strategy module (GRE-1382): the KPI cascade and KPI readings.
+  // On for self-hosted so existing instances keep their plan; client editions
+  // and the signed entitlement document turn it off unless it is sold.
+  enableStrategy: z.boolean().default(true),
   // Greatstone: board control panel (GRE-1135). Off by default; set per instance.
+  // Needs enableStrategy: with Strategy off it reads off and cannot be turned on.
   enableStrategyBoard: z.boolean().default(false),
   // Greatstone: the board secretary agent (GRE-1200). It may make draft board
   // packs that a board member accepts. One per instance; null = none.

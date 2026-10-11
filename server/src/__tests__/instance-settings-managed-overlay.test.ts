@@ -155,6 +155,27 @@ describe("instanceSettingsService managed overlay", () => {
     });
   });
 
+  it("reads Board as off while Strategy is off, from a managed config or the stored row (GRE-1382)", async () => {
+    const boardWithoutStrategy = JSON.stringify({
+      v: 1,
+      mode: "cloud",
+      catalogVersion: "2026.1011.0",
+      features: { enableStrategy: false, enableStrategyBoard: true },
+      plugins: { autoInstall: [] },
+    });
+    const managed = instanceSettingsService(stubDb(settingsRow({})).db, { runtimeEnv: managedEnv(boardWithoutStrategy) });
+    expect(await managed.getExperimental()).toMatchObject({ enableStrategy: false, enableStrategyBoard: false });
+
+    const stored = instanceSettingsService(
+      stubDb(settingsRow({ enableStrategy: false, enableStrategyBoard: true })).db,
+      { runtimeEnv: {} },
+    );
+    expect(await stored.getExperimental()).toMatchObject({ enableStrategy: false, enableStrategyBoard: false });
+
+    const bothOn = instanceSettingsService(stubDb(settingsRow({ enableStrategyBoard: true })).db, { runtimeEnv: {} });
+    expect(await bothOn.getExperimental()).toMatchObject({ enableStrategy: true, enableStrategyBoard: true });
+  });
+
   it("overlays managed values on get()", async () => {
     const { db } = stubDb(settingsRow({ enableApps: true }));
     const svc = instanceSettingsService(db, { runtimeEnv: managedEnv() });

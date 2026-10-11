@@ -153,10 +153,20 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableStrategy: {
+    title: "Strategy",
+    description:
+      "The strategy module: the one-page strategic plan (vision to KPI cascade), KPI readings with RAG status, and KPI drafts from a research pack. Plain goals stay on without it. Off answers the KPI routes with 403 not_entitled.",
+    tier: "managed",
+    cloudDefault: false,
+    // On for self-hosted so existing instances keep their plan; client
+    // editions pin it off and the signed entitlement document governs it.
+    selfHostedDefault: true,
+  },
   enableStrategyBoard: {
     title: "Board control panel",
     description:
-      "The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, \"Why?\" requests and the quarterly board pack.",
+      "Requires Strategy. The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, \"Why?\" requests and the quarterly board pack.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -360,6 +370,39 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
 };
 
 export const INSTANCE_FEATURE_KEYS = Object.keys(INSTANCE_FEATURE_CATALOG).sort() as InstanceFeatureKey[];
+
+/**
+ * Switches that only work with another switch on (GRE-1382, D2 rule 1 on
+ * GRE-1354): the Board add-on needs the Strategy module. The server reads a
+ * dependent switch as off while what it needs is off, and refuses a settings
+ * write that would leave it on alone.
+ */
+export const INSTANCE_FEATURE_REQUIRES: Partial<Record<InstanceFeatureKey, InstanceFeatureKey>> = {
+  enableStrategyBoard: "enableStrategy",
+};
+
+export interface FeatureDependencyViolation {
+  feature: InstanceFeatureKey;
+  requires: InstanceFeatureKey;
+}
+
+/** Dependent switches that are on while the switch they need is off. */
+export function featureDependencyViolations(
+  settings: Partial<Record<InstanceFeatureKey, unknown>>,
+): FeatureDependencyViolation[] {
+  return (Object.entries(INSTANCE_FEATURE_REQUIRES) as Array<[InstanceFeatureKey, InstanceFeatureKey]>)
+    .filter(([feature, requires]) => settings[feature] === true && settings[requires] !== true)
+    .map(([feature, requires]) => ({ feature, requires }));
+}
+
+/** Reads each dependent switch as off while the switch it needs is off. */
+export function applyFeatureDependencies<T extends Partial<Record<InstanceFeatureKey, unknown>>>(settings: T): T {
+  const violations = featureDependencyViolations(settings);
+  if (violations.length === 0) return settings;
+  const next = { ...settings } as Record<string, unknown>;
+  for (const { feature } of violations) next[feature] = false;
+  return next as T;
+}
 
 /**
  * Greatstone: flags retired from Settings > Experimental (GRE-193 / GRE-196).

@@ -139,6 +139,8 @@ export const toolConnections = pgTable(
     lastHealthAt: timestamp("last_health_at", { withTimezone: true }),
     lastCatalogRefreshAt: timestamp("last_catalog_refresh_at", { withTimezone: true }),
     lastError: text("last_error"),
+    /** Set when a company pause turned this connection off (GRE-1364). Cleared only by a re-enable that passes a health check. */
+    pauseSuspendedAt: timestamp("pause_suspended_at", { withTimezone: true }),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -231,7 +233,7 @@ export const connectionGrants = pgTable(
   },
   (table) => [
     check("connection_grants_kind_check", sql`${table.kind} in ('organization', 'user', 'agent')`),
-    check("connection_grants_status_check", sql`${table.status} in ('active', 'revoked', 'expired', 'needs_reauthorization')`),
+    check("connection_grants_status_check", sql`${table.status} in ('active', 'revoked', 'expired', 'needs_reauthorization', 'suspended')`),
     check("connection_grants_credential_source_one_of_check", sql`${table.externalCredential} is null or jsonb_array_length(${table.credentialSecretRefs}) = 0`),
     check("connection_grants_subject_check", sql`(${table.kind} = 'user' and ${table.subjectUserId} is not null and ${table.subjectAgentId} is null) or (${table.kind} = 'agent' and ${table.subjectAgentId} is not null and ${table.subjectUserId} is null) or (${table.kind} = 'organization' and ${table.subjectUserId} is null and ${table.subjectAgentId} is null)`),
     check("connection_grants_default_check", sql`${table.isDefault} = false or ${table.kind} = 'organization'`),

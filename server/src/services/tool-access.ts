@@ -1619,6 +1619,7 @@ function toConnection(row: typeof toolConnections.$inferSelect): ToolConnection 
     lastHealthAt: row.lastHealthAt,
     lastCatalogRefreshAt: row.lastCatalogRefreshAt,
     lastError: row.lastError,
+    pauseSuspendedAt: row.pauseSuspendedAt ?? null,
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt,
@@ -3161,6 +3162,8 @@ export function toolAccessService(
             eq(connectionGrants.id, grant.id),
             eq(connectionGrants.companyId, connection.companyId),
             eq(connectionGrants.connectionId, connection.id),
+            // GRE-1364: a token fetch racing a company pause must not lift the suspension.
+            ne(connectionGrants.status, "suspended"),
           ),
         );
       return {
@@ -11750,6 +11753,12 @@ export function toolAccessService(
         .limit(1);
       if (!currentGrant || currentGrant.status === "revoked")
         throw notFound("GitHub authorization not found");
+      // GRE-1364: a company pause can suspend the grant while the provider
+      // requests are in flight. A refresh must never write it back to active.
+      if (currentGrant.status === "suspended")
+        throw conflict("This GitHub authorization is suspended while the company is paused.", {
+          code: "grant_suspended",
+        });
       const previousGitHub = currentGrant.providerTenant?.github;
       const initialGitHub = grant.providerTenant?.github;
       // No lock is held during provider requests. Reject a snapshot if another
@@ -18465,6 +18474,20 @@ export function toolAccessService(
       input: UpdateToolConnection,
     ): Promise<ToolConnection> => {
       const existing = await getConnectionRow(connectionId);
+      if (input.enabled === true && !existing.enabled) {
+        // GRE-1364: a paused company turns nothing on, and a connection the pause
+        // turned off comes back only through the health-checked re-enable.
+        if (existing.pauseSuspendedAt) {
+          throw conflict("Re-enable this connection from the company pause screen; it must pass a health check.", { code: "pause_suspended" });
+        }
+        const [company] = await db
+          .select({ status: companies.status })
+          .from(companies)
+          .where(eq(companies.id, existing.companyId));
+        if (company?.status !== "active") {
+          throw conflict("The company is not active, so its connections stay off.", { code: "company_not_active" });
+        }
+      }
       if (existing.connectionPurpose === "ai" && (input.config || input.transportConfig || input.credentialRefs || input.credentialSecretRefs || (input.credentialPolicy && input.credentialPolicy !== existing.credentialPolicy))) throw badRequest("Use AI account reconnect to change credentials. Provider, sign-in method, and ownership cannot be changed.");
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? existing.config,
@@ -18503,6 +18526,14 @@ export function toolAccessService(
         })
         .where(eq(toolConnections.id, connectionId))
         .returning();
+      if (row.enabled && !existing.enabled) {
+        // A connection that was already off when the company paused has its grants
+        // held too; turning it on after resume is the deliberate act that frees them.
+        await db
+          .update(connectionGrants)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(and(eq(connectionGrants.connectionId, row.id), eq(connectionGrants.status, "suspended")));
+      }
       await syncCredentialBindings(row);
       await ensureRuntimeSlot(row);
       emitConnectionUpdated(row, existing, "api");
@@ -18512,6 +18543,124 @@ export function toolAccessService(
     archiveConnection: removeConnection,
 
     checkHealth: checkConnectionHealth,
+
+    /**
+     * GRE-1364: a company pause turns off every enabled connection and suspends
+     * every active grant, with one audit row each. Running it twice changes nothing.
+     */
+    suspendCompanyForPause: async (companyId: string, actor?: ActorInfo) => {
+      const now = new Date();
+      const connections = await db
+        .update(toolConnections)
+        .set({ enabled: false, pauseSuspendedAt: now, updatedAt: now })
+        .where(and(
+          eq(toolConnections.companyId, companyId),
+          eq(toolConnections.enabled, true),
+          isNull(toolConnections.pauseSuspendedAt),
+        ))
+        .returning();
+      const grants = await db
+        .update(connectionGrants)
+        .set({ status: "suspended", updatedAt: now })
+        .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.status, "active")))
+        .returning({ id: connectionGrants.id, connectionId: connectionGrants.connectionId, kind: connectionGrants.kind });
+      for (const connection of connections) {
+        emitConnectionUpdated(connection, { status: connection.status, enabled: true }, "api");
+        await audit({
+          companyId,
+          connectionId: connection.id,
+          action: "tool_connection.pause_suspended",
+          outcome: "success",
+          reasonCode: "company_paused",
+          actor,
+          details: { connectionPurpose: connection.connectionPurpose, transport: connection.transport },
+        });
+      }
+      for (const grant of grants) {
+        await audit({
+          companyId,
+          connectionId: grant.connectionId,
+          action: "connection_grant.pause_suspended",
+          outcome: "success",
+          reasonCode: "company_paused",
+          actor,
+          details: { grantId: grant.id, kind: grant.kind },
+        });
+      }
+      return { connectionsSuspended: connections.length, grantsSuspended: grants.length };
+    },
+
+    /**
+     * GRE-1364: after a company resume, a connection the pause turned off comes
+     * back only through this call, and only if it passes a health check. Its
+     * suspended grants are restored for the check and put back if it fails.
+     */
+    reenableConnectionAfterPause: async (connectionId: string, actor?: ActorInfo): Promise<ToolConnection> => {
+      const connection = await getConnectionRow(connectionId);
+      if (!connection.pauseSuspendedAt) {
+        throw conflict("This connection was not turned off by a company pause.", { code: "not_pause_suspended" });
+      }
+      const [company] = await db
+        .select({ status: companies.status })
+        .from(companies)
+        .where(eq(companies.id, connection.companyId));
+      if (company?.status !== "active") {
+        throw conflict("Resume the company before you re-enable its connections.", { code: "company_not_active" });
+      }
+      assertLocalStdioCanBeEnabled(connection.transport, true, connection.config);
+      const restoredGrants = await db
+        .update(connectionGrants)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(and(eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.status, "suspended")))
+        .returning({ id: connectionGrants.id });
+      try {
+        if (connection.connectionPurpose === "ai") {
+          // AI connections have no live probe; their health is set when the credential is saved or rejected.
+          if (connection.healthStatus !== "ok") {
+            throw unprocessable("Reconnect this AI account before you re-enable it.", { code: "ai_connection_unhealthy" });
+          }
+        } else {
+          await checkConnectionHealth(connection.id, actor);
+        }
+      } catch (error) {
+        if (restoredGrants.length > 0) {
+          await db
+            .update(connectionGrants)
+            .set({ status: "suspended", updatedAt: new Date() })
+            .where(and(
+              inArray(connectionGrants.id, restoredGrants.map((grant) => grant.id)),
+              eq(connectionGrants.status, "active"),
+            ));
+        }
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.pause_reenabled",
+          outcome: "failure",
+          reasonCode: error instanceof HttpError ? String(asRecord(error.details).code ?? "health_check_failed") : "health_check_failed",
+          actor,
+        });
+        throw error;
+      }
+      const [row] = await db
+        .update(toolConnections)
+        .set({ enabled: true, pauseSuspendedAt: null, updatedAt: new Date() })
+        .where(and(eq(toolConnections.id, connection.id), isNotNull(toolConnections.pauseSuspendedAt)))
+        .returning();
+      if (!row) throw conflict("This connection was already re-enabled.", { code: "not_pause_suspended" });
+      await syncCredentialBindings(row);
+      await ensureRuntimeSlot(row);
+      emitConnectionUpdated(row, connection, "api");
+      await audit({
+        companyId: connection.companyId,
+        connectionId: connection.id,
+        action: "tool_connection.pause_reenabled",
+        outcome: "success",
+        actor,
+        details: { grantsRestored: restoredGrants.length },
+      });
+      return toConnection(row);
+    },
 
     refreshCatalog,
 

@@ -1,5 +1,5 @@
 {
-  "id": "9667ff37-c486-4a52-bd48-5c3a1d981e7c",
+  "id": "a72ba858-1514-4405-a37a-3891a14d305f",
   "prevId": "dbc26ec0-a156-4a76-a8b1-200e5aa76495",
   "version": "7",
   "dialect": "postgresql",
@@ -3704,24 +3704,6 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true
-        },
-        "estimate_monthly_cents": {
-          "name": "estimate_monthly_cents",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "usage_warned_window_start": {
-          "name": "usage_warned_window_start",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "usage_warned_at": {
-          "name": "usage_warned_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
         },
         "term_kind": {
           "name": "term_kind",
@@ -27132,7 +27114,7 @@
         },
         "connection_grants_status_check": {
           "name": "connection_grants_status_check",
-          "value": "\"connection_grants\".\"status\" in ('active', 'revoked', 'expired', 'needs_reauthorization')"
+          "value": "\"connection_grants\".\"status\" in ('active', 'revoked', 'expired', 'needs_reauthorization', 'suspended')"
         },
         "connection_grants_credential_source_one_of_check": {
           "name": "connection_grants_credential_source_one_of_check",
@@ -50100,6 +50082,12 @@
         "last_error": {
           "name": "last_error",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pause_suspended_at": {
+          "name": "pause_suspended_at",
+          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },
