@@ -23,6 +23,9 @@ vi.mock("@/api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
 
+// The secretary picker reads the company context; the Board tests only need the toggles.
+vi.mock("@/components/strategy-board/BoardSecretarySetting", () => ({ BoardSecretarySetting: () => null }));
+
 vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
 }));
@@ -71,6 +74,8 @@ const CASES_TOGGLE_SELECTOR =
   'button[aria-label="Toggle cases experimental setting"]';
 const DEEP_DIVE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle deep dive experimental setting"]';
+const STRATEGY_TOGGLE_SELECTOR = 'button[aria-label="Toggle strategy setting"]';
+const BOARD_TOGGLE_SELECTOR = 'button[aria-label="Toggle board control panel experimental setting"]';
 const GSAM_RUNNER_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager Runner experimental setting"]';
 
@@ -90,6 +95,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enablePipelines: false,
     enableCases: false,
     enableDeepDive: false,
+    enableStrategy: false,
     enableStrategyBoard: false,
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
@@ -783,6 +789,29 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(
       container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it("turns Strategy on with the Board, and the Board off with Strategy (GRE-1382)", async () => {
+    await renderPage();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableStrategy: true,
+      enableStrategyBoard: true,
+    });
+    expect(container.querySelector<HTMLButtonElement>(STRATEGY_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(STRATEGY_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+      enableStrategy: false,
+      enableStrategyBoard: false,
+    });
+    expect(container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
   });
 
   it("renders and patches the Server Info Debug View experimental toggle", async () => {

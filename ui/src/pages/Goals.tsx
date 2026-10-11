@@ -8,6 +8,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
+import { useStrategyEnabled } from "../hooks/useStrategyEnabled";
 import { queryKeys } from "../lib/queryKeys";
 import { buildScoreboard } from "../lib/goal-journey";
 import { buildStrategyCascade, hasStrategyGoals } from "../lib/goal-cascade";
@@ -49,7 +50,8 @@ export function Goals() {
     setBreadcrumbs([{ label: "Goals" }]);
   }, [setBreadcrumbs]);
 
-  const { data: goals, isLoading, error, refetch } = useQuery({
+  const { enabled: strategyOn } = useStrategyEnabled();
+  const { data: allGoals, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
     queryFn: () => goalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -77,6 +79,13 @@ export function Goals() {
       pushToast({ title: "Could not add the strategic plan", body: err.message, tone: "error" });
     },
   });
+
+  // GRE-1382: with the Strategy module off, goals with a kind (the KPI
+  // cascade) are hidden; they stay stored and come back when it is on.
+  const goals = useMemo(
+    () => (strategyOn ? allGoals : allGoals?.filter((goal) => goal.kind == null)),
+    [allGoals, strategyOn],
+  );
 
   const agentsById: AgentsById = useMemo(
     () => new Map((agents ?? []).map((agent) => [agent.id, agent])),
@@ -120,7 +129,7 @@ export function Goals() {
         </div>
         {goals ? (
           <div className="flex flex-wrap items-center gap-2">
-            {!hasStrategy ? (
+            {strategyOn && !hasStrategy ? (
               <Button
                 size="sm"
                 variant="outline"
