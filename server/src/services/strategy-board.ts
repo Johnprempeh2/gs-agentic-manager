@@ -529,6 +529,7 @@ export function strategyBoardService(db: Db) {
       counts: countStrategyBoardKpis(board.kpis),
       areas: board.areas,
       kpis: board.kpis,
+      attention: rankStrategyBoardAttention(board.kpis),
       overdueActions: board.overdueActions,
       readings: readings.map((reading) => ({
         goalId: reading.goalId,

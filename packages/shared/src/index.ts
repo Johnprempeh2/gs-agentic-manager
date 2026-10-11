@@ -55,6 +55,7 @@ export {
   boardEvidenceTrust,
   renderStrategyBoardBrief,
   renderStrategyBoardPackMarkdown,
+  strategyBoardNotMeasuredReason,
   strategyBoardOwner,
   type StrategyBoardGoal,
   type StrategyBoardKpiInput,

@@ -60,6 +60,16 @@ describe("AttentionQueue", () => {
     expect(html).toMatch(/disabled=""[^>]*title="This KPI has no owner to ask"/);
   });
 
+  it("shows a KPI with no status as not measured, with the reason (GRE-1325)", () => {
+    const unmeasured = kpi({
+      goalId: "k3", title: "Brand trust", status: null, reason: "no_plan", gapPercent: null, latestValue: null,
+      plannedValue: null, targetValue: null, latestReadingSource: null, readingAgeDays: null, notMeasuredReason: "No target",
+    });
+    const html = renderToStaticMarkup(<AttentionQueue kpis={[RETENTION, unmeasured]} canAskWhy onAskWhy={() => {}} />);
+    expect(html).toContain("Not measured: No target");
+    expect(html).not.toContain("0% behind plan: n/a");
+  });
+
   it("hides Ask why from people without the board right", () => {
     const html = renderToStaticMarkup(<AttentionQueue kpis={[RETENTION]} canAskWhy={false} onAskWhy={() => {}} />);
     expect(html).not.toContain("Ask why");

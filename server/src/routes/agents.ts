@@ -87,6 +87,7 @@ import { setAgentPipelineAccess } from "../services/agent-pipeline-access.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
 import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
+import { RUN_FAILURE_RATE_DEFAULT_DAYS, summarizeRunFailureRate } from "../services/run-failure-rate.js";
 import { assertAuthenticated, assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 import { runAdapterLoginStartSpine } from "./adapter-login-route-spine.js";
 import { isLoginCommandSupportedAdapterType } from "../services/login-command.js";
@@ -6790,6 +6791,25 @@ export function agentRoutes(
     const filters = parseHeartbeatRunListFilters(req.query);
     const runs = await heartbeat.list(companyId, agentId, limit, { summary, ...filters });
     res.json(await runRedactions.redactForRuns(companyId, runs));
+  });
+
+  /**
+   * Failed runs per 100 finished runs in a window (GRE-1325), counted in the
+   * database so a week reads in one call. `since` (inclusive) and `before`
+   * (exclusive) are on `finishedAt`; the window defaults to the last 7 days.
+   * Same rule as tracked number R2: see services/run-failure-rate.ts.
+   */
+  router.get("/companies/:companyId/heartbeat-runs/failure-rate", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertRunTelemetryReadAllowed(req, res, companyId))) return;
+    const agentId = typeof req.query.agentId === "string" && req.query.agentId ? req.query.agentId : undefined;
+    const before = readRunListTime(req.query, "before") ?? new Date();
+    const since = readRunListTime(req.query, "since")
+      ?? new Date(before.getTime() - RUN_FAILURE_RATE_DEFAULT_DAYS * 86_400_000);
+    if (since.getTime() >= before.getTime()) throw badRequest("since must be earlier than before");
+    const counts = await heartbeat.countFinishedByStatus(companyId, { agentId, since, before });
+    res.json(summarizeRunFailureRate({ since, before, agentId, counts }));
   });
 
   router.get("/companies/:companyId/provider-traces", async (req, res) => {

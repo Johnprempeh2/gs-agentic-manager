@@ -45,6 +45,11 @@ export interface StrategyBoardKpi {
   /** True when the status differs from the last board pack (a new KPI counts as changed). */
   changedSinceSnapshot: boolean;
   openWhyRequests: number;
+  /**
+   * Why the KPI has no status, in words ("No target date", "No reading yet");
+   * null when it has one (GRE-1325). Absent in packs made before GRE-1325.
+   */
+  notMeasuredReason?: string | null;
 }
 
 /**
@@ -91,7 +96,7 @@ export interface StrategyBoardSummary {
   /** The last accepted board pack, which "changed since" compares against. Drafts never count. */
   lastSnapshot: StrategyBoardSnapshotRef | null;
   counts: { red: number; amber: number; green: number; noStatus: number };
-  /** Red then amber KPIs, biggest slippage first. */
+  /** Red then amber KPIs, biggest slippage first, then KPIs that are not measured (GRE-1325). */
   attention: StrategyBoardKpi[];
   areas: StrategyBoardArea[];
   /** Overdue plan actions, grouped by objective then owner, most overdue first. */
@@ -214,6 +219,8 @@ export interface StrategyBoardPackSnapshot {
   counts: StrategyBoardSummary["counts"];
   areas: StrategyBoardArea[];
   kpis: StrategyBoardKpi[];
+  /** The attention queue on the day the pack was made, as on the board. Absent in packs made before GRE-1325. */
+  attention?: StrategyBoardKpi[];
   /** Overdue plan actions on the day the pack was made. Absent in packs made before GRE-1188. */
   overdueActions?: StrategyBoardAction[];
   /** Readings dated inside the period, by KPI, newest first. */

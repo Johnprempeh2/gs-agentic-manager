@@ -32143,6 +32143,25 @@ export function heartbeatService(
       });
     },
 
+    // Runs that finished in [since, before), counted by status (GRE-1325).
+    // One grouped query, so a week of runs reads in one call however many there are.
+    countFinishedByStatus: async (
+      companyId: string,
+      options: { agentId?: string; since: Date; before: Date },
+    ) => {
+      const conditions = [
+        eq(heartbeatRuns.companyId, companyId),
+        gte(heartbeatRuns.finishedAt, options.since),
+        lt(heartbeatRuns.finishedAt, options.before),
+      ];
+      if (options.agentId) conditions.push(eq(heartbeatRuns.agentId, options.agentId));
+      return db
+        .select({ status: heartbeatRuns.status, count: sql<number>`count(*)::int` })
+        .from(heartbeatRuns)
+        .where(and(...conditions))
+        .groupBy(heartbeatRuns.status);
+    },
+
     getRun,
 
     decorateActiveRunStatus: decorateHeartbeatRunRuntimeStatus,

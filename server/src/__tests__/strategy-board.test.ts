@@ -402,6 +402,42 @@ describeEmbeddedPostgres("board control panel (GRE-1135)", () => {
     expect((await request(app(other.actor)).post(`/api/goals/${kpi.id}/why-requests`).send({ question: "?" })).status).toBe(404);
   });
 
+  it("KPIs with no target or no target date show as not measured on the board and in the pack (GRE-1325)", async () => {
+    const { companyId, actor: owner } = await seedCompanyWithBoardAccess(ctx.db, "Unmeasured");
+    const { csf, kpi } = await seedPlan(companyId);
+    await postReading(owner, kpi.id, 120, dayOffset(-2)); // red
+    const kpiRow = (values: Partial<typeof goals.$inferInsert> & { title: string }) =>
+      ({ companyId, kind: "kpi", level: "task", status: "active", parentId: csf.id, ...values }) as typeof goals.$inferInsert;
+    await ctx.db.insert(goals).values([
+      kpiRow({ title: "Brand trust" }),
+      kpiRow({ title: "App rating", targetValue: 4.5 }),
+      kpiRow({ title: "Cost to serve", targetDate: dayOffset(90) }),
+    ]);
+
+    const board = (await request(app(owner)).get(`/api/companies/${companyId}/strategy-board`)).body as StrategyBoardSummary;
+    expect(board.attention.map((k) => [k.title, k.status, k.notMeasuredReason])).toEqual([
+      ["Revenue", "red", null],
+      ["App rating", null, "No target date"],
+      ["Brand trust", null, "No target or target date"],
+      ["Cost to serve", null, "No target"],
+    ]);
+    expect(board.counts).toEqual({ red: 1, amber: 0, green: 0, noStatus: 3 });
+
+    const created = await request(app(owner))
+      .post(`/api/companies/${companyId}/strategy-board/packs`)
+      .send({ periodStart: dayOffset(-30), periodEnd: TODAY });
+    expect(created.status).toBe(201);
+    const pack = created.body as StrategyBoardPack;
+    expect(pack.snapshot.attention?.map((k) => [k.title, k.notMeasuredReason])).toEqual(
+      board.attention.map((k) => [k.title, k.notMeasuredReason]),
+    );
+    expect(pack.body).toContain("## Not measured");
+    expect(pack.body).toContain("3 of 4 KPIs cannot be judged red, amber or green.");
+    expect(pack.body).toContain("| App rating | No target date | No owner |");
+    expect(pack.body).toContain("| Brand trust | No target or target date | No owner |");
+    expect(pack.body).toContain("| Cost to serve | No target | No owner |");
+  });
+
   // ---- Due dates on plan actions (GRE-1188) ----
 
   it("a task under a plan objective takes a due date; overdue ones show on the board and in the pack; off-plan tasks do not change", async () => {
