@@ -14,6 +14,7 @@ import {
 import { agents } from "./agents.js";
 import { companies } from "./companies.js";
 import { documents } from "./documents.js";
+import { issueAttachments } from "./issue_attachments.js";
 import { issues } from "./issues.js";
 import { pipelineStages, pipelines } from "./pipelines.js";
 import { projects } from "./projects.js";
@@ -152,6 +153,47 @@ export const pipelineCaseContacts = pgTable(
   },
   (table) => ({
     companyCaseIdx: index("pipeline_case_contacts_company_case_idx").on(table.companyId, table.caseId),
+  }),
+);
+
+// Evidence on a client (or any other case): the client's own material, such
+// as files attached to a task, documents on a task, or links (GRE-1311). Files
+// stay where they were uploaded; a row points at them so they are easy to find.
+export const pipelineCaseEvidence = pgTable(
+  "pipeline_case_evidence",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    title: text("title").notNull(),
+    note: text("note"),
+    attachmentId: uuid("attachment_id").references(() => issueAttachments.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }),
+    url: text("url"),
+    sourceIssueId: uuid("source_issue_id").references(() => issues.id, { onDelete: "set null" }),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyCaseIdx: index("pipeline_case_evidence_company_case_idx").on(table.companyId, table.caseId),
+    caseAttachmentUq: uniqueIndex("pipeline_case_evidence_case_attachment_uq")
+      .on(table.caseId, table.attachmentId)
+      .where(sql`${table.attachmentId} is not null`),
+    caseDocumentUq: uniqueIndex("pipeline_case_evidence_case_document_uq")
+      .on(table.caseId, table.documentId)
+      .where(sql`${table.documentId} is not null`),
+    caseUrlUq: uniqueIndex("pipeline_case_evidence_case_url_uq")
+      .on(table.caseId, table.url)
+      .where(sql`${table.url} is not null`),
+    kindCheck: check(
+      "pipeline_case_evidence_kind_check",
+      sql`(${table.kind} = 'attachment' and ${table.attachmentId} is not null)
+        or (${table.kind} = 'document' and ${table.documentId} is not null)
+        or (${table.kind} = 'link' and ${table.url} is not null)`,
+    ),
   }),
 );
 

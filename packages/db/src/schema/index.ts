@@ -84,6 +84,7 @@ export {
   pipelineCaseIssueLinks,
   pipelineCaseProjectLinks,
   pipelineCaseContacts,
+  pipelineCaseEvidence,
   pipelineCaseBlockers,
   pipelineDocuments,
   pipelineCaseDocuments,
