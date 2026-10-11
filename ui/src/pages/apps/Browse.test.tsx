@@ -40,6 +40,7 @@ vi.mock("@/api/tools", () => ({
     startOAuth: (connectionId: string, input?: unknown) => startOAuthMock(connectionId, input),
   },
 }));
+vi.mock("@/api/mailboxes", () => ({ mailboxesApi: { list: vi.fn(async () => []) } }));
 vi.mock("@/lib/browserNavigation", () => ({ navigateTopLevel: navigateTopLevelMock }));
 vi.mock("@/lib/oauthHandoff", () => ({
   prepareOAuthNavigation: async (start: { authorizationUrl: string }) => ({ kind: "direct", url: start.authorizationUrl }),
