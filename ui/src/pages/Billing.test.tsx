@@ -139,6 +139,7 @@ describe("Billing page", () => {
     expect(text("billing-actual")).toContain("30%");
     expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("30");
     expect(container.querySelector('[data-testid="billing-extra"]')).toBeNull();
+    expect(container.querySelector('[data-testid="billing-warn-marker"]')?.getAttribute("aria-label")).toBe("Usage warning level, 80%");
   });
 
   it("AT-1.3: labels used, estimate and forecast; the estimate is in the account currency", async () => {
@@ -162,11 +163,13 @@ describe("Billing page", () => {
     expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("100");
     expect(text("billing-extra")).toContain("Extra usage");
     expect(text("billing-extra")).toContain(formatMoney(1_234, "GBP"));
+    expect(container.querySelector('[data-testid="billing-warn-marker"]')).toBeNull();
   });
 
   it("over 100% with the rate missing: says extra usage will be on the invoice, with no amount", async () => {
     await render(view({ usage: { ...USAGE, usedPercent: 106, warning: true, extraUsage: { state: "rate_missing", amountCents: null, currency: "GBP" } } }));
-    expect(text("billing-extra")).toContain("Extra usage will be shown on your invoice");
+    expect(text("billing-extra")).toContain("Shown on invoice");
+    expect(text("billing-extra")).toContain("Final extra usage charge will appear on your invoice.");
     expect(text("billing-extra")).not.toMatch(/£|\$/);
   });
 

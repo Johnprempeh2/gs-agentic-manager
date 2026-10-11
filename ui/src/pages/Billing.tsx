@@ -188,12 +188,16 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
           )}
           style={{ width: `${width}%` }}
         />
-        <div
-          aria-hidden
-          title={`Warning at ${formatPercent(usage.warnPercent)}`}
-          className="absolute -top-0.5 h-3 w-px bg-foreground/60"
-          style={{ left: `${Math.min(100, usage.warnPercent)}%` }}
-        />
+        {over ? null : (
+          <div
+            role="img"
+            aria-label={`Usage warning level, ${formatPercent(usage.warnPercent)}`}
+            title={`Usage warning level, ${formatPercent(usage.warnPercent)}`}
+            data-testid="billing-warn-marker"
+            className="absolute -top-0.5 h-3 w-px bg-foreground/60"
+            style={{ left: `${Math.min(100, usage.warnPercent)}%` }}
+          />
+        )}
       </div>
     </div>
   );
@@ -201,7 +205,7 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
 
 function ExtraUsageValue({ extra }: { extra: BillingUsage["extraUsage"] }) {
   if (extra.state === "priced" && extra.amountCents !== null) return <>{formatMoney(extra.amountCents, extra.currency)}</>;
-  return <span className="block text-sm leading-snug font-normal text-muted-foreground">Extra usage will be shown on your invoice</span>;
+  return <>Shown on invoice</>;
 }
 
 function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; accountCurrency: string }) {
@@ -249,7 +253,11 @@ function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; acc
             <Figure
               label="Extra usage"
               value={<ExtraUsageValue extra={usage.extraUsage} />}
-              note="Usage past your included AI usage this month"
+              note={
+                usage.extraUsage.state === "priced"
+                  ? "Usage past your included AI usage this month"
+                  : "Final extra usage charge will appear on your invoice."
+              }
               testId="billing-extra"
             />
           )}
