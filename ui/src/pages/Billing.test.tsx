@@ -56,6 +56,8 @@ const USAGE: BillingUsage = {
   pausedSince: null,
 };
 
+const OVER: Partial<BillingAccountView> = { usage: { ...USAGE, usedPercent: 106, warning: true, extraUsage: { state: "priced", amountCents: 1_234, currency: "GBP" } } };
+
 function view(overrides: Partial<BillingAccountView> = {}): BillingAccountView {
   return {
     audience: "client",
@@ -114,7 +116,7 @@ afterEach(() => {
 });
 
 describe("Billing page", () => {
-  it("AT-1.1: shows each fee exactly as set and the allowance with no money, with no edit control", async () => {
+  it("AT-1.1: shows each fee exactly as set, with no edit control", async () => {
     await render(view());
     const rows = Array.from(container.querySelectorAll('[data-testid="billing-fee-row"]')).map((row) => row.textContent);
     expect(rows).toHaveLength(3);
@@ -125,44 +127,47 @@ describe("Billing page", () => {
     expect(rows[2]).toContain("Strategy");
     expect(rows[2]).toContain("Included");
     expect(text("billing-fee-total")).toBe(formatMoney(148_400, "GBP"));
-    expect(text("billing-allowance")).toContain("AI allowance is included");
-    expect(text("billing-allowance")).not.toMatch(/[£$]/);
+    expect(text("billing-allowance")).toContain("allowance is included");
     expect(container.textContent).toContain(`Renews on ${formatBillingDay("2026-11-01")}`);
     expect(container.querySelectorAll("input, textarea, select, button")).toHaveLength(0);
   });
 
-  it("AT-1.2: shows used and left as a percent of the allowance, with no money for it (GRE-1395)", async () => {
+  it("AT-1.2: under 100%: shows the percent used and left, and no money for included usage", async () => {
     await render(view());
-    expect(container.textContent).toContain("30% used");
+    expect(container.textContent).toContain("30% of your included AI usage used this month");
     expect(container.textContent).toContain("70% left");
     expect(text("billing-actual")).toContain("30%");
-    expect(text("billing-actual")).not.toMatch(/[£$]/);
     expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("30");
+    expect(container.querySelector('[data-testid="billing-extra"]')).toBeNull();
   });
 
-  it("AT-1.3: labels the forecast and the estimate", async () => {
+  it("AT-1.3: labels used, estimate and forecast; the estimate is in the account currency", async () => {
     await render(view());
+    expect(text("billing-actual")).toContain("Used");
     expect(text("billing-estimate")).toContain("Estimate");
     expect(text("billing-estimate")).toContain(formatMoney(40_000, "GBP"));
     expect(text("billing-forecast")).toContain("Forecast to month end");
     expect(text("billing-forecast")).toContain("93%");
-    expect(text("billing-forecast")).not.toMatch(/[£$]/);
   });
 
-  it("shows extra usage in the account currency, 'None' within the allowance, and the invoice note when the rate is missing", async () => {
-    await render(view());
-    expect(text("billing-extra")).toContain("None");
+  it("shows no US dollar text for a GBP account", async () => {
+    await render(view(OVER));
+    expect(container.textContent).not.toMatch(/US\$|USD|US dollars/);
+  });
 
-    act(() => root.unmount());
-    root = createRoot(container);
-    await render(view({ usage: { ...USAGE, usedPercent: 120, extraUsage: { state: "priced", amountCents: 7_900, currency: "GBP" } } }));
-    expect(text("billing-extra")).toContain(formatMoney(7_900, "GBP"));
+  it("over 100% with a rate: shows the extra usage amount in the account currency", async () => {
+    await render(view(OVER));
+    expect(container.textContent).toContain("106% of your included AI usage used this month");
+    expect(container.textContent).not.toContain("left");
+    expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("100");
+    expect(text("billing-extra")).toContain("Extra usage");
+    expect(text("billing-extra")).toContain(formatMoney(1_234, "GBP"));
+  });
 
-    act(() => root.unmount());
-    root = createRoot(container);
-    await render(view({ usage: { ...USAGE, usedPercent: 120, extraUsage: { state: "rate_missing", amountCents: null, currency: "GBP" } } }));
-    expect(text("billing-extra")).toContain("Shown on your invoice");
-    expect(text("billing-extra")).not.toMatch(/[£$]/);
+  it("over 100% with the rate missing: says extra usage will be on the invoice, with no amount", async () => {
+    await render(view({ usage: { ...USAGE, usedPercent: 106, warning: true, extraUsage: { state: "rate_missing", amountCents: null, currency: "GBP" } } }));
+    expect(text("billing-extra")).toContain("Extra usage will be shown on your invoice");
+    expect(text("billing-extra")).not.toMatch(/£|\$/);
   });
 
   it("AT-1.3: shows 'Not set' when no estimate was set", async () => {
@@ -179,7 +184,14 @@ describe("Billing page", () => {
     await render(view({ usage: { ...USAGE, usedPercent: 82, warning: true } }));
     const note = container.querySelector('[role="note"]');
     expect(note?.textContent).toContain("82% of this month's AI allowance");
-    expect(note?.textContent).toContain("warning level is 80%");
+    expect(note?.textContent).not.toContain("warning level");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(view(OVER));
+    const over = container.querySelector('[role="note"]');
+    expect(over?.textContent).toContain("This month's AI allowance is used up");
+    expect(over?.textContent).toContain("You have used 106%");
   });
 
   it("AT-1.10: shows paused since the pause date", async () => {

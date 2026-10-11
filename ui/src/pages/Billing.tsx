@@ -2,7 +2,6 @@ import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, PauseCircle, ReceiptText } from "lucide-react";
 import {
   BILLING_MODULES,
-  type BillingExtraUsage,
   type BillingInvoice,
   type BillingInvoiceStatus,
   type BillingState,
@@ -21,9 +20,10 @@ import { cn } from "@/lib/utils";
 /**
  * Client Billing page (GRE-1370, B1 on GRE-1357). Read-only: the hosting
  * operator sets the record (B2) and the server computes usage (GRE-1389).
- * Every amount shown comes from the server; none is in this file. The
- * included AI allowance shows only as a percent; money shows only for extra
- * usage, in the account currency (GRE-1395).
+ * Every amount shown comes from the server; none is in this file.
+ *
+ * Included AI usage shows as a percent only; money shows only for fees, the
+ * estimate and extra usage past 100%, all in the account currency (GRE-1395).
  */
 
 export function formatMoney(cents: number, currency: string) {
@@ -158,8 +158,8 @@ function PlanCard({ account, status }: { account: ClientBillingAccount; status: 
             </tr>
           </tfoot>
         </table>
-        <p className="border-t border-border pt-4 text-sm text-muted-foreground" data-testid="billing-allowance">
-          An AI allowance is included in the fee each calendar month. Usage shows as a percent of it.
+        <p className="border-t border-border pt-4 text-xs text-muted-foreground" data-testid="billing-allowance">
+          An AI usage allowance is included in the fee each calendar month.
         </p>
       </CardContent>
     </Card>
@@ -171,14 +171,14 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
   const over = usage.usedPercent >= 100;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{formatPercent(usage.usedPercent)} used</span>
-        <span>{formatPercent(Math.max(0, 100 - usage.usedPercent))} left</span>
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{formatPercent(usage.usedPercent)} of your included AI usage used this month</span>
+        {over ? null : <span className="shrink-0">{formatPercent(100 - usage.usedPercent)} left</span>}
       </div>
       <div className="relative h-2 rounded-full bg-muted">
         <div
           role="progressbar"
-          aria-label="AI allowance used"
+          aria-label="Included AI usage used"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(width)}
@@ -199,10 +199,9 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
   );
 }
 
-function extraUsageValue(extra: BillingExtraUsage): ReactNode {
-  if (extra.state === "priced" && extra.amountCents !== null) return formatMoney(extra.amountCents, extra.currency);
-  if (extra.state === "rate_missing") return <span className="text-base font-normal">Shown on your invoice</span>;
-  return <span className="text-muted-foreground">None</span>;
+function ExtraUsageValue({ extra }: { extra: BillingUsage["extraUsage"] }) {
+  if (extra.state === "priced" && extra.amountCents !== null) return <>{formatMoney(extra.amountCents, extra.currency)}</>;
+  return <span className="block text-sm leading-snug font-normal text-muted-foreground">Extra usage will be shown on your invoice</span>;
 }
 
 function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; accountCurrency: string }) {
@@ -227,8 +226,13 @@ function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; acc
       </CardHeader>
       <CardContent className="space-y-5">
         <UsageBar usage={usage} />
-        <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Figure label="Used" value={formatPercent(usage.usedPercent)} note="Of this month's AI allowance" testId="billing-actual" />
+        <dl className={cn("grid grid-cols-2 gap-4", usage.extraUsage.state === "none" ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
+          <Figure
+            label="Used"
+            value={formatPercent(usage.usedPercent)}
+            note="Of your included AI usage"
+            testId="billing-actual"
+          />
           <Figure
             label="Forecast to month end"
             value={formatPercent(usage.forecastPercent)}
@@ -236,17 +240,19 @@ function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; acc
             testId="billing-forecast"
           />
           <Figure
-            label="Extra usage"
-            value={extraUsageValue(usage.extraUsage)}
-            note="Past the allowance, charged on your invoice"
-            testId="billing-extra"
-          />
-          <Figure
             label="Estimate"
             value={usage.estimateCents === null ? <span className="text-muted-foreground">Not set</span> : formatMoney(usage.estimateCents, accountCurrency)}
-            note="Estimated at sign-up"
+            note="Monthly AI usage estimated at sign-up"
             testId="billing-estimate"
           />
+          {usage.extraUsage.state === "none" ? null : (
+            <Figure
+              label="Extra usage"
+              value={<ExtraUsageValue extra={usage.extraUsage} />}
+              note="Usage past your included AI usage this month"
+              testId="billing-extra"
+            />
+          )}
         </dl>
       </CardContent>
     </Card>
@@ -338,9 +344,15 @@ export function Billing() {
       ) : null}
 
       {usage?.warning ? (
-        <InlineBanner tone="warning" title={`You have used ${formatPercent(usage.usedPercent)} of this month's AI allowance`}>
-          The warning level is {formatPercent(usage.warnPercent)}. Contact Greatstone if you expect to need more this month.
-        </InlineBanner>
+        usage.usedPercent >= 100 ? (
+          <InlineBanner tone="warning" title="This month's AI allowance is used up">
+            You have used {formatPercent(usage.usedPercent)}. Contact Greatstone if you need more AI usage this month.
+          </InlineBanner>
+        ) : (
+          <InlineBanner tone="warning" title={`You have used ${formatPercent(usage.usedPercent)} of this month's AI allowance`}>
+            Contact Greatstone if you expect to need more this month.
+          </InlineBanner>
+        )
       ) : null}
 
       <UsageCard usage={usage} accountCurrency={account.currency} />
