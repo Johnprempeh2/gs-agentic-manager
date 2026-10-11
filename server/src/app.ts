@@ -833,7 +833,7 @@ export async function createApp(
   );
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
-  api.use(mailboxRoutes(db, opts.storageService));
+  api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));

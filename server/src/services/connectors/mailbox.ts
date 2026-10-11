@@ -10,6 +10,7 @@ import type { StorageService } from "../../storage/types.js";
 import { getStorageService } from "../../storage/index.js";
 import { mailboxService } from "../mailboxes.js";
 import type { MailboxClientFactory } from "../mailbox-imap.js";
+import type { OAuthFetch } from "../mailbox-oauth.js";
 
 const mailboxId = {
   type: "string",
@@ -107,11 +108,12 @@ export async function executeMailboxTool(
   binding: { companyId: string; agentId: string; runId: string; issueId: string },
   action: (typeof MAILBOX_TOOLS)[number]["action"],
   value: Record<string, unknown>,
-  options: { storage?: StorageService; clientFactory?: MailboxClientFactory } = {},
+  options: { storage?: StorageService; clientFactory?: MailboxClientFactory; fetch?: OAuthFetch } = {},
 ) {
   const { storage, clientFactory } = options;
   const service = mailboxService(db, {
     clientFactory,
+    fetch: options.fetch,
     // Resolved only when a message is saved.
     get storage() {
       return storage ?? getStorageService();

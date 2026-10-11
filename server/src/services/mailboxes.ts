@@ -13,6 +13,10 @@ import type {
   MailboxAgentsInput,
   MailboxConnectInput,
   MailboxMessage,
+  MailboxOAuthAppInput,
+  MailboxOAuthAppSummary,
+  MailboxOAuthProvider,
+  MailboxOAuthStartInput,
   MailboxReadInput,
   MailboxSaveInput,
   MailboxSearchInput,
@@ -35,9 +39,27 @@ import {
   type MailboxAccount,
   type MailboxClientFactory,
 } from "./mailbox-imap.js";
+import {
+  accessTokenFor,
+  addressFromIdToken,
+  authorizationUrl,
+  forgetAccessToken,
+  MAILBOX_OAUTH_PROVIDERS,
+  parseApp,
+  pkcePair,
+  primeAccessToken,
+  rememberSignIn,
+  requestToken,
+  takeSignIn,
+  type MailboxOAuthApp,
+  type OAuthFetch,
+  type PendingSignIn,
+} from "./mailbox-oauth.js";
 
 export const MAILBOX_PROVIDER = "imap_mailbox";
 const PASSWORD_PATH = "credentials.password";
+const REFRESH_TOKEN_PATH = "credentials.refreshToken";
+const OAUTH_APP_PATH = "credentials.clientSecret";
 const MAX_TEXT_CHARS = 100_000;
 
 type Connection = typeof toolConnections.$inferSelect;
@@ -49,6 +71,8 @@ type MailboxConfig = {
   port: number;
   secure: boolean;
   username: string;
+  /** Set for Microsoft / Google sign-in; absent for an IMAP app password. */
+  oauthProvider?: MailboxOAuthProvider;
 };
 export type MailboxBoardActor = { userId?: string; localImplicit?: boolean };
 /** Who is reading. Agents only reach mailboxes installed for them. */
@@ -84,14 +108,20 @@ function parsedAddresses(value: AddressObject | AddressObject[] | undefined): Ma
   );
 }
 
+function appKey(provider: MailboxOAuthProvider) {
+  return `mailbox_oauth.${provider}.app`;
+}
+
 export function mailboxService(
   db: Db,
   options: {
     clientFactory?: MailboxClientFactory;
     storage?: StorageService;
+    fetch?: OAuthFetch;
   } = {},
 ) {
   const clientFactory = options.clientFactory ?? imapMailboxClient;
+  const oauthFetch: OAuthFetch = options.fetch ?? ((url, init) => fetch(url, init));
   const secrets = secretService(db);
 
   async function rows(companyId: string) {
@@ -131,7 +161,7 @@ export function mailboxService(
       port: config.port,
       secure: config.secure,
       username: config.username,
-      provider: "imap",
+      provider: config.oauthProvider ?? "imap",
       healthStatus: connection.healthStatus ?? "unknown",
       healthMessage: connection.healthMessage ?? null,
       healthCheckedAt: connection.healthCheckedAt?.toISOString() ?? null,
@@ -173,29 +203,75 @@ export function mailboxService(
     return connection;
   }
 
-  async function account(connection: Connection): Promise<MailboxAccount> {
-    const config = connection.config as unknown as MailboxConfig;
-    const ref = connection.credentialSecretRefs.find((r) => r.configPath === PASSWORD_PATH);
-    if (!ref) throw unprocessable("Reconnect this mailbox to restore its password");
-    const password = await secrets.resolveSecretValue(
+  async function credential(connection: Connection, configPath: string) {
+    const ref = connection.credentialSecretRefs.find((r) => r.configPath === configPath);
+    if (!ref) throw new MailboxAuthError("This mailbox has no saved sign-in. Reconnect it.");
+    const value = await secrets.resolveSecretValue(
       connection.companyId,
       ref.secretId,
       ref.versionSelector ?? "latest",
       {
         consumerType: "tool_connection",
         consumerId: connection.id,
-        configPath: PASSWORD_PATH,
+        configPath,
         actorType: "system",
         actorId: null,
       },
     );
-    return {
+    return { secretId: ref.secretId, value };
+  }
+
+  async function loadApp(companyId: string, provider: MailboxOAuthProvider) {
+    const secret = await secrets.getByKey(companyId, appKey(provider));
+    if (!secret || secret.status !== "active") return null;
+    const raw = await secrets.resolveSecretValue(companyId, secret.id, "latest", {
+      accessContext: {
+        consumerType: "system",
+        consumerId: appKey(provider),
+        configPath: OAUTH_APP_PATH,
+        actorType: "system",
+        actorId: null,
+      },
+    });
+    return { secretId: secret.id, app: parseApp(raw) };
+  }
+
+  async function requireApp(companyId: string, provider: MailboxOAuthProvider) {
+    const found = await loadApp(companyId, provider);
+    if (!found)
+      throw new MailboxAuthError(
+        `Add the ${MAILBOX_OAUTH_PROVIDERS[provider].label} app settings on the Mailboxes page, then reconnect.`,
+      );
+    return found.app;
+  }
+
+  /** Redeem the stored refresh token. Microsoft may hand back a new one. */
+  async function refresh(connection: Connection, provider: MailboxOAuthProvider) {
+    const app = await requireApp(connection.companyId, provider);
+    const stored = await credential(connection, REFRESH_TOKEN_PATH);
+    const tokens = await requestToken(oauthFetch, provider, app, {
+      grant_type: "refresh_token",
+      refresh_token: stored.value,
+    });
+    if (tokens.refreshToken && tokens.refreshToken !== stored.value)
+      await secrets.rotate(stored.secretId, { value: tokens.refreshToken });
+    return tokens;
+  }
+
+  async function account(connection: Connection): Promise<MailboxAccount> {
+    const config = connection.config as unknown as MailboxConfig;
+    const server = {
       host: config.host,
       port: config.port,
       secure: config.secure,
       username: config.username,
-      password,
     };
+    const provider = config.oauthProvider;
+    if (provider) {
+      const accessToken = await accessTokenFor(connection.id, () => refresh(connection, provider));
+      return { ...server, accessToken };
+    }
+    return { ...server, password: (await credential(connection, PASSWORD_PATH)).value };
   }
 
   async function setHealth(connection: Connection, ok: boolean, message: string) {
@@ -216,7 +292,16 @@ export function mailboxService(
     work: (client: ReturnType<MailboxClientFactory>) => Promise<T>,
   ) {
     try {
-      return await work(clientFactory(await account(connection)));
+      const first = await account(connection);
+      try {
+        return await work(clientFactory(first));
+      } catch (error) {
+        // A cached access token can be revoked before it expires. Retry once
+        // with a freshly refreshed one; a second refusal is final.
+        if (!(error instanceof MailboxAuthError) || !first.accessToken) throw error;
+        forgetAccessToken(connection.id);
+        return await work(clientFactory(await account(connection)));
+      }
     } catch (error) {
       if (error instanceof MailboxAuthError)
         await setHealth(connection, false, error.message);
@@ -249,30 +334,28 @@ export function mailboxService(
         }));
   }
 
-  async function connect(
+  /**
+   * Store a signed-in mailbox: its credential as an owned secret, the tool
+   * connection, and the agent installs, in one transaction.
+   */
+  async function createMailbox(
     companyId: string,
-    input: MailboxConnectInput,
+    input: {
+      key: string;
+      config: MailboxConfig;
+      secretPath: string;
+      secretValue: string;
+      secretDescription: string;
+      allAgents: boolean;
+      agentIds: string[];
+    },
     actor: MailboxBoardActor,
-  ): Promise<MailboxSummary> {
-    await assertAgents(companyId, input.agentIds);
-    const uid = `mailbox-${input.idempotencyKey}`;
-    const [existing] = await db
-      .select()
-      .from(toolConnections)
-      .where(and(eq(toolConnections.companyId, companyId), eq(toolConnections.uid, uid)));
-    if (existing) return (await list(companyId)).find((m) => m.id === existing.id) ?? toSummary(existing, []);
-    // Sign in before saving anything, so a typo never becomes a stored secret.
-    await clientFactory({
-      host: input.host,
-      port: input.port,
-      secure: input.secure,
-      username: input.username,
-      password: input.password,
-    }).folders();
+  ) {
+    const uid = `mailbox-${input.key}`;
     const id = await db.transaction(async (tx) => {
       const db = tx as unknown as Db;
       await db.execute(
-        sql`select pg_advisory_xact_lock(hashtextextended(${`mailbox:${companyId}:${input.idempotencyKey}`}, 0))`,
+        sql`select pg_advisory_xact_lock(hashtextextended(${`mailbox:${companyId}:${input.key}`}, 0))`,
       );
       const [previous] = await db
         .select({ id: toolConnections.id })
@@ -280,36 +363,27 @@ export function mailboxService(
         .where(and(eq(toolConnections.companyId, companyId), eq(toolConnections.uid, uid)));
       if (previous) return previous.id;
       const secret = await secretService(db).create(companyId, {
-        name: `Mailbox password ${input.address} ${randomUUID().slice(0, 8)}`,
+        name: `Mailbox ${input.secretPath === PASSWORD_PATH ? "password" : "sign-in"} ${input.config.address} ${randomUUID().slice(0, 8)}`,
         // The `tool_app.` namespace marks the secret as owned by this
         // connection, so removing the mailbox revokes it.
-        key: `tool_app.${randomUUID()}.credentials_password`,
+        key: `tool_app.${randomUUID()}.${input.secretPath.replace(".", "_")}`,
         provider: "local_encrypted",
-        value: input.password,
-        description: `IMAP app password for ${input.address}.`,
+        value: input.secretValue,
+        description: input.secretDescription,
       });
       const tools = toolAccessService(db);
       const app = await tools.createApplication(companyId, {
-        name: `Mailbox ${input.address}`.slice(0, 200),
-        applicationKey: `mailbox:${input.idempotencyKey}`,
+        name: `Mailbox ${input.config.address}`.slice(0, 200),
+        applicationKey: `mailbox:${input.key}`,
         type: "chat",
         status: "active",
         metadata: { sourceTemplateKey: MAILBOX_PROVIDER },
       });
-      const config: MailboxConfig = {
-        provider: MAILBOX_PROVIDER,
-        label: input.label,
-        address: input.address,
-        host: input.host,
-        port: input.port,
-        secure: input.secure,
-        username: input.username,
-      };
       const connection = await tools.createConnection(
         companyId,
         {
           applicationId: app.id,
-          name: input.label,
+          name: input.config.label,
           connectionKind: "managed",
           connectionPurpose: "tool",
           transport: "rest_api",
@@ -318,12 +392,12 @@ export function mailboxService(
           credentialPolicy: "shared",
           enabled: true,
           status: "active",
-          config,
+          config: input.config,
           transportConfig: {},
           credentialSecretRefs: [
             {
               secretId: secret.id,
-              configPath: PASSWORD_PATH,
+              configPath: input.secretPath,
               versionSelector: "latest",
               required: true,
             },
@@ -353,8 +427,9 @@ export function mailboxService(
         entityType: "tool_connection",
         entityId: connection.id,
         details: {
-          address: input.address,
-          host: input.host,
+          address: input.config.address,
+          host: input.config.host,
+          ...(input.config.oauthProvider ? { provider: input.config.oauthProvider } : {}),
           allAgents: input.allAgents,
           agentIds: input.agentIds,
         },
@@ -363,6 +438,218 @@ export function mailboxService(
     });
     const created = (await list(companyId)).find((m) => m.id === id);
     if (!created) throw notFound("Mailbox not found");
+    return created;
+  }
+
+  async function connect(
+    companyId: string,
+    input: MailboxConnectInput,
+    actor: MailboxBoardActor,
+  ): Promise<MailboxSummary> {
+    await assertAgents(companyId, input.agentIds);
+    const uid = `mailbox-${input.idempotencyKey}`;
+    const [existing] = await db
+      .select()
+      .from(toolConnections)
+      .where(and(eq(toolConnections.companyId, companyId), eq(toolConnections.uid, uid)));
+    if (existing) return (await list(companyId)).find((m) => m.id === existing.id) ?? toSummary(existing, []);
+    // Sign in before saving anything, so a typo never becomes a stored secret.
+    await clientFactory({
+      host: input.host,
+      port: input.port,
+      secure: input.secure,
+      username: input.username,
+      password: input.password,
+    }).folders();
+    return createMailbox(
+      companyId,
+      {
+        key: input.idempotencyKey,
+        config: {
+          provider: MAILBOX_PROVIDER,
+          label: input.label,
+          address: input.address,
+          host: input.host,
+          port: input.port,
+          secure: input.secure,
+          username: input.username,
+        },
+        secretPath: PASSWORD_PATH,
+        secretValue: input.password,
+        secretDescription: `IMAP app password for ${input.address}.`,
+        allAgents: input.allAgents,
+        agentIds: input.agentIds,
+      },
+      actor,
+    );
+  }
+
+  async function oauthApps(companyId: string, redirectUri: string): Promise<MailboxOAuthAppSummary[]> {
+    const providers: MailboxOAuthProvider[] = ["microsoft", "google"];
+    return Promise.all(
+      providers.map(async (provider) => {
+        const found = await loadApp(companyId, provider).catch(() => null);
+        return {
+          provider,
+          configured: !!found,
+          clientId: found?.app.clientId ?? null,
+          tenant: provider === "microsoft" ? (found?.app.tenant ?? null) : null,
+          redirectUri,
+        };
+      }),
+    );
+  }
+
+  async function saveOAuthApp(
+    companyId: string,
+    provider: MailboxOAuthProvider,
+    input: MailboxOAuthAppInput,
+    actor: MailboxBoardActor,
+  ) {
+    const app: MailboxOAuthApp = {
+      clientId: input.clientId,
+      clientSecret: input.clientSecret,
+      ...(provider === "microsoft" && input.tenant ? { tenant: input.tenant } : {}),
+    };
+    const value = JSON.stringify(app);
+    const existing = await secrets.getByKey(companyId, appKey(provider));
+    if (existing && existing.status === "active") {
+      await secrets.rotate(existing.id, { value }, { userId: actor.userId ?? null });
+    } else {
+      await secrets.create(
+        companyId,
+        {
+          name: `Mailbox sign-in app (${MAILBOX_OAUTH_PROVIDERS[provider].label})`,
+          key: appKey(provider),
+          provider: "local_encrypted",
+          value,
+          description: `OAuth client for ${MAILBOX_OAUTH_PROVIDERS[provider].label} mailbox sign-in.`,
+        },
+        { userId: actor.userId ?? null },
+      );
+    }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.userId ?? "board",
+      action: "mailbox.oauth_app_saved",
+      entityType: "company",
+      entityId: companyId,
+      details: { provider, clientId: app.clientId, tenant: app.tenant ?? null },
+    });
+    return { provider, configured: true, clientId: app.clientId, tenant: app.tenant ?? null };
+  }
+
+  async function startOAuth(
+    companyId: string,
+    input: MailboxOAuthStartInput,
+    actor: MailboxBoardActor,
+    redirectUri: string,
+  ) {
+    await assertAgents(companyId, input.agentIds);
+    const found = await loadApp(companyId, input.provider);
+    if (!found)
+      throw unprocessable(
+        `Add the ${MAILBOX_OAUTH_PROVIDERS[input.provider].label} app settings first.`,
+        { code: "mailbox_oauth_app_missing" },
+      );
+    const pkce = pkcePair();
+    const state = rememberSignIn({
+      companyId,
+      provider: input.provider,
+      userId: actor.userId ?? "board",
+      codeVerifier: pkce.verifier,
+      redirectUri,
+      label: input.label || undefined,
+      allAgents: input.allAgents,
+      agentIds: input.agentIds,
+    });
+    return {
+      authorizationUrl: authorizationUrl({
+        provider: input.provider,
+        app: found.app,
+        redirectUri,
+        state,
+        codeChallenge: pkce.challenge,
+      }),
+    };
+  }
+
+  /**
+   * Finish a sign-in: redeem the code, confirm IMAP accepts the token, then
+   * store the refresh token. Signing in again to a mailbox that is already
+   * linked replaces its refresh token (the "Reconnect" path).
+   */
+  async function completeOAuth(
+    entry: PendingSignIn,
+    code: string,
+    actor: MailboxBoardActor,
+  ): Promise<MailboxSummary> {
+    const { companyId, provider } = entry;
+    const label = MAILBOX_OAUTH_PROVIDERS[provider].label;
+    const app = await requireApp(companyId, provider);
+    const tokens = await requestToken(oauthFetch, provider, app, {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: entry.redirectUri,
+      code_verifier: entry.codeVerifier,
+    });
+    const address = addressFromIdToken(tokens.idToken);
+    if (!address) throw unprocessable(`${label} did not say which mailbox signed in. Try again.`);
+    if (!tokens.refreshToken)
+      throw unprocessable(`${label} did not allow offline access. Sign in again and accept every permission.`);
+    const server = {
+      host: MAILBOX_OAUTH_PROVIDERS[provider].imapHost,
+      port: 993,
+      secure: true,
+      username: address,
+    };
+    await clientFactory({ ...server, accessToken: tokens.accessToken }).folders();
+
+    const existing = (await rows(companyId)).find((row) => {
+      const config = row.config as unknown as MailboxConfig;
+      return config.oauthProvider === provider && config.address === address;
+    });
+    if (existing) {
+      const ref = existing.credentialSecretRefs.find((r) => r.configPath === REFRESH_TOKEN_PATH);
+      if (ref) {
+        await secrets.rotate(ref.secretId, { value: tokens.refreshToken }, { userId: actor.userId ?? null });
+        primeAccessToken(existing.id, tokens);
+        await setHealth(existing, true, "Connected");
+        await logActivity(db, {
+          companyId,
+          actorType: "user",
+          actorId: actor.userId ?? "board",
+          action: "mailbox.reconnected",
+          entityType: "tool_connection",
+          entityId: existing.id,
+          details: { address, provider },
+        });
+        return (await list(companyId)).find((m) => m.id === existing.id)!;
+      }
+    }
+
+    await assertAgents(companyId, entry.agentIds);
+    const created = await createMailbox(
+      companyId,
+      {
+        key: `oauth-${randomUUID()}`,
+        config: {
+          provider: MAILBOX_PROVIDER,
+          label: entry.label || address,
+          address,
+          ...server,
+          oauthProvider: provider,
+        },
+        secretPath: REFRESH_TOKEN_PATH,
+        secretValue: tokens.refreshToken,
+        secretDescription: `${label} sign-in (refresh token) for ${address}.`,
+        allAgents: entry.allAgents,
+        agentIds: entry.agentIds,
+      },
+      actor,
+    );
+    primeAccessToken(created.id, tokens);
     return created;
   }
 
@@ -394,6 +681,7 @@ export function mailboxService(
   async function remove(companyId: string, id: string, actor: MailboxBoardActor) {
     await get(companyId, id);
     await toolAccessService(db).archiveConnection(id, companyId, boardActor(actor));
+    forgetAccessToken(id);
     await logActivity(db, {
       companyId,
       actorType: "user",
@@ -555,6 +843,11 @@ export function mailboxService(
     list,
     assigned,
     connect,
+    oauthApps,
+    saveOAuthApp,
+    startOAuth,
+    takeSignIn,
+    completeOAuth,
     setAgents,
     remove,
     test,

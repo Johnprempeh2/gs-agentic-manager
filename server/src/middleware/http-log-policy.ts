@@ -41,6 +41,8 @@ const SECRET_SENSITIVE_HTTP_PATHS = [
   /^\/api\/chat-endpoints\/[^/]+\/setup(?:-secret)?(?:\/|$)/,
   // Adding a mailbox carries its IMAP password (GRE-1343).
   /^\/api\/companies\/[^/]+\/mailboxes\/?$/,
+  // Mailbox sign-in app settings carry the OAuth client secret (GRE-1349).
+  /^\/api\/companies\/[^/]+\/mailbox-oauth\/apps\/[^/]+\/?$/,
 ];
 const SECRET_SENSITIVE_HTTP_METHODS = new Set(["POST", "PUT", "PATCH"]);
 

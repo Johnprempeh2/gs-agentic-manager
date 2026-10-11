@@ -7,17 +7,19 @@ import type {
 import { HttpError } from "../errors.js";
 
 // The one IMAP seam. Everything above it is provider-neutral, so tests swap in
-// a fake and an XOAUTH2 client (Microsoft 365, Gmail) can slot in later.
+// a fake. Microsoft 365 and Gmail sign in with an OAuth access token (XOAUTH2).
 
 export const MAX_MAILBOX_MESSAGE_BYTES = 25 * 1024 * 1024;
 
-export type MailboxAccount = {
+type MailboxServer = {
   host: string;
   port: number;
   secure: boolean;
   username: string;
-  password: string;
 };
+export type MailboxAccount =
+  | (MailboxServer & { password: string; accessToken?: undefined })
+  | (MailboxServer & { accessToken: string; password?: undefined });
 
 export interface MailboxClient {
   /** Sign in and list folder paths. Throws MailboxAuthError on bad credentials. */
@@ -34,14 +36,15 @@ export type MailboxClientFactory = (account: MailboxAccount) => MailboxClient;
  * username or a hint, and this message reaches agents and logs.
  */
 export class MailboxAuthError extends HttpError {
-  constructor() {
-    super(
-      422,
-      "Mailbox sign-in failed. Check the username and app password, then reconnect the mailbox.",
-      { code: "mailbox_auth_failed" },
-    );
+  constructor(
+    message = "Mailbox sign-in failed. Check the username and app password, then reconnect the mailbox.",
+  ) {
+    super(422, message, { code: "mailbox_auth_failed" });
   }
 }
+
+export const OAUTH_SIGN_IN_REFUSED =
+  "The mail server refused the sign-in. Check that IMAP is turned on for this mailbox, then reconnect it.";
 
 export class MailboxUnavailableError extends HttpError {
   constructor(reason: string) {
@@ -75,10 +78,11 @@ function summary(folder: string, message: FetchMessageObject): MailboxMessageSum
   };
 }
 
-function mapError(error: unknown): never {
+function mapError(error: unknown, oauth: boolean): never {
   if (error instanceof HttpError) throw error;
   const err = error as { authenticationFailed?: boolean; code?: string };
-  if (err?.authenticationFailed) throw new MailboxAuthError();
+  if (err?.authenticationFailed)
+    throw oauth ? new MailboxAuthError(OAUTH_SIGN_IN_REFUSED) : new MailboxAuthError();
   const code = typeof err?.code === "string" ? err.code : "";
   if (["ENOTFOUND", "EAI_AGAIN"].includes(code))
     throw new MailboxUnavailableError("host not found");
@@ -101,9 +105,11 @@ export const imapMailboxClient: MailboxClientFactory = (account) => {
       host: account.host,
       port: account.port,
       secure: account.secure,
-      auth: { user: account.username, pass: account.password },
+      auth: account.accessToken
+        ? { user: account.username, accessToken: account.accessToken }
+        : { user: account.username, pass: account.password },
       // imapflow logs to stdout by default. Never let protocol traffic
-      // (which includes the LOGIN command) reach a log sink.
+      // (which includes the LOGIN or AUTHENTICATE command) reach a log sink.
       logger: false,
       emitLogs: false,
       disableAutoIdle: true,
@@ -117,12 +123,12 @@ export const imapMailboxClient: MailboxClientFactory = (account) => {
     try {
       await client.connect();
     } catch (error) {
-      mapError(error);
+      mapError(error, !!account.accessToken);
     }
     try {
       return await work(client);
     } catch (error) {
-      mapError(error);
+      mapError(error, !!account.accessToken);
     } finally {
       await client.logout().catch(() => client.close());
     }

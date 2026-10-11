@@ -28,6 +28,47 @@ export const mailboxConnectSchema = z
   .strict();
 export type MailboxConnectInput = z.infer<typeof mailboxConnectSchema>;
 
+// Microsoft 365 / Outlook and Gmail sign in with OAuth (XOAUTH2 over IMAP,
+// GRE-1349). The refresh token is the stored credential; access tokens stay
+// on the server.
+export const mailboxOAuthProviderSchema = z.enum(["microsoft", "google"]);
+export type MailboxOAuthProvider = z.infer<typeof mailboxOAuthProviderSchema>;
+
+/** The company's own OAuth app (Entra ID app or Google OAuth client). */
+export const mailboxOAuthAppSchema = z
+  .object({
+    clientId: z.string().trim().min(1).max(200),
+    // Named `clientSecret` so HTTP failure logs redact it by key.
+    clientSecret: z.string().min(1).max(4096),
+    // Microsoft only: a tenant id or domain, or "organizations" / "common".
+    tenant: z
+      .string()
+      .trim()
+      .regex(/^[a-zA-Z0-9.-]{1,100}$/, "Enter a tenant id, a domain, or organizations")
+      .optional(),
+  })
+  .strict();
+export type MailboxOAuthAppInput = z.infer<typeof mailboxOAuthAppSchema>;
+
+export interface MailboxOAuthAppSummary {
+  provider: MailboxOAuthProvider;
+  configured: boolean;
+  clientId: string | null;
+  tenant: string | null;
+  /** Register this exact address as the app's redirect URI. */
+  redirectUri: string;
+}
+
+export const mailboxOAuthStartSchema = z
+  .object({
+    provider: mailboxOAuthProviderSchema,
+    label: z.string().trim().max(120).optional(),
+    allAgents: z.boolean().default(false),
+    agentIds: z.array(z.string().uuid()).max(500).default([]),
+  })
+  .strict();
+export type MailboxOAuthStartInput = z.infer<typeof mailboxOAuthStartSchema>;
+
 export const mailboxAgentsSchema = z
   .object({
     allAgents: z.boolean().default(false),
@@ -84,7 +125,7 @@ export interface MailboxSummary {
   port: number;
   secure: boolean;
   username: string;
-  provider: "imap";
+  provider: "imap" | MailboxOAuthProvider;
   healthStatus: string;
   healthMessage: string | null;
   healthCheckedAt: string | null;
