@@ -337,6 +337,60 @@ describeEmbeddedPostgres("company pause and resume (GRE-1364)", () => {
     await expect(tools.updateConnection(off.id, { enabled: true })).rejects.toMatchObject({ status: 409 });
   });
 
+  it("GRE-1385: a paused company that is archived comes back only through resume", async () => {
+    const { companyId, agentId, trigger } = await seedCompany();
+    const svc = companyService(db);
+    await svc.pause(companyId, BOARD, {});
+    await svc.archive(companyId, BOARD);
+    const [archivedAgent] = await db.select().from(agents).where(eq(agents.id, agentId));
+    expect(archivedAgent).toMatchObject({ status: "paused", pauseReason: "company_archived" });
+
+    // Neither a settings patch nor an unarchive skips the resume (operator, reason, no catch-up).
+    await expect(svc.update(companyId, { status: "active" }, BOARD))
+      .rejects.toMatchObject({ status: 409, details: { code: "use_resume_action" } });
+    const [stillArchived] = await db.select().from(companies).where(eq(companies.id, companyId));
+    expect(stillArchived).toMatchObject({ status: "archived", pauseReason: "manual" });
+
+    await db.update(routineTriggers).set({ nextRunAt: new Date(Date.now() - 5 * HOUR) })
+      .where(eq(routineTriggers.id, trigger.id));
+    const resumedAt = new Date();
+    const resumed = await svc.resume(companyId, BOARD, { operator: "John Prempeh", reason: "Back from archive" });
+    expect(resumed).toMatchObject({ status: "active" });
+
+    // Resume does the unarchive steps too: the agents the archive paused come back.
+    const [restored] = await db.select().from(agents).where(eq(agents.id, agentId));
+    expect(restored).toMatchObject({ status: "idle", pauseReason: null });
+    const [rebased] = await db.select().from(routineTriggers).where(eq(routineTriggers.id, trigger.id));
+    expect(rebased!.nextRunAt!.getTime()).toBeGreaterThan(resumedAt.getTime());
+    const [log] = await db.select().from(activityLog)
+      .where(and(eq(activityLog.companyId, companyId), eq(activityLog.action, "company.resumed")));
+    expect(log?.details).toMatchObject({
+      operator: "John Prempeh",
+      previousStatus: "archived",
+      agentsRestored: 1,
+      schedulesRestarted: 1,
+    });
+  });
+
+  it("GRE-1385: a paused company cannot be set active by a settings patch", async () => {
+    const { companyId } = await seedCompany();
+    const svc = companyService(db);
+    await svc.pause(companyId, BOARD, {});
+    await expect(svc.update(companyId, { status: "active" }, BOARD))
+      .rejects.toMatchObject({ status: 409, details: { code: "use_resume_action" } });
+    const [row] = await db.select().from(companies).where(eq(companies.id, companyId));
+    expect(row).toMatchObject({ status: "paused", pauseReason: "manual" });
+  });
+
+  it("GRE-1385: a company that was archived without a pause still unarchives as before, and resume refuses it", async () => {
+    const { companyId } = await seedCompany();
+    const svc = companyService(db);
+    await svc.archive(companyId, BOARD);
+    await expect(svc.resume(companyId, BOARD, { operator: "John", reason: "Not paused" }))
+      .rejects.toMatchObject({ status: 409 });
+    expect(await svc.update(companyId, { status: "active" }, BOARD)).toMatchObject({ status: "active" });
+  });
+
   it("AT-4.5: after a 3-day pause an hourly catch-up routine replays nothing and each agent gets one timer wake", async () => {
     const { companyId, agentId, routine, routines, trigger } = await seedCompany();
     const svc = companyService(db);

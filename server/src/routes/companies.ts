@@ -4,7 +4,7 @@ import multer from "multer";
 import { and, count as countFn, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
-import { agents as agentsTable, companies as companiesTable } from "@greatstone/db";
+import { agents as agentsTable } from "@greatstone/db";
 import type { CompanyPortabilityImportResult } from "@greatstone/shared";
 import {
   MAX_ZIP_ENTRY_DECOMPRESSED_BYTES,
@@ -67,7 +67,6 @@ import {
   workTimelineService,
 } from "../services/index.js";
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
-import { COMPANY_PAUSE_REASON_MANUAL } from "../services/companies.js";
 import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import type { StorageService } from "../storage/types.js";
 import {
@@ -1300,17 +1299,10 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
     // GRE-1364: pause and resume have their own actions, so a settings patch
     // cannot pause without suspending connections or resume without a reason.
+    // svc.update refuses any move to active (from paused or archived) while an
+    // operator pause holds (GRE-1385).
     if (body.status === "paused" && existingCompany.status !== "paused") {
       throw conflict("Use the company pause action to pause a company", { code: "use_pause_action" });
-    }
-    if (body.status === "active" && existingCompany.status === "paused") {
-      const [pause] = await db
-        .select({ pauseReason: companiesTable.pauseReason })
-        .from(companiesTable)
-        .where(eq(companiesTable.id, companyId));
-      if (pause?.pauseReason === COMPANY_PAUSE_REASON_MANUAL) {
-        throw conflict("Use the company resume action, with an operator and a reason", { code: "use_resume_action" });
-      }
     }
 
     const transitionsToArchived =

@@ -359,6 +359,20 @@ export function companyService(db: Db) {
         const willReactivate = existing.status !== "active" && companyPatch.status === "active";
         const willArchive = existing.status !== "archived" && companyPatch.status === "archived";
 
+        // GRE-1385: an operator pause is lifted only by resume(), which needs an
+        // operator and a reason and rebases schedules. Archiving keeps the pause,
+        // so unarchiving to active is refused here too.
+        if (willReactivate) {
+          const [pause] = await tx
+            .select({ pauseReason: companies.pauseReason })
+            .from(companies)
+            .where(eq(companies.id, id))
+            .for("update");
+          if (pause?.pauseReason === COMPANY_PAUSE_REASON_MANUAL) {
+            throw conflict("Use the company resume action, with an operator and a reason", { code: "use_resume_action" });
+          }
+        }
+
         if (logoAssetId !== undefined && logoAssetId !== null) {
           const nextLogoAsset = await tx
             .select({ id: assets.id, companyId: assets.companyId })
@@ -611,6 +625,9 @@ export function companyService(db: Db) {
      * GRE-1364: resume a paused company. It needs a named operator and a reason.
      * Schedules restart at their next tick (no catch-up), and connections stay off
      * until each one is re-enabled and passes a health check.
+     *
+     * GRE-1385: a paused company that was then archived is resumed here too, and
+     * gets the unarchive steps (agents the archive paused come back).
      */
     resume: async (
       id: string,
@@ -619,12 +636,29 @@ export function companyService(db: Db) {
     ) => {
       const now = new Date();
       const result = await db.transaction(async (tx) => {
-        const [resumed] = await tx
+        const [existing] = await tx
+          .select({ status: companies.status, pauseReason: companies.pauseReason })
+          .from(companies)
+          .where(eq(companies.id, id))
+          .for("update");
+        const resumable = existing?.status === "paused" ||
+          (existing?.status === "archived" && existing.pauseReason === COMPANY_PAUSE_REASON_MANUAL);
+        if (!existing || !resumable) return null;
+
+        await tx
           .update(companies)
           .set({ status: "active", pauseReason: null, pausedAt: null, updatedAt: now })
-          .where(and(eq(companies.id, id), eq(companies.status, "paused")))
-          .returning({ id: companies.id });
-        if (!resumed) return null;
+          .where(eq(companies.id, id));
+
+        const restoredAgents = await tx
+          .update(agents)
+          .set({ status: "idle", pauseReason: null, pausedAt: null, updatedAt: now })
+          .where(and(
+            eq(agents.companyId, id),
+            eq(agents.status, "paused"),
+            eq(agents.pauseReason, "company_archived"),
+          ))
+          .returning({ id: agents.id });
 
         // Missed ticks are not replayed: every schedule restarts at its next tick.
         const triggers = await tx
@@ -658,6 +692,8 @@ export function companyService(db: Db) {
             sql`${toolConnections.pauseSuspendedAt} is not null`,
           ));
         return {
+          previousStatus: existing.status,
+          agentsRestored: restoredAgents.length,
           schedulesRestarted: triggers.length,
           connectionsAwaitingReenable: Number(awaiting?.value ?? 0),
         };
@@ -670,6 +706,10 @@ export function companyService(db: Db) {
           .then((rows) => rows[0] ?? null);
         if (!exists) return null;
         throw conflict("Company is not paused", { status: exists.status });
+      }
+      // Same doorbell rule as update(): the company left archived, so ring Cloud.
+      if (result.previousStatus === "archived") {
+        void notifyCloudOfPrimaryCompanyLifecycleChange(id);
       }
 
       await logActivity(db, {
@@ -684,6 +724,8 @@ export function companyService(db: Db) {
         details: {
           operator: input.operator,
           reason: input.reason,
+          previousStatus: result.previousStatus,
+          agentsRestored: result.agentsRestored,
           schedulesRestarted: result.schedulesRestarted,
           connectionsAwaitingReenable: result.connectionsAwaitingReenable,
         },
