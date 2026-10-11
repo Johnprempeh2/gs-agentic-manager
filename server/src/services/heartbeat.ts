@@ -31287,6 +31287,41 @@ export function heartbeatService(
     return rows.map((row) => row.id);
   }
 
+  /**
+   * GRE-1364: a company pause cancels every live run and every queued or
+   * deferred wake of the company. Cancelled wakes are not replayed on resume.
+   */
+  async function cancelCompanyPauseWork(companyId: string, reason: string) {
+    const runIds = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(heartbeatRuns.status, [...CANCELLABLE_HEARTBEAT_RUN_STATUSES]),
+        ),
+      )
+      .then((rows) => rows.map((row) => row.id));
+    for (const runId of runIds) {
+      await cancelRunInternal(runId, reason);
+    }
+
+    const now = new Date();
+    const wakeups = await db
+      .update(agentWakeupRequests)
+      .set({ status: "cancelled", finishedAt: now, error: reason, updatedAt: now })
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, companyId),
+          inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution"]),
+          sql`${agentWakeupRequests.runId} is null`,
+        ),
+      )
+      .returning({ id: agentWakeupRequests.id });
+
+    return { runsCancelled: runIds.length, wakeupsCancelled: wakeups.length };
+  }
+
   async function cancelPendingWakeupsForBudgetScope(
     scope: BudgetEnforcementScope,
   ) {
@@ -32534,6 +32569,7 @@ export function heartbeatService(
       cancelInvocationsForAgentsInternal(agentIds, reason),
 
     cancelBudgetScopeWork,
+    cancelCompanyPauseWork,
     noticeBudgetHardStop,
 
     getRunIssueSummary: async (runId: string) => {
