@@ -1940,12 +1940,11 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             identifier: null,
             status: "warning",
             href: `/${prefix}/billing`,
+            // Percent only: the client reads this card, and sees no money for the included allowance (GRE-1395).
             metadata: {
               windowStart: usage.windowStart,
-              usedCents: usage.usedCents,
-              allowanceCents: usage.allowanceCents,
+              usedPercent: usage.usedPercent,
               warnPercent: usage.warnPercent,
-              currency: account.currency,
             },
           },
           whyNow: `AI usage this month reached the ${usage.warnPercent}% warn level of the allowance.`,
@@ -1963,10 +1962,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           updatedAt: toIso(warnedAt),
           relatedIssue: null,
           detail: {
-            kind: "budget",
-            observedPercent: usage.usedPercent,
-            amountObserved: usage.usedCents,
-            amountLimit: usage.allowanceCents,
+            kind: "generic",
+            summaryExcerpt: `${Math.floor(usage.usedPercent)}% of the included AI usage used this month (warn at ${usage.warnPercent}%).`,
             images: [],
           },
         }));
