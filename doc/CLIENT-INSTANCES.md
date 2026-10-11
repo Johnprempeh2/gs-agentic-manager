@@ -350,8 +350,11 @@ scripts/client-instance.sh billing-archive --billing-config /etc/gsam/billing.en
 - **billing-archive** lists every export with its retention end. Past that
   day it says `DUE FOR REVIEW`. Nothing deletes an export on a timer: removal
   is a manual step with an approval reference.
-- **delete** (GRE-1367) runs the export as its first step and stops,
-  removing nothing, if it fails. The deletion record names the export file.
+- **delete** (GRE-1367) runs the export as its first step when the instance
+  holds any billing record, so it then needs `--billing-config`. If the
+  export fails or does not read back, `delete` stops and removes nothing.
+  The retention end is the deletion day + the set years. The deletion record
+  names the export file.
 
 ## Copy a drafted plan to the client (GRE-1190)
 
@@ -812,7 +815,8 @@ shows `DUE FOR DELETION`. Nothing is deleted automatically.
 ```sh
 scripts/client-instance.sh delete --root <root> --confirm-code <code> \
   --approval <issue or ticket> --operator <name> \
-  [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
+  [--billing-config <file>] [--offsite-config <file>] [--watch-config <file>] \
+  [--fleet-local-only yes] [--restic <bin>]
 ```
 
 Only from `paused` or `archived`, with the app stopped. `--confirm-code` is
@@ -823,10 +827,11 @@ policy; do not delete before it allows.
 In this order it:
 
 1. **Billing records (AT-4.10).** Greatstone's billing records are not
-   deleted with the instance. Until `billing-export` (B11, GRE-1372) is in,
-   `delete` stops with `billing-export missing` when the instance holds any
-   billing account or invoice, and removes nothing. With no billing record it
-   says so and goes on;
+   deleted with the instance. When the instance holds any billing account or
+   invoice, `delete` runs `billing-export` with `--billing-config` (see
+   "Billing records outside the instance"). Without that flag, or if the
+   export fails or does not read back, it stops and removes nothing. With no
+   billing record it says so and goes on;
 2. **Hub.** Sends a signed `delete` to the hub. The hub removes this
    instance's record and its check-ins, then the local hub key is deleted.
    If the hub refuses or cannot be reached, `delete` stops and removes
@@ -842,7 +847,8 @@ In this order it:
 5. removes the instance folder: database, data, local backups, logs, keys.
 
 It leaves one record at `<instances dir>/deletions/<code>.json`: code, date,
-operator, approval reference, what was removed and what was not. No client
+operator, approval reference, the billing export file, what was removed
+and what was not. No client
 data. A second run finds nothing to delete and says when it was deleted.
 On a hosted server, also `sudo systemctl disable --now gsam-watch@<code>.timer
 gsam-offsite@<code>.timer gsam-restore-check@<code>.timer`.

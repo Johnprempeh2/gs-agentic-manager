@@ -10,6 +10,11 @@
 # its own and gives the same file; an archive inside the instance folder, or a
 # config with no retention years, is refused and writes nothing;
 # billing-archive lists the export with its retention end and removes nothing.
+# Then AT-4.10: the instance is paused and `delete` is refused, removing
+# nothing, with no billing config, with no retention years and when the export
+# fails; then `delete` exports the rows, removes the instance and names the
+# export in the deletion record. An export past its retention end is listed
+# as due for review and stays.
 # Never point it at a real instance.
 set -euo pipefail
 
@@ -32,7 +37,8 @@ clean() {
 }
 pass() { echo "PASS $*"; }
 fail() { echo "FAIL $*"; exit 1; }
-cleanup() { clean "$CI" stop --root "$ROOT" >/dev/null 2>&1 || true; }
+op() { clean CLIENT_INSTANCE_OPERATOR_PASSWORD="$OPERATOR_PASSWORD" "$@"; }
+cleanup() { [ -f "$ROOT/client-instance.json" ] && clean "$CI" stop --root "$ROOT" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 printf 'BILLING_ARCHIVE_DIR=%s\nBILLING_RETENTION_YEARS=6\n' "$ARCHIVE" >"$CONFIG"
@@ -40,6 +46,8 @@ printf 'BILLING_ARCHIVE_DIR=%s\nBILLING_RETENTION_YEARS=6\n' "$ARCHIVE" >"$CONFI
 echo "== create a Managed sandbox instance"
 CREATE_OUT="$(clean "$CI" create --root "$ROOT" --edition managed)" || { echo "$CREATE_OUT" | grep -v -e 'Operator:' -e 'Client:'; fail "create"; }
 echo "$CREATE_OUT" | grep -v -e 'Operator:' -e 'Client:'
+OPERATOR_PASSWORD="$(echo "$CREATE_OUT" | awk '/Operator:/ {print $4}')"
+[ -n "$OPERATOR_PASSWORD" ] || fail "no operator log-in in the create output"
 
 echo "== write one billing account and two invoices (test values)"
 cat >"$S/seed.mts" <<EOF
@@ -104,5 +112,36 @@ echo "$OUT"
 echo "$OUT" | grep -q "c917, 1 accounts, 2 invoices, exported .* kept until " && pass "export listed" || fail "not listed"
 echo "$OUT" | grep -q 'no export is past its retention end' && pass "nothing due" || fail "due line"
 [ "$(ls "$ARCHIVE" | wc -l | tr -d ' ')" = "1" ] && pass "archive unchanged" || fail "archive changed"
+
+echo "== delete exports billing records first (AT-4.10)"
+clean "$CI" start --root "$ROOT" >/dev/null || fail "start"
+op "$CI" pause --root "$ROOT" --operator sandbox-ops --reason "billing delete test" >/dev/null || fail "pause"
+DEL=(--confirm-code c917 --approval GRE-1372 --operator sandbox-ops)
+if OUT="$(clean "$CI" delete --root "$ROOT" "${DEL[@]}" 2>&1)"; then fail "delete without a billing config ran"; fi
+echo "$OUT" | grep -q -- 'holds 1 billing account and 2 invoices: --billing-config <file> is required' && pass "delete needs --billing-config" || { echo "$OUT"; fail "no-config message"; }
+if OUT="$(clean "$CI" delete --root "$ROOT" "${DEL[@]}" --billing-config "$S/noyears.env" 2>&1)"; then fail "delete with no retention ran"; fi
+echo "$OUT" | grep -q 'billing retention not set' && pass "delete needs the retention setting" || { echo "$OUT"; fail "no-retention message"; }
+if OUT="$(clean "$CI" delete --root "$ROOT" "${DEL[@]}" --billing-config "$S/inside.env" 2>&1)"; then fail "delete with a failing export ran"; fi
+echo "$OUT" | grep -q 'billing-export failed: .*delete would remove it; nothing removed' && pass "failed export stops delete" || { echo "$OUT"; fail "failed-export message"; }
+[ -d "$ROOT/instances/default/db" ] && pass "refusals removed nothing" || fail "a refusal removed data"
+OUT="$(clean "$CI" delete --root "$ROOT" "${DEL[@]}" --billing-config "$CONFIG")" || { echo "$OUT"; fail "delete"; }
+echo "$OUT"
+echo "$OUT" | grep -q "billing records: 1 billing account and 2 invoices exported to $FILE" && pass "delete exported the rows first" || fail "no export line"
+[ ! -e "$ROOT" ] && pass "instance folder removed" || fail "$ROOT still there"
+[ "$(sha256sum "$FILE" | cut -d' ' -f1)" = "$SUM1" ] && pass "billing export kept, same rows" || fail "export changed or gone"
+TODAY="$(date -u +%F)"
+node -e '
+  const e = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  const [y, md] = [Number(process.argv[2].slice(0, 4)), process.argv[2].slice(4)];
+  process.exit(e.exportedOn === process.argv[2] && e.retentionEndsOn === `${y + 6}${md}` ? 0 : 1);' "$FILE" "$TODAY" \
+  && pass "retention end = deletion day + 6 years (from the config)" || fail "retention end"
+RECORD="$S/instances/deletions/c917.json"
+node -e 'const r=require(process.argv[1]);process.exit(r.billingExport.endsWith(process.argv[2])?0:1)' "$RECORD" "$FILE" && pass "deletion record names the export" || fail "record billingExport"
+
+echo "== past the retention end: listed, not removed"
+node -e 'const f=process.argv[1];const e=JSON.parse(require("fs").readFileSync(f,"utf8"));e.retentionEndsOn="2000-01-01";require("fs").writeFileSync(f,JSON.stringify(e,null,2)+"\n")' "$FILE"
+OUT="$(clean "$CI" billing-archive --billing-config "$CONFIG")" || { echo "$OUT"; fail "billing-archive"; }
+echo "$OUT" | grep -q 'kept until 2000-01-01 - DUE FOR REVIEW' && pass "listed as due for review" || { echo "$OUT"; fail "not due"; }
+[ -f "$FILE" ] && pass "export not removed" || fail "export removed"
 
 echo "ALL PASS"

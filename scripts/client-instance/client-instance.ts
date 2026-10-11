@@ -34,7 +34,7 @@
 //                                     (copy the strategy plan; without --apply on it only reports; GRE-1190)
 //   scripts/client-instance.sh pause|resume --root <dir> --operator <name> --reason <text>
 //   scripts/client-instance.sh archive --root <dir> --operator <name> --retention-days N --offsite-config <file> --sandbox <empty dir>
-//   scripts/client-instance.sh delete --root <dir> --confirm-code <code> --approval <ref> --operator <name> [--offsite-config <file>]
+//   scripts/client-instance.sh delete --root <dir> --confirm-code <code> --approval <ref> --operator <name> [--billing-config <file>] [--offsite-config <file>]
 //                                     (lifecycle of an instance, GRE-1367; needs CLIENT_INSTANCE_OPERATOR_PASSWORD for pause and resume)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
@@ -233,9 +233,10 @@ const USAGE = `usage:
                                            from paused: final backup, off-host copy checked in the sandbox,
                                            ports freed, retention end recorded (N is John's setting; no default)
   delete --root <dir> --confirm-code <code> --approval <ref> --operator <name>
-         [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
-                                           from paused or archived: removes data, local backups, off-host copies,
-                                           hub record and key, watch config; leaves one deletion record
+         [--billing-config <file>] [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
+                                           from paused or archived: exports billing records first (needs
+                                           --billing-config when there are any), then removes data, local backups,
+                                           off-host copies, hub record and key, watch config; leaves one deletion record
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -1182,10 +1183,15 @@ async function readBillingRows(root: string, state: InstanceState): Promise<{ ac
  * instance folder, and check the file reads back with the same row counts.
  * Throws when it cannot, so `delete` stops and removes nothing (AT-4.10).
  */
-async function exportBilling(root: string, state: InstanceState, config: BillingConfig): Promise<{ file: string; changed: boolean; counts: { accounts: number; invoices: number } }> {
+async function exportBilling(
+  root: string,
+  state: InstanceState,
+  config: BillingConfig,
+  read?: Awaited<ReturnType<typeof readBillingRows>>,
+): Promise<{ file: string; changed: boolean; counts: { accounts: number; invoices: number } }> {
   const outside = checkArchiveOutside(config.archiveDir, root);
   if (outside) throw new Error(outside);
-  const rows = await readBillingRows(root, state);
+  const rows = read ?? (await readBillingRows(root, state));
   const exp = buildBillingExport({ code: instanceCode(root), ...rows, retentionYears: config.retentionYears, now: new Date() });
   const written = writeBillingExport(config.archiveDir, exp);
   const bad = verifyBillingExport(written.file, { accounts: rows.accounts.length, invoices: rows.invoices.length });
@@ -1645,30 +1651,6 @@ async function usageCounts(root: string, state: InstanceState): Promise<UsageCou
   }
 }
 
-/**
- * B11 (GRE-1372) sets this: copy the instance's billing records to the
- * operator's billing archive, outside the instance folder, and return the
- * file. Until then `delete` stops when the instance holds any billing record
- * (AT-4.10); it never skips the step.
- */
-const billingExport: ((root: string, state: InstanceState) => Promise<{ file: string }>) | null = null;
-
-/** Billing rows in the stopped instance's database, read with the database started on its own (no app). */
-async function billingRowCounts(root: string, state: InstanceState): Promise<{ accounts: number; invoices: number }> {
-  const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
-  const db = await import("../../packages/db/src/index.js");
-  const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
-  const pg = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), preferred, { allowExisting: false });
-  const url = db.embeddedPostgresConnectionString({ ...pg, database: "paperclip" });
-  try {
-    const conn = db.createDb(url);
-    return { accounts: await conn.$count(db.billingAccounts), invoices: await conn.$count(db.billingInvoices) };
-  } finally {
-    await db.closeRegisteredClients(url);
-    await pg.stop();
-  }
-}
-
 /** Sign in as the operator; the app limits sign-ins a minute, so a 429 waits and tries again. */
 async function signInOperator(state: InstanceState): Promise<Session> {
   const operator = new Session(baseUrl(state));
@@ -1896,7 +1878,7 @@ function removeOffsite(config: OffsiteConfig, opts: Record<string, string>, code
  * second run finds nothing.
  */
 async function cmdDelete(root: string, opts: Record<string, string>) {
-  checkFlags(opts, ["confirm-code", "approval", "operator", "offsite-config", "restic", "watch-config", "fleet-local-only"]);
+  checkFlags(opts, ["confirm-code", "approval", "operator", "offsite-config", "restic", "watch-config", "fleet-local-only", "billing-config"]);
   const recordFile = deletionRecordPath(root);
   if (!existsSync(path.join(root, STATE_FILE))) {
     if (existsSync(recordFile)) {
@@ -1923,14 +1905,19 @@ async function cmdDelete(root: string, opts: Record<string, string>) {
   const config = opts["offsite-config"] ? offsiteConfig(opts, code) : null;
 
   say("1/5 billing records (AT-4.10)");
-  const billing = await billingRowCounts(root, state);
+  const billing = await readBillingRows(root, state);
   let billingLine: string;
-  if (billingExport) {
-    billingLine = `exported to ${(await billingExport(root, state)).file}`;
-  } else if (billing.accounts === 0 && billing.invoices === 0) {
+  if (billing.accounts.length === 0 && billing.invoices.length === 0) {
     billingLine = "none: the instance holds no billing account and no invoice";
   } else {
-    die(`billing-export missing (B11, GRE-1372): the instance holds ${plural(billing.accounts, "billing account", "billing accounts")} and ${plural(billing.invoices, "invoice", "invoices")}; nothing removed`);
+    const held = `${plural(billing.accounts.length, "billing account", "billing accounts")} and ${plural(billing.invoices.length, "invoice", "invoices")}`;
+    if (!opts["billing-config"]) die(`the instance holds ${held}: --billing-config <file> is required to export them first; nothing removed`);
+    const archive = billingConfig(opts);
+    try {
+      billingLine = `${held} exported to ${(await exportBilling(root, state, archive, billing)).file}`;
+    } catch (err) {
+      die(`billing-export failed: ${err instanceof Error ? err.message : String(err)}; nothing removed`);
+    }
   }
   say(`billing records: ${billingLine}`);
 
