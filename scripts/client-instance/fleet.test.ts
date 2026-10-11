@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createPublicKey, verify } from "node:crypto";
 import { test } from "node:test";
-import { buildCheckIn, countRunsSince, fleetHubUrl, generateFleetKey, hubAnswer, nextSeq, RUN_PAGE_LIMIT, signFleetMessage, usageTotals, type CheckInInput } from "./fleet.ts";
+import { buildCheckIn, connectionTotals, countRunsSince, fleetHubUrl, generateFleetKey, hubAnswer, nextSeq, RUN_PAGE_LIMIT, signFleetMessage, usageTotals, type CheckInInput } from "./fleet.ts";
 
 const now = Date.parse("2026-10-09T12:00:00Z");
 
@@ -15,6 +15,7 @@ const input: CheckInInput = {
   appVersion: "0.3.1",
   lastUpgrade: { to: { tag: "stable-2026-10-01.1" }, at: "2026-10-02T12:00:00Z" },
   usage: usageTotals([], 0),
+  connections: null,
   signals: [
     { key: "health", ok: true, detail: "pid 1, health ok" },
     { key: "ai-connections:abcdef12", ok: false, detail: "claude connection 1234 for Acme Ltd is expired" },
@@ -44,6 +45,34 @@ test("no company id leaves the host: per-company signals fold into one key per c
 
 test("a value outside the schema stops the check-in before it is signed", () => {
   assert.throws(() => buildCheckIn({ ...input, releaseTag: "Acme merger plan" }, now));
+});
+
+test("AT-3.3: connection health leaves the host as four counts, never a name or id", () => {
+  const ai = [
+    { id: "aaaa1111-0000-0000-0000-000000000001", provider: "claude", status: "connected", credential: { expiresAt: "2026-12-01T00:00:00Z" } },
+    { id: "aaaa1111-0000-0000-0000-000000000002", provider: "codex", status: "connected", credential: { expiresAt: "2026-10-12T00:00:00Z" } },
+    { id: "aaaa1111-0000-0000-0000-000000000003", provider: "claude", status: "needs_reauth" },
+  ];
+  const tools = [
+    { id: "bbbb2222-0000-0000-0000-000000000001", name: "Acme Ltd CRM", status: "active", enabled: true },
+    { id: "bbbb2222-0000-0000-0000-000000000002", name: "Acme mail", status: "active", enabled: false },
+    { id: "bbbb2222-0000-0000-0000-000000000003", name: "Old", status: "disabled", enabled: false },
+    { id: "bbbb2222-0000-0000-0000-000000000004", name: "Draft", status: "draft", enabled: false },
+    { id: "bbbb2222-0000-0000-0000-000000000005", name: "Gone", status: "archived", enabled: false },
+    { id: "aaaa1111-0000-0000-0000-000000000001", name: "Claude", connectionPurpose: "ai", status: "active", enabled: true },
+  ];
+  const connections = connectionTotals([{ ai, tools }, { ai: [], tools: [] }], now);
+  assert.deepEqual(connections, { ai: { healthy: 1, needsAttention: 2 }, tools: { active: 1, disabled: 2 } });
+  const serialized = JSON.stringify(buildCheckIn({ ...input, connections }, now));
+  for (const marker of ["Acme", "aaaa1111", "bbbb2222", "claude", "codex"]) assert.equal(serialized.includes(marker), false, marker);
+});
+
+test("lifecycle: absent means active; a paused instance says paused while the app is down", () => {
+  assert.equal(buildCheckIn(input, now).lifecycle, "active");
+  const paused = buildCheckIn({ ...input, appUp: false, lifecycle: "paused" }, now);
+  assert.equal(paused.lifecycle, "paused");
+  assert.equal(paused.health.app, "down");
+  assert.equal(paused.connections, null);
 });
 
 test("usage is totals over every company", () => {
