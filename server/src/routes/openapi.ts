@@ -5456,6 +5456,23 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/memory/operations",
+  tags: ["memory"],
+  summary:
+    "Memory operations log, read only, for live checks (GRE-1302): rows newest first with kind, actor, outcome, numeric counts and flags (retention rows carry `forgotten`), plus a summary by kind and outcome over every matching row. `kind` (for example `retention`), `since` (ISO date-time), `limit` (default 50, max 200). No memory content. Any agent or board user of the company; 404 while memory is off",
+  request: {
+    params: memoryCompanyParams,
+    query: z.object({
+      kind: z.string().optional(),
+      since: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(200).optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/memory/plan-usage",
   tags: ["memory"],
   summary: "Daily Claude plan use by memory extraction (engine deliveries and model tokens per Europe/London day); 404 while memory is off",

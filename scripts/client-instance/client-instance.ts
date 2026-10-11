@@ -51,6 +51,7 @@ import { FEEDBACK_DATA_SHARING_PREFERENCES } from "../../packages/shared/src/typ
 import { DAILY_RETENTION_PRESETS, DEFAULT_BACKUP_RETENTION } from "../../packages/shared/src/types/instance.js";
 import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
 import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/ai-connections.js";
+import type { FleetLifecycle } from "../../packages/shared/src/fleet.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
@@ -71,7 +72,9 @@ import {
 } from "./offsite.js";
 import {
   buildCheckIn,
+  connectionTotals,
   countRunsSince,
+  FAILED_RUN_STATUSES,
   fleetHubUrl,
   generateFleetKey,
   hubAnswer,
@@ -82,6 +85,7 @@ import {
   usageTotals,
   type FleetKey,
   type FleetRegistration,
+  type ToolConnectionView,
   type UsageCompany,
 } from "./fleet.js";
 import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines, type RestoreCheck, type VerifyRecord } from "./status.js";
@@ -221,6 +225,8 @@ interface InstanceState {
   aiAccessRoute?: AiAccessRoute;
   /** GRE-667: set on the company at create; `verify` checks it. Absent means on. */
   requireBoardApprovalForNewAgents?: boolean;
+  /** GRE-1366: set by `pause`, `resume` and `archive` (B9); the fleet check-in reports it. Absent means active. */
+  lifecycle?: FleetLifecycle;
 }
 
 interface ReleaseRef {
@@ -1266,7 +1272,7 @@ function folderBytes(dir: string): number {
   return total;
 }
 
-/** Usage totals over every company, read as the operator log-in. Throws (never exits) when a read fails. */
+/** Usage totals and connection counts over every company, read as the operator log-in. Throws (never exits) when a read fails. */
 async function fleetUsage(root: string, state: InstanceState, operatorPassword: string) {
   const operator = new Session(baseUrl(state));
   const read = async <T,>(method: string, route: string, body?: unknown): Promise<T> => {
@@ -1281,19 +1287,28 @@ async function fleetUsage(root: string, state: InstanceState, operatorPassword: 
   monthStart.setUTCHours(0, 0, 0, 0);
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const rows: UsageCompany[] = [];
+  const connections: Array<{ ai: AiConnectionView[]; tools: ToolConnectionView[] }> = [];
   for (const company of companies) {
-    const runsPage = (since: Date, before: Date | null) =>
+    const runsPage = (status: string) => (since: Date, before: Date | null) =>
       read<Array<{ id: string; createdAt: string }>>(
         "GET",
-        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
+        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true${status ? `&status=${status}` : ""}&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
       );
     rows.push({
       agents: await read("GET", `/api/companies/${company.id}/agents`),
-      runsLast24h: await countRunsSince(runsPage, dayAgo),
+      runsLast24h: await countRunsSince(runsPage(""), dayAgo),
+      runsFailedLast24h: await countRunsSince(runsPage(FAILED_RUN_STATUSES.join(",")), dayAgo),
       ...(await read<{ spendCents: number; budgetCents: number }>("GET", `/api/companies/${company.id}/costs/summary?from=${encodeURIComponent(monthStart.toISOString())}`)),
     });
+    connections.push({
+      ai: (await read<{ connections?: AiConnectionView[] }>("GET", `/api/companies/${company.id}/ai-connections`)).connections ?? [],
+      tools: (await read<{ connections?: ToolConnectionView[] }>("GET", `/api/companies/${company.id}/tools/connections`)).connections ?? [],
+    });
   }
-  return usageTotals(rows, folderBytes(path.join(instanceDir(root), "data", "storage")));
+  return {
+    usage: usageTotals(rows, folderBytes(path.join(instanceDir(root), "data", "storage"))),
+    connections: connectionTotals(connections),
+  };
 }
 
 /**
@@ -1311,6 +1326,7 @@ async function sendFleetCheckIn(root: string, state: InstanceState, operatorPass
     const appUp = body?.status === "ok";
     const version = typeof body?.version === "string" && /^[0-9A-Za-z.+-]{1,40}$/.test(body.version) ? body.version : null;
     const newest = newestBackup(backupDir(root));
+    const live = appUp ? await fleetUsage(root, state, operatorPassword) : null;
     const checkIn = buildCheckIn({
       edition: state.edition,
       appUp,
@@ -1320,8 +1336,10 @@ async function sendFleetCheckIn(root: string, state: InstanceState, operatorPass
       releaseTag: state.release?.tag ?? null,
       appVersion: version,
       lastUpgrade: state.lastUpgrade ?? null,
-      usage: appUp ? await fleetUsage(root, state, operatorPassword) : usageTotals([], 0),
+      usage: live?.usage ?? usageTotals([], 0),
       signals,
+      lifecycle: state.lifecycle,
+      connections: live?.connections ?? null,
     });
     const seq = nextSeq(registration.lastSeq);
     registration.lastSeq = seq;

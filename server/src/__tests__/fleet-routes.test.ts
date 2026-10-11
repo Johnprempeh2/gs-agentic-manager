@@ -2,7 +2,8 @@ import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createDb, fleetCheckIns, fleetInstances } from "@greatstone/db";
-import { FLEET_CHECK_IN_SCHEMA, fleetCheckInSchema, type FleetCheckIn } from "@greatstone/shared/fleet";
+import { eq } from "drizzle-orm";
+import { FLEET_CHECK_IN_SCHEMA, FLEET_CHECK_IN_SCHEMA_V1, fleetCheckInSchema, type FleetCheckIn } from "@greatstone/shared/fleet";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -20,6 +21,7 @@ import {
 } from "../../../scripts/client-instance/fleet.js";
 
 // GRE-1082: fleet registration, signed check-in and revoke, from both sides.
+// GRE-1366: check-in v2 with lifecycle and connection counts (AT-3.3, AT-3.8).
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -35,9 +37,15 @@ const checkIn: FleetCheckIn = {
   edition: "managed",
   health: { app: "ok", backupAgeMinutes: 12, restoreCheck: { ok: true, ageMinutes: 600 }, offsiteBackup: null },
   version: { releaseTag: "stable-2026-10-01.1", appVersion: "0.3.1", lastUpgrade: null },
-  usage: { companies: 1, activeAgents: 3, runsLast24h: 20, spendCentsMonth: 1234, budgetCentsMonth: 15000, storageBytes: 1024 },
+  usage: { companies: 1, activeAgents: 3, runsLast24h: 20, runsFailedLast24h: 2, spendCentsMonth: 1234, budgetCentsMonth: 15000, storageBytes: 1024 },
   alerts: [{ key: "health", ok: true }, { key: "ai-connections", ok: false }],
+  lifecycle: "active",
+  connections: { ai: { healthy: 2, needsAttention: 1 }, tools: { active: 4, disabled: 1 } },
 };
+
+const { lifecycle: _lifecycle, connections: _connections, ...v1Fields } = checkIn;
+const { runsFailedLast24h: _runsFailed, ...usageV1 } = checkIn.usage;
+const checkInV1 = { ...v1Fields, usage: usageV1, schema: FLEET_CHECK_IN_SCHEMA_V1 };
 
 describe("fleet check-in schema", () => {
   it("accepts facts and refuses any field it does not name", () => {
@@ -47,6 +55,38 @@ describe("fleet check-in schema", () => {
     expect(fleetCheckInSchema.safeParse({ ...checkIn, alerts: [{ key: "health", ok: false, detail: "Acme Ltd board pack" }] }).success).toBe(false);
     expect(fleetCheckInSchema.safeParse({ ...checkIn, alerts: [{ key: "Issue: Acme merger", ok: false }] }).success).toBe(false);
     expect(fleetCheckInSchema.safeParse({ ...checkIn, version: { ...checkIn.version, releaseTag: "Acme merger plan" } }).success).toBe(false);
+  });
+
+  it("AT-3.3: connections are counts only; a name, id or other field is refused", () => {
+    expect(fleetCheckInSchema.safeParse({ ...checkIn, connections: null }).success).toBe(true);
+    const bad = [
+      { ai: { ...checkIn.connections!.ai, names: ["Claude for Acme"] }, tools: checkIn.connections!.tools },
+      { ai: checkIn.connections!.ai, tools: { ...checkIn.connections!.tools, ids: ["0d6f3c2a-1111-2222-3333-444455556666"] } },
+      { ...checkIn.connections, byCompany: { acme: 1 } },
+      { ai: { healthy: "Acme", needsAttention: 0 }, tools: checkIn.connections!.tools },
+      { ai: { healthy: -1, needsAttention: 0 }, tools: checkIn.connections!.tools },
+      { ai: checkIn.connections!.ai },
+    ];
+    for (const connections of bad) expect(fleetCheckInSchema.safeParse({ ...checkIn, connections }).success).toBe(false);
+    expect(fleetCheckInSchema.safeParse({ ...checkIn, lifecycle: "deleted" }).success).toBe(false);
+    const { connections: _c, ...noConnections } = checkIn;
+    expect(fleetCheckInSchema.safeParse(noConnections).success).toBe(false);
+  });
+
+  it("takes v1 from a spoke not yet upgraded, but not v1 with v2 fields", () => {
+    expect(fleetCheckInSchema.safeParse(checkInV1).success).toBe(true);
+    expect(fleetCheckInSchema.safeParse({ ...checkInV1, lifecycle: "paused" }).success).toBe(false);
+    expect(fleetCheckInSchema.safeParse({ ...checkInV1, usage: checkIn.usage }).success).toBe(false);
+    expect(fleetCheckInSchema.safeParse({ ...checkInV1, schema: "gsam-fleet-check-in/v3" }).success).toBe(false);
+  });
+
+  it("GRE-144: v2 carries failed runs as one instance count, never per company", () => {
+    expect(fleetCheckInSchema.safeParse(checkIn).success).toBe(true);
+    for (const runsFailedLast24h of [-1, 1.5, "2", null]) {
+      expect(fleetCheckInSchema.safeParse({ ...checkIn, usage: { ...checkIn.usage, runsFailedLast24h } }).success).toBe(false);
+    }
+    expect(fleetCheckInSchema.safeParse({ ...checkIn, usage: { ...checkIn.usage, runsFailedByCompany: { acme: 2 } } }).success).toBe(false);
+    expect(fleetCheckInSchema.safeParse({ ...checkIn, usage: usageV1 }).success).toBe(false);
   });
 
   it("refuses a company id in an alert key", () => {
@@ -220,6 +260,78 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     const res = await sendCheckIn(key, id, nextSeq(seq), { ...checkIn, clientName: "Acme" });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe("fleet_bad_message");
+  });
+
+  it("AT-3.3: refuses a signed check-in that names a connection", async () => {
+    const { id, key, seq } = await register("c001");
+    const named = { ...checkIn, connections: { ...checkIn.connections, tools: { active: 1, disabled: 0, names: ["Acme CRM"] } } };
+    const res = await sendCheckIn(key, id, nextSeq(seq), named);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("fleet_bad_message");
+    expect(await db.select().from(fleetCheckIns)).toHaveLength(0);
+  });
+
+  it("AT-3.8: after pause the hub shows paused, not down, even when no check-in follows", async () => {
+    const { id, key, seq } = await register("c001");
+    let last = seq;
+    const next = () => (last = nextSeq(last));
+    const state = async () => (await request(app()).get("/api/fleet/instances")).body[0];
+    expect(await state()).toMatchObject({ state: "waiting", lifecycle: null });
+
+    await sendCheckIn(key, id, next());
+    expect(await state()).toMatchObject({ state: "ok", lifecycle: "active" });
+    const activeSince = (await state()).lifecycleChangedAt;
+
+    // The final check-in `pause` sends: the app is stopped on purpose.
+    const paused = { ...checkIn, lifecycle: "paused", health: { ...checkIn.health, app: "down" }, connections: null };
+    expect((await sendCheckIn(key, id, next(), paused)).status).toBe(200);
+    const afterPause = await state();
+    expect(afterPause).toMatchObject({ state: "paused", lifecycle: "paused" });
+    expect(new Date(afterPause.lifecycleChangedAt).getTime()).toBeGreaterThanOrEqual(new Date(activeSince).getTime());
+
+    // Days later, with nothing more sent: still paused, never stale or down.
+    await db.update(fleetInstances).set({ lastCheckInAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) }).where(eq(fleetInstances.id, id));
+    expect(await state()).toMatchObject({ state: "paused" });
+
+    // An active instance in the same place is down.
+    await sendCheckIn(key, id, next());
+    const resumedAt = (await state()).lifecycleChangedAt;
+    await db.update(fleetInstances).set({ lastCheckInAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) }).where(eq(fleetInstances.id, id));
+    expect(await state()).toMatchObject({ state: "down", lifecycle: "active", lifecycleChangedAt: resumedAt });
+  });
+
+  it("shows an active instance stale, then down, at the limits the hub sets; app down is down", async () => {
+    process.env.GSAM_FLEET_STALE_AFTER_MINUTES = "5";
+    process.env.GSAM_FLEET_DOWN_AFTER_MINUTES = "30";
+    try {
+      const { id, key, seq } = await register("c001");
+      let last = seq;
+      const next = () => (last = nextSeq(last));
+      const state = async () => (await request(app()).get("/api/fleet/instances")).body[0].state;
+      await sendCheckIn(key, id, next());
+      const ago = (minutes: number) =>
+        db.update(fleetInstances).set({ lastCheckInAt: new Date(Date.now() - minutes * 60 * 1000) }).where(eq(fleetInstances.id, id));
+      await ago(10);
+      expect(await state()).toBe("stale");
+      await ago(31);
+      expect(await state()).toBe("down");
+      await sendCheckIn(key, id, next(), { ...checkIn, health: { ...checkIn.health, app: "down" } });
+      expect(await state()).toBe("down");
+    } finally {
+      delete process.env.GSAM_FLEET_STALE_AFTER_MINUTES;
+      delete process.env.GSAM_FLEET_DOWN_AFTER_MINUTES;
+    }
+  });
+
+  it("a v1 check-in is stored and keeps the lifecycle the hub knows", async () => {
+    const { id, key, seq } = await register("c001");
+    let last = seq;
+    const next = () => (last = nextSeq(last));
+    await sendCheckIn(key, id, next(), { ...checkIn, lifecycle: "paused" });
+    expect((await sendCheckIn(key, id, next(), checkInV1)).status).toBe(200);
+    const [instance] = (await request(app()).get("/api/fleet/instances")).body;
+    expect(instance).toMatchObject({ lifecycle: "paused", state: "paused" });
+    expect((await request(app()).get(`/api/fleet/instances/${id}/check-ins`)).body[0].checkIn).toEqual(checkInV1);
   });
 
   it("revokes from the hub: the spoke's key is refused after", async () => {
