@@ -2,12 +2,12 @@ import { useEffect, type CSSProperties, type ReactNode } from "react";
 import { ExternalLink, PauseCircle, ReceiptText } from "lucide-react";
 import {
   BILLING_MODULES,
-  type BillingAccount,
   type BillingInvoice,
   type BillingInvoiceStatus,
   type BillingState,
   type BillingStatus,
   type BillingUsage,
+  type ClientBillingAccount,
 } from "@greatstone/shared/billing-account";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
@@ -21,6 +21,9 @@ import { cn } from "@/lib/utils";
  * Client Billing page (GRE-1370, B1 on GRE-1357). Read-only: the hosting
  * operator sets the record (B2) and the server computes usage (GRE-1389).
  * Every amount shown comes from the server; none is in this file.
+ *
+ * Included AI usage shows as a percent only; money shows only for fees, the
+ * estimate and extra usage past 100%, all in the account currency (GRE-1395).
  */
 
 export function formatMoney(cents: number, currency: string) {
@@ -36,13 +39,6 @@ export function formatBillingDay(day: string) {
     timeZone: "UTC",
   });
 }
-
-/**
- * Usage amounts are summed from cost events, which are recorded in US dollars
- * and not converted (GRE-1389). They are shown in that currency, not the
- * account's, so the label stays true.
- */
-const USAGE_CURRENCY = "USD";
 
 function formatPercent(value: number) {
   return `${Math.round(value)}%`;
@@ -94,7 +90,7 @@ function Figure({ label, value, note, testId }: { label: string; value: ReactNod
   );
 }
 
-function PlanCard({ account, status }: { account: BillingAccount; status: BillingStatus | null }) {
+function PlanCard({ account, status }: { account: ClientBillingAccount; status: BillingStatus | null }) {
   const period = account.termKind === "annual" ? "year" : "month";
   const moduleTotal = account.modules.reduce((sum, module) => sum + (module.feeCents ?? 0), 0);
   const total = account.serviceFeeCents + moduleTotal;
@@ -162,14 +158,9 @@ function PlanCard({ account, status }: { account: BillingAccount; status: Billin
             </tr>
           </tfoot>
         </table>
-        <dl className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
-          <Figure
-            label="AI allowance"
-            value={formatMoney(account.allowanceMonthlyCents, account.currency)}
-            note="Included in the fee, each calendar month"
-            testId="billing-allowance"
-          />
-        </dl>
+        <p className="border-t border-border pt-4 text-xs text-muted-foreground" data-testid="billing-allowance">
+          An AI usage allowance is included in the fee each calendar month.
+        </p>
       </CardContent>
     </Card>
   );
@@ -180,14 +171,14 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
   const over = usage.usedPercent >= 100;
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{formatPercent(usage.usedPercent)} used</span>
-        <span>{formatPercent(Math.max(0, 100 - usage.usedPercent))} left</span>
+      <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+        <span>{formatPercent(usage.usedPercent)} of your included AI usage used this month</span>
+        {over ? null : <span className="shrink-0">{formatPercent(100 - usage.usedPercent)} left</span>}
       </div>
       <div className="relative h-2 rounded-full bg-muted">
         <div
           role="progressbar"
-          aria-label="AI allowance used"
+          aria-label="Included AI usage used"
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(width)}
@@ -206,6 +197,11 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
       </div>
     </div>
   );
+}
+
+function ExtraUsageValue({ extra }: { extra: BillingUsage["extraUsage"] }) {
+  if (extra.state === "priced" && extra.amountCents !== null) return <>{formatMoney(extra.amountCents, extra.currency)}</>;
+  return <span className="text-sm font-normal text-muted-foreground">Extra usage will be shown on your invoice</span>;
 }
 
 function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; accountCurrency: string }) {
@@ -230,43 +226,34 @@ function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; acc
       </CardHeader>
       <CardContent className="space-y-5">
         <UsageBar usage={usage} />
-        <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <dl className={cn("grid grid-cols-2 gap-4", usage.extraUsage.state === "none" ? "lg:grid-cols-3" : "lg:grid-cols-4")}>
           <Figure
-            label="Actual"
-            value={formatMoney(usage.usedCents, USAGE_CURRENCY)}
-            note={`of ${formatMoney(usage.allowanceCents, accountCurrency)} allowance`}
+            label="Used"
+            value={formatPercent(usage.usedPercent)}
+            note="Of your included AI usage"
             testId="billing-actual"
           />
           <Figure
-            label="Remaining"
-            value={formatMoney(usage.remainingCents, USAGE_CURRENCY)}
-            note="Until the month ends"
-            testId="billing-remaining"
-          />
-          <Figure
             label="Forecast to month end"
-            value={formatMoney(usage.forecastCents, USAGE_CURRENCY)}
+            value={formatPercent(usage.forecastPercent)}
             note="Straight line from usage so far"
             testId="billing-forecast"
           />
           <Figure
             label="Estimate"
             value={usage.estimateCents === null ? <span className="text-muted-foreground">Not set</span> : formatMoney(usage.estimateCents, accountCurrency)}
-            note="Estimated at sign-up"
+            note="Monthly AI usage estimated at sign-up"
             testId="billing-estimate"
           />
+          {usage.extraUsage.state === "none" ? null : (
+            <Figure
+              label="Extra usage"
+              value={<ExtraUsageValue extra={usage.extraUsage} />}
+              note="Usage past your included AI usage this month"
+              testId="billing-extra"
+            />
+          )}
         </dl>
-        {usage.apiEquivalentCents > 0 ? (
-          <p className="border-t border-border pt-4 text-sm text-muted-foreground" data-testid="billing-api-equivalent">
-            Subscription-included usage: <span className="font-medium text-foreground">{formatMoney(usage.apiEquivalentCents, USAGE_CURRENCY)}</span>{" "}
-            API-equivalent. This is not charged.
-          </p>
-        ) : null}
-        {accountCurrency !== USAGE_CURRENCY ? (
-          <p className="text-xs text-muted-foreground" data-testid="billing-usage-currency">
-            Usage is measured in US dollars. It is compared with your {accountCurrency} allowance without currency conversion.
-          </p>
-        ) : null}
       </CardContent>
     </Card>
   );
