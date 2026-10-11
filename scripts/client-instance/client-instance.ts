@@ -21,6 +21,9 @@
 //   scripts/client-instance.sh offsite-init|offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
 //   scripts/client-instance.sh offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
 //                                     (off-host backups with restic, GRE-666)
+//   scripts/client-instance.sh billing-export --root <dir> --billing-config <file>
+//   scripts/client-instance.sh billing-archive --billing-config <file>
+//                                     (billing records kept outside the instance, B11 / GRE-1372)
 //   scripts/client-instance.sh watch --root <dir> --watch-config <file> [--public-url https://<host>]
 //                                     (host watch: health, backups, disk, memory, AI access, public URL; GRE-666)
 //   scripts/client-instance.sh fleet-register --root <dir> --fleet-hub <url>   (code in CLIENT_INSTANCE_FLEET_CODE)
@@ -55,6 +58,15 @@ import type { FleetLifecycle } from "../../packages/shared/src/fleet.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import {
+  billingArchiveLines,
+  buildBillingExport,
+  checkArchiveOutside,
+  loadBillingConfig,
+  verifyBillingExport,
+  writeBillingExport,
+  type BillingConfig,
+} from "./billing.js";
 import { copyPlan, companyIds, planCopyLines } from "./plan-copy.js";
 import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
@@ -169,6 +181,12 @@ const USAGE = `usage:
   offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
                                            pull the newest off-host copy into the sandbox, restore-check it,
                                            then delete the copy
+  billing-export --root <dir> --billing-config <file>
+                                           copy the billing account and invoices to the billing archive,
+                                           outside the instance folder; safe to run again
+  billing-archive --billing-config <file>
+                                           list billing exports; past the retention years they are due
+                                           for review (nothing is removed on a timer)
   watch --root <dir> --watch-config <file> [--public-url https://<host>]
                                            host watch (every 5 min): health, backups, restore-check, disk,
                                            memory, AI access, public URL; pings the dead-man check, mails on failure
@@ -1075,6 +1093,73 @@ async function pullAndCheck(config: OffsiteConfig, opts: Record<string, string>,
   return { ok: check.ok, line: `offsite-check ${check.ok ? "OK" : "FAILED"}: ${code}, ${label}: ${check.line}` };
 }
 
+// ---------------------------------------------------------------- billing records (B11, GRE-1372)
+
+function billingConfig(opts: Record<string, string>): BillingConfig {
+  if (!opts["billing-config"]) die("--billing-config <file> is required (BILLING_ARCHIVE_DIR and BILLING_RETENTION_YEARS)");
+  const config = loadBillingConfig(path.resolve(opts["billing-config"]));
+  if ("error" in config) die(config.error);
+  return config;
+}
+
+/**
+ * The instance's billing_accounts and billing_invoices rows, read only. A
+ * running instance is read through its own database port; a stopped one has
+ * its database started on its own (no app) on a free port, then stopped.
+ * An instance made before B2 has no billing tables, so no rows.
+ */
+async function readBillingRows(root: string, state: InstanceState): Promise<{ accounts: Record<string, unknown>[]; invoices: Record<string, unknown>[] }> {
+  const db = await import("../../packages/db/src/index.js");
+  let pg: { stop: () => Promise<void> } | null = null;
+  let url: string;
+  if (readPid(root)) {
+    url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  } else {
+    const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+    const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
+    const started = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), preferred, { allowExisting: false });
+    pg = started;
+    url = db.embeddedPostgresConnectionString({ ...started, database: "paperclip" });
+  }
+  try {
+    const conn = db.createDb(url);
+    const [found] = await conn.$client.unsafe("select to_regclass('public.billing_accounts') is not null as accounts, to_regclass('public.billing_invoices') is not null as invoices");
+    return {
+      accounts: found?.accounts ? await conn.select().from(db.billingAccounts) : [],
+      invoices: found?.invoices ? await conn.select().from(db.billingInvoices) : [],
+    };
+  } finally {
+    await db.closeRegisteredClients(url);
+    if (pg) await pg.stop();
+  }
+}
+
+/**
+ * Copy the instance's billing records to the billing archive, outside the
+ * instance folder, and check the file reads back with the same row counts.
+ * Throws when it cannot, so `delete` stops and removes nothing (AT-4.10).
+ */
+async function exportBilling(root: string, state: InstanceState, config: BillingConfig): Promise<{ file: string; changed: boolean; counts: { accounts: number; invoices: number } }> {
+  const outside = checkArchiveOutside(config.archiveDir, root);
+  if (outside) throw new Error(outside);
+  const rows = await readBillingRows(root, state);
+  const exp = buildBillingExport({ code: instanceCode(root), ...rows, retentionYears: config.retentionYears, now: new Date() });
+  const written = writeBillingExport(config.archiveDir, exp);
+  const bad = verifyBillingExport(written.file, { accounts: rows.accounts.length, invoices: rows.invoices.length });
+  if (bad) throw new Error(`billing export did not verify: ${bad}`);
+  return { ...written, counts: exp.counts };
+}
+
+async function cmdBillingExport(root: string, state: InstanceState, opts: Record<string, string>) {
+  const result = await exportBilling(root, state, billingConfig(opts));
+  say(`billing-export: ${plural(result.counts.accounts, "billing account", "billing accounts")} and ${plural(result.counts.invoices, "invoice", "invoices")}`);
+  say(`billing-export: ${result.changed ? "written" : "already exported; nothing changed"}: ${result.file}`);
+}
+
+function cmdBillingArchive(opts: Record<string, string>) {
+  for (const line of billingArchiveLines(billingConfig(opts).archiveDir, new Date())) say(line);
+}
+
 // ---------------------------------------------------------------- host watch (GRE-666)
 
 function loadWatchConfig(file: string | undefined, publicUrl: string | undefined): WatchConfig {
@@ -1799,6 +1884,10 @@ async function main() {
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
   if (command === "offsite-check") return cmdOffsiteCheck(opts);
+  if (command === "billing-archive") {
+    if (positional.length > 0 || opts.root) die("usage: billing-archive --billing-config <file>");
+    return cmdBillingArchive(opts);
+  }
   if (command === "plan-copy") {
     if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
     return cmdPlanCopy(opts);
@@ -1868,6 +1957,8 @@ async function main() {
       return cmdOffsiteInit(root, opts);
     case "offsite-backup":
       return cmdOffsiteBackup(root, opts);
+    case "billing-export":
+      return cmdBillingExport(root, state, opts);
     case "watch":
       return cmdWatch(root, state, opts);
     case "ai-route":

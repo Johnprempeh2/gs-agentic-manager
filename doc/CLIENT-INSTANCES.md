@@ -315,6 +315,40 @@ curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: appl
   `billing.invoice_recorded`, `billing.cancel_requested`,
   `billing.renewal_resumed`) with the old and new values.
 
+### Billing records outside the instance (GRE-1372)
+
+The billing account and invoices live in the instance's own database, so
+deleting the instance would delete them. Greatstone keeps them for the years
+John set (D8, 11 Oct 2026: 6 years). `billing-export` copies them to a
+billing archive on the host, outside every instance folder.
+
+One config file on the host holds the two settings. Nothing in the code
+holds a retention period; with no `BILLING_RETENTION_YEARS` the commands stop
+with `billing retention not set`.
+
+```sh
+# /etc/gsam/billing.env (one per host)
+BILLING_ARCHIVE_DIR=/srv/gsam-billing        # absolute; never inside an instance folder
+BILLING_RETENTION_YEARS=6                    # D8
+
+scripts/client-instance.sh billing-export --root <dir> --billing-config /etc/gsam/billing.env
+scripts/client-instance.sh billing-archive --billing-config /etc/gsam/billing.env
+```
+
+- **billing-export** reads the two tables (read only; a stopped instance's
+  database is started on its own and stopped again) and writes one file,
+  `<code>-billing-<hash>.json`, readable by its owner only. It holds the rows,
+  the export day and `retentionEndsOn` (export day + the set years). It
+  writes a temp file, renames it, then reads it back and checks the row
+  counts. Running it again with the same rows changes nothing (a later day
+  only moves the retention end forward). New rows give a new file; the old
+  one stays.
+- **billing-archive** lists every export with its retention end. Past that
+  day it says `DUE FOR REVIEW`. Nothing deletes an export on a timer: removal
+  is a manual step with an approval reference.
+- **delete** (GRE-1367) runs the export as its first step and stops,
+  removing nothing, if it fails. The deletion record names the export file.
+
 ## Copy a drafted plan to the client (GRE-1190)
 
 The strategy plan is drafted in the practice (workshop) instance. This step
