@@ -281,6 +281,7 @@ curl -X PUT <base>/api/instance/billing-account -H 'Content-Type: application/js
   "serviceFeeCents": N,                  # Foundation and service fee per term period
   "modules": [{"key": "crm", "feeCents": N}, {"key": "crm_write_back", "feeCents": N, "scope": "<agreed scope>"}],
   "allowanceMonthlyCents": N,            # AI allowance included in the fee
+  "estimateMonthlyCents": N,             # optional: monthly AI usage estimated at sign-up
   "termKind": "monthly",                 # or "annual"
   "termStartsOn": "YYYY-MM-DD",
   "autoRenew": true,
@@ -314,6 +315,19 @@ curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: appl
 - Every change writes one activity row (`billing.account_updated`,
   `billing.invoice_recorded`, `billing.cancel_requested`,
   `billing.renewal_resumed`) with the old and new values.
+- **Usage (GRE-1389).** `GET /api/instance/billing-account` also returns
+  `usage` for the instance's company in the current UTC month: `usedCents`
+  (the sum of recorded cost), `apiEquivalentCents` (subscription-included runs
+  at API price; shown, not charged), allowance, remaining, a straight-line
+  `forecastCents`, the `estimateCents` above, and `pausedSince` while the
+  company is paused. The amounts are cost-event cents (USD today), not
+  converted to the account currency.
+- **Warn level.** `warning` is true at `warnPercent` of the allowance: the
+  company budget policy's warn level, else the budget default. The first
+  crossing in a month makes one Inbox card and one `billing.usage_warning`
+  activity row; more usage, or a crossing again after a raised allowance,
+  makes no second one. The watch reports `budget-warn` (fail while warning),
+  so the next fleet check-in carries it.
 
 ## Copy a drafted plan to the client (GRE-1190)
 

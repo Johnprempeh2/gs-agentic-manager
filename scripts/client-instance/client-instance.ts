@@ -52,6 +52,7 @@ import { DAILY_RETENTION_PRESETS, DEFAULT_BACKUP_RETENTION } from "../../package
 import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
 import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/ai-connections.js";
 import type { FleetLifecycle } from "../../packages/shared/src/fleet.js";
+import type { BillingUsage } from "../../packages/shared/src/billing-account.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
@@ -91,6 +92,7 @@ import {
 import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines, type RestoreCheck, type VerifyRecord } from "./status.js";
 import {
   aiSignals,
+  billingUsageSignal,
   alertMessage,
   decideAlert,
   diskSignal,
@@ -1131,6 +1133,21 @@ async function aiWatchSignals(state: InstanceState, config: WatchConfig): Promis
   }
 }
 
+/** The allowance warn level (GRE-1389), read as the operator log-in from the billing account. */
+async function billingWatchSignal(state: InstanceState, config: WatchConfig): Promise<WatchSignal> {
+  const fail = (detail: string): WatchSignal => ({ key: "budget-warn", ok: false, detail });
+  try {
+    const operator = new Session(baseUrl(state));
+    const signIn = await operator.request("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: config.operatorPassword });
+    if (signIn.status !== 200) return fail(`operator log-in refused (${signIn.status}); AI usage not checked`);
+    const view = await operator.request("GET", "/api/instance/billing-account");
+    if (view.status !== 200) return fail(`GET /api/instance/billing-account returned ${view.status}`);
+    return billingUsageSignal((view.json as { usage?: BillingUsage | null }).usage ?? null);
+  } catch (err) {
+    return fail(`AI usage not checked: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 async function watchSignals(root: string, state: InstanceState, config: WatchConfig): Promise<WatchSignal[]> {
   const pid = readPid(root);
   const body = pid ? await health(state) : null;
@@ -1145,6 +1162,7 @@ async function watchSignals(root: string, state: InstanceState, config: WatchCon
     diskSignal(Number(disk.bavail) * Number(disk.bsize)),
     memorySignal(meminfo ?? freemem()),
     ...(up ? await aiWatchSignals(state, config) : [{ key: "ai", ok: false, detail: "not checked: the app is not up" }]),
+    ...(up ? [await billingWatchSignal(state, config)] : []),
     ...(config.publicUrl ? [await publicUrlWatchSignal(config.publicUrl)] : []),
   ];
 }
