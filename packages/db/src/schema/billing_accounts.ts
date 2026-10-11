@@ -18,6 +18,15 @@ export const billingAccounts = pgTable(
     serviceFeeCents: integer("service_fee_cents").notNull(),
     modules: jsonb("modules").$type<Array<{ key: string; feeCents: number | null; scope?: string }>>().notNull().default([]),
     allowanceMonthlyCents: integer("allowance_monthly_cents").notNull(),
+    /** Monthly AI usage estimated at sign-up (GRE-1389); operator-set, null when none was given. */
+    estimateMonthlyCents: integer("estimate_monthly_cents"),
+    /**
+     * First day (UTC) of the newest usage window that crossed the warn level,
+     * and when (GRE-1389). Moved forward by one guarded update, so each window
+     * gets one Inbox card however often usage crosses.
+     */
+    usageWarnedWindowStart: date("usage_warned_window_start"),
+    usageWarnedAt: timestamp("usage_warned_at", { withTimezone: true }),
     termKind: text("term_kind").notNull(),
     termStartsOn: date("term_starts_on").notNull(),
     autoRenew: boolean("auto_renew").notNull().default(true),

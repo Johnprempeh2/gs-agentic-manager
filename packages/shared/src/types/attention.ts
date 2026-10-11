@@ -33,6 +33,7 @@ export type AttentionSubjectKind =
   | "recovery_action"
   | "run"
   | "budget_incident"
+  | "billing_account"
   | "agent"
   | "ai_connection"
   | "connectivity_outage";

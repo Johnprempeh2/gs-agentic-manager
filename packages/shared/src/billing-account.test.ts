@@ -7,6 +7,8 @@ import {
   billingModuleProblems,
   billingPeriodOn,
   billingStatusOn,
+  billingUsageOn,
+  billingUsageWarning,
   recordBillingInvoiceSchema,
   upsertBillingAccountSchema,
   type BillingModuleSelection,
@@ -166,5 +168,35 @@ describe("term dates (UTC days)", () => {
       hasAccess: false,
       renewsOn: "2026-10-01",
     });
+  });
+});
+
+describe("billing usage (GRE-1389)", () => {
+  const base = { usedCents: 0, apiEquivalentCents: 0, allowanceCents: 25_000, warnPercent: 80, estimateCents: null, pausedSince: null };
+
+  it("the window is the UTC calendar month, today included", () => {
+    expect(billingUsageOn(new Date("2028-02-29T23:59:59Z"), base)).toMatchObject({
+      windowStart: "2028-02-01",
+      windowEnd: "2028-02-29",
+      daysElapsed: 29,
+      daysInWindow: 29,
+    });
+    expect(billingUsageOn(new Date("2026-10-01T00:00:00Z"), base)).toMatchObject({ daysElapsed: 1, daysInWindow: 31 });
+  });
+
+  it("warns at the warn level exactly, never with no allowance", () => {
+    expect(billingUsageWarning(19_999, 25_000, 80)).toBe(false);
+    expect(billingUsageWarning(20_000, 25_000, 80)).toBe(true);
+    expect(billingUsageWarning(1, 0, 80)).toBe(false);
+    expect(billingUsageOn(new Date("2026-10-10T00:00:00Z"), { ...base, usedCents: 5, allowanceCents: 0 })).toMatchObject({
+      usedPercent: 0,
+      remainingCents: 0,
+      warning: false,
+    });
+  });
+
+  it("forecasts on a straight line and floors remaining at zero", () => {
+    const usage = billingUsageOn(new Date("2026-10-10T12:00:00Z"), { ...base, usedCents: 30_000 });
+    expect(usage).toMatchObject({ forecastCents: 93_000, remainingCents: 0, usedPercent: 120, warning: true });
   });
 });

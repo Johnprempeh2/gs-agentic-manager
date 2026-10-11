@@ -204,6 +204,8 @@ export const upsertBillingAccountSchema = z
     modules: z.array(billingModuleSelectionSchema).max(BILLING_MODULE_KEYS.length),
     /** AI allowance included in the fee, per calendar month. */
     allowanceMonthlyCents: cents,
+    /** Monthly AI usage estimated at sign-up. Null or absent: no estimate was given. */
+    estimateMonthlyCents: cents.nullable().optional(),
     termKind: z.enum(BILLING_TERM_KINDS),
     termStartsOn: isoDate,
     autoRenew: z.boolean(),
@@ -280,6 +282,8 @@ export interface BillingAccount {
   serviceFeeCents: number;
   modules: BillingModuleSelection[];
   allowanceMonthlyCents: number;
+  /** Monthly AI usage estimated at sign-up; null when none was given. */
+  estimateMonthlyCents: number | null;
   termKind: BillingTermKind;
   termStartsOn: string;
   autoRenew: boolean;
@@ -332,9 +336,45 @@ export interface BillingStatus {
   endAction: BillingEndAction | null;
 }
 
+/**
+ * AI usage of the instance's company in the current UTC calendar month
+ * (GRE-1389). Every amount is in the account's currency, in cents.
+ */
+export interface BillingUsage {
+  /** First day of the month, YYYY-MM-DD. */
+  windowStart: string;
+  /** Last day of the month, YYYY-MM-DD. */
+  windowEnd: string;
+  /** Days in the window up to and including today. */
+  daysElapsed: number;
+  daysInWindow: number;
+  /** Sum of `cost_events.costCents` in the window: the charged usage. */
+  usedCents: number;
+  /** Subscription-included usage priced at API rates: shown, not charged. */
+  apiEquivalentCents: number;
+  /** The monthly allowance on the account. */
+  allowanceCents: number;
+  /** max(0, allowance - used). */
+  remainingCents: number;
+  /** used / allowance * 100, two decimals; 0 when the allowance is 0. */
+  usedPercent: number;
+  /** The warn level: the company budget policy's, else the budget default. */
+  warnPercent: number;
+  /** usedPercent >= warnPercent. The page, the Inbox card and the fleet check-in share this rule. */
+  warning: boolean;
+  /** Straight line: usedCents / daysElapsed * daysInWindow, rounded. */
+  forecastCents: number;
+  /** The account's estimate at sign-up; null when none was given. */
+  estimateCents: number | null;
+  /** When the company was paused (ISO time); null while it runs. */
+  pausedSince: string | null;
+}
+
 export interface BillingAccountView {
   account: BillingAccount | null;
   status: BillingStatus | null;
+  /** Null when there is no account. */
+  usage: BillingUsage | null;
   /** Newest first. */
   invoices: BillingInvoice[];
 }
@@ -443,4 +483,64 @@ export function billingStatusOn(
 export function accessEndWhenRenewalStops(termKind: BillingTermKind, termStartsOn: string, today: string): string {
   const period = billingPeriodOn(termKind, termStartsOn, today);
   return period ? period.end : addDays(termStartsOn, -1);
+}
+
+// ---------------------------------------------------------------- usage (UTC calendar month)
+
+/** The UTC calendar month that holds `now`, as dates and as the instants [start, end). */
+export function billingUsageWindowOn(now: Date) {
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth();
+  const start = new Date(Date.UTC(year, month, 1));
+  const end = new Date(Date.UTC(year, month + 1, 1));
+  const daysInWindow = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return {
+    windowStart: utcDay(start),
+    windowEnd: addDays(utcDay(end), -1),
+    start,
+    end,
+    daysElapsed: now.getUTCDate(),
+    daysInWindow,
+  };
+}
+
+/**
+ * The one warn rule (AT-1.4): usage is at or over the warn level of the
+ * allowance. Whole-number arithmetic, so 80% of 25 000 is exactly 20 000.
+ * No allowance means nothing to warn about.
+ */
+export function billingUsageWarning(usedCents: number, allowanceCents: number, warnPercent: number): boolean {
+  return allowanceCents > 0 && usedCents * 100 >= allowanceCents * warnPercent;
+}
+
+/** The usage block from the window, the sums and the settings. */
+export function billingUsageOn(
+  now: Date,
+  input: {
+    usedCents: number;
+    apiEquivalentCents: number;
+    allowanceCents: number;
+    warnPercent: number;
+    estimateCents: number | null;
+    pausedSince: string | null;
+  },
+): BillingUsage {
+  const window = billingUsageWindowOn(now);
+  const { usedCents, allowanceCents, warnPercent } = input;
+  return {
+    windowStart: window.windowStart,
+    windowEnd: window.windowEnd,
+    daysElapsed: window.daysElapsed,
+    daysInWindow: window.daysInWindow,
+    usedCents,
+    apiEquivalentCents: input.apiEquivalentCents,
+    allowanceCents,
+    remainingCents: Math.max(0, allowanceCents - usedCents),
+    usedPercent: allowanceCents > 0 ? Number(((usedCents / allowanceCents) * 100).toFixed(2)) : 0,
+    warnPercent,
+    warning: billingUsageWarning(usedCents, allowanceCents, warnPercent),
+    forecastCents: Math.round((usedCents / window.daysElapsed) * window.daysInWindow),
+    estimateCents: input.estimateCents,
+    pausedSince: input.pausedSince,
+  };
 }
