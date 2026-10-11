@@ -7,8 +7,8 @@ import {
   type BillingInvoiceStatus,
   type BillingState,
   type BillingStatus,
+  type BillingUsage,
 } from "@greatstone/shared/billing-account";
-import type { BillingUsage } from "@/api/billing";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/EmptyState";
 import { InlineBanner } from "@/components/InlineBanner";
@@ -36,6 +36,13 @@ export function formatBillingDay(day: string) {
     timeZone: "UTC",
   });
 }
+
+/**
+ * Usage amounts are summed from cost events, which are recorded in US dollars
+ * and not converted (GRE-1389). They are shown in that currency, not the
+ * account's, so the label stays true.
+ */
+const USAGE_CURRENCY = "USD";
 
 function formatPercent(value: number) {
   return `${Math.round(value)}%`;
@@ -201,7 +208,7 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
   );
 }
 
-function UsageCard({ usage, currency }: { usage: BillingUsage | null | undefined; currency: string }) {
+function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; accountCurrency: string }) {
   if (!usage) {
     return (
       <Card data-testid="billing-usage">
@@ -226,33 +233,38 @@ function UsageCard({ usage, currency }: { usage: BillingUsage | null | undefined
         <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <Figure
             label="Actual"
-            value={formatMoney(usage.usedCents, currency)}
-            note={`of ${formatMoney(usage.allowanceCents, currency)} allowance`}
+            value={formatMoney(usage.usedCents, USAGE_CURRENCY)}
+            note={`of ${formatMoney(usage.allowanceCents, accountCurrency)} allowance`}
             testId="billing-actual"
           />
           <Figure
             label="Remaining"
-            value={formatMoney(usage.remainingCents, currency)}
+            value={formatMoney(usage.remainingCents, USAGE_CURRENCY)}
             note="Until the month ends"
             testId="billing-remaining"
           />
           <Figure
             label="Forecast to month end"
-            value={formatMoney(usage.forecastCents, currency)}
+            value={formatMoney(usage.forecastCents, USAGE_CURRENCY)}
             note="Straight line from usage so far"
             testId="billing-forecast"
           />
           <Figure
             label="Estimate"
-            value={usage.estimateCents === null ? <span className="text-muted-foreground">Not set</span> : formatMoney(usage.estimateCents, currency)}
+            value={usage.estimateCents === null ? <span className="text-muted-foreground">Not set</span> : formatMoney(usage.estimateCents, accountCurrency)}
             note="Estimated at sign-up"
             testId="billing-estimate"
           />
         </dl>
         {usage.apiEquivalentCents > 0 ? (
           <p className="border-t border-border pt-4 text-sm text-muted-foreground" data-testid="billing-api-equivalent">
-            Subscription-included usage: <span className="font-medium text-foreground">{formatMoney(usage.apiEquivalentCents, currency)}</span>{" "}
+            Subscription-included usage: <span className="font-medium text-foreground">{formatMoney(usage.apiEquivalentCents, USAGE_CURRENCY)}</span>{" "}
             API-equivalent. This is not charged.
+          </p>
+        ) : null}
+        {accountCurrency !== USAGE_CURRENCY ? (
+          <p className="text-xs text-muted-foreground" data-testid="billing-usage-currency">
+            Usage is measured in US dollars. It is compared with your {accountCurrency} allowance without currency conversion.
           </p>
         ) : null}
       </CardContent>
@@ -350,7 +362,7 @@ export function Billing() {
         </InlineBanner>
       ) : null}
 
-      <UsageCard usage={usage} currency={account.currency} />
+      <UsageCard usage={usage} accountCurrency={account.currency} />
       <PlanCard account={account} status={status} />
       <InvoicesCard invoices={invoices} />
     </div>

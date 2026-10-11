@@ -4,8 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BillingAccount } from "@greatstone/shared/billing-account";
-import type { BillingUsage, ClientBillingView } from "@/api/billing";
+import type { BillingAccount, BillingAccountView, BillingUsage } from "@greatstone/shared/billing-account";
 import { Billing, formatBillingDay, formatMoney } from "./Billing";
 
 const mockBillingApi = vi.hoisted(() => ({ get: vi.fn() }));
@@ -61,7 +60,7 @@ const USAGE: BillingUsage = {
   pausedSince: null,
 };
 
-function view(overrides: Partial<ClientBillingView> = {}): ClientBillingView {
+function view(overrides: Partial<BillingAccountView> = {}): BillingAccountView {
   return {
     account: ACCOUNT,
     status: {
@@ -83,7 +82,7 @@ function view(overrides: Partial<ClientBillingView> = {}): ClientBillingView {
 let container: HTMLDivElement;
 let root: Root;
 
-async function render(data: ClientBillingView) {
+async function render(data: BillingAccountView) {
   mockBillingApi.get.mockResolvedValue(data);
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   await act(async () => {
@@ -138,8 +137,8 @@ describe("Billing page", () => {
     await render(view());
     expect(container.textContent).toContain("30% used");
     expect(container.textContent).toContain("70% left");
-    expect(text("billing-actual")).toContain(formatMoney(15_000, "GBP"));
-    expect(text("billing-remaining")).toContain(formatMoney(35_000, "GBP"));
+    expect(text("billing-actual")).toContain(formatMoney(15_000, "USD"));
+    expect(text("billing-remaining")).toContain(formatMoney(35_000, "USD"));
     expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("30");
   });
 
@@ -149,9 +148,20 @@ describe("Billing page", () => {
     expect(text("billing-estimate")).toContain("Estimate");
     expect(text("billing-estimate")).toContain(formatMoney(40_000, "GBP"));
     expect(text("billing-forecast")).toContain("Forecast to month end");
-    expect(text("billing-forecast")).toContain(formatMoney(46_500, "GBP"));
+    expect(text("billing-forecast")).toContain(formatMoney(46_500, "USD"));
     expect(text("billing-api-equivalent")).toContain("API-equivalent");
     expect(text("billing-api-equivalent")).toContain("not charged");
+  });
+
+  it("labels usage in US dollars and says it is not converted when the account is in another currency", async () => {
+    await render(view());
+    expect(text("billing-actual")).toContain(`of ${formatMoney(50_000, "GBP")} allowance`);
+    expect(text("billing-usage-currency")).toContain("without currency conversion");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(view({ account: { ...ACCOUNT, currency: "USD" } }));
+    expect(container.querySelector('[data-testid="billing-usage-currency"]')).toBeNull();
   });
 
   it("AT-1.3: shows 'Not set' when no estimate was set", async () => {
@@ -198,7 +208,7 @@ describe("Billing page", () => {
   });
 
   it("still shows fees when the server sends no usage yet", async () => {
-    await render(view({ usage: undefined }));
+    await render(view({ usage: null }));
     expect(text("billing-usage")).toContain("not available yet");
     expect(text("billing-fee-total")).toBe(formatMoney(148_400, "GBP"));
   });
