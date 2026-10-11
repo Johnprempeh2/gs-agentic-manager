@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { GoalWhyRequest } from "@greatstone/shared";
+import type { GoalWhyRequest, StrategyBoardKpi } from "@greatstone/shared";
 import { strategyBoardApi } from "@/api/strategyBoard";
 import { useToastActions } from "@/context/ToastContext";
 import { queryKeys } from "@/lib/queryKeys";
@@ -46,6 +46,32 @@ function AnswerForm({ request, companyId }: { request: GoalWhyRequest; companyId
       />
       <Button size="sm" type="submit" disabled={!answer.trim() || send.isPending}>{send.isPending ? "Saving…" : "Answer"}</Button>
     </form>
+  );
+}
+
+/**
+ * Heading of the KPI page's "Why?" section. Board members may ask on any KPI,
+ * whatever its status (GRE-1330); the attention list only shows slipping ones.
+ */
+export function GoalWhyRequestsHeading({
+  kpi,
+  mayAskWhy,
+  onAskWhy,
+}: {
+  /** The KPI as the board sees it; null when the board does not list it. */
+  kpi: StrategyBoardKpi | null;
+  mayAskWhy: boolean;
+  onAskWhy: (kpi: StrategyBoardKpi) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+      <h3 className="text-sm font-semibold">Why? requests from the board</h3>
+      {mayAskWhy && kpi ? (
+        <Button size="sm" variant="outline" onClick={() => onAskWhy(kpi)} disabled={!kpi.owner} title={kpi.owner ? undefined : "This KPI has no owner to ask"}>
+          Ask why
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

@@ -41,13 +41,14 @@ import {
   rollupSummary,
   type NewKpiReading,
 } from "../components/goals/KpiReadings";
-import { GoalWhyRequests } from "../components/strategy-board/GoalWhyRequests";
+import { GoalWhyRequests, GoalWhyRequestsHeading } from "../components/strategy-board/GoalWhyRequests";
+import { AskWhyDialog } from "../components/strategy-board/StrategyBoardDialogs";
 import { useStrategyBoardEnabled } from "../components/StrategyBoardExperimentalGate";
 import { strategyBoardApi } from "../api/strategyBoard";
 import { InitiativeBudgetForm, KpiPlanForm } from "../components/goals/KpiPlanForm";
 import { PackKpiDraftsDialog } from "../components/goals/PackKpiDraftsDialog";
 import { KpiDraftNotice } from "../components/goals/KpiDraftNotice";
-import { GOAL_KIND_LABELS, GOAL_KIND_PARENTS } from "@greatstone/shared";
+import { GOAL_KIND_LABELS, GOAL_KIND_PARENTS, type StrategyBoardKpi } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileText, Plus, SlidersHorizontal } from "lucide-react";
@@ -138,6 +139,7 @@ export function GoalDetail() {
     queryFn: () => strategyBoardApi.summary(selectedCompanyId!),
     enabled: strategyBoardOn && isKpi && !!selectedCompanyId,
   });
+  const [askKpi, setAskKpi] = useState<StrategyBoardKpi | null>(null);
 
   const { data: userDirectory } = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
@@ -354,13 +356,18 @@ export function GoalDetail() {
           <KpiPlanForm key={goal.id} goal={goal} onSave={(patch) => updateGoal.mutate(patch)} pending={updateGoal.isPending} />
           {strategyBoardOn ? (
             <>
-              <h3 className="pt-2 text-sm font-semibold">Why? requests from the board</h3>
+              <GoalWhyRequestsHeading
+                kpi={boardSummary?.kpis.find((kpi) => kpi.goalId === goal.id) ?? null}
+                mayAskWhy={boardSummary?.viewer.mayAskWhy ?? false}
+                onAskWhy={setAskKpi}
+              />
               <GoalWhyRequests
                 goalId={goal.id}
                 companyId={goal.companyId}
                 names={{ agents: agentsById, users: usersById }}
                 mayAnswer={boardSummary ? !boardSummary.viewer.isBoardMember : false}
               />
+              <AskWhyDialog companyId={goal.companyId} kpi={askKpi} onClose={() => setAskKpi(null)} />
             </>
           ) : null}
         </section>
