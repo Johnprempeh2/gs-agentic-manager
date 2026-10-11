@@ -1,6 +1,7 @@
 // Ports for a new client instance (GRE-706, register row 62).
 // A stopped instance does not hold its ports, so `create` also skips the ports
 // that sibling instances (other folders beside --root) wrote in client-instance.json.
+// An archived instance has freed its ports (GRE-1367, AT-4.7) and claims none.
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -24,7 +25,8 @@ export function siblingPortClaims(root: string): PortClaim[] {
     const file = path.join(dir, STATE_FILE);
     if (!existsSync(file)) continue;
     try {
-      const state = JSON.parse(readFileSync(file, "utf8")) as { port?: unknown; dbPort?: unknown };
+      const state = JSON.parse(readFileSync(file, "utf8")) as { port?: unknown; dbPort?: unknown; lifecycle?: unknown };
+      if (state.lifecycle === "archived") continue;
       if (Number.isInteger(state.port) && Number.isInteger(state.dbPort)) {
         claims.push({ root: dir, port: state.port as number, dbPort: state.dbPort as number });
       }
