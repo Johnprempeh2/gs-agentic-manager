@@ -9,7 +9,7 @@ import { FleetMessageError, fleetHubEnabled, fleetService } from "../services/fl
 import { assertInstanceAdmin } from "./authz.js";
 
 // Fleet hub (GRE-1082). Two routers:
-// - fleetHubRoutes: the hub's instance admins create, list and revoke
+// - fleetHubRoutes: the hub's instance admins create, list, revoke and remove
 //   instances and read their check-ins. Clients never log in to the hub.
 // - fleetSpokeRoutes: what a client instance calls. No session; the signed
 //   message is the whole authorization. It answers only with the caller's own
@@ -56,6 +56,13 @@ export function fleetHubRoutes(db: Db) {
     const revoked = await fleet.revokeFromHub(req.params.id as string);
     logger.info({ fleetInstanceId: revoked?.id }, "Fleet instance revoked by the hub");
     res.json(revoked);
+  });
+
+  router.delete("/fleet/instances/:id", async (req, res) => {
+    const removed = await fleet.remove(req.params.id as string);
+    if (!removed) throw notFound("Fleet instance not found");
+    logger.info({ fleetInstanceId: removed.id }, "Fleet instance removed by the hub");
+    res.json({ id: removed.id, removed: true });
   });
 
   router.get("/fleet/instances/:id/check-ins", async (req, res) => {
@@ -119,6 +126,11 @@ export function fleetSpokeRoutes(db: Db) {
 
   router.post("/api/fleet/spoke/check-in", signed((message) => fleet.checkIn(message)));
   router.post("/api/fleet/spoke/revoke", signed((message) => fleet.revokeFromSpoke(message)));
+  router.post("/api/fleet/spoke/delete", signed(async (message) => {
+    const result = await fleet.deleteFromSpoke(message);
+    logger.info("Fleet instance removed by the spoke");
+    return result;
+  }));
 
   return router;
 }

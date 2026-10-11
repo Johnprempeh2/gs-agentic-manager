@@ -410,6 +410,9 @@ export const toolsApi = {
     api.delete<ToolConnection & { removal: ToolConnectionRemovalSummary }>(
       `/tool-connections/${connectionId}`,
     ),
+  // GRE-1364: health-checks the connection first; it stays off if the check fails.
+  reenableConnectionAfterPause: (connectionId: string) =>
+    api.post<ToolConnection>(`/tool-connections/${connectionId}/reenable-after-pause`, {}),
   checkConnectionHealth: (connectionId: string) =>
     api.post<ToolConnectionHealthCheckResult>(`/tool-connections/${connectionId}/health-check`, {}),
   reconnectConnection: (connectionId: string, credentialValues: Record<string, string>) =>

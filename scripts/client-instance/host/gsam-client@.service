@@ -21,6 +21,8 @@ TimeoutStartSec=6min
 TimeoutStopSec=90
 Restart=on-failure
 RestartSec=30
+# `start` exits 3 while the instance is paused or archived (GRE-1367): no restart loop.
+RestartPreventExitStatus=3
 NoNewPrivileges=true
 ProtectSystem=full
 PrivateTmp=true

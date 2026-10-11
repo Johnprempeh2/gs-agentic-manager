@@ -242,6 +242,10 @@ the last off-host backup, the current release tag, and the last upgrade and rest
 backup or the newest is older than 2 hours; the exit code stays 0. Run
 `status` before and after each upgrade.
 
+`status` also shows the lifecycle: active, paused or archived (see "Pause,
+resume, archive, delete"). An archive past its retention end shows
+`DUE FOR DELETION`.
+
 ## Check an instance
 
 ```sh
@@ -716,6 +720,142 @@ Tested on a sandbox instance (upgrade, then restore, then health check and
 ```sh
 scripts/client-instance/upgrade-restore.sandbox-test.sh <empty scratch dir> [from ref] [to ref]
 ```
+
+## Pause, resume, archive, delete (GRE-1367)
+
+Use these when a client stops, takes a break or leaves. Each is a named act:
+`--operator` is the Greatstone person who runs it. Run them only with John's
+go-ahead on the issue for a real client.
+
+**Cost.** A paused or archived instance makes no new AI use, no runs and no
+pause or archive fee. It still uses disk, backups and admin time. Those are
+allocated costs: they stay in active-client economics and are not billed to
+the client as a fee.
+
+### Pause
+
+```sh
+CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh pause --root <root> \
+  --operator <name> --reason "<why>"
+```
+
+The instance must run. In this order it:
+
+1. pauses each active company in the app (GRE-1364): live runs and queued
+   wakes are cancelled, timers and routines stop, every connection and AI
+   grant is suspended. A company that was paused already is left as it is;
+2. counts runs, cost events, finance events and invoices;
+3. makes a backup (`pre-pause-*`);
+4. records the pause in `client-instance.json` (`lifecycle: paused`);
+5. sends a check-in that says `paused` (when registered with a hub);
+6. stops the app.
+
+Data, local backups and the off-host repository stay. While paused, `start`
+is refused with exit code 3 (the systemd unit does not restart on it),
+`offsite-backup` and `restore-check` say `skipped` and change nothing, and
+`watch` reports `paused` and fails only if the app runs.
+
+If `pause` stops after step 1 and before step 4, the companies are paused
+but no pause is recorded, and `resume` refuses (`no pause record`). To
+recover: sign in as the operator and resume each company in the app
+(`POST /api/companies/<id>/resume` with `operator` and `reason`). Then run
+`pause` again if the instance must still pause.
+
+On a hosted server, after `pause`, stop the unit so systemd does not try to
+start it: `sudo systemctl disable --now gsam-client@<code>`. Leave the watch
+timer on; it keeps sending check-ins that say `paused`.
+
+### Resume
+
+```sh
+CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh resume --root <root> \
+  --operator <name> --reason "<why>"
+```
+
+It starts the app with the companies still paused, then counts the same rows
+again. `PASS no new use while paused` means no run, cost event, finance event
+or invoice was added (AT-4.6). If a row was added, it says `FAIL`, finishes
+the resume and exits 1: find out why before the client uses the instance.
+Then it resumes only the companies that `pause` paused, with the operator and
+reason. Missed routine ticks are not replayed. Connections stay off until
+each one is turned on again in the app and passes its health check. Run
+`verify` next. On a hosted server: `sudo systemctl enable --now gsam-client@<code>`.
+
+An archived instance can be resumed the same way. If another instance took
+its ports, it gets new ones; the script says which.
+
+### Archive (dormant)
+
+```sh
+scripts/client-instance.sh archive --root <root> --operator <name> \
+  --retention-days <N> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+```
+
+Only from `paused`. `<N>` is John's retention setting; there is no default
+and the script holds no value. It:
+
+1. starts the app only for a final backup (`archive-*`; the companies stay
+   paused), then stops it;
+2. sends the backups off the host (`offsite-backup`);
+3. pulls the newest off-host copy into `--sandbox`, runs restore-check on it
+   and deletes the copy. If this fails, nothing is archived and the instance
+   stays paused;
+4. checks both ports are free. Other instances may use them now;
+5. records the archive date, the retention days and the retention end
+   (`lifecycle: archived`), and sends a check-in that says `archived`.
+
+The local data stays until a delete. When the retention end passes, `status`
+shows `DUE FOR DELETION`. Nothing is deleted automatically.
+
+### Delete
+
+```sh
+scripts/client-instance.sh delete --root <root> --confirm-code <code> \
+  --approval <issue or ticket> --operator <name> \
+  [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
+```
+
+Only from `paused` or `archived`, with the app stopped. `--confirm-code` is
+the instance code typed again. `--approval` is the issue or ticket where John
+approved the deletion. Deletion follows John's approved retention and legal
+policy; do not delete before it allows.
+
+In this order it:
+
+1. **Billing records (AT-4.10).** Greatstone's billing records are not
+   deleted with the instance. Until `billing-export` (B11, GRE-1372) is in,
+   `delete` stops with `billing-export missing` when the instance holds any
+   billing account or invoice, and removes nothing. With no billing record it
+   says so and goes on;
+2. **Hub.** Sends a signed `delete` to the hub. The hub removes this
+   instance's record and its check-ins, then the local hub key is deleted.
+   If the hub refuses or cannot be reached, `delete` stops and removes
+   nothing. If the hub had revoked the key, the spoke cannot ask: the key is
+   deleted and the record says a hub admin must run
+   `DELETE /api/fleet/instances/<id>` on the hub. With `--fleet-local-only yes`
+   (the hub is gone), only the local key is deleted, with the same note;
+3. removes every off-host snapshot of the code (`restic forget --prune`), the
+   repository folder when it is local, the off-host key file and config
+   file. On a Storage Box the empty repository folder stays: remove it there
+   by hand;
+4. removes the watch config file, when given (it holds the operator password);
+5. removes the instance folder: database, data, local backups, logs, keys.
+
+It leaves one record at `<instances dir>/deletions/<code>.json`: code, date,
+operator, approval reference, what was removed and what was not. No client
+data. A second run finds nothing to delete and says when it was deleted.
+On a hosted server, also `sudo systemctl disable --now gsam-watch@<code>.timer
+gsam-offsite@<code>.timer gsam-restore-check@<code>.timer`.
+
+### Prove it on a sandbox
+
+```sh
+RESTIC=/path/to/restic scripts/client-instance/lifecycle.sandbox-test.sh <empty scratch dir>
+```
+
+It makes a Managed sandbox instance and runs pause, resume (AT-4.6 PASS),
+pause again, archive, the due-for-deletion line, the delete refusals and a
+delete, then a second delete.
 
 ## Change the edition values
 

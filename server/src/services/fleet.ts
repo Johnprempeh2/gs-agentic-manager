@@ -321,6 +321,37 @@ export function fleetService(db: Db) {
       return { receivedAt: now.toISOString() };
     },
 
+    /** Hub admin: remove the record and its check-ins (B9 delete, when the spoke cannot ask). Null when not found. */
+    async remove(id: string) {
+      if (!UUID_PATTERN.test(id)) return null;
+      const [row] = await db.delete(fleetInstances).where(eq(fleetInstances.id, id)).returning({ id: fleetInstances.id, code: fleetInstances.code });
+      return row ?? null;
+    },
+
+    /**
+     * Spoke: remove its own record and check-ins (B9 `delete`, AT-4.8). Same
+     * fence as advanceSeq: the row must be active, signed by the stored key,
+     * with a new seq. Check-ins go with the row (on delete cascade).
+     */
+    async deleteFromSpoke(compactJws: string, now = new Date()) {
+      const { signer, claims } = await signedSender(compactJws, "delete", now);
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .delete(fleetInstances)
+          .where(
+            and(
+              eq(fleetInstances.id, signer.id),
+              eq(fleetInstances.status, "active"),
+              eq(fleetInstances.publicKeyX, signer.publicKeyX),
+              or(isNull(fleetInstances.lastSeq), lt(fleetInstances.lastSeq, claims.seq)),
+            ),
+          )
+          .returning({ id: fleetInstances.id });
+        if (rows.length === 0) reject("fleet_replay", 409);
+      });
+      return { deletedAt: now.toISOString() };
+    },
+
     /** Spoke: revoke its own key. After this the hub refuses every message signed by it. */
     async revokeFromSpoke(compactJws: string, now = new Date()) {
       const { signer, claims } = await signedSender(compactJws, "revoke", now);

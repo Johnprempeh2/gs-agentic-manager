@@ -1343,6 +1343,7 @@ const PUBLIC_OPERATIONS = new Set([
   "POST /api/fleet/spoke/register",
   "POST /api/fleet/spoke/check-in",
   "POST /api/fleet/spoke/revoke",
+  "POST /api/fleet/spoke/delete",
   "GET /api/health",
   "GET /api/openapi.json",
   "GET /api/board-claim/{token}",
@@ -1614,6 +1615,7 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
   "POST /api/fleet/instances",
   "POST /api/fleet/instances/{id}/registration-code",
   "POST /api/fleet/instances/{id}/revoke",
+  "DELETE /api/fleet/instances/{id}",
   "GET /api/fleet/instances/{id}/check-ins",
   "POST /api/companies",
   "POST /api/plugins/install",
@@ -10532,6 +10534,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "delete",
+  path: "/api/fleet/instances/{id}",
+  tags: ["fleet"],
+  summary: "Remove an instance's record and its check-ins from the hub",
+  request: { params: fleetIdParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
   method: "get",
   path: "/api/fleet/instances/{id}/check-ins",
   tags: ["fleet"],
@@ -10571,6 +10582,15 @@ registry.registerPath({
   path: "/api/fleet/spoke/revoke",
   tags: ["fleet"],
   summary: "Spoke: revoke its own key",
+  request: { body: { content: { "application/json": { schema: fleetSignedBody } } } },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/delete",
+  tags: ["fleet"],
+  summary: "Spoke: remove its own record and check-ins (client-instance delete)",
   request: { body: { content: { "application/json": { schema: fleetSignedBody } } } },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
 });
