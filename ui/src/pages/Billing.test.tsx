@@ -178,7 +178,14 @@ describe("Billing page", () => {
     await render(view({ usage: { ...USAGE, usedCents: 41_000, remainingCents: 9_000, usedPercent: 82, warning: true } }));
     const note = container.querySelector('[role="note"]');
     expect(note?.textContent).toContain("82% of this month's AI allowance");
-    expect(note?.textContent).toContain("warning level is 80%");
+    expect(note?.textContent).not.toContain("warning level");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(view({ usage: { ...USAGE, usedCents: 53_000, remainingCents: 0, usedPercent: 106, warning: true } }));
+    const over = container.querySelector('[role="note"]');
+    expect(over?.textContent).toContain("This month's AI allowance is used up");
+    expect(over?.textContent).toContain("You have used 106%");
   });
 
   it("AT-1.10: shows paused since the pause date", async () => {

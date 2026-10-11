@@ -357,9 +357,15 @@ export function Billing() {
       ) : null}
 
       {usage?.warning ? (
-        <InlineBanner tone="warning" title={`You have used ${formatPercent(usage.usedPercent)} of this month's AI allowance`}>
-          The warning level is {formatPercent(usage.warnPercent)}. Contact Greatstone if you expect to need more this month.
-        </InlineBanner>
+        usage.usedPercent >= 100 ? (
+          <InlineBanner tone="warning" title="This month's AI allowance is used up">
+            You have used {formatPercent(usage.usedPercent)}. Contact Greatstone if you need more AI usage this month.
+          </InlineBanner>
+        ) : (
+          <InlineBanner tone="warning" title={`You have used ${formatPercent(usage.usedPercent)} of this month's AI allowance`}>
+            Contact Greatstone if you expect to need more this month.
+          </InlineBanner>
+        )
       ) : null}
 
       <UsageCard usage={usage} accountCurrency={account.currency} />
