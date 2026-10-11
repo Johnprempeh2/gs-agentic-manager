@@ -771,6 +771,8 @@ export const APPROVAL_TYPES = [
   "request_board_approval",
   // Opened by the server when an agent is refused for a missing grant (GRE-601).
   "permission_grant",
+  // Opened by a client board user to change the AI route; the operator decides (GRE-1363).
+  "ai_route_change",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 

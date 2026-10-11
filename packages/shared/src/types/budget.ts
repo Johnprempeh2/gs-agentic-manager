@@ -20,6 +20,10 @@ export interface BudgetPolicy {
   hardStopEnabled: boolean;
   notifyEnabled: boolean;
   isActive: boolean;
+  pendingAmount: number | null;
+  pendingEffectiveFrom: Date | null;
+  pendingReason: string | null;
+  pendingRequestedByUserId: string | null;
   createdByUserId: string | null;
   updatedByUserId: string | null;
   createdAt: Date;
@@ -47,6 +51,9 @@ export interface BudgetPolicySummary {
   pauseReason: PauseReason | null;
   windowStart: Date;
   windowEnd: Date;
+  /** A dated change not yet in force (GRE-1363). */
+  pendingAmount?: number | null;
+  pendingEffectiveFrom?: Date | null;
 }
 
 export interface BudgetIncident {
@@ -90,6 +97,20 @@ export interface BudgetPolicyUpsertInput {
   hardStopEnabled?: boolean;
   notifyEnabled?: boolean;
   isActive?: boolean;
+  /** ISO time the new amount takes effect; absent or past means now (GRE-1363). */
+  effectiveFrom?: string | null;
+  reason?: string | null;
+}
+
+/** Operator-set spending authority for one company (GRE-1363). */
+export interface BudgetAuthority {
+  companyId: string;
+  /** No budget a non-operator sets or raises may exceed this. Null: no ceiling. */
+  ceilingCents: number | null;
+  /** Users who may resolve a budget override. Empty: any board user. */
+  approverUserIds: string[];
+  updatedByUserId: string | null;
+  updatedAt: Date | null;
 }
 
 export interface BudgetIncidentResolutionInput {

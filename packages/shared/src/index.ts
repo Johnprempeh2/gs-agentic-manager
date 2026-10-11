@@ -1412,6 +1412,7 @@ export type {
   BudgetOverview,
   BudgetPolicyUpsertInput,
   BudgetIncidentResolutionInput,
+  BudgetAuthority,
   CostEvent,
   CostSummary,
   IssueCostSummary,
@@ -2338,6 +2339,8 @@ export {
   createApprovalSchema,
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
+  updateBudgetAuthoritySchema,
+  type UpdateBudgetAuthority,
   resolveApprovalSchema,
   requestApprovalRevisionSchema,
   resubmitApprovalSchema,
@@ -3027,6 +3030,7 @@ export { EXECUTION_RECONCILIATION_CAUSES, requiresExecutionReconciliation } from
 
 export * from "./agent-appearance.js";
 export * from "./ai-connections.js";
+export * from "./spending-authority.js";
 export * from "./member-handover.js";
 export * from "./types/email.js";
 export * from "./validators/email.js";

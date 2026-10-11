@@ -16,6 +16,8 @@ export const upsertBudgetPolicySchema = z.object({
   hardStopEnabled: z.boolean().optional().default(true),
   notifyEnabled: z.boolean().optional().default(true),
   isActive: z.boolean().optional().default(true),
+  effectiveFrom: z.string().datetime({ offset: true }).optional().nullable(),
+  reason: z.string().trim().max(1000).optional().nullable(),
 });
 
 export type UpsertBudgetPolicy = z.infer<typeof upsertBudgetPolicySchema>;
@@ -35,3 +37,11 @@ export const resolveBudgetIncidentSchema = z.object({
 });
 
 export type ResolveBudgetIncident = z.infer<typeof resolveBudgetIncidentSchema>;
+
+export const updateBudgetAuthoritySchema = z.object({
+  ceilingCents: z.number().int().nonnegative().nullable(),
+  approverUserIds: z.array(z.string().trim().min(1).max(200)).max(50),
+  reason: z.string().trim().min(1).max(1000),
+});
+
+export type UpdateBudgetAuthority = z.infer<typeof updateBudgetAuthoritySchema>;

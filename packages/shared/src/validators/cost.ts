@@ -27,6 +27,8 @@ export type CreateCostEvent = z.infer<typeof createCostEventSchema>;
 
 export const updateBudgetSchema = z.object({
   budgetMonthlyCents: z.number().int().nonnegative(),
+  effectiveFrom: z.string().datetime({ offset: true }).optional().nullable(),
+  reason: z.string().trim().max(1000).optional().nullable(),
 });
 
 export type UpdateBudget = z.infer<typeof updateBudgetSchema>;

@@ -887,6 +887,7 @@ export type {
   BudgetOverview,
   BudgetPolicyUpsertInput,
   BudgetIncidentResolutionInput,
+  BudgetAuthority,
 } from "./budget.js";
 export type {
   SecretProvider,
