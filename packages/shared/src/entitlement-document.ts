@@ -39,6 +39,7 @@ export const ENTITLEMENT_FEATURE_KEYS = [
   "enableMemoryConnectors",
   "enablePipelines",
   "enableStatusCards",
+  "enableStrategy",
   "enableStrategyBoard",
   "enableSummaries",
 ] as const satisfies readonly InstanceFeatureKey[];

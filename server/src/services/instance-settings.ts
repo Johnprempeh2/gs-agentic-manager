@@ -31,6 +31,7 @@ import {
 import {
   INSTANCE_FEATURE_CATALOG,
   RETIRED_INSTANCE_FEATURE_KEYS,
+  applyFeatureDependencies,
   applyOperatorGeneralDefaults,
   isRetiredInstanceFeatureKey,
   stripOperatorGeneralEchoes,
@@ -267,6 +268,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enablePipelines: parsed.data.enablePipelines ?? false,
       enableCases: parsed.data.enableCases ?? false,
       enableDeepDive: parsed.data.enableDeepDive ?? false,
+      enableStrategy: parsed.data.enableStrategy ?? true,
       enableStrategyBoard: parsed.data.enableStrategyBoard ?? false,
       strategyBoardSecretaryAgentId: parsed.data.strategyBoardSecretaryAgentId ?? null,
       enableWebsiteView: parsed.data.enableWebsiteView ?? false,
@@ -314,6 +316,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enablePipelines: false,
     enableCases: false,
     enableDeepDive: false,
+    enableStrategy: true,
     enableStrategyBoard: false,
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
@@ -479,7 +482,9 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
     const managedKeys = overlaid.managedKeys;
     // GRE-1078: the signed entitlement document narrows managed product
     // features last, so neither a stored nor a managed "on" passes it.
-    const experimental = applyEntitlementsToExperimental(overlaid.experimental);
+    // GRE-1382: a dependent switch (Board on Strategy) reads off without what
+    // it needs, whichever layer turned that off.
+    const experimental = applyFeatureDependencies(applyEntitlementsToExperimental(overlaid.experimental));
     // Self-hosted responses stay byte-identical: no managedKeys field at all.
     return managedConfig ? { ...experimental, managedKeys } : experimental;
   }
