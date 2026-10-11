@@ -10,6 +10,7 @@ import {
   Clock3,
   Link2,
   Loader2,
+  Mail,
   MoreHorizontal,
   PauseCircle,
   Plus,
@@ -42,6 +43,7 @@ import {
   type ChatProvider,
 } from "@/api/chatEndpoints";
 import { accessApi } from "@/api/access";
+import { mailboxesApi } from "@/api/mailboxes";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -325,6 +327,34 @@ function reconnectsWithOAuth(connection: ToolConnection): boolean {
  * surface. Connected providers sort first and expand in place to show every
  * account; unconnected providers retain the same catalog setup flows.
  */
+function MailboxesCard({
+  count,
+  needsAttention,
+  onOpen,
+}: {
+  count: number;
+  needsAttention: number;
+  onOpen: () => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+      <Mail className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-foreground">Mailboxes</h2>
+        <p className="text-xs text-muted-foreground">
+          {count === 0
+            ? "Link IMAP mailboxes so agents can search and read them."
+            : `${count} linked${needsAttention ? ` · ${needsAttention} need${needsAttention === 1 ? "s" : ""} reconnecting` : ""}`}
+        </p>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+        {count === 0 ? <Plus /> : null}
+        {count === 0 ? "Add mailbox" : "Manage"}
+      </Button>
+    </section>
+  );
+}
+
 export function Browse({ renderAccountDetails = (connection) => connection.connectionPurpose === "ai" ? <ManagedAiConnectionRow connection={connection} /> : null }: { renderAccountDetails?: (connection: ToolConnection) => ReactNode } = {}) {
   const navigate = useNavigate();
   const preselectedChatAgentId =
@@ -366,6 +396,12 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     queryKey: queryKeys.chatEndpoints.list(selectedCompanyId ?? "__none__"),
     queryFn: () => chatEndpointsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && chatConnectorsEnabled,
+  });
+  const mailboxesQuery = useQuery({
+    queryKey: queryKeys.mailboxes.list(selectedCompanyId ?? "__none__"),
+    queryFn: () => mailboxesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    retry: false,
   });
   const userDirectoryQuery = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(
@@ -495,13 +531,16 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     const activeConnections = (connectionsQuery.data?.connections ?? []).filter(
       (connection) =>
         connection.status !== "archived" &&
-        connection.connectionPurpose !== "channel",
+        connection.connectionPurpose !== "channel" &&
+        // Mailboxes have their own page (/apps/mailboxes).
+        connection.config?.provider !== "imap_mailbox",
     );
     const activeApplications = (
       applicationsQuery.data?.applications ?? []
     ).filter(
       (application) =>
         application.status !== "archived" &&
+        application.metadata?.sourceTemplateKey !== "imap_mailbox" &&
         (chatConnectorsEnabled ||
           (application.type !== "chat" &&
             application.metadata?.purpose !== "channel")),
@@ -782,6 +821,12 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
           />
         </div>
       </header>
+
+      <MailboxesCard
+        count={mailboxesQuery.data?.length ?? 0}
+        needsAttention={(mailboxesQuery.data ?? []).filter((m) => m.healthStatus !== "ok").length}
+        onOpen={() => navigate("/apps/mailboxes")}
+      />
 
       {loadFailed ? (
         <div
