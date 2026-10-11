@@ -30,6 +30,7 @@ const ACCOUNT: BillingAccount = {
     { key: "strategy", feeCents: null },
   ],
   allowanceMonthlyCents: 50_000,
+  estimateMonthlyCents: null,
   termKind: "monthly",
   termStartsOn: "2026-10-01",
   autoRenew: true,

@@ -9,7 +9,7 @@ import {
 } from "@greatstone/shared/billing-account";
 import { forbidden, notFound } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { billingAccountService } from "../services/billing-account.js";
+import { billingAccountService, noteBillingUsageWarning } from "../services/billing-account.js";
 import { logActivity } from "../services/activity-log.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertBoard, assertBoardOrgAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
@@ -89,6 +89,8 @@ export function billingAccountRoutes(db: Db, opts: { now?: () => Date } = {}) {
       newValue: account,
       reason: reason ?? null,
     });
+    // A lower allowance can put this month's usage over the warn level.
+    await noteBillingUsageWarning(db, at);
     res.json(await svc.view(at));
   });
 

@@ -67,6 +67,7 @@ import type {
 import { badRequest } from "../errors.js";
 import { listAttentionExhaustedRuns } from "./attention-exhausted-runs.js";
 import { budgetService } from "./budgets.js";
+import { billingAccountService } from "./billing-account.js";
 import {
   BLOCKER_ATTENTION_MAX_DEPTH,
   BLOCKER_ATTENTION_MAX_NODES,
@@ -1917,6 +1918,55 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             observedPercent,
             amountObserved: incident.amountObserved,
             amountLimit: incident.amountLimit,
+            images: [],
+          },
+        }));
+      }
+
+      // AT-1.4 (GRE-1389): AI usage of the month crossed the warn level of the
+      // allowance. One card per window: its time is the crossing's, so a
+      // dismissal holds for the rest of the month however often usage crosses.
+      const usageWarning = await billingAccountService(db).usageWarningCard(companyId, new Date(now));
+      if (usageWarning) {
+        const { account, usage, warnedAt } = usageWarning;
+        add(createItem({
+          companyId,
+          sourceKind: "budget_alert",
+          subject: {
+            kind: "billing_account",
+            id: account.id,
+            companyId,
+            title: `AI usage at ${Math.floor(usage.usedPercent)}% of the monthly allowance`,
+            identifier: null,
+            status: "warning",
+            href: `/${prefix}/billing`,
+            metadata: {
+              windowStart: usage.windowStart,
+              usedCents: usage.usedCents,
+              allowanceCents: usage.allowanceCents,
+              warnPercent: usage.warnPercent,
+              currency: account.currency,
+            },
+          },
+          whyNow: `AI usage this month reached the ${usage.warnPercent}% warn level of the allowance.`,
+          decisionVerbs: decisionVerbs(
+            { id: "inspect", label: "Open billing", description: "See usage, forecast and allowance." },
+            { id: "dismiss", label: "Dismiss", description: "Dismiss this warning for the rest of the month." },
+          ),
+          inlineResolvable: true,
+          entryRule: "billing usage of the current UTC month >= warnPercent of the allowance (marked once per window).",
+          exitRule: "Usage falls under the warn level (allowance raised), the month ends, or the row is dismissed.",
+          dedupKey: `billing_usage:${usage.windowStart}`,
+          severity: "medium",
+          activityAt: toIso(warnedAt),
+          createdAt: toIso(warnedAt),
+          updatedAt: toIso(warnedAt),
+          relatedIssue: null,
+          detail: {
+            kind: "budget",
+            observedPercent: usage.usedPercent,
+            amountObserved: usage.usedCents,
+            amountLimit: usage.allowanceCents,
             images: [],
           },
         }));

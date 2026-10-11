@@ -1,9 +1,13 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { billingAccounts, billingInvoices } from "@greatstone/db";
+import { billingAccounts, billingInvoices, budgetPolicies, companies, costEvents } from "@greatstone/db";
+import { computeApiEquivalentCents, DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
+import { logActivity } from "./activity-log.js";
 import {
   accessEndWhenRenewalStops,
   billingStatusOn,
+  billingUsageOn,
+  billingUsageWindowOn,
   utcDay,
   type BillingAccount,
   type BillingAccountView,
@@ -13,6 +17,7 @@ import {
   type BillingModuleSelection,
   type BillingPlanKind,
   type BillingTermKind,
+  type BillingUsage,
   type RecordBillingInvoice,
   type UpsertBillingAccount,
 } from "@greatstone/shared/billing-account";
@@ -42,6 +47,7 @@ function toAccount(row: AccountRow): BillingAccount {
     serviceFeeCents: row.serviceFeeCents,
     modules: (row.modules ?? []) as BillingModuleSelection[],
     allowanceMonthlyCents: row.allowanceMonthlyCents,
+    estimateMonthlyCents: row.estimateMonthlyCents ?? null,
     termKind: row.termKind as BillingTermKind,
     termStartsOn: row.termStartsOn,
     autoRenew: row.autoRenew,
@@ -77,7 +83,99 @@ export type BillingCancelResult =
   | { outcome: "already_cancelled"; account: BillingAccount }
   | { outcome: "no_account" };
 
+/** An allowance warning that is live now: the window crossed the warn level and usage is still over it. */
+export interface BillingUsageWarningCard {
+  account: BillingAccount;
+  usage: BillingUsage;
+  warnedAt: Date;
+}
+
 export function billingAccountService(db: Db) {
+  /**
+   * The company the account bills. A client instance has one company; on an
+   * instance with more, the first one made is the client's.
+   */
+  async function instanceCompany() {
+    return db
+      .select({ id: companies.id, status: companies.status, pausedAt: companies.pausedAt })
+      .from(companies)
+      .orderBy(asc(companies.createdAt), asc(companies.id))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+  }
+
+  /** The warn level setting: the company budget policy's, else the budget default. */
+  async function warnPercentFor(companyId: string): Promise<number> {
+    const policy = await db
+      .select({ warnPercent: budgetPolicies.warnPercent })
+      .from(budgetPolicies)
+      .where(
+        and(
+          eq(budgetPolicies.companyId, companyId),
+          eq(budgetPolicies.scopeType, "company"),
+          eq(budgetPolicies.scopeId, companyId),
+          eq(budgetPolicies.metric, "billed_cents"),
+          eq(budgetPolicies.windowKind, "calendar_month_utc"),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    return policy?.warnPercent ?? DEFAULT_BUDGET_WARN_PERCENT;
+  }
+
+  /**
+   * Used (charged) cents and the API-price equivalent of subscription-included
+   * usage, in [start, end). Subscription-included events record no charge, so
+   * they add to the equivalent only.
+   */
+  async function usageSums(companyId: string, start: Date, end: Date) {
+    const inWindow = and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, start), lt(costEvents.occurredAt, end));
+    const [used] = await db
+      .select({ total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::double precision` })
+      .from(costEvents)
+      .where(inWindow);
+    // Pricing is linear in tokens, so pricing each model's total equals the sum per event.
+    const included = await db
+      .select({
+        provider: costEvents.provider,
+        model: costEvents.model,
+        inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::double precision`,
+        cachedInputTokens: sql<number>`coalesce(sum(${costEvents.cachedInputTokens}), 0)::double precision`,
+        outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::double precision`,
+      })
+      .from(costEvents)
+      .where(and(inWindow, eq(costEvents.billingType, "subscription_included")))
+      .groupBy(costEvents.provider, costEvents.model);
+    const apiEquivalent = included.reduce(
+      (sum, row) =>
+        sum +
+        (computeApiEquivalentCents({
+          provider: row.provider,
+          model: row.model,
+          inputTokens: Number(row.inputTokens),
+          cachedInputTokens: Number(row.cachedInputTokens),
+          outputTokens: Number(row.outputTokens),
+        }) ?? 0),
+      0,
+    );
+    return { usedCents: Number(used?.total ?? 0), apiEquivalentCents: Math.round(apiEquivalent) };
+  }
+
+  /** The usage block for the window that holds `now`. Null with no account or no company. */
+  async function usageFor(account: BillingAccount, now: Date) {
+    const company = await instanceCompany();
+    if (!company) return null;
+    const window = billingUsageWindowOn(now);
+    const [sums, warnPercent] = await Promise.all([usageSums(company.id, window.start, window.end), warnPercentFor(company.id)]);
+    const usage = billingUsageOn(now, {
+      ...sums,
+      allowanceCents: account.allowanceMonthlyCents,
+      warnPercent,
+      estimateCents: account.estimateMonthlyCents,
+      pausedSince: company.status === "paused" && company.pausedAt ? company.pausedAt.toISOString() : null,
+    });
+    return { companyId: company.id, usage };
+  }
+
   async function getRow(): Promise<AccountRow | null> {
     return db
       .select()
@@ -105,7 +203,48 @@ export function billingAccountService(db: Db) {
 
     async view(now: Date): Promise<BillingAccountView> {
       const [account, invoices] = await Promise.all([get(), listInvoices()]);
-      return { account, status: account ? billingStatusOn(account, utcDay(now)) : null, invoices };
+      const usage = account ? ((await usageFor(account, now))?.usage ?? null) : null;
+      return { account, status: account ? billingStatusOn(account, utcDay(now)) : null, usage, invoices };
+    },
+
+    /**
+     * AT-1.4: record that usage in the window holding `at` crossed the warn
+     * level. One guarded update moves the mark forward only, so a repeat, a
+     * race, a second crossing in the same window or a late event for an older
+     * window makes no second mark. Returns the usage when this call made the mark.
+     */
+    async noteUsageWarning(at: Date): Promise<{ companyId: string; usage: BillingUsage } | null> {
+      const account = await get();
+      if (!account) return null;
+      const found = await usageFor(account, at);
+      if (!found?.usage.warning) return null;
+      const windowStart = found.usage.windowStart;
+      const [marked] = await db
+        .update(billingAccounts)
+        .set({ usageWarnedWindowStart: windowStart, usageWarnedAt: at })
+        .where(
+          and(
+            eq(billingAccounts.id, account.id),
+            or(isNull(billingAccounts.usageWarnedWindowStart), lt(billingAccounts.usageWarnedWindowStart, windowStart)),
+          ),
+        )
+        .returning({ id: billingAccounts.id });
+      return marked ? found : null;
+    },
+
+    /**
+     * The Inbox card for `companyId`: the current window was marked and usage
+     * is still at or over the warn level. Its time is the mark's, so a
+     * dismissed card stays dismissed for the rest of the window.
+     */
+    async usageWarningCard(companyId: string, now: Date): Promise<BillingUsageWarningCard | null> {
+      const row = await getRow();
+      if (!row?.usageWarnedAt) return null;
+      const account = toAccount(row);
+      const found = await usageFor(account, now);
+      if (!found || found.companyId !== companyId || !found.usage.warning) return null;
+      if (row.usageWarnedWindowStart !== found.usage.windowStart) return null;
+      return { account, usage: found.usage, warnedAt: row.usageWarnedAt };
     },
 
     /**
@@ -131,6 +270,7 @@ export function billingAccountService(db: Db) {
         serviceFeeCents: input.serviceFeeCents,
         modules: input.modules,
         allowanceMonthlyCents: input.allowanceMonthlyCents,
+        estimateMonthlyCents: input.estimateMonthlyCents ?? null,
         termKind: input.termKind,
         termStartsOn: input.termStartsOn,
         autoRenew,
@@ -222,4 +362,30 @@ export function billingAccountService(db: Db) {
       return { before: toAccount(row), account: toAccount(updated!) };
     },
   };
+}
+
+/**
+ * After usage can have grown (a cost event) or the allowance changed (the
+ * operator's record): mark the first warn crossing of the window and log it
+ * once. The Inbox card and the fleet check-in read the same rule.
+ */
+export async function noteBillingUsageWarning(db: Db, at: Date) {
+  const crossed = await billingAccountService(db).noteUsageWarning(at);
+  if (!crossed) return null;
+  const { usage } = crossed;
+  await logActivity(db, {
+    companyId: crossed.companyId,
+    actorType: "system",
+    actorId: "billing_usage",
+    action: "billing.usage_warning",
+    entityType: "billing_account",
+    entityId: usage.windowStart,
+    details: {
+      windowStart: usage.windowStart,
+      usedCents: usage.usedCents,
+      allowanceCents: usage.allowanceCents,
+      warnPercent: usage.warnPercent,
+    },
+  });
+  return crossed;
 }

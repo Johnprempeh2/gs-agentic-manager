@@ -7608,7 +7608,7 @@ registry.registerPath({
   method: "get",
   path: "/api/instance/billing-account",
   tags: ["instance"],
-  summary: "Get the billing account, its renewal and cancel status, and invoices (newest first)",
+  summary: "Get the billing account, its renewal and cancel status, this month's AI usage (GRE-1389), and invoices (newest first)",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
