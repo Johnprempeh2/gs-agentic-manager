@@ -5,6 +5,7 @@ import {
   Target,
   Landmark,
   LayoutDashboard,
+  CreditCard,
   DollarSign,
   History,
   Search,
@@ -45,6 +46,7 @@ import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
+import { useHasBillingAccount } from "../hooks/useBillingAccount";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
@@ -75,6 +77,8 @@ export function Sidebar() {
   const showPipelines = experimentalSettings?.enablePipelines === true;
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
+  // Client instances only (GRE-1370): the link shows when the instance has a billing account.
+  const showBilling = useHasBillingAccount();
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
@@ -236,6 +240,7 @@ export function Sidebar() {
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           {/* One entry — /audit merged into the rich Activity feed (PAP-16302). */}
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
+          {showBilling ? <SidebarNavItem to="/billing" label="Billing" icon={CreditCard} /> : null}
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
 

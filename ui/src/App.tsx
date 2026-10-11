@@ -51,6 +51,7 @@ import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
 import { WorkflowTemplates } from "./pages/WorkflowTemplates";
 import { Releases } from "./pages/Releases";
+import { Billing } from "./pages/Billing";
 import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
 import { Website } from "./pages/Website";
@@ -407,6 +408,8 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route element={<HiddenSettingsPageGate pageKey="instance.releases" redirectTo="/dashboard" />}>
         <Route path="releases" element={<Releases />} />
       </Route>
+      {/* Client billing (GRE-1370): read-only, every board user of the instance. */}
+      <Route path="billing" element={<Billing />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
       <Route
         path="strategy-board"
@@ -821,6 +824,7 @@ export function App() {
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
           <Route path="workflows" element={<UnprefixedBoardRedirect />} />
+          <Route path="billing" element={<UnprefixedBoardRedirect />} />
           <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
           <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
