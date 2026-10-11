@@ -202,10 +202,21 @@ export const upsertBillingAccountSchema = z
     /** The Foundation and service fee for one term period. */
     serviceFeeCents: cents,
     modules: z.array(billingModuleSelectionSchema).max(BILLING_MODULE_KEYS.length),
-    /** AI allowance included in the fee, per calendar month. */
+    /**
+     * AI allowance included in the fee, per calendar month, in API-equivalent
+     * US cents whatever the account currency (GRE-1395). The client sees only
+     * a percent of it.
+     */
     allowanceMonthlyCents: cents,
     /** Monthly AI usage estimated at sign-up. Null or absent: no estimate was given. */
     estimateMonthlyCents: cents.nullable().optional(),
+    /**
+     * Account-currency units per US dollar, used to price extra usage past the
+     * allowance. Null or absent: no rate (a USD account needs none).
+     */
+    usageFxRate: z.number().positive().max(1_000_000).nullable().optional(),
+    /** The day the rate is from. Absent: the day it was last changed. */
+    usageFxRateSetOn: isoDate.nullable().optional(),
     termKind: z.enum(BILLING_TERM_KINDS),
     termStartsOn: isoDate,
     autoRenew: z.boolean(),
@@ -281,9 +292,13 @@ export interface BillingAccount {
   currency: string;
   serviceFeeCents: number;
   modules: BillingModuleSelection[];
+  /** API-equivalent US cents per month. Operator only. */
   allowanceMonthlyCents: number;
   /** Monthly AI usage estimated at sign-up; null when none was given. */
   estimateMonthlyCents: number | null;
+  /** Account-currency units per US dollar for extra usage; null when none is set. Operator only. */
+  usageFxRate: number | null;
+  usageFxRateSetOn: string | null;
   termKind: BillingTermKind;
   termStartsOn: string;
   autoRenew: boolean;
@@ -336,9 +351,39 @@ export interface BillingStatus {
   endAction: BillingEndAction | null;
 }
 
+/** The record as the client sees it: no allowance amount and no exchange rate (GRE-1395). */
+export type ClientBillingAccount = Omit<BillingAccount, "allowanceMonthlyCents" | "usageFxRate" | "usageFxRateSetOn">;
+
 /**
- * AI usage of the instance's company in the current UTC calendar month
- * (GRE-1389). Every amount is in the account's currency, in cents.
+ * Extra usage past the allowance, in the account currency.
+ * - `none`: usage is within the allowance; `amountCents` is 0.
+ * - `priced`: `amountCents` is the extra usage converted with the account's rate.
+ * - `rate_missing`: there is extra usage, but the account is not in USD and
+ *   has no rate, so no amount is shown (`amountCents` is null).
+ */
+export type BillingExtraUsageState = "none" | "priced" | "rate_missing";
+
+export interface BillingExtraUsage {
+  state: BillingExtraUsageState;
+  amountCents: number | null;
+  /** The account currency. */
+  currency: string;
+}
+
+/** Operator view of extra usage: the US amount and the rate used. */
+export interface OperatorBillingExtraUsage extends BillingExtraUsage {
+  /** max(0, consumed - allowance), API-equivalent US cents. */
+  usdCents: number;
+  /** The rate applied: 1 for a USD account, else the account's rate; null when missing. */
+  rate: number | null;
+  rateSetOn: string | null;
+}
+
+/**
+ * AI usage of the instance's company in the current UTC calendar month, as
+ * the client sees it (GRE-1389, GRE-1395): a percent of the included
+ * allowance, never money for it. Money shows only for extra usage, in the
+ * account currency.
  */
 export interface BillingUsage {
   /** First day of the month, YYYY-MM-DD. */
@@ -348,34 +393,55 @@ export interface BillingUsage {
   /** Days in the window up to and including today. */
   daysElapsed: number;
   daysInWindow: number;
-  /** Sum of `cost_events.costCents` in the window: the charged usage. */
-  usedCents: number;
-  /** Subscription-included usage priced at API rates: shown, not charged. */
-  apiEquivalentCents: number;
-  /** The monthly allowance on the account. */
-  allowanceCents: number;
-  /** max(0, allowance - used). */
-  remainingCents: number;
-  /** used / allowance * 100, two decimals; 0 when the allowance is 0. */
+  /** consumed / allowance * 100, two decimals; 0 when the allowance is 0. May pass 100. */
   usedPercent: number;
+  /** Straight-line month-end forecast as a percent of the allowance, two decimals. */
+  forecastPercent: number;
   /** The warn level: the company budget policy's, else the budget default. */
   warnPercent: number;
   /** usedPercent >= warnPercent. The page, the Inbox card and the fleet check-in share this rule. */
   warning: boolean;
-  /** Straight line: usedCents / daysElapsed * daysInWindow, rounded. */
-  forecastCents: number;
-  /** The account's estimate at sign-up; null when none was given. */
+  extraUsage: BillingExtraUsage;
+  /** The account's estimate at sign-up, in the account currency; null when none was given. */
   estimateCents: number | null;
   /** When the company was paused (ISO time); null while it runs. */
   pausedSince: string | null;
 }
 
+/** The operator's usage block: the client block plus the US-dollar amounts behind it. */
+export interface OperatorBillingUsage extends BillingUsage {
+  /** Sum of `cost_events.costCents` in the window: metered usage, US cents. */
+  usedCents: number;
+  /** Subscription-included usage priced at API rates, US cents. */
+  apiEquivalentCents: number;
+  /** usedCents + apiEquivalentCents: the API-equivalent usage measured against the allowance. */
+  consumedCents: number;
+  /** The monthly allowance, API-equivalent US cents. */
+  allowanceCents: number;
+  /** max(0, allowance - consumed). */
+  remainingCents: number;
+  /** Straight line: consumedCents / daysElapsed * daysInWindow, rounded. */
+  forecastCents: number;
+  extraUsage: OperatorBillingExtraUsage;
+}
+
+/** GET /api/instance/billing-account for a client board user. */
 export interface BillingAccountView {
-  account: BillingAccount | null;
+  audience: "client";
+  account: ClientBillingAccount | null;
   status: BillingStatus | null;
   /** Null when there is no account. */
   usage: BillingUsage | null;
   /** Newest first. */
+  invoices: BillingInvoice[];
+}
+
+/** GET /api/instance/billing-account for the hosting operator. */
+export interface OperatorBillingAccountView {
+  audience: "operator";
+  account: BillingAccount | null;
+  status: BillingStatus | null;
+  usage: OperatorBillingUsage | null;
   invoices: BillingInvoice[];
 }
 
@@ -506,41 +572,126 @@ export function billingUsageWindowOn(now: Date) {
 
 /**
  * The one warn rule (AT-1.4): usage is at or over the warn level of the
- * allowance. Whole-number arithmetic, so 80% of 25 000 is exactly 20 000.
- * No allowance means nothing to warn about.
+ * allowance. Both are API-equivalent US cents, so the rule holds for every
+ * account currency (GRE-1395). Whole-number arithmetic, so 80% of 25 000 is
+ * exactly 20 000. No allowance means nothing to warn about.
  */
-export function billingUsageWarning(usedCents: number, allowanceCents: number, warnPercent: number): boolean {
-  return allowanceCents > 0 && usedCents * 100 >= allowanceCents * warnPercent;
+export function billingUsageWarning(consumedCents: number, allowanceCents: number, warnPercent: number): boolean {
+  return allowanceCents > 0 && consumedCents * 100 >= allowanceCents * warnPercent;
 }
 
-/** The usage block from the window, the sums and the settings. */
+function percentOf(valueCents: number, allowanceCents: number): number {
+  return allowanceCents > 0 ? Number(((valueCents / allowanceCents) * 100).toFixed(2)) : 0;
+}
+
+/**
+ * Extra usage past the allowance in the account currency. A USD account
+ * converts at 1; any other needs the operator's rate, else no amount is shown.
+ */
+export function billingExtraUsage(
+  extraUsdCents: number,
+  account: Pick<BillingAccount, "currency" | "usageFxRate" | "usageFxRateSetOn">,
+): OperatorBillingExtraUsage {
+  const isUsd = account.currency === "USD";
+  const rate = isUsd ? 1 : account.usageFxRate;
+  const rateSetOn = isUsd ? null : account.usageFxRateSetOn;
+  const base = { currency: account.currency, usdCents: extraUsdCents, rate, rateSetOn };
+  if (extraUsdCents <= 0) return { ...base, state: "none", amountCents: 0 };
+  if (rate === null) return { ...base, state: "rate_missing", amountCents: null };
+  return { ...base, state: "priced", amountCents: Math.round(extraUsdCents * rate) };
+}
+
+/** The operator's usage block from the window, the sums and the record. */
 export function billingUsageOn(
   now: Date,
   input: {
     usedCents: number;
     apiEquivalentCents: number;
-    allowanceCents: number;
     warnPercent: number;
-    estimateCents: number | null;
     pausedSince: string | null;
+    account: Pick<BillingAccount, "allowanceMonthlyCents" | "estimateMonthlyCents" | "currency" | "usageFxRate" | "usageFxRateSetOn">;
   },
-): BillingUsage {
+): OperatorBillingUsage {
   const window = billingUsageWindowOn(now);
-  const { usedCents, allowanceCents, warnPercent } = input;
+  const { usedCents, apiEquivalentCents, warnPercent, account } = input;
+  const allowanceCents = account.allowanceMonthlyCents;
+  const consumedCents = usedCents + apiEquivalentCents;
+  const forecastCents = Math.round((consumedCents / window.daysElapsed) * window.daysInWindow);
   return {
     windowStart: window.windowStart,
     windowEnd: window.windowEnd,
     daysElapsed: window.daysElapsed,
     daysInWindow: window.daysInWindow,
-    usedCents,
-    apiEquivalentCents: input.apiEquivalentCents,
-    allowanceCents,
-    remainingCents: Math.max(0, allowanceCents - usedCents),
-    usedPercent: allowanceCents > 0 ? Number(((usedCents / allowanceCents) * 100).toFixed(2)) : 0,
+    usedPercent: percentOf(consumedCents, allowanceCents),
+    forecastPercent: percentOf(forecastCents, allowanceCents),
     warnPercent,
-    warning: billingUsageWarning(usedCents, allowanceCents, warnPercent),
-    forecastCents: Math.round((usedCents / window.daysElapsed) * window.daysInWindow),
-    estimateCents: input.estimateCents,
+    warning: billingUsageWarning(consumedCents, allowanceCents, warnPercent),
+    extraUsage: billingExtraUsage(Math.max(0, consumedCents - allowanceCents), account),
+    estimateCents: account.estimateMonthlyCents,
     pausedSince: input.pausedSince,
+    usedCents,
+    apiEquivalentCents,
+    consumedCents,
+    allowanceCents,
+    remainingCents: Math.max(0, allowanceCents - consumedCents),
+    forecastCents,
+  };
+}
+
+// ---------------------------------------------------------------- client view (GRE-1395)
+// Built field by field, never by spreading the operator object, so a field
+// added to the operator view stays out of the client's until named here.
+
+export function clientBillingUsage(usage: OperatorBillingUsage): BillingUsage {
+  return {
+    windowStart: usage.windowStart,
+    windowEnd: usage.windowEnd,
+    daysElapsed: usage.daysElapsed,
+    daysInWindow: usage.daysInWindow,
+    usedPercent: usage.usedPercent,
+    forecastPercent: usage.forecastPercent,
+    warnPercent: usage.warnPercent,
+    warning: usage.warning,
+    extraUsage: {
+      state: usage.extraUsage.state,
+      amountCents: usage.extraUsage.amountCents,
+      currency: usage.extraUsage.currency,
+    },
+    estimateCents: usage.estimateCents,
+    pausedSince: usage.pausedSince,
+  };
+}
+
+export function clientBillingAccount(account: BillingAccount): ClientBillingAccount {
+  return {
+    id: account.id,
+    planKind: account.planKind,
+    planName: account.planName,
+    catalogueVersion: account.catalogueVersion,
+    currency: account.currency,
+    serviceFeeCents: account.serviceFeeCents,
+    modules: account.modules,
+    estimateMonthlyCents: account.estimateMonthlyCents,
+    termKind: account.termKind,
+    termStartsOn: account.termStartsOn,
+    autoRenew: account.autoRenew,
+    endAction: account.endAction,
+    accessEndsOn: account.accessEndsOn,
+    cancelRequestedAt: account.cancelRequestedAt,
+    cancelRequestedByUserId: account.cancelRequestedByUserId,
+    cancelReason: account.cancelReason,
+    updatedByUserId: account.updatedByUserId,
+    createdAt: account.createdAt,
+    updatedAt: account.updatedAt,
+  };
+}
+
+export function clientBillingAccountView(view: OperatorBillingAccountView): BillingAccountView {
+  return {
+    audience: "client",
+    account: view.account ? clientBillingAccount(view.account) : null,
+    status: view.status,
+    usage: view.usage ? clientBillingUsage(view.usage) : null,
+    invoices: view.invoices,
   };
 }

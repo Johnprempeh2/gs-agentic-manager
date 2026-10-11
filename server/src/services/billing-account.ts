@@ -10,14 +10,14 @@ import {
   billingUsageWindowOn,
   utcDay,
   type BillingAccount,
-  type BillingAccountView,
   type BillingEndAction,
   type BillingInvoice,
   type BillingInvoiceStatus,
   type BillingModuleSelection,
   type BillingPlanKind,
   type BillingTermKind,
-  type BillingUsage,
+  type OperatorBillingAccountView,
+  type OperatorBillingUsage,
   type RecordBillingInvoice,
   type UpsertBillingAccount,
 } from "@greatstone/shared/billing-account";
@@ -48,6 +48,8 @@ function toAccount(row: AccountRow): BillingAccount {
     modules: (row.modules ?? []) as BillingModuleSelection[],
     allowanceMonthlyCents: row.allowanceMonthlyCents,
     estimateMonthlyCents: row.estimateMonthlyCents ?? null,
+    usageFxRate: row.usageFxRate ?? null,
+    usageFxRateSetOn: row.usageFxRateSetOn ?? null,
     termKind: row.termKind as BillingTermKind,
     termStartsOn: row.termStartsOn,
     autoRenew: row.autoRenew,
@@ -86,7 +88,7 @@ export type BillingCancelResult =
 /** An allowance warning that is live now: the window crossed the warn level and usage is still over it. */
 export interface BillingUsageWarningCard {
   account: BillingAccount;
-  usage: BillingUsage;
+  usage: OperatorBillingUsage;
   warnedAt: Date;
 }
 
@@ -168,9 +170,8 @@ export function billingAccountService(db: Db) {
     const [sums, warnPercent] = await Promise.all([usageSums(company.id, window.start, window.end), warnPercentFor(company.id)]);
     const usage = billingUsageOn(now, {
       ...sums,
-      allowanceCents: account.allowanceMonthlyCents,
       warnPercent,
-      estimateCents: account.estimateMonthlyCents,
+      account,
       pausedSince: company.status === "paused" && company.pausedAt ? company.pausedAt.toISOString() : null,
     });
     return { companyId: company.id, usage };
@@ -201,10 +202,11 @@ export function billingAccountService(db: Db) {
     get,
     listInvoices,
 
-    async view(now: Date): Promise<BillingAccountView> {
+    /** The operator's view. Clients get `clientBillingAccountView` of it (GRE-1395). */
+    async view(now: Date): Promise<OperatorBillingAccountView> {
       const [account, invoices] = await Promise.all([get(), listInvoices()]);
       const usage = account ? ((await usageFor(account, now))?.usage ?? null) : null;
-      return { account, status: account ? billingStatusOn(account, utcDay(now)) : null, usage, invoices };
+      return { audience: "operator", account, status: account ? billingStatusOn(account, utcDay(now)) : null, usage, invoices };
     },
 
     /**
@@ -213,7 +215,7 @@ export function billingAccountService(db: Db) {
      * race, a second crossing in the same window or a late event for an older
      * window makes no second mark. Returns the usage when this call made the mark.
      */
-    async noteUsageWarning(at: Date): Promise<{ companyId: string; usage: BillingUsage } | null> {
+    async noteUsageWarning(at: Date): Promise<{ companyId: string; usage: OperatorBillingUsage } | null> {
       const account = await get();
       if (!account) return null;
       const found = await usageFor(account, at);
@@ -262,6 +264,12 @@ export function billingAccountService(db: Db) {
       if (!autoRenew) {
         accessEndsOn = before?.accessEndsOn ?? accessEndWhenRenewalStops(input.termKind, input.termStartsOn, today);
       }
+      // The rate's day: as sent, else kept while the rate is unchanged, else today.
+      const usageFxRate = input.usageFxRate ?? null;
+      const usageFxRateSetOn =
+        usageFxRate === null
+          ? null
+          : (input.usageFxRateSetOn ?? (before?.usageFxRate === usageFxRate ? before.usageFxRateSetOn : null) ?? today);
       const values = {
         planKind: input.planKind,
         planName: input.planName ?? null,
@@ -271,6 +279,8 @@ export function billingAccountService(db: Db) {
         modules: input.modules,
         allowanceMonthlyCents: input.allowanceMonthlyCents,
         estimateMonthlyCents: input.estimateMonthlyCents ?? null,
+        usageFxRate,
+        usageFxRateSetOn,
         termKind: input.termKind,
         termStartsOn: input.termStartsOn,
         autoRenew,
@@ -382,7 +392,8 @@ export async function noteBillingUsageWarning(db: Db, at: Date) {
     entityId: usage.windowStart,
     details: {
       windowStart: usage.windowStart,
-      usedCents: usage.usedCents,
+      usedPercent: usage.usedPercent,
+      consumedCents: usage.consumedCents,
       allowanceCents: usage.allowanceCents,
       warnPercent: usage.warnPercent,
     },

@@ -1,4 +1,4 @@
-import { boolean, date, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, date, doublePrecision, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 
 /**
  * The billing account of this instance (GRE-1369): one row per instance, like
@@ -27,6 +27,13 @@ export const billingAccounts = pgTable(
      */
     usageWarnedWindowStart: date("usage_warned_window_start"),
     usageWarnedAt: timestamp("usage_warned_at", { withTimezone: true }),
+    /**
+     * Account-currency units per US dollar, for extra AI usage past the
+     * allowance (GRE-1395), and the day the operator set it. Null: no rate.
+     * Not read for a USD account, whose rate is 1.
+     */
+    usageFxRate: doublePrecision("usage_fx_rate"),
+    usageFxRateSetOn: date("usage_fx_rate_set_on"),
     termKind: text("term_kind").notNull(),
     termStartsOn: date("term_starts_on").notNull(),
     autoRenew: boolean("auto_renew").notNull().default(true),

@@ -132,11 +132,12 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     return res.body;
   }
 
-  it("AT-1.1: the client sees each fee and the allowance exactly as the operator set them, and cannot change them", async () => {
+  it("AT-1.1: the client sees each fee exactly as the operator set them, and cannot change them; the allowance amount is the operator's", async () => {
     await setRecord();
 
     const view = await as("client").get("/api/instance/billing-account");
     expect(view.status).toBe(200);
+    expect(view.body.audience).toBe("client");
     expect(view.body.account).toMatchObject({
       planKind: "modules",
       currency: "GBP",
@@ -145,9 +146,13 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
         { key: "crm", feeCents: 45_600 },
         { key: "strategy", feeCents: 78_900 },
       ],
-      allowanceMonthlyCents: 25_000,
       termStartsOn: "2026-10-01",
     });
+    // GRE-1395: the included allowance is a percent for the client, never an amount.
+    expect(view.body.account).not.toHaveProperty("allowanceMonthlyCents");
+    const operator = await as("operator").get("/api/instance/billing-account");
+    expect(operator.body.audience).toBe("operator");
+    expect(operator.body.account.allowanceMonthlyCents).toBe(25_000);
 
     const writes = [
       () => as("client").put("/api/instance/billing-account").send({ ...record, serviceFeeCents: 1 }),
@@ -172,7 +177,7 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     }
     const after = await as("client").get("/api/instance/billing-account");
     expect(after.body.account.serviceFeeCents).toBe(123_400);
-    expect(after.body.account.allowanceMonthlyCents).toBe(25_000);
+    expect((await as("operator").get("/api/instance/billing-account")).body.account.allowanceMonthlyCents).toBe(25_000);
     expect(after.body.invoices).toEqual([]);
 
     // The operator's change is audited with the old and new values.
@@ -315,7 +320,7 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
   it("cancel with no record is 404", async () => {
     expect((await as("client").post("/api/instance/billing-account/cancel").send({})).status).toBe(404);
     const view = await as("client").get("/api/instance/billing-account");
-    expect(view.body).toEqual({ account: null, status: null, usage: null, invoices: [] });
+    expect(view.body).toEqual({ audience: "client", account: null, status: null, usage: null, invoices: [] });
   });
 
   // ------------------------------------------------------------ GRE-1389: the usage block (B1)
@@ -386,7 +391,7 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     await db.insert(companies).values({ id: otherCompanyId, name: "Other", issuePrefix: `O${otherCompanyId.slice(0, 6).toUpperCase()}` });
     await addCost(await addAgent(otherCompanyId), 99_999, "2026-10-05T00:00:00.000Z");
 
-    const view = await as("client").get("/api/instance/billing-account");
+    const view = await as("operator").get("/api/instance/billing-account");
     expect(view.status).toBe(200);
     const [sum] = await db
       .select({ total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int` })
@@ -410,6 +415,9 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
       warning: false,
       pausedSince: null,
     });
+    // The client gets the same percent and nothing else about the amounts.
+    const client = await as("client").get("/api/instance/billing-account");
+    expect(client.body.usage).toMatchObject({ usedPercent: 28.01, warning: false, extraUsage: { state: "none", amountCents: 0, currency: "GBP" } });
   });
 
   it("AT-1.3: estimate and straight-line forecast after 10 days; subscription-included usage is API-equivalent, not charged", async () => {
@@ -421,17 +429,23 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     await addCost(agentId, 0, "2026-10-09T10:00:00.000Z", { billingType: "subscription_included", ...tokens });
 
     clock = new Date("2026-10-10T18:00:00.000Z"); // day 10 of 31
-    const view = await as("client").get("/api/instance/billing-account");
+    const view = await as("operator").get("/api/instance/billing-account");
     expect(view.body.account.estimateMonthlyCents).toBe(30_000);
     const expectedEquivalent = Math.round(computeApiEquivalentCents({ provider: "anthropic", model: "claude-opus-5-5", ...tokens })!);
     expect(expectedEquivalent).toBeGreaterThan(0);
+    // GRE-1395: the allowance is API-equivalent, so subscription-included usage counts against it.
+    const consumed = 10_000 + expectedEquivalent;
     expect(view.body.usage).toMatchObject({
       daysElapsed: 10,
       usedCents: 10_000, // the subscription run adds nothing charged
       apiEquivalentCents: expectedEquivalent,
-      forecastCents: 31_000, // 10 000 / 10 days * 31 days
+      consumedCents: consumed,
+      forecastCents: Math.round((consumed / 10) * 31), // straight line over 31 days
       estimateCents: 30_000,
     });
+    const client = await as("client").get("/api/instance/billing-account");
+    expect(client.body.usage.forecastPercent).toBe(Number(((Math.round((consumed / 10) * 31) / 25_000) * 100).toFixed(2)));
+    expect(client.body.usage.estimateCents).toBe(30_000);
 
     // The estimate is the operator's and optional: a record without one shows none.
     await setRecord();
@@ -450,11 +464,15 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     expect(await usageCards()).toHaveLength(0);
 
     await reportCost(agentId, 1, "2026-10-06T10:00:00.000Z"); // 20 000 = 80% exactly
+    expect((await as("operator").get("/api/instance/billing-account")).body.usage).toMatchObject({ usedCents: 20_000, consumedCents: 20_000 });
     let view = await as("client").get("/api/instance/billing-account");
-    expect(view.body.usage).toMatchObject({ usedCents: 20_000, usedPercent: 80, warnPercent: 80, warning: true });
+    expect(view.body.usage).toMatchObject({ usedPercent: 80, warnPercent: 80, warning: true });
     let cards = await usageCards();
     expect(cards).toHaveLength(1);
     expect(cards[0]).toMatchObject({ sourceKind: "budget_alert", dedupKey: "billing_usage:2026-10-01", subject: { kind: "billing_account" } });
+    // The client reads the card: a percent, no money for the included allowance (GRE-1395).
+    expect(cards[0]!.subject.metadata).toEqual({ windowStart: "2026-10-01", usedPercent: 80, warnPercent: 80 });
+    expect(cards[0]!.detail).toMatchObject({ kind: "generic" });
     const firstCardAt = cards[0]!.createdAt;
 
     // The next fleet check-in carries the alert as a fail, with no amount or company in it.
@@ -491,7 +509,7 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     expect(cards[0]!.createdAt).toBe(firstCardAt);
     const crossings = await db.select().from(activityLog).where(eq(activityLog.action, "billing.usage_warning"));
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.details).toMatchObject({ windowStart: "2026-10-01", usedCents: 20_000, allowanceCents: 25_000, warnPercent: 80 });
+    expect(crossings[0]!.details).toMatchObject({ windowStart: "2026-10-01", usedPercent: 80, consumedCents: 20_000, allowanceCents: 25_000, warnPercent: 80 });
 
     // A new month is a new window: the next crossing makes its card.
     clock = new Date("2026-11-03T09:00:00.000Z");
@@ -537,7 +555,7 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     await db.update(companies).set({ status: "paused", pauseReason: "manual", pausedAt }).where(eq(companies.id, companyId));
 
     clock = new Date("2026-10-10T09:00:00.000Z");
-    let view = await as("client").get("/api/instance/billing-account");
+    let view = await as("operator").get("/api/instance/billing-account");
     expect(view.body.usage).toMatchObject({ pausedSince: pausedAt.toISOString(), usedCents: 3_000 });
 
     // The run gate refuses new work while paused, so no cost event is made.
@@ -545,12 +563,115 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     expect(block).toMatchObject({ scopeType: "company", scopeId: companyId });
 
     clock = new Date("2026-10-20T09:00:00.000Z");
-    view = await as("client").get("/api/instance/billing-account");
+    view = await as("operator").get("/api/instance/billing-account");
     expect(view.body.usage).toMatchObject({ pausedSince: pausedAt.toISOString(), usedCents: 3_000 });
 
     // Resumed: no paused-since.
     await db.update(companies).set({ status: "active", pauseReason: null, pausedAt: null }).where(eq(companies.id, companyId));
     view = await as("client").get("/api/instance/billing-account");
     expect(view.body.usage.pausedSince).toBeNull();
+  });
+
+  // ------------------------------------------------------------ GRE-1395: percent for the client, extra usage in the account currency
+
+  const INCLUDED_MONEY_KEYS = ["usedCents", "apiEquivalentCents", "consumedCents", "allowanceCents", "remainingCents", "forecastCents"];
+
+  it("GRE-1395: the client response has no included-usage money; the operator's keeps it", async () => {
+    await setRecord({ ...record, usageFxRate: 0.75, usageFxRateSetOn: "2026-10-01" });
+    const agentId = await addAgent();
+    await addCost(agentId, 10_000, "2026-10-04T10:00:00.000Z");
+    await addCost(agentId, 0, "2026-10-05T10:00:00.000Z", {
+      billingType: "subscription_included",
+      inputTokens: 1_000_000,
+      cachedInputTokens: 0,
+      outputTokens: 100_000,
+    });
+
+    for (const who of ["client", "viewer"] as const) {
+      const view = await as(who).get("/api/instance/billing-account");
+      expect(view.status).toBe(200);
+      expect(view.body.audience).toBe("client");
+      for (const key of INCLUDED_MONEY_KEYS) expect(view.body.usage).not.toHaveProperty(key);
+      for (const key of ["allowanceMonthlyCents", "usageFxRate", "usageFxRateSetOn"]) expect(view.body.account).not.toHaveProperty(key);
+      expect(Object.keys(view.body.usage.extraUsage).sort()).toEqual(["amountCents", "currency", "state"]);
+      expect(view.body.usage).toMatchObject({ warnPercent: 80, warning: expect.any(Boolean) });
+      expect(typeof view.body.usage.usedPercent).toBe("number");
+      expect(typeof view.body.usage.forecastPercent).toBe("number");
+    }
+
+    // A client cancel returns the client view too.
+    const cancel = await as("client").post("/api/instance/billing-account/cancel").send({});
+    expect(cancel.body.audience).toBe("client");
+    for (const key of INCLUDED_MONEY_KEYS) expect(cancel.body.usage).not.toHaveProperty(key);
+
+    const operator = await as("operator").get("/api/instance/billing-account");
+    expect(operator.body.audience).toBe("operator");
+    expect(operator.body.account).toMatchObject({ allowanceMonthlyCents: 25_000, usageFxRate: 0.75, usageFxRateSetOn: "2026-10-01" });
+    for (const key of INCLUDED_MONEY_KEYS) expect(operator.body.usage).toHaveProperty(key);
+  });
+
+  it("GRE-1395: a GBP account with a USD allowance shows the right percent and warning, whatever the rate", async () => {
+    await setRecord({ ...record, usageFxRate: 0.5 });
+    const agentId = await addAgent();
+    await reportCost(agentId, 19_000, "2026-10-05T10:00:00.000Z"); // US$190 of US$250
+    let view = await as("client").get("/api/instance/billing-account");
+    expect(view.body.usage).toMatchObject({ usedPercent: 76, warning: false });
+    expect(await usageCards()).toHaveLength(0);
+
+    await reportCost(agentId, 1_000, "2026-10-06T10:00:00.000Z"); // US$200 = 80%
+    view = await as("client").get("/api/instance/billing-account");
+    expect(view.body.usage).toMatchObject({ usedPercent: 80, warning: true, extraUsage: { state: "none", amountCents: 0, currency: "GBP" } });
+    expect(await usageCards()).toHaveLength(1);
+  });
+
+  it("GRE-1395: extra usage past 100% converts with the account's rate; no rate gives rate missing and no amount", async () => {
+    await setRecord({ ...record, usageFxRate: 0.75, usageFxRateSetOn: "2026-10-01" });
+    const agentId = await addAgent();
+    await addCost(agentId, 29_000, "2026-10-05T10:00:00.000Z"); // US$40 past the US$250 allowance
+
+    let client = await as("client").get("/api/instance/billing-account");
+    expect(client.body.usage).toMatchObject({ usedPercent: 116, warning: true });
+    expect(client.body.usage.extraUsage).toEqual({ state: "priced", amountCents: 3_000, currency: "GBP" });
+    let operator = await as("operator").get("/api/instance/billing-account");
+    expect(operator.body.usage.extraUsage).toEqual({
+      state: "priced",
+      amountCents: 3_000,
+      currency: "GBP",
+      usdCents: 4_000,
+      rate: 0.75,
+      rateSetOn: "2026-10-01",
+    });
+
+    // The operator clears the rate: no amount, a clear rate-missing state.
+    await setRecord({ ...record, usageFxRate: null });
+    client = await as("client").get("/api/instance/billing-account");
+    expect(client.body.usage.extraUsage).toEqual({ state: "rate_missing", amountCents: null, currency: "GBP" });
+    operator = await as("operator").get("/api/instance/billing-account");
+    expect(operator.body.usage.extraUsage).toMatchObject({ state: "rate_missing", amountCents: null, usdCents: 4_000, rate: null });
+
+    // A USD account needs no rate: it converts at 1.
+    await setRecord({ ...record, currency: "USD" });
+    client = await as("client").get("/api/instance/billing-account");
+    expect(client.body.usage.extraUsage).toEqual({ state: "priced", amountCents: 4_000, currency: "USD" });
+  });
+
+  it("GRE-1395: the rate's day is the operator's, else kept while the rate is unchanged, else today", async () => {
+    clock = new Date("2026-10-02T09:00:00.000Z");
+    let body = await setRecord({ ...record, usageFxRate: 0.75 });
+    expect(body.account).toMatchObject({ usageFxRate: 0.75, usageFxRateSetOn: "2026-10-02" });
+
+    clock = new Date("2026-10-09T09:00:00.000Z");
+    body = await setRecord({ ...record, usageFxRate: 0.75, planName: "Renamed" });
+    expect(body.account.usageFxRateSetOn).toBe("2026-10-02");
+
+    body = await setRecord({ ...record, usageFxRate: 0.8 });
+    expect(body.account.usageFxRateSetOn).toBe("2026-10-09");
+
+    body = await setRecord({ ...record, usageFxRate: 0.81, usageFxRateSetOn: "2026-10-07" });
+    expect(body.account.usageFxRateSetOn).toBe("2026-10-07");
+
+    // The client cannot set a rate, and a bad one is refused.
+    expect((await as("client").put("/api/instance/billing-account").send({ ...record, usageFxRate: 1 })).status).toBe(403);
+    expect((await as("operator").put("/api/instance/billing-account").send({ ...record, usageFxRate: 0 })).status).toBe(400);
   });
 });

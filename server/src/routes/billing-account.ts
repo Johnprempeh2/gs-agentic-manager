@@ -3,6 +3,8 @@ import type { Db } from "@greatstone/db";
 import { SETTINGS_OPERATOR_MANAGED_ERROR_CODE } from "@greatstone/shared";
 import {
   cancelBillingAccountSchema,
+  clientBillingAccountView,
+  type OperatorBillingAccountView,
   recordBillingInvoiceSchema,
   resumeBillingRenewalSchema,
   upsertBillingAccountSchema,
@@ -75,9 +77,17 @@ export function billingAccountRoutes(db: Db, opts: { now?: () => Date } = {}) {
     );
   }
 
+  /**
+   * GRE-1395: the client sees the included allowance as a percent only; the
+   * allowance, the US amounts and the exchange rate are the operator's.
+   */
+  function viewFor(req: Request, view: OperatorBillingAccountView) {
+    return isHostingOperator(req) ? view : clientBillingAccountView(view);
+  }
+
   router.get("/instance/billing-account", async (req, res) => {
     assertBoardOrgAccess(req);
-    res.json(await svc.view(now()));
+    res.json(viewFor(req, await svc.view(now())));
   });
 
   router.put("/instance/billing-account", operatorOnly, validate(upsertBillingAccountSchema), async (req, res) => {
@@ -120,7 +130,7 @@ export function billingAccountRoutes(db: Db, opts: { now?: () => Date } = {}) {
         reason: req.body.reason ?? null,
       });
     }
-    res.json(await svc.view(at));
+    res.json(viewFor(req, await svc.view(at)));
   });
 
   router.post(
