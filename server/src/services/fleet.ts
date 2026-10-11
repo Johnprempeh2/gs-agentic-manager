@@ -1,17 +1,22 @@
 import { createHash, createPublicKey, randomBytes, verify, type KeyObject } from "node:crypto";
 import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import type { PgUpdateSetSource } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import { fleetCheckIns, fleetInstances } from "@greatstone/db";
 import {
   FLEET_AUDIENCE,
+  FLEET_CHECK_IN_SCHEMA,
   FLEET_JWS_TYPE,
   FLEET_MAX_CLOCK_SKEW_SECONDS,
   FLEET_MAX_MESSAGE_LIFETIME_SECONDS,
   FLEET_REGISTRATION_CODE_PREFIX,
   FLEET_REGISTRATION_CODE_TTL_HOURS,
   fleetClaimsSchema,
+  fleetInstanceState,
   type FleetAction,
   type FleetClaims,
+  type FleetInstanceStatus,
+  type FleetLifecycle,
   type FleetPublicKey,
 } from "@greatstone/shared/fleet";
 
@@ -22,6 +27,19 @@ import {
 
 const CHECK_IN_RETENTION_DAYS = 7;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * When the hub shows an active instance as stale or down (AT-3.2). Hub
+ * settings: GSAM_FLEET_STALE_AFTER_MINUTES and GSAM_FLEET_DOWN_AFTER_MINUTES.
+ */
+export function fleetStateLimits(env: NodeJS.ProcessEnv = process.env) {
+  const minutes = (raw: string | undefined, fallback: number) => {
+    const value = Number.parseInt(raw?.trim() ?? "", 10);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+  };
+  const staleAfterMinutes = minutes(env.GSAM_FLEET_STALE_AFTER_MINUTES, 15);
+  return { staleAfterMinutes, downAfterMinutes: Math.max(staleAfterMinutes, minutes(env.GSAM_FLEET_DOWN_AFTER_MINUTES, 60)) };
+}
 
 /** The hub side is off unless this instance is the Greatstone hub. A client instance never answers fleet calls. */
 export function fleetHubEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -105,11 +123,25 @@ function verifyMessage(compactJws: string, key: KeyObject, expected: { act: Flee
 export type FleetInstanceRow = typeof fleetInstances.$inferSelect;
 
 /** What the hub shows about an instance. Never the registration code hash. */
-function view(row: FleetInstanceRow) {
+function view(row: FleetInstanceRow, now = new Date()) {
+  const lifecycle = (row.lifecycle as FleetLifecycle | null) ?? null;
   return {
     id: row.id,
     code: row.code,
     status: row.status,
+    /** ok, stale, down, or paused / archived when the operator stopped it on purpose. */
+    state: fleetInstanceState(
+      {
+        status: row.status as FleetInstanceStatus,
+        lifecycle,
+        lastCheckInAt: row.lastCheckInAt,
+        lastAppHealth: (row.lastAppHealth as "ok" | "down" | null) ?? null,
+      },
+      fleetStateLimits(),
+      now,
+    ),
+    lifecycle,
+    lifecycleChangedAt: row.lifecycleChangedAt,
     registeredAt: row.registeredAt,
     lastCheckInAt: row.lastCheckInAt,
     revokedAt: row.revokedAt,
@@ -153,7 +185,7 @@ export function fleetService(db: Db) {
     signer: { id: string; publicKeyX: string },
     seq: number,
     now: Date,
-    fields: Partial<FleetInstanceRow> = {},
+    fields: PgUpdateSetSource<typeof fleetInstances> = {},
   ) {
     const rows = await tx
       .update(fleetInstances)
@@ -171,9 +203,9 @@ export function fleetService(db: Db) {
   }
 
   return {
-    async list() {
+    async list(now = new Date()) {
       const rows = await db.select().from(fleetInstances).orderBy(fleetInstances.code);
-      return rows.map(view);
+      return rows.map((row) => view(row, now));
     },
 
     async get(id: string) {
@@ -272,9 +304,17 @@ export function fleetService(db: Db) {
     /** Spoke: one signed check-in. Stored as parsed by the closed schema, nothing else. */
     async checkIn(compactJws: string, now = new Date()) {
       const { signer, claims } = await signedSender(compactJws, "check-in", now);
+      const checkIn = claims.checkIn!;
+      // A v1 check-in says nothing about lifecycle, so the stored one stays.
+      const lifecycle = checkIn.schema === FLEET_CHECK_IN_SCHEMA ? checkIn.lifecycle : null;
       await db.transaction(async (tx) => {
-        if (!(await advanceSeq(tx, signer, claims.seq, now, { lastCheckInAt: now }))) reject("fleet_replay", 409);
-        await tx.insert(fleetCheckIns).values({ fleetInstanceId: signer.id, seq: claims.seq, payload: claims.checkIn!, receivedAt: now });
+        const fields: PgUpdateSetSource<typeof fleetInstances> = { lastCheckInAt: now, lastAppHealth: checkIn.health.app };
+        if (lifecycle) {
+          fields.lifecycle = lifecycle;
+          fields.lifecycleChangedAt = sql`case when ${fleetInstances.lifecycle} is distinct from ${lifecycle} then ${now.toISOString()}::timestamptz else ${fleetInstances.lifecycleChangedAt} end`;
+        }
+        if (!(await advanceSeq(tx, signer, claims.seq, now, fields))) reject("fleet_replay", 409);
+        await tx.insert(fleetCheckIns).values({ fleetInstanceId: signer.id, seq: claims.seq, payload: checkIn, receivedAt: now });
         const cutoff = new Date(now.getTime() - CHECK_IN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
         await tx.delete(fleetCheckIns).where(and(eq(fleetCheckIns.fleetInstanceId, signer.id), lt(fleetCheckIns.receivedAt, cutoff)));
       });

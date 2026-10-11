@@ -19,6 +19,15 @@ export const fleetInstances = pgTable(
     /** The highest message `seq` accepted; a message at or below it is a replay. */
     lastSeq: bigint("last_seq", { mode: "number" }),
     lastCheckInAt: timestamp("last_check_in_at", { withTimezone: true }),
+    /**
+     * From the last v2 check-in (GRE-1366): active, paused or archived. Kept
+     * here, not only in the check-in rows, so a paused instance that sends
+     * nothing more still shows paused. Null until the first v2 check-in.
+     */
+    lifecycle: text("lifecycle"),
+    lifecycleChangedAt: timestamp("lifecycle_changed_at", { withTimezone: true }),
+    /** `health.app` of the last check-in: ok or down. */
+    lastAppHealth: text("last_app_health"),
     registeredAt: timestamp("registered_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedBy: text("revoked_by"),
