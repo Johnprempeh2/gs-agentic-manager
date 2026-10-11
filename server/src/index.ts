@@ -80,6 +80,7 @@ import {
   backfillPrincipalAccessCompatibility,
   backfillLegacyToolOAuthTokens,
   bootstrapExecutionPolicyFromEnv,
+  budgetService,
   environmentCustomImageService,
   decisionService,
   decisionRetentionService,
@@ -1309,6 +1310,9 @@ async function startServerWithDatabaseTeardown(
   // GRE-1187: board emails are only queued here; the app's email service
   // (started in app.ts) delivers them on its own tick.
   const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
+  const budgets = budgetService(db, heartbeat
+    ? { cancelWorkForScope: heartbeat.cancelBudgetScopeWork, noticeHardStop: heartbeat.noticeBudgetHardStop }
+    : {});
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
@@ -1318,6 +1322,8 @@ async function startServerWithDatabaseTeardown(
     ["status_delivery", () => deliverExecutionStatuses(db)],
     ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
+    // GRE-1363: a dated budget change takes effect on its date, with no restart.
+    ["budget_scheduled_changes", () => budgets.applyDueChanges(new Date())],
     // GRE-933: Everest's renew reminder 3 days before a live steward grant ends.
     ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
     // Memory linking: the link check, at most every 6 hours per company with memory on.
