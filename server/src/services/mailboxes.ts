@@ -280,9 +280,13 @@ export function mailboxService(
         .where(and(eq(toolConnections.companyId, companyId), eq(toolConnections.uid, uid)));
       if (previous) return previous.id;
       const secret = await secretService(db).create(companyId, {
-        name: `Mailbox password ${randomUUID()}`,
+        name: `Mailbox password ${input.address} ${randomUUID().slice(0, 8)}`,
+        // The `tool_app.` namespace marks the secret as owned by this
+        // connection, so removing the mailbox revokes it.
+        key: `tool_app.${randomUUID()}.credentials_password`,
         provider: "local_encrypted",
         value: input.password,
+        description: `IMAP app password for ${input.address}.`,
       });
       const tools = toolAccessService(db);
       const app = await tools.createApplication(companyId, {

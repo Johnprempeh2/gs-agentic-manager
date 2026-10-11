@@ -430,8 +430,13 @@ describe("mailbox connections (GRE-1343)", () => {
   it("removes a mailbox so agents lose access", async () => {
     const f = await fixture();
     const { body: mailbox } = await f.connect();
+    const [before] = await db.select().from(toolConnections).where(eq(toolConnections.id, mailbox.id));
+    const secretId = before.credentialSecretRefs[0].secretId;
     const removed = await request(f.app).delete(`/api/companies/${f.companyId}/mailboxes/${mailbox.id}`);
     expect(removed.status).toBe(200);
+    // The stored password is revoked with the mailbox.
+    const [secret] = await db.select().from(companySecrets).where(eq(companySecrets.id, secretId));
+    expect(!secret || secret.deletedAt !== null).toBe(true);
     expect((await request(f.app).get(`/api/companies/${f.companyId}/mailboxes`)).body).toEqual([]);
     f.asAgent();
     const search = await request(f.app)
