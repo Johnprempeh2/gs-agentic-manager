@@ -459,6 +459,12 @@ const searchAs = (f: Awaited<ReturnType<typeof fixture>>, mailboxId: string) =>
     expect(outcome(denied)).toMatch(/cancelled/);
     expect(denied.headers.location).not.toContain("user said no");
 
+    const badCodeStart = await f.start();
+    const badCodeState = new URL(badCodeStart.body.authorizationUrl).searchParams.get("state")!;
+    const badCode = await f.callback({ state: badCodeState, code: "not-the-code" });
+    expect(badCode.status).toBe(303);
+    expect(outcome(badCode)).toBe("Microsoft sign-in did not complete. Try again.");
+
     const bogus = await f.callback({ state: "made-up", code: AUTH_CODE });
     expect(bogus.status).toBe(303);
     expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, f.companyId))).toHaveLength(0);

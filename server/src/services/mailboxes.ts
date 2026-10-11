@@ -48,6 +48,7 @@ import {
   parseApp,
   pkcePair,
   primeAccessToken,
+  reconnectMessage,
   rememberSignIn,
   requestToken,
   takeSignIn,
@@ -593,6 +594,11 @@ export function mailboxService(
       code,
       redirect_uri: entry.redirectUri,
       code_verifier: entry.codeVerifier,
+    }).catch((error) => {
+      // Nothing is connected yet, so "reconnect" would be the wrong advice.
+      if (error instanceof MailboxAuthError && error.message === reconnectMessage(provider))
+        throw unprocessable(`${label} sign-in did not complete. Try again.`);
+      throw error;
     });
     const address = addressFromIdToken(tokens.idToken);
     if (!address) throw unprocessable(`${label} did not say which mailbox signed in. Try again.`);
