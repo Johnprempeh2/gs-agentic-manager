@@ -2,6 +2,10 @@ import { api } from "./client";
 import type {
   MailboxAgentsInput,
   MailboxConnectInput,
+  MailboxOAuthAppInput,
+  MailboxOAuthAppSummary,
+  MailboxOAuthProvider,
+  MailboxOAuthStartInput,
   MailboxSummary,
 } from "@greatstone/shared";
 
@@ -17,6 +21,12 @@ export const mailboxesApi = {
       `/companies/${companyId}/mailboxes/${id}/test`,
       {},
     ),
+  oauthApps: (companyId: string) =>
+    api.get<MailboxOAuthAppSummary[]>(`/companies/${companyId}/mailbox-oauth/apps`),
+  saveOAuthApp: (companyId: string, provider: MailboxOAuthProvider, input: MailboxOAuthAppInput) =>
+    api.put<MailboxOAuthAppSummary>(`/companies/${companyId}/mailbox-oauth/apps/${provider}`, input),
+  startOAuth: (companyId: string, input: MailboxOAuthStartInput) =>
+    api.post<{ authorizationUrl: string }>(`/companies/${companyId}/mailbox-oauth/start`, input),
   remove: (companyId: string, id: string) =>
     api.delete<{ id: string; removed: true }>(`/companies/${companyId}/mailboxes/${id}`),
 };

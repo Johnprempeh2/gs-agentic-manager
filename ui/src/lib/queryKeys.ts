@@ -33,6 +33,7 @@ export const queryKeys = {
   },
   mailboxes: {
     list: (companyId: string) => ["mailboxes", companyId] as const,
+    oauthApps: (companyId: string) => ["mailboxes", companyId, "oauth-apps"] as const,
   },
   chatEndpoints: {
     list: (companyId: string) => ["chat-endpoints", companyId] as const,

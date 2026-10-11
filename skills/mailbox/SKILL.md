@@ -7,8 +7,8 @@ description: Search and read the mailboxes assigned to you, and save a found ema
 
 You can search and read the mailboxes listed under "Assigned resources" below.
 Access is read-only: you cannot send, reply, move, flag or delete mail. Reading
-does not mark messages as read. GS Agentic Manager holds the mailbox password;
-never look for it or ask for it.
+does not mark messages as read. GS Agentic Manager holds the mailbox password
+or sign-in token; never look for it or ask for it.
 
 Native runners use `mailbox_list`, `mailbox_folders`, `mailbox_search`,
 `mailbox_read` and `mailbox_save_to_task`.
