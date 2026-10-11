@@ -3162,6 +3162,8 @@ export function toolAccessService(
             eq(connectionGrants.id, grant.id),
             eq(connectionGrants.companyId, connection.companyId),
             eq(connectionGrants.connectionId, connection.id),
+            // GRE-1364: a token fetch racing a company pause must not lift the suspension.
+            ne(connectionGrants.status, "suspended"),
           ),
         );
       return {
@@ -11751,6 +11753,12 @@ export function toolAccessService(
         .limit(1);
       if (!currentGrant || currentGrant.status === "revoked")
         throw notFound("GitHub authorization not found");
+      // GRE-1364: a company pause can suspend the grant while the provider
+      // requests are in flight. A refresh must never write it back to active.
+      if (currentGrant.status === "suspended")
+        throw conflict("This GitHub authorization is suspended while the company is paused.", {
+          code: "grant_suspended",
+        });
       const previousGitHub = currentGrant.providerTenant?.github;
       const initialGitHub = grant.providerTenant?.github;
       // No lock is held during provider requests. Reject a snapshot if another

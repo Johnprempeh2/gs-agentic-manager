@@ -2191,11 +2191,14 @@ function connectorEnrollmentPrincipal(req: Request): string {
     const existing = await getAccessibleResource(req, res, svc.getConnection(req.params.connectionId as string), "Tool connection not found");
     if (!existing) return;
     await assertToolConnectionConfigureAccess(req, existing);
-    const connection = await svc.reenableConnectionAfterPause(existing.id, getActorInfo(req));
+    const actor = getActorInfo(req);
+    const connection = await svc.reenableConnectionAfterPause(existing.id, actor);
     await logActivity(db, {
       companyId: connection.companyId,
-      actorType: "user",
-      actorId: req.actor.userId ?? "board",
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
       action: "tool_connection.pause_reenabled",
       entityType: "tool_connection",
       entityId: connection.id,
