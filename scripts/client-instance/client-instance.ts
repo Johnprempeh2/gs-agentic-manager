@@ -29,6 +29,10 @@
 //                                     (signed registration and check-in with a Greatstone hub, GRE-1082)
 //   scripts/client-instance.sh plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
 //                                     (copy the strategy plan; without --apply on it only reports; GRE-1190)
+//   scripts/client-instance.sh pause|resume --root <dir> --operator <name> --reason <text>
+//   scripts/client-instance.sh archive --root <dir> --operator <name> --retention-days N --offsite-config <file> --sandbox <empty dir>
+//   scripts/client-instance.sh delete --root <dir> --confirm-code <code> --approval <ref> --operator <name> [--offsite-config <file>]
+//                                     (lifecycle of an instance, GRE-1367; needs CLIENT_INSTANCE_OPERATOR_PASSWORD for pause and resume)
 //   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
 //                                     (prints the two edition values as KEY=VALUE lines, for the
 //                                      Stable image: scripts/greatstone-stable-image.sh)
@@ -56,6 +60,24 @@ import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visi
 import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
 import { copyPlan, companyIds, planCopyLines } from "./plan-copy.js";
+import {
+  checkActor,
+  checkDeleteRequest,
+  deletionRecordPath,
+  describeUsage,
+  dormantHealthDetail,
+  lifecycleOf,
+  lifecycleStatusLines,
+  parseRetentionDays,
+  retentionEnd,
+  usageDelta,
+  usageIsZero,
+  type ArchiveRecord,
+  type DeletionRecord,
+  type PauseRecord,
+  type ResumeRecord,
+  type UsageCounts,
+} from "./lifecycle.js";
 import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
 import {
@@ -183,6 +205,19 @@ const USAGE = `usage:
                                            copy the strategy plan (vision to initiatives, with targets and
                                            due dates) to the client instance; owners matched by email.
                                            Without --apply on it only reports. Both instances must run.
+  pause --root <dir> --operator <name> --reason <text>
+                                           pause the companies in the app, back up, send a check-in, stop the
+                                           app; start is refused until resume (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+  resume --root <dir> --operator <name> --reason <text>
+                                           start, prove no new use while paused, resume the companies the
+                                           pause paused; connections stay off until each is turned on again
+  archive --root <dir> --operator <name> --retention-days N --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+                                           from paused: final backup, off-host copy checked in the sandbox,
+                                           ports freed, retention end recorded (N is John's setting; no default)
+  delete --root <dir> --confirm-code <code> --approval <ref> --operator <name>
+         [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
+                                           from paused or archived: removes data, local backups, off-host copies,
+                                           hub record and key, watch config; leaves one deletion record
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -227,6 +262,10 @@ interface InstanceState {
   requireBoardApprovalForNewAgents?: boolean;
   /** GRE-1366: set by `pause`, `resume` and `archive` (B9); the fleet check-in reports it. Absent means active. */
   lifecycle?: FleetLifecycle;
+  /** GRE-1367: written by pause, resume and archive; `status` shows them. */
+  lastPause?: PauseRecord;
+  lastResume?: ResumeRecord;
+  lastArchive?: ArchiveRecord;
 }
 
 interface ReleaseRef {
@@ -433,7 +472,11 @@ async function health(state: InstanceState): Promise<Record<string, unknown> | n
  * refuses company creation while GSAM_MANAGED_CONFIG is set, and invites
  * while `company.invites` is hidden. Every normal start sets both values.
  */
-async function startServer(root: string, state: InstanceState, mode: "normal" | "provision") {
+async function startServer(root: string, state: InstanceState, mode: "normal" | "provision", opts: { dormant?: boolean } = {}) {
+  if (lifecycleOf(state) !== "active" && !opts.dormant) {
+    process.stderr.write(`client-instance: the instance is ${lifecycleOf(state)}; start is refused. Use resume (doc/CLIENT-INSTANCES.md, "Pause, resume, archive, delete").\n`);
+    process.exit(EXIT_DORMANT);
+  }
   if (readPid(root)) die(`the instance at ${root} is already running (pid ${readPid(root)})`);
   if (!(await portFree(state.port))) die(`port ${state.port} is in use by another process`);
   if (!(await portFree(state.dbPort))) die(`database port ${state.dbPort} is in use by another process`);
@@ -1132,11 +1175,20 @@ async function aiWatchSignals(state: InstanceState, config: WatchConfig): Promis
 }
 
 async function watchSignals(root: string, state: InstanceState, config: WatchConfig): Promise<WatchSignal[]> {
+  const disk = statfsSync(root);
+  const meminfo = existsSync("/proc/meminfo") ? memAvailableFromMeminfo(readFileSync("/proc/meminfo", "utf8")) : null;
+  if (lifecycleOf(state) !== "active") {
+    // GRE-1367: stopped on purpose; a running app here is the failure.
+    const pid = readPid(root);
+    return [
+      { key: "health", ok: !pid, detail: pid ? `${lifecycleOf(state)}, but the app runs (pid ${pid})` : dormantHealthDetail(state) },
+      diskSignal(Number(disk.bavail) * Number(disk.bsize)),
+      memorySignal(meminfo ?? freemem()),
+    ];
+  }
   const pid = readPid(root);
   const body = pid ? await health(state) : null;
   const up = Boolean(pid) && body?.status === "ok";
-  const disk = statfsSync(root);
-  const meminfo = existsSync("/proc/meminfo") ? memAvailableFromMeminfo(readFileSync("/proc/meminfo", "utf8")) : null;
   return [
     { key: "health", ok: up, detail: pid ? `pid ${pid}, health ${String(body?.status ?? "no answer")}` : "not running" },
     linesSignal("backup", backupStatusLines(backupDir(root))),
@@ -1389,6 +1441,25 @@ async function cmdFleetRevoke(root: string, opts: Record<string, string>) {
   say(`fleet-revoke OK: instance ${registration.instanceId} at ${registration.hubUrl}; the key is deleted`);
 }
 
+/**
+ * delete step 3 (AT-4.8): a signed `delete` asks the hub to remove this
+ * instance's record and check-ins. True when removed; false when the hub had
+ * revoked the key (a revoked spoke cannot ask). Any other answer stops delete.
+ */
+async function deleteFromHub(root: string, fleet: NonNullable<ReturnType<typeof readFleet>>): Promise<boolean> {
+  const { registration, key } = fleet;
+  const seq = nextSeq(registration.lastSeq);
+  writeFleetRegistration(root, { ...registration, lastSeq: seq });
+  const message = signFleetMessage(key.privateJwk, { act: "delete", sub: registration.instanceId, seq });
+  const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/delete", { message }).catch((err: unknown) =>
+    die(`hub delete FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing is removed; run delete again`),
+  );
+  const answer = hubAnswer(res.status, res.json);
+  if (answer.ok) return true;
+  if ((res.json as { error?: unknown } | null)?.error === "fleet_key_revoked") return false;
+  return die(`hub delete FAILED: ${answer.detail}. Nothing is removed; run delete again, or add --fleet-local-only yes and remove the hub record by hand`);
+}
+
 function fleetStatusLines(root: string): string[] {
   if (!existsSync(fleetHubFile(root))) return ["fleet: not registered with a hub"];
   const registration = JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration;
@@ -1456,6 +1527,379 @@ function cmdAiRoute(root: string, state: InstanceState, opts: Record<string, str
   writeState(root, state);
   say(`AI access route saved: ${state.aiAccessRoute}`);
   if (readPid(root)) say("the instance is running; stop and start it to use the new route");
+}
+
+// ---------------------------------------------------------------- pause, resume, archive, delete (GRE-1367)
+
+/** `start` exits with this code while the instance is paused or archived; gsam-client@.service does not restart on it. */
+const EXIT_DORMANT = 3;
+
+function operatorPassword(): string {
+  return process.env.CLIENT_INSTANCE_OPERATOR_PASSWORD || die("set CLIENT_INSTANCE_OPERATOR_PASSWORD to the operator password");
+}
+
+function checkFlags(opts: Record<string, string>, allowed: string[]) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && !allowed.includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+}
+
+/** Rows of AI or job use and of fees, read from the running instance's own database (AT-4.6). */
+async function usageCounts(root: string, state: InstanceState): Promise<UsageCounts> {
+  const db = await import("../../packages/db/src/index.js");
+  const url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  try {
+    const conn = db.createDb(url);
+    return {
+      heartbeatRuns: await conn.$count(db.heartbeatRuns),
+      costEvents: await conn.$count(db.costEvents),
+      financeEvents: await conn.$count(db.financeEvents),
+      billingInvoices: await conn.$count(db.billingInvoices),
+    };
+  } finally {
+    await db.closeRegisteredClients(url);
+  }
+}
+
+/**
+ * B11 (GRE-1372) sets this: copy the instance's billing records to the
+ * operator's billing archive, outside the instance folder, and return the
+ * file. Until then `delete` stops when the instance holds any billing record
+ * (AT-4.10); it never skips the step.
+ */
+const billingExport: ((root: string, state: InstanceState) => Promise<{ file: string }>) | null = null;
+
+/** Billing rows in the stopped instance's database, read with the database started on its own (no app). */
+async function billingRowCounts(root: string, state: InstanceState): Promise<{ accounts: number; invoices: number }> {
+  const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+  const db = await import("../../packages/db/src/index.js");
+  const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
+  const pg = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), preferred, { allowExisting: false });
+  const url = db.embeddedPostgresConnectionString({ ...pg, database: "paperclip" });
+  try {
+    const conn = db.createDb(url);
+    return { accounts: await conn.$count(db.billingAccounts), invoices: await conn.$count(db.billingInvoices) };
+  } finally {
+    await db.closeRegisteredClients(url);
+    await pg.stop();
+  }
+}
+
+/** Sign in as the operator; the app limits sign-ins a minute, so a 429 waits and tries again. */
+async function signInOperator(state: InstanceState): Promise<Session> {
+  const operator = new Session(baseUrl(state));
+  const body = { email: OPERATOR_EMAIL, password: operatorPassword() };
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await operator.request("POST", "/api/auth/sign-in/email", body);
+    if (res.status === 200) return operator;
+    if (res.status !== 429 || attempt === 6) die(`operator sign-in returned ${res.status}: ${res.text.slice(0, 300)}`);
+    await new Promise((resolve) => setTimeout(resolve, 10_000));
+  }
+}
+
+/** One check-in with the new lifecycle, when the instance is registered with a hub (AT-3.8). */
+async function lifecycleCheckIn(root: string, password: string) {
+  const fresh = readState(root);
+  const stateFile = path.join(root, WATCH_STATE_FILE);
+  const signals = existsSync(stateFile) ? ((JSON.parse(readFileSync(stateFile, "utf8")) as { lastRun?: { signals?: WatchSignal[] } }).lastRun?.signals ?? []) : [];
+  const outcome = await sendFleetCheckIn(root, fresh, password, signals);
+  if (!outcome) say("fleet: not registered with a hub; no check-in sent");
+  else say(outcome.ok ? `fleet check-in sent (lifecycle ${fresh.lifecycle})` : `WARNING: fleet check-in FAILED: ${outcome.detail}`);
+}
+
+/**
+ * pause (AT-4.3): pause every active company in the app (runs cancelled,
+ * routines and connections stopped; B8), count the use rows, back up, record
+ * the pause, send a check-in that says paused, stop the app. Data, backups
+ * and the off-host repository stay. `start`, `offsite-backup` and
+ * `restore-check` do nothing until `resume`.
+ */
+async function cmdPause(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, ["operator", "reason"]);
+  const actorError = checkActor(opts, true);
+  if (actorError) die(actorError);
+  if (lifecycleOf(state) !== "active") die(`the instance is ${lifecycleOf(state)} already`);
+  if (!readPid(root)) die("the instance is not running; start it first (pause backs up the running database)");
+  const password = operatorPassword();
+  const operator = await signInOperator(state);
+
+  say("1/5 pause the companies in the app");
+  const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as Array<{ id: string; status: string }>;
+  const companyIds: string[] = [];
+  for (const company of companies) {
+    if (company.status !== "active") {
+      say(`company ${company.id.slice(0, 8)} is ${company.status}; left as it is`);
+      continue;
+    }
+    await operator.expect("POST", `/api/companies/${company.id}/pause`, { reason: `Instance paused by ${opts.operator!.trim()}: ${opts.reason!.trim()}` }, [200]);
+    companyIds.push(company.id);
+  }
+  say(`paused ${plural(companyIds.length, "company", "companies")}`);
+  const counts = await usageCounts(root, state);
+
+  say("2/5 backup");
+  const backupFile = backupNow(root, state, "pre-pause");
+  say(`backup written: ${backupFile}`);
+
+  const fresh = readState(root);
+  fresh.lifecycle = "paused";
+  fresh.lastPause = { at: new Date().toISOString(), operator: opts.operator!.trim(), reason: opts.reason!.trim(), backupFile, companyIds, counts };
+  writeState(root, fresh);
+
+  say("3/5 final check-in");
+  await lifecycleCheckIn(root, password);
+  say("4/5 stop the app");
+  await stopServer(root, fresh);
+  say("5/5 timers: start is refused (exit 3), offsite-backup and restore-check skip, watch reports paused");
+  say(`paused at ${fresh.lastPause.at}. Data, backups and the off-host repository stay. Resume with: resume --root ${root} --operator <name> --reason <text>`);
+}
+
+/** An archived instance freed its ports; take them back, or new ones when a sibling uses them now. */
+async function reclaimPorts(root: string, state: InstanceState) {
+  const claims = siblingPortClaims(root);
+  const claimed = (port: number) => claims.some((c) => c.port === port || c.dbPort === port);
+  if (!claimed(state.port) && !claimed(state.dbPort) && (await portFree(state.port)) && (await portFree(state.dbPort))) return;
+  const { port, dbPort } = await choosePorts({ claims, firstFree: firstFreePort }).catch((err: Error) => die(err.message));
+  const config = JSON.parse(readFileSync(configPath(root), "utf8"));
+  config.server.port = port;
+  config.database.embeddedPostgresPort = dbPort;
+  writeFileSync(configPath(root), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  say(`the old ports are in use now; this instance moves to port ${port}, database port ${dbPort}`);
+  state.port = port;
+  state.dbPort = dbPort;
+  writeState(root, state);
+}
+
+/**
+ * resume (AT-4.4, AT-4.6): a named act with a reason. Starts the app, proves
+ * no run, cost, finance or invoice row was added while paused, then resumes
+ * only the companies the pause paused. Connections stay suspended until each
+ * is turned on again and passes its health check (B8). Nothing catches up.
+ */
+async function cmdResume(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, ["operator", "reason"]);
+  const actorError = checkActor(opts, true);
+  if (actorError) die(actorError);
+  const lifecycle = lifecycleOf(state);
+  if (lifecycle === "active") die("the instance is not paused or archived");
+  const pause = state.lastPause ?? die("no pause record in client-instance.json; cannot resume safely");
+  const password = operatorPassword();
+  if (lifecycle === "archived") await reclaimPorts(root, state);
+
+  say("1/3 start the app (the companies stay paused)");
+  await startServer(root, state, "normal", { dormant: true });
+  const added = usageDelta(pause.counts, await usageCounts(root, state));
+  const ok = usageIsZero(added);
+  say(ok ? `PASS no new use while paused (${describeUsage(added)} added)` : `FAIL rows were added while paused: ${describeUsage(added)}`);
+
+  say("2/3 resume the companies the pause paused");
+  const operator = await signInOperator(state);
+  for (const id of pause.companyIds) {
+    const res = await operator.request("POST", `/api/companies/${id}/resume`, { operator: opts.operator!.trim(), reason: opts.reason!.trim() });
+    if (res.status === 404) say(`company ${id.slice(0, 8)} was not paused any more; left as it is`);
+    else if (res.status !== 200) die(`POST /api/companies/${id}/resume returned ${res.status}: ${res.text.slice(0, 300)}`);
+  }
+
+  const fresh = readState(root);
+  fresh.lifecycle = "active";
+  fresh.lastResume = { at: new Date().toISOString(), operator: opts.operator!.trim(), reason: opts.reason!.trim(), pausedAt: pause.at, addedWhilePaused: added, ok };
+  writeState(root, fresh);
+  say("3/3 check-in");
+  await lifecycleCheckIn(root, password);
+  say("resumed. Connections stay off until each is turned on again and passes its health check. Run verify next.");
+  if (!ok) process.exit(1);
+}
+
+/**
+ * archive (AT-4.7): from paused only. Final backup (the app runs only for it;
+ * the companies stay paused), a fresh off-host copy, offsite-check of that
+ * copy in a throwaway sandbox, then the app stays stopped, both ports are
+ * freed, and the archive date and retention end are recorded. The retention
+ * is John's setting, given here; nothing is deleted when it ends (AT-4.9).
+ */
+async function cmdArchive(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, ["operator", "retention-days", "offsite-config", "restic", "sandbox"]);
+  const actorError = checkActor(opts, false);
+  if (actorError) die(actorError);
+  const retentionDays = parseRetentionDays(opts["retention-days"]);
+  if (typeof retentionDays !== "number") die(retentionDays.error);
+  if (lifecycleOf(state) !== "paused") die(`archive starts from paused; the instance is ${lifecycleOf(state)} (run pause first)`);
+  if (readPid(root)) die("the instance is running; it must be stopped while paused");
+  const code = instanceCode(root);
+  const config = offsiteConfig(opts, code);
+  const sandbox = resolveRoot(opts.sandbox ?? die("--sandbox <empty dir> is required (the off-host copy is checked there, then deleted)"));
+  if (existsSync(sandbox) && readdirSync(sandbox).length > 0) die(`${sandbox} must be empty`);
+
+  say("1/5 final backup (the app runs only for it; the companies stay paused)");
+  await startServer(root, state, "normal", { dormant: true });
+  let backupFile: string;
+  try {
+    backupFile = backupNow(root, state, "archive");
+  } finally {
+    await stopServer(root, state);
+  }
+  say(`backup written: ${backupFile}`);
+
+  say("2/5 off-host copy");
+  cmdOffsiteBackup(root, opts);
+  const snapshot = readState(root).lastOffsiteBackup?.snapshot ?? null;
+
+  say("3/5 check the off-host copy in a throwaway sandbox");
+  mkdirSync(sandbox, { recursive: true });
+  const target = path.join(sandbox, "restore");
+  let check: { ok: boolean; line: string };
+  try {
+    check = await pullAndCheck(config, opts, code, target);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+  if (!check.ok) die(`${check.line}\nnot archived: the instance stays paused`);
+  say(check.line);
+
+  say("4/5 ports");
+  for (const port of [state.port, state.dbPort]) if (!(await portFree(port))) die(`port ${port} is still in use; not archived`);
+  const fresh = readState(root);
+  const at = new Date().toISOString();
+  fresh.lifecycle = "archived";
+  fresh.lastArchive = {
+    at,
+    operator: opts.operator!.trim(),
+    backupFile,
+    offsiteSnapshot: snapshot,
+    offsiteCheck: check.line,
+    retentionDays,
+    retentionEnd: retentionEnd(at, retentionDays),
+  };
+  writeState(root, fresh);
+  say(`ports ${state.port} and ${state.dbPort} are free; other instances may use them now`);
+  say("5/5 final check-in");
+  await lifecycleCheckIn(root, "");
+  say(`archived at ${at}. Retention ends ${fresh.lastArchive.retentionEnd}; status then lists it as due for deletion. Nothing is deleted automatically.`);
+}
+
+/** Remove every off-host snapshot of this code; a local repository folder is removed too. */
+function removeOffsite(config: OffsiteConfig, opts: Record<string, string>, code: string, removed: string[], notRemoved: string[]) {
+  const list = restic(config, opts, ["snapshots", "--json", "--host", code, "--tag", code]);
+  if (!list.ok) die(`restic snapshots: ${list.err}; nothing more removed`);
+  const ids = (JSON.parse(list.out || "[]") as Array<{ id: string }>).map((s) => s.id);
+  if (ids.length > 0) {
+    const forget = restic(config, opts, ["forget", "--prune", ...ids]);
+    if (!forget.ok) die(`restic forget: ${forget.err}; nothing more removed`);
+  }
+  removed.push(`off-host snapshots (${ids.length}), pruned`);
+  if (path.isAbsolute(config.repository)) {
+    rmSync(config.repository, { recursive: true, force: true });
+    removed.push("off-host repository folder");
+  } else {
+    notRemoved.push("the empty off-host repository at the target: remove it there by hand (runbook, Delete)");
+  }
+  for (const [file, label] of [[config.passwordFile, "off-host key file"], [path.resolve(opts["offsite-config"]!), "off-host config file"]] as const) {
+    try {
+      rmSync(file, { force: true });
+      removed.push(label);
+    } catch (err) {
+      notRemoved.push(`${label}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+/**
+ * delete (AT-4.8, AT-4.10): the instance code typed again, an approval
+ * reference and a named operator. Billing records are copied out first (B11);
+ * then the hub record and key, the off-host copies, the watch config and the instance
+ * folder (data, local backups, logs, keys) are removed. One deletion record
+ * stays beside the instance folders: codes, dates, names and labels only. A
+ * second run finds nothing.
+ */
+async function cmdDelete(root: string, opts: Record<string, string>) {
+  checkFlags(opts, ["confirm-code", "approval", "operator", "offsite-config", "restic", "watch-config", "fleet-local-only"]);
+  const recordFile = deletionRecordPath(root);
+  if (!existsSync(path.join(root, STATE_FILE))) {
+    if (existsSync(recordFile)) {
+      const record = JSON.parse(readFileSync(recordFile, "utf8")) as DeletionRecord;
+      say(`nothing to delete: ${record.code} was deleted on ${record.deletedAt} (record: ${recordFile})`);
+      return;
+    }
+    die(`no client instance at ${root} (missing ${STATE_FILE})`);
+  }
+  const state = readState(root);
+  const code = instanceCode(root);
+  const lifecycle = lifecycleOf(state);
+  const requestError = checkDeleteRequest({
+    code,
+    typedCode: opts["confirm-code"],
+    approval: opts.approval,
+    operator: opts.operator,
+    lifecycle,
+    running: Boolean(readPid(root)),
+  });
+  if (requestError) die(requestError);
+  const hadOffsite = Boolean(state.lastOffsiteBackup || state.lastArchive);
+  if (hadOffsite && !opts["offsite-config"]) die("this instance has off-host copies: --offsite-config <file> is required; nothing removed");
+  const config = opts["offsite-config"] ? offsiteConfig(opts, code) : null;
+
+  say("1/5 billing records (AT-4.10)");
+  const billing = await billingRowCounts(root, state);
+  let billingLine: string;
+  if (billingExport) {
+    billingLine = `exported to ${(await billingExport(root, state)).file}`;
+  } else if (billing.accounts === 0 && billing.invoices === 0) {
+    billingLine = "none: the instance holds no billing account and no invoice";
+  } else {
+    die(`billing-export missing (B11, GRE-1372): the instance holds ${plural(billing.accounts, "billing account", "billing accounts")} and ${plural(billing.invoices, "invoice", "invoices")}; nothing removed`);
+  }
+  say(`billing records: ${billingLine}`);
+
+  const removed: string[] = [];
+  const notRemoved: string[] = [];
+  say("2/5 hub (first: if the hub refuses, nothing is removed)");
+  const fleet = readFleet(root);
+  if (fleet) {
+    const handRemoval = `the hub record: a hub admin removes it with DELETE /api/fleet/instances/${fleet.registration.instanceId}`;
+    if (opts["fleet-local-only"] === "yes") {
+      removed.push("hub key (local copy only)");
+      notRemoved.push(handRemoval);
+    } else {
+      const hubRemoved = await deleteFromHub(root, fleet);
+      removed.push(hubRemoved ? "hub record and check-ins, removed at the hub; hub key" : "hub key (the hub had revoked it)");
+      if (!hubRemoved) notRemoved.push(handRemoval);
+    }
+    rmSync(path.join(root, FLEET_DIR), { recursive: true, force: true });
+  } else {
+    say("not registered with a hub");
+  }
+
+  say("3/5 off-host copies");
+  if (config) removeOffsite(config, opts, code, removed, notRemoved);
+  else say("no off-host copies");
+
+  say("4/5 watch config");
+  if (opts["watch-config"]) {
+    rmSync(path.resolve(opts["watch-config"]), { force: true });
+    removed.push("watch config file");
+  }
+
+  say("5/5 instance folder (data, local backups, logs, keys)");
+  const backups = existsSync(backupDir(root)) ? readdirSync(backupDir(root)).length : 0;
+  rmSync(root, { recursive: true, force: true });
+  if (existsSync(root)) die(`${root} is still there after removal`);
+  removed.push("instance database and data folder", `local backups (${backups} files)`, "instance config, secrets and logs");
+
+  const record: DeletionRecord = {
+    code,
+    deletedAt: new Date().toISOString(),
+    operator: opts.operator!.trim(),
+    approval: opts.approval!,
+    lifecycleBefore: lifecycle,
+    archivedAt: state.lastArchive?.at ?? null,
+    billingExport: billingLine,
+    removed,
+    notRemoved,
+  };
+  mkdirSync(path.dirname(recordFile), { recursive: true });
+  writeFileSync(recordFile, `${JSON.stringify(record, null, 2)}\n`);
+  for (const line of removed) say(`removed: ${line}`);
+  for (const line of notRemoved) say(`NOT removed: ${line}`);
+  say(`deleted ${code}. Deletion record: ${recordFile}`);
 }
 
 // ---------------------------------------------------------------- commands
@@ -1789,6 +2233,13 @@ async function cmdPlanCopy(opts: Record<string, string>) {
   }
 }
 
+/** The timers keep firing on a host; while paused or archived these do nothing (AT-4.3). */
+function skipWhileDormant(state: InstanceState, command: string): boolean {
+  if (lifecycleOf(state) === "active") return false;
+  say(`${command} skipped: the instance is ${lifecycleOf(state)}`);
+  return true;
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
@@ -1799,6 +2250,10 @@ async function main() {
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
   if (command === "offsite-check") return cmdOffsiteCheck(opts);
+  if (command === "delete") {
+    if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
+    return cmdDelete(resolveRoot(opts.root), opts);
+  }
   if (command === "plan-copy") {
     if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
     return cmdPlanCopy(opts);
@@ -1824,7 +2279,9 @@ async function main() {
   if (command === "restore-check") {
     if (positional.length > 1) die("usage: restore-check --root <dir> [backup file]");
     const root = resolveRoot(opts.root);
-    return cmdRestoreCheck(root, readState(root), positional[0]);
+    const state = readState(root);
+    if (skipWhileDormant(state, command)) return;
+    return cmdRestoreCheck(root, state, positional[0]);
   }
   if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
   const root = resolveRoot(opts.root);
@@ -1843,6 +2300,7 @@ async function main() {
       say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route)"}`);
       // Read-only; a WARNING does not change the exit code (GRE-533).
       for (const line of [
+        ...lifecycleStatusLines(state),
         ...backupStatusLines(backupDir(root)),
         ...restoreCheckStatusLines(state.lastRestoreCheck),
         ...offsiteStatusLines(state.lastOffsiteBackup),
@@ -1867,6 +2325,7 @@ async function main() {
     case "offsite-init":
       return cmdOffsiteInit(root, opts);
     case "offsite-backup":
+      if (skipWhileDormant(state, command)) return;
       return cmdOffsiteBackup(root, opts);
     case "watch":
       return cmdWatch(root, state, opts);
@@ -1878,6 +2337,12 @@ async function main() {
       return cmdFleetCheckIn(root, state, opts);
     case "fleet-revoke":
       return cmdFleetRevoke(root, opts);
+    case "pause":
+      return cmdPause(root, state, opts);
+    case "resume":
+      return cmdResume(root, state, opts);
+    case "archive":
+      return cmdArchive(root, state, opts);
     default:
       die(USAGE);
   }

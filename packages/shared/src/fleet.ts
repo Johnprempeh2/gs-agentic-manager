@@ -26,7 +26,8 @@ export const FLEET_MAX_CLOCK_SKEW_SECONDS = 60;
 export const FLEET_REGISTRATION_CODE_TTL_HOURS = 24;
 export const FLEET_REGISTRATION_CODE_PREFIX = "gsamfr_";
 
-export const FLEET_ACTIONS = ["register", "check-in", "revoke"] as const;
+/** `delete` (B9): the spoke asks the hub to remove its record and check-ins, as the last step of `client-instance.sh delete`. */
+export const FLEET_ACTIONS = ["register", "check-in", "revoke", "delete"] as const;
 export type FleetAction = (typeof FLEET_ACTIONS)[number];
 
 export const FLEET_INSTANCE_STATUSES = ["pending", "active", "revoked"] as const;
