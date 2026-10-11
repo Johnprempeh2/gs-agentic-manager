@@ -50,6 +50,14 @@ instance; and no signed check-in holds seeded business text or ids.
 RESTIC=/path/to/restic scripts/client-instance/isolation.sandbox-test.sh <empty scratch dir>
 ```
 
+The test needs restic. If it is not on the host, use the release binary
+(tested with 0.17.3; pick the file for your OS and CPU):
+
+```sh
+curl -sSL -o restic.bz2 https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2
+bunzip2 restic.bz2 && chmod +x restic && ./restic version
+```
+
 It ends with `ALL PASSED`, and stops all three instances. Run it after any
 change to `create`, the backups, the off-host backups or the fleet channel.
 

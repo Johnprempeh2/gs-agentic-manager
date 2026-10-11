@@ -140,9 +140,18 @@ function normalize(value: unknown, root: string, ports: number[]): unknown {
   return value;
 }
 
-/** Paths of every file, except the database cluster, backups, logs and run files. */
+/**
+ * Paths of every file, except the database cluster, backups, logs, run files
+ * and the connectivity watch state (written on a timer, so present or not by timing).
+ */
 function fileList(root: string): string[] {
-  const skip = [/^instances\/default\/db\//, /^instances\/default\/data\/backups\//, /^instances\/default\/logs\//, /^server\.(log|pid)$/];
+  const skip = [
+    /^instances\/default\/db\//,
+    /^instances\/default\/data\/backups\//,
+    /^instances\/default\/logs\//,
+    /^instances\/default\/connectivity\//,
+    /^server\.(log|pid)$/,
+  ];
   const out: string[] = [];
   const walk = (dir: string) => {
     for (const name of readdirSync(dir)) {
@@ -166,7 +175,7 @@ async function cmdCompare(rootA: string, rootB: string) {
   for (const p of [...portsOf(a), ...portsOf(b)]) check(p !== 3100 && p !== 3200, `port ${p} is not 3100 or 3200`);
 
   const files = [fileList(rootA), fileList(rootB)];
-  check(same(files[0], files[1]), `same file layout (${files[0]!.length} files outside the database, backups and logs)`);
+  check(same(files[0], files[1]), `same file layout (${files[0]!.length} files outside the database, backups, logs and runtime state)`);
   if (!same(files[0], files[1])) {
     process.stdout.write(`  only in A: ${files[0]!.filter((f) => !files[1]!.includes(f)).join(", ") || "-"}\n`);
     process.stdout.write(`  only in B: ${files[1]!.filter((f) => !files[0]!.includes(f)).join(", ") || "-"}\n`);
