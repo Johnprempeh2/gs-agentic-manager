@@ -124,6 +124,41 @@ memory is below 2048 MB or free disk (data dir and home volume) is below
 20 GB (GRE-207). The OS memory-pressure level does not hold runs (GRE-198).
 Change them in Instance → General → Run limits; 0 turns a floor off.
 
+### Spending authority (GRE-1363)
+
+The operator log-in sets, for the client's company, a **ceiling** and the
+**named approvers**. They are settings of the instance, set in the app, not in
+code. No value is built in: with no ceiling, budgets work as before.
+
+```sh
+# as the operator log-in (instance admin); ceilingCents null removes the ceiling
+curl -X PUT <base>/api/companies/<companyId>/budgets/authority \
+  -H 'Content-Type: application/json' \
+  -d '{"ceilingCents": N, "approverUserIds": ["<operator user id>"], "reason": "<why>"}'
+```
+
+- **Ceiling.** The client (and every log-in that is not the operator) cannot
+  set or raise any budget above it (403 `budget_above_operator_ceiling`), and
+  cannot remove the company's monthly cap or turn off its hard stop
+  (403 `budget_cap_operator_managed`). Lowering the ceiling cancels a dated
+  raise above it.
+- **Named approvers.** When the list is not empty, only those users and the
+  operator can decide a budget override, or change the budget of a scope that
+  is stopped at its cap (403 `budget_approver_required`). An empty list keeps
+  the old rule: any board user.
+- **Dated changes.** A budget change can carry `effectiveFrom` (and `reason`).
+  The old cap stays until that time; the server applies the new one within
+  15 seconds of it, with no restart.
+- **Audit.** Each ceiling, policy, dated, override and AI route change writes
+  one activity row with the actor, old value, new value, effective date and
+  reason (`budget.authority_updated`, `budget.policy_upserted`,
+  `budget.policy_change_scheduled`, `budget.policy_change_applied`,
+  `budget.incident_resolved`, `ai_route.changed`).
+- **AI route.** A client owner or admin asks with
+  `POST /api/companies/<companyId>/ai-route-change-requests`
+  (`{"route": "...", "reason": "..."}`). Only the operator can approve it; the
+  route in `client-instance.json` still wins at the next start, so change both.
+
 ### AI access route and board approval (GRE-667)
 
 The script sets both. There is no hand step after `create`.
