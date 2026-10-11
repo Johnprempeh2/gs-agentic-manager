@@ -79,7 +79,7 @@ export type ToolConnectionStatus = "draft" | "active" | "disabled" | "archived";
 export type ToolConnectionInstallTargetType = "company" | "agent";
 export type ConnectionGrantKind = "organization" | "user" | "agent";
 export type ConnectionGrantStatus =
-  "active" | "revoked" | "expired" | "needs_reauthorization";
+  "active" | "revoked" | "expired" | "needs_reauthorization" | "suspended";
 export type ToolConnectionCredentialPolicy =
   "shared" | "per_user" | "per_user_with_fallback" | "per_agent";
 export type ConnectionGrantMemberSubjectType = "user";
@@ -194,6 +194,8 @@ export interface ToolConnection {
   /** Most recent tool-call event timestamp for this connection; only populated by list endpoints. */
   lastUsedAt?: Date | string | null;
   enabled: boolean;
+  /** Set while a company pause holds this connection off (GRE-1364); re-enable it one by one after resume. */
+  pauseSuspendedAt?: Date | string | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
   createdAt: Date;
