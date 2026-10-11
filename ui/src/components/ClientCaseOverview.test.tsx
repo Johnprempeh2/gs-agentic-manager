@@ -353,4 +353,40 @@ describe("client case page", () => {
       url: "https://www.notion.so/brief",
     });
   });
+
+  it("asks before removing an item from evidence", async () => {
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({
+      evidence: [
+        {
+          id: "ev-1",
+          kind: "link",
+          title: "Notion brief",
+          typeLabel: "Link",
+          note: null,
+          attachmentId: null,
+          documentId: null,
+          documentKey: null,
+          url: "https://www.notion.so/brief",
+          contentPath: null,
+          downloadPath: null,
+          openPath: "https://www.notion.so/brief",
+          sourceIssue: null,
+          addedBy: null,
+          createdAt: "2026-10-11T10:00:00Z",
+        },
+      ],
+      deliverables: [],
+    });
+    mockPipelinesApi.removeCaseEvidence.mockResolvedValue({});
+
+    await render(<PipelineCaseEvidence caseId="case-1" />);
+    click(document.querySelector('button[aria-label="Remove Notion brief from evidence"]'));
+    await flushReact();
+    expect(mockPipelinesApi.removeCaseEvidence).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Remove from evidence?");
+
+    click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === "Remove") ?? null);
+    await flushReact();
+    expect(mockPipelinesApi.removeCaseEvidence).toHaveBeenCalledWith("case-1", "ev-1");
+  });
 });

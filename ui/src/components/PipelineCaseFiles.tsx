@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Link2, Package, PaperclipIcon, Plus, X } from "lucide-react";
+import { FileText, Link2, Package, PaperclipIcon, Plus, Trash2 } from "lucide-react";
 import type {
   ClientEvidenceCandidate,
   ClientEvidenceItem,
@@ -13,7 +13,17 @@ import { Link } from "@/lib/router";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { queryKeys } from "../lib/queryKeys";
 import { formatDate } from "../lib/utils";
-import { Button } from "./ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "./ui/alert-dialog";
+import { Button, buttonVariants } from "./ui/button";
 import { Input } from "./ui/input";
 
 function formatDay(value: string) {
@@ -50,15 +60,13 @@ function SourceTask({ issue }: { issue: ClientFileSourceIssue | { id: string; id
   );
 }
 
+/** Spacing, not separator characters, so a wrapped line on a phone always starts with content. */
 function Meta({ parts }: { parts: ReactNode[] }) {
   const shown = parts.filter(Boolean);
   return (
-    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
       {shown.map((part, index) => (
-        <span key={index} className="inline-flex items-center gap-1.5">
-          {index > 0 ? <span aria-hidden="true">·</span> : null}
-          {part}
-        </span>
+        <span key={index}>{part}</span>
       ))}
     </p>
   );
@@ -97,15 +105,19 @@ function EvidenceRow({ item, busy, onRemove }: { item: ClientEvidenceItem; busy:
         />
         {item.note ? <p className="mt-1 text-xs text-muted-foreground">{item.note}</p> : null}
       </div>
-      <button
+      <Button
         type="button"
-        className="shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+        size="xs"
+        variant="ghost"
+        className="shrink-0 text-muted-foreground hover:text-destructive"
         aria-label={`Remove ${item.title} from evidence`}
+        title="Remove from evidence"
         disabled={busy}
         onClick={onRemove}
       >
-        <X className="h-3.5 w-3.5" />
-      </button>
+        <Trash2 aria-hidden="true" />
+        <span className="hidden sm:inline">Remove</span>
+      </Button>
     </li>
   );
 }
@@ -120,14 +132,12 @@ function LinkForm({ pending, onSubmit }: { pending: boolean; onSubmit: (input: {
     onSubmit({ title: title.trim(), url: url.trim() });
   };
   return (
-    <form className="grid gap-2 sm:grid-cols-2" onSubmit={submit}>
+    <form className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]" onSubmit={submit}>
       <Input aria-label="Link name" placeholder="Name, e.g. Notion brief" value={title} onChange={(event) => setTitle(event.target.value)} />
       <Input aria-label="Link address" placeholder="https://..." type="url" value={url} onChange={(event) => setUrl(event.target.value)} />
-      <div className="sm:col-span-2">
-        <Button type="submit" size="sm" disabled={pending || !valid}>
-          {pending ? "Adding..." : "Add link"}
-        </Button>
-      </div>
+      <Button type="submit" size="sm" variant="outline" className="justify-self-start" disabled={pending || !valid}>
+        {pending ? "Adding..." : "Add link"}
+      </Button>
     </form>
   );
 }
@@ -150,6 +160,12 @@ function AddEvidencePanel({
   const rows = candidates.data?.candidates ?? [];
   return (
     <div className="space-y-3 rounded-md border border-border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-foreground">Add evidence</p>
+        <Button type="button" size="xs" variant="outline" onClick={onClose} disabled={pending}>
+          Done
+        </Button>
+      </div>
       <div>
         <p className="mb-1 text-xs font-medium text-muted-foreground">Files and documents on this client's tasks</p>
         {candidates.isLoading ? (
@@ -181,9 +197,6 @@ function AddEvidencePanel({
         <p className="mb-1 text-xs font-medium text-muted-foreground">Or add a link</p>
         <LinkForm pending={pending} onSubmit={onAdd} />
       </div>
-      <Button type="button" size="sm" variant="ghost" onClick={onClose} disabled={pending}>
-        Done
-      </Button>
     </div>
   );
 }
@@ -200,6 +213,7 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<ClientEvidenceItem | null>(null);
   const files = useCaseFiles(caseId);
 
   const invalidate = () =>
@@ -236,7 +250,7 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
       {rows.length > 0 ? (
         <ul className="divide-y divide-border">
           {rows.map((item) => (
-            <EvidenceRow key={item.id} item={item} busy={busy} onRemove={() => removeEvidence.mutate(item.id)} />
+            <EvidenceRow key={item.id} item={item} busy={busy} onRemove={() => setRemoving(item)} />
           ))}
         </ul>
       ) : (
@@ -255,6 +269,30 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
           Add evidence
         </Button>
       )}
+      <AlertDialog open={removing !== null} onOpenChange={(open) => (open ? null : setRemoving(null))}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove from evidence?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {removing?.kind === "link"
+                ? `"${removing?.title}" will no longer be listed for this client.`
+                : `"${removing?.title}" will no longer be listed for this client. The file stays on its task, so you can add it again.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Keep it</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: "destructive" })}
+              onClick={() => {
+                if (removing) removeEvidence.mutate(removing.id);
+                setRemoving(null);
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
