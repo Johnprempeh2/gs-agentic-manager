@@ -18,6 +18,7 @@ import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
+import { PipelineCaseDeliverables, PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -117,7 +118,8 @@ function RecordRow({ label, tour, children }: { label: string; tour?: string; ch
 
 /**
  * One page for a client (GRE-1048): where the client is in the journey, who
- * owns it, what happens next, who to call, and the open work.
+ * owns it, what happens next, who to call, the client's files and our
+ * deliverables (GRE-1311), and the open work.
  */
 export function ClientCaseOverview({
   detail,
@@ -172,6 +174,14 @@ export function ClientCaseOverview({
 
       <OverviewSection title="Contacts" tour="client-contacts">
         <PipelineCaseContacts caseId={detail.case.id} recordFields={detail.case.fields} />
+      </OverviewSection>
+
+      <OverviewSection title="Evidence" tour="client-evidence">
+        <PipelineCaseEvidence caseId={detail.case.id} />
+      </OverviewSection>
+
+      <OverviewSection title="Deliverables" tour="client-deliverables">
+        <PipelineCaseDeliverables caseId={detail.case.id} />
       </OverviewSection>
 
       <OverviewSection title="Open tasks">

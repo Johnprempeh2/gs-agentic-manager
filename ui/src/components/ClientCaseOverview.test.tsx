@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PipelineCaseDetail, PipelineStage } from "../api/pipelines";
 import { ClientCaseOverview } from "./ClientCaseOverview";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
+import { PipelineCaseDeliverables, PipelineCaseEvidence } from "./PipelineCaseFiles";
 
 const mockPipelinesApi = vi.hoisted(() => ({
   listCaseContacts: vi.fn(),
@@ -15,6 +16,10 @@ const mockPipelinesApi = vi.hoisted(() => ({
   updateCaseContact: vi.fn(),
   deleteCaseContact: vi.fn(),
   getCaseCrmSyncStatus: vi.fn(),
+  getCaseFiles: vi.fn(),
+  listCaseEvidenceCandidates: vi.fn(),
+  addCaseEvidence: vi.fn(),
+  removeCaseEvidence: vi.fn(),
 }));
 const mockPushToast = vi.hoisted(() => vi.fn());
 
@@ -106,6 +111,7 @@ describe("client case page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPipelinesApi.getCaseCrmSyncStatus.mockResolvedValue({ caseId: "case-1", sources: [] });
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -187,7 +193,15 @@ describe("client case page", () => {
     );
 
     const titles = [...container.querySelectorAll("section > h2")].map((heading) => heading.textContent);
-    expect(titles).toEqual(["Client record", "Contacts", "Open tasks", "Projects", "Stage history"]);
+    expect(titles).toEqual([
+      "Client record",
+      "Contacts",
+      "Evidence",
+      "Deliverables",
+      "Open tasks",
+      "Projects",
+      "Stage history",
+    ]);
     expect(container.textContent).toContain("Website rebuild");
   });
 
@@ -245,6 +259,98 @@ describe("client case page", () => {
       role: "CEO",
       phone: null,
       email: null,
+    });
+  });
+  it("lists evidence with its type, date, who added it and the source task", async () => {
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({
+      clients: [{ id: "case-1", title: "Client A", pipelineId: "pipe-1" }],
+      evidence: [
+        {
+          id: "ev-1",
+          caseId: "case-1",
+          kind: "attachment",
+          title: "ecaps-outline.pdf",
+          note: null,
+          typeLabel: "PDF",
+          contentType: "application/pdf",
+          byteSize: 10,
+          originalFilename: "ecaps-outline.pdf",
+          attachmentId: "att-1",
+          documentId: null,
+          documentKey: null,
+          url: null,
+          contentPath: "/api/attachments/att-1/content",
+          downloadPath: "/api/attachments/att-1/content?download=1",
+          openPath: "/api/attachments/att-1/content",
+          sourceIssue: { id: "i1", identifier: "GRE-1128", title: "Kick-off", path: "/GRE/issues/GRE-1128" },
+          addedBy: { type: "user", id: "u1", name: "John" },
+          createdAt: "2026-10-11T10:00:00Z",
+        },
+      ],
+      deliverables: [
+        {
+          id: "d1",
+          title: "Market entry report",
+          kind: "report",
+          openPath: "/api/attachments/att-2/content",
+          createdAt: "2026-10-11T10:00:00Z",
+          createdByAgent: { id: "a1", name: "Everest" },
+          issue: { id: "i2", identifier: "GRE-1259", title: "Report" },
+        },
+      ],
+    });
+
+    await render(
+      <>
+        <PipelineCaseEvidence caseId="case-1" />
+        <PipelineCaseDeliverables caseId="case-1" />
+      </>,
+    );
+
+    const file = container.querySelector('a[href="/api/attachments/att-1/content"]');
+    expect(file?.textContent).toBe("ecaps-outline.pdf");
+    expect(file?.getAttribute("target")).toBe("_blank");
+    expect(container.textContent).toContain("PDF");
+    expect(container.textContent).toContain("Added by John");
+    expect(container.querySelector('a[href="/issues/GRE-1128"]')?.textContent).toBe("GRE-1128");
+    expect(container.textContent).toContain("Market entry report");
+    expect(container.textContent).toContain("Added by Everest");
+    expect(container.querySelector('a[href="/issues/GRE-1259"]')).not.toBeNull();
+  });
+
+  it("adds a task file and a link to evidence", async () => {
+    mockPipelinesApi.listCaseEvidenceCandidates.mockResolvedValue({
+      candidates: [
+        {
+          kind: "attachment",
+          attachmentId: "att-1",
+          documentId: null,
+          title: "ecaps-outline.pdf",
+          typeLabel: "PDF",
+          sourceIssue: { id: "i1", identifier: "GRE-1128", title: "Kick-off", path: "/GRE/issues/GRE-1128" },
+          createdAt: "2026-10-11T10:00:00Z",
+        },
+      ],
+    });
+    mockPipelinesApi.addCaseEvidence.mockResolvedValue({});
+
+    await render(<PipelineCaseEvidence caseId="case-1" />);
+    expect(container.textContent).toContain("No evidence yet");
+
+    click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Add evidence")) ?? null);
+    await flushReact();
+    click([...container.querySelectorAll("button")].find((button) => button.textContent === "Add") ?? null);
+    await flushReact();
+    expect(mockPipelinesApi.addCaseEvidence).toHaveBeenCalledWith("case-1", { kind: "attachment", attachmentId: "att-1" });
+
+    typeInto(container.querySelector('input[aria-label="Link name"]') as HTMLInputElement, "Notion brief");
+    typeInto(container.querySelector('input[aria-label="Link address"]') as HTMLInputElement, "https://www.notion.so/brief");
+    click(container.querySelector('button[type="submit"]'));
+    await flushReact();
+    expect(mockPipelinesApi.addCaseEvidence).toHaveBeenCalledWith("case-1", {
+      kind: "link",
+      title: "Notion brief",
+      url: "https://www.notion.so/brief",
     });
   });
 });
