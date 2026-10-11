@@ -37,6 +37,35 @@ The server gets a clean environment: nothing from your shell (agent tokens,
 `TMPDIR`, so call the script through `env -i` (below). An agent run has a
 `TMPDIR` that is deleted when the run ends, and a `PATH` into `~/GSAM/live`.
 
+### Prove two instances cannot reach each other (GRE-1362)
+
+One sandbox test makes a sandbox hub and two Managed instances with the same
+`create` command, then proves AT-3.1, AT-3.5 and AT-3.6 (GRE-1357): the two
+differ only in root, ports, database, secrets and keys; neither port,
+log-in, session, database password, backup, master key, off-host key or
+fleet key of one works on the other; `/api/fleet` is 404 on a client
+instance; and no signed check-in holds seeded business text or ids.
+
+```sh
+RESTIC=/path/to/restic scripts/client-instance/isolation.sandbox-test.sh <empty scratch dir>
+```
+
+The test needs restic. If it is not on the host, use the release binary
+(tested with 0.17.3; pick the file for your OS and CPU):
+
+```sh
+curl -sSL -o restic.bz2 https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2
+bunzip2 restic.bz2 && chmod +x restic && ./restic version
+```
+
+It ends with `ALL PASSED`, and stops all three instances. Run it after any
+change to `create`, the backups, the off-host backups or the fleet channel.
+
+Local backups are plain database dumps. On a host where every instance runs
+as the same user (`gsam`), they are kept apart by folder and by the script's
+path checks, not by a key. Secrets inside them stay encrypted with the
+instance's own master key.
+
 ## Where the code runs
 
 Each release tag gets its own clone, next to the instance folders, never in
