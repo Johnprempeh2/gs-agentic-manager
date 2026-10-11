@@ -201,7 +201,7 @@ function UsageBar({ usage }: { usage: BillingUsage }) {
 
 function ExtraUsageValue({ extra }: { extra: BillingUsage["extraUsage"] }) {
   if (extra.state === "priced" && extra.amountCents !== null) return <>{formatMoney(extra.amountCents, extra.currency)}</>;
-  return <span className="text-sm font-normal text-muted-foreground">Extra usage will be shown on your invoice</span>;
+  return <span className="block text-sm leading-snug font-normal text-muted-foreground">Extra usage will be shown on your invoice</span>;
 }
 
 function UsageCard({ usage, accountCurrency }: { usage: BillingUsage | null; accountCurrency: string }) {
