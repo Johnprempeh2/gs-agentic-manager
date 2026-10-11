@@ -1884,10 +1884,6 @@ async function main() {
   if (command === "create") return cmdCreate(opts);
   if (command === "edition-env") return cmdEditionEnv(opts);
   if (command === "offsite-check") return cmdOffsiteCheck(opts);
-  if (command === "billing-archive") {
-    if (positional.length > 0 || opts.root) die("usage: billing-archive --billing-config <file>");
-    return cmdBillingArchive(opts);
-  }
   if (command === "plan-copy") {
     if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
     return cmdPlanCopy(opts);
@@ -1905,6 +1901,10 @@ async function main() {
     }
     if (!value) die("usage: restore <root> <backup file>");
     return cmdRestore(root, state, value);
+  }
+  if (command === "billing-archive") {
+    if (positional.length > 0 || opts.root) die("usage: billing-archive --billing-config <file>");
+    return cmdBillingArchive(opts);
   }
   if (command === "releases") {
     if (positional.length !== 1 || opts.root) die("usage: releases <instances dir> [--releases <dir>]");
