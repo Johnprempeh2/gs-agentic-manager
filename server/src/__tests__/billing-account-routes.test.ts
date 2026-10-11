@@ -185,6 +185,12 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.companyId).toBe(companyId);
     expect(rows[0]!.details).toMatchObject({ oldValue: null, reason: "Signed order form" });
+    // Company members can read the activity log: no allowance or rate in it, only the names of what changed (GRE-1395).
+    const details = rows[0]!.details as Record<string, Record<string, unknown> | unknown>;
+    expect(details.newValue).not.toHaveProperty("allowanceMonthlyCents");
+    expect(details.newValue).not.toHaveProperty("usageFxRate");
+    expect(details.newValue).not.toHaveProperty("usageFxRateSetOn");
+    expect(details.operatorFieldsChanged).toEqual(expect.arrayContaining(["allowanceMonthlyCents"]));
   });
 
   it("refuses the record to agents and a module boundary the D2 rules forbid", async () => {
@@ -509,7 +515,8 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     expect(cards[0]!.createdAt).toBe(firstCardAt);
     const crossings = await db.select().from(activityLog).where(eq(activityLog.action, "billing.usage_warning"));
     expect(crossings).toHaveLength(1);
-    expect(crossings[0]!.details).toMatchObject({ windowStart: "2026-10-01", usedPercent: 80, consumedCents: 20_000, allowanceCents: 25_000, warnPercent: 80 });
+    // Company members can read the activity log, so the row holds a percent and no money (GRE-1395).
+    expect(crossings[0]!.details).toEqual({ windowStart: "2026-10-01", usedPercent: 80, warnPercent: 80 });
 
     // A new month is a new window: the next crossing makes its card.
     clock = new Date("2026-11-03T09:00:00.000Z");

@@ -390,11 +390,10 @@ export async function noteBillingUsageWarning(db: Db, at: Date) {
     action: "billing.usage_warning",
     entityType: "billing_account",
     entityId: usage.windowStart,
+    // Company members can read the activity log: a percent only, no money (GRE-1395).
     details: {
       windowStart: usage.windowStart,
       usedPercent: usage.usedPercent,
-      consumedCents: usage.consumedCents,
-      allowanceCents: usage.allowanceCents,
       warnPercent: usage.warnPercent,
     },
   });
