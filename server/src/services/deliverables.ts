@@ -1,5 +1,5 @@
 import { buffer } from "node:stream/consumers";
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -43,6 +43,9 @@ const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "other"]);
 
 type DeliverableRow = typeof issueWorkProducts.$inferSelect;
+
+/** Limit a deliverables list to these tasks, or tasks in these projects. */
+export type DeliverableIssueScope = { issueIds: string[]; projectIds: string[] };
 
 export type DeliverableAttachment = {
   id: string;
@@ -469,6 +472,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
     list: async (
       companyId: string,
       rawQuery: Partial<DeliverablesQuery> = {},
+      options: { scope?: DeliverableIssueScope } = {},
     ): Promise<DeliverablesResponse> => {
       const query = deliverablesQuerySchema.parse(rawQuery);
       const prefix = await companyPrefix(companyId);
@@ -479,6 +483,18 @@ export function deliverableService(db: Db, storage?: StorageService) {
         isNull(issues.harnessKind),
         latestVersionOnly,
       ];
+      if (options.scope) {
+        // A client's deliverables (GRE-1311): only tasks linked to the client
+        // or in its projects.
+        const { issueIds, projectIds } = options.scope;
+        if (issueIds.length === 0 && projectIds.length === 0) {
+          return { deliverables: [], total: 0, nextOffset: null, facets: { brands: [], agents: [], projects: [] } };
+        }
+        const scopeConditions: SQL[] = [];
+        if (issueIds.length > 0) scopeConditions.push(inArray(issues.id, issueIds));
+        if (projectIds.length > 0) scopeConditions.push(inArray(issues.projectId, projectIds));
+        baseConditions.push(or(...scopeConditions)!);
+      }
       const conditions: SQL[] = [...baseConditions];
       if (query.kind) conditions.push(sql`${issueWorkProducts.metadata}->>'kind' = ${query.kind}`);
       if (query.brand) conditions.push(sql`lower(coalesce(${issueWorkProducts.metadata}->>'brand', ${DEFAULT_DELIVERABLE_BRAND})) = lower(${query.brand})`);

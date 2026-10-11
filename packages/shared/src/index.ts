@@ -440,6 +440,8 @@ export {
 export * from "./validators/status-card.js";
 export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
+export * from "./types/client-files.js";
+export * from "./validators/client-files.js";
 export * from "./types/workflow-template.js";
 export * from "./validators/workflow-template.js";
 export * from "./types/document-evidence.js";

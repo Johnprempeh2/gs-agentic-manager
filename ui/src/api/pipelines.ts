@@ -1,4 +1,8 @@
 import type {
+  ClientEvidenceCandidatesResponse,
+  ClientEvidenceItem,
+  ClientFilesResponse,
+  CreateClientEvidence,
   CreateCrmSyncSuggestion,
   CrmSyncBinding,
   CrmSyncCaseStatus,
@@ -690,6 +694,14 @@ export const pipelinesApi = {
     api.get<ProjectPipelineCase[]>(`/projects/${projectId}/pipeline-cases`),
   getCaseOutputs: (caseId: string) =>
     api.get<PipelineCaseOutputsResponse>(`/cases/${caseId}/outputs`),
+  getCaseFiles: (caseId: string) =>
+    api.get<ClientFilesResponse>(`/cases/${caseId}/files`),
+  listCaseEvidenceCandidates: (caseId: string) =>
+    api.get<ClientEvidenceCandidatesResponse>(`/cases/${caseId}/evidence/candidates`),
+  addCaseEvidence: (caseId: string, input: CreateClientEvidence) =>
+    api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
+  removeCaseEvidence: (caseId: string, evidenceId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
   createIssueLink: (
     caseId: string,
     data:

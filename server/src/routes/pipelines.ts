@@ -96,7 +96,11 @@ import { authorizationService } from "../services/authorization.js";
 import { issueService } from "../services/issues.js";
 import { assertCompanyAccess } from "./authz.js";
 import {
+  clientFilesQuerySchema,
+  clientFilesSearchSchema,
   computePipelineHealth,
+  createClientEvidenceSchema,
+  type CreateClientEvidence,
   createPipelineFieldSchema,
   deriveCaseType,
   envConfigSchema,
@@ -131,6 +135,7 @@ import {
   pipelineCaseOutputsService,
   summarizePipelineCaseOutputsForContext,
 } from "../services/pipeline-case-outputs.js";
+import { pipelineCaseFilesService, type ClientEvidenceSourceIssue } from "../services/pipeline-case-files.js";
 
 /** Per-stage instructions document keys look like `stage-instructions:{stageId}`. */
 const STAGE_INSTRUCTIONS_PREFIX = "stage-instructions:";
@@ -831,6 +836,35 @@ async function assertIssueLinkMutationAllowed(
   await input.issuesSvc.assertCheckoutOwner(input.issue.id, actorAgentId, runId);
 }
 
+async function assertIssueReadable(
+  req: Request,
+  access: ReturnType<typeof accessService>,
+  issue: ClientEvidenceSourceIssue,
+) {
+  const decision = await access.decide({
+    actor: req.actor,
+    action: "issue:read",
+    resource: {
+      type: "issue",
+      companyId: issue.companyId,
+      issueId: issue.id,
+      projectId: issue.projectId,
+      parentIssueId: issue.parentId,
+      assigneeAgentId: issue.assigneeAgentId,
+      assigneeUserId: issue.assigneeUserId,
+      status: issue.status,
+    },
+    scope: {
+      issueId: issue.id,
+      projectId: issue.projectId,
+      parentIssueId: issue.parentId,
+      assigneeAgentId: issue.assigneeAgentId,
+      assigneeUserId: issue.assigneeUserId,
+    },
+  });
+  if (!decision.allowed) throw forbidden("Issue is outside this actor's authorization boundary");
+}
+
 async function assertProjectReadable(
   req: Request,
   access: ReturnType<typeof accessService>,
@@ -882,12 +916,14 @@ export const PIPELINE_ROUTE_PREFIXES = [
   "/pipelines",
   "/cases",
   "/projects/:id/pipeline-cases",
+  "/companies/:companyId/client-files",
 ];
 
 export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineService>[1] = {}) {
   const router = Router();
   const svc = pipelineService(db, options);
   const outputsSvc = pipelineCaseOutputsService(db);
+  const filesSvc = pipelineCaseFilesService(db);
   const access = accessService(db);
   const issuesSvc = issueService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
@@ -2657,6 +2693,109 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     });
     if (!removed) throw notFound("Contact not found");
     res.json({ deleted: true });
+  });
+
+  // Client files (GRE-1311): Evidence (the client's own material) and
+  // Deliverables (what we made for them). Reads need case access; adding or
+  // removing evidence also needs Work cases, like contacts. Every query is
+  // scoped to the case's own company, and file content is only served by the
+  // existing access-checked attachment and document routes.
+  function parseSearch(query: unknown) {
+    const parsed = clientFilesSearchSchema.safeParse(query);
+    if (!parsed.success) throw badRequest("Invalid search", parsed.error.flatten());
+    return parsed.data.q || undefined;
+  }
+
+  async function caseSummary(companyId: string, caseId: string) {
+    const clients = await filesSvc.listClients(companyId, { caseId });
+    if (clients.length === 0) throw notFound("Pipeline case not found");
+    return clients;
+  }
+
+  router.get("/cases/:caseId/files", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const q = parseSearch(req.query);
+    res.json(await filesSvc.listFiles(companyId, await caseSummary(companyId, caseId), q));
+  });
+
+  router.get("/cases/:caseId/evidence", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const q = parseSearch(req.query);
+    res.json({ evidence: await filesSvc.listEvidence(companyId, [caseId], q) });
+  });
+
+  router.get("/cases/:caseId/evidence/candidates", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const q = parseSearch(req.query);
+    res.json({ candidates: await filesSvc.listCandidates(companyId, caseId, q) });
+  });
+
+  router.post("/cases/:caseId/evidence", validate(createClientEvidenceSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as CreateClientEvidence;
+    const source = await filesSvc.resolveSource(companyId, body);
+    // Only someone who can read the source task may file its content here.
+    if (source.sourceIssue) await assertIssueReadable(req, access, source.sourceIssue);
+    const item = await filesSvc.addEvidence(
+      companyId,
+      caseId,
+      source,
+      body.note,
+      actor.type === "agent"
+        ? { type: "agent", agentId: actor.agentId }
+        : { type: "user", userId: actor.type === "user" ? actor.userId : "board" },
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "evidence_added", evidenceId: item.id, kind: item.kind },
+    });
+    res.status(201).json(item);
+  });
+
+  router.delete("/cases/:caseId/evidence/:evidenceId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const parsedId = z.string().guid().safeParse(req.params.evidenceId);
+    if (!parsedId.success) throw notFound("Evidence not found");
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const removed = await filesSvc.removeEvidence(companyId, caseId, parsedId.data);
+    if (!removed) throw notFound("Evidence not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "evidence_removed", evidenceId: removed.id },
+    });
+    res.json({ deleted: true });
+  });
+
+  // Agents look up client files by client or by project, with a name search.
+  router.get("/companies/:companyId/client-files", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertPipelineCompanyAccess(req, companyId);
+    const parsed = clientFilesQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw badRequest("Give caseId or projectId", parsed.error.flatten());
+    const { caseId, projectId, q } = parsed.data;
+    if (projectId) {
+      const project = await db
+        .select({ id: projects.id, companyId: projects.companyId })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.companyId, companyId)))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (!project) throw notFound("Project not found");
+      await assertProjectReadable(req, access, project);
+    }
+    const clients = await filesSvc.listClients(companyId, { caseId, projectId });
+    if (caseId && clients.length === 0) throw notFound("Pipeline case not found");
+    res.json(await filesSvc.listFiles(companyId, clients, q || undefined));
   });
 
   router.get("/cases/:caseId/events", async (req, res) => {

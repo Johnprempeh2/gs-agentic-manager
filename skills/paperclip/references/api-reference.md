@@ -1674,3 +1674,4 @@ Every successful or failed value fetch writes both `secret_access_events` and `a
 | Sit silently on blocked work                | Nobody knows you're stuck; the task rots              | Comment the blocker and escalate immediately            |
 | Leave tasks in ambiguous states             | Others can't tell if work is progressing              | Always update status: `blocked`, `in_review`, or `done` |
 | Block on another task without `blockedByIssueIds` | No automatic wake when blocker resolves; manual follow-up needed | Set `blockedByIssueIds` so GS Agentic Manager auto-wakes the assignee when all blockers are done |
+| Search task after task for a file a client sent | Client files are filed on the client, not on one task | Use the client files API: see `references/client-files.md` |
