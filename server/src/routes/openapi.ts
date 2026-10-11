@@ -337,6 +337,12 @@ import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
   companyImportTransferDeclarationSchema,
 } from "@greatstone/shared/company-import-transfer";
+import {
+  cancelBillingAccountSchema,
+  recordBillingInvoiceSchema,
+  resumeBillingRenewalSchema,
+  upsertBillingAccountSchema,
+} from "@greatstone/shared/billing-account";
 
 type JsonSchema = Record<string, unknown>;
 type OpenApiResponse = Record<string, unknown>;
@@ -7628,6 +7634,53 @@ registry.registerPath({
   summary: "Update general instance settings",
   request: { body: jsonBody(patchInstanceGeneralSettingsSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+// GRE-1369: the billing account of this instance. Every board user reads it; only the
+// hosting operator writes it (403 settings_operator_managed otherwise). Cancel is the
+// one client write, by a company owner or admin.
+registry.registerPath({
+  method: "get",
+  path: "/api/instance/billing-account",
+  tags: ["instance"],
+  summary: "Get the billing account, its renewal and cancel status, and invoices (newest first)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/instance/billing-account",
+  tags: ["instance"],
+  summary: "Set the billing account (hosting operator only)",
+  request: { body: jsonBody(upsertBillingAccountSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/instance/billing-account/invoices",
+  tags: ["instance"],
+  summary: "Add or correct one invoice line by its reference (hosting operator only)",
+  request: { body: jsonBody(recordBillingInvoiceSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/instance/billing-account/cancel",
+  tags: ["instance"],
+  summary: "Cancel: stop the next renewal and keep access to the end of the paid period",
+  request: { body: jsonBody(cancelBillingAccountSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/instance/billing-account/resume-renewal",
+  tags: ["instance"],
+  summary: "Lift a cancel or stopped renewal (hosting operator only)",
+  request: { body: jsonBody(resumeBillingRenewalSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

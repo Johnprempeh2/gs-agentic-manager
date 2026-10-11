@@ -251,3 +251,4 @@ export * from "./memory_steward.js";
 export { fleetInstances, fleetCheckIns } from "./fleet.js";
 export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";
+export { billingAccounts, billingInvoices } from "./billing_accounts.js";

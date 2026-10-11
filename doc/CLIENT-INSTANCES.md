@@ -37,6 +37,35 @@ The server gets a clean environment: nothing from your shell (agent tokens,
 `TMPDIR`, so call the script through `env -i` (below). An agent run has a
 `TMPDIR` that is deleted when the run ends, and a `PATH` into `~/GSAM/live`.
 
+### Prove two instances cannot reach each other (GRE-1362)
+
+One sandbox test makes a sandbox hub and two Managed instances with the same
+`create` command, then proves AT-3.1, AT-3.5 and AT-3.6 (GRE-1357): the two
+differ only in root, ports, database, secrets and keys; neither port,
+log-in, session, database password, backup, master key, off-host key or
+fleet key of one works on the other; `/api/fleet` is 404 on a client
+instance; and no signed check-in holds seeded business text or ids.
+
+```sh
+RESTIC=/path/to/restic scripts/client-instance/isolation.sandbox-test.sh <empty scratch dir>
+```
+
+The test needs restic. If it is not on the host, use the release binary
+(tested with 0.17.3; pick the file for your OS and CPU):
+
+```sh
+curl -sSL -o restic.bz2 https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2
+bunzip2 restic.bz2 && chmod +x restic && ./restic version
+```
+
+It ends with `ALL PASSED`, and stops all three instances. Run it after any
+change to `create`, the backups, the off-host backups or the fleet channel.
+
+Local backups are plain database dumps. On a host where every instance runs
+as the same user (`gsam`), they are kept apart by folder and by the script's
+path checks, not by a key. Secrets inside them stay encrypted with the
+instance's own master key.
+
 ## Where the code runs
 
 Each release tag gets its own clone, next to the instance folders, never in
@@ -268,6 +297,58 @@ fails.
 `instance.environments`, `company.secrets`, `company.export` and
 `company.invites` also return 403 since GRE-107. `verify` proves they are
 hidden; it does not yet send a change request to each of them.
+
+## Billing account (GRE-1369)
+
+Each instance has one billing account record: plan, modules, fees, AI
+allowance, term, renewal, cancel state and invoice lines. The operator log-in
+(instance admin) sets it. Every board user of the instance can read it; any
+other write gets 403 `settings_operator_managed`. No price, allowance or end
+policy is built in: every value comes from the signed order form.
+
+```sh
+# as the operator log-in; the whole record each time
+curl -X PUT <base>/api/instance/billing-account -H 'Content-Type: application/json' -d '{
+  "planKind": "modules",                 # or "all_inclusive"
+  "planName": "<name on the order form>",
+  "catalogueVersion": "packaging-v2-d2-2026-10-11",
+  "currency": "GBP",
+  "serviceFeeCents": N,                  # Foundation and service fee per term period
+  "modules": [{"key": "crm", "feeCents": N}, {"key": "crm_write_back", "feeCents": N, "scope": "<agreed scope>"}],
+  "allowanceMonthlyCents": N,            # AI allowance included in the fee
+  "termKind": "monthly",                 # or "annual"
+  "termStartsOn": "YYYY-MM-DD",
+  "autoRenew": true,
+  "endAction": "pause",                  # or "archive" (John's policy); null until decided
+  "reason": "<why>"
+}'
+# one invoice line; sending the same reference again corrects it
+curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: application/json' \
+  -d '{"reference": "<invoice no>", "periodStart": "YYYY-MM-DD", "periodEnd": "YYYY-MM-DD",
+       "amountCents": N, "currency": "GBP", "status": "issued", "url": "https://<invoice link>", "issuedOn": "YYYY-MM-DD"}'
+```
+
+- **Modules** follow packaging v2 with John's D2 choices (11 Oct 2026):
+  `board` is an add-on that needs `strategy`; `crm_write_back`,
+  `crm_two_way_sync` and `crm_migration` each need `crm` and a `scope`;
+  pipelines and cases are in `crm`; development environments are in
+  `software_development` only. `feeCents: null` means included in the plan
+  fee. An all-inclusive plan lists its modules: a module added later does not
+  join it. The list is in `packages/shared/src/billing-account.ts`.
+- **Invoices** keep a reference, period, amount, status and link. No card or
+  bank data: any other field is refused.
+- **Cancel.** A client owner or admin cancels with
+  `POST /api/instance/billing-account/cancel` (`{"reason": "..."}`). The
+  next renewal stops and access stays to the end of the paid period that holds
+  that day. The day after, the status is `ended` and shows `endAction`; the
+  operator then pauses or archives the instance on the host. Nothing is
+  refunded automatically. A second cancel changes nothing.
+- **Auto-renew off** (operator) stops renewal the same way, without a cancel.
+- **Undo.** Only the operator lifts a cancel:
+  `POST /api/instance/billing-account/resume-renewal` with a reason.
+- Every change writes one activity row (`billing.account_updated`,
+  `billing.invoice_recorded`, `billing.cancel_requested`,
+  `billing.renewal_resumed`) with the old and new values.
 
 ## Copy a drafted plan to the client (GRE-1190)
 
