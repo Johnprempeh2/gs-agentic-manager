@@ -721,6 +721,12 @@ is refused with exit code 3 (the systemd unit does not restart on it),
 `offsite-backup` and `restore-check` say `skipped` and change nothing, and
 `watch` reports `paused` and fails only if the app runs.
 
+If `pause` stops after step 1 and before step 4, the companies are paused
+but no pause is recorded, and `resume` refuses (`no pause record`). To
+recover: sign in as the operator and resume each company in the app
+(`POST /api/companies/<id>/resume` with `operator` and `reason`). Then run
+`pause` again if the instance must still pause.
+
 On a hosted server, after `pause`, stop the unit so systemd does not try to
 start it: `sudo systemctl disable --now gsam-client@<code>`. Leave the watch
 timer on; it keeps sending check-ins that say `paused`.
@@ -787,13 +793,17 @@ In this order it:
    `delete` stops with `billing-export missing` when the instance holds any
    billing account or invoice, and removes nothing. With no billing record it
    says so and goes on;
-2. removes every off-host snapshot of the code (`restic forget --prune`), the
+2. **Hub.** Sends a signed `delete` to the hub. The hub removes this
+   instance's record and its check-ins, then the local hub key is deleted.
+   If the hub refuses or cannot be reached, `delete` stops and removes
+   nothing. If the hub had revoked the key, the spoke cannot ask: the key is
+   deleted and the record says a hub admin must run
+   `DELETE /api/fleet/instances/<id>` on the hub. With `--fleet-local-only yes`
+   (the hub is gone), only the local key is deleted, with the same note;
+3. removes every off-host snapshot of the code (`restic forget --prune`), the
    repository folder when it is local, the off-host key file and config
    file. On a Storage Box the empty repository folder stays: remove it there
    by hand;
-3. revokes the hub key (`fleet-revoke`). The hub has no delete route yet: the
-   hub row keeps the code and the revoked state only; remove it on the hub by
-   hand;
 4. removes the watch config file, when given (it holds the operator password);
 5. removes the instance folder: database, data, local backups, logs, keys.
 

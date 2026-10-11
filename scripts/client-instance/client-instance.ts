@@ -217,7 +217,7 @@ const USAGE = `usage:
   delete --root <dir> --confirm-code <code> --approval <ref> --operator <name>
          [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
                                            from paused or archived: removes data, local backups, off-host copies,
-                                           hub key and watch config; leaves one deletion record
+                                           hub record and key, watch config; leaves one deletion record
   edition-env --edition managed|managed-plus [--passed-features a,b]
                                            print the edition values as KEY=VALUE lines (Stable image)
 
@@ -1441,6 +1441,25 @@ async function cmdFleetRevoke(root: string, opts: Record<string, string>) {
   say(`fleet-revoke OK: instance ${registration.instanceId} at ${registration.hubUrl}; the key is deleted`);
 }
 
+/**
+ * delete step 3 (AT-4.8): a signed `delete` asks the hub to remove this
+ * instance's record and check-ins. True when removed; false when the hub had
+ * revoked the key (a revoked spoke cannot ask). Any other answer stops delete.
+ */
+async function deleteFromHub(root: string, fleet: NonNullable<ReturnType<typeof readFleet>>): Promise<boolean> {
+  const { registration, key } = fleet;
+  const seq = nextSeq(registration.lastSeq);
+  writeFleetRegistration(root, { ...registration, lastSeq: seq });
+  const message = signFleetMessage(key.privateJwk, { act: "delete", sub: registration.instanceId, seq });
+  const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/delete", { message }).catch((err: unknown) =>
+    die(`hub delete FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing is removed; run delete again`),
+  );
+  const answer = hubAnswer(res.status, res.json);
+  if (answer.ok) return true;
+  if ((res.json as { error?: unknown } | null)?.error === "fleet_key_revoked") return false;
+  return die(`hub delete FAILED: ${answer.detail}. Nothing is removed; run delete again, or add --fleet-local-only yes and remove the hub record by hand`);
+}
+
 function fleetStatusLines(root: string): string[] {
   if (!existsSync(fleetHubFile(root))) return ["fleet: not registered with a hub"];
   const registration = JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration;
@@ -1786,7 +1805,7 @@ function removeOffsite(config: OffsiteConfig, opts: Record<string, string>, code
 /**
  * delete (AT-4.8, AT-4.10): the instance code typed again, an approval
  * reference and a named operator. Billing records are copied out first (B11);
- * then the off-host copies, the hub key, the watch config and the instance
+ * then the hub record and key, the off-host copies, the watch config and the instance
  * folder (data, local backups, logs, keys) are removed. One deletion record
  * stays beside the instance folders: codes, dates, names and labels only. A
  * second run finds nothing.
@@ -1832,19 +1851,26 @@ async function cmdDelete(root: string, opts: Record<string, string>) {
 
   const removed: string[] = [];
   const notRemoved: string[] = [];
-  say("2/5 off-host copies");
-  if (config) removeOffsite(config, opts, code, removed, notRemoved);
-  else say("no off-host copies");
-
-  say("3/5 hub");
-  if (existsSync(fleetHubFile(root))) {
-    const localOnly = opts["fleet-local-only"] === "yes";
-    await cmdFleetRevoke(root, localOnly ? { "local-only": "yes" } : {});
-    removed.push(localOnly ? "hub key (local copy only)" : "hub key, revoked at the hub");
-    notRemoved.push(localOnly ? "the hub record: revoke and remove it on the hub by hand" : "the hub record: it keeps the code and revoked state only; remove it on the hub by hand");
+  say("2/5 hub (first: if the hub refuses, nothing is removed)");
+  const fleet = readFleet(root);
+  if (fleet) {
+    const handRemoval = `the hub record: a hub admin removes it with DELETE /api/fleet/instances/${fleet.registration.instanceId}`;
+    if (opts["fleet-local-only"] === "yes") {
+      removed.push("hub key (local copy only)");
+      notRemoved.push(handRemoval);
+    } else {
+      const hubRemoved = await deleteFromHub(root, fleet);
+      removed.push(hubRemoved ? "hub record and check-ins, removed at the hub; hub key" : "hub key (the hub had revoked it)");
+      if (!hubRemoved) notRemoved.push(handRemoval);
+    }
+    rmSync(path.join(root, FLEET_DIR), { recursive: true, force: true });
   } else {
     say("not registered with a hub");
   }
+
+  say("3/5 off-host copies");
+  if (config) removeOffsite(config, opts, code, removed, notRemoved);
+  else say("no off-host copies");
 
   say("4/5 watch config");
   if (opts["watch-config"]) {

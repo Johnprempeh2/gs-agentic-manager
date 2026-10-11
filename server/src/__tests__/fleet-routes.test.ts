@@ -22,6 +22,7 @@ import {
 
 // GRE-1082: fleet registration, signed check-in and revoke, from both sides.
 // GRE-1366: check-in v2 with lifecycle and connection counts (AT-3.3, AT-3.8).
+// GRE-1367: delete removes the hub record and its check-ins (AT-4.8).
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -354,6 +355,43 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     expect((await request(app()).post("/api/fleet/spoke/revoke").send({ message: forged })).body.error).toBe("fleet_bad_signature");
   });
 
+  it("AT-4.8: a signed spoke delete removes the record and its check-ins, once", async () => {
+    const { id, key, seq } = await register("c001");
+    const other = await register("c002");
+    expect((await sendCheckIn(key, id, nextSeq(seq))).status).toBe(200);
+    expect((await sendCheckIn(other.key, other.id, nextSeq(other.seq))).status).toBe(200);
+    // Someone else's key cannot delete an instance.
+    const forged = signFleetMessage(key.privateJwk, { act: "delete", sub: other.id, seq: nextSeq(other.seq) + 10 });
+    expect((await request(app()).post("/api/fleet/spoke/delete").send({ message: forged })).body.error).toBe("fleet_bad_signature");
+    // A revoke message is not a delete.
+    const wrongAct = signFleetMessage(key.privateJwk, { act: "revoke", sub: id, seq: nextSeq(seq) + 10 });
+    expect((await request(app()).post("/api/fleet/spoke/delete").send({ message: wrongAct })).body.error).toBe("fleet_bad_message");
+
+    const message = signFleetMessage(key.privateJwk, { act: "delete", sub: id, seq: nextSeq(seq) + 20 });
+    const res = await request(app()).post("/api/fleet/spoke/delete").send({ message });
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body)).toEqual(["deletedAt"]);
+    expect((await db.select().from(fleetInstances)).map((row) => row.code)).toEqual(["c002"]);
+    expect((await db.select().from(fleetCheckIns)).map((row) => row.fleetInstanceId)).toEqual([other.id]);
+    // Sent again, or anything else from the old key: nothing is there to answer.
+    expect((await request(app()).post("/api/fleet/spoke/delete").send({ message })).body.error).toBe("fleet_bad_signature");
+    expect((await sendCheckIn(key, id, nextSeq(seq) + 30)).body.error).toBe("fleet_bad_signature");
+  });
+
+  it("AT-4.8: a revoked instance cannot delete itself; the hub admin removes it", async () => {
+    const { id, key, seq } = await register("c001");
+    await request(app()).post(`/api/fleet/instances/${id}/revoke`);
+    const message = signFleetMessage(key.privateJwk, { act: "delete", sub: id, seq: nextSeq(seq) });
+    expect((await request(app()).post("/api/fleet/spoke/delete").send({ message })).body.error).toBe("fleet_key_revoked");
+    actor = { type: "board", userId: "client-user", source: "session", isInstanceAdmin: false, companyIds: [] };
+    expect((await request(app()).delete(`/api/fleet/instances/${id}`)).status).toBe(403);
+    actor = { type: "board", userId: "hub-admin", source: "session", isInstanceAdmin: true, companyIds: [] };
+    expect((await request(app()).delete(`/api/fleet/instances/${id}`)).body).toEqual({ id, removed: true });
+    expect(await db.select().from(fleetInstances)).toHaveLength(0);
+    expect((await request(app()).delete(`/api/fleet/instances/${id}`)).status).toBe(404);
+  });
+
+
   it("re-registers after a revoke with a new code and a new key", async () => {
     const { id, key, seq } = await register("c001");
     await request(app()).post(`/api/fleet/instances/${id}/revoke`);
@@ -414,6 +452,13 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     expect((await db.select().from(fleetInstances))[0]).toMatchObject({ status: "active", revokedBy: null });
   });
 
+  it("refuses an old-key spoke delete when the key is replaced between verify and write", async () => {
+    const old = await register("c001");
+    const stale = signFleetMessage(old.key.privateJwk, { act: "delete", sub: old.id, seq: old.seq + 1000 });
+    await expect(fleetService(raceAfterVerify(old)).deleteFromSpoke(stale)).rejects.toThrow("fleet_replay");
+    expect(await db.select().from(fleetInstances)).toHaveLength(1);
+  });
+
   it("keeps each instance's facts apart: one key cannot write as another, and no spoke route reads facts", async () => {
     const a = await register("c001");
     const b = await register("c002");
@@ -437,10 +482,12 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     );
     expect(paths.sort()).toEqual([
       "/api/fleet/spoke/check-in",
+      "/api/fleet/spoke/delete",
       "/api/fleet/spoke/register",
       "/api/fleet/spoke/revoke",
       "/fleet/instances",
       "/fleet/instances",
+      "/fleet/instances/:id",
       "/fleet/instances/:id/check-ins",
       "/fleet/instances/:id/registration-code",
       "/fleet/instances/:id/revoke",
