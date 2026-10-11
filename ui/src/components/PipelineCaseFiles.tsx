@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Link2, Package, Paperclip, Plus, X } from "lucide-react";
+import { FileText, Link2, Package, PaperclipIcon, Plus, X } from "lucide-react";
 import type {
   ClientEvidenceCandidate,
   ClientEvidenceItem,
@@ -38,7 +38,7 @@ function KindIcon({ kind }: { kind: ClientEvidenceItem["kind"] | "deliverable" }
   if (kind === "link") return <Link2 className={className} aria-hidden="true" />;
   if (kind === "document") return <FileText className={className} aria-hidden="true" />;
   if (kind === "deliverable") return <Package className={className} aria-hidden="true" />;
-  return <Paperclip className={className} aria-hidden="true" />;
+  return <PaperclipIcon className={className} aria-hidden="true" />;
 }
 
 function SourceTask({ issue }: { issue: ClientFileSourceIssue | { id: string; identifier: string | null; title: string } | null }) {
