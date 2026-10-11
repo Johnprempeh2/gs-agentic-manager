@@ -26,7 +26,7 @@ function errorMessage(error: unknown, fallback: string): string {
 /**
  * GRE-1364: pause and resume use their own server actions. Pause stops runs,
  * routines and every connection; resume is a named act with a reason, and each
- * connection is then turned back on from the Connections page.
+ * connection is then turned back on from the Connectors page.
  */
 export function CompanyPauseSection({ company }: { company: Company }) {
   const queryClient = useQueryClient();
@@ -98,7 +98,7 @@ export function CompanyPauseSection({ company }: { company: Company }) {
           </p>
           <p className="text-sm text-muted-foreground">
             Agents, routines and connections are stopped. When you resume, routines start again at
-            their next scheduled time, and you turn each connection back on from the Connections
+            their next scheduled time, and you turn each connection back on from the Connectors
             page.
           </p>
           <Button size="sm" onClick={() => openDialog("resume")} disabled={busy}>
