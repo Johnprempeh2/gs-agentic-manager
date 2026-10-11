@@ -749,4 +749,90 @@ describeEmbeddedPostgres("organization memory gateway API", () => {
     expect(memoryRows).toHaveLength(1);
     expect(memoryRows[0].scope).toEqual({ memoryScopeIds: ["client-scope-1"] });
   });
+
+  it("lets an agent or board user of the company read the operations log, counts only (GRE-1302)", async () => {
+    const one = await setup("OpsOne");
+    const two = await setup("OpsTwo");
+    const flint = await seedAgent(one.companyId, "Flint");
+    const outsider = await seedAgent(two.companyId, "Outsider");
+    await enable(one.board, one.base);
+    await enable(two.board, two.base);
+    const actor = { actorType: "system", actorId: "memory-retention" };
+    await ctx.db.insert(memoryOperations).values([
+      {
+        companyId: one.companyId,
+        operation: "retention",
+        outcome: "ok",
+        ...actor,
+        app: "gsam_scheduler",
+        createdAt: new Date("2026-10-08T03:00:00Z"),
+        detail: { trigger: "schedule", dryRun: false, count: 3, deleted: 3, byRule: { unreviewed: 2, superseded: 1 } },
+      },
+      {
+        companyId: one.companyId,
+        operation: "retention",
+        outcome: "ok",
+        ...actor,
+        createdAt: new Date("2026-10-01T03:00:00Z"),
+        detail: { dryRun: true, withinDays: 7, count: 5 },
+      },
+      {
+        companyId: one.companyId,
+        operation: "contribute",
+        outcome: "denied",
+        actorType: "agent",
+        actorId: flint.id,
+        agentId: flint.id,
+        createdAt: new Date("2026-10-09T03:00:00Z"),
+        detail: { reason: "Body names sk-live-SECRET", matchedTypes: ["api_key"], claimedRunId: "x" },
+      },
+      { companyId: two.companyId, operation: "retention", outcome: "ok", ...actor, detail: { count: 9, deleted: 9 } },
+    ]);
+    const before = await ctx.db.select().from(memoryOperations);
+
+    // An agent of the company: 200 with its own company's rows, newest first.
+    const all = await request(one.asAgent(flint.id)).get(`${one.base}/operations`);
+    expect(all.status).toBe(200);
+    expect(all.body.rows.map((row: { kind: string }) => row.kind)).toContain("contribute");
+    expect(all.body.summary.byKind).toMatchObject({ retention: 2, contribute: 1 });
+    expect(all.body.summary.byOutcome.denied).toBe(1);
+    expect(all.body.rows.some((row: { counts: { count?: number } }) => row.counts.count === 9)).toBe(false);
+    // Strings in `detail` (refusal text, ids) never leave the server.
+    expect(JSON.stringify(all.body)).not.toContain("SECRET");
+    expect(JSON.stringify(all.body)).not.toContain("api_key");
+
+    // kind=retention: only retention rows, each with its forgotten count.
+    const retention = await request(one.board).get(`${one.base}/operations?kind=retention`);
+    expect(retention.status).toBe(200);
+    expect(retention.body.summary).toEqual({ total: 2, byKind: { retention: 2 }, byOutcome: { ok: 2 } });
+    expect(retention.body.rows).toHaveLength(2);
+    expect(retention.body.rows[0]).toMatchObject({
+      kind: "retention",
+      outcome: "ok",
+      actor: { type: "system", id: "memory-retention", agentId: null },
+      app: "gsam_scheduler",
+      trigger: "schedule",
+      flags: { dryRun: false },
+      counts: { count: 3, deleted: 3, byRule: { unreviewed: 2, superseded: 1 } },
+      forgotten: 3,
+    });
+    expect(retention.body.rows[1]).toMatchObject({ flags: { dryRun: true }, counts: { count: 5, withinDays: 7 }, forgotten: 0 });
+
+    // since and limit narrow the rows; the summary still counts every match.
+    const recent = await request(one.board).get(`${one.base}/operations?kind=retention&since=2026-10-05T00:00:00Z`);
+    expect(recent.body.rows.map((row: { forgotten: number }) => row.forgotten)).toEqual([3]);
+    const limited = await request(one.board).get(`${one.base}/operations?kind=retention&limit=1`);
+    expect(limited.body.rows).toHaveLength(1);
+    expect(limited.body.summary.total).toBe(2);
+    expect((await request(one.board).get(`${one.base}/operations?limit=201`)).status).toBe(400);
+    expect((await request(one.board).get(`${one.base}/operations?kind=DROP%20TABLE`)).status).toBe(400);
+
+    // Another company's agent or board user is refused.
+    for (const app of [two.asAgent(outsider.id), two.board]) {
+      expect((await request(app).get(`${one.base}/operations`)).status).toBe(403);
+    }
+
+    // Reading the log writes nothing.
+    expect(await ctx.db.select().from(memoryOperations)).toHaveLength(before.length);
+  });
 });

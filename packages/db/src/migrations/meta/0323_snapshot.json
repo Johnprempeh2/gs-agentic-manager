@@ -1,5 +1,5 @@
 {
-  "id": "e786dd70-e818-47df-95a1-a10be3729b9b",
+  "id": "c26f9b3a-9652-456c-a5e9-2d911ed46632",
   "prevId": "9d77e9c6-5f12-4871-b766-9dffd93dc4b4",
   "version": "7",
   "dialect": "postgresql",
@@ -23855,6 +23855,24 @@
           "primaryKey": false,
           "notNull": false
         },
+        "lifecycle": {
+          "name": "lifecycle",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lifecycle_changed_at": {
+          "name": "lifecycle_changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_app_health": {
+          "name": "last_app_health",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "registered_at": {
           "name": "registered_at",
           "type": "timestamp with time zone",
@@ -26828,7 +26846,7 @@
         },
         "connection_grants_status_check": {
           "name": "connection_grants_status_check",
-          "value": "\"connection_grants\".\"status\" in ('active', 'revoked', 'expired', 'needs_reauthorization', 'suspended')"
+          "value": "\"connection_grants\".\"status\" in ('active', 'revoked', 'expired', 'needs_reauthorization')"
         },
         "connection_grants_credential_source_one_of_check": {
           "name": "connection_grants_credential_source_one_of_check",
@@ -49796,12 +49814,6 @@
         "last_error": {
           "name": "last_error",
           "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pause_suspended_at": {
-          "name": "pause_suspended_at",
-          "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
         },

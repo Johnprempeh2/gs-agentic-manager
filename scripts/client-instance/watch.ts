@@ -63,6 +63,12 @@ export interface RunView {
 
 const shortId = (id: string) => id.slice(0, 8);
 
+/** Not `connected`, or a known expiry under 7 days. The fleet check-in counts these (GRE-1366). */
+export function aiConnectionNeedsAttention(c: AiConnectionView, now = Date.now()): boolean {
+  const expiresAt = c.credential?.expiresAt ? Date.parse(c.credential.expiresAt) : Number.NaN;
+  return c.status !== "connected" || (Number.isFinite(expiresAt) && expiresAt - now < AI_EXPIRY_ALERT_MS);
+}
+
 /**
  * AI access as the operator log-in sees it (GRE-15): every visible connection
  * is `connected` and no known expiry is under 7 days; no run refused for auth
@@ -74,6 +80,7 @@ export function aiSignals(companyId: string, connections: AiConnectionView[], ru
   const problems: string[] = [];
   for (const c of connections) {
     const label = `${c.provider ?? "ai"} connection ${shortId(c.id)}`;
+    // Same rule as aiConnectionNeedsAttention, with the reason for the operator.
     if (c.status !== "connected") problems.push(`${label} is ${c.status.replace("_", " ")}`);
     const expiresAt = c.credential?.expiresAt ? Date.parse(c.credential.expiresAt) : Number.NaN;
     if (Number.isFinite(expiresAt) && expiresAt - now < AI_EXPIRY_ALERT_MS) {

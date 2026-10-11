@@ -15,12 +15,14 @@ import {
   FLEET_JWS_TYPE,
   FLEET_ALERT_KEY_PATTERN,
   FLEET_MAX_MESSAGE_LIFETIME_SECONDS,
-  fleetCheckInSchema,
+  fleetCheckInV2Schema,
   type FleetAction,
   type FleetCheckIn,
+  type FleetConnections,
+  type FleetLifecycle,
   type FleetPublicKey,
 } from "../../packages/shared/src/fleet.js";
-import type { WatchSignal } from "./watch.js";
+import { aiConnectionNeedsAttention, type AiConnectionView, type WatchSignal } from "./watch.js";
 
 export interface FleetKey {
   privateJwk: JsonWebKey;
@@ -107,6 +109,10 @@ export interface CheckInInput {
   lastUpgrade?: { to: { tag: string | null }; at: string } | null;
   usage: FleetCheckIn["usage"];
   signals: WatchSignal[];
+  /** From client-instance.json; absent means active. */
+  lifecycle?: FleetLifecycle;
+  /** Null when the app is not up to ask. */
+  connections: FleetConnections | null;
 }
 
 const checkView = (value: { ok: boolean; at: string } | null | undefined, now: number) => {
@@ -137,7 +143,7 @@ export function instanceAlerts(signals: WatchSignal[]): FleetCheckIn["alerts"] {
  */
 export function buildCheckIn(input: CheckInInput, now = Date.now()): FleetCheckIn {
   const upgradeAge = minutesSince(input.lastUpgrade?.at, now);
-  return fleetCheckInSchema.parse({
+  return fleetCheckInV2Schema.parse({
     schema: FLEET_CHECK_IN_SCHEMA,
     edition: input.edition,
     health: {
@@ -153,15 +159,54 @@ export function buildCheckIn(input: CheckInInput, now = Date.now()): FleetCheckI
     },
     usage: input.usage,
     alerts: instanceAlerts(input.signals),
+    lifecycle: input.lifecycle ?? "active",
+    connections: input.connections,
   });
+}
+
+/** A tool connection as GET /api/companies/:id/tools/connections lists it. Only these fields are read. */
+export interface ToolConnectionView {
+  connectionPurpose?: string;
+  status: string;
+  enabled: boolean;
+}
+
+/**
+ * Connection health as counts over every company (AT-3.3). Only the numbers
+ * leave this function: no name, id, provider or company. AI log-ins listed
+ * among the tool connections are counted once, as AI. A tool connection is
+ * active when it is switched on; disabled when it is off or turned off.
+ * Drafts and archived ones are not counted.
+ */
+export function connectionTotals(
+  companies: Array<{ ai: AiConnectionView[]; tools: ToolConnectionView[] }>,
+  now = Date.now(),
+): FleetConnections {
+  const totals: FleetConnections = { ai: { healthy: 0, needsAttention: 0 }, tools: { active: 0, disabled: 0 } };
+  for (const company of companies) {
+    for (const connection of company.ai) {
+      if (aiConnectionNeedsAttention(connection, now)) totals.ai.needsAttention += 1;
+      else totals.ai.healthy += 1;
+    }
+    for (const connection of company.tools) {
+      if (connection.connectionPurpose === "ai") continue;
+      if (connection.status === "active" && connection.enabled) totals.tools.active += 1;
+      else if (connection.status === "active" || connection.status === "disabled") totals.tools.disabled += 1;
+    }
+  }
+  return totals;
 }
 
 export interface UsageCompany {
   agents: Array<{ status: string }>;
   runsLast24h: number;
+  runsFailedLast24h: number;
   spendCents: number;
   budgetCents: number;
 }
+
+/** Run statuses counted as failed: the same rule as the failure rate (server/src/services/run-failure-rate.ts). */
+export const FAILED_RUN_STATUSES = ["failed", "timed_out", "interrupted"] as const;
 
 /** The run list API returns at most this many rows per call. */
 export const RUN_PAGE_LIMIT = 1000;
@@ -202,15 +247,17 @@ export async function countRunsSince(
 export function usageTotals(companies: UsageCompany[], storageBytes: number): FleetCheckIn["usage"] {
   let activeAgents = 0;
   let runsLast24h = 0;
+  let runsFailedLast24h = 0;
   let spendCentsMonth = 0;
   let budgetCentsMonth = 0;
   for (const company of companies) {
     activeAgents += company.agents.filter((a) => a.status !== "terminated" && a.status !== "paused" && a.status !== "pending_approval").length;
     runsLast24h += Math.max(0, Math.round(company.runsLast24h));
+    runsFailedLast24h += Math.max(0, Math.round(company.runsFailedLast24h));
     spendCentsMonth += Math.max(0, Math.round(company.spendCents));
     budgetCentsMonth += Math.max(0, Math.round(company.budgetCents));
   }
-  return { companies: companies.length, activeAgents, runsLast24h, spendCentsMonth, budgetCentsMonth, storageBytes: Math.max(0, Math.round(storageBytes)) };
+  return { companies: companies.length, activeAgents, runsLast24h, runsFailedLast24h, spendCentsMonth, budgetCentsMonth, storageBytes: Math.max(0, Math.round(storageBytes)) };
 }
 
 /** What the hub's answer means for the operator. */

@@ -13,6 +13,7 @@ import {
   memoryActivityCountsQuerySchema,
   memoryActivityQuerySchema,
   memoryGraphQuerySchema,
+  memoryOperationsQuerySchema,
   memoryReviewQueueQuerySchema,
   memoryStewardActionSchema,
   recallMemorySchema,
@@ -37,6 +38,7 @@ import {
 import { memoryGraphService } from "../services/memory-gateway/graph.js";
 import { memoryGrantService } from "../services/memory-gateway/grants.js";
 import { memoryLinkService } from "../services/memory-gateway/link-check.js";
+import { memoryOperationsReadService } from "../services/memory-gateway/operations.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
 import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
@@ -105,6 +107,7 @@ export function memoryRoutes(
   const grants = memoryGrantService(db, svc);
   const links = memoryLinkService(db, svc);
   const stewards = memoryStewardService(db, svc, reviews);
+  const operations = memoryOperationsReadService(db);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -432,6 +435,14 @@ export function memoryRoutes(
   router.post("/companies/:companyId/memory/retention", requireEnabled, validate(runMemoryRetentionSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.json(await reviews.runRetention(await callerFor(req, companyId, "retention"), req.body));
+  });
+
+  // The operations log for live checks (GRE-1302): any agent or board user of
+  // the company. Read only and not itself logged; counts and flags, never content.
+  router.get("/companies/:companyId/memory/operations", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await callerFor(req, companyId, "operations_list");
+    res.json(await operations.list(companyId, parseQuery(memoryOperationsQuerySchema, req)));
   });
 
   // Graph and contribution activity (GRE-864, plan section 8). Read only;

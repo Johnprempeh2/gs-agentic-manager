@@ -732,6 +732,45 @@ export const memoryActivityCountsQuerySchema = memoryActivityQuerySchema.omit({ 
 export type MemoryActivityCountsQuery = z.infer<typeof memoryActivityCountsQuerySchema>;
 
 /**
+ * The memory operations log, read only (GRE-1302). For live checks: which
+ * operations ran, who ran them, the outcome and their counts. Never content.
+ */
+export const MEMORY_OPERATIONS_LIMIT_MAX = 200;
+export const memoryOperationsQuerySchema = z
+  .object({
+    /** The operation, for example `retention`. */
+    kind: z.string().trim().regex(/^[a-z_]{1,64}$/).optional(),
+    since: z.coerce.date().optional(),
+    limit: z.coerce.number().int().min(1).max(MEMORY_OPERATIONS_LIMIT_MAX).default(50),
+  })
+  .strict();
+export type MemoryOperationsQuery = z.infer<typeof memoryOperationsQuerySchema>;
+
+export interface MemoryOperationRow {
+  id: string;
+  kind: string;
+  outcome: string;
+  actor: { type: string; id: string; agentId: string | null };
+  runId: string | null;
+  app: string | null;
+  createdAt: Date;
+  /** Numbers recorded with the operation, for example `count`, `deleted` or `byRule`. */
+  counts: Record<string, number | Record<string, number>>;
+  /** Yes/no flags recorded with the operation, for example `dryRun`. */
+  flags: Record<string, boolean>;
+  /** `schedule` or `manual` where the operation records it. */
+  trigger: string | null;
+  /** Retention only: records forgotten by this pass; 0 for a dry run, null when the row does not say. */
+  forgotten: number | null;
+}
+
+export interface MemoryOperationsResult {
+  rows: MemoryOperationRow[];
+  /** Over every row the filters match, not only the rows returned. */
+  summary: { total: number; byKind: Record<string, number>; byOutcome: Record<string, number> };
+}
+
+/**
  * Memory rights the owner may grant (G3, GRE-933). Always for organization
  * and project scopes only: a grant made here never reaches a client or
  * restricted-project scope. `memory:admin` is never granted; only John has it.
