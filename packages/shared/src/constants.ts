@@ -961,6 +961,9 @@ export type BudgetMetric = (typeof BUDGET_METRICS)[number];
 export const BUDGET_WINDOW_KINDS = ["calendar_month_utc", "lifetime"] as const;
 export type BudgetWindowKind = (typeof BUDGET_WINDOW_KINDS)[number];
 
+/** Warn level of a budget policy that sets none, in percent of the amount. The policy's own value wins. */
+export const DEFAULT_BUDGET_WARN_PERCENT = 80;
+
 export const BUDGET_THRESHOLD_TYPES = ["soft", "hard"] as const;
 export type BudgetThresholdType = (typeof BUDGET_THRESHOLD_TYPES)[number];
 

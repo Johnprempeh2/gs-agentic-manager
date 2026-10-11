@@ -284,7 +284,10 @@ curl -X PUT <base>/api/instance/billing-account -H 'Content-Type: application/js
   "currency": "GBP",
   "serviceFeeCents": N,                  # Foundation and service fee per term period
   "modules": [{"key": "crm", "feeCents": N}, {"key": "crm_write_back", "feeCents": N, "scope": "<agreed scope>"}],
-  "allowanceMonthlyCents": N,            # AI allowance included in the fee
+  "allowanceMonthlyCents": N,            # AI allowance included in the fee, API-equivalent US cents (any account currency)
+  "estimateMonthlyCents": N,             # optional: monthly AI usage estimated at sign-up
+  "usageFxRate": 0.79,                   # optional: account-currency units per US dollar, prices extra usage (not needed for USD)
+  "usageFxRateSetOn": "YYYY-MM-DD",      # optional: the day the rate is from (default: the day it changed)
   "termKind": "monthly",                 # or "annual"
   "termStartsOn": "YYYY-MM-DD",
   "autoRenew": true,
@@ -318,6 +321,26 @@ curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: appl
 - Every change writes one activity row (`billing.account_updated`,
   `billing.invoice_recorded`, `billing.cancel_requested`,
   `billing.renewal_resumed`) with the old and new values.
+- **Usage (GRE-1389, GRE-1395).** `GET /api/instance/billing-account` also
+  returns `usage` for the instance's company in the current UTC month. The
+  allowance is in API-equivalent US cents; usage measured against it is
+  `consumedCents` = `usedCents` (recorded cost) + `apiEquivalentCents`
+  (subscription-included runs at API price), so the percent is USD against
+  USD for every account currency.
+- **What the client sees.** The response has `audience: "client"` for anyone
+  but the operator: `usedPercent`, `forecastPercent`, the warn level, and
+  `extraUsage` (usage past 100%) in the account currency. No allowance amount,
+  no US amounts and no rate. The operator log-in gets `audience: "operator"`
+  with all of them.
+- **Extra usage.** Converted with `usageFxRate` (a USD account uses 1). With
+  no rate on a non-USD account, `extraUsage.state` is `rate_missing` and no
+  amount is shown: set the rate.
+- **Warn level.** `warning` is true at `warnPercent` of the allowance: the
+  company budget policy's warn level, else the budget default. The first
+  crossing in a month makes one Inbox card and one `billing.usage_warning`
+  activity row; more usage, or a crossing again after a raised allowance,
+  makes no second one. The watch reports `budget-warn` (fail while warning),
+  so the next fleet check-in carries it.
 
 ### Billing records outside the instance (GRE-1372)
 

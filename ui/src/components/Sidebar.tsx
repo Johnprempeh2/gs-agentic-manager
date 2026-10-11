@@ -25,6 +25,7 @@ import {
   UserCheck,
   Users,
   Rocket,
+  CreditCard,
   FileCheck2,
   Brain,
   Workflow,
@@ -79,6 +80,7 @@ import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { SidebarBrandSignature } from "./SidebarBrandSignature";
 import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
 import { useCanRelease } from "../hooks/useReleases";
+import { useHasBillingAccount } from "../hooks/useBillingAccount";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
 
@@ -166,6 +168,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const inboxBadge = useInboxBadge(selectedCompanyId);
   // Releasing is the board's decision (GRE-119): agents never see the page.
   const { canRelease } = useCanRelease(selectedCompanyId);
+  // Client instances only (GRE-1370): the link shows when the instance has a billing account.
+  const hasBillingAccount = useHasBillingAccount();
+  const billingItem = hasBillingAccount ? <SidebarNavItem to="/billing" label="Billing" icon={CreditCard} /> : null;
   // Organisation memory is per company: the link shows only once it is switched on.
   const { enabled: memoryEnabled } = useMemoryEnabled(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
@@ -360,6 +365,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         {websiteItem}
         <SidebarNavItem to="/activity" label="Audit" icon={History} />
         {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+        {billingItem}
         <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
       </SidebarSection>
     ),
@@ -484,6 +490,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
               <SidebarNavItem to="/activity" label="Activity" icon={History} />
               {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
+              {billingItem}
               <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
             </SidebarSection>
           </>

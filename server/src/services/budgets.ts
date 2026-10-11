@@ -9,6 +9,7 @@ import {
   costEvents,
   projects,
 } from "@greatstone/db";
+import { DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
 import type {
   BudgetIncident,
   BudgetIncidentResolutionInput,
@@ -564,7 +565,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
             metric,
             windowKind,
             amount,
-            warnPercent: input.warnPercent ?? 80,
+            warnPercent: input.warnPercent ?? DEFAULT_BUDGET_WARN_PERCENT,
             hardStopEnabled: input.hardStopEnabled ?? true,
             notifyEnabled: input.notifyEnabled ?? true,
             isActive: nextIsActive,
