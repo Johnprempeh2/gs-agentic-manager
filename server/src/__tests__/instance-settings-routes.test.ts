@@ -526,6 +526,44 @@ describe("instance settings routes", () => {
     });
   });
 
+  describe("Board needs Strategy (GRE-1382)", () => {
+    const admin = { type: "board", userId: "local-board", source: "local_implicit", isInstanceAdmin: true };
+
+    it("rejects turning Board on while Strategy is off", async () => {
+      mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableStrategy: false, enableStrategyBoard: false });
+      const res = await request(await createApp(admin))
+        .patch("/api/instance/settings/experimental")
+        .send({ enableStrategyBoard: true })
+        .expect(422);
+      expect(res.body).toMatchObject({ details: { code: "feature_requires", feature: "enableStrategyBoard", requires: "enableStrategy" } });
+      expect(mockInstanceSettingsService.updateExperimental).not.toHaveBeenCalled();
+    });
+
+    it("rejects turning Strategy off while Board stays on", async () => {
+      mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableStrategy: true, enableStrategyBoard: true });
+      await request(await createApp(admin))
+        .patch("/api/instance/settings/experimental")
+        .send({ enableStrategy: false })
+        .expect(422);
+      expect(mockInstanceSettingsService.updateExperimental).not.toHaveBeenCalled();
+    });
+
+    it("accepts both on together, and both off together", async () => {
+      mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableStrategy: false, enableStrategyBoard: false });
+      const app = await createApp(admin);
+      await request(app)
+        .patch("/api/instance/settings/experimental")
+        .send({ enableStrategy: true, enableStrategyBoard: true })
+        .expect(200);
+      mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableStrategy: true, enableStrategyBoard: true });
+      await request(app)
+        .patch("/api/instance/settings/experimental")
+        .send({ enableStrategy: false, enableStrategyBoard: false })
+        .expect(200);
+      expect(mockInstanceSettingsService.updateExperimental).toHaveBeenCalledTimes(2);
+    });
+  });
+
   it("allows local board users to update the server info debug view", async () => {
     const app = await createApp({
       type: "board",
