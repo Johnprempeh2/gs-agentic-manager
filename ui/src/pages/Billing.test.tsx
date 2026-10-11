@@ -4,7 +4,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BillingAccount, BillingAccountView, BillingUsage } from "@greatstone/shared/billing-account";
+import type { BillingAccountView, BillingUsage, ClientBillingAccount } from "@greatstone/shared/billing-account";
 import { Billing, formatBillingDay, formatMoney } from "./Billing";
 
 const mockBillingApi = vi.hoisted(() => ({ get: vi.fn() }));
@@ -17,7 +17,7 @@ vi.mock("@/context/BreadcrumbContext", () => ({
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
 
 // Test values only: the page shows whatever the operator set.
-const ACCOUNT: BillingAccount = {
+const ACCOUNT: ClientBillingAccount = {
   id: "acct-1",
   planKind: "modules",
   planName: "Growth",
@@ -28,7 +28,6 @@ const ACCOUNT: BillingAccount = {
     { key: "crm", feeCents: 25_000 },
     { key: "strategy", feeCents: null },
   ],
-  allowanceMonthlyCents: 50_000,
   estimateMonthlyCents: null,
   termKind: "monthly",
   termStartsOn: "2026-10-01",
@@ -48,20 +47,18 @@ const USAGE: BillingUsage = {
   windowEnd: "2026-10-31",
   daysElapsed: 10,
   daysInWindow: 31,
-  usedCents: 15_000,
-  apiEquivalentCents: 4_200,
-  allowanceCents: 50_000,
-  remainingCents: 35_000,
   usedPercent: 30,
+  forecastPercent: 93,
   warnPercent: 80,
   warning: false,
-  forecastCents: 46_500,
+  extraUsage: { state: "none", amountCents: 0, currency: "GBP" },
   estimateCents: 40_000,
   pausedSince: null,
 };
 
 function view(overrides: Partial<BillingAccountView> = {}): BillingAccountView {
   return {
+    audience: "client",
     account: ACCOUNT,
     status: {
       today: "2026-10-11",
@@ -117,7 +114,7 @@ afterEach(() => {
 });
 
 describe("Billing page", () => {
-  it("AT-1.1: shows each fee and the allowance exactly as set, with no edit control", async () => {
+  it("AT-1.1: shows each fee exactly as set and the allowance with no money, with no edit control", async () => {
     await render(view());
     const rows = Array.from(container.querySelectorAll('[data-testid="billing-fee-row"]')).map((row) => row.textContent);
     expect(rows).toHaveLength(3);
@@ -128,40 +125,44 @@ describe("Billing page", () => {
     expect(rows[2]).toContain("Strategy");
     expect(rows[2]).toContain("Included");
     expect(text("billing-fee-total")).toBe(formatMoney(148_400, "GBP"));
-    expect(text("billing-allowance")).toContain(formatMoney(50_000, "GBP"));
+    expect(text("billing-allowance")).toContain("AI allowance is included");
+    expect(text("billing-allowance")).not.toMatch(/[£$]/);
     expect(container.textContent).toContain(`Renews on ${formatBillingDay("2026-11-01")}`);
     expect(container.querySelectorAll("input, textarea, select, button")).toHaveLength(0);
   });
 
-  it("AT-1.2: shows used and remaining against the allowance", async () => {
+  it("AT-1.2: shows used and left as a percent of the allowance, with no money for it (GRE-1395)", async () => {
     await render(view());
     expect(container.textContent).toContain("30% used");
     expect(container.textContent).toContain("70% left");
-    expect(text("billing-actual")).toContain(formatMoney(15_000, "USD"));
-    expect(text("billing-remaining")).toContain(formatMoney(35_000, "USD"));
+    expect(text("billing-actual")).toContain("30%");
+    expect(text("billing-actual")).not.toMatch(/[£$]/);
     expect(container.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("30");
   });
 
-  it("AT-1.3: labels actual, estimate and forecast; subscription usage is API-equivalent, not charged", async () => {
+  it("AT-1.3: labels the forecast and the estimate", async () => {
     await render(view());
-    expect(text("billing-actual")).toContain("Actual");
     expect(text("billing-estimate")).toContain("Estimate");
     expect(text("billing-estimate")).toContain(formatMoney(40_000, "GBP"));
     expect(text("billing-forecast")).toContain("Forecast to month end");
-    expect(text("billing-forecast")).toContain(formatMoney(46_500, "USD"));
-    expect(text("billing-api-equivalent")).toContain("API-equivalent");
-    expect(text("billing-api-equivalent")).toContain("not charged");
+    expect(text("billing-forecast")).toContain("93%");
+    expect(text("billing-forecast")).not.toMatch(/[£$]/);
   });
 
-  it("labels usage in US dollars and says it is not converted when the account is in another currency", async () => {
+  it("shows extra usage in the account currency, 'None' within the allowance, and the invoice note when the rate is missing", async () => {
     await render(view());
-    expect(text("billing-actual")).toContain(`of ${formatMoney(50_000, "GBP")} allowance`);
-    expect(text("billing-usage-currency")).toContain("without currency conversion");
+    expect(text("billing-extra")).toContain("None");
 
     act(() => root.unmount());
     root = createRoot(container);
-    await render(view({ account: { ...ACCOUNT, currency: "USD" } }));
-    expect(container.querySelector('[data-testid="billing-usage-currency"]')).toBeNull();
+    await render(view({ usage: { ...USAGE, usedPercent: 120, extraUsage: { state: "priced", amountCents: 7_900, currency: "GBP" } } }));
+    expect(text("billing-extra")).toContain(formatMoney(7_900, "GBP"));
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    await render(view({ usage: { ...USAGE, usedPercent: 120, extraUsage: { state: "rate_missing", amountCents: null, currency: "GBP" } } }));
+    expect(text("billing-extra")).toContain("Shown on your invoice");
+    expect(text("billing-extra")).not.toMatch(/[£$]/);
   });
 
   it("AT-1.3: shows 'Not set' when no estimate was set", async () => {
@@ -175,7 +176,7 @@ describe("Billing page", () => {
 
     act(() => root.unmount());
     root = createRoot(container);
-    await render(view({ usage: { ...USAGE, usedCents: 41_000, remainingCents: 9_000, usedPercent: 82, warning: true } }));
+    await render(view({ usage: { ...USAGE, usedPercent: 82, warning: true } }));
     const note = container.querySelector('[role="note"]');
     expect(note?.textContent).toContain("82% of this month's AI allowance");
     expect(note?.textContent).toContain("warning level is 80%");
@@ -214,7 +215,7 @@ describe("Billing page", () => {
   });
 
   it("shows an empty state when the instance has no billing account", async () => {
-    await render({ account: null, status: null, invoices: [], usage: null });
+    await render({ audience: "client", account: null, status: null, invoices: [], usage: null });
     expect(container.textContent).toContain("No billing account");
   });
 });
