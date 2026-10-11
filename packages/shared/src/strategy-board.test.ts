@@ -10,6 +10,7 @@ import {
   kpiAlertAction,
   rankStrategyBoardAttention,
   renderStrategyBoardBrief,
+  strategyBoardNotMeasuredReason,
   renderStrategyBoardPackMarkdown,
   type StrategyBoardActionTask,
   type StrategyBoardGoal,
@@ -113,6 +114,38 @@ describe("strategy board KPIs", () => {
     const extraRed = { ...kpis[0], goalId: "kpi-x", title: "Cash", gapPercent: 50 };
     const ranked = rankStrategyBoardAttention([kpis[1], kpis[0], kpis[2], extraRed]);
     expect(ranked.map((kpi) => kpi.goalId)).toEqual(["kpi-x", "kpi-retention", "kpi-hiring"]);
+  });
+
+  it("puts KPIs that are not measured after the slippages, with the reason (GRE-1325)", () => {
+    const kpis = boardKpis(null);
+    const noTarget = { ...kpis[3], goalId: "kpi-nt", title: "Brand trust", targetValue: null, reason: "no_plan" as const };
+    const noDate = { ...kpis[3], goalId: "kpi-nd", title: "App rating", targetDate: null, reason: "no_plan" as const };
+    const neither = { ...kpis[3], goalId: "kpi-nn", title: "Net promoter", targetValue: null, targetDate: null, reason: "no_plan" as const };
+    const ranked = rankStrategyBoardAttention([noTarget, kpis[2], kpis[3], kpis[1], noDate, neither, kpis[0]]);
+    expect(ranked.map((kpi) => [kpi.goalId, kpi.notMeasuredReason ?? null])).toEqual([
+      ["kpi-retention", null],
+      ["kpi-hiring", null],
+      ["kpi-nd", "No target date"],
+      ["kpi-nt", "No target"],
+      ["kpi-launch", "No reading yet"],
+      ["kpi-nn", "No target or target date"],
+    ]);
+  });
+
+  it("gives each KPI its not-measured reason when it is built, and none when it has a status", () => {
+    const kpis = boardKpis(null);
+    expect(kpis.map((kpi) => kpi.notMeasuredReason)).toEqual([null, null, null, "No reading yet"]);
+    const plain = buildStrategyBoardKpis({
+      goals: [goal({ id: "k", title: "Unplanned", kind: "kpi" })],
+      statusById: new Map(),
+      latestReadingById: new Map(),
+      snapshotById: null,
+      openWhyById: new Map(),
+      ownerNames: NAMES,
+      today: TODAY,
+    });
+    expect(plain[0]).toMatchObject({ status: null, reason: "no_plan", notMeasuredReason: "No target or target date" });
+    expect(strategyBoardNotMeasuredReason({ status: "green", reason: "on_track", targetValue: null, targetDate: null })).toBeNull();
   });
 
   it("builds areas with objectives and their roll-up", () => {
@@ -219,6 +252,19 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
     expect(markdown).not.toContain("| Training hours | Green");
   });
 
+  it("lists KPIs that are not measured, with the reason and owner (GRE-1325)", () => {
+    expect(markdown).toContain("## Not measured");
+    expect(markdown).toContain("1 of 4 KPIs cannot be judged red, amber or green.");
+    expect(markdown).toContain("| Countries live | No reading yet | No owner |");
+    const slippages = markdown.slice(markdown.indexOf("## Slippages"), markdown.indexOf("## Not measured"));
+    expect(slippages).not.toContain("Countries live");
+  });
+
+  it("reads the reason from an old pack whose KPIs have no notMeasuredReason field", () => {
+    const old = kpis.map(({ notMeasuredReason: _drop, ...kpi }) => ({ ...kpi, targetValue: kpi.status ? kpi.targetValue : null }));
+    expect(renderStrategyBoardPackMarkdown({ ...pack, kpis: old })).toContain("| Countries live | No target | No owner |");
+  });
+
   it("includes owner explanations and open requests", () => {
     expect(markdown).toContain("**Staff retention** (asked 2026-09-16): Why did retention fall?");
     expect(markdown).toContain("> Two teams left after the merger.\n> We start stay interviews in October.");
@@ -236,6 +282,7 @@ describe("renderStrategyBoardPackMarkdown (board pack from fixture data)", () =>
     const empty = renderStrategyBoardPackMarkdown({ ...pack, areas: [], kpis: [], readings: [], whyRequests: [], counts: { red: 0, amber: 0, green: 0, noStatus: 0 } });
     expect(empty).toContain("No pillars or critical success factors on the plan.");
     expect(empty).toContain("No KPI is red or amber.");
+    expect(empty).toContain("Every KPI has a target, a target date and a reading.");
     expect(empty).toContain("No \"Why?\" requests in this period.");
     expect(empty).toContain("No readings dated in this period.");
   });

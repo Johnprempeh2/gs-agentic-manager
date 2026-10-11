@@ -84,7 +84,7 @@ export function buildStrategyBoardKpis(input: StrategyBoardKpiInput): StrategyBo
     const previous = input.snapshotById?.get(goal.id) ?? null;
     const { area, objective } = ancestorsOf(goal, byId);
     const rag = status?.status ?? null;
-    out.push({
+    const kpi: StrategyBoardKpi = {
       goalId: goal.id,
       title: goal.title,
       unit: goal.unit,
@@ -107,7 +107,9 @@ export function buildStrategyBoardKpis(input: StrategyBoardKpiInput): StrategyBo
       previousValue: previous?.latestValue ?? null,
       changedSinceSnapshot: input.snapshotById != null && (previous == null || previous.status !== rag),
       openWhyRequests: input.openWhyById.get(goal.id) ?? 0,
-    });
+    };
+    kpi.notMeasuredReason = strategyBoardNotMeasuredReason(kpi);
+    out.push(kpi);
   }
   return out;
 }
@@ -197,19 +199,44 @@ export function buildStrategyBoardOverdueActions(input: {
 const STATUS_WEIGHT: Record<KpiRagStatus, number> = { red: 0, amber: 1, green: 2 };
 
 /**
+ * Why a KPI has no status, in words the board reads (GRE-1325): no target, no
+ * target date, or no reading yet. Null when the KPI has a status. Read from
+ * the KPI's own fields, so it works on packs made before GRE-1325 too.
+ */
+export function strategyBoardNotMeasuredReason(
+  kpi: Pick<StrategyBoardKpi, "status" | "reason" | "targetValue" | "targetDate">,
+): string | null {
+  if (kpi.status) return null;
+  if (kpi.targetValue == null && !kpi.targetDate) return "No target or target date";
+  if (kpi.targetValue == null) return "No target";
+  if (!kpi.targetDate) return "No target date";
+  if (kpi.reason === "no_reading") return "No reading yet";
+  return "No status";
+}
+
+function isSlipping(kpi: StrategyBoardKpi): boolean {
+  return kpi.status === "red" || kpi.status === "amber";
+}
+
+/**
  * The board attention queue: red before amber, then the biggest slippage,
- * then a KPI that got worse since the last pack, then by title. Green and
- * unread KPIs are not in it.
+ * then a KPI that got worse since the last pack, then by title. After them
+ * come the KPIs that are not measured (GRE-1325), by title, so a plan with no
+ * targets never reads as "all clear". Green KPIs are not in it.
  */
 export function rankStrategyBoardAttention(kpis: readonly StrategyBoardKpi[]): StrategyBoardKpi[] {
-  return kpis
-    .filter((kpi) => kpi.status === "red" || kpi.status === "amber")
-    .slice()
+  const slipping = kpis
+    .filter(isSlipping)
     .sort((a, b) =>
       STATUS_WEIGHT[a.status!] - STATUS_WEIGHT[b.status!]
       || (b.gapPercent ?? 0) - (a.gapPercent ?? 0)
       || Number(b.changedSinceSnapshot) - Number(a.changedSinceSnapshot)
       || a.title.localeCompare(b.title));
+  const notMeasured = kpis
+    .filter((kpi) => kpi.status == null)
+    .map((kpi) => ({ ...kpi, notMeasuredReason: strategyBoardNotMeasuredReason(kpi) }))
+    .sort((a, b) => a.title.localeCompare(b.title));
+  return [...slipping, ...notMeasured];
 }
 
 /** Pillars and CSFs with their objectives, in plan order (as created). */
@@ -312,7 +339,9 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
     lines.push("");
   }
 
-  const slippages = rankStrategyBoardAttention(pack.kpis);
+  const attention = rankStrategyBoardAttention(pack.kpis);
+  const slippages = attention.filter(isSlipping);
+  const notMeasured = attention.filter((kpi) => kpi.status == null);
   lines.push("## Slippages", "");
   if (slippages.length === 0) {
     lines.push("No KPI is red or amber.", "");
@@ -323,6 +352,22 @@ export function renderStrategyBoardPackMarkdown(pack: StrategyBoardPackSnapshot)
       lines.push(
         `| ${cell(kpi.title)} | ${ragWord(kpi.status)} | ${kpi.gapPercent ?? 0}% | ${num(kpi.latestValue, kpi.unit)} | ${num(kpi.plannedValue, kpi.unit)} | ${sourceLabel(kpi.latestReadingSource)}${age} | ${cell(ownerName(kpi.owner))} |`,
       );
+    }
+    lines.push("");
+  }
+
+  lines.push("## Not measured", "");
+  if (notMeasured.length === 0) {
+    lines.push("Every KPI has a target, a target date and a reading.", "");
+  } else {
+    lines.push(
+      `${notMeasured.length} of ${pack.kpis.length} KPIs cannot be judged red, amber or green.`,
+      "",
+      "| KPI | Reason | Owner |",
+      "| --- | --- | --- |",
+    );
+    for (const kpi of notMeasured) {
+      lines.push(`| ${cell(kpi.title)} | ${kpi.notMeasuredReason ?? "No status"} | ${cell(ownerName(kpi.owner))} |`);
     }
     lines.push("");
   }

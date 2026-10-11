@@ -18,6 +18,7 @@ const mockHeartbeatService = vi.hoisted(() => ({
   wakeup: vi.fn(),
   getRun: vi.fn(),
   list: vi.fn(),
+  countFinishedByStatus: vi.fn(),
 }));
 
 const mockIssueService = vi.hoisted(() => ({
@@ -737,6 +738,60 @@ describe("agent live run routes", () => {
       expect(res.status, JSON.stringify(res.body)).toBe(400);
       expect(res.body.error).toMatch(message);
       expect(mockHeartbeatService.list).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("company run failure rate (GRE-1325)", () => {
+    const ratePath = "/api/companies/company-1/heartbeat-runs/failure-rate";
+
+    beforeEach(() => {
+      mockHeartbeatService.countFinishedByStatus.mockResolvedValue([
+        { status: "succeeded", count: 1880 },
+        { status: "failed", count: 70 },
+        { status: "timed_out", count: 20 },
+        { status: "interrupted", count: 30 },
+        { status: "cancelled", count: 400 },
+      ]);
+    });
+
+    it("reads a week of runs in one call, defaulting to the last 7 days", async () => {
+      const startedAt = Date.now();
+      const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl).get(ratePath));
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.countFinishedByStatus).toHaveBeenCalledTimes(1);
+      const [, options] = mockHeartbeatService.countFinishedByStatus.mock.calls[0];
+      expect(options.before.getTime() - options.since.getTime()).toBe(7 * 86_400_000);
+      expect(options.before.getTime()).toBeGreaterThanOrEqual(startedAt);
+      expect(res.body).toMatchObject({
+        agentId: null,
+        byStatus: { succeeded: 1880, failed: 70, timed_out: 20, interrupted: 30, cancelled: 400 },
+        failed: 120,
+        judged: 2000,
+        failedPer100: 6,
+      });
+    });
+
+    it("passes the window and agent through", async () => {
+      const res = await requestApp(await createApp(), (baseUrl) =>
+        request(baseUrl).get(`${ratePath}?since=2026-10-01&before=2026-10-08T00:00:00Z&agentId=agent-1`),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.countFinishedByStatus).toHaveBeenCalledWith("company-1", {
+        agentId: "agent-1",
+        since: new Date("2026-10-01T00:00:00.000Z"),
+        before: new Date("2026-10-08T00:00:00.000Z"),
+      });
+      expect(res.body).toMatchObject({ since: "2026-10-01T00:00:00.000Z", before: "2026-10-08T00:00:00.000Z", agentId: "agent-1" });
+    });
+
+    it.each([
+      ["since=last-week", /since must be one ISO 8601 time/],
+      ["since=2026-10-08&before=2026-10-01", /since must be earlier than before/],
+    ])("rejects %s with 400 and reads nothing", async (query, message) => {
+      const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl).get(`${ratePath}?${query}`));
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(res.body.error).toMatch(message);
+      expect(mockHeartbeatService.countFinishedByStatus).not.toHaveBeenCalled();
     });
   });
 

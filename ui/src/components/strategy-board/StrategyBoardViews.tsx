@@ -40,6 +40,7 @@ export function changeText(kpi: StrategyBoardKpi): string | null {
 }
 
 function slipText(kpi: StrategyBoardKpi): string {
+  if (!kpi.status) return `Not measured: ${kpi.notMeasuredReason ?? "no status"}`;
   const latest = kpi.latestValue != null ? formatKpiValue(kpi.latestValue, kpi.unit) : "n/a";
   if (kpi.reason === "deadline_missed") {
     return `Deadline passed: ${latest} against a target of ${kpi.targetValue != null ? formatKpiValue(kpi.targetValue, kpi.unit) : "n/a"}`;
@@ -60,7 +61,7 @@ export function AttentionQueue({
   if (kpis.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
-        No KPI is red or amber. No board action is needed.
+        Every KPI is measured, and none is red or amber. No board action is needed.
       </p>
     );
   }

@@ -8242,6 +8242,24 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/heartbeat-runs/failure-rate",
+  tags: ["runs"],
+  summary: "Failed runs per 100 finished runs in a window (default: last 7 days)",
+  description:
+    "Counts runs by `finishedAt` in [since, before). Failed is failed + timed_out + interrupted; the base is those plus succeeded. Cancelled runs are counted in byStatus but not in the base (same rule as tracked number R2).",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      since: z.string().optional().describe("Inclusive ISO 8601 time. Default: 7 days before `before`."),
+      before: z.string().optional().describe("Exclusive ISO 8601 time. Default: now."),
+      agentId: z.string().optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/provider-traces",
   tags: ["runs"],
   summary: "List provider trace metadata for selected runs",

@@ -6,6 +6,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { boundHeartbeatRunEventPayloadForStorage, heartbeatService } from "../services/heartbeat.ts";
+import { summarizeRunFailureRate } from "../services/run-failure-rate.ts";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -33,6 +34,54 @@ describeEmbeddedPostgres("heartbeat list", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
+  });
+
+  it("counts more than 1,000 finished runs by status in one query, inside the window only (GRE-1325)", async () => {
+    const companyId = randomUUID();
+    const otherCompanyId = randomUUID();
+    const agentId = randomUUID();
+    const otherAgentId = randomUUID();
+    for (const id of [companyId, otherCompanyId]) {
+      await db.insert(companies).values({
+        id,
+        name: "GS Agentic Manager",
+        issuePrefix: `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+      });
+    }
+    const agentRow = (id: string, company: string) => ({
+      id, companyId: company, name: `Agent ${id.slice(0, 4)}`, role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(agents).values([agentRow(agentId, companyId), agentRow(otherAgentId, otherCompanyId)]);
+
+    const since = new Date("2026-10-01T00:00:00Z");
+    const before = new Date("2026-10-08T00:00:00Z");
+    const inside = new Date("2026-10-04T12:00:00Z");
+    const run = (status: string, finishedAt: Date | null, overrides: { companyId?: string; agentId?: string } = {}) => ({
+      companyId, agentId, invocationSource: "assignment", status, finishedAt, ...overrides,
+    });
+    await db.insert(heartbeatRuns).values([
+      ...Array.from({ length: 1150 }, () => run("succeeded", inside)),
+      ...Array.from({ length: 40 }, () => run("failed", inside)),
+      ...Array.from({ length: 6 }, () => run("timed_out", inside)),
+      ...Array.from({ length: 4 }, () => run("interrupted", inside)),
+      ...Array.from({ length: 25 }, () => run("cancelled", inside)),
+      run("succeeded", since), // inclusive start
+      run("failed", before), // exclusive end
+      run("failed", new Date("2026-09-20T00:00:00Z")), // before the window
+      run("running", null), // not finished
+      run("failed", inside, { companyId: otherCompanyId, agentId: otherAgentId }), // another company
+    ]);
+
+    const heartbeat = heartbeatService(db);
+    const counts = await heartbeat.countFinishedByStatus(companyId, { since, before });
+    const rate = summarizeRunFailureRate({ since, before, counts });
+    expect(rate.byStatus).toEqual({ succeeded: 1151, failed: 40, timed_out: 6, interrupted: 4, cancelled: 25 });
+    expect(rate).toMatchObject({ failed: 50, judged: 1201, failedPer100: 4.2 });
+
+    const none = await heartbeat.countFinishedByStatus(companyId, { since, before, agentId: otherAgentId });
+    expect(summarizeRunFailureRate({ since, before, counts: none })).toMatchObject({ judged: 0, failedPer100: null });
   });
 
   it("returns runs even when the linked db schema lacks processGroupId", async () => {
