@@ -150,6 +150,8 @@ import {
   createFinanceEventSchema,
   updateBudgetSchema,
   upsertBudgetPolicySchema,
+  updateBudgetAuthoritySchema,
+  requestAiRouteChangeSchema,
   createCompanySubscriptionSchema,
   updateCompanySubscriptionSchema,
   resolveBudgetIncidentSchema,
@@ -6435,6 +6437,39 @@ registry.registerPath({
     401: r.unauthorized,
     404: r.notFound,
   },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/budgets/authority",
+  tags: ["costs"],
+  summary: "Read the operator budget ceiling and named override approvers",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/budgets/authority",
+  tags: ["costs"],
+  summary: "Set the budget ceiling and named override approvers (hosting operator only)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(updateBudgetAuthoritySchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/ai-route-change-requests",
+  tags: ["instance"],
+  summary: "Ask the hosting operator to change the AI route (applies at once for the operator)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(requestAiRouteChangeSchema),
+  },
+  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
