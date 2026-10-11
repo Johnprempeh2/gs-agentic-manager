@@ -465,7 +465,11 @@ fixed schema (`packages/shared/src/fleet.ts`): edition; health (app up,
 backup age, last restore-check and off-host backup); version (release tag,
 app version, last upgrade); usage totals over the whole instance (companies,
 active agents, runs in 24 h, spend and budget this month, storage bytes); and
-one alert per watch check as key and pass/fail only. Per-company signals fold
+one alert per watch check as key and pass/fail only; lifecycle (`active`,
+`paused` or `archived`, from `lifecycle` in `client-instance.json`, absent
+means active); and connection health as four counts over the whole instance
+(AI log-ins healthy / needs attention, tool connections active / disabled),
+or null when the app is down. Per-company signals fold
 into one key for the whole instance (it fails when any company fails), so no
 company id leaves the host; the hub refuses a key with a `:` suffix. The
 signal detail text stays on the host. Runs in 24 h are counted page by page,
@@ -485,6 +489,15 @@ instance's key cannot write as another, and no route lets an instance read
 anything back. Read check-ins on the hub (instance admins only):
 `GET <hub>/api/fleet/instances` and `GET <hub>/api/fleet/instances/<id>/check-ins`.
 The hub keeps 7 days of check-ins.
+
+Each instance in the hub list has a `state`. A paused or archived instance
+shows `paused` or `archived`, never `stale` or `down`, also when it sends
+nothing more. An active one shows `ok`, `stale` after
+`GSAM_FLEET_STALE_AFTER_MINUTES` (default 15) with no check-in, and `down`
+after `GSAM_FLEET_DOWN_AFTER_MINUTES` (default 60) or when its last check-in
+said the app was down. Set both on the hub. The hub still takes the v1
+check-in from an instance that is not yet upgraded; it keeps the last
+lifecycle it knows.
 
 Tests:
 
