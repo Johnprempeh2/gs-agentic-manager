@@ -78,12 +78,12 @@ test("lifecycle: absent means active; a paused instance says paused while the ap
 test("usage is totals over every company", () => {
   const usage = usageTotals(
     [
-      { agents: [{ status: "idle" }, { status: "terminated" }, { status: "running" }], runsLast24h: 1, spendCents: 120.4, budgetCents: 5000 },
-      { agents: [{ status: "paused" }], runsLast24h: 1500, spendCents: 10, budgetCents: 0 },
+      { agents: [{ status: "idle" }, { status: "terminated" }, { status: "running" }], runsLast24h: 1, runsFailedLast24h: 1, spendCents: 120.4, budgetCents: 5000 },
+      { agents: [{ status: "paused" }], runsLast24h: 1500, runsFailedLast24h: 7.2, spendCents: 10, budgetCents: 0 },
     ],
     2048,
   );
-  assert.deepEqual(usage, { companies: 2, activeAgents: 2, runsLast24h: 1501, spendCentsMonth: 130, budgetCentsMonth: 5000, storageBytes: 2048 });
+  assert.deepEqual(usage, { companies: 2, activeAgents: 2, runsLast24h: 1501, runsFailedLast24h: 8, spendCentsMonth: 130, budgetCentsMonth: 5000, storageBytes: 2048 });
 });
 
 /** A fake run list with the API's rules: since inclusive, before exclusive, newest first, 1000 per page. */

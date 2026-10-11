@@ -37,14 +37,15 @@ const checkIn: FleetCheckIn = {
   edition: "managed",
   health: { app: "ok", backupAgeMinutes: 12, restoreCheck: { ok: true, ageMinutes: 600 }, offsiteBackup: null },
   version: { releaseTag: "stable-2026-10-01.1", appVersion: "0.3.1", lastUpgrade: null },
-  usage: { companies: 1, activeAgents: 3, runsLast24h: 20, spendCentsMonth: 1234, budgetCentsMonth: 15000, storageBytes: 1024 },
+  usage: { companies: 1, activeAgents: 3, runsLast24h: 20, runsFailedLast24h: 2, spendCentsMonth: 1234, budgetCentsMonth: 15000, storageBytes: 1024 },
   alerts: [{ key: "health", ok: true }, { key: "ai-connections", ok: false }],
   lifecycle: "active",
   connections: { ai: { healthy: 2, needsAttention: 1 }, tools: { active: 4, disabled: 1 } },
 };
 
 const { lifecycle: _lifecycle, connections: _connections, ...v1Fields } = checkIn;
-const checkInV1 = { ...v1Fields, schema: FLEET_CHECK_IN_SCHEMA_V1 };
+const { runsFailedLast24h: _runsFailed, ...usageV1 } = checkIn.usage;
+const checkInV1 = { ...v1Fields, usage: usageV1, schema: FLEET_CHECK_IN_SCHEMA_V1 };
 
 describe("fleet check-in schema", () => {
   it("accepts facts and refuses any field it does not name", () => {
@@ -75,7 +76,17 @@ describe("fleet check-in schema", () => {
   it("takes v1 from a spoke not yet upgraded, but not v1 with v2 fields", () => {
     expect(fleetCheckInSchema.safeParse(checkInV1).success).toBe(true);
     expect(fleetCheckInSchema.safeParse({ ...checkInV1, lifecycle: "paused" }).success).toBe(false);
+    expect(fleetCheckInSchema.safeParse({ ...checkInV1, usage: checkIn.usage }).success).toBe(false);
     expect(fleetCheckInSchema.safeParse({ ...checkInV1, schema: "gsam-fleet-check-in/v3" }).success).toBe(false);
+  });
+
+  it("GRE-144: v2 carries failed runs as one instance count, never per company", () => {
+    expect(fleetCheckInSchema.safeParse(checkIn).success).toBe(true);
+    for (const runsFailedLast24h of [-1, 1.5, "2", null]) {
+      expect(fleetCheckInSchema.safeParse({ ...checkIn, usage: { ...checkIn.usage, runsFailedLast24h } }).success).toBe(false);
+    }
+    expect(fleetCheckInSchema.safeParse({ ...checkIn, usage: { ...checkIn.usage, runsFailedByCompany: { acme: 2 } } }).success).toBe(false);
+    expect(fleetCheckInSchema.safeParse({ ...checkIn, usage: usageV1 }).success).toBe(false);
   });
 
   it("refuses a company id in an alert key", () => {

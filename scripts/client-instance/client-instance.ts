@@ -74,6 +74,7 @@ import {
   buildCheckIn,
   connectionTotals,
   countRunsSince,
+  FAILED_RUN_STATUSES,
   fleetHubUrl,
   generateFleetKey,
   hubAnswer,
@@ -1288,14 +1289,15 @@ async function fleetUsage(root: string, state: InstanceState, operatorPassword: 
   const rows: UsageCompany[] = [];
   const connections: Array<{ ai: AiConnectionView[]; tools: ToolConnectionView[] }> = [];
   for (const company of companies) {
-    const runsPage = (since: Date, before: Date | null) =>
+    const runsPage = (status: string) => (since: Date, before: Date | null) =>
       read<Array<{ id: string; createdAt: string }>>(
         "GET",
-        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
+        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true${status ? `&status=${status}` : ""}&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
       );
     rows.push({
       agents: await read("GET", `/api/companies/${company.id}/agents`),
-      runsLast24h: await countRunsSince(runsPage, dayAgo),
+      runsLast24h: await countRunsSince(runsPage(""), dayAgo),
+      runsFailedLast24h: await countRunsSince(runsPage(FAILED_RUN_STATUSES.join(",")), dayAgo),
       ...(await read<{ spendCents: number; budgetCents: number }>("GET", `/api/companies/${company.id}/costs/summary?from=${encodeURIComponent(monthStart.toISOString())}`)),
     });
     connections.push({

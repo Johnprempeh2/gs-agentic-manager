@@ -14,7 +14,7 @@ import { z } from "zod";
 
 export const FLEET_JWS_TYPE = "gsam-fleet+jwt";
 export const FLEET_AUDIENCE = "gsam-fleet/v1";
-/** v2 (GRE-1366) adds `lifecycle` and `connections`. The hub still takes v1 until every spoke runs a v2 release. */
+/** v2 (GRE-1366) adds `lifecycle`, `connections` and `usage.runsFailedLast24h`. The hub still takes v1 until every spoke runs a v2 release. */
 export const FLEET_CHECK_IN_SCHEMA = "gsam-fleet-check-in/v2";
 export const FLEET_CHECK_IN_SCHEMA_V1 = "gsam-fleet-check-in/v1";
 /** The spoke sends one check-in per watch pass. */
@@ -51,6 +51,18 @@ const ageMinutes = z.number().int().min(0).max(100_000_000);
 const releaseTag = z.string().regex(/^[A-Za-z0-9._-]{1,80}$/);
 const check = z.object({ ok: z.boolean(), ageMinutes }).strict();
 
+const usageV1Fields = {
+  companies: count,
+  activeAgents: count,
+  runsLast24h: count,
+  spendCentsMonth: count,
+  budgetCentsMonth: count,
+  storageBytes: count,
+};
+const usageV1Schema = z.object(usageV1Fields).strict();
+/** v2 adds failed runs (GRE-144): runs made in the last 24 hours that ended failed, timed out or interrupted. */
+const usageV2Schema = z.object({ ...usageV1Fields, runsFailedLast24h: count }).strict();
+
 const checkInV1Fields = {
   edition: z.enum(["managed", "managed-plus", "internal"]),
   health: z
@@ -69,16 +81,7 @@ const checkInV1Fields = {
     })
     .strict(),
   /** Totals over the whole instance. Never per company, agent or person. */
-  usage: z
-    .object({
-      companies: count,
-      activeAgents: count,
-      runsLast24h: count,
-      spendCentsMonth: count,
-      budgetCentsMonth: count,
-      storageBytes: count,
-    })
-    .strict(),
+  usage: usageV1Schema,
   /**
    * The watch signals of the last pass, one per check over the whole
    * instance: key and pass/fail only. Detail text and company ids stay on the host.
@@ -106,6 +109,7 @@ export const fleetCheckInV2Schema = z
   .object({
     schema: z.literal(FLEET_CHECK_IN_SCHEMA),
     ...checkInV1Fields,
+    usage: usageV2Schema,
     lifecycle: z.enum(FLEET_LIFECYCLES),
     connections: fleetConnectionsSchema.nullable(),
   })

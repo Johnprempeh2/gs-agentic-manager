@@ -200,9 +200,13 @@ export function connectionTotals(
 export interface UsageCompany {
   agents: Array<{ status: string }>;
   runsLast24h: number;
+  runsFailedLast24h: number;
   spendCents: number;
   budgetCents: number;
 }
+
+/** Run statuses counted as failed: the same rule as the failure rate (server/src/services/run-failure-rate.ts). */
+export const FAILED_RUN_STATUSES = ["failed", "timed_out", "interrupted"] as const;
 
 /** The run list API returns at most this many rows per call. */
 export const RUN_PAGE_LIMIT = 1000;
@@ -243,15 +247,17 @@ export async function countRunsSince(
 export function usageTotals(companies: UsageCompany[], storageBytes: number): FleetCheckIn["usage"] {
   let activeAgents = 0;
   let runsLast24h = 0;
+  let runsFailedLast24h = 0;
   let spendCentsMonth = 0;
   let budgetCentsMonth = 0;
   for (const company of companies) {
     activeAgents += company.agents.filter((a) => a.status !== "terminated" && a.status !== "paused" && a.status !== "pending_approval").length;
     runsLast24h += Math.max(0, Math.round(company.runsLast24h));
+    runsFailedLast24h += Math.max(0, Math.round(company.runsFailedLast24h));
     spendCentsMonth += Math.max(0, Math.round(company.spendCents));
     budgetCentsMonth += Math.max(0, Math.round(company.budgetCents));
   }
-  return { companies: companies.length, activeAgents, runsLast24h, spendCentsMonth, budgetCentsMonth, storageBytes: Math.max(0, Math.round(storageBytes)) };
+  return { companies: companies.length, activeAgents, runsLast24h, runsFailedLast24h, spendCentsMonth, budgetCentsMonth, storageBytes: Math.max(0, Math.round(storageBytes)) };
 }
 
 /** What the hub's answer means for the operator. */
