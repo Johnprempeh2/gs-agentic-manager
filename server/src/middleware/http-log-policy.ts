@@ -39,6 +39,8 @@ function normalizePath(url: string): string {
 
 const SECRET_SENSITIVE_HTTP_PATHS = [
   /^\/api\/chat-endpoints\/[^/]+\/setup(?:-secret)?(?:\/|$)/,
+  // Adding a mailbox carries its IMAP password (GRE-1343).
+  /^\/api\/companies\/[^/]+\/mailboxes\/?$/,
 ];
 const SECRET_SENSITIVE_HTTP_METHODS = new Set(["POST", "PUT", "PATCH"]);
 
