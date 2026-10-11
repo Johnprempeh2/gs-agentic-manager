@@ -5663,19 +5663,21 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/goals",
   tags: ["goals"],
-  summary: "Create a goal",
+  summary: "Create a goal. A goal with a kind (the KPI cascade) answers 403 not_entitled while enableStrategy is off.",
   request: {
     params: z.object({ companyId: z.string() }),
     body: jsonBody(createGoalSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/goals/strategic-plan",
   tags: ["goals"],
-  summary: "Create the empty one-page strategic plan (vision, value, CSF, objective, KPI). Company owners only.",
+  summary:
+    "Create the empty one-page strategic plan (vision, value, CSF, objective, KPI). Company owners only. " +
+    "403 not_entitled while enableStrategy is off.",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -5693,12 +5695,14 @@ registry.registerPath({
   method: "patch",
   path: "/api/goals/{id}",
   tags: ["goals"],
-  summary: "Update a goal",
+  summary:
+    "Update a goal. Setting a kind, or editing a goal that has one, answers 403 not_entitled while enableStrategy " +
+    "is off; kind: null (make it a plain goal) stays allowed.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(updateGoalSchema),
   },
-  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -5726,9 +5730,9 @@ registry.registerPath({
   method: "get",
   path: "/api/goals/{id}/readings",
   tags: ["goals"],
-  summary: "List a KPI's readings, newest first, with source and who recorded each",
+  summary: "List a KPI's readings, newest first, with source and who recorded each. 403 not_entitled while enableStrategy is off.",
   request: { params: z.object({ id: z.string() }) },
-  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -5737,7 +5741,8 @@ registry.registerPath({
   tags: ["goals"],
   summary:
     "Record a KPI reading. source: owner_reported (board user, owner agent or lead agent), " +
-    "agent_verified or system (an agent that is not the KPI owner). The goal must be a KPI.",
+    "agent_verified or system (an agent that is not the KPI owner). The goal must be a KPI. " +
+    "403 not_entitled while enableStrategy is off.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(createGoalKpiReadingSchema),
@@ -5913,12 +5918,13 @@ registry.registerPath({
   summary:
     "Pre-fill draft KPIs under this goal from slide-5 rows of a research pack document, in one transaction. " +
     "Each draft keeps baseline, unit, benchmark note and a link to its bullet; target stays empty and status is draft " +
-    "(no RAG status) until a person sets the target and accepts it. First reading: system (agent) or owner_reported (person).",
+    "(no RAG status) until a person sets the target and accepts it. First reading: system (agent) or owner_reported (person). " +
+    "403 not_entitled while enableStrategy is off.",
   request: {
     params: z.object({ id: z.string() }),
     body: jsonBody(createKpiDraftsFromPackSchema),
   },
-  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 422: r.unprocessable },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

@@ -15,6 +15,9 @@ function act(callback: () => void) {
 }
 
 const dialogState = vi.hoisted(() => ({ parentId: undefined as string | undefined }));
+const settingsApi = vi.hoisted(() => ({ getExperimental: vi.fn() }));
+
+vi.mock("@/api/instanceSettings", () => ({ instanceSettingsApi: settingsApi }));
 
 vi.mock("../api/goals", () => ({ goalsApi: { list: vi.fn().mockResolvedValue([]), create: vi.fn() } }));
 vi.mock("../api/assets", () => ({ assetsApi: { uploadImage: vi.fn() } }));
@@ -46,6 +49,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   dialogState.parentId = undefined;
+  settingsApi.getExperimental.mockResolvedValue({ enableStrategy: true });
 });
 
 afterEach(() => {
@@ -66,6 +70,11 @@ function render() {
   });
 }
 
+async function flushQueries() {
+  for (let index = 0; index < 5; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
+  act(() => {});
+}
+
 /** Accessible name of the dialog, resolved from aria-labelledby as a screen reader would. */
 function dialogName() {
   const dialog = document.querySelector('[role="dialog"]');
@@ -83,5 +92,21 @@ describe("NewGoalDialog", () => {
     dialogState.parentId = "goal-1";
     render();
     expect(dialogName()).toMatch(/new sub-goal/i);
+  });
+
+  it("offers the strategy layer picker only while Strategy is on (GRE-1382)", async () => {
+    const kindPicker = () =>
+      [...document.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Kind");
+
+    render();
+    await flushQueries();
+    expect(kindPicker()).toBeDefined();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    settingsApi.getExperimental.mockResolvedValue({ enableStrategy: false });
+    render();
+    await flushQueries();
+    expect(kindPicker()).toBeUndefined();
   });
 });

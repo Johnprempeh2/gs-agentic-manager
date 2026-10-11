@@ -14,7 +14,7 @@ import { forbidden, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { goalService, logActivity } from "../services/index.js";
 import { isAcceptingDraftKpi } from "../services/goals.js";
-import { isEntitled } from "../services/entitlements.js";
+import { assertEntitled, isEntitled, requireEntitlement } from "../services/entitlements.js";
 import { strategyBoardService } from "../services/strategy-board.js";
 import { logger } from "../middleware/logger.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyBoardRole } from "./authz.js";
@@ -38,6 +38,10 @@ export function goalRoutes(db: Db) {
   const router = Router();
   const svc = goalService(db);
   const board = strategyBoardService(db);
+  // GRE-1382: plain goals are Foundation; the KPI cascade (goals with a kind)
+  // and KPI readings are the Strategy module.
+  const requireStrategy = requireEntitlement(db, "enableStrategy");
+  const assertStrategy = () => assertEntitled(db, "enableStrategy");
 
   /**
    * Board control panel (GRE-1135): after a KPI's reading or plan changes,
@@ -107,7 +111,7 @@ export function goalRoutes(db: Db) {
     res.status(201).json(checkIn);
   });
 
-  router.get("/goals/:id/readings", async (req, res) => {
+  router.get("/goals/:id/readings", requireStrategy, async (req, res) => {
     const id = req.params.id as string;
     const goal = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!goal) return;
@@ -120,7 +124,7 @@ export function goalRoutes(db: Db) {
    * - owner_reported: any board user, the owner agent or the lead agent.
    * - agent_verified / system: agents only, and not the KPI's owner agent.
    */
-  router.post("/goals/:id/readings", validate(createGoalKpiReadingSchema), async (req, res) => {
+  router.post("/goals/:id/readings", requireStrategy, validate(createGoalKpiReadingSchema), async (req, res) => {
     const id = req.params.id as string;
     const goal = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!goal) return;
@@ -171,7 +175,7 @@ export function goalRoutes(db: Db) {
    * document (GRE-1161), in one transaction. Drafts have a baseline and a
    * benchmark note but no target and no status until a person accepts them.
    */
-  router.post("/goals/:id/kpi-drafts", validate(createKpiDraftsFromPackSchema), async (req, res) => {
+  router.post("/goals/:id/kpi-drafts", requireStrategy, validate(createKpiDraftsFromPackSchema), async (req, res) => {
     const id = req.params.id as string;
     const parent = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!parent) return;
@@ -200,6 +204,7 @@ export function goalRoutes(db: Db) {
 
   router.post("/companies/:companyId/goals", validate(createGoalSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
+    if (req.body.kind) await assertStrategy();
     assertCompanyAccess(req, companyId);
     assertMayEditGoalKinds(req, companyId, req.body.kind);
     const goal = await svc.create(companyId, req.body);
@@ -223,7 +228,7 @@ export function goalRoutes(db: Db) {
 
   // One click: the empty one-page strategic plan (vision, values, CSF, objective, KPI).
   // It creates board layers, so it needs a board member like any vision edit.
-  router.post("/companies/:companyId/goals/strategic-plan", async (req, res) => {
+  router.post("/companies/:companyId/goals/strategic-plan", requireStrategy, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     assertMayEditGoalKinds(req, companyId, "vision");
@@ -244,8 +249,11 @@ export function goalRoutes(db: Db) {
 
   router.patch("/goals/:id", validate(updateGoalSchema), async (req, res) => {
     const id = req.params.id as string;
+    if (req.body.kind) await assertStrategy();
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Goal not found");
     if (!existing) return;
+    // Turning a strategy goal into a plain goal (kind: null) stays open.
+    if (existing.kind && req.body.kind !== null) await assertStrategy();
     assertMayEditGoalKinds(req, existing.companyId, existing.kind, req.body.kind);
     // A person accepts a draft KPI; an agent may fill it in but not make it live.
     if (isAcceptingDraftKpi(existing, req.body.status) && getActorInfo(req).actorType !== "user") {

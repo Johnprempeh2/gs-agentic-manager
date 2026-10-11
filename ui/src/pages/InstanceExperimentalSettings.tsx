@@ -286,6 +286,11 @@ export function InstanceExperimentalSettings() {
   const deepDiveManaged = managedKeys.enableDeepDive?.managed === true;
   const deepDiveBlockedByManagedCases = casesManaged && !enableCases;
   const casesRequiredByManagedDeepDive = deepDiveManaged && enableDeepDive;
+  // GRE-1382: the Board add-on needs the Strategy module.
+  const enableStrategy = experimentalQuery.data?.enableStrategy === true;
+  const enableStrategyBoard = experimentalQuery.data?.enableStrategyBoard === true;
+  const boardBlockedByManagedStrategy = managedKeys.enableStrategy?.managed === true && !enableStrategy;
+  const strategyRequiredByManagedBoard = managedKeys.enableStrategyBoard?.managed === true && enableStrategyBoard;
   const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
   const enablePaperclipDeveloperMode =
     experimentalQuery.data?.enablePaperclipDeveloperMode === true;
@@ -379,18 +384,22 @@ export function InstanceExperimentalSettings() {
         <ExperimentalToggleCard
           title="Board control panel"
           description="The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, “Why?” requests and the quarterly board pack."
-          footnote="Turning it off hides the Board page, the alerts and the board packs; nothing is deleted."
-          checked={experimentalQuery.data?.enableStrategyBoard === true}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableStrategyBoard: checked })}
-          disabled={toggleMutation.isPending}
+          footnote="Turning it on also turns Strategy on. Turning it off hides the Board page, the alerts and the board packs; nothing is deleted."
+          checked={enableStrategyBoard}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate(
+              checked ? { enableStrategy: true, enableStrategyBoard: true } : { enableStrategyBoard: false },
+            )
+          }
+          disabled={toggleMutation.isPending || boardBlockedByManagedStrategy}
           settingKey="enableStrategyBoard"
           managed={managedKeys.enableStrategyBoard}
           ariaLabel="Toggle board control panel experimental setting"
         />
 
-        {experimentalQuery.data?.enableStrategyBoard === true ? (
+        {enableStrategyBoard ? (
           <BoardSecretarySetting
-            value={experimentalQuery.data.strategyBoardSecretaryAgentId ?? null}
+            value={experimentalQuery.data?.strategyBoardSecretaryAgentId ?? null}
             onChange={(agentId) => toggleMutation.mutate({ strategyBoardSecretaryAgentId: agentId })}
             disabled={toggleMutation.isPending}
           />
@@ -578,6 +587,24 @@ export function InstanceExperimentalSettings() {
           settingKey="enableStatusCards"
           managed={managedKeys.enableStatusCards}
           ariaLabel="Toggle status cards experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Strategy"
+          description="The one-page strategic plan (vision down to KPIs), KPI readings with on and off track status, and KPI drafts from a research pack. Plain goals work without it."
+          footnote="Turning it off hides the plan and the KPI parts of each goal; nothing is deleted. The Board control panel needs Strategy, so turning Strategy off also turns the Board off."
+          checked={enableStrategy}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate(
+              checked || !enableStrategyBoard
+                ? { enableStrategy: checked }
+                : { enableStrategy: false, enableStrategyBoard: false },
+            )
+          }
+          disabled={toggleMutation.isPending || strategyRequiredByManagedBoard}
+          settingKey="enableStrategy"
+          managed={managedKeys.enableStrategy}
+          ariaLabel="Toggle strategy setting"
         />
 
         <ExperimentalToggleCard

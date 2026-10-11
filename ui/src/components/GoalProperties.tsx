@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 interface GoalPropertiesProps {
   goal: Goal;
   onUpdate?: (data: Record<string, unknown>) => void;
+  /** The strategy layer picker; hidden while the Strategy module is off (GRE-1382). */
+  showKind?: boolean;
 }
 
 function PropertyRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -80,7 +82,7 @@ function PickerButton({
   );
 }
 
-export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
+export function GoalProperties({ goal, onUpdate, showKind = true }: GoalPropertiesProps) {
   const { selectedCompanyId } = useCompany();
 
   const { data: agents } = useQuery({
@@ -143,20 +145,22 @@ export function GoalProperties({ goal, onUpdate }: GoalPropertiesProps) {
           )}
         </PropertyRow>
 
-        <PropertyRow label="Kind">
-          {onUpdate ? (
-            <PickerButton
-              current={goal.kind ?? NO_KIND}
-              options={[NO_KIND, ...GOAL_KINDS]}
-              labelFor={kindLabel}
-              onChange={(kind) => onUpdate({ kind: kind === NO_KIND ? null : kind })}
-            >
+        {showKind ? (
+          <PropertyRow label="Kind">
+            {onUpdate ? (
+              <PickerButton
+                current={goal.kind ?? NO_KIND}
+                options={[NO_KIND, ...GOAL_KINDS]}
+                labelFor={kindLabel}
+                onChange={(kind) => onUpdate({ kind: kind === NO_KIND ? null : kind })}
+              >
+                <span className="text-sm">{kindLabel(goal.kind ?? NO_KIND)}</span>
+              </PickerButton>
+            ) : (
               <span className="text-sm">{kindLabel(goal.kind ?? NO_KIND)}</span>
-            </PickerButton>
-          ) : (
-            <span className="text-sm">{kindLabel(goal.kind ?? NO_KIND)}</span>
-          )}
-        </PropertyRow>
+            )}
+          </PropertyRow>
+        ) : null}
 
         <PropertyRow label="Owner">
           {ownerPerson ? (

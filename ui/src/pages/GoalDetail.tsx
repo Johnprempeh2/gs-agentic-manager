@@ -44,6 +44,7 @@ import {
 import { GoalWhyRequests, GoalWhyRequestsHeading } from "../components/strategy-board/GoalWhyRequests";
 import { AskWhyDialog } from "../components/strategy-board/StrategyBoardDialogs";
 import { useStrategyBoardEnabled } from "../components/StrategyBoardExperimentalGate";
+import { useStrategyEnabled } from "../hooks/useStrategyEnabled";
 import { strategyBoardApi } from "../api/strategyBoard";
 import { InitiativeBudgetForm, KpiPlanForm } from "../components/goals/KpiPlanForm";
 import { PackKpiDraftsDialog } from "../components/goals/PackKpiDraftsDialog";
@@ -125,7 +126,11 @@ export function GoalDetail() {
     enabled: !!goalId
   });
 
-  const isKpi = goal?.kind === "kpi";
+  // GRE-1382: with the Strategy module off, a goal with a kind shows as a
+  // plain goal: no KPI readings, plan, budget or research-pack drafts.
+  const { enabled: strategyOn } = useStrategyEnabled();
+  const kind = strategyOn ? goal?.kind ?? null : null;
+  const isKpi = kind === "kpi";
   const { data: readings } = useQuery({
     queryKey: queryKeys.goals.readings(goalId!),
     queryFn: () => goalsApi.listReadings(goalId!),
@@ -227,11 +232,12 @@ export function GoalDetail() {
         <GoalProperties
           goal={goal}
           onUpdate={(data) => updateGoal.mutate(data)}
+          showKind={strategyOn}
         />
       );
     }
     return () => closePanel();
-  }, [goal]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [goal, strategyOn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "+N more blockers" on a goal card lands here; scroll once the list renders.
   const { hash } = useLocation();
@@ -251,23 +257,23 @@ export function GoalDetail() {
   const target = formatTargetDate(goal.targetDate);
   const days = daysToTarget(goal.targetDate);
   const newestCheckIn = checkIns?.[0] ?? goal.latestCheckIn;
-  const rollup = rollupSummary(goal.ragRollup);
+  const rollup = strategyOn ? rollupSummary(goal.ragRollup) : null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <div className="space-y-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs uppercase text-muted-foreground">
-            {goal.kind ? GOAL_KIND_LABELS[goal.kind] : goal.level}
+            {kind ? GOAL_KIND_LABELS[kind] : goal.level}
           </span>
           <StatusBadge status={goal.status} />
           {/* On a KPI the reading against plan is the status, not task progress. */}
-          {goal.kind === "kpi" ? (
+          {kind === "kpi" ? (
             <KpiStatusPill status={goal.kpiStatus?.status ?? null} />
           ) : (
             <GoalHealthPill health={health} />
           )}
-          {goal.kind !== "kpi" && rollup ? (
+          {kind !== "kpi" && rollup ? (
             <span className="flex items-center gap-1.5" data-testid="goal-rag-rollup">
               <KpiStatusPill status={goal.ragRollup.status} />
               <span className="text-xs text-muted-foreground">{rollup}</span>
@@ -330,11 +336,11 @@ export function GoalDetail() {
         />
       </section>
 
-      {goal.kind === "kpi" && (goal.status === "draft" || goal.benchmarkNote || goal.sourceIssueId) ? (
+      {kind === "kpi" && (goal.status === "draft" || goal.benchmarkNote || goal.sourceIssueId) ? (
         <KpiDraftNotice goal={goal} onAccept={() => updateGoal.mutate({ status: "active" })} pending={updateGoal.isPending} />
       ) : null}
 
-      {goal.kind === "kpi" ? (
+      {kind === "kpi" ? (
         <section className="space-y-3" aria-labelledby="kpi-readings-heading">
           <h3 id="kpi-readings-heading" className="text-sm font-semibold">
             Readings
@@ -373,7 +379,7 @@ export function GoalDetail() {
         </section>
       ) : null}
 
-      {goal.kind === "initiative" ? (
+      {kind === "initiative" ? (
         <section className="space-y-3" aria-labelledby="initiative-budget-heading">
           <h3 id="initiative-budget-heading" className="text-sm font-semibold">
             Budget
@@ -433,7 +439,7 @@ export function GoalDetail() {
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Sub Goal
             </Button>
-            {goal.kind && GOAL_KIND_PARENTS.kpi?.includes(goal.kind) ? (
+            {kind && GOAL_KIND_PARENTS.kpi?.includes(kind) ? (
               <Button size="sm" variant="outline" className="ml-2" onClick={() => setPackDialogOpen(true)}>
                 <FileText className="h-3.5 w-3.5 mr-1.5" />
                 KPIs from research pack
@@ -465,7 +471,7 @@ export function GoalDetail() {
           )}
         </TabsContent>
       </Tabs>
-      {goal.kind && GOAL_KIND_PARENTS.kpi?.includes(goal.kind) ? (
+      {kind && GOAL_KIND_PARENTS.kpi?.includes(kind) ? (
         <PackKpiDraftsDialog goal={goal} open={packDialogOpen} onOpenChange={setPackDialogOpen} />
       ) : null}
     </div>

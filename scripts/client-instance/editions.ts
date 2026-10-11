@@ -9,6 +9,7 @@
 import {
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  featureDependencyViolations,
   type InstanceFeatureKey,
 } from "../../packages/shared/src/feature-catalog.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
@@ -54,8 +55,12 @@ export const MANAGED_FEATURES_OFF = [
   "enableOwnerInstanceAdmin",
   // GRE-575: beta history view on task pages; off by default, now pinned off.
   "enableIssuePlanDecompositions",
+  // GRE-1382: Strategy module (KPI cascade and readings). Off in Managed; it is
+  // sold apart from basic goals (D2 rule 2 on GRE-1354).
+  "enableStrategy",
   // GRE-1135: board control panel. Off in Managed; the strategy edition passes
-  // it on Managed plus (Harbor's edition doc on GRE-1136, section 5).
+  // it on Managed plus (Harbor's edition doc on GRE-1136, section 5). Needs
+  // enableStrategy (D2 rule 1 on GRE-1354).
   "enableStrategyBoard",
 ] as const satisfies readonly InstanceFeatureKey[];
 
@@ -170,6 +175,10 @@ export function buildEditionValues(input: EditionInput): EditionValues {
   }
 
   const on = new Set<InstanceFeatureKey>([...MANAGED_FEATURES_ON, ...(passed as InstanceFeatureKey[])]);
+  // GRE-1382: the app would read the dependent switch as off, so refuse it here.
+  for (const { feature, requires } of featureDependencyViolations(Object.fromEntries([...on].map((key) => [key, true])))) {
+    throw new Error(`"${feature}" needs "${requires}"; pass both or neither`);
+  }
 
   // GSAM_MANAGED_CONFIG accepts only tier "managed" keys. Pin exactly the
   // section 5 keys; CLIENT_DEFAULT_OK keys keep the app default.

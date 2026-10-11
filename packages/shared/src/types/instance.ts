@@ -142,7 +142,9 @@ export interface InstanceExperimentalSettings {
   enableCases: boolean;
   /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
   enableDeepDive: boolean;
-  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). */
+  /** Greatstone: the Strategy module, the KPI cascade and KPI readings (GRE-1382). */
+  enableStrategy: boolean;
+  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). Requires `enableStrategy`. */
   enableStrategyBoard: boolean;
   /**
    * Greatstone: the board secretary agent (GRE-1200), one per instance. It may

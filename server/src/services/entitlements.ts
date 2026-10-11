@@ -125,6 +125,20 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     kind: "api",
     probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
   },
+  enableStrategy: {
+    kind: "api",
+    // Plain goals stay open (Foundation). Goal reads and deletes stay open too,
+    // so a client keeps its data; the KPI routes and every write that makes or
+    // edits a goal with a kind are refused (GRE-1382).
+    probes: [
+      { method: "get", path: `/goals/${ID}/readings` },
+      { method: "post", path: `/goals/${ID}/readings` },
+      { method: "post", path: `/goals/${ID}/kpi-drafts` },
+      { method: "post", path: `${COMPANY}/goals/strategic-plan` },
+      { method: "post", path: `${COMPANY}/goals`, body: { title: "Grow revenue", kind: "objective" } },
+      { method: "patch", path: `/goals/${ID}`, body: { kind: "kpi" } },
+    ],
+  },
   enableStrategyBoard: {
     kind: "api",
     probes: [
