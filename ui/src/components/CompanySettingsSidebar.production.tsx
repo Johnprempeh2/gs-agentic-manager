@@ -6,6 +6,7 @@ import {
   Download,
   FlaskConical,
   KeyRound,
+  LifeBuoy,
   MailPlus,
   MonitorCog,
   Puzzle,
@@ -31,6 +32,7 @@ import { useSidebar } from "@/context/SidebarContext";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
 import { useIsFleetHub } from "@/hooks/useFleetInstances";
+import { useShowGetHelp } from "@/hooks/useShowGetHelp";
 import { usePluginSlots } from "@/plugins/slots";
 import { SidebarNavItem } from "./SidebarNavItem.production";
 
@@ -54,6 +56,8 @@ export function CompanySettingsSidebar() {
   const showPlugins = showPage("instance.plugins");
   // Fleet (GRE-1083): only on the Greatstone hub, to its instance admins.
   const showFleet = useIsFleetHub();
+  // Get help (GRE-1425): board users of a client instance.
+  const showGetHelp = useShowGetHelp();
   // Import is floored server-side on cloud-managed instances (403 cloud_managed), so the
   // nav entry is hidden rather than dead-ending. Export stays available.
   const isCloud = Boolean(useCloudInstance());
@@ -180,6 +184,9 @@ export function CompanySettingsSidebar() {
               icon={Clock3}
               end
             />
+          )}
+          {showGetHelp && (
+            <SidebarNavItem to="/company/settings/get-help" label="Get help" icon={LifeBuoy} end />
           )}
           {showPage("company.export") && (
             <SidebarNavItem to="/company/export" label="Export" icon={Download} />

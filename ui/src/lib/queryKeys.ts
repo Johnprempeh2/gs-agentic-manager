@@ -703,6 +703,9 @@ export const queryKeys = {
     billingAccount: ["instance", "billing-account"] as const,
     fleetInstances: ["instance", "fleet-instances"] as const,
   },
+  clientSupport: {
+    tickets: (companyId: string) => ["client-support", companyId, "tickets"] as const,
+  },
   health: ["health"] as const,
   cloud: {
     stacks: ["cloud", "stacks"] as const,
