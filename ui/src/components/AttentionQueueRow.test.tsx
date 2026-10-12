@@ -221,8 +221,7 @@ describe("AttentionQueueRow", () => {
         agentMap={ridgeMap}
       />,
     );
-    const summary = el.querySelector('[data-testid="review-decision-summary"]');
-    expect(summary?.textContent).toContain("Ridge worked on this task");
+    expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain("from Ridge");
     expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain(
       "The billing page now shows fees.",
     );
@@ -232,7 +231,7 @@ describe("AttentionQueueRow", () => {
     const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
     expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1#comment-comment-9");
     expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
-      "Ridge says this work is finished.",
+      "Ridge says the work is finished.",
     );
     expect(el.querySelector('[data-testid="stalled-review-hint-approve"]')?.textContent).toContain(
       "The task is marked done.",
@@ -264,7 +263,7 @@ describe("AttentionQueueRow", () => {
     expect(el.querySelector('[data-testid="review-no-update"]')).not.toBeNull();
     expect(el.querySelector('[data-testid="review-work-product"]')).toBeNull();
     expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
-      "The assignee says this work is finished.",
+      "The assignee says the work is finished.",
     );
     expect(el.querySelector('[data-testid="stalled-review-hint-send_back"]')?.textContent).toContain(
       "goes back to the assignee",

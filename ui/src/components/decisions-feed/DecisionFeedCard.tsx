@@ -31,6 +31,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
 import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
+import { ReviewWorkEvidence, reviewDetailOf } from "../ReviewDecisionSummary";
 
 export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   question: "Question",
@@ -82,6 +83,19 @@ export function decisionCardDeliverables(card: DecisionCard): AttentionDetailDel
 /** The first row Focus can answer natively (question, confirmation, suggested tasks). */
 export function decisionCardQuestionItem(card: DecisionCard): AttentionItem | null {
   return card.items.find(isFocusItem) ?? null;
+}
+
+/** The review row that carries what the agent handed over (GRE-1421). */
+export function decisionCardReviewItem(card: DecisionCard): AttentionItem | null {
+  return card.items.find((item) => item.sourceKind === "review" && reviewDetailOf(item) !== null) ?? null;
+}
+
+const VERDICT_ACTION_IDS = new Set<DecisionCardAction["id"]>(["approve", "request_changes", "send_back"]);
+
+/** A review's verdict buttons, each with what it does, for the "Your choices" list. */
+export function reviewChoiceActions(card: DecisionCard): DecisionCardAction[] {
+  if (!card.kinds.includes("review")) return [];
+  return card.actions.filter((action) => VERDICT_ACTION_IDS.has(action.id));
 }
 
 /** Card buttons, minus the ones the card renders in its own way. */
@@ -174,6 +188,8 @@ export function DecisionFeedCard({
   const phonePrimary = actions.find(isPrimaryCardAction) ?? (answersInPlace ? null : actions[0]) ?? null;
   const phoneMore = actions.filter((action) => action !== phonePrimary);
   const decisionItems = hideInlineResolver ? [] : card.items.filter((item) => item.sourceKind === "decision");
+  const reviewItem = decisionCardReviewItem(card);
+  const choices = answersInPlace ? [] : reviewChoiceActions(card);
 
   const runAction = (action: DecisionCardAction) => {
     if (action.type === "link") return;
@@ -257,6 +273,8 @@ export function DecisionFeedCard({
         />
       ) : null}
 
+      {reviewItem ? <ReviewWorkEvidence item={reviewItem} agentMap={agentMap} knownAgent={card.waiting} /> : null}
+
       <DecisionCardDeliverables card={card} />
 
       <DecisionCardImages card={card} />
@@ -285,6 +303,8 @@ export function DecisionFeedCard({
       ))}
 
       {card.clarity ? <ClarityThread clarity={card.clarity} /> : null}
+
+      {choices.length > 0 ? <ReviewChoices actions={choices} /> : null}
 
       {isPhone ? (
         // Phone: the main action, Not now, and More (a sheet with the rest as
@@ -444,6 +464,23 @@ export function DecisionFeedCard({
         />
       ) : null}
     </Frame>
+  );
+}
+
+/** What each verdict does, read before the buttons (GRE-1421). */
+function ReviewChoices({ actions }: { actions: DecisionCardAction[] }) {
+  return (
+    <section className="flex flex-col gap-1" aria-label="Your choices" data-review-choices>
+      <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
+      <ul className="flex flex-col gap-1 text-sm">
+        {actions.map((action) => (
+          <li key={action.id} data-review-choice={action.id}>
+            <span className="font-medium text-foreground">{action.label}:</span>{" "}
+            <span className="text-muted-foreground">{action.description}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
