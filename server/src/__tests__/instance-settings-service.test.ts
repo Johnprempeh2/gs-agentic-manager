@@ -78,7 +78,7 @@ describe("instance settings service", () => {
       enableFirstTaskPlanProposal: false,
       autoRestartDevServerWhenIdle: false,
       enableWorkspaceBranchReconcileForward: true,
-      enableWorkspaceDirtyQuarantineRepair: false,
+      enableWorkspaceDirtyQuarantineRepair: true,
       enableOwnerInstanceAdmin: false,
       enableSandboxDuplexBridge: false,
       enableRunnerPreviewIngress: false,
@@ -237,6 +237,11 @@ describe("instance settings service", () => {
     expect(
       normalizeExperimentalSettings({ enableWorkspaceBranchReconcileForward: false })
         .enableWorkspaceBranchReconcileForward,
+    ).toBe(true);
+    // GRE-1439: graduated, so a stored off value reads as on.
+    expect(
+      normalizeExperimentalSettings({ enableWorkspaceDirtyQuarantineRepair: false })
+        .enableWorkspaceDirtyQuarantineRepair,
     ).toBe(true);
     expect(normalizeExperimentalSettings(undefined).enableWorkspaceDirtyQuarantineRepair).toBe(true);
     expect(normalizeExperimentalSettings({}).enableWorkspaceDirtyQuarantineRepair).toBe(true);

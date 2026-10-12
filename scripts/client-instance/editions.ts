@@ -21,7 +21,6 @@ export type Edition = (typeof EDITIONS)[number];
 export const MANAGED_FEATURES_ON = [
   "enableStreamlinedUi",
   "enableStreamlinedLeftNavigation",
-  "enableWorkspaceDirtyQuarantineRepair",
   "enableIsolatedWorkspaces",
   "enableIsolatedWorkspacesByDefault",
 ] as const satisfies readonly InstanceFeatureKey[];
@@ -78,6 +77,8 @@ export const CLIENT_DEFAULT_OK = {
   enableGoalsSidebarLink: "Compatibility key; Goals graduated (GRE-191), is always in the sidebar and the app ignores the value.",
   enableWorkspaceBranchReconcileForward:
     "Compatibility key; branch reconcile forward graduated (GRE-1438), is always on and the app ignores the value.",
+  enableWorkspaceDirtyQuarantineRepair:
+    "Compatibility key; dirty quarantine repair graduated (GRE-1439), is always on and the app ignores the value.",
   enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
   enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",

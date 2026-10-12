@@ -122,6 +122,17 @@ describe("instanceSettingsService managed overlay", () => {
     });
   });
 
+  it("keeps workspace dirty quarantine repair on when stored and managed values say off (GRE-1439)", async () => {
+    const { db } = stubDb(settingsRow({ enableWorkspaceDirtyQuarantineRepair: false }));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: { enableWorkspaceDirtyQuarantineRepair: false }, plugins: { autoInstall: [] },
+    })) });
+    expect(await service.getExperimental()).toMatchObject({ enableWorkspaceDirtyQuarantineRepair: true, managedKeys: {} });
+    expect(await service.updateExperimental({ enableWorkspaceDirtyQuarantineRepair: false })).toMatchObject({
+      experimental: { enableWorkspaceDirtyQuarantineRepair: true },
+    });
+  });
+
   it("persists chat connector opt-in and reads it back after service reconstruction", async () => {
     const row = settingsRow({});
     const { db, persistedSets } = stubDb(row);

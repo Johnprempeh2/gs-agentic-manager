@@ -2134,7 +2134,6 @@ export async function ensureGitWorktreeBranchCoherent(input: {
    * restore) passes `false`.
    */
   enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
   persistForwardReconcile?: boolean;
   reconcileOperationPhase?: "worktree_prepare" | "workspace_finalize";
   recorder?: WorkspaceOperationRecorder | null;
@@ -2159,7 +2158,9 @@ export async function ensureGitWorktreeBranchCoherent(input: {
     executionWorkspaceId: input.executionWorkspaceId ?? null,
   });
 
-  if (evidence.cleanliness === "dirty" && input.enableWorkspaceDirtyQuarantineRepair === true) {
+  // Greatstone (GRE-1439): dirty quarantine repair graduated from Experimental
+  // and always runs; the guards below still fail closed when it is unsafe.
+  if (evidence.cleanliness === "dirty") {
     if (!input.db) {
       evidence.safeRepair.reason = "dirty quarantine repair requires database access for claimant checks and audit";
       throw branchIncoherenceValidationFailure(evidence);
@@ -3283,7 +3284,6 @@ export async function realizeExecutionWorkspace(input: {
     createdByRuntime: boolean;
   } | null;
   heartbeatRunId?: string | null;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
   resolveGitAuth?: GitRemoteAuthProvider | null;
 }): Promise<RealizedExecutionWorkspace> {
@@ -3485,7 +3485,6 @@ export async function realizeExecutionWorkspace(input: {
         sourceIssue: input.issue,
         executionWorkspaceId: null,
         heartbeatRunId: input.heartbeatRunId ?? null,
-        enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         reconcileOperationPhase: "worktree_prepare",
         recorder: input.recorder ?? null,
       });
@@ -3732,7 +3731,6 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
   issue: ExecutionWorkspaceIssueRef | null;
   agent: ExecutionWorkspaceAgentRef;
   heartbeatRunId?: string | null;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
   resolveGitAuth?: GitRemoteAuthProvider | null;
 }): Promise<RealizedExecutionWorkspace | null> {
@@ -3806,7 +3804,6 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
         sourceIssue: input.issue,
         executionWorkspaceId: input.workspace.id ?? null,
         heartbeatRunId: input.heartbeatRunId ?? null,
-        enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         persistForwardReconcile: false,
         reconcileOperationPhase: "worktree_prepare",
         recorder: input.recorder ?? null,

@@ -221,6 +221,7 @@ test("graduated switches from the real catalog show graduated, whatever their st
     "enableStreamlinedLeftNavigation",
     "enableStreamlinedUi",
     "enableWorkspaceBranchReconcileForward",
+    "enableWorkspaceDirtyQuarantineRepair",
   ]);
   const settings = {
     ...SETTINGS,
@@ -232,6 +233,7 @@ test("graduated switches from the real catalog show graduated, whatever their st
     enableStreamlinedLeftNavigation: true,
     enableStreamlinedUi: true,
     enableWorkspaceBranchReconcileForward: false,
+    enableWorkspaceDirtyQuarantineRepair: false,
   };
   const rows = byKey(switchAges(settings, ACTIVITY, { now: NOW, graduated }));
   for (const key of graduated) {

@@ -319,9 +319,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: true,
   },
   enableWorkspaceDirtyQuarantineRepair: {
-    title: "Workspace Dirty Quarantine Repair",
+    title: "Workspace Dirty Quarantine Repair (compatibility)",
     description:
-      "Let workspace runtime recovery quarantine and repair dirty execution workspaces before runs.",
+      "Deprecated compatibility key. Workspace runtime recovery always quarantines and repairs dirty execution workspaces before runs when it is safe; stored and managed values are ignored.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -436,6 +436,7 @@ export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
   { key: "enableStreamlinedUi", issue: "GRE-1441" },
   { key: "enableWorkspaceBranchReconcileForward", issue: "GRE-1438" },
+  { key: "enableWorkspaceDirtyQuarantineRepair", issue: "GRE-1439" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
 
 export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];

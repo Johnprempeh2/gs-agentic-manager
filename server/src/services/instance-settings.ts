@@ -296,7 +296,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
       // Greatstone (GRE-1438): graduated; a stored off value is ignored.
       enableWorkspaceBranchReconcileForward: true,
-      enableWorkspaceDirtyQuarantineRepair: parsed.data.enableWorkspaceDirtyQuarantineRepair ?? true,
+      // Greatstone (GRE-1439): graduated; a stored off value is ignored.
+      enableWorkspaceDirtyQuarantineRepair: true,
       enableOwnerInstanceAdmin: parsed.data.enableOwnerInstanceAdmin ?? false,
       enableSandboxDuplexBridge: parsed.data.enableSandboxDuplexBridge ?? false,
       enableRunnerPreviewIngress: parsed.data.enableRunnerPreviewIngress ?? false,
@@ -383,6 +384,8 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableApps" || key === "enableMcpAggregators") continue;
     // Greatstone (GRE-1438): graduated; a managed config cannot turn it off.
     if (key === "enableWorkspaceBranchReconcileForward") continue;
+    // Greatstone (GRE-1439): graduated; a managed config cannot turn it off.
+    if (key === "enableWorkspaceDirtyQuarantineRepair") continue;
     // Greatstone (GRE-1436): Runner is always on; a managed "off" is ignored.
     if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.

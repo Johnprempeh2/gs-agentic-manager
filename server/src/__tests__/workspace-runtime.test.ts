@@ -2960,7 +2960,7 @@ describe("realizeExecutionWorkspace", () => {
     await expect(readGit(worktreePath, ["rev-parse", "HEAD"])).resolves.toBe(detachedHead);
   }, 15_000);
 
-  it("rejects dirty persisted git worktree branch incoherence with bounded recovery evidence", async () => {
+  it("rejects dirty persisted git worktree branch incoherence without database access, with bounded recovery evidence", async () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-455-reject-dirty-branch-mismatch";
     const actualBranch = "PAP-455-publish-head";
@@ -3002,7 +3002,6 @@ describe("realizeExecutionWorkspace", () => {
         name: "Codex Coder",
         companyId: "company-1",
       },
-      enableWorkspaceDirtyQuarantineRepair: false,
     })).rejects.toMatchObject({
       code: "workspace_validation_failed",
       resultJson: {
@@ -3027,7 +3026,7 @@ describe("realizeExecutionWorkspace", () => {
             eligible: false,
             attempted: false,
             succeeded: false,
-            reason: "worktree is not clean",
+            reason: "dirty quarantine repair requires database access for claimant checks and audit",
           }),
         }),
       },
@@ -6208,7 +6207,6 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
         companyId: input.ids.companyId,
       },
       heartbeatRunId: input.ids.runId,
-      enableWorkspaceDirtyQuarantineRepair: true,
       recorder: input.recorder ?? null,
     });
   }

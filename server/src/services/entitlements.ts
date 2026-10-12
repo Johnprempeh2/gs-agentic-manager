@@ -199,7 +199,10 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     kind: "runtime",
     reason: "Graduated (GRE-1438): always on; stored and managed values are ignored.",
   },
-  enableWorkspaceDirtyQuarantineRepair: { kind: "runtime", reason: "Workspace recovery reads it." },
+  enableWorkspaceDirtyQuarantineRepair: {
+    kind: "runtime",
+    reason: "Graduated (GRE-1439): always on; stored and managed values are ignored.",
+  },
   enableOwnerInstanceAdmin: { kind: "runtime", reason: "Read at the trusted-header auth boundary." },
   enableSandboxDuplexBridge: { kind: "runtime", reason: "Read per run before the sandbox transport is chosen." },
   enableRunnerPreviewIngress: { kind: "runtime", reason: "Deprecated: runner ingress follows enableNativeRunner." },

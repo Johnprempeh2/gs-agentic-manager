@@ -503,6 +503,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("reconcile a diverged recorded branch forward");
   });
 
+  it("no longer shows a Workspace Dirty Quarantine Repair toggle (graduated, GRE-1439)", async () => {
+    await renderPage();
+
+    expect(container.textContent).not.toContain("Workspace Dirty Quarantine Repair");
+    expect(container.textContent).not.toContain("quarantine and repair dirty execution workspaces");
+  });
+
   it("hides the worktree run-execution toggle when not running in a worktree", async () => {
     setWorktreeRuntimeMeta(false);
     await renderPage();
