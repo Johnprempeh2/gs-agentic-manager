@@ -76,6 +76,7 @@ const {
       issueIds: [],
     })),
     reconcileResolvedDependencyWakes: vi.fn(async () => ({ healed: 0 })),
+    reconcileOverdueHumanWaits: vi.fn(async () => ({ issueIds: [] })),
     reconcileTaskWatchdogs: vi.fn(async () => ({ triggered: 0 })),
     scanSilentActiveRuns: vi.fn(async () => ({ created: 0, escalated: 0, silentStops: { stopped: 0, retried: 0, escalated: 0, runIds: [] } })),
     stopSilentRuns: vi.fn(async () => ({
@@ -89,6 +90,7 @@ const {
     sweepStaleIssueLocks: vi.fn(async () => ({ cleared: 0 })),
     sweepPendingCleanupLeases: vi.fn(async () => ({ swept: 0, destroyed: 0, capped: 0 })),
     sweepExpiredRuntimeStatuses: vi.fn(() => 0),
+    sweepStaleRunOutputFiles: vi.fn(async () => undefined),
     tickTimers: vi.fn(async () => ({ checked: 0, enqueued: 0, skipped: 0 })),
   };
   const heartbeatServiceFactoryMock = vi.fn(() => heartbeatServiceMock);
@@ -270,6 +272,7 @@ vi.mock("../realtime/live-events-ws.js", () => ({
 }));
 
 vi.mock("../services/index.js", () => ({
+  returnDueTabledIssues: vi.fn(async () => ({ returned: 0 })),
   backfillLegacyToolOAuthTokens: vi.fn(async () => ({
     scannedConnections: 0,
     migratedConnections: 0,
@@ -630,6 +633,57 @@ describe("startServer feedback export wiring", () => {
       expect(executionWorkspaceServiceMock.sweepTerminalWorkspaces).toHaveBeenCalledTimes(1);
       expect(routineServiceMock.tickScheduledTriggers).toHaveBeenCalledTimes(1);
       expect(environmentCustomImagesServiceMock.cleanupExpiredSetupSessions).toHaveBeenCalledTimes(2);
+    } finally {
+      setIntervalSpy.mockRestore();
+    }
+  });
+
+  it("runs hot-restart adoption under a release hold and defers admission work until it lifts (GRE-242)", async () => {
+    loadConfigMock.mockReturnValue(buildTestConfig({
+      heartbeatSchedulerEnabled: true,
+      heartbeatSchedulerIntervalMs: 30000,
+    }));
+    // The release hold file restored at startup puts the task drain on.
+    resolveHeartbeatSchedulingSuppressionMock.mockReturnValue({
+      suppressed: true,
+      reason: "task_drain",
+    });
+    let intervalCallback: (() => void) | null = null;
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation(((callback: () => void) => {
+        intervalCallback = callback;
+        return 1 as unknown as ReturnType<typeof setInterval>;
+      }) as typeof setInterval);
+
+    try {
+      await startServer();
+
+      expect(heartbeatServiceMock.recoverNativeRunsAfterRestart).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.reconcileHotRestartAdoption).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.reapOrphanedRuns).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.resumeQueuedRuns).not.toHaveBeenCalled();
+      expect(heartbeatServiceMock.recoverActiveSessionGoals).not.toHaveBeenCalled();
+      expect(heartbeatServiceMock.tickTimers).not.toHaveBeenCalled();
+
+      // Still held: the periodic recovery waits.
+      intervalCallback?.();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(heartbeatServiceMock.resumeQueuedRuns).not.toHaveBeenCalled();
+
+      // The release reports and lifts the hold: the deferred session-goal
+      // recovery runs once with the periodic recovery.
+      resolveHeartbeatSchedulingSuppressionMock.mockReturnValue({ suppressed: false, reason: null });
+      intervalCallback?.();
+      await vi.waitFor(() => expect(heartbeatServiceMock.recoverActiveSessionGoals).toHaveBeenCalledTimes(1));
+      expect(heartbeatServiceMock.recoverPendingSessionGoalActions).toHaveBeenCalledTimes(1);
+      expect(heartbeatServiceMock.resumeQueuedRuns).toHaveBeenCalledTimes(1);
+
+      intervalCallback?.();
+      await vi.waitFor(() => expect(heartbeatServiceMock.resumeQueuedRuns).toHaveBeenCalledTimes(2));
+      expect(heartbeatServiceMock.recoverActiveSessionGoals).toHaveBeenCalledTimes(1);
+      // Adoption is startup-only.
+      expect(heartbeatServiceMock.reconcileHotRestartAdoption).toHaveBeenCalledTimes(1);
     } finally {
       setIntervalSpy.mockRestore();
     }

@@ -17,6 +17,13 @@ import { ToolGatewayHttpError, type ToolGatewayService } from "../services/tool-
 import { forbidden, HttpError } from "../errors.js";
 import { accessService } from "../services/index.js";
 import { listConnectionLifecycleEvents } from "../services/tool-connection-activity.js";
+import {
+  acceptMcpMessage,
+  classifyMcpMessage,
+  sendMcpGetNotAllowed,
+  sendMcpInvalidRequest,
+  sendMcpMethodNotFound,
+} from "./mcp-streamable-http.js";
 
 const TOOL_ACTIVITY_EVENT_TYPES = [
   "call_completed",
@@ -55,6 +62,74 @@ function callerHeaders(req: { headers: Record<string, string | string[] | undefi
   return headers;
 }
 
+/**
+ * Tool wrappers over the gateway's resources and prompts, each listed only
+ * when the bearer token may perform the MCP action it calls.
+ */
+const CONTEXT_WRAPPER_TOOLS = [
+  {
+    action: "resources/list",
+    tool: {
+      name: "paperclip_list_resources",
+      description: "List resources from fully assigned MCP connections.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    action: "resources/read",
+    tool: {
+      name: "paperclip_read_resource",
+      description: "Read a resource URI returned by paperclip_list_resources.",
+      inputSchema: { type: "object", required: ["uri"], properties: { uri: { type: "string" } }, additionalProperties: false },
+    },
+  },
+  {
+    action: "prompts/list",
+    tool: {
+      name: "paperclip_list_prompts",
+      description: "List prompts from fully assigned MCP connections.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    },
+  },
+  {
+    action: "prompts/get",
+    tool: {
+      name: "paperclip_get_prompt",
+      description: "Get a prompt returned by paperclip_list_prompts.",
+      inputSchema: { type: "object", required: ["name"], properties: { name: { type: "string" }, arguments: { type: "object" } }, additionalProperties: false },
+    },
+  },
+] as const;
+
+function tokenMay(allowedActions: readonly string[] | null | undefined, action: string) {
+  return !allowedActions || allowedActions.includes(action);
+}
+
+/**
+ * Advertise only what this bearer token may use. A run token limited to
+ * tools/list and tools/call gets no resources or prompts capability, so a
+ * spec-following client does not call resources/list or prompts/list only to
+ * be refused. The refusal itself is unchanged for clients that call anyway.
+ */
+function gatewayCapabilities(allowedActions: readonly string[] | null | undefined) {
+  return {
+    ...(tokenMay(allowedActions, "tools/list") ? { tools: {} } : {}),
+    ...(tokenMay(allowedActions, "resources/list") ? { resources: {} } : {}),
+    ...(tokenMay(allowedActions, "prompts/list") ? { prompts: {} } : {}),
+  };
+}
+
+/**
+ * A failure of this one tool call: the tool is missing or hidden, the provider
+ * timed out, rate limited or failed. It is an MCP tool result with isError, so
+ * the agent's session on this gateway stays usable for the next call
+ * (GRE-1039). Gateway auth (401), policy refusals (403) and the gateway's own
+ * rate limit (429) keep their status.
+ */
+function isCallScopedFailure(err: ToolGatewayHttpError) {
+  return err.status === 404 || err.status >= 500;
+}
+
 async function handleMcpGatewayProtocol(
   req: Request,
   res: Response,
@@ -68,10 +143,21 @@ async function handleMcpGatewayProtocol(
       return;
     }
     const headers = callerHeaders(req);
-    const body = (req.body ?? {}) as { jsonrpc?: string; id?: unknown; method?: string; params?: Record<string, unknown> };
-    const id = body.id ?? null;
+    const message = classifyMcpMessage(req.body);
+    if (message.kind === "invalid") {
+      sendMcpInvalidRequest(res);
+      return;
+    }
+    // Notifications (initialized, cancelled, roots/list_changed, ...) and
+    // client responses need no answer and read no gateway data.
+    if (message.kind !== "request") {
+      acceptMcpMessage(res);
+      return;
+    }
+    const body = { method: message.method, params: message.params as Record<string, unknown> | undefined };
+    const id = message.id;
     if (body.method === "initialize") {
-      await toolGateway.initializeNamedGatewayProtocol({
+      const session = await toolGateway.initializeNamedGatewayProtocol({
         ...locator,
         bearerToken: token,
         callerHeaders: headers,
@@ -81,7 +167,7 @@ async function handleMcpGatewayProtocol(
         id,
         result: {
           protocolVersion: "2025-03-26",
-          capabilities: { tools: {}, resources: {}, prompts: {} },
+          capabilities: gatewayCapabilities(session.gatewayTokenAllowedActions),
           serverInfo: { name: "GS Agentic Manager MCP Gateway", version: "1.0.0" },
           _meta: {
             "paperclip/mcp-app-ui": "unsupported",
@@ -91,12 +177,12 @@ async function handleMcpGatewayProtocol(
       });
       return;
     }
-    if (body.method === "notifications/initialized") {
-      res.status(202).end();
+    if (body.method === "ping") {
+      res.json({ jsonrpc: "2.0", id, result: {} });
       return;
     }
     if (body.method === "tools/list") {
-      const tools = await toolGateway.listToolsForNamedGateway({
+      const { tools, allowedActions } = await toolGateway.discoverNamedGatewayTools({
         ...locator,
         bearerToken: token,
         callerHeaders: headers,
@@ -112,26 +198,9 @@ async function handleMcpGatewayProtocol(
             description: tool.description,
             inputSchema: tool.parametersSchema ?? { type: "object", properties: {} },
             })),
-            {
-              name: "paperclip_list_resources",
-              description: "List resources from fully assigned MCP connections.",
-              inputSchema: { type: "object", properties: {}, additionalProperties: false },
-            },
-            {
-              name: "paperclip_read_resource",
-              description: "Read a resource URI returned by paperclip_list_resources.",
-              inputSchema: { type: "object", required: ["uri"], properties: { uri: { type: "string" } }, additionalProperties: false },
-            },
-            {
-              name: "paperclip_list_prompts",
-              description: "List prompts from fully assigned MCP connections.",
-              inputSchema: { type: "object", properties: {}, additionalProperties: false },
-            },
-            {
-              name: "paperclip_get_prompt",
-              description: "Get a prompt returned by paperclip_list_prompts.",
-              inputSchema: { type: "object", required: ["name"], properties: { name: { type: "string" }, arguments: { type: "object" } }, additionalProperties: false },
-            },
+            ...CONTEXT_WRAPPER_TOOLS
+              .filter((wrapper) => tokenMay(allowedActions, wrapper.action))
+              .map((wrapper) => wrapper.tool),
           ],
         },
       });
@@ -200,18 +269,31 @@ async function handleMcpGatewayProtocol(
       res.json({ jsonrpc: "2.0", id, result });
       return;
     }
-    res.status(404).json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } });
+    // Unknown or optional methods (server/discover, completion/complete, ...)
+    // are a JSON-RPC error in a normal response. An HTTP 404 here would tell
+    // the client its session is gone.
+    sendMcpMethodNotFound(res, id);
   } catch (err) {
     if (err instanceof ToolGatewayHttpError) {
       const id = (req.body as { id?: unknown } | undefined)?.id ?? null;
       // Provider tool failures are MCP tool results, not successful calls or
       // protocol errors. The service has already recorded the failed invocation.
-      if (req.body?.method === "tools/call" && err.reasonCode === "tool_error") {
+      if (req.body?.method === "tools/call" && (err.reasonCode === "tool_error" || isCallScopedFailure(err))) {
         res.json({
           jsonrpc: "2.0",
           id,
-          result: { content: [{ type: "text", text: err.message }], isError: true },
+          result: {
+            content: [{ type: "text", text: err.reasonCode === "tool_error" ? err.message : `${err.message} (${err.reasonCode})` }],
+            isError: true,
+          },
         });
+        return;
+      }
+      // Clients read an HTTP 404 as "session gone" and refuse every later call
+      // on this server (GRE-1039). A missing tool or resource is a JSON-RPC
+      // error, never an HTTP 404.
+      if (err.status === 404) {
+        res.json({ jsonrpc: "2.0", id, error: { code: -32602, message: err.message, data: { reasonCode: err.reasonCode } } });
         return;
       }
       res.status(err.status).json({
@@ -227,12 +309,10 @@ async function handleMcpGatewayProtocol(
 
 export function mcpGatewayProtocolRoutes(toolGateway: ToolGatewayService) {
   const router = Router();
-  router.get("/mcp/gateways/:gatewayPublicId", async (req, res) => {
-    res.json({
-      transport: "streamable_http",
-      endpoint: `/mcp/gateways/${req.params.gatewayPublicId}`,
-      authentication: "bearer",
-    });
+  // GET is an MCP client opening an optional SSE stream. The gateway offers
+  // none; a 200 here made clients reconnect the "stream" every second.
+  router.get("/mcp/gateways/:gatewayPublicId", (_req, res) => {
+    sendMcpGetNotAllowed(res);
   });
   router.post("/mcp/gateways/:gatewayPublicId", async (req, res) => {
     await handleMcpGatewayProtocol(req, res, toolGateway, { gatewayPublicId: req.params.gatewayPublicId });
@@ -450,12 +530,8 @@ export function toolGatewayRoutes(db: Db, toolGateway: ToolGatewayService) {
     }
   });
 
-  router.get("/tool-gateway/gateways/:gatewayId/mcp", async (req, res) => {
-    res.json({
-      transport: "streamable_http",
-      endpoint: `/api/tool-gateway/gateways/${req.params.gatewayId}/mcp`,
-      authentication: "bearer",
-    });
+  router.get("/tool-gateway/gateways/:gatewayId/mcp", (_req, res) => {
+    sendMcpGetNotAllowed(res);
   });
 
   router.post("/tool-gateway/gateways/:gatewayId/mcp", async (req, res) => {

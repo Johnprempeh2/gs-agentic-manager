@@ -53,7 +53,7 @@ const UNSET_LABELS: Record<GovernanceField, string> = {
 };
 
 const UNSET_EFFECTS: Record<GovernanceField, string> = {
-  defaultPolicy: "New cards are open — the board or any agent can respond, including the one that asked.",
+  defaultPolicy: "New cards are open. The board or any agent can respond, including the one that asked.",
   cap: "A request keeps whatever audience it asks for.",
 };
 
@@ -244,8 +244,8 @@ export function InteractionGovernancePanel({
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
           Thread interactions are open by default:{" "}
-          <span className="font-medium text-foreground">Anyone</span> in the organization — the
-          board or any agent, including the one that asked — can respond. Narrow a kind
+          <span className="font-medium text-foreground">Anyone</span> in the organisation (the
+          board or any agent, including the one that asked) can respond. Narrow a kind
           only when you need to.{" "}
           <span className="font-medium text-foreground">Default policy</span> is the
           audience new cards get when the requester does not ask for one;{" "}

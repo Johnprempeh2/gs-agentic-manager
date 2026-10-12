@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import express from "express";
 import request from "supertest";
 import { eq } from "drizzle-orm";
@@ -27,10 +30,12 @@ import {
   invites,
   issueApprovals,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueRecoveryActions,
   issueRelations,
   issueThreadInteractions,
+  issueWorkProducts,
   issues,
   joinRequests,
   projects,
@@ -684,7 +689,8 @@ describeEmbeddedPostgres("attention service", () => {
     expect(feed.items.find((item) =>
       item.sourceKind === "review" && item.subject.title === "Stalled review blocker"
     )).toMatchObject({
-      whyNow: expect.stringContaining("without a maintained"),
+      whyNow: "The work is ready for review, but no reviewer is set. You must decide.",
+      detail: { kind: "review", lastUpdate: null, workProduct: null },
       // A stalled review resolves in-row on the /decisions card (PAP-16080 §4.4).
       inlineResolvable: true,
       subject: expect.objectContaining({
@@ -1199,7 +1205,8 @@ describeEmbeddedPostgres("attention service", () => {
       issueTitle: "Approve launch plan",
       planTitle: "Launch Plan",
       summaryExcerpt: expect.stringContaining("launch checklist"),
-      images: imageAssetIds.slice(0, 3).map((assetId) => ({ assetId, alt: expect.any(String) })),
+      // Newest first: the latest screenshots are the ones a decision is about.
+      images: [...imageAssetIds].reverse().map((assetId) => ({ assetId, alt: expect.any(String) })),
     });
     expect(detailsByKind.get("questions")?.detail).toMatchObject({
       kind: "questions",
@@ -1220,6 +1227,151 @@ describeEmbeddedPostgres("attention service", () => {
       kind: "item_verdicts",
       itemCount: 2,
       promptExcerpt: "Approve these screenshots",
+    });
+  });
+
+  it("puts the task's latest deliverable versions on an approval card (GRE-451)", async () => {
+    const { companyId, workerId } = await seedCompany("ATD");
+    const issueId = randomUUID();
+    const deckV1 = randomUUID();
+    const deckV2 = randomUUID();
+    const brief = randomUUID();
+    await insertIssue({
+      id: issueId,
+      companyId,
+      identifier: "ATD-1",
+      title: "Pricing deck",
+      status: "in_progress",
+      assigneeAgentId: workerId,
+    });
+    const deliverable = (id: string, key: string, version: number, title: string, minute: number) => ({
+      id,
+      companyId,
+      issueId,
+      type: "deliverable",
+      provider: "paperclip",
+      externalId: key,
+      title,
+      status: "active",
+      metadata: {
+        version,
+        attachmentId: `att-${id}`,
+        contentType: "text/html",
+        originalFilename: `${key}-v${version}.html`,
+      },
+      createdAt: new Date(`2026-07-09T12:0${minute}:00.000Z`),
+      updatedAt: new Date(`2026-07-09T12:0${minute}:00.000Z`),
+    });
+    await db.insert(issueWorkProducts).values([
+      deliverable(deckV1, "pricing-deck", 1, "Pricing deck", 1),
+      deliverable(brief, "pricing-brief", 1, "Pricing brief", 2),
+      deliverable(deckV2, "pricing-deck", 2, "Pricing deck v2", 3),
+    ]);
+    await db.insert(issueThreadInteractions).values({
+      id: randomUUID(),
+      companyId,
+      issueId,
+      kind: "request_confirmation",
+      status: "pending",
+      continuationPolicy: "wake_assignee",
+      title: "Approve the deck",
+      payload: { version: 1, prompt: "Approve the pricing deck?" },
+    });
+
+    const feed = await attentionService(db).list(companyId, { userId: "board-user" });
+    const item = feed.items.find((row) => row.sourceKind === "issue_thread_interaction");
+    expect(item?.detail).toMatchObject({
+      kind: "confirmation",
+      // Newest first, one entry per deliverable: version 1 of the deck is gone.
+      deliverables: [
+        {
+          id: deckV2,
+          title: "Pricing deck v2",
+          contentType: "text/html",
+          contentPath: `/api/attachments/att-${deckV2}/content`,
+          originalFilename: "pricing-deck-v2.html",
+        },
+        expect.objectContaining({ id: brief, title: "Pricing brief" }),
+      ],
+    });
+  });
+
+  it("puts the assignee's last update and the pull request on a stalled review card (GRE-1421)", async () => {
+    const { companyId, workerId } = await seedCompany("ATR");
+    const issueId = await insertIssue({
+      companyId,
+      identifier: "ATR-1",
+      title: "Fix the billing page",
+      status: "in_review",
+      assigneeAgentId: workerId,
+    });
+    const handOffId = randomUUID();
+    await db.insert(issueComments).values([
+      {
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "Started work.",
+        createdAt: new Date("2026-07-09T12:00:00.000Z"),
+      },
+      {
+        id: handOffId,
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "**Done.** The billing page now shows fees, the allowance and the usage warnings. PR is open for review.",
+        createdAt: new Date("2026-07-09T12:05:00.000Z"),
+      },
+      {
+        // A newer status note from the assignee does not replace the hand-off.
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "Starting: I am checking the review notes.",
+        createdAt: new Date("2026-07-09T12:05:30.000Z"),
+      },
+      {
+        // A newer board comment is not the assignee's hand-off.
+        companyId,
+        issueId,
+        authorUserId: "board-user",
+        body: "Thanks",
+        createdAt: new Date("2026-07-09T12:06:00.000Z"),
+      },
+    ]);
+    await db.insert(issueWorkProducts).values([
+      {
+        companyId,
+        issueId,
+        type: "document",
+        provider: "paperclip",
+        title: "Notes",
+        url: "https://example.com/notes",
+        status: "active",
+        isPrimary: true,
+      },
+      {
+        companyId,
+        issueId,
+        type: "pull_request",
+        provider: "github",
+        title: "Billing fees",
+        url: "https://github.com/acme/app/pull/12",
+        status: "open",
+      },
+    ]);
+
+    const feed = await attentionService(db).list(companyId, { userId: "board-user" });
+    const item = feed.items.find((row) => row.sourceKind === "review" && row.subject.id === issueId);
+    expect(item?.detail).toMatchObject({
+      kind: "review",
+      lastUpdate: {
+        commentId: handOffId,
+        authorAgentId: workerId,
+        excerpt: "Done. The billing page now shows fees, the allowance and the usage warnings. PR is open for review.",
+        kind: "handoff",
+      },
+      workProduct: { type: "pull_request", title: "Billing fees", url: "https://github.com/acme/app/pull/12" },
     });
   });
 
@@ -1997,6 +2149,55 @@ describeEmbeddedPostgres("attention service", () => {
       decideBy: "2026-08-03",
       expiresAt: "2026-08-03T12:00:00.000Z",
     });
+  });
+
+  it("shows each recorded internet outage once, with its run counts, to board users only (GRE-999)", async () => {
+    const { companyId, workerId } = await seedCompany("OUT");
+    const dir = mkdtempSync(join(tmpdir(), "attention-outage-"));
+    const stateFile = join(dir, "outages.json");
+    const startedAt = "2026-10-07T13:02:00.000Z";
+    const endedAt = "2026-10-07T14:05:00.000Z";
+    writeFileSync(stateFile, JSON.stringify({
+      offlineSince: null,
+      lastCheckAt: endedAt,
+      outages: [
+        {
+          id: "outage-1", startedAt, endedAt, endIsApproximate: false,
+          checks: [{ name: "webhook_path", ok: false, message: "The public webhook path (Funnel) does not answer." }],
+        },
+        // Ended more than seven days ago: no card.
+        { id: "outage-old", startedAt: "2026-09-20T10:00:00.000Z", endedAt: "2026-09-20T11:00:00.000Z", endIsApproximate: false, checks: [] },
+      ],
+    }));
+    await db.insert(heartbeatRuns).values([
+      { companyId, agentId: workerId, status: "failed", createdAt: new Date("2026-10-07T13:00:00.000Z"), finishedAt: new Date("2026-10-07T13:10:00.000Z") },
+      { companyId, agentId: workerId, status: "timed_out", createdAt: new Date("2026-10-07T13:30:00.000Z"), finishedAt: new Date("2026-10-07T14:00:00.000Z") },
+      { companyId, agentId: workerId, status: "queued", scheduledRetryAttempt: 1, createdAt: new Date("2026-10-07T14:06:00.000Z") },
+      // Before the outage: not counted.
+      { companyId, agentId: workerId, status: "failed", createdAt: new Date("2026-10-07T11:00:00.000Z"), finishedAt: new Date("2026-10-07T11:05:00.000Z") },
+    ]);
+    try {
+      const service = attentionService(db, { now: () => Date.parse("2026-10-07T14:06:00.000Z"), connectivityStateFile: stateFile });
+      const outages = (await service.list(companyId, { userId: "board-user", limit: 100 }))
+        .items.filter((item) => item.sourceKind === "connectivity_outage");
+
+      expect(outages).toHaveLength(1);
+      expect(outages[0]).toMatchObject({
+        severity: "high",
+        dedupKey: "connectivity_outage:outage-1",
+        activityAt: endedAt,
+        subject: { kind: "connectivity_outage", id: "outage-1", title: "GSAM was offline from 14:02 to 15:05", status: "still_broken" },
+      });
+      expect((outages[0]!.detail as { summaryExcerpt: string }).summaryExcerpt).toBe(
+        "GSAM was offline from 14:02 to 15:05, 1 h 3 min, London time. Agent runs in that time: 2 failed, 1 retried. "
+          + "Still broken: The public webhook path (Funnel) does not answer.",
+      );
+
+      // Agents do not see it.
+      expect((await service.list(companyId, { limit: 100 })).items.some((item) => item.sourceKind === "connectivity_outage")).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("warns the board before a Claude token expires, again at expiry, and when a run's login is rejected (GRE-15)", async () => {

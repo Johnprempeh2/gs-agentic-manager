@@ -186,7 +186,7 @@ function AwaitingJoinApprovalPanel({
             Ask them to visit <span className="text-zinc-200">Settings → Members</span> to approve your request.
           </p>
           <p className="text-xs text-zinc-500">
-            Refresh this page after you've been approved — you'll be redirected automatically.
+            Refresh this page after you've been approved. You'll be redirected automatically.
           </p>
         </div>
         {claimSecret && claimApiKeyPath ? (
@@ -378,11 +378,17 @@ export function InviteLandingPage() {
         await authApi.signInEmail({ email: email.trim(), password });
         return;
       }
-      await authApi.signUpEmail({
-        name: name.trim(),
-        email: email.trim(),
-        password,
-      });
+      // The invite token lets the server create this account even while public
+      // sign-up is closed. Creating the account does not accept the invite; the
+      // accept call below (or the auto-accept effect) still does that.
+      await authApi.signUpEmail(
+        {
+          name: name.trim(),
+          email: email.trim(),
+          password,
+        },
+        { inviteToken: token },
+      );
     },
     onSuccess: async () => {
       setAuthFeedback(null);

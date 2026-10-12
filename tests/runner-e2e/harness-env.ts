@@ -25,6 +25,10 @@ const AMBIENT_EXTERNAL_STATE_KEYS = [
   "GSAM_STORAGE_S3_PREFIX",
   "GSAM_STORAGE_S3_FORCE_PATH_STYLE",
 ] as const;
+// The context a live instance gives the agent that launched this harness. Its
+// scripted agents must talk to the sandbox, not the live API, run or task.
+const AMBIENT_AGENT_RUN_KEY =
+  /^GSAM_(?:API_URL|AGENT_ID|COMPANY_ID|RUN_ID|TASK_ID|WAKE_REASON|ISSUE_WORK_MODE|GIT_TOKEN|GIT_METADATA_ROOTS|OPENCODE_PROVIDERS|RUNNER_NETWORK_[A-Z_]+|(?:RUN_|TASK_)?SCRATCH_DIR|TMPDIR|GITHUB_[A-Z_]+|WORKSPACE_[A-Z_]+)$/;
 const PROVIDER_SECRET_KEY = /^(?:OPENAI|ANTHROPIC|OPENROUTER|DAYTONA)(?:_|$)/;
 
 export function runnerE2EServerControlPaths(temporaryRoot: string) {
@@ -137,7 +141,7 @@ export function buildPaperclipServerEnvironment(
 ): NodeJS.ProcessEnv {
   const result = { ...source };
   for (const key of Object.keys(result)) {
-    if (PROVIDER_SECRET_KEY.test(key)) delete result[key];
+    if (PROVIDER_SECRET_KEY.test(key) || AMBIENT_AGENT_RUN_KEY.test(key)) delete result[key];
   }
   for (const key of [
     ...CREDENTIAL_NAMES,

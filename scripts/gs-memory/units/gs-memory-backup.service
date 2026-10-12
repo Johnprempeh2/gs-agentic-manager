@@ -1,0 +1,12 @@
+# Nightly organization memory dump. Skips when the database is not running. GRE-674.
+[Unit]
+Description=GS organization memory - nightly database dump
+
+[Service]
+Type=oneshot
+User=@USER@
+Group=@USER@
+ExecStart=@ROOT@/app/setup/gs-memory.sh backup
+Nice=15
+IOSchedulingClass=idle
+UMask=0077

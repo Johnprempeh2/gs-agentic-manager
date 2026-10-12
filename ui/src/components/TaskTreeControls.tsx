@@ -120,7 +120,8 @@ export function TaskTreeControlDialog({
     >
       <DialogContent
         showCloseButton={!pending}
-        className="max-h-(--sz-calc-18) overflow-y-auto sm:max-w-sm"
+        scrollBody
+        className="max-h-(--sz-calc-18) sm:max-w-sm"
       >
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>

@@ -145,6 +145,40 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableDeepDive: {
+    title: "Deep Dive",
+    description:
+      "Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with depth, status and visibility per stream. Requires Cases.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
+  enableStrategy: {
+    title: "Strategy",
+    description:
+      "The strategy module: the one-page strategic plan (vision to KPI cascade), KPI readings with RAG status, and KPI drafts from a research pack. Plain goals stay on without it. Off answers the KPI routes with 403 not_entitled.",
+    tier: "managed",
+    cloudDefault: false,
+    // On for self-hosted so existing instances keep their plan; client
+    // editions pin it off and the signed entitlement document governs it.
+    selfHostedDefault: true,
+  },
+  enableStrategyBoard: {
+    title: "Board control panel",
+    description:
+      "Requires Strategy. The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, \"Why?\" requests and the quarterly board pack.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
+  enableWebsiteView: {
+    title: "Website view",
+    description:
+      "Read-only Website page built from Google Analytics 4 and Search Console: Google sign-in with read-only scopes, a daily pull stored in this instance, and the report API. Off answers every Website route with 403 not_entitled.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableAgentChat: {
     title: "Agent Chat",
     description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",
@@ -233,7 +267,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableDecisions: {
     title: "Decisions",
     description:
-      "Show the Decisions item in the main sidebar — the attention home that surfaces tasks awaiting input.",
+      "Show the Decisions item in the main sidebar: the attention home that surfaces tasks awaiting input.",
     tier: "preference",
     cloudDefault: false,
     selfHostedDefault: true,
@@ -338,6 +372,39 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
 export const INSTANCE_FEATURE_KEYS = Object.keys(INSTANCE_FEATURE_CATALOG).sort() as InstanceFeatureKey[];
 
 /**
+ * Switches that only work with another switch on (GRE-1382, D2 rule 1 on
+ * GRE-1354): the Board add-on needs the Strategy module. The server reads a
+ * dependent switch as off while what it needs is off, and refuses a settings
+ * write that would leave it on alone.
+ */
+export const INSTANCE_FEATURE_REQUIRES: Partial<Record<InstanceFeatureKey, InstanceFeatureKey>> = {
+  enableStrategyBoard: "enableStrategy",
+};
+
+export interface FeatureDependencyViolation {
+  feature: InstanceFeatureKey;
+  requires: InstanceFeatureKey;
+}
+
+/** Dependent switches that are on while the switch they need is off. */
+export function featureDependencyViolations(
+  settings: Partial<Record<InstanceFeatureKey, unknown>>,
+): FeatureDependencyViolation[] {
+  return (Object.entries(INSTANCE_FEATURE_REQUIRES) as Array<[InstanceFeatureKey, InstanceFeatureKey]>)
+    .filter(([feature, requires]) => settings[feature] === true && settings[requires] !== true)
+    .map(([feature, requires]) => ({ feature, requires }));
+}
+
+/** Reads each dependent switch as off while the switch it needs is off. */
+export function applyFeatureDependencies<T extends Partial<Record<InstanceFeatureKey, unknown>>>(settings: T): T {
+  const violations = featureDependencyViolations(settings);
+  if (violations.length === 0) return settings;
+  const next = { ...settings } as Record<string, unknown>;
+  for (const { feature } of violations) next[feature] = false;
+  return next as T;
+}
+
+/**
  * Greatstone: flags retired from Settings > Experimental (GRE-193 / GRE-196).
  * The feature code stays in place so upstream merges stay easy, but the
  * switch is hidden and the flag always reads as off — a stored or managed
@@ -354,6 +421,23 @@ export type RetiredInstanceFeatureKey = (typeof RETIRED_INSTANCE_FEATURE_KEYS)[n
 
 export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstanceFeatureKey {
   return (RETIRED_INSTANCE_FEATURE_KEYS as readonly string[]).includes(key);
+}
+
+/**
+ * Greatstone: flags graduated out of Settings > Experimental (GRE-848).
+ * The feature is always on, so the switch is hidden; each entry names the
+ * issue that graduated it. Beta tools report these as `graduated`.
+ */
+export const GRADUATED_INSTANCE_FEATURE_KEYS = [
+  { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableGoalsSidebarLink", issue: "GRE-191" },
+  { key: "enableMcpAggregators", issue: "upstream #12728" },
+] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
+
+export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];
+
+export function isGraduatedInstanceFeatureKey(key: string): key is GraduatedInstanceFeatureKey {
+  return GRADUATED_INSTANCE_FEATURE_KEYS.some((entry) => entry.key === key);
 }
 
 /**

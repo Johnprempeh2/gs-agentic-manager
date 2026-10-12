@@ -78,6 +78,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -130,6 +131,7 @@ import {
 } from "./secrets/user-secret-presentation";
 import type { MyUserSecretEntry } from "../api/secrets";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type CreateMode = "managed" | "external";
 // "value" writes a new secret value (for external references: through to the
@@ -291,9 +293,9 @@ function providerVaultFormFromConfig(config: CompanySecretProviderConfig): Provi
 }
 
 function formatRelative(value: Date | string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "Never";
   const date = typeof value === "string" ? new Date(value) : value;
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "Unknown";
   const diff = Date.now() - date.getTime();
   if (diff < 0) return date.toLocaleString();
   const seconds = Math.floor(diff / 1000);
@@ -2580,7 +2582,7 @@ export function Secrets() {
           if (!open) setCreateNamePrefix(null);
         }}
       >
-        <DialogContent className="max-h-(--sz-calc-18) overflow-y-auto p-4 sm:max-w-lg sm:p-6">
+        <DialogContent scrollBody className="max-h-(--sz-calc-18) p-4 sm:max-w-lg sm:p-6">
           <DialogHeader>
             <DialogTitle>{editingDefinition ? "Edit user-provided secret" : "Create secret"}</DialogTitle>
             <DialogDescription>
@@ -2687,7 +2689,7 @@ export function Secrets() {
               )}
               {createNamePrefix && !editingDefinition ? (
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Creating in {folderPath} — remove the chip to type a different path.
+                  Creating in {folderPath}. Remove the chip to type a different path.
                 </p>
               ) : null}
             </div>
@@ -2810,9 +2812,8 @@ export function Secrets() {
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="text-xs font-medium" htmlFor="new-secret-provider">Provider</label>
-                  <select
+                  <NativeSelect
                     id="new-secret-provider"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
                     value={createForm.provider}
                     onChange={(event) =>
                       setCreateForm((current) => {
@@ -2847,7 +2848,7 @@ export function Secrets() {
                             : ""}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                   {createProviderBlockReason ? (
                     <p className="mt-1 flex items-center gap-1 text-(length:--text-micro) text-destructive">
                       <AlertCircle className="h-3 w-3" />
@@ -2859,9 +2860,8 @@ export function Secrets() {
                 </div>
                 <div>
                   <label className="text-xs font-medium" htmlFor="new-secret-vault">Provider vault</label>
-                  <select
+                  <NativeSelect
                     id="new-secret-vault"
-                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
                     value={createForm.providerConfigId}
                     onChange={(event) =>
                       setCreateForm((current) => ({ ...current, providerConfigId: event.target.value }))
@@ -2878,7 +2878,7 @@ export function Secrets() {
                         </option>
                       );
                     })}
-                  </select>
+                  </NativeSelect>
                   {selectedCreateProviderConfig ? (
                     <ProviderVaultInlineWarning config={selectedCreateProviderConfig} />
                   ) : null}
@@ -2940,7 +2940,7 @@ export function Secrets() {
       </Dialog>
 
       <Dialog open={vaultDialogOpen} onOpenChange={setVaultDialogOpen}>
-        <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl">
+        <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingVault ? "Edit provider vault" : "Create provider vault"}</DialogTitle>
             <DialogDescription>
@@ -2951,9 +2951,8 @@ export function Secrets() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-provider">Provider</label>
-                <select
+                <NativeSelect
                   id="vault-provider"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none disabled:opacity-60"
                   value={vaultForm.provider}
                   disabled={Boolean(editingVault)}
                   onChange={(event) => {
@@ -2968,7 +2967,7 @@ export function Secrets() {
                       {providerLabel(providers, provider)}
                     </option>
                   ))}
-                </select>
+                </NativeSelect>
               </div>
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-name">Display name</label>
@@ -2983,9 +2982,8 @@ export function Secrets() {
               </div>
               <div>
                 <label className="text-xs font-medium" htmlFor="vault-status">Status</label>
-                <select
+                <NativeSelect
                   id="vault-status"
-                  className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
                   value={vaultForm.status}
                   onChange={(event) => {
                     const status = event.target.value as SecretProviderConfigStatus;
@@ -3005,7 +3003,7 @@ export function Secrets() {
                   </option>
                   <option value="coming_soon">Coming soon</option>
                   <option value="disabled">Disabled</option>
-                </select>
+                </NativeSelect>
               </div>
               <label className="flex items-center gap-2 pt-6 text-sm">
                 <input
@@ -3094,9 +3092,8 @@ export function Secrets() {
           ) : null}
           <div>
             <label className="text-xs font-medium" htmlFor="rotate-secret-vault">Provider vault</label>
-            <select
+            <NativeSelect
               id="rotate-secret-vault"
-              className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm outline-none"
               value={rotateProviderConfigId}
               onChange={(event) => setRotateProviderConfigId(event.target.value)}
             >
@@ -3111,7 +3108,7 @@ export function Secrets() {
                   </option>
                 );
               })}
-            </select>
+            </NativeSelect>
             {selectedRotateProviderConfig ? (
               <ProviderVaultInlineWarning config={selectedRotateProviderConfig} />
             ) : (
@@ -3502,7 +3499,7 @@ function ImportFromVaultButton({
         className={cn("text-xs text-muted-foreground", className)}
         title="Configure an AWS provider vault to enable remote import"
       >
-        <Cloud className="h-3.5 w-3.5 mr-1" /> AWS vault disabled — manage
+        <Cloud className="h-3.5 w-3.5 mr-1" /> AWS vault disabled: manage
       </Button>
     );
   }
@@ -3791,8 +3788,8 @@ function ProviderVaultFields({
       <div className="grid gap-3 sm:grid-cols-2">
         <TextField label="AWS region" value={form.region} onChange={(value) => setField("region", value)} placeholder="us-east-1" required />
         <TextField label="Namespace" value={form.namespace} onChange={(value) => setField("namespace", value)} placeholder="production" />
-        <TextField label="Secret name prefix" value={form.secretNamePrefix} onChange={(value) => setField("secretNamePrefix", value)} placeholder="paperclip" />
-        <TextField label="KMS key id" value={form.kmsKeyId} onChange={(value) => setField("kmsKeyId", value)} placeholder="alias/paperclip-secrets" />
+        <TextField label="Secret name prefix" value={form.secretNamePrefix} onChange={(value) => setField("secretNamePrefix", value)} placeholder="gsam" />
+        <TextField label="KMS key id" value={form.kmsKeyId} onChange={(value) => setField("kmsKeyId", value)} placeholder="alias/gsam-secrets" />
         <TextField label="Owner tag" value={form.ownerTag} onChange={(value) => setField("ownerTag", value)} placeholder="platform" />
         <TextField label="Environment tag" value={form.environmentTag} onChange={(value) => setField("environmentTag", value)} placeholder="prod" />
       </div>
@@ -3802,10 +3799,10 @@ function ProviderVaultFields({
   if (form.provider === "gcp_secret_manager") {
     return (
       <div className="grid gap-3 sm:grid-cols-2">
-        <TextField label="Project id" value={form.projectId} onChange={(value) => setField("projectId", value)} placeholder="paperclip-prod" />
+        <TextField label="Project id" value={form.projectId} onChange={(value) => setField("projectId", value)} placeholder="gsam-prod" />
         <TextField label="Location" value={form.location} onChange={(value) => setField("location", value)} placeholder="global" />
         <TextField label="Namespace" value={form.namespace} onChange={(value) => setField("namespace", value)} placeholder="production" />
-        <TextField label="Secret name prefix" value={form.secretNamePrefix} onChange={(value) => setField("secretNamePrefix", value)} placeholder="paperclip" />
+        <TextField label="Secret name prefix" value={form.secretNamePrefix} onChange={(value) => setField("secretNamePrefix", value)} placeholder="gsam" />
       </div>
     );
   }
@@ -3815,7 +3812,7 @@ function ProviderVaultFields({
       <TextField label="Address" value={form.address} onChange={(value) => setField("address", value)} placeholder="https://vault.example.com" />
       <TextField label="Namespace" value={form.namespace} onChange={(value) => setField("namespace", value)} placeholder="admin" />
       <TextField label="Mount path" value={form.mountPath} onChange={(value) => setField("mountPath", value)} placeholder="secret" />
-      <TextField label="Secret path prefix" value={form.secretPathPrefix} onChange={(value) => setField("secretPathPrefix", value)} placeholder="paperclip/prod" />
+      <TextField label="Secret path prefix" value={form.secretPathPrefix} onChange={(value) => setField("secretPathPrefix", value)} placeholder="gsam/prod" />
     </div>
   );
 }
@@ -4200,7 +4197,7 @@ function CoverageInline({
     staleTime: 30_000,
   });
   const summary = coverageQuery.data;
-  if (coverageQuery.isPending) return <span className="text-muted-foreground">Loading…</span>;
+  if (coverageQuery.isPending) return <Skeleton className="inline-block h-4 w-20 align-middle" aria-busy="true" />;
   if (coverageQuery.isError) return <span className="text-destructive">Coverage unavailable</span>;
   return (
     <span className="inline-flex min-w-0 items-center gap-1 text-muted-foreground">
@@ -4231,7 +4228,7 @@ function UserSecretDetailsTab({
   return (
     <dl className="divide-y divide-border/60 text-xs">
       <DetailRow label="Description">
-        <span>{definition.description ?? <span className="text-muted-foreground">—</span>}</span>
+        <span>{definition.description ?? <span className="text-muted-foreground">None</span>}</span>
       </DetailRow>
       <DetailRow label="Provided by">Each user</DetailRow>
       <DetailRow label="Key">
@@ -4251,7 +4248,7 @@ function UserSecretDetailsTab({
       <DetailRow label="Created">{formatRelative(definition.createdAt)}</DetailRow>
       <DetailRow label="Updated">{formatRelative(definition.updatedAt)}</DetailRow>
       <DetailRow label="Usage guidance">
-        {definition.usageGuidance ?? <span className="text-muted-foreground">—</span>}
+        {definition.usageGuidance ?? <span className="text-muted-foreground">None</span>}
       </DetailRow>
       <div className="mt-3 rounded-md border border-violet-500/30 bg-violet-500/5 p-2 text-(length:--text-micro) text-violet-800 dark:text-violet-200">
         No value is stored on this admin row. Each member manages their own value under My secrets.
@@ -4273,7 +4270,12 @@ function UserSecretCoverageTab({
     staleTime: 30_000,
   });
   if (coverageQuery.isPending) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <div className="space-y-2 py-4" aria-busy="true">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
   }
   if (coverageQuery.isError) {
     return <div className="py-6 text-center text-xs text-destructive">Coverage unavailable.</div>;
@@ -4646,7 +4648,7 @@ function SecretDetailsTab({
   return (
     <dl className="divide-y divide-border/60 text-xs">
       <DetailRow label="Description">
-        <span>{secret.description ?? <span className="text-muted-foreground">—</span>}</span>
+        <span>{secret.description ?? <span className="text-muted-foreground">None</span>}</span>
       </DetailRow>
       <DetailRow label="Provided by">Organization</DetailRow>
       <DetailRow label="Custody">{modeLabel(secret.managedMode)}</DetailRow>
@@ -4656,7 +4658,7 @@ function SecretDetailsTab({
         {secret.externalRef ? (
           <span className="break-all font-mono">{secret.externalRef}</span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">None</span>
         )}
       </DetailRow>
       <DetailRow label="Latest version">v{secret.latestVersion}</DetailRow>
@@ -4699,7 +4701,12 @@ function DetailRow({ label, children }: { label: string; children: React.ReactNo
 
 export function SecretUsageTab({ loading, bindings }: { loading: boolean; bindings: CompanySecretUsageBinding[] }) {
   if (loading) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <div className="space-y-2 py-4" aria-busy="true">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
   }
   if (bindings.length === 0) {
     return (
@@ -4789,7 +4796,7 @@ export function SecretEventsTab({
     staleTime: 60_000,
   });
   const userLabel = (userId: string | null): string => {
-    if (!userId) return "—";
+    if (!userId) return "None";
     const entry: CompanyUserDirectoryEntry | undefined = directory?.users.find(
       (u) => u.principalId === userId,
     );
@@ -4797,7 +4804,12 @@ export function SecretEventsTab({
   };
 
   if (loading) {
-    return <div className="py-6 text-center text-xs text-muted-foreground">Loading…</div>;
+    return (
+      <div className="space-y-2 py-4" aria-busy="true">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-8 w-full" />
+      </div>
+    );
   }
   if (events.length === 0) {
     return (

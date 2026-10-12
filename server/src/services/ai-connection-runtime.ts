@@ -11,6 +11,7 @@ import {
 import { aiConnectionService, aiCredentialGeneration } from "./ai-connections.js";
 import { secretService } from "./secrets.js";
 import { MANAGED_AI_HOME_PREFIX, claimManagedAiHome, removeManagedAiHome } from "./managed-ai-home-sweep.js";
+import { runManagedAiCleanup } from "./managed-ai-cleanup.js";
 import { decideCodexAuthMerge } from "@greatstone/adapter-codex-local/server";
 import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
 import { runAdapterExecutionTargetProcess } from "@greatstone/adapter-utils/execution-target";
@@ -296,6 +297,7 @@ export async function prepareManagedAiRuntime(
     }
     const generation = aiCredentialGeneration(value);
     const identity = `${selection.grant.id}:${input.responsibleUserId ?? "shared"}:${generation}`;
+    const runHome = home;
     return {
       config: {
         ...input.config,
@@ -307,77 +309,78 @@ export async function prepareManagedAiRuntime(
       accountOwnerUserId: selection.grant.subjectUserId,
       identity,
       home,
-      cleanup: async () => {
-        try {
-          if (subscriptionFile) {
-            const refreshed = await readFile(authFile, "utf8");
-            if (refreshed !== value)
-              await db.transaction(async (tx) => {
-                const [grant] = await tx
-                  .select()
-                  .from(connectionGrants)
-                  .where(
-                    and(
-                      eq(connectionGrants.id, selection.grant.id),
-                      eq(connectionGrants.companyId, input.companyId),
-                    ),
-                  )
-                  .for("update");
-                // A missing or revoked grant blocks the write-back. Among
-                // active copies, the merge decision below keeps the
-                // credential with the newest provider freshness field.
-                if (!grant || grant.status !== "active") return;
-                const ref = grant.credentialSecretRefs.find(
-                  (r) => r.configPath === "ai.credential",
-                );
-                if (!ref) return;
-                // Lock the referenced secret row for the rest of this
-                // transaction. The grant-row lock above does not cover it,
-                // so an authorized rotation of this secret could otherwise
-                // land between the read and the write below and be
-                // overwritten by this stale write-back.
-                await tx
-                  .select({ id: companySecrets.id })
-                  .from(companySecrets)
-                  .where(
-                    and(
-                      eq(companySecrets.id, ref.secretId),
-                      eq(companySecrets.companyId, input.companyId),
-                    ),
-                  )
-                  .for("update");
-                const current = await aiConnectionService(
-                  tx as unknown as Db,
-                ).credential({ ...selection, grant });
-                const destination = path.join(
-                  providerHome,
-                  "current-auth.json",
-                );
-                await writeFile(destination, current, { mode: 0o600 });
-                const decision =
-                  input.binding.provider === "openai"
-                    ? await decideCodexAuthMerge(authFile, destination, {
-                        errorLabel: "AI account refresh",
-                      })
-                    : await decideGrokAuthMerge(authFile, destination, {
-                        errorLabel: "AI account refresh",
-                      });
-                if (decision !== 10) return;
-                await secretService(tx).rotate(
-                  ref.secretId,
-                  { value: refreshed },
-                  { userId: grant.subjectUserId },
-                );
-                await tx
-                  .update(connectionGrants)
-                  .set({ updatedAt: new Date() })
-                  .where(eq(connectionGrants.id, grant.id));
-              });
-          }
-        } finally {
-          if (home) await removeManagedAiHome(home);
-        }
-      },
+      // A failure names its step and provider (see managedAiCleanupLogFields);
+      // the home is removed even when the refresh write-back fails.
+      cleanup: () => runManagedAiCleanup({
+        provider: input.binding.provider,
+        method: selection.attribution.method,
+        refresh: subscriptionFile ? async () => {
+          const refreshed = await readFile(authFile, "utf8");
+          if (refreshed !== value)
+            await db.transaction(async (tx) => {
+              const [grant] = await tx
+                .select()
+                .from(connectionGrants)
+                .where(
+                  and(
+                    eq(connectionGrants.id, selection.grant.id),
+                    eq(connectionGrants.companyId, input.companyId),
+                  ),
+                )
+                .for("update");
+              // A missing or revoked grant blocks the write-back. Among
+              // active copies, the merge decision below keeps the
+              // credential with the newest provider freshness field.
+              if (!grant || grant.status !== "active") return;
+              const ref = grant.credentialSecretRefs.find(
+                (r) => r.configPath === "ai.credential",
+              );
+              if (!ref) return;
+              // Lock the referenced secret row for the rest of this
+              // transaction. The grant-row lock above does not cover it,
+              // so an authorized rotation of this secret could otherwise
+              // land between the read and the write below and be
+              // overwritten by this stale write-back.
+              await tx
+                .select({ id: companySecrets.id })
+                .from(companySecrets)
+                .where(
+                  and(
+                    eq(companySecrets.id, ref.secretId),
+                    eq(companySecrets.companyId, input.companyId),
+                  ),
+                )
+                .for("update");
+              const current = await aiConnectionService(
+                tx as unknown as Db,
+              ).credential({ ...selection, grant });
+              const destination = path.join(
+                providerHome,
+                "current-auth.json",
+              );
+              await writeFile(destination, current, { mode: 0o600 });
+              const decision =
+                input.binding.provider === "openai"
+                  ? await decideCodexAuthMerge(authFile, destination, {
+                      errorLabel: "AI account refresh",
+                    })
+                  : await decideGrokAuthMerge(authFile, destination, {
+                      errorLabel: "AI account refresh",
+                    });
+              if (decision !== 10) return;
+              await secretService(tx).rotate(
+                ref.secretId,
+                { value: refreshed },
+                { userId: grant.subjectUserId },
+              );
+              await tx
+                .update(connectionGrants)
+                .set({ updatedAt: new Date() })
+                .where(eq(connectionGrants.id, grant.id));
+            });
+        } : undefined,
+        remove: () => removeManagedAiHome(runHome),
+      }),
     };
   } catch (error) {
     if (home) await removeManagedAiHome(home);

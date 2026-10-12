@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { test, expect, type APIResponse } from "@playwright/test";
 import { and, eq } from "../../server/node_modules/drizzle-orm/index.js";
-import { createDb, closeRegisteredClients, heartbeatRuns, issueRecoveryActions, issues, issueComments, agentWakeupRequests, authUsers, companyMemberships } from "../../packages/db/src/index.ts";
+import { createDb, closeRegisteredClients, resolveEmbeddedPostgresConnectionString, heartbeatRuns, issueRecoveryActions, issues, issueComments, agentWakeupRequests, authUsers, companyMemberships } from "../../packages/db/src/index.ts";
 
 async function json(response: APIResponse) {
   expect(response.ok(), `${response.status()} ${await response.text()}`).toBe(true);
@@ -18,7 +18,10 @@ for (const action of ["task_retry", "thread_retry", "inbox_retry", "message", "q
     const config = JSON.parse(await readFile(process.env.GSAM_E2E_SERVER_CONFIG!, "utf8"));
     // Use the running test server's actual port, including fallback allocation.
     const pid = await readFile(path.join(config.database.embeddedPostgresDataDir, "postmaster.pid"), "utf8");
-    const url = `postgres://paperclip:paperclip@127.0.0.1:${pid.split("\n")[3]}/paperclip`;
+    const url = resolveEmbeddedPostgresConnectionString({
+      dataDir: config.database.embeddedPostgresDataDir,
+      port: Number(pid.split("\n")[3]),
+    });
     const db = createDb(url);
     const company = await json(await request.post("/api/companies", { data: { name: `Legacy recovery ${action} ${Date.now()}` } }));
     try {

@@ -1,9 +1,11 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
+import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore } from "./task-search.js";
 import { createdFromIssueCondition } from "./issue-creation-origin.js";
 import { executionProjectionsForRuns } from "./execution-projection.js";
+import { SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY } from "../modules/wake-queue/domain/values.js";
 import type { ExecutionProjection } from "@greatstone/shared";
 import { Buffer } from "node:buffer";
 import { createHash, randomUUID } from "node:crypto";
@@ -20,6 +22,7 @@ import {
   isNull,
   like,
   lt,
+  lte,
   ne,
   notExists,
   notInArray,
@@ -43,6 +46,7 @@ import {
   assets,
   companies,
   companyMemberships,
+  decisions,
   documentRevisions,
   documents,
   goals,
@@ -86,6 +90,7 @@ import type {
   IssueReviewAttentionPath,
   IssueBlockedInboxAttention,
   IssueBlockedInboxIssueRef,
+  IssueLatestRun,
   IssueRelationIssueSummary,
   IssueWatchdogSummary,
   LowTrustBoundary,
@@ -100,9 +105,13 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
+  STRATEGIC_WORK_GOAL_KINDS,
+  type IssueWorkFilter,
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
+import { bindLegacyBoardUserId } from "./board-identity.js";
+import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 import { logger } from "../middleware/logger.js";
 import { parseObject } from "../adapters/utils.js";
 import {
@@ -147,6 +156,7 @@ import {
 } from "./issue-goal-fallback.js";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
+import { assertDueDateOnPlan, resolveNextDueDate } from "./issue-due-date.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import {
   CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
@@ -194,6 +204,7 @@ import {
 import { buildIssueChanges } from "./issue-change-receipt.js";
 import { projectSafeChatPublication } from "./chat-publication-projection.js";
 import { issueThreadInteractionAttentionAgentAllowed } from "./issue-thread-interaction-resolution.js";
+import { listOpenBlockedDependents } from "./issue-blocker-handoff.js";
 
 const ALL_ISSUE_STATUSES = [
   "backlog",
@@ -376,19 +387,35 @@ function readStringFromRecord(record: unknown, key: string) {
     : null;
 }
 
+type ResponsibleUserIdForIssueCreateInput = {
+  explicitResponsibleUserId?: string | null;
+  createdByUserId?: string | null;
+  parentId?: string | null;
+  originKind?: string | null;
+  originRunId?: string | null;
+  actorRunId?: string | null;
+  actorResponsibleUserId?: string | null;
+  trustExplicitResponsibleUserId?: boolean;
+};
+
+/**
+ * The responsible user of a new issue. An inherited legacy `local-board` id
+ * becomes the company's primary owner in authenticated mode, so new work goes
+ * to a user who can sign in (`board-identity.ts`).
+ */
 async function resolveResponsibleUserIdForIssueCreate(
   reader: DbReader,
   companyId: string,
-  input: {
-    explicitResponsibleUserId?: string | null;
-    createdByUserId?: string | null;
-    parentId?: string | null;
-    originKind?: string | null;
-    originRunId?: string | null;
-    actorRunId?: string | null;
-    actorResponsibleUserId?: string | null;
-    trustExplicitResponsibleUserId?: boolean;
-  },
+  input: ResponsibleUserIdForIssueCreateInput,
+) {
+  const resolved = await resolveInheritedResponsibleUserIdForIssueCreate(reader, companyId, input);
+  return bindLegacyBoardUserId(reader, companyId, resolved);
+}
+
+async function resolveInheritedResponsibleUserIdForIssueCreate(
+  reader: DbReader,
+  companyId: string,
+  input: ResponsibleUserIdForIssueCreateInput,
 ) {
   const explicitResponsibleUserId = readStringFromRecord(
     input,
@@ -1803,6 +1830,11 @@ export interface IssueFilters {
   assigneeAgentId?: string | null;
   participantAgentId?: string;
   assigneeUserId?: string;
+  /**
+   * Other user ids that count as `assigneeUserId` (an owner's legacy
+   * `local-board` work, see `board-identity.ts`). Ignored without it.
+   */
+  assigneeUserIdAliases?: readonly string[];
   touchedByUserId?: string;
   inboxArchivedByUserId?: string;
   unreadForUserId?: string;
@@ -1813,6 +1845,7 @@ export interface IssueFilters {
   descendantOf?: string;
   createdFromIssueId?: string;
   labelId?: string;
+  teamId?: string;
   originKind?: string;
   originKindPrefix?: string;
   originId?: string;
@@ -1825,6 +1858,8 @@ export interface IssueFilters {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  /** Strategic work (goal kind objective or initiative) or everything else. */
+  work?: IssueWorkFilter;
   lowTrustBoundary?: LowTrustBoundary & { companyId: string };
   q?: string;
   limit?: number;
@@ -1919,6 +1954,13 @@ type IssueUserContextInput = {
 };
 type ProjectGoalReader = Pick<Db, "select">;
 type DbReader = Pick<Db, "select">;
+
+function assigneeUserFilterCondition(assigneeUserId: string, aliases: readonly string[] | undefined) {
+  const ids = [...new Set([assigneeUserId, ...(aliases ?? [])])];
+  return ids.length === 1
+    ? eq(issues.assigneeUserId, assigneeUserId)
+    : inArray(issues.assigneeUserId, ids);
+}
 /** Conversation containers cannot acquire new child edges, even with the experiment disabled. */
 async function assertExecutionTaskParent(db: Db, companyId: string, parentId?: string | null) {
   if (!parentId) return;
@@ -3104,6 +3146,11 @@ export function deriveIssueUserContext(
 
   return {
     myLastTouchAt,
+    // My tasks tells "Waiting for answer" from "Answer ready" with these.
+    // myLastTouchAt cannot: it moves on a read, and on any update to a task
+    // assigned to me, so an agent's reply never reads as unread there.
+    myLastCommentAt,
+    myLastReadAt,
     lastExternalCommentAt,
     isUnreadForMe,
   };
@@ -3437,6 +3484,60 @@ async function activeRunMapForIssues(
     for (const [runId, execution] of projections) {
       const row = map.get(runId);
       if (row) row.execution = execution;
+    }
+  }
+  return map;
+}
+
+/**
+ * The most recent finished run per issue, one query per chunk of issues, so
+ * list rows can show why a task stopped (GRE-403).
+ */
+async function latestFinishedRunMapForIssues(
+  dbOrTx: any,
+  companyId: string,
+  issueIds: string[],
+): Promise<Map<string, IssueLatestRun>> {
+  const map = new Map<string, IssueLatestRun>();
+  const uniqueIssueIds = [...new Set(issueIds)];
+  if (uniqueIssueIds.length === 0) return map;
+
+  const contextIssueId = sql<string>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+  for (const issueIdChunk of chunkList(
+    uniqueIssueIds,
+    ISSUE_LIST_RELATED_QUERY_CHUNK_SIZE,
+  )) {
+    const rows: Array<{
+      issueId: string;
+      status: string;
+      errorCode: string | null;
+      finishedAt: Date | null;
+    }> = await dbOrTx
+      .selectDistinctOn([contextIssueId], {
+        issueId: contextIssueId,
+        status: heartbeatRuns.status,
+        errorCode: heartbeatRuns.errorCode,
+        finishedAt: heartbeatRuns.finishedAt,
+      })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(contextIssueId, issueIdChunk),
+          isNotNull(heartbeatRuns.finishedAt),
+        ),
+      )
+      .orderBy(
+        contextIssueId,
+        desc(heartbeatRuns.finishedAt),
+        desc(heartbeatRuns.id),
+      );
+    for (const row of rows) {
+      map.set(row.issueId, {
+        status: row.status,
+        errorCode: row.errorCode ?? null,
+        finishedAt: row.finishedAt,
+      });
     }
   }
   return map;
@@ -3945,6 +4046,20 @@ async function listIssueBlockerAttentionMap(
           ),
         );
       for (const row of approvalRows) explicitWaitingIssueIds.add(row.issueId);
+
+      // An open agent decision waits on the board like a pending question, so
+      // its issue already has a Decisions card and is not a stalled blocker.
+      const decisionRows: Array<{ issueId: string }> = await dbOrTx
+        .select({ issueId: decisions.originIssueId })
+        .from(decisions)
+        .where(
+          and(
+            eq(decisions.companyId, companyId),
+            eq(decisions.status, "open"),
+            inArray(decisions.originIssueId, chunk),
+          ),
+        );
+      for (const row of decisionRows) explicitWaitingIssueIds.add(row.issueId);
     }
 
     // Recovery rows are intentionally company-wide: a liveness escalation for
@@ -4849,6 +4964,10 @@ const issueListSelect = {
   projectId: issues.projectId,
   projectWorkspaceId: issues.projectWorkspaceId,
   goalId: issues.goalId,
+  goalKind: sql<string | null>`(
+    SELECT ${goals.kind} FROM ${goals}
+    WHERE ${goals.id} = ${issues.goalId} AND ${goals.companyId} = ${issues.companyId}
+  )`,
   parentId: issues.parentId,
   title: issues.title,
   description: sql<string | null>`
@@ -4878,6 +4997,7 @@ const issueListSelect = {
   reviewPolicy: issues.reviewPolicy,
   assigneeAgentId: issues.assigneeAgentId,
   assigneeUserId: issues.assigneeUserId,
+  teamId: issues.teamId,
   checkoutRunId: issues.checkoutRunId,
   executionRunId: issues.executionRunId,
   executionAgentNameKey: issues.executionAgentNameKey,
@@ -4915,6 +5035,11 @@ const issueListSelect = {
   completedAt: issues.completedAt,
   cancelledAt: issues.cancelledAt,
   hiddenAt: issues.hiddenAt,
+  tabledAt: issues.tabledAt,
+  tabledUntil: issues.tabledUntil,
+  tabledByUserId: issues.tabledByUserId,
+  tabledFromStatus: issues.tabledFromStatus,
+  dueDate: issues.dueDate,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
 };
@@ -5226,6 +5351,21 @@ function hasPlanDocumentCondition(
   return hasPlanDocument
     ? existsPlanDocument
     : sql<boolean>`NOT ${existsPlanDocument}`;
+}
+
+function issueWorkCondition(companyId: string, work: IssueWorkFilter): SQL {
+  const linkedToStrategicGoal = sql<boolean>`
+    EXISTS (
+      SELECT 1
+      FROM ${goals}
+      WHERE ${goals.companyId} = ${companyId}
+        AND ${goals.id} = ${issues.goalId}
+        AND ${inArray(goals.kind, [...STRATEGIC_WORK_GOAL_KINDS])}
+    )
+  `;
+  return work === "strategic"
+    ? linkedToStrategicGoal
+    : sql<boolean>`NOT ${linkedToStrategicGoal}`;
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -6291,7 +6431,7 @@ async function blockedInboxIssueConditions(
       participatedByAgentCondition(companyId, filters.participantAgentId),
     );
   if (filters?.assigneeUserId)
-    conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+    conditions.push(assigneeUserFilterCondition(filters.assigneeUserId, filters.assigneeUserIdAliases));
   if (touchedByUserId)
     conditions.push(touchedByUserCondition(companyId, touchedByUserId));
   if (inboxArchivedByUserId)
@@ -6302,6 +6442,7 @@ async function blockedInboxIssueConditions(
     conditions.push(unreadForUserCondition(companyId, unreadForUserId));
   if (filters?.projectId)
     conditions.push(eq(issues.projectId, filters.projectId));
+  if (filters?.teamId) conditions.push(eq(issues.teamId, filters.teamId));
   if (filters?.workspaceId) {
     conditions.push(
       or(
@@ -6325,6 +6466,7 @@ async function blockedInboxIssueConditions(
       hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
     );
   }
+  if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
   if (!shouldIncludePluginOperationIssues(filters))
     conditions.push(nonPluginOperationIssueCondition());
   if (filters?.labelId) {
@@ -6371,6 +6513,8 @@ async function listBlockedInboxIssues(
       liveDescendantCount?: number;
       lastActivityAt: Date;
       myLastTouchAt?: Date | null;
+      myLastCommentAt?: Date | null;
+      myLastReadAt?: Date | null;
       lastExternalCommentAt?: Date | null;
       isUnreadForMe?: boolean;
     }
@@ -7138,8 +7282,12 @@ export function issueService(db: Db) {
     });
   }
 
-  async function assertAssignableUser(companyId: string, userId: string) {
-    const membership = await db
+  async function assertAssignableUser(
+    companyId: string,
+    userId: string,
+    dbOrTx: DbReader = db,
+  ) {
+    const membership = await dbOrTx
       .select({ id: companyMemberships.id })
       .from(companyMemberships)
       .where(
@@ -7836,35 +7984,64 @@ export function issueService(db: Db) {
     },
     dbOrTx: any = db,
   ) {
-    const now = new Date();
-    const [row] = await dbOrTx
-      .insert(issueInboxArchives)
-      .values({
-        companyId,
-        issueId,
-        userId,
-        archivedByActorType: attribution?.archivedByActorType ?? "user",
-        archivedByAgentId: attribution?.archivedByAgentId ?? null,
-        archivedByRunId: attribution?.archivedByRunId ?? null,
-        archivedAt,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          issueInboxArchives.companyId,
-          issueInboxArchives.issueId,
-          issueInboxArchives.userId,
-        ],
-        set: {
-          archivedAt,
+    const runArchive = async (tx: typeof dbOrTx) => {
+      // Completion locks the issue before archiving. Take the FK's parent lock
+      // first too, or an insert can hold the archive key while waiting on that
+      // issue and deadlock with completion's archive UPSERT. SHARE also holds
+      // companyId stable; different users can still archive concurrently.
+      const [issue] = await tx
+        .select({ id: issues.id })
+        .from(issues)
+        .where(and(eq(issues.companyId, companyId), eq(issues.id, issueId)))
+        .for("share");
+      if (!issue) throw notFound("Issue not found");
+
+      const now = new Date();
+      const [row] = await tx
+        .insert(issueInboxArchives)
+        .values({
+          companyId,
+          issueId,
+          userId,
           archivedByActorType: attribution?.archivedByActorType ?? "user",
           archivedByAgentId: attribution?.archivedByAgentId ?? null,
           archivedByRunId: attribution?.archivedByRunId ?? null,
+          archivedAt,
           updatedAt: now,
-        },
-      })
-      .returning();
-    return row;
+        })
+        .onConflictDoUpdate({
+          target: [
+            issueInboxArchives.companyId,
+            issueInboxArchives.issueId,
+            issueInboxArchives.userId,
+          ],
+          set: {
+            archivedAt,
+            archivedByActorType: attribution?.archivedByActorType ?? "user",
+            archivedByAgentId: attribution?.archivedByAgentId ?? null,
+            archivedByRunId: attribution?.archivedByRunId ?? null,
+            updatedAt: now,
+          },
+          // A request that waited behind completion must not replace the newer
+          // archive with its earlier request time and resurface the done task.
+          setWhere: lte(issueInboxArchives.archivedAt, archivedAt),
+        })
+        .returning();
+      if (row) return row;
+      // ON CONFLICT holds this row lock even when setWhere skips the update.
+      // Return the newer state, including its matching actor attribution.
+      const [existing] = await tx
+        .select()
+        .from(issueInboxArchives)
+        .where(and(
+          eq(issueInboxArchives.companyId, companyId),
+          eq(issueInboxArchives.issueId, issueId),
+          eq(issueInboxArchives.userId, userId),
+        ));
+      if (!existing) throw new Error("Inbox archive conflict row missing");
+      return existing;
+    };
+    return dbOrTx === db ? db.transaction(runArchive) : runArchive(dbOrTx);
   }
 
   const service = {
@@ -7971,7 +8148,7 @@ export function issueService(db: Db) {
         );
       }
       if (filters?.assigneeUserId) {
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+        conditions.push(assigneeUserFilterCondition(filters.assigneeUserId, filters.assigneeUserIdAliases));
       }
       if (touchedByUserId) {
         conditions.push(touchedByUserCondition(companyId, touchedByUserId));
@@ -7986,6 +8163,8 @@ export function issueService(db: Db) {
       }
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId)
+        conditions.push(eq(issues.teamId, filters.teamId));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -8014,6 +8193,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters)) {
         conditions.push(nonPluginOperationIssueCondition());
       }
@@ -8091,6 +8271,9 @@ export function issueService(db: Db) {
       }
 
       const issueIds = withRuns.map((row) => row.id);
+      const blockedIssueIds = withRuns
+        .filter((row) => row.status === "blocked")
+        .map((row) => row.id);
       const [
         statsRows,
         readRows,
@@ -8099,6 +8282,8 @@ export function issueService(db: Db) {
         blockedByMap,
         blocksMap,
         liveDescendantCountByIssueId,
+        latestRunByIssueId,
+        scheduledRetryByIssueId,
       ] = await Promise.all([
         contextUserId
           ? userCommentStatsForIssues(db, companyId, contextUserId, issueIds)
@@ -8110,16 +8295,28 @@ export function issueService(db: Db) {
         contextUserId
           ? inboxArchiveRowsForIssues(db, companyId, contextUserId, issueIds)
           : Promise.resolve([]),
-        includeBlockedBy
-          ? blockedByMapForIssues(db, companyId, issueIds)
-          : Promise.resolve(new Map<string, IssueRelationIssueSummary[]>()),
+        // Blocked rows always carry their blockers so rows can name who must act (GRE-403).
+        blockedByMapForIssues(
+          db,
+          companyId,
+          includeBlockedBy ? issueIds : blockedIssueIds,
+        ),
         includeBlocks
           ? blocksMapForIssues(db, companyId, issueIds)
           : Promise.resolve(new Map<string, IssueRelationIssueSummary[]>()),
         includeLiveDescendantSummary
           ? liveDescendantCountMapForIssues(db, companyId, issueIds)
           : Promise.resolve(new Map<string, number>()),
+        latestFinishedRunMapForIssues(db, companyId, issueIds),
+        getCurrentScheduledRetriesForIssues(issueIds, companyId, db),
       ]);
+      const stopReasonFields = (row: { id: string; status: string }) => ({
+        ...(includeBlockedBy || row.status === "blocked"
+          ? { blockedBy: blockedByMap.get(row.id) ?? [] }
+          : {}),
+        latestRun: latestRunByIssueId.get(row.id) ?? null,
+        scheduledRetry: scheduledRetryByIssueId.get(row.id) ?? null,
+      });
       const statsByIssueId = new Map(
         statsRows.map((row) => [row.issueId, row]),
       );
@@ -8152,9 +8349,7 @@ export function issueService(db: Db) {
             ) ?? row.updatedAt;
           return {
             ...row,
-            ...(includeBlockedBy
-              ? { blockedBy: blockedByMap.get(row.id) ?? [] }
-              : {}),
+            ...stopReasonFields(row),
             ...(includeBlocks ? { blocks: blocksMap.get(row.id) ?? [] } : {}),
             lastActivityAt,
             ...(blockerAttentionByIssueId.has(row.id)
@@ -8196,9 +8391,7 @@ export function issueService(db: Db) {
             archiveByIssueId.get(row.id),
             lastActivityAt,
           ),
-          ...(includeBlockedBy
-            ? { blockedBy: blockedByMap.get(row.id) ?? [] }
-            : {}),
+          ...stopReasonFields(row),
           ...(includeBlocks ? { blocks: blocksMap.get(row.id) ?? [] } : {}),
           lastActivityAt,
           ...(blockerAttentionByIssueId.has(row.id)
@@ -8256,9 +8449,11 @@ export function issueService(db: Db) {
         conditions.push(eq(issues.assigneeAgentId, assigneeAgentFilter));
       }
       if (filters?.assigneeUserId)
-        conditions.push(eq(issues.assigneeUserId, filters.assigneeUserId));
+        conditions.push(assigneeUserFilterCondition(filters.assigneeUserId, filters.assigneeUserIdAliases));
       if (filters?.projectId)
         conditions.push(eq(issues.projectId, filters.projectId));
+      if (filters?.teamId)
+        conditions.push(eq(issues.teamId, filters.teamId));
       if (filters?.workspaceId) {
         conditions.push(
           or(
@@ -8286,6 +8481,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters))
         conditions.push(nonPluginOperationIssueCondition());
       const [row] = await db
@@ -9093,6 +9289,12 @@ export function issueService(db: Db) {
     ) => {
       return listIssueReviewAttentionMap(dbOrTx, companyId, issueRows);
     },
+
+    listOpenBlockedDependents: (
+      companyId: string,
+      blockerIssueId: string,
+      dbOrTx: any = db,
+    ) => listOpenBlockedDependents(dbOrTx, companyId, blockerIssueId),
 
     listWakeableBlockedDependents: async (blockerIssueId: string) => {
       const blockerIssue = await db
@@ -10177,6 +10379,9 @@ export function issueService(db: Db) {
           issueNumber,
           identifier,
         } as typeof issues.$inferInsert;
+        if (values.dueDate) {
+          await assertDueDateOnPlan(tx, companyId, values.goalId ?? null);
+        }
         if (values.status === "in_progress" && !values.startedAt) {
           values.startedAt = new Date();
         }
@@ -10600,6 +10805,8 @@ export function issueService(db: Db) {
         labelIds?: string[];
         blockedByIssueIds?: string[];
         actorAgentId?: string | null;
+        actorRunId?: string | null;
+        actorRunStopId?: string | null;
         actorUserId?: string | null;
         companyGuard?: string;
       },
@@ -10645,6 +10852,8 @@ export function issueService(db: Db) {
         labelIds: nextLabelIds,
         blockedByIssueIds,
         actorAgentId,
+        actorRunId,
+        actorRunStopId,
         actorUserId,
         companyGuard,
         ...issueData
@@ -10674,8 +10883,12 @@ export function issueService(db: Db) {
           );
         }
       }
+      // No read in `update` may use the outer `db` directly. When the caller
+      // passes its transaction, a read through the outer pool would wait for a
+      // second connection while the caller holds this one, and enough
+      // concurrent callers leave the whole pool idle in transaction.
       const isolatedWorkspacesEnabled = (
-        await instanceSettings.getExperimental()
+        await instanceSettings.getExperimental({ db: dbOrTx })
       ).enableIsolatedWorkspaces;
       if (options.bindRuntimeSharedWorkspace) {
         const workspaceId = issueData.executionWorkspaceId ?? existing.executionWorkspaceId;
@@ -10725,6 +10938,14 @@ export function issueService(db: Db) {
         patch.unblockDescriptor = null;
         patch.blockedTransitionAt = null;
         patch.blockedOwnerNotifiedAt = null;
+      }
+      // Moving a tabled task to another status by hand brings it back: the
+      // parked state must not outlive the status that represents it.
+      if (existing.tabledAt && issueData.status && issueData.status !== existing.status) {
+        patch.tabledAt = null;
+        patch.tabledUntil = null;
+        patch.tabledByUserId = null;
+        patch.tabledFromStatus = null;
       }
       if (issueData.requestDepth !== undefined) {
         patch.requestDepth = clampIssueRequestDepth(issueData.requestDepth);
@@ -10797,6 +11018,7 @@ export function issueService(db: Db) {
         await assertAssignableUser(
           existing.companyId,
           issueData.assigneeUserId,
+          dbOrTx,
         );
       }
       let nextProjectId =
@@ -10835,6 +11057,7 @@ export function issueService(db: Db) {
           existing.companyId,
           null,
           nextProjectWorkspaceId,
+          dbOrTx,
         );
         validatedProjectWorkspace = workspace;
         nextProjectId = workspace.projectId;
@@ -10845,6 +11068,7 @@ export function issueService(db: Db) {
           existing.companyId,
           null,
           nextExecutionWorkspaceId,
+          dbOrTx,
         );
         validatedExecutionWorkspace = workspace;
         nextProjectId = workspace.projectId;
@@ -10856,6 +11080,7 @@ export function issueService(db: Db) {
             existing.companyId,
             nextProjectId,
             nextProjectWorkspaceId,
+            dbOrTx,
           );
         }
       }
@@ -10865,6 +11090,7 @@ export function issueService(db: Db) {
             existing.companyId,
             nextProjectId,
             nextExecutionWorkspaceId,
+            dbOrTx,
           );
         }
       }
@@ -10918,6 +11144,13 @@ export function issueService(db: Db) {
           .for("update")
           .then((rows: Array<typeof issues.$inferSelect>) => rows[0] ?? null);
         if (!receiptExisting) return null;
+        if (actorAgentId && actorRunId) {
+          // Recheck under a run lock: a request admitted before Stop must not
+          // commit a late Done after cancellation revoked its credentials.
+          await assertAgentRunWriteAllowed(tx, receiptExisting.companyId, {
+            agentId: actorAgentId, runId: actorRunId, stopId: actorRunStopId,
+          });
+        }
         if (actorAgentId && patch.status === "done") {
           const [review] = await tx.select({ id: toolActionRequests.id }).from(toolActionRequests).where(and(eq(toolActionRequests.companyId, existing.companyId), eq(toolActionRequests.issueId, id), inArray(toolActionRequests.status, ["pending", "approved", "executing"]))).limit(1);
           if (review) throw conflict("This task is waiting for a connection review. Finish unrelated work, then yield in_review without retrying the governed call.", { code: "tool_review_pending", actionRequestId: review.id });
@@ -10952,6 +11185,13 @@ export function issueService(db: Db) {
           projectGoalId: nextProjectGoalId,
           defaultGoalId: defaultCompanyGoal?.id ?? null,
         });
+        const nextDueDate = await resolveNextDueDate(tx, existing.companyId, {
+          currentDueDate: existing.dueDate,
+          currentGoalId: existing.goalId,
+          dueDate: issueData.dueDate,
+          goalId: patch.goalId ?? null,
+        });
+        if (nextDueDate !== undefined) patch.dueDate = nextDueDate;
         // Ownership changes invalidate observed handoff versions even if status
         // stays the same, including an A -> B -> A assignment race.
         if ((issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== receiptExisting.assigneeAgentId)
@@ -11027,6 +11267,25 @@ export function issueService(db: Db) {
           }
           if (updated.status === "done" || updated.status === "cancelled") {
             await finalizeSummarySlotsForTerminalIssue(tx, updated);
+            if (actorUserId && !actorAgentId) {
+              // A board close is newer than every wake already parked behind
+              // the active run. Stamp them in this transaction so the run's
+              // release cannot reopen the task from an older comment. Wakes
+              // queued after this close stay unstamped and reopen as before.
+              await tx
+                .update(agentWakeupRequests)
+                .set({
+                  payload: sql`coalesce(${agentWakeupRequests.payload}, '{}'::jsonb) || jsonb_build_object(${SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY}::text, ${updated.status}::text)`,
+                  updatedAt: new Date(),
+                })
+                .where(
+                  and(
+                    eq(agentWakeupRequests.companyId, updated.companyId),
+                    eq(agentWakeupRequests.status, "deferred_issue_execution"),
+                    wakeRequestTargetsIssue(updated.id),
+                  ),
+                );
+            }
             // Every terminal transition funnels through here, including direct
             // service callers (tree control, recovery, pipelines, status cards)
             // that never touch the HTTP routes, so pending interaction cards
@@ -12156,11 +12415,13 @@ export function issueService(db: Db) {
             // cannot publish the same visible result twice. This needs no schema
             // change: the issue row is the transaction fence, and the recursive
             // call below performs the lookup and insert while holding it.
+            // NO KEY UPDATE fences comment writers against each other as before
+            // without blocking writes that only reference the task.
             await tx
               .select({ id: issues.id })
               .from(issues)
               .where(eq(issues.id, issueId))
-              .for("update");
+              .for(REFERENCED_ROW_LOCK);
             return addComment(issueId, body, actor, options, tx);
           });
         return options?.authorizationReason ===
@@ -12170,18 +12431,24 @@ export function issueService(db: Db) {
       }
       // Callers supplying a transaction still share the settlement fence.
       if (actor.userId && dbOrTx !== db) {
-        await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for("update");
+        await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for(REFERENCED_ROW_LOCK);
       }
       const issue = await dbOrTx
-        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId })
+        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId, originKind: issues.originKind })
         .from(issues)
         .where(eq(issues.id, issueId))
-        .then((rows: Array<{ companyId: string; conversationAgentId: string | null }>) => rows[0] ?? null);
+        .then((rows: Array<{ companyId: string; conversationAgentId: string | null; originKind: string }>) => rows[0] ?? null);
 
       if (!issue) throw notFound("Issue not found");
 
-      if (issue.conversationAgentId && actor.userId && !(await instanceSettingsService(dbOrTx).getExperimental()).enableAgentChat) {
-        throw unprocessable("Agent Chat is disabled in Experimental settings");
+      if (issue.conversationAgentId && actor.userId) {
+        // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+        const experimental = await instanceSettingsService(dbOrTx).getExperimental();
+        if (issue.originKind === "strategy_board_question") {
+          if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
+        } else if (!experimental.enableAgentChat) {
+          throw unprocessable("Agent Chat is disabled in Experimental settings");
+        }
       }
       const currentUserRedactionOptions = {
         // Keep every read on the caller's transaction connection. Re-entering
@@ -12276,7 +12543,9 @@ export function issueService(db: Db) {
         // for serialization. Lock both stable parents here before selecting or
         // binding files. Concurrent helper calls for the same run then observe
         // one another's committed selection count instead of both admitting a
-        // twenty-first attachment.
+        // twenty-first attachment. NO KEY UPDATE keeps that mutual exclusion;
+        // FOR UPDATE also waited on any write referencing the run, and a
+        // document write that referenced the run and then the task deadlocked.
         const [lockedIssue] = await dbOrTx
           .select({ id: issues.id })
           .from(issues)
@@ -12286,7 +12555,7 @@ export function issueService(db: Db) {
               eq(issues.companyId, issue.companyId),
             ),
           )
-          .for("update");
+          .for(REFERENCED_ROW_LOCK);
         if (!lockedIssue) throw notFound("Issue not found");
         const [lockedRun] = await dbOrTx
           .select({ id: heartbeatRuns.id })
@@ -12298,7 +12567,7 @@ export function issueService(db: Db) {
               eq(heartbeatRuns.agentId, actor.agentId),
             ),
           )
-          .for("update");
+          .for(REFERENCED_ROW_LOCK);
         if (!lockedRun) {
           throw unprocessable(
             "Agent comment attachments require the current registered run",
@@ -12784,6 +13053,9 @@ export function issueService(db: Db) {
       if (!issue) throw notFound("Issue not found");
 
       return db.transaction(async (tx) => {
+        // Task, run and comment locks serialise attachment selection for one
+        // run. This transaction only inserts, so NO KEY UPDATE keeps that
+        // exclusion without waiting on writes that merely reference these rows.
         if (input.createdByAgentId && input.issueCommentId) {
           const [lockedIssue] = await tx
             .select({ id: issues.id })
@@ -12794,7 +13066,7 @@ export function issueService(db: Db) {
                 eq(issues.companyId, issue.companyId),
               ),
             )
-            .for("update");
+            .for(REFERENCED_ROW_LOCK);
           if (!lockedIssue) throw notFound("Issue not found");
         }
         const registeredRun =
@@ -12814,7 +13086,7 @@ export function issueService(db: Db) {
                       : []),
                   ),
                 )
-                .for("update")
+                .for(REFERENCED_ROW_LOCK)
                 .then((rows) => rows[0] ?? null)
             : null;
         const registeredRunId = registeredRun?.id ?? null;
@@ -12836,7 +13108,7 @@ export function issueService(db: Db) {
                   isNull(issueComments.deletedAt),
                 ),
               )
-              .for("update")
+              .for(REFERENCED_ROW_LOCK)
               .then((rows) => rows[0] ?? null)
           : null;
         if (input.issueCommentId && !parentComment) {

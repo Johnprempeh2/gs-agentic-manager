@@ -198,7 +198,7 @@ export function parseHermesStdoutLine(
   if (!trimmed) return [];
 
   // ── System/adapter messages ────────────────────────────────────────────
-  if (trimmed.startsWith("[hermes]") || trimmed.startsWith("[paperclip]")) {
+  if (trimmed.startsWith("[hermes]") || trimmed.startsWith("[gsam]") || trimmed.startsWith("[paperclip]")) {
     return [{ kind: "system", ts, text: trimmed }];
   }
 

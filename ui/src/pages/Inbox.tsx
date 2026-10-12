@@ -5,6 +5,7 @@ import { deriveOriginatingActor, INBOX_MINE_ISSUE_STATUS_FILTER } from "@greatst
 import { usePublishSharedQueryData, useSharedPollingQuery } from "@/hooks/useSharedPolling";
 import { approvalsApi } from "../api/approvals";
 import { accessApi } from "../api/access";
+import { rebrandRunLogText } from "../adapters";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
 import { dashboardApi } from "../api/dashboard";
@@ -86,12 +87,16 @@ import {
 } from "../components/IssueColumns";
 import { IssueFiltersPopover } from "../components/IssueFiltersPopover";
 import { InboxArchiveButton, IssueRow } from "../components/IssueRow";
+import { TaskOwnerLabel } from "../components/TaskOwnerLabel";
 import { BlockedInboxView } from "../components/BlockedInboxView";
 import { SwipeToArchive } from "../components/SwipeToArchive";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
+import { useNeedsMe } from "../hooks/useDecisionsFeed";
+import { NeedsMeList } from "../components/NeedsMeList";
 import { Inbox as LegacyInbox } from "./LegacyInbox";
 
 import { StatusIcon } from "../components/StatusIcon";
+import { isWaitingOnMonitor } from "../components/IssueMonitorBanner";
 import { cn } from "../lib/utils";
 import { StatusBadge } from "../components/StatusBadge";
 import { approvalLabel, defaultTypeIcon, typeIcon } from "../components/ApprovalPayload";
@@ -286,7 +291,7 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
 }
 
 function runFailureMessage(run: HeartbeatRun): string {
-  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt) ?? "Run exited with an error.";
+  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt && rebrandRunLogText(run.stderrExcerpt)) ?? "Run exited with an error.";
 }
 
 function approvalStatusLabel(status: Approval["status"]): string {
@@ -434,7 +439,7 @@ export function FailedRunInboxRow({
                   {issue.title}
                 </>
               ) : (
-                <>Failed run{linkedAgentName ? ` — ${linkedAgentName}` : ""}</>
+                <>Failed run{linkedAgentName ? `: ${linkedAgentName}` : ""}</>
               )}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -529,6 +534,8 @@ function ApprovalInboxRow({
   const showResolutionButtons =
     approval.type !== "budget_override_required" &&
     ACTIONABLE_APPROVAL_STATUSES.has(approval.status);
+  // GRE-601: a missing-permission request reads as Grant / Deny.
+  const isPermissionGrant = approval.type === "permission_grant";
   const showUnreadSlot = unreadState !== null;
   const showUnreadDot = unreadState === "visible" || unreadState === "fading";
 
@@ -597,7 +604,7 @@ function ApprovalInboxRow({
                   onClick={onApprove}
                   disabled={isPending}
                 >
-                  Approve
+                  {isPermissionGrant ? "Grant" : "Approve"}
                 </Button>
                 <Button
                   variant="destructive"
@@ -606,7 +613,7 @@ function ApprovalInboxRow({
                   onClick={onReject}
                   disabled={isPending}
                 >
-                  Reject
+                  {isPermissionGrant ? "Deny" : "Reject"}
                 </Button>
               </>
             ) : null}
@@ -621,7 +628,7 @@ function ApprovalInboxRow({
             onClick={onApprove}
             disabled={isPending}
           >
-            Approve
+            {isPermissionGrant ? "Grant" : "Approve"}
           </Button>
           <Button
             variant="destructive"
@@ -630,7 +637,7 @@ function ApprovalInboxRow({
             onClick={onReject}
             disabled={isPending}
           >
-            Reject
+            {isPermissionGrant ? "Deny" : "Reject"}
           </Button>
         </div>
       ) : null}
@@ -966,6 +973,9 @@ function StreamlinedInbox() {
     staleTime: INBOX_HOT_PATH_STALE_MS,
   });
   usePublishSharedQueryData(sharedInboxIssues, issues, issuesUpdatedAt);
+  // One "needs me" list (GRE-358): same count as the Decisions header and the
+  // nav badge, shown first on Mine so assigned tasks are above the fold.
+  const { data: needsMe } = useNeedsMe(selectedCompanyId);
   const {
     data: mineIssuesRaw = [],
     isLoading: isMineIssuesLoading,
@@ -1304,10 +1314,10 @@ function StreamlinedInbox() {
 
   const failedRuns = useMemo(
     () =>
-      getLatestFailedRunsByAgent(heartbeatRuns ?? []).filter(
+      getLatestFailedRunsByAgent(heartbeatRuns ?? [], agents).filter(
         (r) => !isInboxEntityDismissed(dismissedAtByKey, `run:${r.id}`, r.createdAt),
       ),
-    [heartbeatRuns, dismissedAtByKey],
+    [heartbeatRuns, agents, dismissedAtByKey],
   );
   const approvalsToRender = useMemo(() => {
     let filtered = getApprovalsForTab(approvals ?? [], tab, allApprovalFilter, currentUserId);
@@ -1349,6 +1359,7 @@ function StreamlinedInbox() {
         approvals: tab === "all" && !showApprovalsCategory ? [] : approvalsToRender,
         failedRuns: failedRunsForTab,
         joinRequests: joinRequestsForTab,
+        unreadFirst: tab === "mine",
       }),
     [approvalsToRender, issuesToRender, showApprovalsCategory, showTouchedCategory, tab, failedRunsForTab, joinRequestsForTab],
   );
@@ -1500,7 +1511,10 @@ function StreamlinedInbox() {
     });
   }, [selectedCompanyId]);
   const freshGroupedSections = useMemo<InboxGroupedSection[]>(() => [
-    ...buildGroupedInboxSections(filteredWorkItems, groupBy, inboxWorkspaceGrouping, { nestingEnabled }),
+    ...buildGroupedInboxSections(filteredWorkItems, groupBy, inboxWorkspaceGrouping, {
+      nestingEnabled,
+      unreadFirst: tab === "mine",
+    }),
     ...buildGroupedInboxSections(
       getInboxWorkItems({ issues: archivedSearchIssues, approvals: [] }),
       groupBy,
@@ -1520,6 +1534,7 @@ function StreamlinedInbox() {
     inboxWorkspaceGrouping,
     issueSearchSupplementResults,
     nestingEnabled,
+    tab,
   ]);
 
   // --- Order pinning (PAP-16015) ---
@@ -2393,9 +2408,9 @@ function StreamlinedInbox() {
       issueFilters.statuses.includes(status as IssueFilterState["statuses"][number]),
     );
   const issueFilterFeedback = issueFilters.liveOnly
-    ? "Live runs only — tasks currently connected to an agent run."
+    ? "Live runs only: tasks currently connected to an agent run."
     : activeStatusFilterApplied
-      ? "Active statuses — open tasks, whether or not an agent is running."
+      ? "Active statuses: open tasks, whether or not an agent is running."
       : null;
   return (
     <div className="space-y-6">
@@ -2406,7 +2421,7 @@ function StreamlinedInbox() {
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
             <PageTabBar
               items={[
-                { value: "mine", label: "Mine" },
+                { value: "mine", label: needsMe?.count ? `Mine (${needsMe.count})` : "Mine" },
                 { value: "recent", label: "Recent" },
                 { value: "unread", label: "Unread" },
                 { value: "blocked", label: "Blocked" },
@@ -2689,6 +2704,8 @@ function StreamlinedInbox() {
       {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
+      {tab === "mine" && needsMe ? <NeedsMeList needsMe={needsMe} includeDecisions /> : null}
+
       {tab === "blocked" ? (
         <div className="-mx-2 sm:mx-0">
         <BlockedInboxView
@@ -2788,7 +2805,7 @@ function StreamlinedInbox() {
                     && blockerAttention?.state === "covered"
                   );
                   const rowStatusIcon = (
-                    <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} size="md" />
+                    <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} waiting={isWaitingOnMonitor(issue)} size="md" />
                   );
                   return (
                     <IssueRow
@@ -2799,6 +2816,7 @@ function StreamlinedInbox() {
                       treeGuides={depth}
                       chevronInGuide={streamlinedUiEnabled && depth > 0 && hasChildren}
                       selected={selected}
+                      ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
                       className={
                         isArchiving
                           ? "pointer-events-none -translate-x-4 scale-(--s-0_98) opacity-0 transition-all duration-200 ease-out"
@@ -2887,7 +2905,7 @@ function StreamlinedInbox() {
                             <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
                           </button>
                         ) : (
-                          <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} size="md" />
+                          <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} waiting={isWaitingOnMonitor(issue)} size="md" />
                         )
                       ) : undefined}
                       unreadState={isUnread ? "visible" : isFading ? "fading" : "hidden"}

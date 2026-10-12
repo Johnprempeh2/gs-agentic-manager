@@ -26,7 +26,12 @@ import {
   issueThreadInteractions,
   issueWorkProducts,
 } from "@greatstone/db";
-import { readPaperclipSkillSyncPreference, writePaperclipSkillSyncPreference } from "@greatstone/adapter-utils/server-utils";
+import {
+  GSAM_SKILL_DISPLAY_NAMES,
+  rebrandGsamSkillText,
+  readPaperclipSkillSyncPreference,
+  writePaperclipSkillSyncPreference,
+} from "@greatstone/adapter-utils/server-utils";
 import type { PaperclipDesiredSkillEntry, PaperclipSkillEntry } from "@greatstone/adapter-utils/server-utils";
 import type {
   AgentDesiredSkillEntry,
@@ -288,6 +293,8 @@ function assertImportedSkillSourceAllowed(skill: ImportedSkill) {
         sourceType: skill.sourceType,
         trustLevel: skill.trustLevel,
         reason: "scripts_executables_blocked",
+        scriptPaths: skill.fileInventory.filter((entry) => entry.kind === "script").map((entry) => entry.path),
+        remediation: "Re-import with stripScripts: true to import the skill without its script files.",
       },
     );
   }
@@ -301,6 +308,19 @@ function assertImportedSkillSourceAllowed(skill: ImportedSkill) {
       },
     );
   }
+}
+
+// Drops script files from an external skill so it can be stored without them.
+// Runtime materialization and file reads only touch inventory paths, so the
+// stripped files never reach the library or an agent's runtime skill dir.
+function stripImportedSkillScripts(skill: ImportedSkill): string[] {
+  if (!EXTERNAL_SKILL_SOURCE_TYPES.has(skill.sourceType)) return [];
+  const stripped = skill.fileInventory.filter((entry) => entry.kind === "script").map((entry) => entry.path);
+  if (stripped.length === 0) return [];
+  skill.fileInventory = skill.fileInventory.filter((entry) => entry.kind !== "script");
+  skill.trustLevel = deriveTrustLevel(skill.fileInventory);
+  skill.metadata = { ...(skill.metadata ?? {}), scriptsStripped: true, strippedScriptPaths: stripped };
+  return stripped;
 }
 
 function assertImportedSkillKeyAllowed(skill: ImportedSkill) {
@@ -692,26 +712,61 @@ function deriveCanonicalSkillKey(
   return `company/${companyId}/${slug}`;
 }
 
-function classifyInventoryKind(relativePath: string): CompanySkillFileInventoryEntry["kind"] {
+const SCRIPT_FILE_EXTENSIONS = new Set([
+  ".sh",
+  ".bash",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".py",
+  ".rb",
+  ".cmd",
+  ".bat",
+  ".ps1",
+]);
+
+// A file with no extension can only be judged by its content: a leading "#!"
+// makes it an executable script (e.g. a launcher like `bin/tool`).
+function isExtensionlessFile(relativePath: string) {
+  return path.posix.extname(path.posix.basename(normalizePortablePath(relativePath))) === "";
+}
+
+function startsWithShebang(content: string | Buffer | null | undefined) {
+  if (content == null) return false;
+  if (typeof content === "string") return content.replace(/^﻿/, "").startsWith("#!");
+  const offset = content.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])) ? 3 : 0;
+  return content[offset] === 0x23 && content[offset + 1] === 0x21;
+}
+
+async function readLocalFileHead(absolutePath: string): Promise<Buffer | null> {
+  const handle = await fs.open(absolutePath, "r").catch(() => null);
+  if (!handle) return null;
+  try {
+    const buffer = Buffer.alloc(8);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead);
+  } finally {
+    await handle.close();
+  }
+}
+
+// Script detection runs before the references/ and assets/ folders so an
+// executable is a script wherever it sits in the skill. `content` (or its first
+// bytes) is only needed for files with no extension.
+function classifyInventoryKind(
+  relativePath: string,
+  content?: string | Buffer | null,
+): CompanySkillFileInventoryEntry["kind"] {
   const normalized = normalizePortablePath(relativePath).toLowerCase();
   if (normalized.endsWith("/skill.md") || normalized === "skill.md") return "skill";
-  if (normalized.startsWith("references/")) return "reference";
   if (normalized.startsWith("scripts/")) return "script";
+  const fileName = path.posix.basename(normalized);
+  if (SCRIPT_FILE_EXTENSIONS.has(path.posix.extname(fileName))) return "script";
+  if (isExtensionlessFile(normalized) && startsWithShebang(content)) return "script";
+  if (normalized.startsWith("references/")) return "reference";
   if (normalized.startsWith("assets/")) return "asset";
   if (normalized.endsWith(".md")) return "markdown";
-  const fileName = path.posix.basename(normalized);
-  if (
-    fileName.endsWith(".sh")
-    || fileName.endsWith(".js")
-    || fileName.endsWith(".mjs")
-    || fileName.endsWith(".cjs")
-    || fileName.endsWith(".ts")
-    || fileName.endsWith(".py")
-    || fileName.endsWith(".rb")
-    || fileName.endsWith(".bash")
-  ) {
-    return "script";
-  }
   if (
     fileName.endsWith(".png")
     || fileName.endsWith(".jpg")
@@ -1085,7 +1140,7 @@ function readInlineSkillImports(companyId: string, files: Record<string, string>
         const relative = entry === skillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
         return {
           path: normalizePortablePath(relative),
-          kind: classifyInventoryKind(relative),
+          kind: classifyInventoryKind(relative, normalizedFiles[entry]),
         };
       })
       .sort((left, right) => left.path.localeCompare(right.path));
@@ -1260,12 +1315,14 @@ async function collectLocalSkillInventory(
     }
   }
 
-  return Array.from(allFiles)
-    .map((relativePath) => ({
-      path: normalizePortablePath(relativePath),
-      kind: classifyInventoryKind(relativePath),
-    }))
-    .sort((left, right) => left.path.localeCompare(right.path));
+  const inventory = await Promise.all(Array.from(allFiles).map(async (relativePath) => ({
+    path: normalizePortablePath(relativePath),
+    kind: classifyInventoryKind(
+      relativePath,
+      isExtensionlessFile(relativePath) ? await readLocalFileHead(path.join(skillDir, relativePath)) : null,
+    ),
+  })));
+  return inventory.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 function inventoryEntriesEqual(
@@ -1593,16 +1650,23 @@ async function readLocalSkillImports(companyId: string, sourcePath: string): Pro
 
   const imports: ImportedSkill[] = [];
   for (const skillPath of skillPaths) {
-    const skillDir = path.posix.dirname(skillPath);
-    const inventory = allFiles
-      .filter((entry) => entry === skillPath || entry.startsWith(`${skillDir}/`))
-      .map((entry) => {
-        const relative = entry === skillPath ? "SKILL.md" : entry.slice(skillDir.length + 1);
+    // A path that points straight at the skill folder puts SKILL.md at the
+    // root, where dirname() is "." and no entry starts with "./" (GRE-781).
+    const dir = path.posix.dirname(skillPath);
+    const skillDir = dir === "." ? "" : dir;
+    const prefix = skillDir ? `${skillDir}/` : "";
+    const inventory = (await Promise.all(allFiles
+      .filter((entry) => entry === skillPath || entry.startsWith(prefix))
+      .map(async (entry) => {
+        const relative = entry === skillPath ? "SKILL.md" : entry.slice(prefix.length);
         return {
           path: normalizePortablePath(relative),
-          kind: classifyInventoryKind(relative),
+          kind: classifyInventoryKind(
+            relative,
+            isExtensionlessFile(relative) ? await readLocalFileHead(path.join(root, entry)) : null,
+          ),
         };
-      })
+      })))
       .sort((left, right) => left.path.localeCompare(right.path));
     const imported = await readLocalSkillImportFromDirectory(companyId, path.join(root, skillDir));
     imported.fileInventory = inventory;
@@ -1626,15 +1690,15 @@ async function readUrlSkillImports(
     const apiBase = gitHubApiBase(parsed.hostname);
     const { pinnedRef, trackingRef } = await resolveGitHubPinnedRef(parsed);
     let ref = pinnedRef;
-    const tree = await fetchJson<{ tree?: Array<{ path: string; type: string }> }>(
+    const tree = await fetchJson<{ tree?: Array<{ path: string; type: string; mode?: string }> }>(
       `${apiBase}/repos/${parsed.owner}/${parsed.repo}/git/trees/${ref}?recursive=1`,
     ).catch(() => {
       throw unprocessable(`Failed to read GitHub tree for ${url}`);
     });
-    const allPaths = (tree.tree ?? [])
-      .filter((entry) => entry.type === "blob")
-      .map((entry) => entry.path)
-      .filter((entry): entry is string => typeof entry === "string");
+    const blobs = (tree.tree ?? [])
+      .filter((entry) => entry.type === "blob" && typeof entry.path === "string");
+    const allPaths = blobs.map((entry) => entry.path);
+    const executablePaths = new Set(blobs.filter((entry) => entry.mode === "100755").map((entry) => entry.path));
     const basePrefix = parsed.basePath ? `${parsed.basePath.replace(/^\/+|\/+$/g, "")}/` : "";
     const scopedPaths = basePrefix
       ? allPaths.filter((entry) => entry.startsWith(basePrefix))
@@ -1656,8 +1720,15 @@ async function readUrlSkillImports(
       const repoSkillPath = basePrefix ? `${basePrefix}${relativeSkillPath}` : relativeSkillPath;
       const markdown = await fetchText(resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoSkillPath));
       const parsedMarkdown = parseFrontmatterMarkdown(markdown);
-      const skillDir = path.posix.dirname(relativeSkillPath);
-      const slug = deriveImportedSkillSlug(parsedMarkdown.frontmatter, path.posix.basename(skillDir));
+      // A URL that points straight at the skill folder puts SKILL.md at the
+      // scoped root, where dirname() is "." and no entry starts with "./".
+      const dir = path.posix.dirname(relativeSkillPath);
+      const skillDir = dir === "." ? "" : dir;
+      const repoDir = basePrefix ? `${basePrefix}${skillDir}`.replace(/\/+$/, "") : skillDir;
+      const slug = deriveImportedSkillSlug(
+        parsedMarkdown.frontmatter,
+        path.posix.basename(repoDir || parsed.repo),
+      );
       const skillKey = readCanonicalSkillKey(
         parsedMarkdown.frontmatter,
         isPlainRecord(parsedMarkdown.frontmatter.metadata) ? parsedMarkdown.frontmatter.metadata : null,
@@ -1673,17 +1744,23 @@ async function readUrlSkillImports(
         repo: parsed.repo,
         ref,
         trackingRef,
-        repoSkillDir: normalizeGitHubSkillDirectory(
-          basePrefix ? `${basePrefix}${skillDir}` : skillDir,
-          slug,
-        ),
+        repoSkillDir: normalizeGitHubSkillDirectory(repoDir, slug),
       };
-      const inventory = filteredPaths
-        .filter((entry) => entry === relativeSkillPath || entry.startsWith(`${skillDir}/`))
-        .map((entry) => ({
-          path: entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1),
-          kind: classifyInventoryKind(entry === relativeSkillPath ? "SKILL.md" : entry.slice(skillDir.length + 1)),
-        }))
+      // Files with no extension are judged by content: the executable bit in
+      // the tree, else a "#!" at the start of the raw file.
+      const inventory = (await Promise.all(filteredPaths
+        .filter((entry) => entry === relativeSkillPath || !skillDir || entry.startsWith(`${skillDir}/`))
+        .map(async (entry) => {
+          const relative = entry === relativeSkillPath ? "SKILL.md" : skillDir ? entry.slice(skillDir.length + 1) : entry;
+          let content: string | null = null;
+          if (relative !== "SKILL.md" && isExtensionlessFile(relative)) {
+            const repoPath = basePrefix ? `${basePrefix}${entry}` : entry;
+            content = executablePaths.has(repoPath)
+              ? "#!"
+              : await fetchText(resolveRawGitHubUrl(parsed.hostname, parsed.owner, parsed.repo, ref, repoPath));
+          }
+          return { path: relative, kind: classifyInventoryKind(relative, content) };
+        })))
         .sort((left, right) => left.path.localeCompare(right.path));
       skills.push({
         key: deriveCanonicalSkillKey(companyId, {
@@ -2490,7 +2567,7 @@ async function collectSkillFileBytes(skillDir: string): Promise<{
         path: relativePath,
         bytes,
         sizeBytes: lstat.size,
-        kind: classifyInventoryKind(relativePath),
+        kind: classifyInventoryKind(relativePath, bytes),
       });
     }
   }
@@ -4871,6 +4948,9 @@ export function companySkillService(db: Db) {
     if (!matching) {
       throw unprocessable(`Skill ${skill.key} could not be re-imported from its source.`);
     }
+    if (isPlainRecord(skill.metadata) && skill.metadata.scriptsStripped === true) {
+      stripImportedSkillScripts(matching);
+    }
     const imported = await upsertImportedSkills(companyId, [matching]);
     return imported[0] ?? null;
   }
@@ -5859,7 +5939,10 @@ export function companySkillService(db: Db) {
     }
   }
 
-  async function materializedVersionSnapshotMatches(skillDir: string, version: CompanySkillVersion) {
+  async function materializedVersionSnapshotMatches(
+    skillDir: string,
+    version: { fileInventory: Array<{ path: string; content: string }> },
+  ) {
     const expected = new Map<string, string>();
     let sawSkillFile = false;
     for (const entry of version.fileInventory) {
@@ -5908,6 +5991,38 @@ export function companySkillService(db: Db) {
       throw unprocessable("Company skill version could not be materialized because its SKILL.md snapshot is missing.");
     }
 
+    return skillDir;
+  }
+
+  /**
+   * Built-in skills reach agents under their Greatstone name (gsam, ...): a
+   * renamed copy at a stable path, so symlinked skill homes see content
+   * updates without relinking. Rewritten only when the content changes, and
+   * swapped in whole so a concurrent run never reads a half-written copy.
+   */
+  async function materializeGsamSkillAlias(companyId: string, source: string, name: string) {
+    const files = (await listMaterializedFiles(source)) ?? [];
+    const fileInventory = await Promise.all(files.map(async (relativePath) => {
+      const content = await fs.readFile(path.join(source, relativePath), "utf8");
+      return { path: relativePath, content: relativePath.endsWith(".md") ? rebrandGsamSkillText(content) : content };
+    }));
+    const skillDir = path.resolve(resolveManagedSkillsRoot(companyId), "__runtime__", "__gsam__", name);
+    if (await materializedVersionSnapshotMatches(skillDir, { fileInventory })) return skillDir;
+    const staging = `${skillDir}.${randomUUID()}.tmp`;
+    const retired = `${skillDir}.${randomUUID()}.old`;
+    try {
+      for (const file of fileInventory) {
+        const target = path.join(staging, file.path);
+        await fs.mkdir(path.dirname(target), { recursive: true });
+        await fs.writeFile(target, file.content, "utf8");
+      }
+      await fs.rename(skillDir, retired).catch(() => {});
+      // A concurrent run may have published first; its copy has the same content.
+      await fs.rename(staging, skillDir).catch(() => {});
+    } finally {
+      await fs.rm(staging, { recursive: true, force: true });
+      await fs.rm(retired, { recursive: true, force: true });
+    }
     return skillDir;
   }
 
@@ -6011,10 +6126,17 @@ export function companySkillService(db: Db) {
       const sourceResolution = await resolveRuntimeSkillSource(companyId, skill, options);
       if (!sourceResolution) continue;
 
+      const gsamName = GSAM_SKILL_DISPLAY_NAMES[skill.key];
+      const gsamSource = gsamName && sourceResolution.status === "available"
+        ? await materializeGsamSkillAlias(companyId, sourceResolution.source, gsamName).catch((error) => {
+          logger.warn({ err: error, skillKey: skill.key }, "Could not materialise the GSAM-named skill copy; mounting the original");
+          return null;
+        })
+        : null;
       out.push({
         key: skill.key,
-        runtimeName: buildSkillRuntimeName(skill.key, skill.slug),
-        source: sourceResolution.source,
+        runtimeName: gsamSource ? gsamName! : buildSkillRuntimeName(skill.key, skill.slug),
+        source: gsamSource ?? sourceResolution.source,
         versionId: options.versionSelections?.get(skill.key) ?? null,
         currentVersionId: skill.currentVersionId,
         sourceStatus: sourceResolution.status,
@@ -6253,7 +6375,11 @@ export function companySkillService(db: Db) {
     return out;
   }
 
-  async function importFromSource(companyId: string, source: string): Promise<CompanySkillImportResult> {
+  async function importFromSource(
+    companyId: string,
+    source: string,
+    options: { stripScripts?: boolean } = {},
+  ): Promise<CompanySkillImportResult> {
     await ensureSkillInventoryCurrent(companyId);
     const parsed = parseSkillImportSourceInput(source);
     const local = !/^https?:\/\//i.test(parsed.resolvedSource);
@@ -6292,8 +6418,17 @@ export function companySkillService(db: Db) {
         skill.key = deriveCanonicalSkillKey(companyId, skill);
       }
     }
+    const strippedFiles: NonNullable<CompanySkillImportResult["strippedFiles"]> = [];
+    if (options.stripScripts) {
+      for (const skill of filteredSkills) {
+        const paths = stripImportedSkillScripts(skill);
+        if (paths.length === 0) continue;
+        strippedFiles.push({ skillKey: skill.key, slug: skill.slug, paths });
+        warnings.push(`Stripped ${paths.length} script file(s) from "${skill.slug}": ${paths.join(", ")}`);
+      }
+    }
     const imported = await upsertImportedSkills(companyId, filteredSkills);
-    return { imported, warnings };
+    return { imported, warnings, ...(options.stripScripts ? { strippedFiles } : {}) };
   }
 
   async function listTestInputs(companyId: string, skillId: string): Promise<CompanySkillTestInput[]> {

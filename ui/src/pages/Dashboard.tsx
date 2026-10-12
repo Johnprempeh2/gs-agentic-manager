@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "@/lib/router";
 import {
   onboardingStepForCompany,
@@ -8,9 +8,16 @@ import { claimOnboardingOffer } from "../lib/onboarding-auto-open";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
+import { activityApi } from "../api/activity";
+import { accessApi } from "../api/access";
+import { authApi } from "../api/auth";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
+import { projectsApi } from "../api/projects";
+import { buildCompanyUserLabelMap, buildCompanyUserProfileMap } from "../lib/company-members";
 import { useCompany } from "../context/CompanyContext";
+import { useSidebar } from "../context/SidebarContext";
+import { DashboardHero } from "../components/DashboardHero";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -18,57 +25,77 @@ import { queryKeys } from "../lib/queryKeys";
 import { MetricCard } from "../components/MetricCard";
 import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
+import { DashboardDigestCard } from "../components/AgentWorkDigest";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { useLiveAgents } from "../hooks/useLiveAgents";
+
+import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
-import { Bot, ChevronRight, CircleDot, DollarSign, ShieldCheck, LayoutDashboard, PauseCircle } from "lucide-react";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
+import { Bot, ChevronDown, CircleDot, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
+import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
+import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
 import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 import { DashboardCostCard } from "../components/DashboardCostCard";
+import { ErrorState } from "../components/ErrorState";
 
-export const DASHBOARD_MORE_OPEN_KEY = "gsam:dashboard:more-open";
+const DASHBOARD_ACTIVITY_LIMIT = 10;
+/** The phone home lists fewer open tasks; "View all tasks" has the rest (GRE-364). */
+export const PHONE_DASHBOARD_OPEN_TASK_LIMIT = 5;
 
-function loadDashboardMoreOpen(): boolean {
-  try {
-    return localStorage.getItem(DASHBOARD_MORE_OPEN_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function saveDashboardMoreOpen(open: boolean) {
-  try {
-    localStorage.setItem(DASHBOARD_MORE_OPEN_KEY, String(open));
-  } catch {
-    // Ignore localStorage failures.
-  }
-}
-
-function greetingFor(hour: number) {
-  if (hour < 5) return "Working late";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
-}
-
-/** A one-line page header: organization name with the greeting and date beside it. */
-function DashboardHeader({ companyName, now = new Date() }: { companyName: string; now?: Date }) {
-  const dateLabel = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "long" }).format(now);
+/**
+ * Phone only: Agents and Audit are not on the tab bar, so home gives them one
+ * tap each instead of the side drawer (GRE-364). Audit stands in for the
+ * overnight view until GRE-357 ships it.
+ */
+function PhoneShortcuts() {
   return (
-    <header className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-      <h1 className="min-w-0 truncate text-xl font-bold">{companyName}</h1>
-      <p className="text-sm text-muted-foreground">
-        {greetingFor(now.getHours())} · {dateLabel}
-      </p>
-    </header>
+    <nav className="grid grid-cols-2 gap-2" aria-label="Shortcuts" data-testid="dashboard-phone-shortcuts">
+      <Button variant="outline" className="h-11 justify-start" asChild>
+        <Link to="/agents">
+          <Users />
+          Agents
+        </Link>
+      </Button>
+      <Button variant="outline" className="h-11 justify-start" asChild>
+        <Link to="/activity">
+          <History />
+          Audit
+        </Link>
+      </Button>
+    </nav>
   );
+}
+
+/**
+ * What an owner wants from Recent activity: work started, finished or stuck,
+ * decisions asked and made, releases and hires. Housekeeping (leases, syncs,
+ * gateway discovery) stays on the Audit page.
+ */
+export const OWNER_ACTIVITY_ACTIONS = [
+  "issue.created",
+  "issue.updated",
+  "issue.thread_interaction_created",
+  "issue.thread_interaction_accepted",
+  "issue.thread_interaction_rejected",
+  "issue.thread_interaction_answered",
+  "instance.live_released",
+  "agent.hire_created",
+  "goal.created",
+];
+const OWNER_STATUS_CHANGES = new Set(["done", "blocked", "cancelled"]);
+
+/** A task update counts only when it finished, blocked or cancelled the task. */
+export function isOwnerActivity(event: { action: string; details: Record<string, unknown> | null }) {
+  if (event.action !== "issue.updated") return true;
+  return OWNER_STATUS_CHANGES.has(String(event.details?.status ?? ""));
 }
 
 export type PausedAgentBanner =
@@ -97,10 +124,19 @@ export function derivePausedAgentBanner(agents: Agent[] | undefined): PausedAgen
 
 export function Dashboard() {
   const { selectedCompanyId, companies } = useCompany();
+  const { isMobile } = useSidebar();
+  // Phone home keeps what needs the user on the first screens; runs, numbers,
+  // charts and activity wait behind one button (GRE-364). Desktop shows all.
+  const [phoneDetailsOpen, setPhoneDetailsOpen] = useState(false);
+  const showDetails = !isMobile || phoneDetailsOpen;
+  const companyStart = companies.find((company) => company.id === selectedCompanyId)?.createdAt;
   const { openOnboarding } = useDialogActions();
   const location = useLocation();
   const { setBreadcrumbs } = useBreadcrumbs();
-  const [moreOpen, setMoreOpen] = useState(() => loadDashboardMoreOpen());
+  const [animatedActivityIds, setAnimatedActivityIds] = useState<Set<string>>(new Set());
+  const seenActivityIdsRef = useRef<Set<string>>(new Set());
+  const hydratedActivityRef = useRef(false);
+  const activityAnimationTimersRef = useRef<number[]>([]);
 
   // `isFetching` is read alongside the data: a cached list is served while its
   // refetch runs, and an empty one from before the first hire must not pass
@@ -187,12 +223,27 @@ export function Dashboard() {
     queryKey: dashboardQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data, isLoading, error, dataUpdatedAt: dashboardUpdatedAt } = useQuery({
+  const { data, isLoading, error, refetch, dataUpdatedAt: dashboardUpdatedAt } = useQuery({
     queryKey: dashboardQueryKey,
     queryFn: () => dashboardApi.summary(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(sharedDashboard, data, dashboardUpdatedAt);
+
+  const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { owner: true, limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
+  const sharedActivity = useSharedPollingQuery({
+    companyId: selectedCompanyId,
+    resourceKey: `activity:owner:limit:${DASHBOARD_ACTIVITY_LIMIT}`,
+    queryKey: activityQueryKey,
+    enabled: !!selectedCompanyId,
+  });
+  const { data: activity, dataUpdatedAt: activityUpdatedAt } = useQuery({
+    queryKey: activityQueryKey,
+    // Task updates are filtered to real status changes below, so fetch a margin.
+    queryFn: () => activityApi.list(selectedCompanyId!, { action: OWNER_ACTIVITY_ACTIONS, limit: 80 }),
+    enabled: !!selectedCompanyId,
+  });
+  usePublishSharedQueryData(sharedActivity, activity, activityUpdatedAt);
 
   const { data: issues } = useQuery({
     queryKey: queryKeys.issues.list(selectedCompanyId!),
@@ -211,6 +262,117 @@ export function Dashboard() {
     queryFn: () => issuesApi.list(selectedCompanyId!, { status: DASHBOARD_OPEN_TASK_STATUSES.join(",") }),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: projects } = useQuery({
+    queryKey: queryKeys.projects.list(selectedCompanyId!, { includeArchived: true }),
+    queryFn: () => projectsApi.list(selectedCompanyId!, { includeArchived: true }),
+    enabled: !!selectedCompanyId,
+  });
+
+  const { data: companyMembers } = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(selectedCompanyId!),
+    queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const userProfileMap = useMemo(
+    () => buildCompanyUserProfileMap(companyMembers?.users),
+    [companyMembers?.users],
+  );
+
+  // Task rows say "Your task" for the viewer and name other people.
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+  const companyUserLabelMap = useMemo(
+    () => buildCompanyUserLabelMap(companyMembers?.users),
+    [companyMembers?.users],
+  );
+
+  const recentActivity = useMemo(
+    () => (activity ?? []).filter(isOwnerActivity).slice(0, DASHBOARD_ACTIVITY_LIMIT),
+    [activity],
+  );
+
+  useEffect(() => {
+    for (const timer of activityAnimationTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+    activityAnimationTimersRef.current = [];
+    seenActivityIdsRef.current = new Set();
+    hydratedActivityRef.current = false;
+    setAnimatedActivityIds(new Set());
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (recentActivity.length === 0) return;
+
+    const seen = seenActivityIdsRef.current;
+    const currentIds = recentActivity.map((event) => event.id);
+
+    if (!hydratedActivityRef.current) {
+      for (const id of currentIds) seen.add(id);
+      hydratedActivityRef.current = true;
+      return;
+    }
+
+    const newIds = currentIds.filter((id) => !seen.has(id));
+    if (newIds.length === 0) {
+      for (const id of currentIds) seen.add(id);
+      return;
+    }
+
+    setAnimatedActivityIds((prev) => {
+      const next = new Set(prev);
+      for (const id of newIds) next.add(id);
+      return next;
+    });
+
+    for (const id of newIds) seen.add(id);
+
+    const timer = window.setTimeout(() => {
+      setAnimatedActivityIds((prev) => {
+        const next = new Set(prev);
+        for (const id of newIds) next.delete(id);
+        return next;
+      });
+      activityAnimationTimersRef.current = activityAnimationTimersRef.current.filter((t) => t !== timer);
+    }, 980);
+    activityAnimationTimersRef.current.push(timer);
+  }, [recentActivity]);
+
+  useEffect(() => {
+    return () => {
+      for (const timer of activityAnimationTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, []);
+
+  const agentMap = useMemo(() => {
+    const map = new Map<string, Agent>();
+    for (const a of agents ?? []) map.set(a.id, a);
+    return map;
+  }, [agents]);
+
+  const entityNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.id.slice(0, 8));
+    for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
+    for (const p of projects ?? []) map.set(`project:${p.id}`, p.name);
+    return map;
+  }, [issues, agents, projects]);
+
+  const entityTitleMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.title);
+    return map;
+  }, [issues]);
+
+  // Same source as the sidebar "N live" count, so the two always agree (GRE-257).
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
 
   if (!selectedCompanyId) {
     if (companies.length === 0) {
@@ -232,6 +394,10 @@ export function Dashboard() {
     return <PageSkeleton variant="dashboard" />;
   }
 
+  if (error && !data) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   // Same rule as the auto-offer above: a list still being refreshed may be the
   // empty one cached before the first hire, and the banner's "Create one here"
   // opens the same agent step the offer does.
@@ -244,8 +410,11 @@ export function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {selectedCompany ? <DashboardHeader companyName={selectedCompany.name} /> : null}
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {selectedCompany ? <DashboardHero companyName={selectedCompany.name} /> : null}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
+
+      <DashboardDecisionsBox companyId={selectedCompanyId!} />
+      <DashboardDigestCard companyId={selectedCompanyId!} />
 
       {pausedBanner?.kind === "imported" ? (
         <InlineBanner
@@ -269,7 +438,7 @@ export function Dashboard() {
         <InlineBanner
           tone="warning"
           icon={PauseCircle}
-          title="All agents in this organization are paused — nothing will run."
+          title="All agents in this organisation are paused. Nothing will run."
           actions={
             <Button variant="ghost" size="sm" asChild>
               <Link to="/agents">Review agents</Link>
@@ -297,6 +466,21 @@ export function Dashboard() {
         </div>
       )}
 
+      {isMobile ? <PhoneShortcuts /> : null}
+
+      <DashboardOverview
+        agents={agents}
+        openIssues={openIssues}
+        liveAgents={liveAgents}
+        agentsLoading={agentsLoading}
+        issuesLoading={openIssuesLoading}
+        agentsError={agentsError}
+        issuesError={openIssuesError}
+        currentUserId={currentUserId}
+        userLabels={companyUserLabelMap}
+        openTaskLimit={isMobile ? PHONE_DASHBOARD_OPEN_TASK_LIMIT : undefined}
+      />
+
       {data && data.budgets.activeIncidents > 0 ? (
         <div className="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-(image:--gradient-extract-1) px-4 py-3">
           <div className="flex items-start gap-2.5">
@@ -316,124 +500,141 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      <DashboardDecisionsBox companyId={selectedCompanyId!} />
-
-      <DashboardOverview
-        agents={agents}
-        openIssues={openIssues}
-        agentsLoading={agentsLoading}
-        issuesLoading={openIssuesLoading}
-        agentsError={agentsError}
-        issuesError={openIssuesError}
-      />
-
-      {data && (
-        <Collapsible
-          open={moreOpen}
-          onOpenChange={(open) => {
-            setMoreOpen(open);
-            saveDashboardMoreOpen(open);
-          }}
+      {isMobile ? (
+        <Button
+          variant="outline"
+          className="h-11 w-full"
+          aria-expanded={phoneDetailsOpen}
+          aria-controls="dashboard-details"
+          onClick={() => setPhoneDetailsOpen((open) => !open)}
+          data-testid="dashboard-phone-details-toggle"
         >
-          <CollapsibleTrigger className="group flex items-center gap-1.5 rounded-sm text-sm font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            <ChevronRight className="h-4 w-4 transition-transform group-data-[state=open]:rotate-90" aria-hidden />
-            Numbers and charts
-          </CollapsibleTrigger>
-          <CollapsibleContent className="mt-3 space-y-6">
-            <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
-              <MetricCard
-                icon={Bot}
-                value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
-                label="Agents Enabled"
-                to="/agents"
-                description={
-                  <span>
-                    {data.agents.running} running{", "}
-                    {data.agents.paused} paused{", "}
-                    {data.agents.error} errors
-                  </span>
-                }
-              />
-              <MetricCard
-                icon={CircleDot}
-                value={data.tasks.inProgress}
-                label="Tasks In Progress"
-                to="/issues"
-                description={
-                  <span>
-                    {data.tasks.open} open{", "}
-                    {data.tasks.blocked} blocked
-                  </span>
-                }
-              />
-              <MetricCard
-                icon={DollarSign}
-                value={formatCents(data.costs.monthSpendCents)}
-                label="Month Spend"
-                to="/costs"
-                description={
-                  <span>
-                    {data.costs.monthBudgetCents > 0
-                      ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
-                      : "Unlimited budget"}
-                  </span>
-                }
-              />
-              <MetricCard
-                icon={ShieldCheck}
-                value={data.pendingApprovals + data.budgets.pendingApprovals}
-                label="Pending Approvals"
-                to="/approvals"
-                description={
-                  <span>
-                    {data.budgets.pendingApprovals > 0
-                      ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
-                      : "Awaiting board review"}
-                  </span>
-                }
-              />
-            </div>
+          {phoneDetailsOpen ? "Show less" : "Show runs, numbers and activity"}
+          <ChevronDown className={cn("transition-transform", phoneDetailsOpen && "rotate-180")} />
+        </Button>
+      ) : null}
 
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
-              <DashboardCostCard companyId={selectedCompanyId!} />
-            </div>
+      {showDetails ? (
+        <div id="dashboard-details" className="space-y-6">
+          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
 
-            <SmokeLabDashboardCard companyId={selectedCompanyId!} />
+          {data && (
+            <>
+              <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
+                <MetricCard
+                  icon={Bot}
+                  value={data.agents.active + data.agents.running + data.agents.paused + data.agents.error}
+                  label="Agents Enabled"
+                  to="/agents"
+                  description={
+                    <span>
+                      {data.agents.running} running{", "}
+                      {data.agents.paused} paused{", "}
+                      {data.agents.error} errors
+                    </span>
+                  }
+                />
+                <MetricCard
+                  icon={CircleDot}
+                  value={data.tasks.inProgress}
+                  label="Tasks In Progress"
+                  to="/issues"
+                  description={
+                    <span>
+                      {data.tasks.open} open{", "}
+                      {data.tasks.blocked} blocked
+                    </span>
+                  }
+                />
+                <MetricCard
+                  icon={DollarSign}
+                  value={formatCents(data.costs.monthSpendCents)}
+                  label="Month Spend"
+                  to="/costs"
+                  description={
+                    <span>
+                      {data.costs.monthBudgetCents > 0
+                        ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
+                        : "Unlimited budget"}
+                    </span>
+                  }
+                />
+                <MetricCard
+                  icon={ShieldCheck}
+                  value={data.pendingApprovals + data.budgets.pendingApprovals}
+                  label="Pending Approvals"
+                  to="/approvals"
+                  description={
+                    <span>
+                      {data.budgets.pendingApprovals > 0
+                        ? `${data.budgets.pendingApprovals} budget overrides awaiting board review`
+                        : "Awaiting board review"}
+                    </span>
+                  }
+                />
+              </div>
 
-            <div className={cn("gs-stagger grid grid-cols-2 gap-4", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-              <ChartCard title="Run Activity" subtitle="Last 14 days">
-                <RunActivityChart activity={data.runActivity} />
-              </ChartCard>
-              {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
-              {SHOW_TASK_PRIORITY_UI && (
-                <ChartCard title="Tasks by Priority" subtitle="Last 14 days">
-                  <PriorityChart issues={issues ?? []} />
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
+                <DashboardCostCard companyId={selectedCompanyId!} />
+              </div>
+
+              <SmokeLabDashboardCard companyId={selectedCompanyId!} />
+
+              <div className={cn("gs-stagger grid grid-cols-1 gap-4 sm:grid-cols-2", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
+                <ChartCard title="Run Activity" subtitle={chartWindowLabel(companyStart)}>
+                  <RunActivityChart activity={data.runActivity} start={companyStart} />
                 </ChartCard>
-              )}
-              <ChartCard title="Tasks by Status" subtitle="Last 14 days">
-                <IssueStatusChart issues={issues ?? []} />
-              </ChartCard>
-              <ChartCard title="Success Rate" subtitle="Last 14 days">
-                <SuccessRateChart activity={data.runActivity} />
-              </ChartCard>
-            </div>
+                {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
+                {SHOW_TASK_PRIORITY_UI && (
+                  <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(companyStart)}>
+                    <PriorityChart issues={issues ?? []} start={companyStart} />
+                  </ChartCard>
+                )}
+                <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(companyStart)}>
+                  <IssueStatusChart issues={issues ?? []} start={companyStart} />
+                </ChartCard>
+                <ChartCard title="Success Rate" subtitle={chartWindowLabel(companyStart)}>
+                  <SuccessRateChart activity={data.runActivity} start={companyStart} />
+                </ChartCard>
+              </div>
 
-            <PluginSlotOutlet
-              slotTypes={["dashboardWidget"]}
-              context={{ companyId: selectedCompanyId }}
-              className="grid gap-4 md:grid-cols-2"
-              // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
-              itemClassName="rounded-lg border bg-card p-4 shadow-sm"
-            />
+              <PluginSlotOutlet
+                slotTypes={["dashboardWidget"]}
+                context={{ companyId: selectedCompanyId }}
+                className="grid gap-4 md:grid-cols-2"
+                // design-allow(card-pattern): class-string prop consumed by the plugin outlet; a component can't be passed here (C5a Run 3)
+                itemClassName="rounded-lg border bg-card p-4 shadow-sm"
+              />
 
-            <p className="text-xs text-muted-foreground">
-              <Link to="/activity" className="underline-offset-2 hover:text-foreground hover:underline">
-                See all recent activity
-              </Link>
-            </p>
-          </CollapsibleContent>
-        </Collapsible>
-      )}
+              <div>
+                {/* Recent Activity */}
+                {recentActivity.length > 0 && (
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+                      Recent Activity
+                    </h3>
+                    <Card className="@container block py-0 divide-y divide-border overflow-hidden">
+                      {recentActivity.map((event) => (
+                        <ActivityRow
+                          key={event.id}
+                          event={event}
+                          agentMap={agentMap}
+                          userProfileMap={userProfileMap}
+                          entityNameMap={entityNameMap}
+                          entityTitleMap={entityTitleMap}
+                          className={animatedActivityIds.has(event.id) ? "activity-row-enter" : undefined}
+                        />
+                      ))}
+                    </Card>
+                  </div>
+                )}
+
+              </div>
+
+            </>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

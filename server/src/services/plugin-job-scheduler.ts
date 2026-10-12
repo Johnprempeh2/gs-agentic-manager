@@ -246,7 +246,7 @@ export function createPluginJobScheduler(
   async function tick(): Promise<void> {
     // Prevent overlapping ticks (in case a tick takes longer than the interval)
     if (tickInProgress) {
-      log.debug("skipping tick — previous tick still in progress");
+      log.debug("skipping tick: previous tick still in progress");
       return;
     }
 
@@ -293,7 +293,7 @@ export function createPluginJobScheduler(
         if (activeJobs.has(job.id)) {
           log.debug(
             { jobId: job.id, jobKey: job.jobKey, pluginId: job.pluginId },
-            "skipping job — already running (overlap prevention)",
+            "skipping job: already running (overlap prevention)",
           );
           continue;
         }
@@ -302,7 +302,7 @@ export function createPluginJobScheduler(
         if (!workerManager.isRunning(job.pluginId)) {
           log.debug(
             { jobId: job.id, pluginId: job.pluginId },
-            "skipping job — worker not running",
+            "skipping job: worker not running",
           );
           continue;
         }
@@ -311,7 +311,7 @@ export function createPluginJobScheduler(
         if (!job.schedule) {
           log.warn(
             { jobId: job.id, jobKey: job.jobKey },
-            "skipping job — no schedule defined",
+            "skipping job: no schedule defined",
           );
           continue;
         }
@@ -454,7 +454,7 @@ export function createPluginJobScheduler(
     // Overlap prevention
     if (activeJobs.has(jobId)) {
       throw new Error(
-        `Job "${job.jobKey}" is already running — cannot trigger while in progress`,
+        `Job "${job.jobKey}" is already running; cannot trigger while in progress`,
       );
     }
 
@@ -471,14 +471,14 @@ export function createPluginJobScheduler(
 
     if (existingRuns.length > 0) {
       throw new Error(
-        `Job "${job.jobKey}" already has a running execution — cannot trigger while in progress`,
+        `Job "${job.jobKey}" already has a running execution; cannot trigger while in progress`,
       );
     }
 
     // Check worker availability
     if (!workerManager.isRunning(job.pluginId)) {
       throw new Error(
-        `Worker for plugin "${job.pluginId}" is not running — cannot trigger job`,
+        `Worker for plugin "${job.pluginId}" is not running; cannot trigger job`,
       );
     }
 
@@ -575,7 +575,7 @@ export function createPluginJobScheduler(
       if (validationError) {
         log.warn(
           { jobId: job.id, schedule: job.schedule, error: validationError },
-          "invalid cron schedule — cannot compute next run",
+          "invalid cron schedule; cannot compute next run",
         );
       } else {
         const cron = parseCron(job.schedule);

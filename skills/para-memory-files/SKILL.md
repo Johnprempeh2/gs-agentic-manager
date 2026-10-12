@@ -81,9 +81,13 @@ Memory does not survive session restarts. Files do.
 - Make a mistake -> document it so future-you does not repeat it.
 - On-disk text files are always better than holding it in temporary context.
 
-## Memory Recall -- Use qmd
+## Memory Recall -- Use qmd when installed
 
-Use `qmd` rather than grepping files:
+Check first with `command -v qmd`. If it is not installed, search with `rg` (or `grep -rn`)
+over `$AGENT_HOME/life`, `$AGENT_HOME/memory` and `plans/`, and read the matching
+`summary.md` files. Never skip recall because `qmd` is missing.
+
+When `qmd` is installed, use it rather than grepping files:
 
 ```bash
 qmd query "what happened at Christmas"   # Semantic search with reranking
@@ -97,4 +101,4 @@ Vectors + BM25 + reranking finds things even when the wording differs.
 
 ## Planning
 
-Keep plans in timestamped files in `plans/` at the project root (outside personal memory so other agents can access them). Use `qmd` to search plans. Plans go stale -- if a newer plan exists, do not confuse yourself with an older version. If you notice staleness, update the file to note what it is supersededBy.
+Keep plans in timestamped files in `plans/` at the project root (outside personal memory so other agents can access them). Search plans with `qmd` (or `rg` when it is not installed). Plans go stale -- if a newer plan exists, do not confuse yourself with an older version. If you notice staleness, update the file to note what it is supersededBy.

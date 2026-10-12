@@ -29,6 +29,7 @@ import { collectSubtreeLiveCounts } from "../lib/liveIssueIds";
 import { cn } from "../lib/utils";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { TaskOwnerLabel } from "./TaskOwnerLabel";
 
 export const KANBAN_BOARD_HIGH_VOLUME_THRESHOLD = 100;
 export const KANBAN_COLUMN_PAGE_SIZE_OPTIONS = [10, 25, 50] as const;
@@ -150,9 +151,16 @@ interface Agent {
   name: string;
 }
 
+/** The viewer, so cards can say "Your task" and name other people. */
+export interface KanbanOwnerContext {
+  currentUserId?: string | null;
+  userLabels?: ReadonlyMap<string, string> | null;
+}
+
 interface KanbanBoardProps {
   issues: Issue[];
   agents?: Agent[];
+  ownerContext?: KanbanOwnerContext;
   liveIssueIds?: Set<string>;
   compactCards?: boolean;
   collapsedStatuses?: string[];
@@ -174,6 +182,7 @@ function KanbanColumn({
   status,
   issues,
   agents,
+  ownerContext,
   liveIssueIds,
   subtreeLiveCounts,
   compactCards = false,
@@ -188,6 +197,7 @@ function KanbanColumn({
   status: IssueStatus;
   issues: Issue[];
   agents?: Agent[];
+  ownerContext?: KanbanOwnerContext;
   liveIssueIds?: Set<string>;
   subtreeLiveCounts?: ReadonlyMap<string, number>;
   compactCards?: boolean;
@@ -263,6 +273,7 @@ function KanbanColumn({
               key={issue.id}
               issue={issue}
               agents={agents}
+              ownerContext={ownerContext}
               isLive={liveIssueIds?.has(issue.id)}
               subtreeLiveCount={subtreeLiveCounts?.get(issue.id) ?? 0}
               compact={compactCards}
@@ -296,6 +307,7 @@ function KanbanColumn({
 function KanbanCard({
   issue,
   agents,
+  ownerContext,
   isLive,
   subtreeLiveCount = 0,
   isOverlay,
@@ -306,6 +318,7 @@ function KanbanCard({
 }: {
   issue: Issue;
   agents?: Agent[];
+  ownerContext?: KanbanOwnerContext;
   isLive?: boolean;
   subtreeLiveCount?: number;
   isOverlay?: boolean;
@@ -400,6 +413,11 @@ function KanbanCard({
         <div className="flex items-center gap-2 min-w-0">
           {/* PAP-411: priority UI hidden behind SHOW_TASK_PRIORITY_UI. */}
           {SHOW_TASK_PRIORITY_UI && <PriorityIcon priority={issue.priority} />}
+          <TaskOwnerLabel
+            issue={issue}
+            currentUserId={ownerContext?.currentUserId}
+            userLabels={ownerContext?.userLabels}
+          />
           {issue.assigneeAgentId && (() => {
             const name = agentName(issue.assigneeAgentId);
             return name ? (
@@ -421,6 +439,7 @@ function KanbanCard({
 export function KanbanBoard({
   issues,
   agents,
+  ownerContext,
   liveIssueIds,
   compactCards = false,
   collapsedStatuses = [],
@@ -508,6 +527,7 @@ export function KanbanBoard({
             status={status}
             issues={columnIssues[status] ?? []}
             agents={agents}
+            ownerContext={ownerContext}
             liveIssueIds={liveIssueIds}
             subtreeLiveCounts={subtreeLiveCounts}
             compactCards={compactCards}
@@ -537,7 +557,7 @@ export function KanbanBoard({
       </div>
       <DragOverlay>
         {activeIssue ? (
-          <KanbanCard issue={activeIssue} agents={agents} isOverlay compact={compactCards} showIdentifier={showIdentifiers} />
+          <KanbanCard issue={activeIssue} agents={agents} ownerContext={ownerContext} isOverlay compact={compactCards} showIdentifier={showIdentifiers} />
         ) : null}
       </DragOverlay>
     </DndContext>

@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Settings2, X } from "lucide-react";
+import { Check, Inbox, Loader2, Settings2, X } from "lucide-react";
 import type { Agent, AttentionItem } from "@greatstone/shared";
-import { useParams } from "@/lib/router";
+import { useNavigate, useParams } from "@/lib/router";
 import { attentionApi } from "../api/attention";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
@@ -46,6 +46,8 @@ import { DecisionDateChips, type AttentionCustomRange } from "../components/Deci
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { Button } from "../components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import { ErrorState } from "../components/ErrorState";
+import { EmptyState } from "../components/EmptyState";
 
 /**
  * Queue page. A single queue's pending
@@ -60,13 +62,14 @@ import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popove
  */
 export function DecisionQueuePage() {
   const { selectedCompanyId } = useCompany();
+  const navigate = useNavigate();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const params = useParams<{ key: string }>();
   const queueKey = params.key ?? "";
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const { dismiss, snooze } = useInboxDismissals(selectedCompanyId);
+  const { dismiss } = useInboxDismissals(selectedCompanyId);
 
   // Toolbar preferences (persisted to localStorage, shared with the desk).
   const [groupBy, setGroupBy] = useState<AttentionGroupBy>(() => loadAttentionGroupBy());
@@ -95,6 +98,7 @@ export function DecisionQueuePage() {
     data: feed,
     isLoading,
     error,
+    refetch,
   } = useQuery({
     queryKey: [
       ...queryKeys.attention(selectedCompanyId!),
@@ -218,6 +222,10 @@ export function DecisionQueuePage() {
     return <PageSkeleton variant="approvals" />;
   }
 
+  if (error && !feed) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   const isEmpty = activeItems.length === 0;
 
   return (
@@ -260,15 +268,17 @@ export function DecisionQueuePage() {
         />
       )}
 
-      {error && <p className="text-sm text-destructive">{(error as Error).message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       {isEmpty ? (
-        <div className="rounded-xl border border-dashed border-border py-14 text-center">
-          <p className="text-sm font-medium text-foreground">This queue is empty.</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Decisions land here when they match the queue's rules or an agent adds them.
-          </p>
-        </div>
+        <EmptyState
+          icon={Inbox}
+          message="This queue is empty."
+          description="Decisions land here when they match the queue's rules or an agent adds them."
+          action="Back to Decisions"
+          onAction={() => navigate("/decisions")}
+          hideActionIcon
+        />
       ) : (
         <div className="space-y-4">
           {visibleCount === 0 ? (
@@ -307,7 +317,6 @@ export function DecisionQueuePage() {
                           expanded={expandedId === item.id}
                           onToggleExpand={handleToggleExpand}
                           onDismiss={(next) => dismiss(next.dismissalKey)}
-                          onSnooze={(next, until) => snooze(next.dismissalKey, until)}
                           onExcluded={invalidate}
                         />
                       ))}
@@ -326,7 +335,7 @@ export function DecisionQueuePage() {
               onToggle={() => setAgingOpen((prev) => !prev)}
             >
               <p className="text-xs text-muted-foreground">
-                Idle past {ATTENTION_AGING_DAYS} days — kept off the queue. Keep any you still want surfaced.
+                Idle past {ATTENTION_AGING_DAYS} days: kept off the queue. Keep any you still want surfaced.
               </p>
               {agingItems.map((item) => (
                 <AgingItemRow
@@ -340,7 +349,6 @@ export function DecisionQueuePage() {
                   expanded={expandedId === item.id}
                   onToggleExpand={handleToggleExpand}
                   onDismiss={(next) => dismiss(next.dismissalKey)}
-                  onSnooze={(next, until) => snooze(next.dismissalKey, until)}
                 />
               ))}
             </Curtain>
@@ -374,7 +382,7 @@ function SeedRulesCard({
         <div className="flex min-w-0 items-start gap-2">
           <Settings2 className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 space-y-1">
-            <p className="text-sm font-medium text-foreground">Auto-seeding is {enabled ? "on" : "off"}</p>
+            <p className="text-sm font-medium text-foreground">Automatic adding is {enabled ? "on" : "off"}</p>
             <p className="text-xs text-muted-foreground">
               {enabled
                 ? "This queue fills itself automatically. Decisions are added the moment they match any of its rules:"
@@ -390,8 +398,8 @@ function SeedRulesCard({
             </ul>
             <p className="text-(length:--text-nano) text-muted-foreground">
               {enabled
-                ? "Turning it off stops new automatic adds only — decisions already here stay, and you can still add or remove decisions by hand."
-                : "Adding or removing decisions by hand still works while automatic seeding is off."}
+                ? "Turning it off stops new automatic adds only. Decisions already here stay, and you can still add or remove decisions by hand."
+                : "Adding or removing decisions by hand still works while automatic adding is off."}
             </p>
           </div>
         </div>
@@ -414,7 +422,6 @@ function QueueItemRow({
   expanded,
   onToggleExpand,
   onDismiss,
-  onSnooze,
   onExcluded,
 }: {
   item: AttentionItem;
@@ -426,7 +433,6 @@ function QueueItemRow({
   expanded: boolean;
   onToggleExpand: (item: AttentionItem) => void;
   onDismiss: (item: AttentionItem) => void;
-  onSnooze: (item: AttentionItem, snoozedUntil: string) => void;
   onExcluded: () => void;
 }) {
   const { pushToast } = useToastActions();
@@ -498,7 +504,6 @@ function QueueItemRow({
         expanded={expanded}
         onToggleExpand={onToggleExpand}
         onDismiss={onDismiss}
-        onSnooze={onSnooze}
         agentMap={agentMap}
         agents={agents}
         showTriage

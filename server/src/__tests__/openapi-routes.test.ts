@@ -13,12 +13,19 @@ const ROUTES_DIR = path.resolve(__dirname, "../routes");
 
 const apiPrefixes: Record<string, string> = {
   "pipelines.ts": "/api",
+  "client-version.ts": "/api",
   "cases.ts": "/api",
+  "billing-account.ts": "/api",
+  "support.ts": "/api",
   "smoke-lab.ts": "/api",
   "access.ts": "/api",
   "activity.ts": "/api",
   "adapters.ts": "/api",
   "agents.ts": "/api",
+  "agent-teams.ts": "/api",
+  "memory.ts": "/api",
+  "memory-steward.ts": "/api",
+  "memory-tools.ts": "/api",
   "agent-avatars.ts": "/api",
   "announcements.ts": "/api",
   "ai-connections.ts": "/api",
@@ -41,18 +48,27 @@ const apiPrefixes: Record<string, string> = {
   "decision-queues.ts": "/api",
   "decisions.ts": "/api",
   "decision-training.ts": "/api",
+  "decisions-feed.ts": "/api",
+  "agent-work-digest.ts": "/api",
+  "push.ts": "/api",
   "environments.ts": "/api",
   "execution-workspaces.ts": "/api",
   "file-resources.ts": "/api",
   "folders.ts": "/api",
   "goals.ts": "/api",
+  "strategy-board.ts": "/api",
   "health.ts": "/api/health",
   "inbox-agent-policy.ts": "/api",
   "inbox-dismissals.ts": "/api",
+  "legacy-board.ts": "/api",
+  "member-handover.ts": "/api",
   "instance-database-backups.ts": "/api",
   "instance-settings.ts": "/api",
   "issues.ts": "/api",
   "issue-tree-control.ts": "/api",
+  "issue-tabling.ts": "/api",
+  "deliverables.ts": "/api",
+  "fleet.ts": "/api",
   "llms.ts": "/api",
   "managed-agent-profiles.ts": "/api",
   "onboarding-seed.ts": "/api",
@@ -69,6 +85,7 @@ const apiPrefixes: Record<string, string> = {
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
+  "tour-dismissals.ts": "/api",
   "summary-slots.ts": "/api",
   "releases.ts": "/api",
   "status-cards.ts": "/api",
@@ -147,6 +164,10 @@ function resolveMountedPath(file: string, prefix: string, routePath: string) {
     file === "connection-intents.ts" &&
     (routePath.startsWith("/mcp/") || routePath.startsWith("/runtime-tools/"))
   ) {
+    return routePath;
+  }
+  // Fleet spoke routes are mounted on the app with their full path.
+  if (file === "fleet.ts" && routePath.startsWith("/api/")) {
     return routePath;
   }
   if ((file === "companies.ts" || file === "health.ts") && routePath === "/") {

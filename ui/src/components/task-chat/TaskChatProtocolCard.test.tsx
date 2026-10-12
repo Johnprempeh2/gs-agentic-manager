@@ -14,6 +14,7 @@ import type {
 } from "./task-chat-model";
 import type { IssueWorkProduct } from "@greatstone/shared";
 import { IssueGalleryContext } from "@/context/IssueGalleryContext";
+import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
 import { RichWorkProductCard } from "./RichWorkProductCard";
 import { stateChipFor } from "./RichWorkProductCard";
 
@@ -42,6 +43,11 @@ function workProduct(overrides: Partial<IssueWorkProduct> = {}): IssueWorkProduc
     ...overrides,
   };
 }
+
+vi.mock("@/context/CompanyContext", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/context/CompanyContext")>()),
+  useCompany: () => ({ selectedCompany: null }),
+}));
 
 vi.mock("@/components/MarkdownEditor", () => ({
   MarkdownEditor: forwardRef(function MockMarkdownEditor(
@@ -155,6 +161,31 @@ describe("TaskChatProtocolCard", () => {
     expect(stats?.className).toContain("whitespace-nowrap");
   });
 
+  it("opens a deliverable in the in-app Quick Look, not the raw file (GRE-611)", () => {
+    const product = workProduct({
+      id: "deliverable-1",
+      type: "deliverable",
+      provider: "paperclip",
+      url: null,
+      title: "Q4 hiring brief",
+      metadata: { contentType: "text/html", openPath: "/api/attachments/a-1/content" },
+    });
+    renderCard(root, {
+      id: "resource:deliverable:deliverable-1",
+      kind: "protocol",
+      surface: "resource",
+      resourceKind: "deliverable",
+      title: product.title,
+      subtitle: "deliverable · active",
+      href: "/api/attachments/a-1/content",
+      workProduct: product,
+    });
+
+    const action = container.querySelector<HTMLAnchorElement>('a[aria-label="Open: Q4 hiring brief"]');
+    expect(action?.getAttribute("href")).toBe("/deliverables?open=deliverable-1");
+    expect(action?.target).toBe("");
+  });
+
   it("shows pending artifacts with a dashed Pending chip", () => {
     const product = workProduct({
       type: "artifact",
@@ -178,7 +209,8 @@ describe("TaskChatProtocolCard", () => {
     const chip = Array.from(container.querySelectorAll("span")).find((node) => node.textContent === "Pending");
     expect(chip?.className).toContain("border-dashed");
     expect(container.textContent).toContain("Image · 2.0 KB");
-    expect(container.textContent).toContain("Open gallery");
+    // Thread media is a gallery tile: the whole tile opens the gallery.
+    expect(container.querySelector('button[aria-label="Open gallery: demo.png"] img')).not.toBeNull();
   });
 
   it.each([
@@ -287,6 +319,42 @@ describe("TaskChatProtocolCard", () => {
       label: "Review",
       tone: "review",
     });
+  });
+
+  it("opens an attachment resource card in the issue's preview panel on a plain click (GRE-1036)", () => {
+    const openPreview = vi.fn(() => true);
+    flushSync(() =>
+      root.render(
+        <MemoryRouter>
+          <ThemeProvider>
+            <AttachmentPreviewContext.Provider value={openPreview}>
+              <TaskChatProtocolCard
+                item={{
+                  id: "resource:attachment:att-1",
+                  kind: "protocol",
+                  surface: "resource",
+                  resourceKind: "attachment",
+                  title: "mock-up.html",
+                  subtitle: "text/html · 1.3 KB",
+                  href: "/api/attachments/att-1/content",
+                }}
+              />
+            </AttachmentPreviewContext.Provider>
+          </ThemeProvider>
+        </MemoryRouter>,
+      ),
+    );
+    const link = container.querySelector<HTMLAnchorElement>("a[href='/api/attachments/att-1/content']")!;
+
+    const ctrlClick = new MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true });
+    flushSync(() => link.dispatchEvent(ctrlClick));
+    expect(ctrlClick.defaultPrevented).toBe(false);
+    expect(openPreview).not.toHaveBeenCalled();
+
+    const plain = new MouseEvent("click", { bubbles: true, cancelable: true });
+    flushSync(() => link.dispatchEvent(plain));
+    expect(plain.defaultPrevented).toBe(true);
+    expect(openPreview).toHaveBeenCalledWith({ href: "/api/attachments/att-1/content", name: "mock-up.html" });
   });
 
   it("shows an unhealthy active runtime as unhealthy", () => {

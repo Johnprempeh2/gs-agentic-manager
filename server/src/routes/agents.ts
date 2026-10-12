@@ -1,4 +1,4 @@
-import { resolveAgentAppearance, agentAvatarUrl } from "@greatstone/shared";
+import { resolveAgentAppearance, agentAvatarUrl, HEARTBEAT_RUN_STATUSES } from "@greatstone/shared";
 import { listOpenRouterModels } from "../services/openrouter-models.js";
 import { prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings } from "../services/ai-connection-runtime.js";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE, AI_CONNECTION_CAPABILITIES, aiConnectionBindingSchema, type AiConnectionBinding } from "@greatstone/shared";
@@ -6,7 +6,7 @@ import { toolConnections } from "@greatstone/db";
 import { aiConnectionService } from "../services/ai-connections.js";
 import { defaultAiConnectionForHire } from "../services/agent-ai-connection-default.js";
 import { assertAiConnectionCreateAccess, canInstallSharedAiConnectionForNewAgent, responsibleUserForAiRequest, validateAiApiKey } from "./ai-connections.js";
-import { isAiConnectionCompatible } from "@greatstone/shared";
+import { isAiConnectionCompatible, normalizeAgentApiKeyScope } from "@greatstone/shared";
 import type { PermissionKey } from "@greatstone/shared";
 import { applyConnectorSkills, resolveConnectorAssignments, annotateConnectorSkills, isConnectorSkill } from "../services/connector-runtime.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
@@ -83,9 +83,12 @@ import {
   workspaceOperationService,
 } from "../services/index.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
+import { setAgentPipelineAccess } from "../services/agent-pipeline-access.js";
 import { ONBOARDING_FIRST_TASK_SKILL_KEY, GSAM_CORE_SKILL_KEYS } from "../services/company-skills.js";
 import { createRunSecretRedactionRegistry } from "../services/run-secret-redaction.js";
-import { assertAuthenticated, assertBoard, assertCompanyAccess, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
+import { runTranscriptDigestService } from "../services/run-transcript-digests.js";
+import { RUN_FAILURE_RATE_DEFAULT_DAYS, summarizeRunFailureRate } from "../services/run-failure-rate.js";
+import { assertAuthenticated, assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, assertInstanceAdmin, buildActorSecretContext, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 import { runAdapterLoginStartSpine } from "./adapter-login-route-spine.js";
 import { isLoginCommandSupportedAdapterType } from "../services/login-command.js";
 import {
@@ -282,6 +285,44 @@ function mergeDesiredSkillEntries(
 
 const RUN_LOG_DEFAULT_LIMIT_BYTES = 256_000;
 const RUN_LOG_MAX_LIMIT_BYTES = 1024 * 1024;
+
+const HEARTBEAT_RUN_STATUS_SET = new Set<string>(HEARTBEAT_RUN_STATUSES);
+const ISO_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+function readRunListTime(query: Request["query"], name: "since" | "before") {
+  const value = query[name];
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !ISO_TIME_PATTERN.test(value) || Number.isNaN(Date.parse(value))) {
+    throw badRequest(`${name} must be one ISO 8601 time, e.g. 2026-10-02T08:41:00Z`);
+  }
+  return new Date(value);
+}
+
+/**
+ * Optional filters of GET /companies/:companyId/heartbeat-runs (GRE-794):
+ * `status` (comma list of run statuses), `since` (inclusive) and `before`
+ * (exclusive) on `createdAt`. A bad value is a 400, never a silent ignore.
+ */
+export function parseHeartbeatRunListFilters(query: Request["query"]) {
+  const filters: { statuses?: string[]; since?: Date; before?: Date } = {};
+  const status = query.status;
+  if (status !== undefined) {
+    if (typeof status !== "string") throw badRequest("status must be one comma-separated list");
+    const statuses = [...new Set(status.split(",").map((value) => value.trim()).filter(Boolean))];
+    const unknown = statuses.filter((value) => !HEARTBEAT_RUN_STATUS_SET.has(value));
+    if (statuses.length === 0 || unknown.length > 0) {
+      throw badRequest(
+        `Unknown run status: ${unknown.join(", ") || "(empty)"}; use ${HEARTBEAT_RUN_STATUSES.join(", ")}`,
+      );
+    }
+    filters.statuses = statuses;
+  }
+  const since = readRunListTime(query, "since");
+  const before = readRunListTime(query, "before");
+  if (since) filters.since = since;
+  if (before) filters.before = before;
+  return filters;
+}
 
 function readRunLogLimitBytes(value: unknown) {
   const parsed = Number(value ?? RUN_LOG_DEFAULT_LIMIT_BYTES);
@@ -718,6 +759,10 @@ export function agentRoutes(
   const runRedactions = createRunSecretRedactionRegistry(db);
   const heartbeat = heartbeatService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
+  });
+  const runTranscriptDigests = runTranscriptDigestService(db, {
+    readLog: (run, opts) => heartbeat.readLog(run, opts),
+    redactForRun: (companyId, runId, value) => runRedactions.redactForRun(companyId, runId, value),
   });
   const providerTraces = providerTraceStore(db);
   const traceExpiryCleanup = providerTraces.cleanupExpired?.();
@@ -3574,7 +3619,7 @@ export function agentRoutes(
         let result;
         try {
           result = managed && aiBinding ? await testManagedEnvironment(type, { companyId, adapterType: type, config: managed.config, executionTarget, environmentName }, aiBinding) : await adapter.testEnvironment({ companyId, adapterType: type, config: effectiveAdapterConfig, executionTarget, environmentName });
-          if (managed) result.checks.unshift({ code: "ai_connection_tested", level: "info", message: `Tested ${managed.accountName} — ${managed.accountOwnerUserId ? managed.accountOwnerUserId === responsibleUserForAiRequest(req) ? "your personal account" : "the owner’s account authorized for this agent" : "company-shared account"}. Responsible user: ${req.actor.type === "agent" ? responsibleUserForAiRequest(req) ?? "unavailable" : "the signed-in user"}.` });
+          if (managed) result.checks.unshift({ code: "ai_connection_tested", level: "info", message: `Tested ${managed.accountName} (${managed.accountOwnerUserId ? managed.accountOwnerUserId === responsibleUserForAiRequest(req) ? "your personal account" : "the owner’s account authorized for this agent" : "company-shared account"}). Responsible user: ${req.actor.type === "agent" ? responsibleUserForAiRequest(req) ?? "unavailable" : "the signed-in user"}.` });
         } finally { await managed?.cleanup(); }
 
         const prefixChecks = [
@@ -4962,7 +5007,36 @@ export function agentRoutes(
       await assertBoardCanManageAgentsForCompany(req, existing.companyId);
     }
 
-    const { canConfigureAgents, canChangeSkills, ...permissionFlags } = req.body;
+    const {
+      canConfigureAgents,
+      canChangeSkills,
+      canContributeMemory,
+      canApproveMemory,
+      pipelineAccess,
+      ...permissionFlags
+    } = req.body;
+    // Pipeline access levels (GRE-1072) are changed only by board users who
+    // may manage permissions. Checked before anything is written.
+    if (pipelineAccess) {
+      if (req.actor.type !== "board") {
+        throw forbidden("Only board users with users:manage_permissions can change pipeline access");
+      }
+      const decision = await access.decide({
+        actor: req.actor,
+        action: "users:manage_permissions",
+        resource: { type: "company", companyId: existing.companyId },
+      });
+      if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
+    }
+    // Memory rights have one writer: the owner-only grant service (G3,
+    // GRE-933). This route cannot write them, so it must not answer 200 for
+    // them either (GRE-988).
+    if (typeof canContributeMemory === "boolean" || typeof canApproveMemory === "boolean") {
+      res.status(422).json({
+        error: "Memory rights are set by a company owner via PATCH /api/companies/:companyId/memory/grants",
+      });
+      return;
+    }
     const agent = await svc.updatePermissions(id, permissionFlags);
     if (!agent) {
       res.status(404).json({ error: "Agent not found" });
@@ -4989,8 +5063,30 @@ export function agentRoutes(
       effectiveCanAssignTasks,
       req.actor.type === "board" ? (req.actor.userId ?? null) : null,
     );
+    const pipelineAccessChange = pipelineAccess
+      ? await setAgentPipelineAccess(db, {
+          companyId: agent.companyId,
+          agentId: agent.id,
+          access: pipelineAccess,
+          grantedByUserId,
+        })
+      : null;
 
     const actor = getActorInfo(req);
+    if (pipelineAccessChange) {
+      await logActivity(db, {
+        companyId: agent.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "agent.pipeline_access_updated",
+        entityType: "agent",
+        entityId: agent.id,
+        details: { before: pipelineAccessChange.before, after: pipelineAccessChange.after },
+      });
+    }
     await logActivity(db, {
       companyId: agent.companyId,
       actorType: actor.actorType,
@@ -5719,6 +5815,14 @@ export function agentRoutes(
     if (!agent) {
       return;
     }
+    if (req.body.scope.kind === "memory_only") {
+      // John's Claude and Codex (GRE-958): only an owner or admin mints one,
+      // and only for a paused agent, so the key never stands in for a worker.
+      assertCompanyOwnerOrAdmin(req, agent.companyId);
+      if (agent.status !== "paused") {
+        throw conflict("Pause the agent before creating a memory-only key");
+      }
+    }
     const key = await svc.createApiKey(id, req.body.name, req.body.scope, {
       responsibleUserId: req.actor.userId ?? null,
     });
@@ -5754,6 +5858,9 @@ export function agentRoutes(
     if (!key || key.agentId !== agent.id) {
       res.status(404).json({ error: "Key not found" });
       return;
+    }
+    if (normalizeAgentApiKeyScope(key.scopeConfig).kind === "memory_only") {
+      assertCompanyOwnerOrAdmin(req, agent.companyId);
     }
 
     const revoked = await svc.revokeKey(agent.id, keyId);
@@ -6681,8 +6788,28 @@ export function agentRoutes(
     const limitParam = req.query.limit as string | undefined;
     const limit = limitParam ? Math.max(1, Math.min(1000, parseInt(limitParam, 10) || 200)) : undefined;
     const summary = req.query.summary === "true" || req.query.summary === "1";
-    const runs = await heartbeat.list(companyId, agentId, limit, { summary });
+    const filters = parseHeartbeatRunListFilters(req.query);
+    const runs = await heartbeat.list(companyId, agentId, limit, { summary, ...filters });
     res.json(await runRedactions.redactForRuns(companyId, runs));
+  });
+
+  /**
+   * Failed runs per 100 finished runs in a window (GRE-1325), counted in the
+   * database so a week reads in one call. `since` (inclusive) and `before`
+   * (exclusive) are on `finishedAt`; the window defaults to the last 7 days.
+   * Same rule as tracked number R2: see services/run-failure-rate.ts.
+   */
+  router.get("/companies/:companyId/heartbeat-runs/failure-rate", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertRunTelemetryReadAllowed(req, res, companyId))) return;
+    const agentId = typeof req.query.agentId === "string" && req.query.agentId ? req.query.agentId : undefined;
+    const before = readRunListTime(req.query, "before") ?? new Date();
+    const since = readRunListTime(req.query, "since")
+      ?? new Date(before.getTime() - RUN_FAILURE_RATE_DEFAULT_DAYS * 86_400_000);
+    if (since.getTime() >= before.getTime()) throw badRequest("since must be earlier than before");
+    const counts = await heartbeat.countFinishedByStatus(companyId, { agentId, since, before });
+    res.json(summarizeRunFailureRate({ since, before, agentId, counts }));
   });
 
   router.get("/companies/:companyId/provider-traces", async (req, res) => {
@@ -7359,6 +7486,29 @@ export function agentRoutes(
 
     res.set("Cache-Control", "no-cache, no-store");
     res.json(result);
+  });
+
+  // Structure-only transcripts of finished runs: the task page draws each folded
+  // run row from these and reads a full log only when a row is opened.
+  router.get("/issues/:issueId/run-transcript-digests", async (req, res) => {
+    const rawId = req.params.issueId as string;
+    const issueSvc = issueService(db);
+    const identifier = normalizeIssueIdentifier(rawId);
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      identifier ? issueSvc.getByIdentifier(identifier) : issueSvc.getById(rawId),
+      "Issue not found",
+    );
+    if (!issue) return;
+    if (!(await assertRunTelemetryReadAllowed(req, res, issue.companyId))) return;
+
+    const runIds = String(req.query.runIds ?? "").split(",").filter(Boolean);
+    if (runIds.length > 200 || runIds.some((runId) => runId !== runId.trim() || !isUuidLike(runId))) {
+      throw badRequest("runIds must list up to 200 heartbeat run IDs");
+    }
+    // Same scope as the per-run log route: company telemetry access.
+    res.json({ digests: await runTranscriptDigests.forRuns(issue.companyId, runIds) });
   });
 
   router.get("/issues/:issueId/live-runs", async (req, res) => {

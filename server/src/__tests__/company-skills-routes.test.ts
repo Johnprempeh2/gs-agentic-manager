@@ -1768,7 +1768,7 @@ describe("company skill mutation permissions", () => {
       runId: "run-1",
     }))
       .post("/api/companies/company-1/skills/import")
-      .send({ source: "https://github.com/vercel-labs/agent-browser" });
+      .send({ source: "https://github.com/vercel-labs/agent-browser", stripScripts: true });
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
     expect(mockAccessService.decide).toHaveBeenCalledWith(expect.objectContaining({
@@ -1779,6 +1779,7 @@ describe("company skill mutation permissions", () => {
     expect(mockCompanySkillService.importFromSource).toHaveBeenCalledWith(
       "company-1",
       "https://github.com/vercel-labs/agent-browser",
+      { stripScripts: true },
     );
   });
 
@@ -1855,6 +1856,7 @@ describe("company skill mutation permissions", () => {
     expect(mockCompanySkillService.importFromSource).toHaveBeenCalledWith(
       "company-1",
       "https://github.com/vercel-labs/agent-browser",
+      { stripScripts: false },
     );
   });
 

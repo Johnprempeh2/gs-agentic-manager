@@ -15,6 +15,7 @@ import {
 import type {
   ToolCatalogEntry,
   ToolConnectionAccessSummary,
+  ToolConnectionAgentCheckReason,
   ToolConnectionTestAgent,
   ToolConnectionTestCallResult,
   ToolConnectionTestCallStatus,
@@ -51,6 +52,7 @@ import {
 import { cn, relativeTime } from "@/lib/utils";
 import { appTabHref } from "../app-tabs";
 import { formatActionPermissionSummary } from "./action-permission-summary";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 // ---------------------------------------------------------------------------
 // Small format helpers
@@ -144,7 +146,7 @@ export function ActionTestDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl">
+      <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Test {title}</DialogTitle>
           <DialogDescription>
@@ -431,7 +433,7 @@ export function TestPanel({
           <FilterChip label={`Read ${readActions.length}`} active={kindFilter === "read"} onClick={() => setKindFilter("read")} />
           <FilterChip label={`Write ${writeActions.length}`} active={kindFilter === "write"} onClick={() => setKindFilter("write")} />
         </div>
-        <p className="text-xs text-muted-foreground">{visibleCount} matches · sorted A–Z</p>
+        <p className="text-xs text-muted-foreground">{visibleCount} matches · sorted A to Z</p>
       </section>
 
       {visibleCount === 0 ? (
@@ -546,7 +548,67 @@ function TestAsHeader({
           {formatActionPermissionSummary(selectedAgent.effectiveAccess)}
         </Link>
       </div>
+      <ConnectionCheck
+        key={selectedAgent.id}
+        connectionId={connectionId}
+        agent={selectedAgent}
+      />
     </section>
+  );
+}
+
+const CHECK_REASON_LABEL: Record<ToolConnectionAgentCheckReason, string> = {
+  no_access: "No access",
+  no_grant: "No grant",
+  expired_token: "Expired token",
+  scope_missing: "Scope missing",
+  service_error: "Service error",
+};
+
+/**
+ * "Check connection" (GRE-341): one read-only check with the selected agent's
+ * access. No run starts and no action runs.
+ */
+function ConnectionCheck({
+  connectionId,
+  agent,
+}: {
+  connectionId: string;
+  agent: ToolConnectionTestAgent;
+}) {
+  const check = useMutation({
+    mutationFn: () => toolsApi.checkAsAgent(connectionId, agent.id),
+  });
+  const result = check.data;
+  return (
+    <div className="flex flex-wrap items-start gap-3" data-testid="connection-check">
+      <Button size="sm" variant="outline" onClick={() => check.mutate()} disabled={check.isPending}>
+        {check.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Play className="mr-1.5 h-4 w-4" />}
+        {check.isPending ? "Checking…" : `Check connection as ${agent.name}`}
+      </Button>
+      <div className="min-w-0 flex-1 text-sm" role="status" aria-live="polite">
+        {check.isError ? (
+          <p className="text-destructive">We couldn't run the check. Try again.</p>
+        ) : result?.ok ? (
+          <p className="flex items-start gap-1.5 text-foreground">
+            <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+            <span>
+              <span className="font-medium">Works.</span> {result.message}
+            </span>
+          </p>
+        ) : result ? (
+          <p className="flex items-start gap-1.5 text-foreground">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+            <span>
+              <span className="font-medium">{result.reason ? CHECK_REASON_LABEL[result.reason] : "Failed"}.</span>{" "}
+              {result.message.replace(/^[^:]+:\s*/, "")}
+            </span>
+          </p>
+        ) : (
+          <p className="text-muted-foreground">Checks the connection with this agent's access. No run, no action.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -643,10 +705,10 @@ function AgentPicker({
         <div className="border-t border-border p-3">
           <p className="text-xs font-semibold text-foreground">What the badges mean</p>
           <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
-            <li><span className="font-medium text-foreground">Allowed</span> — runs immediately when you press Run.</li>
-            <li><span className="font-medium text-foreground">Ask first</span> — Run is parked in Review for your OK.</li>
+            <li><span className="font-medium text-foreground">Allowed</span>: runs immediately when you press Run.</li>
+            <li><span className="font-medium text-foreground">Ask first</span>: Run is parked in Review for your OK.</li>
             <li>
-              <span className="font-medium text-foreground">Off</span> — won't run. Change it in{" "}
+              <span className="font-medium text-foreground">Off</span>: won't run. Change it in{" "}
               <Link className="text-primary hover:underline" to={appTabHref(connectionId, "permissions")}>
                 Permissions
               </Link>.
@@ -838,8 +900,8 @@ function splitRequiredOptional(schema: JsonSchemaNode): JsonSchemaNode {
 
 const GUT_CHECK: Record<ToolConnectionTestDecision, (app: string, agent: string) => string> = {
   allowed: (app, agent) => `This runs a real call against ${app} as ${agent}.`,
-  ask_first: () => `Waiting for your OK before this call leaves GS Agentic Manager.`,
-  off: (_app, agent) => `No call will be made — this action is off for ${agent}.`,
+  ask_first: () => `Waiting for your OK before this call leaves ${CLIENT_BRAND_NAME}.`,
+  off: (_app, agent) => `No call will be made. This action is off for ${agent}.`,
 };
 
 function ActionTester({
@@ -1099,7 +1161,7 @@ function ProviderPendingResult({ pending, appName, connectionId, agent }: { pend
   return (
     <div role="status" className="space-y-3 rounded-md border border-border bg-muted/40 p-4 text-sm">
       <p className="font-medium">{pending.kind === "approval" ? "Approval needed" : "Authorization needed"} in {appName}</p>
-      <p className="text-muted-foreground">GS Agentic Manager allowed this call. The provider needs your input before it can continue.</p>
+      <p className="text-muted-foreground">{CLIENT_BRAND_NAME} allowed this call. The provider needs your input before it can continue.</p>
       {pending.links.map((link) => {
         const checked = checkOAuthEndpointUrl(link.url);
         return checked.ok ? <Button key={checked.url} variant="outline" asChild><a href={checked.url} target="_blank" rel="noopener noreferrer">Continue at {checked.host}</a></Button> : null;
@@ -1112,7 +1174,7 @@ function ProviderPendingResult({ pending, appName, connectionId, agent }: { pend
       {pending.resumeTool && agent ? <ProviderResumeControls pending={pending} connectionId={connectionId} agent={agent} onResult={setResumed} /> :
       <p className="text-muted-foreground">{pending.resumeTool
         ? `After approval, test the ${pending.resumeTool} action with this execution ID. Do not start the original action again.`
-        : "After authorizing, check the provider's result before using Run again. GS Agentic Manager will not repeat the call automatically."}</p>}
+        : `After authorizing, check the provider's result before using Run again. ${CLIENT_BRAND_NAME} will not repeat the call automatically.`}</p>}
     </div>
   );
 }
@@ -1308,7 +1370,7 @@ function PrettyPreview({ value }: { value: unknown }) {
 }
 
 function cellText(value: unknown): string {
-  if (value === null || value === undefined) return "—";
+  if (value === null || value === undefined) return "None";
   if (typeof value === "object") return Array.isArray(value) ? `[${value.length}]` : "{…}";
   return String(value);
 }
@@ -1490,11 +1552,11 @@ function AskFirstResult({
     phase === "running"
       ? "Approved · running"
       : phase === "denied"
-        ? "Denied — see Review for why"
+        ? "Denied: see Review for why"
         : phase === "cancelled"
           ? "Cancelled"
           : phase === "expired"
-            ? "Expired — send it again"
+            ? "Expired: send it again"
             : `Waiting · ${relTime(requestedAt)}`;
   const settled = phase === "denied" || phase === "cancelled" || phase === "expired";
 
@@ -1599,15 +1661,15 @@ function OffExplanation({
               Want to test it? Turn it on for {agent.name} in{" "}
               <Link className="font-medium text-primary hover:underline" to={appTabHref(connectionId, "permissions")}>
                 Permissions
-              </Link>{" "}
-              — set it to Allowed or Ask first.
+              </Link>
+              . Set it to Allowed or Ask first.
             </p>
           </div>
         </div>
         <Button asChild size="sm">
           <Link to={permHref}>Open Permissions →</Link>
         </Button>
-        <p className="text-xs text-muted-foreground">No call will be made — this action is off for {agent.name}.</p>
+        <p className="text-xs text-muted-foreground">No call will be made. This action is off for {agent.name}.</p>
       </div>
 
       <aside>
@@ -1657,7 +1719,7 @@ export function errorHints(message: string, reasonCode: string | null | undefine
   const haystack = `${reasonCode ?? ""} ${message}`.toUpperCase();
   if (haystack.includes("NOT_FOUND")) {
     return [
-      "Double-check the ID or name you entered — pick it from a dropdown if one is offered.",
+      "Double-check the ID or name you entered. Pick it from a dropdown if one is offered.",
       "Make sure this agent has access to that resource in the connected account.",
     ];
   }
@@ -1669,12 +1731,12 @@ export function errorHints(message: string, reasonCode: string | null | undefine
   }
   if (haystack.includes("INVALID_ARGUMENT") || haystack.includes("INVALID") || haystack.includes("BAD_REQUEST")) {
     return [
-      "Check the field formats above — a value may be the wrong type or shape.",
+      "Check the field formats above. A value may be the wrong type or shape.",
       "Open “More options” to confirm any advanced fields are filled in correctly.",
     ];
   }
   if (haystack.includes("RATE_LIMIT") || haystack.includes("RESOURCE_EXHAUSTED") || haystack.includes("429")) {
-    return ["The app is rate-limiting calls right now — wait a moment and run it again."];
+    return ["The app is rate-limiting calls right now. Wait a moment and run it again."];
   }
   // Locked generic fallback (copy-spec decision #2).
   return ["Check the inputs above and try again."];

@@ -44,6 +44,7 @@ import type {
   ToolConnectionLifecycleEventType,
   ToolConnectionTestAgentsResponse,
   ToolConnectionTestAgentAccessResponse,
+  ToolConnectionAgentCheckResult,
   ToolConnectionTestCallResult,
   ToolConnectionTestCallStatus,
   ToolActionRequest,
@@ -409,6 +410,9 @@ export const toolsApi = {
     api.delete<ToolConnection & { removal: ToolConnectionRemovalSummary }>(
       `/tool-connections/${connectionId}`,
     ),
+  // GRE-1364: health-checks the connection first; it stays off if the check fails.
+  reenableConnectionAfterPause: (connectionId: string) =>
+    api.post<ToolConnection>(`/tool-connections/${connectionId}/reenable-after-pause`, {}),
   checkConnectionHealth: (connectionId: string) =>
     api.post<ToolConnectionHealthCheckResult>(`/tool-connections/${connectionId}/health-check`, {}),
   reconnectConnection: (connectionId: string, credentialValues: Record<string, string>) =>
@@ -430,6 +434,11 @@ export const toolsApi = {
   getTestAgentAccess: (connectionId: string, agentId: string) =>
     api.get<ToolConnectionTestAgentAccessResponse>(
       `/tool-connections/${connectionId}/test-agents/${agentId}/access`,
+    ),
+  checkAsAgent: (connectionId: string, agentId: string) =>
+    api.post<ToolConnectionAgentCheckResult>(
+      `/tool-connections/${connectionId}/test-agents/${agentId}/check`,
+      {},
     ),
   runTestCall: (
     connectionId: string,

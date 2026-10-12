@@ -7,12 +7,14 @@ export { instanceSettings } from "./instance_settings.js";
 export { instanceUserRoles } from "./instance_user_roles.js";
 export { userSidebarPreferences } from "./user_sidebar_preferences.js";
 export { agents } from "./agents.js";
+export { agentTeams, agentTeamMembers } from "./agent_teams.js";
 export { builtInManagedResources } from "./built_in_managed_resources.js";
 export { agentMemberships } from "./agent_memberships.js";
 export { boardApiKeys } from "./board_api_keys.js";
 export { cliAuthChallenges } from "./cli_auth_challenges.js";
 export { companyMemberships } from "./company_memberships.js";
 export { companyUserSidebarPreferences } from "./company_user_sidebar_preferences.js";
+export { companyUserVisits } from "./company_user_visits.js";
 export { principalPermissionGrants } from "./principal_permission_grants.js";
 export { companySkillPolicies } from "./company_skill_policies.js";
 export { invites } from "./invites.js";
@@ -40,6 +42,8 @@ export { workspaceRuntimeServices } from "./workspace_runtime_services.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { goalCheckIns } from "./goal_check_ins.js";
+export { goalKpiReadings } from "./goal_kpi_readings.js";
+export { goalWhyRequests, goalKpiAlerts, strategyBoardPacks, strategyBoardSettings, strategyBoardEmails } from "./strategy_board.js";
 export { folders } from "./folders.js";
 export { issues } from "./issues.js";
 export { issueWatchdogs } from "./issue_watchdogs.js";
@@ -65,7 +69,8 @@ export {
 } from "./chat_channels.js";
 export { issueRelations } from "./issue_relations.js";
 export { routines, routineRevisions, routineTriggers, routineWebhookTestReceipts, routineRuns } from "./routines.js";
-export { pipelines, pipelineStages, pipelineTransitions } from "./pipelines.js";
+export { pipelines, pipelineStages, pipelineTransitions, pipelineFieldDefinitions } from "./pipelines.js";
+export { pipelineMemberships } from "./pipeline_memberships.js";
 export {
   cases,
   caseAttachments,
@@ -77,13 +82,26 @@ export {
 export {
   pipelineCases,
   pipelineCaseIssueLinks,
+  pipelineCaseProjectLinks,
+  pipelineCaseContacts,
+  pipelineCaseEvidence,
   pipelineCaseBlockers,
   pipelineDocuments,
   pipelineCaseDocuments,
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export {
+  crmSyncBindings,
+  crmSyncFieldMaps,
+  crmSyncRecordLinks,
+  crmSyncConflicts,
+  crmSyncEvents,
+  type CrmSyncStoredValue,
+} from "./crm_sync.js";
 export { issueWorkProducts } from "./issue_work_products.js";
+export { deliverableComments } from "./deliverable_comments.js";
+export { websiteProperties, websitePulls } from "./website.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
 export { issueApprovals } from "./issue_approvals.js";
@@ -212,3 +230,25 @@ export { aiConnectionDefaults } from "./ai_connection_defaults.js";
 export { aiProviderDefaults } from "./ai_provider_defaults.js";
 export * from "./email.js";
 export { announcementDismissals, announcementPublications } from "./announcement_dismissals.js";
+export { userTourDismissals } from "./user_tour_dismissals.js";
+export { pushSubscriptions, pushNotifiedDecisions } from "./push_subscriptions.js";
+export * from "./support.js";
+export {
+  memorySettings,
+  memoryScopes,
+  memoryRecords,
+  memoryOperations,
+  memoryReviewEvents,
+  memoryRelationships,
+  memoryConflicts,
+  memoryExtractedFacts,
+  memoryLinkLeads,
+  memoryScopeStewards,
+} from "./memory.js";
+export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
+export * from "./memory_steward.js";
+export { fleetInstances, fleetCheckIns, fleetSupportTickets, fleetSupportReplies, fleetSupportAttachments } from "./fleet.js";
+export { clientSupportTickets, clientSupportReplies, clientSupportAttachments } from "./client_support.js";
+export { workflowTemplates } from "./workflow_templates.js";
+export { documentEvidenceLinks } from "./document_evidence_links.js";
+export { billingAccounts, billingInvoices } from "./billing_accounts.js";

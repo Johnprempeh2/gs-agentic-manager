@@ -14,6 +14,7 @@ const mockIssueService = vi.hoisted(() => ({
   findMentionedAgents: vi.fn(),
   getRelationSummaries: vi.fn(),
   listWakeableBlockedDependents: vi.fn(),
+  listOpenBlockedDependents: vi.fn(async () => []),
   getWakeableParentAfterChildCompletion: vi.fn(),
 }));
 
@@ -83,6 +84,18 @@ function registerModuleMocks() {
     RunnerGoalConflictError: class RunnerGoalConflictError extends Error {},
   }));
 
+  // The run posted its result; GRE-573's done guard is covered elsewhere.
+  vi.doMock("../services/agent-done-result-guard.js", async () => ({
+    ...(await vi.importActual<typeof import("../services/agent-done-result-guard.js")>(
+      "../services/agent-done-result-guard.js",
+    )),
+    loadAgentDoneResultEvidence: vi.fn(async () => ({
+      runCommentCount: 2,
+      runDocumentRevisionCount: 0,
+      runWorkProductCount: 0,
+    })),
+  }));
+
   vi.doMock("../services/index.js", () => ({
     companyService: () => ({
       getById: vi.fn(async () => ({ id: "company-1" })),
@@ -103,6 +116,9 @@ function registerModuleMocks() {
           orgChainHealth: { status: "healthy" },
         },
       })),
+    }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
     }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),

@@ -7,6 +7,7 @@ import { cleanupGitHubOperationLaunchers } from "@greatstone/adapter-utils/execu
 import type { CommandManagedRuntimeRunner } from "@greatstone/adapter-utils/command-managed-runtime";
 import { describe, expect, it, vi } from "vitest";
 import { prepareHeartbeatGitHubLaunchers } from "./heartbeat-github-launchers.js";
+import { liveProcessGuard } from "./live-process-guard.js";
 
 const target = { kind: "remote" as const, transport: "sandbox" as const, providerKey: "daytona", remoteCwd: "/workspace" };
 
@@ -59,6 +60,14 @@ describe("heartbeat GitHub launcher lifetime", () => {
       createBrokerToken: () => { throw new Error("must not mint a capability"); },
     }, async () => { throw stagingError; }, cleanupLaunchers)).rejects.toBe(stagingError);
     expect(cleanupLaunchers).not.toHaveBeenCalled();
+  });
+
+  it("hands the live process guard to launcher staging", async () => {
+    const prepareLaunchers = vi.fn(async (input) => input.env);
+    await prepareHeartbeatGitHubLaunchers({ native: false, githubConfigured: true, agentId: "agent-a", runId: "run-one",
+      target: null, cwd: "/workspace", env: {}, brokerUrl: "https://paperclip.test", createBrokerToken: () => "token" },
+    prepareLaunchers);
+    expect(prepareLaunchers.mock.calls[0]?.[0].processGuard).toEqual(liveProcessGuard());
   });
 
   it.each([

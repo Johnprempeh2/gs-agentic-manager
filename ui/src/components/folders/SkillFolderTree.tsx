@@ -454,7 +454,7 @@ export function SkillFolderRail({
         aria-valuenow={width}
         tabIndex={0}
         className={cn(
-          "absolute inset-y-0 right-0 z-20 w-3 cursor-col-resize touch-none outline-none",
+          "absolute inset-y-0 right-0 z-sticky w-3 cursor-col-resize touch-none outline-none",
           "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-transparent before:transition-colors",
           "hover:before:bg-border focus-visible:before:bg-ring",
           isResizing && "before:bg-ring",

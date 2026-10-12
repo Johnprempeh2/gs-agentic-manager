@@ -141,11 +141,11 @@ const KIND_LABEL: Record<IssueRecoveryActionKind, string> = {
 
 const KIND_HEADLINE: Record<IssueRecoveryActionKind, string> = {
   missing_disposition:
-    "This task's run finished, but no next step was chosen. Choose what happens next — try the task again, mark it done, or send it for review.",
+    "This task's run finished, but no next step was chosen. Choose what happens next: try the task again, mark it done, or send it for review.",
   deliberate_wait_without_target:
     "This task's last run stopped to wait, but there is no reviewer, blocker, monitor, or approval to wait for. GS Agentic Manager is repairing the next step; the task stays with its owner.",
   stranded_assigned_issue:
-    "GS Agentic Manager retried this task's last run, but there is still no queued run, reviewer, blocker, or other next owner. To get it moving, choose what happens next — try the task again, mark it done, or send it for review.",
+    "GS Agentic Manager retried this task's last run, but there is still no queued run, reviewer, blocker, or other next owner. To get it moving, choose what happens next: try the task again, mark it done, or send it for review.",
   workspace_validation:
     "GS Agentic Manager stopped this run because the task's git workspace could not be validated.",
   configuration_validation:
@@ -433,7 +433,7 @@ function BranchFacet({
         )}
       </div>
       <div className="mt-0.5 pl-5 font-mono text-(length:--text-micro) text-muted-foreground">
-        {shortSha ? `@ ${shortSha}` : "@ —"}
+        {shortSha ? `@ ${shortSha}` : "@ unknown"}
       </div>
     </div>
   );
@@ -493,7 +493,7 @@ function DivergenceDiagnosis({
           <span>
             Worktree claimed by{" "}
             <code className="font-mono text-foreground/90">{contentionLabel(divergence.contention)}</code>{" "}
-            {divergence.contention.hasActiveRun ? "(active run)" : "(claim held)"} — the lossless repair
+            {divergence.contention.hasActiveRun ? "(active run)" : "(claim held)"}. The lossless repair
             can&apos;t run while another workspace holds the live branch.
           </span>
         </p>
@@ -543,7 +543,7 @@ function BreakGlassOverride({
           className="border-red-400/60 text-red-700 hover:bg-red-500/10 dark:border-red-500/40 dark:text-red-300"
         >
           <OctagonAlert className="h-3.5 w-3.5" aria-hidden />
-          I&apos;ve verified this — reconcile anyway
+          I&apos;ve verified this, reconcile anyway
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -592,7 +592,7 @@ function BreakGlassOverride({
         </dl>
         <div className="space-y-1">
           <Label htmlFor="recovery-breakglass-reason" className="text-(length:--text-micro) text-muted-foreground">
-            Reason <span className="text-red-600 dark:text-red-400">(required — recorded in the audit log)</span>
+            Reason <span className="text-red-600 dark:text-red-400">(required, recorded in the audit log)</span>
           </Label>
           <Textarea
             id="recovery-breakglass-reason"
@@ -663,7 +663,7 @@ function RepairWorkspace({
       ) : (
         <Wrench className="h-3.5 w-3.5" aria-hidden />
       )}
-      Repair workspace — quarantine changes &amp; restore branch
+      Repair workspace: quarantine changes &amp; restore branch
     </Button>
   );
   if (disabled) {
@@ -698,7 +698,7 @@ function RepairWorkspace({
             Repair workspace
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            This is lossless — no reason required. Your uncommitted changes are committed onto a fresh
+            This is lossless: no reason required. Your uncommitted changes are committed onto a fresh
             rescue branch, then the recorded branch is restored so the task can resume. The live branch
             is left exactly as it is.
           </p>
@@ -821,7 +821,7 @@ function MetadataRow({
 }
 
 function MissingValue() {
-  return <span className="text-muted-foreground">—</span>;
+  return <span className="text-muted-foreground">None</span>;
 }
 
 function AgentLink({
@@ -914,7 +914,7 @@ function lineageHeadline(lineage: RecoveryRetryLineage): string {
       : "This task's last run stopped to wait, but nothing was waiting for it. GS Agentic Manager is retrying the original owner to record a real next step. The task stays with its owner, and no action is needed yet.";
   }
   if (lineage.lane === "recovery_owner") {
-    return "The original owner could not record a next step within its retry budget. A recovery owner is now repairing the path only — the task itself still belongs to its original owner.";
+    return "The original owner could not record a next step within its retry budget. A recovery owner is now repairing the path only. The task itself still belongs to its original owner.";
   }
   return "Automatic recovery is exhausted, so the board must choose the next step. The task itself still belongs to its original owner.";
 }
@@ -1020,9 +1020,9 @@ export function IssueRecoveryActionCard({
   // A lane with no path left must not keep advertising a retry that will never run — whether
   // the budget ran out or the scheduled attempt simply never fired.
   const wakeSummary = lineage?.retryExpired
-    ? "The scheduled retry did not run — a retry or a decision is needed"
+    ? "The scheduled retry did not run. A retry or a decision is needed"
     : lineage?.exhausted && lineage.lane !== "board"
-    ? "Automatic retries are finished — a decision is needed"
+    ? "Automatic retries are finished. A decision is needed"
     : readWakePolicySummary(action);
   const evidenceSummary = pickEvidenceSummary(action);
   const sourceRunId = readEvidenceRunId(action, "sourceRunId") ?? readEvidenceRunId(action, "latestRunId");
@@ -1099,7 +1099,7 @@ export function IssueRecoveryActionCard({
     divergence !== null &&
     divergence.cleanliness === "dirty";
   const repairDisabledReason = repairContention
-    ? `Held by ${contentionLabel(repairContention)}${showReissueAction ? " — re-issue on an isolated workspace instead." : "."}`
+    ? `Held by ${contentionLabel(repairContention)}${showReissueAction ? ". Re-issue on an isolated workspace instead." : "."}`
     : null;
   // When contended, the re-issue is the recommended path, so it takes the primary emphasis and a
   // "Recommended" hint while the repair button is disabled.
@@ -1178,7 +1178,7 @@ export function IssueRecoveryActionCard({
                 data-testid="recovery-recovery-owner"
               >
                 {recoveryOwnerIsSourceOwner ? (
-                  <span className="font-medium">Original owner — retrying itself</span>
+                  <span className="font-medium">Original owner (retrying itself)</span>
                 ) : action.ownerType === "agent" && action.ownerAgentId ? (
                   <>
                     <AgentLink agentId={action.ownerAgentId} agentMap={agentMap} />
@@ -1192,7 +1192,7 @@ export function IssueRecoveryActionCard({
                 ) : action.ownerType === "user" && action.ownerUserId ? (
                   <span className="font-medium">user {action.ownerUserId.slice(0, 6)}</span>
                 ) : (
-                  <span className="text-muted-foreground">unassigned — pick one to wake them</span>
+                  <span className="text-muted-foreground">unassigned: pick one to wake them</span>
                 )}
               </span>
             </MetadataRow>
@@ -1264,7 +1264,7 @@ export function IssueRecoveryActionCard({
             ) : action.ownerType === "system" ? (
               <span className="font-medium">System</span>
             ) : (
-              <span className="text-muted-foreground">unassigned — pick one to wake them</span>
+              <span className="text-muted-foreground">unassigned: pick one to wake them</span>
             )}
             {action.returnOwnerAgentId ? (
               <>
@@ -1439,7 +1439,7 @@ export function IssueRecoveryActionCard({
                   <div className="flex items-center justify-between gap-2">
                     <dt className="text-muted-foreground">Recorded</dt>
                     <dd className="min-w-0 truncate font-mono text-foreground/80">
-                      {divergence.expectedBranch ?? "—"}
+                      {divergence.expectedBranch ?? "Not recorded"}
                     </dd>
                   </div>
                   {reissueVerdictBadge ? (

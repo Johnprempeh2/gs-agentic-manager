@@ -201,7 +201,7 @@ export function ActionCard({
       onClick={onApprove}
       disabled={isStale}
       className={mobile ? "w-full" : undefined}
-      title={isStale ? "Re-issue the request before approving — the catalog hash changed." : undefined}
+      title={isStale ? "Re-issue the request before approving: the catalog hash changed." : undefined}
     >
       Approve
     </Button>
@@ -257,7 +257,7 @@ export function ActionCard({
           <EnforcementBanner
             tone="warning"
             title="Catalog changed since this request was signed."
-            body="The application's tool catalog hash no longer matches the one this approval was issued against. Approval is disabled — the agent must edit & re-sign to request again."
+            body="The application's tool catalog hash no longer matches the one this approval was issued against. Approval is disabled. The agent must edit & re-sign to request again."
           />
         ) : null}
 

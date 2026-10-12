@@ -14,13 +14,22 @@ import { createIssueDetailLocationState } from "../lib/issueDetailBreadcrumb";
 import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
 import { CircleDot } from "lucide-react";
-import type { Issue } from "@greatstone/shared";
+import type { Issue, IssueWorkFilter } from "@greatstone/shared";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
+import { issueQuickFilterPresets } from "../lib/issue-filters";
 
 const WORKSPACE_FILTER_ISSUE_LIMIT = 1000;
 const ISSUES_PAGE_SIZE = 100;
 export const ISSUES_ROW_PRESENTATION = "task" as const;
 export const ISSUES_TOOLBAR_PRESENTATION = "collection" as const;
+
+/** Owners open the list to see what is live and what just finished, so it starts on Recent. */
+export const ISSUES_DEFAULT_STATUSES = issueQuickFilterPresets.find((preset) => preset.label === "Recent")!.statuses;
+
+/** One stable server filter per status set, or none for "All". */
+export function issuesStatusQueryParam(statuses: readonly string[]): string | undefined {
+  return statuses.length > 0 ? [...statuses].sort().join(",") : undefined;
+}
 
 export function resolveIssuesPresentation(streamlinedUiEnabled: boolean) {
   return streamlinedUiEnabled
@@ -74,6 +83,17 @@ export function Issues() {
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const fetchNextPageInFlightRef = useRef(false);
+  // The list reports its status filter; the server then pages through only those
+  // tasks, so an old blocked task is not stuck behind hundreds of done ones.
+  const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const handleStatusFilterChange = useCallback((statuses: string[]) => {
+    setStatusFilter(issuesStatusQueryParam(statuses));
+  }, []);
+  // Strategic or day-to-day work is also a server filter, so paging is not thinned out by the client.
+  const [workFilter, setWorkFilter] = useState<IssueWorkFilter | undefined>(undefined);
+  const handleWorkFilterChange = useCallback((work: IssueWorkFilter | null) => {
+    setWorkFilter(work ?? undefined);
+  }, []);
 
   const urlSearch = searchParams.get("q") ?? "";
   const [searchOverride, setSearchOverride] = useState<{ search: string; locationSearch: string } | null>(null);
@@ -129,7 +149,7 @@ export function Issues() {
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
-        "Tasks",
+        "Agent tasks",
         `${location.pathname}${location.search}${location.hash}`,
         "issues",
       ),
@@ -137,7 +157,7 @@ export function Issues() {
   );
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Tasks" }]);
+    setBreadcrumbs([{ label: "Agent tasks" }]);
   }, [setBreadcrumbs]);
 
   const issuePageSize = workspaceIdFilter ? WORKSPACE_FILTER_ISSUE_LIMIT : ISSUES_PAGE_SIZE;
@@ -156,6 +176,10 @@ export function Issues() {
       participantAgentId ?? "__all__",
       "workspace",
       workspaceIdFilter ?? "__all__",
+      "status",
+      statusFilter ?? "__all__",
+      "work",
+      workFilter ?? "__all__",
       "compact",
       "with-routine-executions",
       "infinite",
@@ -164,6 +188,8 @@ export function Issues() {
     queryFn: ({ pageParam, signal }) => issuesApi.listCompact(selectedCompanyId!, {
       participantAgentId,
       workspaceId: workspaceIdFilter,
+      status: statusFilter,
+      work: workFilter,
       includeRoutineExecutions: true,
       limit: issuePageSize,
       offset: pageParam,
@@ -226,6 +252,10 @@ export function Issues() {
       initialSearch={syncedSearch}
       onSearchChange={handleSearchChange}
       enableRoutineVisibilityFilter
+      defaultStatuses={ISSUES_DEFAULT_STATUSES}
+      showStatusChips
+      onStatusFilterChange={handleStatusFilterChange}
+      onWorkFilterChange={handleWorkFilterChange}
       hasMoreIssues={hasMoreServerIssues}
       onLoadMoreIssues={loadMoreServerIssues}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}

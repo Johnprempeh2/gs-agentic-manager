@@ -2,7 +2,8 @@ import { TaskChatProjectCreatedCard } from "./TaskChatProjectCreatedCard";
 import { TaskChatSkillCreatedCard } from "./TaskChatSkillCreatedCard";
 import { useMemo, type ReactNode } from "react";
 import type { IssueAttachment } from "@greatstone/shared";
-import { cn } from "@/lib/utils";
+import { cn, formatShortDate } from "@/lib/utils";
+import { taskDateGroup, taskDateGroupLabels } from "@/lib/task-date-groups";
 import { useStreamlinedTaskChatPresentation } from "./presentation-mode";
 import type {
   TaskChatInteractionItem,
@@ -24,6 +25,7 @@ import { TaskMessageScroller } from "./TaskMessageScroller";
 import { TaskChatProtocolCard } from "./TaskChatProtocolCard";
 import { TaskChatProtocolActivityRow } from "./TaskChatProtocolActivityRow";
 import { TaskChatPlanPreviewCard } from "./TaskChatPlanPreviewCard";
+import { isMediaWorkProduct } from "./RichWorkProductCard";
 
 const EMPTY_ATTACHMENTS: IssueAttachment[] = [];
 
@@ -273,6 +275,10 @@ export function taskChatItemSpacingClass(
   previousItem: TaskChatItem | null,
 ): string | undefined {
   if (!previousItem) return undefined;
+  // A teammate's follow-up under the same name sits close to their last
+  // bubble so the run reads as one speaker; a new speaker keeps mt-6 (GRE-1012).
+  if (item.kind === "message" && item.fromOtherUser && item.showAuthorName === false)
+    return "mt-2";
   const currentIsSystemLike = isSystemLikeItem(item);
   const previousIsSystemLike = isSystemLikeItem(previousItem);
   if (currentIsSystemLike && previousIsSystemLike) return "mt-2";
@@ -281,6 +287,78 @@ export function taskChatItemSpacingClass(
   if (item.kind === "interaction" || previousItem.kind === "interaction")
     return "mt-4";
   return "mt-6";
+}
+
+function isMediaTileItem(item: TaskChatItem): boolean {
+  return (
+    item.kind === "protocol" &&
+    item.surface === "resource" &&
+    item.resourceKind === "deliverable" &&
+    item.workProduct !== undefined &&
+    isMediaWorkProduct(item.workProduct)
+  );
+}
+
+/** Consecutive image and video deliverables share one two-column grid. */
+/** "Today", "Yesterday", "29 Sept" or, in another year, "2 Oct 2025": the reader's calendar. */
+export function chatDayLabel(iso: string, now: Date = new Date()): string {
+  const group = taskDateGroup(iso, now);
+  if (group !== "earlier") return taskDateGroupLabels[group];
+  const date = new Date(iso);
+  return date.getFullYear() === now.getFullYear()
+    ? formatShortDate(date)
+    : date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** When an item happened, if it knows: a run row borrows its reply's or live status's time. */
+function itemTimeIso(item: TaskChatItem): string | undefined {
+  switch (item.kind) {
+    case "message":
+    case "marker":
+      return item.createdAtIso;
+    case "interaction":
+      return item.interaction.createdAt ? new Date(item.interaction.createdAt).toISOString() : undefined;
+    case "turn":
+      return item.finalResponse?.createdAtIso
+        ?? (item.liveStatus?.startedAtMs ? new Date(item.liveStatus.startedAtMs).toISOString() : undefined);
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The day label to draw before each group, keyed by the group's first item.
+ * Groups with no known time are skipped; a thread that is all today gets no label.
+ */
+export function chatDaySeparators<T extends { item: TaskChatItem }>(
+  groups: Array<{ entries: T[] }>,
+  now: Date = new Date(),
+): Map<T, string> {
+  const labels = new Map<T, string>();
+  let previousDay: string | null = null;
+  for (const group of groups) {
+    const iso = group.entries.map((entry) => itemTimeIso(entry.item)).find(Boolean);
+    if (!iso || Number.isNaN(new Date(iso).getTime())) continue;
+    const day = new Date(iso).toDateString();
+    if (day === previousDay) continue;
+    const label = chatDayLabel(iso, now);
+    if (previousDay !== null || label !== taskDateGroupLabels.today) labels.set(group.entries[0]!, label);
+    previousDay = day;
+  }
+  return labels;
+}
+
+export function groupConsecutiveMedia<T extends { item: TaskChatItem }>(entries: T[]) {
+  const groups: Array<{ media: boolean; entries: T[]; previous: TaskChatItem | null }> = [];
+  let previous: TaskChatItem | null = null;
+  for (const entry of entries) {
+    const media = isMediaTileItem(entry.item);
+    const last = groups[groups.length - 1];
+    if (media && last?.media) last.entries.push(entry);
+    else groups.push({ media, entries: [entry], previous });
+    previous = entry.item;
+  }
+  return groups;
 }
 
 /**
@@ -348,29 +426,64 @@ export function TaskChatThreadView({
           }))
           .filter((entry) => entry.content !== null)
       : [];
+    const renderStreamlinedEntry = (
+      { item, content }: (typeof renderedItems)[number],
+      className: string | undefined,
+    ) => (
+      <div
+        key={item.kind === "message" ? (item.renderKey ?? item.id) : item.id}
+        data-thread-anchor={item.kind === "message" ? (item.renderKey ?? item.id) : item.id}
+        id={item.kind === "message" ? `comment-${item.id}` : undefined}
+        className={className}
+        data-thread-item-kind={item.kind === "message" ? item.author : item.kind}
+      >
+        {content}
+      </div>
+    );
     return (
       <>
         {streamlined
-          ? renderedItems.map(({ item, content }, index) => (
-              <div
-                key={
-                  item.kind === "message" ? (item.renderKey ?? item.id) : item.id
-                }
-                data-thread-anchor={
-                  item.kind === "message" ? (item.renderKey ?? item.id) : item.id
-                }
-                id={item.kind === "message" ? `comment-${item.id}` : undefined}
-                className={taskChatItemSpacingClass(
-                  item,
-                  renderedItems[index - 1]?.item ?? null,
-                )}
-                data-thread-item-kind={
-                  item.kind === "message" ? item.author : item.kind
-                }
-              >
-                {content}
-              </div>
-            ))
+          ? (() => {
+              const groups = groupConsecutiveMedia(renderedItems);
+              const dayLabels = chatDaySeparators(groups);
+              // Flat siblings: a message keeps its key (and its DOM) when a
+              // label appears or moves, e.g. as an optimistic bubble settles.
+              return groups.flatMap((group) => {
+                const dayLabel = dayLabels.get(group.entries[0]!);
+                const body = group.media ? (
+                <div
+                  key={`media-grid:${group.entries[0]!.item.id}`}
+                  className={cn(
+                    "grid grid-cols-2 gap-2",
+                    taskChatItemSpacingClass(group.entries[0]!.item, group.previous),
+                  )}
+                  data-testid="task-chat-media-grid"
+                >
+                  {group.entries.map((entry) => renderStreamlinedEntry(entry, "min-w-0"))}
+                </div>
+              ) : (
+                renderStreamlinedEntry(
+                  group.entries[0]!,
+                  taskChatItemSpacingClass(group.entries[0]!.item, group.previous),
+                )
+              );
+                if (!dayLabel) return [body];
+                return [
+                  <div
+                    key={`day:${group.entries[0]!.item.id}`}
+                    role="separator"
+                    aria-label={dayLabel}
+                    data-testid="task-chat-day-separator"
+                    className="mt-4 flex items-center gap-3 text-xs text-muted-foreground"
+                  >
+                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                    <span>{dayLabel}</span>
+                    <span className="h-px flex-1 bg-border" aria-hidden="true" />
+                  </div>,
+                  body,
+                ];
+              });
+            })()
           : items.map((item, index) => (
               <div
                 key={

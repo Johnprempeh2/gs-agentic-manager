@@ -43,6 +43,7 @@ import type {
   AgentPermissions,
   EmailEndpointSummary,
 } from "@greatstone/shared";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 const selectClass =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
 
@@ -200,7 +201,7 @@ export function EmailEndpointSetup() {
       <p className="text-sm text-muted-foreground">
         {lowTrust
           ? "Email tasks stay inside the configured project or root task boundary. Output is quarantined for trusted review."
-          : "Email can contain malicious instructions. We recommend Low-trust review to limit the agent’s access to GS Agentic Manager work."}
+          : `Email can contain malicious instructions. We recommend Low-trust review to limit the agent’s access to ${CLIENT_BRAND_NAME} work.`}
       </p>
       <p className="text-xs text-muted-foreground">Low-trust execution also requires isolated workspaces and an active sandbox environment in the agent’s runtime settings.</p>
       <Button
@@ -429,7 +430,7 @@ export function EmailEndpointSetup() {
                     >
                       {i.inbox_id}
                       {inboxes.data?.some((e) => e.address === i.inbox_id)
-                        ? " — already assigned"
+                        ? " (already assigned)"
                         : ""}
                     </option>
                   ))}
@@ -475,10 +476,10 @@ export function EmailEndpointSetup() {
                   className={selectClass}
                 >
                   <option value="websocket">
-                    Live connection — works locally
+                    Live connection (works locally)
                   </option>
                   <option value="webhook">
-                    Webhook — requires public HTTPS
+                    Webhook (requires public HTTPS)
                   </option>
                 </select>
               </div>
@@ -565,7 +566,7 @@ export function EmailEndpointSetup() {
         </p>
       )}
       <Dialog open={trustOpen} onOpenChange={setTrustOpen}>
-        <DialogContent className="max-h-screen overflow-y-auto sm:max-w-2xl">
+        <DialogContent scrollBody className="max-h-screen sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Trust settings · {chosen?.name}</DialogTitle>
             <DialogDescription>
@@ -589,7 +590,7 @@ export function EmailEndpointSetup() {
             candidatesLoading={projects.isPending || boundaryIssues.isPending}
           />
           <p className="text-xs text-muted-foreground">
-            Low trust limits GS Agentic Manager access; it does not sandbox the runtime.
+            Low trust limits {CLIENT_BRAND_NAME} access; it does not sandbox the runtime.
             Review filesystem, tool, and secret access separately.
           </p>
           {(trust.error || projects.error || boundaryIssues.error) && (

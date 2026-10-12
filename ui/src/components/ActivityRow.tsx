@@ -37,11 +37,14 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
     ? (event.details as Record<string, unknown> | null)?.agentId as string | undefined
     : undefined;
 
+  // The company activity list names tasks itself, so a task outside the
+  // loaded maps still reads "on GRE-12 Title" instead of a dangling "on".
   const name = isHeartbeatEvent
     ? (heartbeatAgentId ? entityNameMap.get(`agent:${heartbeatAgentId}`) : null)
-    : entityNameMap.get(`${event.entityType}:${event.entityId}`);
+    : entityNameMap.get(`${event.entityType}:${event.entityId}`) ?? event.issueIdentifier ?? undefined;
 
   const entityTitle = entityTitleMap?.get(`${event.entityType}:${event.entityId}`)
+    ?? event.issueTitle
     ?? (event.entityType === "issue" && typeof event.details?.issueTitle === "string" ? event.details.issueTitle : undefined);
 
   const link = isHeartbeatEvent && heartbeatAgentId
@@ -53,8 +56,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
   const actorName = actor?.name ?? (event.actorType === "system" ? "System" : userProfile?.label ?? (event.actorType === "user" ? "Board" : event.actorId || "Unknown"));
   const actorAvatarUrl = userProfile?.image ?? null;
 
-  const inner = (
-    <div className="space-y-2">
+  const header = (
       <div className="flex items-start gap-2 @xl:grid @xl:grid-cols-(--dashboard-activity-list-columns) @xl:items-baseline">
         {event.actorType === "agent" ? (
           <AgentAvatar agent={actor} name={actorName} size={24} className="@xl:self-center" />
@@ -76,7 +78,7 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
               ) : (
                 <span className="min-w-0 flex-1 truncate">
                   {name && <span className="font-medium">{name}</span>}
-                  {entityTitle && <span className="text-muted-foreground"> — {entityTitle}</span>}
+                  {entityTitle && <span className="text-muted-foreground">: {entityTitle}</span>}
                 </span>
               )}
             </p>
@@ -91,27 +93,25 @@ export function ActivityRow({ event, agentMap, userProfileMap, entityNameMap, en
           </div>
         </div>
       </div>
-      <IssueReferenceActivitySummary event={event} />
-    </div>
   );
 
   const classes = cn(
     "dashboard-list-row text-sm",
-    link && "cursor-pointer hover:bg-accent/50 transition-colors",
+    // The row link stretches over the whole row; the chip links sit above it.
+    link && "relative cursor-pointer hover:bg-accent/50 transition-colors [&_a:not([data-row-link])]:relative [&_a:not([data-row-link])]:z-raised",
     className,
   );
 
-  if (link) {
-    return (
-      <Link to={link} className={cn(classes, "no-underline text-inherit block")}>
-        {inner}
-      </Link>
-    );
-  }
-
+  // The reference chips are links themselves, so they sit beside the row
+  // link rather than inside it (an <a> inside an <a> is invalid HTML).
   return (
-    <div className={classes}>
-      {inner}
+    <div className={cn(classes, "space-y-2")}>
+      {link ? (
+        <Link to={link} data-row-link className="no-underline text-inherit block after:absolute after:inset-0">
+          {header}
+        </Link>
+      ) : header}
+      <IssueReferenceActivitySummary event={event} />
     </div>
   );
 }

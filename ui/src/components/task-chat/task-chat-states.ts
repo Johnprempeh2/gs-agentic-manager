@@ -15,6 +15,7 @@
 export const TASK_CHAT_STATES = [
   "session-start",
   "human-message",
+  "team-messages",
   "agent-message",
   "thinking",
   "responding",
@@ -61,6 +62,13 @@ export const TASK_CHAT_STATE_META: Record<TaskChatStateId, TaskChatStateMeta> = 
     tier: "live",
     surface: "thread",
     protocol: 'IssueComment authorType:"user"',
+  },
+  "team-messages": {
+    id: "team-messages",
+    label: "Team messages",
+    tier: "live",
+    surface: "thread",
+    protocol: 'IssueComment authorType:"user" authorUserId≠viewer',
   },
   "agent-message": {
     id: "agent-message",

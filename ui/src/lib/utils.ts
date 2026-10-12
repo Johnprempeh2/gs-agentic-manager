@@ -1,7 +1,15 @@
 import { type ClassValue, clsx } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
 import { deriveAgentUrlKey, deriveProjectUrlKey, normalizeProjectUrlKey, hasNonAsciiContent } from "@greatstone/shared";
 import type { BillingType, FinanceDirection, FinanceEventKind } from "@greatstone/shared";
+
+/** Named stacking layers from `--z-index-*` in index.css, lowest first. */
+export const Z_LAYERS = ["page", "raised", "sticky", "chrome", "drawer", "dialog", "popover", "toast", "top"] as const;
+
+// Teach tailwind-merge the named layers so `cn("z-dialog", "z-popover")` keeps the last one.
+const twMerge = extendTailwindMerge({
+  extend: { classGroups: { z: [{ z: [...Z_LAYERS] }] } },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -34,11 +42,11 @@ export function asFiniteNumber(value: unknown, fallback: number) {
 }
 
 export function formatCents(cents: number): string {
-  return `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `$${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 export function formatNumber(n: number): string {
-  return n.toLocaleString("en-US");
+  return n.toLocaleString("en-GB");
 }
 
 /**
@@ -51,7 +59,7 @@ export function formatProjectBudget(budget: { amountCents: number; windowKind: s
 }
 
 export function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-US", {
+  return new Date(date).toLocaleDateString("en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -62,7 +70,7 @@ export function formatDateTime(
   date: Date | string,
   options: { includeSeconds?: boolean } = {},
 ): string {
-  return new Date(date).toLocaleString("en-US", {
+  return new Date(date).toLocaleString("en-GB", {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -73,9 +81,32 @@ export function formatDateTime(
 }
 
 export function formatShortDate(date: Date | string): string {
-  return new Date(date).toLocaleString("en-US", {
+  return new Date(date).toLocaleString("en-GB", {
     month: "short",
     day: "numeric",
+  });
+}
+
+/**
+ * A `YYYY-MM-DD` calendar day, e.g. `9 Oct` or `9 Oct 2026`. Read in UTC so
+ * the label never shifts a day with the viewer's time zone.
+ */
+export function formatCalendarDay(day: string, options: { includeYear?: boolean } = {}): string {
+  const [year, month, date] = day.split("-").map(Number);
+  return new Date(Date.UTC(year!, (month ?? 1) - 1, date ?? 1)).toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(options.includeYear ? { year: "numeric" as const } : {}),
+    timeZone: "UTC",
+  });
+}
+
+/** 24-hour clock time with seconds, e.g. `13:02:54`. */
+export function formatTime(date: Date | string): string {
+  return new Date(date).toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 }
 

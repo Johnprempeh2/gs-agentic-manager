@@ -88,7 +88,7 @@ describe("logSandboxProbeDiagnostic", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     logSandboxProbeDiagnostic("probe failed", "auth_required");
     expect(warnSpy).toHaveBeenCalledTimes(1);
-    expect(warnSpy).toHaveBeenCalledWith("[paperclip] probe failed", {
+    expect(warnSpy).toHaveBeenCalledWith("[gsam] probe failed", {
       classification: "auth_required",
     });
     warnSpy.mockRestore();
@@ -97,7 +97,7 @@ describe("logSandboxProbeDiagnostic", () => {
   it("adds a finite exit code as a structured field", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     logSandboxProbeDiagnostic("probe failed", "nonzero_exit", { exitCode: 3 });
-    expect(warnSpy).toHaveBeenCalledWith("[paperclip] probe failed", {
+    expect(warnSpy).toHaveBeenCalledWith("[gsam] probe failed", {
       classification: "nonzero_exit",
       exitCode: 3,
     });

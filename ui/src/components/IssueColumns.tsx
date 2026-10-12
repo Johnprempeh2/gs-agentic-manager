@@ -21,6 +21,7 @@ import { cn } from "../lib/utils";
 import { timeAgo } from "../lib/timeAgo";
 import { Identity } from "./Identity";
 import { StatusIcon } from "./StatusIcon";
+import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { Badge } from "@/components/ui/badge";
 
 export const issueTrailingColumns: InboxIssueColumn[] = ["assignee", "kickedOffBy", "project", "workspace", "parent", "labels", "updated"];
@@ -112,7 +113,8 @@ export function IssueColumnPicker({
           type="button"
           variant={iconOnly ? "outline" : "ghost"}
           size={iconOnly ? "icon" : "sm"}
-          className={iconOnly ? "h-8 w-8 shrink-0" : "hidden h-8 shrink-0 px-2 text-xs sm:inline-flex"}
+          // Desktop task rows only: phones use the stacked row, so no column picker there.
+          className={iconOnly ? "h-8 w-8 shrink-0 max-sm:hidden" : "hidden h-8 shrink-0 px-2 text-xs sm:inline-flex"}
           title="Columns"
         >
           <Columns3 className={iconOnly ? "h-3.5 w-3.5" : "mr-1 h-3.5 w-3.5"} />
@@ -202,7 +204,7 @@ export function InboxIssueMetaLeading({
     <>
       {showStatus ? (
         <span className="hidden shrink-0 items-center sm:inline-flex">
-          {statusSlot ?? <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} />}
+          {statusSlot ?? <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} />}
         </span>
       ) : null}
       {checklistStepNumber !== null ? (

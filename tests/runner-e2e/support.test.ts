@@ -907,6 +907,32 @@ describe("runner E2E server isolation", () => {
     ).not.toThrow();
   });
 
+  it("keeps the launching agent's live run context out of the GS Agentic Manager process", () => {
+    const live = {
+      GSAM_API_URL: "http://127.0.0.1:3100/api",
+      GSAM_AGENT_ID: "live-agent",
+      GSAM_COMPANY_ID: "live-company",
+      GSAM_RUN_ID: "live-run",
+      GSAM_TASK_ID: "live-task",
+      GSAM_WAKE_REASON: "issue_assigned",
+      GSAM_GIT_TOKEN: "live-git-token",
+      GSAM_GITHUB_BROKER_TOKEN: "live-broker-token",
+      GSAM_WORKSPACE_CWD: "/live/worktree",
+      GSAM_RUNNER_NETWORK_ACCESS: "live",
+      GSAM_RUN_SCRATCH_DIR: "/live/scratch",
+    };
+    const env = buildPaperclipServerEnvironment({
+      ...live,
+      GSAM_RUNNER_API_TOOLS_ENABLED: "true",
+      GSAM_RUNNER_BINARY: "/tmp/cell/runner",
+      GSAM_VITE_CACHE_DIR: "/tmp/cell/vite",
+    });
+    for (const key of Object.keys(live)) expect(env[key], key).toBeUndefined();
+    expect(env.GSAM_RUNNER_API_TOOLS_ENABLED).toBe("true");
+    expect(env.GSAM_RUNNER_BINARY).toBe("/tmp/cell/runner");
+    expect(env.GSAM_VITE_CACHE_DIR).toBe("/tmp/cell/vite");
+  });
+
   it("uses absolute repository paths for the Playwright web server", () => {
     const command = runnerE2EWebServerCommand("/workspace/paperclip");
     expect(command).toContain(

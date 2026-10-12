@@ -57,8 +57,8 @@ export function MyUserSecretsTab({ companyId }: { companyId: string }) {
       <div className="flex items-start gap-2 rounded-md border border-violet-500/30 bg-violet-500/5 px-4 py-3 text-xs text-violet-800 dark:text-violet-200">
         <UserRound className="h-4 w-4 mt-0.5 shrink-0" />
         <p>
-          These are credentials only you provide. Each value is yours alone — used when you are the
-          user responsible for a run — and is never shown back to anyone, including admins.
+          These are credentials only you provide. Each value is yours alone (used when you are the
+          user responsible for a run) and is never shown back to anyone, including admins.
           {missingCount > 0 ? (
             <span className="font-medium">
               {" "}

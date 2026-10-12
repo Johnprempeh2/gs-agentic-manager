@@ -11,6 +11,24 @@ import {
 } from "../redaction.js";
 
 describe("redaction", () => {
+  it("keeps Office MIME types visible on approval cards but still redacts JWTs (GRE-809)", () => {
+    const docx =
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const pptx =
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+    expect(redactSensitiveText(docx)).toBe(docx);
+    expect(redactSensitiveText(pptx)).toBe(pptx);
+    expect(
+      sanitizeRecord({ attachments: [{ filename: "a.docx", mimeType: docx }] }),
+    ).toEqual({ attachments: [{ filename: "a.docx", mimeType: docx }] });
+
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huIn0.c2lnbmF0dXJlLXZhbHVl";
+    expect(redactSensitiveText(`sent ${docx} with ${jwt}`)).toBe(
+      `sent ${docx} with ${REDACTED_EVENT_VALUE}`,
+    );
+  });
+
   it("keeps the discriminator allowlist in exact PRP v1 schema parity", () => {
     const schema = JSON.parse(
       readFileSync(

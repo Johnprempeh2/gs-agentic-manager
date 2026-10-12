@@ -104,6 +104,7 @@ export function releaseProgressFixture(
     targetTitle: "Release from the app",
     state,
     waitingForFlaggedRuns: state === "holding" ? 1 : null,
+    waitingForAcpRuns: state === "holding" ? 0 : null,
     overridden: false,
     reason: state === "rolled_back" ? "Live did not answer its health check within 2 minutes." : null,
     restartReport: state === "healthy" ? restartReportFixture() : null,

@@ -5763,6 +5763,40 @@ describe("native session same-turn steering", () => {
     state.release?.();
     await running;
   });
+
+  it("bounds a stuck runtime probe and never dispatches after the deadline", async () => {
+    // The route calls this while it holds the issue row lock and a pooled
+    // connection, so the runtime probe must sit inside the same deadline.
+    const { running } = await startActiveSession();
+    let finishSnapshot!: (value: { activeTurnId: string }) => void;
+    snapshot.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSnapshot = resolve;
+      }),
+    );
+
+    const error = await steerNativeSession({
+      runId: execution.binding.runId,
+      message: "Do not deliver late",
+      correlationId: "queued-comment-stuck-probe",
+      timeoutMs: 5,
+    }).catch((value) => value);
+    // Nothing was dispatched, so this is a definite failure: the caller can
+    // release the identity reservation and keep the message queued.
+    expect(error).toBeInstanceOf(NativeSessionSteeringError);
+    expect(error.code).toBe("steering_temporarily_unavailable");
+    const probeOptions = snapshot.mock.calls.at(-1)?.[0] as
+      | { signal?: AbortSignal }
+      | undefined;
+    expect(probeOptions?.signal?.aborted).toBe(true);
+
+    finishSnapshot({ activeTurnId: "provider-turn-1" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(steer).not.toHaveBeenCalled();
+
+    state.release?.();
+    await running;
+  });
 });
 
 describe("native warm session supervision", () => {

@@ -914,6 +914,7 @@ const categoryBySlug = {
   embat: "commerce",
   fireflies: "productivity",
   "hugging-face": "ai",
+  higgsfield: "ai",
   jira: "productivity",
   kernel: "developer",
   "local-falcon": "analytics",
@@ -1471,7 +1472,7 @@ for (const entry of researchManifest.entries) {
     schemaVersion: 1,
     slug: entry.slug,
     name: entry.name,
-    description: ({ mem0: "Remember preferences, conversations, events, and agent state.", zep: "Retrieve temporal graph memory and authorized business context.", supermemory: "Search and save shared memories, documents, and profiles.", honcho: "Remember conversations and retrieve context about peers." })[entry.slug] ?? (entry.slug === "fireflies"
+    description: ({ mem0: "Remember preferences, conversations, events, and agent state.", zep: "Retrieve temporal graph memory and authorized business context.", supermemory: "Search and save shared memories, documents, and profiles.", honcho: "Remember conversations and retrieve context about peers.", higgsfield: "Generate images and videos with Higgsfield. Each generation uses your Higgsfield credits." })[entry.slug] ?? (entry.slug === "fireflies"
       ? "Search meeting transcripts, read summaries and action items, and connect meeting-ready routines."
       : `Connect ${entry.name}'s provider-hosted MCP server.`),
     categories: [categoryBySlug[entry.slug] ?? "other"],

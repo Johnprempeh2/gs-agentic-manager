@@ -230,7 +230,7 @@ export function PipelineItemBodyDocument({
         await caseDocumentQuery.refetch();
         pushToast({
           title: "Body changed elsewhere",
-          body: "This item body was updated by someone else. Reloaded the latest — re-apply your edit.",
+          body: "This item body was updated by someone else. Reloaded the latest. Re-apply your edit.",
           tone: "error",
         });
         return;
@@ -389,7 +389,7 @@ export function PipelineItemBodyDocument({
         className="relative min-w-0"
         data-testid="pipeline-item-body-unlinked"
       >
-        <div className="relative z-(--z-1)">{renderReadOnlyBody(displayedBody)}</div>
+        <div className="relative z-raised">{renderReadOnlyBody(displayedBody)}</div>
         <DocumentAnnotationLayer
           containerRef={containerRef}
           markdown={displayedBody}

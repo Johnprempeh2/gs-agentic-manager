@@ -478,6 +478,29 @@ describeEmbeddedPostgres("generic remote MCP connections", () => {
     }
   });
 
+  it("signs Higgsfield in directly with dynamic client registration and this instance's callback", async () => {
+    const method = APP_DEFINITIONS.find((app) => app.slug === "higgsfield")!.methods.find((entry) => entry.key === "mcp-oauth")!;
+    expect(method.defaults!.serverUrl).toBe("https://mcp.higgsfield.ai/mcp");
+    const originalUrl = method.defaults!.serverUrl;
+    method.defaults!.serverUrl = MCP_URL;
+    try {
+      const fixture = installMcpOAuthFixture({ auth: "oauth" });
+      const company = await createCompany(db);
+      const service = toolAccessService(db, { paperclipCloudConnector: null });
+      const connected = await service.connectGalleryApp(company.id, { galleryKey: "higgsfield", connectionMethodKey: "mcp-oauth" });
+      const actor = { actorType: "user" as const, actorId: "board-user" };
+      const start = await service.startOAuth(company.id, connected.connectionId, { redirectUri: REDIRECT_URI, actor });
+      expect(start.registrationSource).toBe("dcr");
+      expect(start.issuer).toBe(ISSUER);
+      expect(start.authorizationUrl.startsWith(`${ISSUER}/authorize`)).toBe(true);
+      expect(fixture.requestsTo("/register")[0]!.body).toMatchObject({ redirect_uris: [REDIRECT_URI] });
+      const completed = await service.completeOAuthCallback({ state: new URL(start.authorizationUrl).searchParams.get("state")!, code: fixture.issueAuthorizationCode(start.authorizationUrl), iss: ISSUER, redirectUri: REDIRECT_URI, actor });
+      expect(completed.connection).toMatchObject({ id: connected.connectionId, status: "active" });
+    } finally {
+      method.defaults!.serverUrl = originalUrl;
+    }
+  });
+
   it("discovers every tool for a public unknown endpoint without activating the draft", async () => {
     installMcpOAuthFixture({ auth: "public" });
     const company = await createCompany(db);

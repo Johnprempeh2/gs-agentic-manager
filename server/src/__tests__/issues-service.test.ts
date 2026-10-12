@@ -487,6 +487,61 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     ]);
   });
 
+  // GRE-356: answering a decision logs activity but is not a read, so the
+  // agent's asking comment kept the user's task unread until the answer
+  // route marks it read.
+  it("keeps an answered decision unread until it is marked read, then only new comments make it unread", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const issueId = randomUUID();
+    const userId = "board-user";
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Approve the onboarding plan",
+      status: "in_progress",
+      priority: "medium",
+      createdByUserId: userId,
+      createdAt: new Date(Date.now() - 120_000),
+    });
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      body: "Please approve the plan.",
+      createdAt: new Date(Date.now() - 60_000),
+    });
+    await db.insert(activityLog).values({
+      companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "issue.thread_interaction_accepted",
+      entityType: "issue",
+      entityId: issueId,
+    });
+
+    await expect(svc.list(companyId, { touchedByUserId: userId })).resolves.toEqual([
+      expect.objectContaining({ id: issueId, isUnreadForMe: true }),
+    ]);
+
+    await svc.markRead(companyId, issueId, userId, new Date());
+
+    await expect(svc.list(companyId, { touchedByUserId: userId })).resolves.toEqual([
+      expect.objectContaining({ id: issueId, isUnreadForMe: false }),
+    ]);
+    await expect(svc.list(companyId, { unreadForUserId: userId })).resolves.toEqual([]);
+
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      body: "Plan approved, starting now.",
+      createdAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(svc.list(companyId, { unreadForUserId: userId })).resolves.toEqual([
+      expect.objectContaining({ id: issueId }),
+    ]);
+  });
+
   function agentRow(companyId: string, input: {
     id: string;
     name: string;
@@ -2713,8 +2768,12 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
       type: "blocks",
     });
 
+    // GRE-403: blocked rows carry their blockers even without includeBlockedBy.
     const defaultResult = await svc.list(companyId);
-    expect(defaultResult.find((issue) => issue.id === blockedId)?.blockedBy).toBeUndefined();
+    expect(defaultResult.find((issue) => issue.id === blockedId)?.blockedBy).toEqual([
+      expect.objectContaining({ id: blockerId }),
+    ]);
+    expect(defaultResult.find((issue) => issue.id === unblockedId)?.blockedBy).toBeUndefined();
 
     const result = await svc.list(companyId, { includeBlockedBy: true });
     const byId = new Map(result.map((issue) => [issue.id, issue]));
@@ -2730,6 +2789,113 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     ]);
     expect(byId.get(blockerId)?.blockedBy).toEqual([]);
     expect(byId.get(unblockedId)?.blockedBy).toEqual([]);
+  });
+
+  // GRE-403: list rows carry what they need to say why a task stopped.
+  it("adds the latest finished run, scheduled retry and blocker owners to list rows", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const noRunsId = randomUUID();
+    const failedId = randomUUID();
+    const blockerId = randomUUID();
+    const blockedId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Ridge",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(issues).values([
+      { id: noRunsId, companyId, title: "Never ran", status: "todo", priority: "medium" },
+      { id: failedId, companyId, title: "Last run failed", status: "todo", priority: "medium" },
+      {
+        id: blockerId,
+        companyId,
+        title: "Blocker",
+        status: "in_progress",
+        priority: "high",
+        assigneeAgentId: agentId,
+      },
+      { id: blockedId, companyId, title: "Waiting", status: "blocked", priority: "medium" },
+    ]);
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId: blockerId,
+      relatedIssueId: blockedId,
+      type: "blocks",
+    });
+
+    const failedRunId = randomUUID();
+    await db.insert(heartbeatRuns).values([
+      {
+        id: randomUUID(),
+        companyId,
+        agentId,
+        status: "succeeded",
+        contextSnapshot: { issueId: failedId },
+        startedAt: new Date("2026-10-01T09:00:00.000Z"),
+        finishedAt: new Date("2026-10-01T09:10:00.000Z"),
+      },
+      {
+        id: failedRunId,
+        companyId,
+        agentId,
+        status: "failed",
+        errorCode: "claude_auth_required",
+        contextSnapshot: { issueId: failedId },
+        startedAt: new Date("2026-10-01T10:00:00.000Z"),
+        finishedAt: new Date("2026-10-01T10:05:00.000Z"),
+      },
+      {
+        // Still waiting: not finished, so it is the retry, not the latest run.
+        id: randomUUID(),
+        companyId,
+        agentId,
+        status: "scheduled_retry",
+        retryOfRunId: failedRunId,
+        scheduledRetryAt: new Date("2026-10-01T10:40:00.000Z"),
+        scheduledRetryAttempt: 1,
+        scheduledRetryReason: "transient_failure",
+        contextSnapshot: { issueId: failedId },
+      },
+    ]);
+
+    const byId = new Map((await svc.list(companyId)).map((issue) => [issue.id, issue]));
+
+    expect(byId.get(noRunsId)?.latestRun).toBeNull();
+    expect(byId.get(noRunsId)?.scheduledRetry).toBeNull();
+
+    expect(byId.get(failedId)?.latestRun).toEqual({
+      status: "failed",
+      errorCode: "claude_auth_required",
+      finishedAt: new Date("2026-10-01T10:05:00.000Z"),
+    });
+    expect(byId.get(failedId)?.scheduledRetry).toEqual(
+      expect.objectContaining({
+        status: "scheduled_retry",
+        agentId,
+        agentName: "Ridge",
+        retryOfRunId: failedRunId,
+        scheduledRetryAttempt: 1,
+      }),
+    );
+
+    expect(byId.get(blockedId)?.blockedBy).toEqual([
+      expect.objectContaining({ id: blockerId, assigneeAgentId: agentId, assigneeUserId: null }),
+    ]);
+    expect(byId.get(failedId)?.blockedBy).toBeUndefined();
   });
 
   it("includes blocks summaries (issues this one blocks) when includeBlocks is set", async () => {
@@ -7286,5 +7452,176 @@ describeEmbeddedPostgres("issueService.addComment createdByRunId", () => {
       .from(issueComments)
       .where(eq(issueComments.createdByRunId, runId));
     expect(duplicates).toHaveLength(1);
+  });
+});
+
+// `update` joins the caller's transaction when one is passed. Every read it
+// makes must go through that transaction: a read through the outer pool needs a
+// second connection while the caller holds the first, and enough concurrent
+// callers (one per pool slot) leave every connection idle in transaction for
+// good. A one-connection pool turns that into a deterministic hang.
+describeEmbeddedPostgres("issueService.update on a single pooled connection", () => {
+  let db!: ReturnType<typeof createDb>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let companyId!: string;
+  let agentId!: string;
+  let projectId!: string;
+  let projectWorkspaceId!: string;
+  let executionWorkspaceId!: string;
+  const memberUserId = "single-connection-member";
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issues-update-single-connection-");
+    db = createDb(tempDb.connectionString);
+    companyId = randomUUID();
+    agentId = randomUUID();
+    projectId = randomUUID();
+    projectWorkspaceId = randomUUID();
+    executionWorkspaceId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `S${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "SingleConnectionAgent",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(companyMemberships).values({
+      companyId,
+      principalType: "user",
+      principalId: memberUserId,
+      status: "active",
+      membershipRole: "member",
+    });
+    await db.insert(projects).values({
+      id: projectId,
+      companyId,
+      name: "Single-connection project",
+      status: "in_progress",
+    });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Single-connection project workspace",
+      sourceType: "local_path",
+      visibility: "default",
+      isPrimary: false,
+    });
+    await db.insert(executionWorkspaces).values({
+      id: executionWorkspaceId,
+      companyId,
+      projectId,
+      projectWorkspaceId,
+      mode: "shared_workspace",
+      strategyType: "project_primary",
+      name: "Single-connection execution workspace",
+      status: "active",
+      providerType: "local_fs",
+    });
+  }, 20_000);
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  async function seedIssue(values: Partial<typeof issues.$inferInsert> = {}) {
+    const [issue] = await db
+      .insert(issues)
+      .values({
+        companyId,
+        title: "Single-connection update",
+        status: "todo",
+        priority: "medium",
+        ...values,
+      })
+      .returning();
+    return issue!;
+  }
+
+  async function inTransactionOnSingleConnection<T>(
+    work: (
+      svc: ReturnType<typeof issueService>,
+      tx: Parameters<Parameters<ReturnType<typeof createDb>["transaction"]>[0]>[0],
+    ) => Promise<T>,
+  ) {
+    const singleDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const singleSvc = issueService(singleDb);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        singleDb.transaction((tx) => work(singleSvc, tx)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("issue update waited for a second pooled connection")),
+            10_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      // Ends a stuck transaction too, so later tests are not blocked by its
+      // row locks.
+      await singleDb.$client.end({ timeout: 1 });
+    }
+  }
+
+  it("changes status", async () => {
+    const issue = await seedIssue({ assigneeAgentId: agentId });
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { status: "blocked" }, tx),
+    );
+
+    expect(updated?.status).toBe("blocked");
+  });
+
+  it("assigns a member user", async () => {
+    const issue = await seedIssue({ assigneeAgentId: agentId });
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { assigneeAgentId: null, assigneeUserId: memberUserId }, tx),
+    );
+
+    expect(updated).toMatchObject({ assigneeAgentId: null, assigneeUserId: memberUserId });
+  });
+
+  it.each([
+    ["a project and both workspaces", { withProject: true, withProjectWorkspace: true }],
+    ["a project workspace and no project", { withProject: false, withProjectWorkspace: true }],
+    ["an execution workspace and no project", { withProject: false, withProjectWorkspace: false }],
+  ])("validates the workspaces of an issue with %s", async (_label, shape) => {
+    const issue = await seedIssue({
+      projectId: shape.withProject ? projectId : null,
+      projectWorkspaceId: shape.withProjectWorkspace ? projectWorkspaceId : null,
+      executionWorkspaceId,
+    });
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { title: "Renamed on one connection" }, tx),
+    );
+
+    expect(updated).toMatchObject({ title: "Renamed on one connection", projectId });
+  });
+
+  it("completes an issue for a user", async () => {
+    const issue = await seedIssue({ assigneeUserId: memberUserId });
+    const publications: Parameters<ReturnType<typeof issueService>["update"]>[3] = [];
+
+    const updated = await inTransactionOnSingleConnection((svc, tx) =>
+      svc.update(issue.id, { status: "done", actorUserId: memberUserId }, tx, publications, []),
+    );
+
+    expect(updated?.status).toBe("done");
+    expect(publications).toHaveLength(1);
   });
 });

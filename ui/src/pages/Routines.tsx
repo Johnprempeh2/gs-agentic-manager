@@ -36,7 +36,7 @@ import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/Rout
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Select,
@@ -995,10 +995,10 @@ export function Routines() {
         >
           <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-border/60 px-5 py-3">
             <div>
-              <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">New routine</p>
-              <p className="text-sm text-muted-foreground">
+              <DialogTitle className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">New routine</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
                 Define the recurring work first. Default project and agent are optional for draft routines.
-              </p>
+              </DialogDescription>
             </div>
             <Button
               variant="ghost"

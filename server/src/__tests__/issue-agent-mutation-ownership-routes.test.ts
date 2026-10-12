@@ -32,6 +32,7 @@ const mockIssueService = vi.hoisted(() => ({
   listAttachments: vi.fn(),
   listComments: vi.fn(),
   listWakeableBlockedDependents: vi.fn(),
+  listOpenBlockedDependents: vi.fn(async () => []),
   remove: vi.fn(),
   removeAttachment: vi.fn(),
   update: vi.fn(),
@@ -223,6 +224,9 @@ function registerRouteMocks() {
     ISSUE_LIST_MAX_LIMIT: 500,
     accessService: () => mockAccessService,
     agentService: () => mockAgentService,
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     budgetService: () => mockBudgetService,
     clampIssueListLimit: (value: number) => Math.min(Math.max(value, 1), 500),
     companySkillService: () => ({
@@ -517,6 +521,7 @@ describe("agent issue mutation checkout ownership", () => {
     mockIssueService.getDependencyReadiness.mockResolvedValue({
       blockerIssueIds: [],
       isDependencyReady: false,
+      unresolvedBlockerIssueIds: [],
       unresolvedBlockerCount: 0,
     });
     mockIssueService.getRelationSummaries.mockReset();
@@ -1361,6 +1366,106 @@ describe("agent issue mutation checkout ownership", () => {
         inheritExecutionWorkspaceFromIssueId: issueId,
       }),
     );
+  });
+
+  describe("run workspace inheritance by assignee (GRE-838)", () => {
+    const runWorkspaceDb = () =>
+      createRunContextDb({
+        issueId,
+        executionWorkspaceId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      });
+    const resolveAssignee = (agentId: string) =>
+      mockAgentService.resolveByReference.mockResolvedValue({
+        ambiguous: false,
+        agent: makeAgent(agentId),
+      });
+
+    it("does not bind a task for another agent to the creator's run workspace", async () => {
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({
+          title: "Work for a peer",
+          projectId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+          assigneeAgentId: peerAgentId,
+        });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({ title: "Work for a peer", assigneeAgentId: peerAgentId }),
+      );
+      expect(mockIssueService.create.mock.calls[0]?.[1]).not.toHaveProperty(
+        "inheritExecutionWorkspaceFromIssueId",
+      );
+    });
+
+    it("keeps the run issue's project, but not its workspace, for a task for another agent (GRE-845)", async () => {
+      const runProjectId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+      mockIssueService.getById.mockResolvedValue(makeIssue({ projectId: runProjectId }));
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({ title: "Peer task, no project", assigneeAgentId: peerAgentId });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      const created = mockIssueService.create.mock.calls[0]?.[1];
+      expect(created).toMatchObject({ assigneeAgentId: peerAgentId, projectId: runProjectId });
+      expect(created).not.toHaveProperty("inheritExecutionWorkspaceFromIssueId");
+      expect(created).not.toHaveProperty("executionWorkspaceId");
+    });
+
+    it("keeps an explicit project over the run issue's project for a task for another agent", async () => {
+      mockIssueService.getById.mockResolvedValue(
+        makeIssue({ projectId: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" }),
+      );
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({ title: "Peer task, chosen project", projectId: null, assigneeAgentId: peerAgentId });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create.mock.calls[0]?.[1]).toMatchObject({ projectId: null });
+    });
+
+    it("keeps an explicit inherit request for a task for another agent", async () => {
+      resolveAssignee(peerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({
+          title: "Peer works in my worktree",
+          assigneeAgentId: peerAgentId,
+          inheritExecutionWorkspaceFromIssueId: issueId,
+        });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({
+          assigneeAgentId: peerAgentId,
+          inheritExecutionWorkspaceFromIssueId: issueId,
+        }),
+      );
+    });
+
+    it("still inherits the run workspace for a task the creator assigns to itself", async () => {
+      resolveAssignee(ownerAgentId);
+      const res = await request(await createApp(ownerActor(), runWorkspaceDb()))
+        .post(`/api/companies/${companyId}/issues`)
+        .send({
+          title: "Self follow-up",
+          assigneeAgentId: ownerAgentId,
+        });
+
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
+      expect(mockIssueService.create).toHaveBeenCalledWith(
+        companyId,
+        expect.objectContaining({
+          assigneeAgentId: ownerAgentId,
+          inheritExecutionWorkspaceFromIssueId: issueId,
+        }),
+      );
+    });
   });
 
   it("authorizes child creation through the shared visible-issue write path", async () => {
@@ -2422,7 +2527,7 @@ describe("agent issue mutation checkout ownership", () => {
       if (gate === "approval") mockIssueApprovalService.listApprovalsForIssue.mockResolvedValue([{ status: "pending" }]);
       if (gate === "pause") mockIssueTreeControlService.getActivePauseHoldGate.mockResolvedValue({ holdId: "hold", mode: "pause" });
       if (gate === "run") mockIssueService.getById.mockResolvedValue(makeIssue({ status: "blocked", assigneeAgentId: ownerAgentId, executionRunId: ownerRunId }));
-      if (gate === "blocker") mockIssueService.getDependencyReadiness.mockResolvedValue({ unresolvedBlockerCount: 1 });
+      if (gate === "blocker") mockIssueService.getDependencyReadiness.mockResolvedValue({ unresolvedBlockerCount: 1, unresolvedBlockerIssueIds: ["blocker-1"] });
       if (gate === "pausedAgent" || gate === "terminatedAgent") mockAgentService.getById.mockResolvedValue({ ...makeAgent(ownerAgentId), status: gate === "pausedAgent" ? "paused" : "terminated" });
       const res = await request(await createApp(boardActor())).post(`/api/issues/${issueId}/recovery-actions/resolve`)
         .send({ actionId: recoveryActionId, outcome: "restored", sourceIssueStatus: "todo" });

@@ -175,9 +175,9 @@ export function ExternalObjectRows({
 
   if (externalObjectsError) {
     return (
-      <PropertyRow label="External objects">
+      <PropertyRow label="Linked work">
         <span className="text-xs text-muted-foreground">
-          Couldn't load external objects.
+          Couldn't load linked work.
           {onRetryExternalObjects ? (
             <>
               {" "}
@@ -197,7 +197,7 @@ export function ExternalObjectRows({
 
   if (externalObjectsLoading) {
     return (
-      <PropertyRow label="External objects">
+      <PropertyRow label="Linked work">
         <span className="h-4 w-24 animate-pulse rounded bg-muted/40" />
       </PropertyRow>
     );

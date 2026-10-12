@@ -6,7 +6,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   activityLog,
   agents,
@@ -37,6 +37,7 @@ import {
   metadataHasReopenPendingConsumption,
   readExecutionWorkspaceConfig,
   readMetadataReopenPendingConsumptionSince,
+  TERMINAL_WORKTREE_REMOVED_ACTION,
 } from "../services/execution-workspaces.ts";
 import { issueService } from "../services/issues.ts";
 import {
@@ -245,6 +246,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   let svc!: ReturnType<typeof executionWorkspaceService>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
   const tempDirs = new Set<string>();
+  let worktreePatchDir!: string;
   const pullRequestDetailsByKey = new Map<string, {
     state: "merged" | "open" | "unknown";
     headRef: string | null;
@@ -254,7 +256,9 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-execution-workspaces-service-");
     db = createDb(tempDb.connectionString);
+    worktreePatchDir = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-patches-"));
     svc = executionWorkspaceService(db, {
+      worktreePatchDir,
       resolvePullRequestDetails: vi.fn(async (companyId, reference) =>
         pullRequestDetailsByKey.get(`${companyId}:${reference.number}`)
         ?? { state: "unknown", headRef: null, headSha: null }
@@ -290,6 +294,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
+    await fs.rm(worktreePatchDir, { recursive: true, force: true });
   });
 
   async function seedTerminalWorkspace(options: {
@@ -554,6 +559,39 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(workspace).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
   }, 20_000);
 
+  it("keeps a done issue's workspace while an open issue outside its tree reuses it (GRE-229)", async () => {
+    const seeded = await seedAncestryTerminalWorkspace();
+    const reusingIssueId = randomUUID();
+    await db.insert(issues).values({
+      id: reusingIssueId,
+      companyId: seeded.companyId,
+      projectId: seeded.projectId,
+      title: "Reuses the done issue's workspace",
+      status: "todo",
+      priority: "medium",
+      executionWorkspaceId: seeded.executionWorkspaceId,
+      executionWorkspacePreference: "reuse_existing",
+    });
+
+    const readiness = await svc.getCloseReadiness(seeded.executionWorkspaceId);
+    expect(readiness?.blockingReasons).toContain("This workspace is still linked to an open issue.");
+
+    const sweep = await svc.sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status, closedAt: executionWorkspaces.closedAt })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+
+    expect(sweep).toMatchObject({ archived: 0, skippedOpenLinkedIssue: 1 });
+    expect(workspace).toMatchObject({ status: "active", closedAt: null });
+    await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+
+    // Once the reusing issue closes, the next sweep archives the workspace.
+    await db.update(issues).set({ status: "done" }).where(eq(issues.id, reusingIssueId));
+    const nextSweep = await svc.sweepTerminalWorkspaces();
+    expect(nextSweep).toMatchObject({ archived: 1, skippedOpenLinkedIssue: 0 });
+  }, 20_000);
+
   describe("finished workspace cleanup safety (GRE-208)", () => {
     async function markRuntimeOwnedBranch(executionWorkspaceId: string) {
       await db
@@ -617,8 +655,97 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       expect(await branchExists(seeded.repoRoot)).toBe(true);
     }, 60_000);
 
-    it("never archives a worktree with uncommitted changes and posts one notice", async () => {
+    async function readPatchActivity(executionWorkspaceId: string) {
+      return db
+        .select({ details: activityLog.details })
+        .from(activityLog)
+        .where(and(
+          eq(activityLog.entityId, executionWorkspaceId),
+          eq(activityLog.action, TERMINAL_WORKTREE_REMOVED_ACTION),
+        ));
+    }
+
+    it("saves uncommitted changes of a merged worktree as a patch, then removes it (GRE-452)", async () => {
       const seeded = await seedTerminalWorkspace({ mergedPr: true });
+      await markRuntimeOwnedBranch(seeded.executionWorkspaceId);
+      await fs.appendFile(path.join(seeded.worktreePath, "delivered.txt"), "edited later\n", "utf8");
+      await fs.writeFile(path.join(seeded.worktreePath, "scratch-notes.txt"), "untracked\n", "utf8");
+      // The worktree's own index must stay as it was; only the patch reads it.
+      await runGit(seeded.worktreePath, ["add", "delivered.txt"]);
+
+      const sweep = await svc.sweepTerminalWorkspaces();
+      const state = await readState(seeded);
+
+      expect(sweep).toMatchObject({ archived: 1, patchedAndRemoved: 1, cleanupFailed: 0, keptNoticePosted: 0 });
+      expect(state.status).toBe("archived");
+      expect(state.comments).toHaveLength(0);
+      await expect(fs.access(seeded.worktreePath)).rejects.toThrow();
+      // No branch is deleted, even though the runtime owns it.
+      expect(await branchExists(seeded.repoRoot)).toBe(true);
+
+      const [activity] = await readPatchActivity(seeded.executionWorkspaceId);
+      const details = activity?.details as Record<string, unknown>;
+      expect(details).toMatchObject({
+        sourceIssueId: seeded.sourceIssueId,
+        worktreePath: seeded.worktreePath,
+        branchName: "PAP-16015-delivery",
+        branchKept: true,
+        patchFileCount: 2,
+      });
+      const patchPath = details.patchPath as string;
+      expect(patchPath.startsWith(path.join(worktreePatchDir, seeded.companyId))).toBe(true);
+      const patch = await fs.readFile(patchPath, "utf8");
+      expect(patch).toContain("+edited later");
+      expect(patch).toContain("scratch-notes.txt");
+      expect(patch).toContain("+untracked");
+
+      // The patch restores the work on the kept branch.
+      const restored = path.join(path.dirname(seeded.repoRoot), `paperclip-restored-${randomUUID()}`);
+      tempDirs.add(restored);
+      await runGit(seeded.repoRoot, ["worktree", "add", restored, "PAP-16015-delivery"]);
+      await runGit(restored, ["apply", patchPath]);
+      await expect(fs.readFile(path.join(restored, "scratch-notes.txt"), "utf8")).resolves.toBe("untracked\n");
+      await expect(fs.readFile(path.join(restored, "delivered.txt"), "utf8")).resolves.toBe("delivered\nedited later\n");
+    }, 60_000);
+
+    it("records a clean merged removal as branch deleted for the digest (GRE-457)", async () => {
+      const seeded = await seedTerminalWorkspace({ mergedPr: true });
+      await markRuntimeOwnedBranch(seeded.executionWorkspaceId);
+
+      const sweep = await svc.sweepTerminalWorkspaces();
+
+      expect(sweep).toMatchObject({ archived: 1, patchedAndRemoved: 0, cleanupFailed: 0 });
+      expect(await branchExists(seeded.repoRoot)).toBe(false);
+      const [activity] = await readPatchActivity(seeded.executionWorkspaceId);
+      expect(activity?.details).toMatchObject({ branchKept: false, patchPath: null, patchFileCount: 0 });
+    }, 60_000);
+
+    it("keeps a dirty merged worktree that an open issue still uses (GRE-229)", async () => {
+      const seeded = await seedTerminalWorkspace({ mergedPr: true });
+      await fs.writeFile(path.join(seeded.worktreePath, "scratch-notes.txt"), "untracked\n", "utf8");
+      await db.insert(issues).values({
+        id: randomUUID(),
+        companyId: seeded.companyId,
+        projectId: seeded.projectId,
+        title: "Reuses the done issue's workspace",
+        status: "in_progress",
+        priority: "medium",
+        executionWorkspaceId: seeded.executionWorkspaceId,
+        executionWorkspacePreference: "reuse_existing",
+      });
+
+      const sweep = await svc.sweepTerminalWorkspaces();
+      const state = await readState(seeded);
+
+      expect(sweep).toMatchObject({ archived: 0, patchedAndRemoved: 0, skippedOpenLinkedIssue: 1 });
+      expect(state.status).toBe("active");
+      await expect(fs.access(path.join(seeded.worktreePath, "scratch-notes.txt"))).resolves.toBeUndefined();
+      expect(await readPatchActivity(seeded.executionWorkspaceId)).toHaveLength(0);
+      await expect(fs.readdir(path.join(worktreePatchDir, seeded.companyId))).rejects.toThrow();
+    }, 60_000);
+
+    it("never archives an unmerged worktree with uncommitted changes and posts one notice", async () => {
+      const seeded = await seedTerminalWorkspace();
       await pushBranchToRemote(seeded);
       await fs.appendFile(path.join(seeded.worktreePath, "delivered.txt"), "edited later\n", "utf8");
       await fs.writeFile(path.join(seeded.worktreePath, "scratch-notes.txt"), "untracked\n", "utf8");
@@ -627,7 +754,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       const second = await svc.sweepTerminalWorkspaces();
       const state = await readState(seeded);
 
-      expect(first).toMatchObject({ archived: 0, skippedUndelivered: 1, keptNoticePosted: 1 });
+      expect(first).toMatchObject({ archived: 0, skippedUndelivered: 1, keptNoticePosted: 1, patchedAndRemoved: 0 });
       expect(second).toMatchObject({ archived: 0, skippedUndelivered: 1, keptNoticePosted: 0 });
       expect(state.status).toBe("active");
       await expect(fs.access(path.join(seeded.worktreePath, "scratch-notes.txt"))).resolves.toBeUndefined();
@@ -648,6 +775,16 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       expect(second).toMatchObject({ archived: 0, keptNoticePosted: 0 });
       expect(state.status).toBe("active");
       await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+
+      // A kept workspace is not scanned again on every tick while nothing changed.
+      const scans = vi.spyOn(workspaceGitOperationScheduler, "run");
+      try {
+        const third = await svc.sweepTerminalWorkspaces();
+        expect(third).toMatchObject({ archived: 0, skippedUndelivered: 1 });
+        expect(scans).not.toHaveBeenCalled();
+      } finally {
+        scans.mockRestore();
+      }
       expect(state.comments).toHaveLength(1);
       expect(state.comments[0]!.body).toContain("Commits not merged or pushed to any remote branch (1)");
       expect(state.comments[0]!.body).toContain("Delivered change");
@@ -1152,7 +1289,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(workspace?.status).toBe("active");
   });
 
-  it("does not reap uncommitted work after the workspace HEAD was delivered", async () => {
+  it("reaps uncommitted work after the workspace HEAD was delivered only once it is saved as a patch", async () => {
     const seeded = await seedTerminalWorkspace({ mergedPr: true });
     await fs.writeFile(path.join(seeded.worktreePath, "uncommitted.txt"), "not delivered\n", "utf8");
 
@@ -1165,9 +1302,90 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
 
     expect(readiness?.deliveryState).toBe("merged_via_pr");
     expect(readiness?.warnings).toContain("The workspace has 1 untracked file.");
-    expect(sweep).toMatchObject({ archived: 0, skippedUndelivered: 1 });
-    expect(workspace?.status).toBe("active");
+    expect(sweep).toMatchObject({ archived: 1, patchedAndRemoved: 1 });
+    expect(workspace?.status).toBe("archived");
+    const [patchFile] = await fs.readdir(path.join(worktreePatchDir, seeded.companyId));
+    await expect(fs.readFile(path.join(worktreePatchDir, seeded.companyId, patchFile!), "utf8"))
+      .resolves.toContain("+not delivered");
   });
+
+  // Put a closed workspace back in front of the sweep, so a test can run a
+  // second cleanup attempt on the same worktree.
+  async function reopenForAnotherSweep(executionWorkspaceId: string) {
+    await db.update(executionWorkspaces)
+      .set({ status: "active", closedAt: null, updatedAt: new Date(Date.now() - 1_000) })
+      .where(eq(executionWorkspaces.id, executionWorkspaceId));
+  }
+
+  it("refuses to remove a patched worktree whose changes moved after the patch was saved", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true });
+    await fs.writeFile(path.join(seeded.worktreePath, "uncommitted.txt"), "saved\n", "utf8");
+    const createRacingService = () => executionWorkspaceService(db, {
+      resolvePullRequestDetails: async (_companyId, reference) =>
+        pullRequestDetailsByKey.get(`${seeded.companyId}:${reference.number}`) ?? { state: "unknown" },
+      workspaceReaperCooldownDays: 0,
+      worktreePatchDir,
+      beforeTerminalWorkspaceCleanup: async () => {
+        await fs.appendFile(path.join(seeded.worktreePath, "late-work.txt"), "not in the patch\n", "utf8");
+      },
+    });
+
+    const sweep = await createRacingService().sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status, cleanupReason: executionWorkspaces.cleanupReason })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+
+    expect(sweep).toMatchObject({ archived: 0, cleanupFailed: 1, patchedAndRemoved: 0 });
+    expect(workspace?.status).toBe("cleanup_failed");
+    expect(workspace?.cleanupReason).toContain("differ from the saved patch");
+    await expect(fs.readFile(path.join(seeded.worktreePath, "late-work.txt"), "utf8")).resolves.toBe("not in the patch\n");
+    await expect(fs.readFile(path.join(seeded.worktreePath, "uncommitted.txt"), "utf8")).resolves.toBe("saved\n");
+    // The check refused before removal started, so the worktree still holds
+    // the changes and the attempt's patch is deleted. A second refused attempt
+    // leaves no patch either (GRE-457).
+    await expect(fs.readdir(path.join(worktreePatchDir, seeded.companyId))).resolves.toEqual([]);
+    await reopenForAnotherSweep(seeded.executionWorkspaceId);
+    expect(await createRacingService().sweepTerminalWorkspaces()).toMatchObject({ cleanupFailed: 1 });
+    await expect(fs.readdir(path.join(worktreePatchDir, seeded.companyId))).resolves.toEqual([]);
+  });
+
+  it("keeps the patch when a forced removal fails part-way (GRE-457)", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true });
+    await fs.writeFile(path.join(seeded.worktreePath, "loose.txt"), "removed first\n", "utf8");
+    const lockedDir = path.join(seeded.worktreePath, "locked");
+    await fs.mkdir(lockedDir);
+    await fs.writeFile(path.join(lockedDir, "notes.txt"), "cannot be removed\n", "utf8");
+    // A read-only folder makes `git worktree remove --force` fail after it has
+    // started deleting files.
+    await fs.chmod(lockedDir, 0o555);
+    try {
+      const sweep = await svc.sweepTerminalWorkspaces();
+
+      expect(sweep).toMatchObject({ archived: 0, cleanupFailed: 1, patchedAndRemoved: 0 });
+      await expect(fs.access(path.join(lockedDir, "notes.txt"))).resolves.toBeUndefined();
+      const patchFiles = await fs.readdir(path.join(worktreePatchDir, seeded.companyId));
+      expect(patchFiles).toHaveLength(1);
+      const patchPath = path.join(worktreePatchDir, seeded.companyId, patchFiles[0]!);
+      const patch = await fs.readFile(patchPath, "utf8");
+      expect(patch).toContain("+removed first");
+      expect(patch).toContain("+cannot be removed");
+
+      // A later sweep checks the part-deleted worktree again. It can no longer
+      // prove delivery, so it skips it and the full copy stays as it was.
+      await reopenForAnotherSweep(seeded.executionWorkspaceId);
+      const retry = await executionWorkspaceService(db, {
+        resolvePullRequestDetails: async (_companyId, reference) =>
+          pullRequestDetailsByKey.get(`${seeded.companyId}:${reference.number}`) ?? { state: "unknown" },
+        workspaceReaperCooldownDays: 0,
+        worktreePatchDir,
+      }).sweepTerminalWorkspaces();
+      expect(retry).toMatchObject({ checked: 1, skippedUndelivered: 1, cleanupFailed: 0 });
+      await expect(fs.readFile(patchPath, "utf8")).resolves.toBe(patch);
+    } finally {
+      await fs.chmod(lockedDir, 0o755).catch(() => {});
+    }
+  }, 60_000);
 
   it("refuses cleanup when the worktree changes after delivery assessment", async () => {
     const seeded = await seedTerminalWorkspace({ mergedPr: true });
@@ -1925,9 +2143,11 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
     expect(parentWorkspace?.status).toBe("active");
   });
 
-  it("reaps only fully-terminal delivered workspaces without active checkout runs", async () => {
+  it("reaps delivered workspaces of finished issues without active checkout runs", async () => {
     const eligible = await seedTerminalWorkspace({ mergedPr: true, childStatus: "done" });
     const activeRun = await seedTerminalWorkspace({ mergedPr: true, activeRun: true });
+    // An open child that is not bound to the workspace never uses it, so it no
+    // longer holds the finished parent's worktree (GRE-119).
     const openDescendant = await seedTerminalWorkspace({ mergedPr: true, childStatus: "todo" });
     const undelivered = await seedTerminalWorkspace();
 
@@ -1943,11 +2163,11 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       ]));
     const byId = new Map(rows.map((row) => [row.id, row]));
 
-    expect(result).toMatchObject({ archived: 1, skippedActiveRun: 1, skippedNonTerminalTree: 1, skippedUndelivered: 1 });
+    expect(result).toMatchObject({ archived: 2, skippedActiveRun: 1, skippedNonTerminalTree: 0, skippedUndelivered: 1 });
     expect(byId.get(eligible.executionWorkspaceId)).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
     expect(byId.get(eligible.executionWorkspaceId)?.cleanupEligibleAt).toBeInstanceOf(Date);
     expect(byId.get(activeRun.executionWorkspaceId)?.status).toBe("active");
-    expect(byId.get(openDescendant.executionWorkspaceId)?.status).toBe("active");
+    expect(byId.get(openDescendant.executionWorkspaceId)?.status).toBe("archived");
     expect(byId.get(undelivered.executionWorkspaceId)?.status).toBe("active");
 
     const second = await svc.sweepTerminalWorkspaces();
@@ -1969,6 +2189,154 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       .where(eq(activityLog.entityId, eligible.executionWorkspaceId));
     expect(reopenedWorkspace?.status).toBe("archived");
     expect(reopenActivities).toContainEqual({ action: "execution_workspace.source_issue_reopened" });
+  }, 20_000);
+
+  it("keeps a finished workspace that an open descendant is bound to", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true, childStatus: "todo" });
+    await db
+      .update(issues)
+      .set({ executionWorkspaceId: seeded.executionWorkspaceId })
+      .where(eq(issues.parentId, seeded.sourceIssueId));
+
+    const sweep = await svc.sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+
+    expect(sweep).toMatchObject({ archived: 0, skippedOpenLinkedIssue: 1 });
+    expect(workspace?.status).toBe("active");
+    await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+  }, 20_000);
+
+  describe("finished shared sessions (no files of their own)", () => {
+    async function seedFinishedSharedSession(cwd: string) {
+      const companyId = randomUUID();
+      const projectId = randomUUID();
+      const executionWorkspaceId = randomUUID();
+      const sourceIssueId = randomUUID();
+      await db.insert(companies).values({
+        id: companyId,
+        name: "GS Agentic Manager",
+        issuePrefix: `S${companyId.slice(0, 8).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+      });
+      await db.insert(projects).values({ id: projectId, companyId, name: "Shared sessions", status: "in_progress" });
+      await db.insert(executionWorkspaces).values({
+        id: executionWorkspaceId,
+        companyId,
+        projectId,
+        mode: "shared_workspace",
+        strategyType: "project_primary",
+        name: "Shared session",
+        status: "active",
+        providerType: "local_fs",
+        cwd,
+        metadata: { source: "project_primary", createdByRuntime: false },
+      });
+      await db.insert(issues).values({
+        id: sourceIssueId,
+        companyId,
+        projectId,
+        title: "Finished on the shared checkout",
+        status: "done",
+        priority: "medium",
+        executionWorkspaceId,
+      });
+      await db
+        .update(executionWorkspaces)
+        .set({ sourceIssueId })
+        .where(eq(executionWorkspaces.id, executionWorkspaceId));
+      return { executionWorkspaceId, sourceIssueId };
+    }
+
+    async function readSession(seeded: { executionWorkspaceId: string; sourceIssueId: string }) {
+      const [workspace] = await db
+        .select({ status: executionWorkspaces.status, cleanupReason: executionWorkspaces.cleanupReason })
+        .from(executionWorkspaces)
+        .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+      const [issue] = await db
+        .select({ executionWorkspaceId: issues.executionWorkspaceId })
+        .from(issues)
+        .where(eq(issues.id, seeded.sourceIssueId));
+      return { workspace, issue };
+    }
+
+    it("archives a session on a project folder that is not a git repository", async () => {
+      const folder = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-shared-folder-"));
+      tempDirs.add(folder);
+      const seeded = await seedFinishedSharedSession(folder);
+
+      const readiness = await svc.getCloseReadiness(seeded.executionWorkspaceId);
+      const sweep = await svc.sweepTerminalWorkspaces();
+      const state = await readSession(seeded);
+
+      expect(readiness?.blockingReasons).toEqual([]);
+      expect(sweep).toMatchObject({ archived: 1, cleanupFailed: 0, skippedUndelivered: 0 });
+      expect(state.workspace).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
+      expect(state.issue?.executionWorkspaceId).toBeNull();
+      await expect(fs.access(folder)).resolves.toBeUndefined();
+    }, 20_000);
+
+    it("archives a session on the project checkout without marking cleanup failed (GRE-316)", async () => {
+      const checkout = await createTempRepo();
+      const remote = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-shared-remote-"));
+      tempDirs.add(checkout);
+      tempDirs.add(remote);
+      await runGit(remote, ["init", "--bare"]);
+      await runGit(checkout, ["remote", "add", "origin", remote]);
+      await runGit(checkout, ["push", "-q", "origin", "main"]);
+      const seeded = await seedFinishedSharedSession(checkout);
+
+      const sweep = await svc.sweepTerminalWorkspaces();
+      const state = await readSession(seeded);
+
+      expect(sweep).toMatchObject({ archived: 1, cleanupFailed: 0 });
+      expect(state.workspace).toMatchObject({ status: "archived", cleanupReason: "issue_terminal" });
+      await expect(fs.access(path.join(checkout, "README.md"))).resolves.toBeUndefined();
+    }, 20_000);
+  });
+
+  it("waits for the run that set its issue done before removing the worktree (GRE-386)", async () => {
+    const seeded = await seedTerminalWorkspace({ mergedPr: true });
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    await db.insert(agents).values({
+      id: agentId,
+      companyId: seeded.companyId,
+      name: "Reviewer",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    // Setting the issue to done cleared its checkout and execution run ids, so
+    // only the run context still ties the live run to the workspace.
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId: seeded.companyId,
+      agentId,
+      status: "running",
+      contextSnapshot: { issueId: seeded.sourceIssueId, executionWorkspaceId: seeded.executionWorkspaceId },
+    });
+
+    const whileRunning = await svc.sweepTerminalWorkspaces();
+    expect(whileRunning).toMatchObject({ archived: 0, skippedActiveRun: 1 });
+    await expect(fs.access(seeded.worktreePath)).resolves.toBeUndefined();
+
+    // The run finalizes against the intact worktree and ends; the next sweep
+    // then removes the worktree.
+    await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+    const afterRun = await svc.sweepTerminalWorkspaces();
+    const [workspace] = await db
+      .select({ status: executionWorkspaces.status })
+      .from(executionWorkspaces)
+      .where(eq(executionWorkspaces.id, seeded.executionWorkspaceId));
+    expect(afterRun).toMatchObject({ archived: 1, skippedActiveRun: 0 });
+    expect(workspace?.status).toBe("archived");
+    await expect(fs.access(seeded.worktreePath)).rejects.toThrow();
   }, 20_000);
 
   it("allows archiving shared workspace sessions with warnings even when issues are still open", async () => {

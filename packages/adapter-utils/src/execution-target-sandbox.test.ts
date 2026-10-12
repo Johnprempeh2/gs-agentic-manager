@@ -2579,7 +2579,7 @@ describe("sandbox adapter execution targets", () => {
 
     expect(combinedStream(events, "stdout")).toBe("final out\n");
     expect(combinedStream(events, "stderr")).toBe(
-      "final err\n[paperclip] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
+      "final err\n[gsam] Run log streaming degraded during the run; remaining output was delivered at completion.\n",
     );
   });
 

@@ -12,6 +12,9 @@ import { MissingUserSecretsBanner } from "../pages/secrets/MissingUserSecretsBan
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
+import { agentTeamsApi } from "../api/agentTeams";
+import { isTeamAssigneeValue, teamAssigneeValue, teamForAssigneeValue } from "../lib/agent-teams";
+import { TeamColorDot } from "./AgentTeamsDialog";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
@@ -40,6 +43,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -97,14 +101,12 @@ type VisualViewportLayout = {
 
 type NewIssueDialogViewportStyle = CSSProperties & {
   "--new-issue-visual-viewport-height"?: string;
-  "--new-issue-visual-viewport-offset-top"?: string;
   "--new-issue-dialog-top"?: string;
   "--new-issue-dialog-height"?: string;
 };
 
 type MobileEntityPickerViewportStyle = CSSProperties & {
   "--mobile-entity-picker-visual-viewport-height"?: string;
-  "--mobile-entity-picker-visual-viewport-bottom"?: string;
 };
 
 function readVisualViewportLayout(): VisualViewportLayout | null {
@@ -553,6 +555,11 @@ export function NewIssueDialog() {
     queryFn: () => agentsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
+  const { data: agentTeams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(effectiveCompanyId!),
+    queryFn: () => agentTeamsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
 
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(effectiveCompanyId!),
@@ -603,7 +610,17 @@ export function NewIssueDialog() {
     userId: currentUserId,
   });
 
-  const selectedAssignee = useMemo(() => parseAssigneeValue(assigneeValue), [assigneeValue]);
+  // A `team:<id>` value (GRE-437) assigns the team lead and stores the team.
+  const resolveAssigneeValue = useCallback(
+    (value: string) => {
+      if (!isTeamAssigneeValue(value)) return parseAssigneeValue(value);
+      const team = teamForAssigneeValue(value, agentTeams);
+      return { assigneeAgentId: team?.leadAgentId ?? null, assigneeUserId: null };
+    },
+    [agentTeams],
+  );
+  const selectedTeam = useMemo(() => teamForAssigneeValue(assigneeValue, agentTeams), [assigneeValue, agentTeams]);
+  const selectedAssignee = useMemo(() => resolveAssigneeValue(assigneeValue), [assigneeValue, resolveAssigneeValue]);
   const selectedAssigneeAgentId = selectedAssignee.assigneeAgentId;
   const selectedAssigneeUserId = selectedAssignee.assigneeUserId;
 
@@ -1093,6 +1110,7 @@ export function NewIssueDialog() {
       workMode,
       ...(selectedAssigneeAgentId ? { assigneeAgentId: selectedAssigneeAgentId } : {}),
       ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
+      ...(selectedTeam ? { teamId: selectedTeam.id } : {}),
       ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
       ...(newIssueDefaults.goalId ? { goalId: newIssueDefaults.goalId } : {}),
       ...(projectId ? { projectId } : {}),
@@ -1255,6 +1273,21 @@ export function NewIssueDialog() {
     ],
     [agents, companyMembers?.users, currentUserId, recentAssigneeIds],
   );
+  // Teams go only in the assignee picker, not the reviewer picker. Teams with
+  // no lead cannot take a task, so they are left out here.
+  const assigneeOptionsWithTeams = useMemo<InlineEntityOption[]>(
+    () => [
+      ...(agentTeams ?? [])
+        .filter((team) => team.leadAgentId)
+        .map((team) => ({
+          id: teamAssigneeValue(team.id),
+          label: `Team: ${team.name}`,
+          searchText: `team ${team.name}`,
+        })),
+      ...assigneeOptions,
+    ],
+    [agentTeams, assigneeOptions],
+  );
   const watchdogAgentOptions = useMemo<InlineEntityOption[]>(
     () =>
       sortAgentsByRecency((agents ?? []).filter(isAgentTaskTarget), recentAssigneeIds).map((agent) => ({
@@ -1339,8 +1372,10 @@ export function NewIssueDialog() {
   const CurrentWorkModeIcon = currentWorkMode.icon;
   const dialogViewportStyle = useMemo<NewIssueDialogViewportStyle>(() => {
     const dialogGeometry = {
-      "--new-issue-dialog-top":
-        "calc(var(--new-issue-visual-viewport-offset-top) + var(--new-issue-dialog-top-gap))",
+      // Fixed-position coordinates are relative to Safari's visual viewport.
+      // Adding visualViewport.offsetTop here places the dialog below that
+      // viewport after the software keyboard pans the page.
+      "--new-issue-dialog-top": "var(--new-issue-dialog-top-gap)",
       "--new-issue-dialog-height":
         "calc(var(--new-issue-visual-viewport-height) - var(--new-issue-dialog-top-gap) - var(--new-issue-dialog-bottom-gap))",
     };
@@ -1348,7 +1383,6 @@ export function NewIssueDialog() {
     return {
       ...dialogGeometry,
       "--new-issue-visual-viewport-height": `${visualViewportLayout.height}px`,
-      "--new-issue-visual-viewport-offset-top": `${visualViewportLayout.offsetTop}px`,
       ...(visualViewportLayout.constrained
         ? {
             top: "var(--new-issue-dialog-top)",
@@ -1362,7 +1396,6 @@ export function NewIssueDialog() {
     if (!visualViewportLayout) return {};
     return {
       "--mobile-entity-picker-visual-viewport-height": `${visualViewportLayout.height}px`,
-      "--mobile-entity-picker-visual-viewport-bottom": `${visualViewportLayout.offsetTop + visualViewportLayout.height}px`,
     };
   }, [visualViewportLayout]);
 
@@ -1467,10 +1500,15 @@ export function NewIssueDialog() {
               </PopoverContent>
             </Popover>
             <span className="text-subtle-foreground">&rsaquo;</span>
-            <span>{isSubIssueMode ? "New sub-task" : "New task"}</span>
+            {/* Visible breadcrumb text doubles as the dialog's accessible name. */}
+            <DialogTitle className="text-sm font-normal leading-normal">
+              {isSubIssueMode ? "New sub-task" : "New task"}
+            </DialogTitle>
           </div>
           <div className="flex items-center gap-1">
             <Button
+              aria-label={expanded ? "Collapse" : "Expand"}
+              title={expanded ? "Collapse" : "Expand"}
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
@@ -1480,6 +1518,8 @@ export function NewIssueDialog() {
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
             <Button
+              aria-label="Close"
+              title="Close"
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
@@ -1524,9 +1564,10 @@ export function NewIssueDialog() {
               <InlineEntitySelector
                 ref={assigneeSelectorRef}
                 value={assigneeValue}
-                options={assigneeOptions}
+                options={assigneeOptionsWithTeams}
                 recentOptionIds={recentAssigneeOptionIds}
                 placeholder="Assignee"
+                mobileTitle="Select assignee"
                 className="h-8 px-2.5 py-0 sm:h-auto sm:px-2 sm:py-1"
                 triggerDataSlot="new-issue-compact-control"
                 contentStyle={entityPickerViewportStyle}
@@ -1534,8 +1575,8 @@ export function NewIssueDialog() {
                 searchPlaceholder="Search assignees..."
                 emptyMessage="No assignees found."
                 onChange={(value) => {
-                  const nextAssignee = parseAssigneeValue(value);
-                  if (nextAssignee.assigneeAgentId) {
+                  const nextAssignee = resolveAssigneeValue(value);
+                  if (nextAssignee.assigneeAgentId && !isTeamAssigneeValue(value)) {
                     trackRecentAssignee(nextAssignee.assigneeAgentId);
                   }
                   setAssigneeValue(value);
@@ -1567,6 +1608,15 @@ export function NewIssueDialog() {
                 }
                 renderOption={(option) => {
                   if (!option.id) return <span className="truncate">{option.label}</span>;
+                  const team = teamForAssigneeValue(option.id, agentTeams);
+                  if (team) {
+                    return (
+                      <>
+                        <TeamColorDot color={team.color} className="h-2 w-2" />
+                        <span className="truncate">{option.label}</span>
+                      </>
+                    );
+                  }
                   const assignee = parseAssigneeValue(option.id).assigneeAgentId
                     ? (agents ?? []).find((agent) => agent.id === parseAssigneeValue(option.id).assigneeAgentId)
                     : null;
@@ -1588,6 +1638,7 @@ export function NewIssueDialog() {
                 options={projectOptions}
                 recentOptionIds={recentProjectIds}
                 placeholder="Project"
+                mobileTitle="Select project"
                 className="h-8 px-2.5 py-0 sm:h-auto sm:px-2 sm:py-1"
                 triggerDataSlot="new-issue-compact-control"
                 contentStyle={entityPickerViewportStyle}
@@ -2342,7 +2393,7 @@ export function NewIssueDialog() {
           <div data-testid="new-issue-paused-assignee-note" className="mx-4 mb-2">
             <InlineBanner tone="warning" icon={PauseCircle} compact>
               <span className="font-medium">{selectedAssigneeAgent.name}</span> is paused and will not start work on this task until it is resumed
-              {selectedAssigneeAgent.pauseReason === "import" ? " — it arrived paused from an organization import" : ""}. You can resume it from the task page after creating the task.
+              {selectedAssigneeAgent.pauseReason === "import" ? " (it arrived paused from an organisation import)" : ""}. You can resume it from the task page after creating the task.
             </InlineBanner>
           </div>
         ) : null}

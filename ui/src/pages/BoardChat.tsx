@@ -33,7 +33,7 @@ import {
 } from "../components/AgentBubbleActionRow";
 import { cn, formatDateTime } from "../lib/utils";
 import type { FeedbackVoteValue } from "@greatstone/shared";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 /**
  * Board Concierge Chat — a chat interface powered by the board-member skill.
@@ -656,7 +656,10 @@ export function BoardChat() {
   }
 
   return (
-    <div className="flex h-(--sz-calc-29) flex-col -m-6">
+    // Desktop fills the fixed-height main panel. A phone scrolls the page
+    // instead, so "100% of main" collapses; fill the screen between the
+    // header and the tab bar explicitly.
+    <div className="flex h-(--sz-calc-29) flex-col -m-6 max-md:-m-4 max-md:h-(--mobile-page-fill)">
       <div
         ref={splitContainerRef}
         className="flex min-h-0 min-w-0 flex-1 flex-row"
@@ -712,6 +715,18 @@ export function BoardChat() {
                 </TooltipTrigger>
                 <TooltipContent side="bottom">new chat</TooltipContent>
               </Tooltip>
+              {/* Phone: the agent feed opens from the header, not a floating
+                  button that covered the send button. */}
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className="text-muted-foreground md:hidden"
+                aria-label="Open agent feed"
+                onClick={() => setMobileFeedOpen(true)}
+              >
+                <Activity className="h-4 w-4" />
+              </Button>
             </div>
           </div>
           {/* Messages — scroll viewport flush right so the scrollbar sits on the pane/divider edge */}
@@ -732,7 +747,7 @@ export function BoardChat() {
                 const ceoName = ceoAgent.name;
                 const companyName = selectedCompany.name;
                 const missionLine = missionText
-                  ? ` — your mission is "${missionText}".`
+                  ? `: your mission is "${missionText}".`
                   : ".";
                 const welcomeBody =
                   `Welcome to **${companyName}**! I'm ${ceoName}, your team lead. I've read through what you shared in the wizard${missionLine}\n\n` +
@@ -745,7 +760,7 @@ export function BoardChat() {
                 const chips: Array<{ label: string; prompt: string }> = [
                   {
                     label: "Draft an Organization Brief",
-                    prompt: `Draft a one-page Organization Brief for ${companyName} — include our mission, team roster, and first priorities.`,
+                    prompt: `Draft a one-page Organization Brief for ${companyName}, with our mission, team roster and first priorities.`,
                   },
                   {
                     label: "Create a hiring plan",
@@ -931,7 +946,7 @@ export function BoardChat() {
               onClick={() => scrollToLatest("smooth")}
               aria-label="Jump to latest messages"
               // design-allow(card-pattern): floating scroll-to-bottom <button>, not a content card (C5a Run 3)
-              className="absolute bottom-24 left-1/2 z-20 grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:border-muted-foreground/30"
+              className="absolute bottom-24 left-1/2 z-sticky grid h-8 w-8 -translate-x-1/2 place-items-center rounded-full border border-border bg-card text-foreground shadow-md transition-colors duration-150 hover:bg-accent hover:border-muted-foreground/30"
             >
               <ArrowDown className="h-4 w-4" />
             </button>
@@ -949,7 +964,7 @@ export function BoardChat() {
                mask is gone — the dock carries the task-style soft top fade instead
                (mirrors IssueChatThread's composer dock). pointer-events pass through
                the fade so the scrollbar stays usable; the composer re-enables them. */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-raised bg-gradient-to-t from-background via-background/95 to-background/0 px-6 pt-6 pb-5">
             <ChatComposer
               ref={composerRef}
               value={input}
@@ -986,20 +1001,9 @@ export function BoardChat() {
         </div>
       </div>
 
-      {/* Mobile: floating feed toggle + sheet drawer */}
+      {/* Mobile: agent feed sheet (opened from the chat header) */}
       <div className="md:hidden">
         <Sheet open={mobileFeedOpen} onOpenChange={setMobileFeedOpen}>
-          <SheetTrigger asChild>
-            <Button
-              type="button"
-              size="icon"
-              variant="secondary"
-              className="fixed bottom-20 right-4 z-20 h-10 w-10 rounded-full shadow-lg"
-              aria-label="Open agent feed"
-            >
-              <Activity className="h-4 w-4" />
-            </Button>
-          </SheetTrigger>
           <SheetContent side="bottom" className="h-(--sz-70vh) p-0 rounded-t-xl">
             <ActivityFeed />
           </SheetContent>

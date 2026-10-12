@@ -38,6 +38,18 @@ export function hasVisibleMonitorSurface(issue: Issue): boolean {
   return isWaitingMonitorState(derived.state) && derived.nextCheckAt !== null;
 }
 
+/** The still clock: waiting on a scheduled check, and no agent is working it right now. */
+export function isWaitingOnMonitor(issue: Issue): boolean {
+  if (issue.executionRunId) return false;
+  if (hasVisibleMonitorSurface(issue)) return true;
+  // List rows carry only the flat monitorNextCheckAt column, not the monitor
+  // object, so without this the clock showed on the task page only.
+  return !issue.executionState
+    && Boolean(issue.monitorNextCheckAt)
+    && issue.status !== "done"
+    && issue.status !== "cancelled";
+}
+
 export interface MonitorSurfaceCopy {
   /** Prominent lead for the top banner, e.g. "Waiting on monitor — resumes in 2h 12m". */
   bannerTitle: string;
@@ -89,17 +101,17 @@ export function buildMonitorSurfaceCopy(
   switch (derived.state) {
     case "scheduled":
     case "retrying":
-      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Waiting on monitor — resumes ${eta}`;
+      bannerTitle = isScheduledRetryOnly ? `Agent resumes ${eta}` : `Waiting on monitor: resumes ${eta}`;
       stripTitle = `Resumes ${eta}`;
       break;
     case "due-now":
-      bannerTitle = isScheduledRetryOnly ? "Agent retry due now" : "Waiting on monitor — due now";
+      bannerTitle = isScheduledRetryOnly ? "Agent retry due now" : "Waiting on monitor: due now";
       stripTitle = "Due now";
       statusHint = "Checking momentarily…";
       break;
     case "overdue":
     default:
-      bannerTitle = isScheduledRetryOnly ? `Agent retry ${eta}` : `Waiting on monitor — ${eta}`;
+      bannerTitle = isScheduledRetryOnly ? `Agent retry ${eta}` : `Waiting on monitor: ${eta}`;
       stripTitle = capitalize(eta);
       statusHint = "Fires on next tick";
       break;
@@ -178,7 +190,9 @@ export function IssueMonitorBanner({
       tone={copy.tone}
       icon={Clock}
       title={copy.bannerTitle}
-      className="my-3"
+      // On a phone the composer strip sits right under this, so the banner
+      // would repeat it; the strip (where you act) carries the state there.
+      className="my-3 max-sm:hidden"
       actions={onCheckNow && !copy.workspaceWait ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
     >
       <span>{copy.bannerMeta.join("  ·  ")}</span>
@@ -204,22 +218,24 @@ export function IssueMonitorComposerStrip({
     <div
       role="note"
       data-testid="issue-monitor-composer-strip"
-      className={cn("rounded-lg border border-border bg-muted/30 px-3 py-2", className)}
+      // Opaque: it docks over the thread, and a see-through strip let the last
+      // message's time and buttons show through it on a phone.
+      className={cn("rounded-lg border border-border bg-card px-3 py-2", className)}
     >
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-start gap-2">
           <Clock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <div className="min-w-0">
             <div className="text-sm font-medium text-foreground">{copy.stripTitle}</div>
-            <div className="text-xs text-muted-foreground">{copy.stripMeta.join(" · ")}</div>
+            <div className="truncate text-xs text-muted-foreground">{copy.stripMeta.join(" · ")}</div>
           </div>
         </div>
         {onCheckNow && !copy.workspaceWait ? <CheckNowButton onCheckNow={onCheckNow} checkingNow={checkingNow} /> : null}
       </div>
-      <p className="mt-1.5 text-xs text-muted-foreground">
+      <p className="mt-1.5 text-xs text-muted-foreground max-sm:hidden">
         {copy.workspaceWait
           ? "You can keep sending instructions while the agent waits."
-          : "Sending a reply wakes the agent now — before the scheduled check."}
+          : "Sending a reply wakes the agent now, before the scheduled check."}
       </p>
     </div>
   );

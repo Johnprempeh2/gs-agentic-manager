@@ -1,16 +1,18 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PatchInstanceGeneralSettings, BackupRetentionPolicy } from "@greatstone/shared";
+import type { PatchInstanceGeneralSettings, BackupRetentionPolicy, StrategyBoardEmailSettings } from "@greatstone/shared";
 import {
   DAILY_RETENTION_PRESETS,
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
 } from "@greatstone/shared";
 import { LogOut, SlidersHorizontal } from "lucide-react";
 import { healthApi } from "@/api/health";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { ModeBadge } from "@/components/access/ModeBadge";
+import { AiAccessRouteSection } from "@/components/AiAccessRouteSection";
 import { RunAdmissionSettingsSection } from "@/components/RunAdmissionSettingsSection";
 import { Button } from "../components/ui/button";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -19,9 +21,35 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { cn } from "../lib/utils";
 import { useSignOut } from "@/hooks/useSignOut";
 
-const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || "https://paperclip.ing/tos";
+const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || null;
 
-export function InstanceGeneralSettings({ embedded = false }: { embedded?: boolean }) {
+/** Section names match their `instance.general.*` hidden-setting keys. */
+export type InstanceGeneralSection =
+  | "deploymentStatus"
+  | "censorUsernameInLogs"
+  | "runAdmission"
+  | "backupRetention"
+  | "feedbackDataSharingPreference"
+  | "aiAccessRoute"
+  | "teamCatalogFilter"
+  | "teamCatalogAddMode"
+  | "strategyBoardEmail"
+  | "signOut";
+
+const STRATEGY_BOARD_EMAIL_TOGGLES: Array<{ key: keyof StrategyBoardEmailSettings; title: string; description: string }> = [
+  { key: "meetingReminders", title: "Meeting reminders", description: "Each KPI owner, before the board meeting: readings and actions due." },
+  { key: "slippageAlerts", title: "Slippage alerts", description: "The chair, once each time a KPI turns red." },
+  { key: "whyRequests", title: "\"Why?\" requests", description: "The KPI owner, when the board asks why a KPI slipped." },
+];
+
+export function InstanceGeneralSettings({
+  embedded = false,
+  sections,
+}: {
+  embedded?: boolean;
+  /** Render only these sections (Settings spreads them across its tabs). All when omitted. */
+  sections?: readonly InstanceGeneralSection[];
+}) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
@@ -80,15 +108,24 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
   }
 
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
+  const greatstoneTeamsOnly = generalQuery.data?.teamCatalogFilter === "greatstone";
+  const askGreatstoneToAdd = generalQuery.data?.teamCatalogAddMode === "request";
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
   const backupRetention: BackupRetentionPolicy = generalQuery.data?.backupRetention ?? DEFAULT_BACKUP_RETENTION;
   const hiddenSettings = new Set(healthQuery.data?.hiddenSettings ?? []);
-  const showDeploymentStatus = !hiddenSettings.has("instance.general.deploymentStatus");
-  const showCensorUsernameInLogs = !hiddenSettings.has("instance.general.censorUsernameInLogs");
-  const showBackupRetention = !hiddenSettings.has("instance.general.backupRetention");
-  const showRunAdmission = !hiddenSettings.has("instance.general.runAdmission");
-  const showFeedbackDataSharing = !hiddenSettings.has("instance.general.feedbackDataSharingPreference");
-  const showSignOut = !hiddenSettings.has("instance.general.signOut");
+  const shows = (section: InstanceGeneralSection) =>
+    !hiddenSettings.has(`instance.general.${section}`) && (!sections || sections.includes(section));
+  const showDeploymentStatus = shows("deploymentStatus");
+  const showCensorUsernameInLogs = shows("censorUsernameInLogs");
+  const showBackupRetention = shows("backupRetention");
+  const showRunAdmission = shows("runAdmission");
+  const showFeedbackDataSharing = shows("feedbackDataSharingPreference");
+  const showAiAccessRoute = shows("aiAccessRoute");
+  const showTeamCatalogFilter = shows("teamCatalogFilter");
+  const showTeamCatalogAddMode = shows("teamCatalogAddMode");
+  const showStrategyBoardEmail = shows("strategyBoardEmail");
+  const boardEmail = generalQuery.data?.strategyBoardEmail ?? DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS;
+  const showSignOut = shows("signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
     ...(showRunAdmission ? ["run limits"] : []),
@@ -178,6 +215,78 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
             aria-label="Toggle username log censoring"
           />
         </div>
+      </section>
+      )}
+
+      {showTeamCatalogFilter && (
+      <section>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Show only Greatstone teams</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Team Catalogue and the new-company flow offer only teams made by Greatstone. Other teams, such as
+              the engineering teams, are hidden and cannot be installed. On by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={greatstoneTeamsOnly}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({ teamCatalogFilter: greatstoneTeamsOnly ? "all" : "greatstone" })
+            }
+            disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+            aria-label="Show only Greatstone teams"
+          />
+        </div>
+      </section>
+      )}
+
+      {showTeamCatalogAddMode && (
+      <section>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Ask Greatstone to add teams</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Team Catalogue shows "Ask Greatstone to add" in place of Install. The button makes an approval card
+              for the board and installs nothing. On by default.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={askGreatstoneToAdd}
+            onCheckedChange={() =>
+              updateGeneralMutation.mutate({ teamCatalogAddMode: askGreatstoneToAdd ? "install" : "request" })
+            }
+            disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+            aria-label="Ask Greatstone to add teams"
+          />
+        </div>
+      </section>
+      )}
+
+      {showStrategyBoardEmail && (
+      <section className="space-y-3">
+        <div className="space-y-1.5">
+          <h2 className="text-sm font-semibold">Board email</h2>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Which board alerts the board secretary also sends by email. Needs the board control panel switch and a
+            secretary inbox on the Board page. Off keeps that alert in the app only.
+          </p>
+        </div>
+        {STRATEGY_BOARD_EMAIL_TOGGLES.map((toggle) => (
+          <div key={toggle.key} className="flex items-start justify-between gap-4">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">{toggle.title}</p>
+              <p className="text-xs text-muted-foreground">{toggle.description}</p>
+            </div>
+            <ToggleSwitch
+              checked={boardEmail[toggle.key]}
+              onCheckedChange={() =>
+                updateGeneralMutation.mutate({ strategyBoardEmail: { ...boardEmail, [toggle.key]: !boardEmail[toggle.key] } })
+              }
+              disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+              aria-label={`Board email: ${toggle.title}`}
+            />
+          </div>
+        ))}
       </section>
       )}
 
@@ -299,8 +408,8 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
           <div className="space-y-1.5">
             <h2 className="text-sm font-semibold">AI feedback sharing</h2>
             <p className="max-w-2xl text-sm text-muted-foreground">
-              Control whether thumbs up and thumbs down votes can send the voted AI output to
-              Paperclip Labs. Votes are always saved locally.
+              Choose whether a thumbs up or thumbs down vote may also share the AI output you
+              voted on outside this server. Votes are always saved here.
             </p>
             {FEEDBACK_TERMS_URL ? (
               <a
@@ -360,16 +469,26 @@ export function InstanceGeneralSettings({ embedded = false }: { embedded?: boole
               );
             })}
           </div>
-          <p className="text-xs text-muted-foreground">
-            To retest the first-use prompt in local dev, remove the{" "}
-            <code>feedbackDataSharingPreference</code> key from the{" "}
-            <code>instance_settings.general</code> JSON row for this instance, or set it back to{" "}
-            <code>"prompt"</code>. Unset and <code>"prompt"</code> both mean no default has been
-            chosen yet.
-          </p>
+          {import.meta.env.DEV ? (
+            <p className="text-xs text-muted-foreground">
+              To retest the first-use prompt in local dev, remove the{" "}
+              <code>feedbackDataSharingPreference</code> key from the{" "}
+              <code>instance_settings.general</code> JSON row for this instance, or set it back to{" "}
+              <code>"prompt"</code>. Unset and <code>"prompt"</code> both mean no default has been
+              chosen yet.
+            </p>
+          ) : null}
         </div>
       </section>
 
+      )}
+
+      {showAiAccessRoute && (
+        <AiAccessRouteSection
+          route={generalQuery.data?.aiAccessRoute}
+          disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+          onChange={(aiAccessRoute) => updateGeneralMutation.mutate({ aiAccessRoute })}
+        />
       )}
 
       {showSignOut && (

@@ -16,6 +16,8 @@ import {
   pendingAskUserQuestionsInteraction,
   pendingRequestCheckboxConfirmationInteraction,
   pendingRequestItemVerdictsInteraction,
+  pendingStepGuideAskUserQuestionsInteraction,
+  pendingStepGuideRequestConfirmationInteraction,
 } from "@/fixtures/issueThreadInteractionFixtures";
 import { TaskChatInteractionCard } from "./TaskChatInteractionCard";
 import { TaskChatThreadView } from "./TaskChatThreadView";
@@ -922,5 +924,95 @@ describe("TaskChatThreadView interaction items", () => {
     expect(
       container.querySelector('[data-testid="task-chat-interaction"]'),
     ).toBeNull();
+  });
+
+  describe("step-by-step guide (GRE-916)", () => {
+    function clickButton(scope: ParentNode, text: string) {
+      const button = Array.from(scope.querySelectorAll("button")).find(
+        (candidate) => candidate.textContent?.trim() === text,
+      );
+      expect(button, `button "${text}"`).toBeTruthy();
+      flushSync(() => button!.click());
+    }
+
+    function renderTakeover(
+      interaction: IssueThreadInteraction,
+      props: Record<string, unknown> = {},
+    ) {
+      flushSync(() => {
+        root.render(
+          <TooltipProvider>
+            <ThemeProvider>
+              <TaskChatInteractionCard
+                item={interactionItem(interaction)}
+                presentation="takeover"
+                {...props}
+              />
+            </ThemeProvider>
+          </TooltipProvider>,
+        );
+      });
+    }
+
+    it("keeps the question card short and answers from the guide", async () => {
+      const onSubmitInteractionAnswers = vi.fn(async () => undefined);
+      renderTakeover(pendingStepGuideAskUserQuestionsInteraction, {
+        onSubmitInteractionAnswers,
+      });
+
+      expect(container.textContent).toContain(
+        "Run the setup script on your computer, then tell me when it is done.",
+      );
+      expect(container.textContent).not.toContain("pnpm gsam setup");
+      // Option descriptions render as markdown.
+      expect(container.querySelector('[role="radio"] strong')?.textContent).toBe(
+        "last line",
+      );
+
+      clickButton(container, "Open step-by-step guide");
+      const guide = document.body.querySelector(
+        '[data-testid="interaction-guide"]',
+      );
+      expect(
+        guide?.querySelectorAll('[data-testid="interaction-guide-step"]'),
+      ).toHaveLength(3);
+      expect(guide?.querySelector('button[aria-label="Copy code"]')).toBeTruthy();
+      expect(container.querySelectorAll('[role="radio"]')).toHaveLength(0);
+
+      const option = guide!.querySelector('[role="radio"]') as HTMLButtonElement;
+      flushSync(() => option.click());
+      clickButton(guide!, "Send answer");
+      await vi.waitFor(() =>
+        expect(onSubmitInteractionAnswers).toHaveBeenCalledWith(
+          expect.objectContaining({ id: "interaction-questions-step-guide" }),
+          [{ questionId: "setup-done", optionIds: ["done"] }],
+        ),
+      );
+    });
+
+    it("keeps the confirmation card short and approves from the guide", async () => {
+      const onAcceptInteraction = vi.fn(async () => undefined);
+      renderTakeover(pendingStepGuideRequestConfirmationInteraction, {
+        onAcceptInteraction,
+      });
+
+      expect(
+        Array.from(container.querySelectorAll("strong")).map((node) => node.textContent),
+      ).toContain("setup script");
+      expect(container.textContent).not.toContain("**");
+      expect(container.textContent).not.toContain("pnpm gsam setup");
+
+      clickButton(container, "Open step-by-step guide");
+      const guide = document.body.querySelector(
+        '[data-testid="interaction-guide"]',
+      );
+      expect(guide?.textContent).toContain("pnpm gsam setup --company demo");
+      clickButton(guide!, "Yes, it finished");
+      await vi.waitFor(() =>
+        expect(onAcceptInteraction).toHaveBeenCalledWith(
+          expect.objectContaining({ id: "interaction-confirmation-step-guide" }),
+        ),
+      );
+    });
   });
 });

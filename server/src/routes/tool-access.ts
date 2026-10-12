@@ -83,6 +83,8 @@ import { trustedBoardMutationOrigin } from "../middleware/board-mutation-guard.j
 import { connectionIntentService } from "../services/connection-intents.js";
 import { redactRemoteUrlCredential } from "../services/remote-url-credentials.js";
 import { connectionIntentDeliveryService } from "../services/connection-intent-delivery.js";
+import { connectionAgentCheckService } from "../services/connection-agent-check.js";
+import { logger } from "../middleware/logger.js";
 import type { heartbeatService } from "../services/heartbeat.js";
 
 const COMPANY_INSTALL_DENIAL_REASON =
@@ -262,6 +264,24 @@ export function toolAccessRoutes(
 
   function bypassCurrentMembershipCheck(req: Request) {
     return req.actor.source === "local_implicit" || req.actor.isInstanceAdmin === true;
+  }
+
+  // One reconnect repairs every task waiting on this connection (GRE-335).
+  // The user's action closes each card it now serves; delivery wakes each
+  // task once. Agents cannot close the user's cards.
+  async function resumeTasksWaitingOn(req: Request, companyId: string, connectionId: string) {
+    if (req.actor.type === "agent" || !req.actor.userId) return;
+    try {
+      const closed = await connectionIntents.resolveToolIntentsForConnection({
+        companyId, userId: req.actor.userId, connectionId,
+        bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
+      });
+      if (!options.connectionIntentHeartbeat) return;
+      const deliveries = connectionIntentDeliveryService(db, options.connectionIntentHeartbeat);
+      for (const id of closed) await deliveries.tryDeliver(id);
+    } catch (err) {
+      logger.warn({ err, connectionId }, "Could not resume tasks waiting on this connection");
+    }
   }
 
   async function finishConnectionIntentOAuth(input: {
@@ -1006,7 +1026,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
   router.post("/tools/oauth/cloud-connector/enrollment", async (req, res) => {
     assertInstanceAdmin(req);
     const companyId = typeof req.body?.companyId === "string" ? req.body.companyId : "";
-    if (!companyId) throw badRequest("Paperclip Cloud enrollment requires a company");
+    if (!companyId) throw badRequest("Cloud enrollment requires a company");
     assertCompanyAccess(req, companyId);
     const origin = new URL(oauthRedirectUri(req)).origin;
     const returnTo = normalizeCloudConnectorEnrollmentReturnTo(
@@ -1022,7 +1042,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         returnTo,
       });
     } catch {
-      throw unprocessable("Paperclip Cloud enrollment could not be started", {
+      throw unprocessable("Cloud enrollment could not be started", {
         code: "paperclip_cloud_connector_enrollment_failed",
       });
     }
@@ -1043,13 +1063,13 @@ function connectorEnrollmentPrincipal(req: Request): string {
     const enrollmentId = typeof req.query.enrollment_id === "string" ? req.query.enrollment_id : "";
     const approvalCode = typeof req.query.approval_code === "string" ? req.query.approval_code : "";
     const state = typeof req.query.state === "string" ? req.query.state : "";
-    if (!enrollmentId || !approvalCode || !state) throw badRequest("Invalid Paperclip Cloud enrollment callback");
+    if (!enrollmentId || !approvalCode || !state) throw badRequest("Invalid cloud enrollment callback");
     const pending = loadPaperclipCloudConnectorIdentity()?.pending;
     if (pending?.companyId && !hasCompanyAccess(req, pending.companyId)) {
-      throw notFound("Paperclip Cloud enrollment not found");
+      throw notFound("Cloud enrollment not found");
     }
     if (pending?.initiatedBy && pending.initiatedBy !== connectorEnrollmentPrincipal(req)) {
-      throw notFound("Paperclip Cloud enrollment not found");
+      throw notFound("Cloud enrollment not found");
     }
     const [company] = pending?.companyId
       ? await db
@@ -1058,13 +1078,13 @@ function connectorEnrollmentPrincipal(req: Request): string {
         .where(eq(companies.id, pending.companyId))
         .limit(1)
       : [];
-    if (!company) throw notFound("Paperclip Cloud enrollment not found");
+    if (!company) throw notFound("Cloud enrollment not found");
     let status;
     try {
       status = await completePaperclipCloudConnectorEnrollment({ enrollmentId, approvalCode, state });
       invalidatePaperclipCloudConnectorCapabilities();
     } catch {
-      throw badRequest("Invalid or expired Paperclip Cloud enrollment callback");
+      throw badRequest("Invalid or expired cloud enrollment callback");
     }
     if (pending?.companyId) {
       await logActivity(db, {
@@ -1418,6 +1438,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         canManageOrganizationGrant: await isToolConnectionManager(req, pendingConnection.companyId),
         bypassCurrentMembershipCheck: bypassCurrentMembershipCheck(req),
       });
+      await resumeTasksWaitingOn(req, result.connection.companyId, result.connection.id);
       sendConnectionIntentOAuthOutcome(res, {
         interactionId: pendingState.interactionId,
         issueId: pendingState.issueId,
@@ -1426,6 +1447,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
       });
       return;
     }
+    await resumeTasksWaitingOn(req, result.connection.companyId, result.connection.id);
     if (acceptsHtml) {
       const permissionsPath = await oauthAppPath(result.connection.companyId, result.connection.id);
       res.redirect(303, `${permissionsPath}?success=1`);
@@ -2002,6 +2024,30 @@ function connectorEnrollmentPrincipal(req: Request): string {
     res.json({ access: accessSummary });
   });
 
+  // "Test as agent" (GRE-341): one read-only check with this agent's access.
+  // No run and no model call; the answer is returned, not saved as health.
+  router.post("/tool-connections/:connectionId/test-agents/:agentId/check", async (req, res) => {
+    assertBoard(req);
+    if (!options.toolGateway) {
+      res.status(501).json({ error: "Tool gateway service is not configured" });
+      return;
+    }
+    const connection = await getAccessibleResource(req, res, svc.getConnection(req.params.connectionId as string), "Tool connection not found");
+    if (!connection) return;
+    await assertBoardAnyToolPermission(req, connection.companyId, ["tools:use", "tools:manage_connections"]);
+    if (connection.connectionPurpose === "ai") throw unprocessable("AI connections are checked from the AI account, not as an agent");
+    const agentId = req.params.agentId as string;
+    await assertCanTestAsAgent(req, connection.companyId, agentId);
+    const result = await connectionAgentCheckService({ toolAccess: svc, toolGateway: options.toolGateway }).check({
+      companyId: connection.companyId,
+      connectionId: connection.id,
+      agentId,
+      userId: req.actor.userId ?? "board",
+      actor: getActorInfo(req),
+    });
+    res.json(result);
+  });
+
   router.post("/tool-connections/:connectionId/test-calls", validate(toolConnectionTestCallSchema), async (req, res) => {
     assertBoard(req);
     if (!options.toolGateway) {
@@ -2134,7 +2180,32 @@ function connectorEnrollmentPrincipal(req: Request): string {
     if (!existing) return;
     if (existing.credentialPolicy === "per_user") await assertToolConnectionAccess(req, existing);
     else await assertToolConnectionConfigureAccess(req, existing);
-    res.json(await svc.checkHealth(existing.id, getActorInfo(req)));
+    const result = await svc.checkHealth(existing.id, getActorInfo(req));
+    await resumeTasksWaitingOn(req, existing.companyId, existing.id);
+    res.json(result);
+  });
+
+  // GRE-1364: turn back on one connection a company pause turned off. It runs a
+  // health check first and stays off if the check fails.
+  router.post("/tool-connections/:connectionId/reenable-after-pause", async (req, res) => {
+    const existing = await getAccessibleResource(req, res, svc.getConnection(req.params.connectionId as string), "Tool connection not found");
+    if (!existing) return;
+    await assertToolConnectionConfigureAccess(req, existing);
+    const actor = getActorInfo(req);
+    const connection = await svc.reenableConnectionAfterPause(existing.id, actor);
+    await logActivity(db, {
+      companyId: connection.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "tool_connection.pause_reenabled",
+      entityType: "tool_connection",
+      entityId: connection.id,
+      details: { enabled: connection.enabled, healthStatus: connection.healthStatus },
+    });
+    await resumeTasksWaitingOn(req, existing.companyId, existing.id);
+    res.json(connection);
   });
 
   router.post(
@@ -2159,6 +2230,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
         entityId: existing.id,
         details: { healthStatus: result.connection.healthStatus },
       });
+      await resumeTasksWaitingOn(req, existing.companyId, existing.id);
       res.json(result);
     },
   );

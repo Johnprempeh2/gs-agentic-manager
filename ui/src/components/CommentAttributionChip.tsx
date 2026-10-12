@@ -24,7 +24,7 @@ import { cn } from "../lib/utils";
 export function commentAttributionTooltip(agentName: string, userName: string): string {
   return (
     `${agentName} posted this on behalf of ${userName}. ${agentName} is not assigned to ` +
-    `this task — its authority to write here comes from ${userName}, and never exceeds it.`
+    `this task. Its authority to write here comes from ${userName}, and never exceeds it.`
   );
 }
 

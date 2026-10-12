@@ -7,8 +7,10 @@
 //      cuts an rc-* tag from origin/main (title and changelog) once Fork CI on
 //      that commit is green.
 //   1. holding: new agent runs are held (the task drain) and the release waits
-//      only for running runs flagged "finish before update" (run-update-flags.ts),
-//      unless the board overrides. John can cancel here; live is unchanged.
+//      for running runs flagged "finish before update" (run-update-flags.ts),
+//      and up to 5 min for running ACP runs, which a hot restart cannot keep
+//      (GRE-746), unless the board overrides. John can cancel here; live is
+//      unchanged.
 //      The hold is also written to a file, so the server that starts after the
 //      restart keeps holding until the release is reported.
 //   2. switching / restarting: scripts/greatstone-live-release.sh runs from the
@@ -43,10 +45,13 @@ import { LIVE_RELEASE_REF_PATTERN } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { getServerInfoSnapshot } from "../server-info.js";
-import { applyTaskDrain, getTaskDrainStatus, stopTaskDrain } from "./heartbeat.js";
+import { accessService } from "./access.js";
+import { isCompanyOwnerOrAdminRole } from "./company-member-roles.js";
+import { applyTaskDrain, getTaskDrainStatus, isServerStdioBoundHotRestartRun, stopTaskDrain } from "./heartbeat.js";
 import { issueService } from "./issues.js";
 import { announceLiveRelease } from "./live-release-announce.js";
 import { readHotRestartReportSync, type HotRestartReport } from "./hot-restart.js";
+import { getStartupRecoveryState } from "../startup-recovery-state.js";
 import { hasOwnReleaseNotes, parseReleaseNotes, type ReleaseNotes } from "./release-notes.js";
 import {
   LIVE_TAG_RE,
@@ -56,10 +61,12 @@ import {
   checkReleaseTarget,
   clientNotesProblem,
   createStableTag,
+  deleteUnpushedTag,
   nextCandidateTagName,
   nextStableTagName,
   prepareReleaseRepo,
   readForkCi,
+  readReleaseMainCommit,
   readReleaseTags,
   resolveReleaseRepo as resolveReleaseRepoFrom,
   runCandidateScript,
@@ -89,6 +96,11 @@ export interface LiveReleaseEvent {
 }
 
 export const LIVE_RELEASE_WAIT_FOR_RUNS_MS = 60 * 60 * 1000;
+/**
+ * How long a release waits for running ACP runs before the restart. A hot
+ * restart cannot keep them, so they would be cut off and retried (GRE-746).
+ */
+export const LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS = 5 * 60 * 1000;
 export const LIVE_RELEASE_SWITCH_MS = 30 * 60 * 1000;
 export const LIVE_RELEASE_TICK_MS = 10 * 1000;
 export const LIVE_RELEASE_RECORD_ATTEMPTS = 3;
@@ -126,6 +138,8 @@ export interface RestartReportSummary {
   resumedRunIds: string[];
   /** Kept running through the restart. */
   adoptedRunIds: string[];
+  /** Kept running, but with no capture file: its result is lost when it ends (GRE-250). */
+  adoptedWithoutCaptureRunIds: string[];
   /** Ended during the switch; checkpointed ACP runs are here and continue as a conversation retry. */
   finishedWhileDownRunIds: string[];
   /** Running before, unaccounted for after. Needs recovery. */
@@ -149,6 +163,8 @@ export interface LiveReleaseJob {
   previousTag: string | null;
   liveTag: string | null;
   waitingForFlaggedRuns: number | null;
+  /** Running ACP runs the switch waits for, at most LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS after the hold starts. */
+  waitingForAcpRuns: number | null;
   overridden: boolean;
   restartReport: RestartReportSummary | null;
   createdAt: string;
@@ -157,6 +173,8 @@ export interface LiveReleaseJob {
   switchDeadline: string | null;
   launcherStartedAt: string | null;
   finishedAt: string | null;
+  /** This job cut `tag` from origin/main; a job that stops before the switch deletes it (GRE-239). */
+  cutTag: boolean;
 }
 
 /** The progress the Releases page shows (agreed with Mica on GRE-121/GRE-122). */
@@ -167,6 +185,7 @@ export interface ReleaseProgress {
   targetTitle: string | null;
   state: ReleaseState;
   waitingForFlaggedRuns: number | null;
+  waitingForAcpRuns: number | null;
   overridden: boolean;
   reason: string | null;
   previousTag: string | null;
@@ -209,15 +228,6 @@ export interface ReleasesOverview {
     releasedBy: string | null;
     changelog: Changelog;
   } | null;
-  candidate: {
-    tag: string;
-    title: string;
-    date: string | null;
-    commit: string;
-    changelog: Changelog;
-    forkCi: { status: CiStatus; url: string | null };
-    flintCheck: { status: CiStatus; summary: string | null; issueIdentifier: string | null };
-  } | null;
   history: Array<{
     tag: string;
     title: string;
@@ -229,6 +239,8 @@ export interface ReleasesOverview {
     /** The stable-* tag on this release's commit, once promoted (GRE-127). */
     stableTag: string | null;
     restartReport: RestartReportSummary | null;
+    /** The release to this tag failed and live never ran it (GRE-239); it offers no rollback. */
+    neverRan: boolean;
   }>;
   next: NextVersion | null;
   flaggedRuns: FlaggedRunView[];
@@ -259,6 +271,16 @@ interface StoredNextTitle {
   editedAt: string;
 }
 
+/** Who accepted an "Update live?" card (getActorInfo in the issues route). */
+export interface ReleaseCardActor {
+  actorType: string;
+  actorId: string;
+  actorSource?: string;
+}
+
+export const RELEASE_CARD_OWNER_OR_ADMIN_COMMENT =
+  "Not released: only an owner or admin of this company can accept an \"Update live?\" card. Live is unchanged.";
+
 export interface LiveReleaseDeps {
   /** Folder for hold.json, jobs/<id>/, next-title.json and run-flags.json (inside the instance data folder). */
   stateDir: string;
@@ -271,7 +293,15 @@ export interface LiveReleaseDeps {
   now(): Date;
   /** Running runs among `runIds` (the flagged ones). */
   runningRunIds(runIds: string[]): Promise<string[]>;
+  /** Running runs tied to this server's process (ACP), which a hot restart cannot keep. */
+  runningAcpRunIds(): Promise<string[]>;
   postComment(issueId: string, body: string): Promise<void>;
+  /**
+   * Whether this person may release from an "Update live?" card on this
+   * issue: an owner or admin of the issue's company, an instance admin, or
+   * the implicit local board. The Releases page routes check the same.
+   */
+  mayReleaseFromCard(input: { issueId: string; actor: ReleaseCardActor }): Promise<boolean>;
   applyHold(hold: { startedAt: Date; expiresAt: Date }): void;
   /** Lifts the task drain only if it is still the one this release started. */
   liftHold(startedAt: Date): void;
@@ -282,8 +312,6 @@ export interface LiveReleaseDeps {
   readRunningCommit(): { commit: string; tag: string | null } | null;
   /** Whether `ref` (checked with isReleaseRef) is contained in `commit`; null when git cannot tell. */
   containsRef(commit: string, ref: string): boolean | null;
-  /** git merge-base --is-ancestor in the release repo; null when git cannot tell. */
-  isAncestor(repo: string, ancestor: string, commit: string): boolean | null;
   /** Records and announces a new live commit. Must be safe to repeat. */
   announce(event: LiveReleaseEvent, isRefLive: (ref: string) => boolean | null): Promise<void>;
   // Release repo access (release-repo.ts); injected so tests need no git or gh.
@@ -292,15 +320,19 @@ export interface LiveReleaseDeps {
   /** scripts/greatstone-candidate.mjs; `print` makes no tag. */
   runCandidate(repo: string, input: { tag: string; title: string; since: string | null; print: boolean }): Promise<CandidateCut>;
   nextTagName(repo: string): Promise<string>;
+  /** Deletes `tag` in the release repo when origin does not have it. */
+  deleteUnpushedTag(repo: string, tag: string): Promise<void>;
   /** The next free stable-YYYY-MM-DD.N name (GRE-127). */
   nextStableTagName(repo: string): Promise<string>;
   /** Adds the annotated stable tag and pushes it; a failure changes nothing. */
   createStableTag(repo: string, input: { tag: string; commit: string; notes: string }): Promise<void>;
   readForkCi(repo: string, commit: string): Promise<{ status: CiStatus; url: string | null }>;
   readTags(repo: string): Promise<ReleaseTagInfo[]>;
-  /** The main commit last fetched (origin/main), without fetching. */
+  /** origin/main after a short, rate-limited fetch (GRE-249). */
   readMainCommit(repo: string): Promise<string | null>;
   readRestartReport(): HotRestartReport | null;
+  /** True once this server finished startup recovery (hot-restart adoption writes its report before that). */
+  startupRecoveryReady(): boolean;
   /** Agent names and issue identifiers for the flagged-run list. */
   describeRuns(runIds: string[]): Promise<Map<string, { agentName: string | null; issueIdentifier: string | null }>>;
   findRun(runId: string): Promise<{ companyId: string; agentId: string; status: string } | null>;
@@ -356,8 +388,10 @@ function normalizeJob(raw: Record<string, unknown>, result: LiveReleaseResult | 
   job.previousTag ??= null;
   job.liveTag ??= null;
   job.waitingForFlaggedRuns ??= null;
+  job.waitingForAcpRuns ??= null;
   job.overridden ??= false;
   job.restartReport ??= null;
+  job.cutTag ??= false;
   job.updatedAt ??= job.finishedAt ?? job.createdAt;
   const state = raw.state as string;
   if (state === "waiting_for_runs") job.state = "holding";
@@ -373,6 +407,9 @@ export function summarizeRestartReport(report: HotRestartReport): RestartReportS
     completedAt: report.completedAt,
     resumedRunIds: [...new Set([...report.adoptedRunIds, ...report.finalizedWhileDownRunIds])],
     adoptedRunIds: report.adoptedRunIds,
+    adoptedWithoutCaptureRunIds: report.adoptedRunIds.filter(
+      (runId) => !report.runs.some((run) => run.runId === runId && run.outputCaptured === true),
+    ),
     finishedWhileDownRunIds: report.finalizedWhileDownRunIds,
     lostRunIds: report.lostRunIds,
   };
@@ -488,6 +525,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     targetTitle: job.title,
     state: job.state,
     waitingForFlaggedRuns: job.state === "holding" ? job.waitingForFlaggedRuns : null,
+    waitingForAcpRuns: job.state === "holding" ? job.waitingForAcpRuns : null,
     overridden: job.overridden,
     reason: job.reason,
     previousTag: job.previousTag,
@@ -524,12 +562,24 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     }
   };
 
+  /** An rc-* tag this server cut and never released stays out of the release repo (GRE-239). */
+  const dropCutTag = async (repo: string, tag: string) => {
+    try {
+      await deps.deleteUnpushedTag(repo, tag);
+      tagsVersion += 1;
+    } catch (err) {
+      logger.warn({ err, tag }, "live release: could not delete an unreleased candidate tag");
+    }
+  };
+
   const finish = async (job: LiveReleaseJob, state: ReleaseState, reason: string | null, body: string) => {
     job.state = state;
     job.reason = reason;
     job.finishedAt = deps.now().toISOString();
     saveJob(job);
     releaseHold();
+    // Stopped before the launcher started: the release script never saw the tag.
+    if (job.cutTag && !job.launcherStartedAt) await dropCutTag(job.releaseRepo, job.tag);
     await comment(job, body);
   };
 
@@ -585,6 +635,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         targetTitle: null,
         state: "checking",
         waitingForFlaggedRuns: null,
+        waitingForAcpRuns: null,
         overridden: false,
         reason: null,
         previousTag: null,
@@ -620,7 +671,10 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
           }
         }
         const target = await deps.checkTarget({ repo: releaseRepo, kind: input.kind, tag, liveCommit: live?.commit ?? null });
-        if (!target.ok) return fail(409, target.reason);
+        if (!target.ok) {
+          if (fromMain) await dropCutTag(releaseRepo, tag);
+          return fail(409, target.reason);
+        }
 
         const job: LiveReleaseJob = {
           id: `${now.toISOString().replace(/[:.]/g, "")}-${randomUUID().slice(0, 8)}`,
@@ -637,6 +691,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
           previousTag: live?.tag ?? null,
           liveTag: null,
           waitingForFlaggedRuns: null,
+          waitingForAcpRuns: null,
           overridden: false,
           restartReport: null,
           createdAt: now.toISOString(),
@@ -645,6 +700,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
           switchDeadline: null,
           launcherStartedAt: null,
           finishedAt: null,
+          cutTag: fromMain,
         };
         saveJob(job);
         // The hold outlives the longest wait plus the longest switch, then lapses.
@@ -656,7 +712,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         deps.applyHold(hold);
         await step(job);
         const what = job.kind === "rollback" ? `Rollback to ${tag}` : `Update live to ${tag}`;
-        await comment(job, `${what} started. New agent runs are on hold. Running runs continue through a hot restart; the switch waits only for runs flagged "finish before update" (${job.waitingForFlaggedRuns ?? 0} now, at most ${LIVE_RELEASE_WAIT_FOR_RUNS_MS / 60000} min).`);
+        await comment(job, `${what} started. New agent runs are on hold. The switch waits for runs flagged "finish before update" (${job.waitingForFlaggedRuns ?? 0} now, at most ${LIVE_RELEASE_WAIT_FOR_RUNS_MS / 60000} min) and for running ACP runs, which a hot restart cannot keep (${job.waitingForAcpRuns ?? 0} now, at most ${LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS / 60000} min). Other running runs continue through the hot restart.`);
         return { ok: true, job, progress: toProgress(job) };
       } finally {
         checking = null;
@@ -677,6 +733,18 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         }
         saveJob(job);
         return;
+      }
+      // ACP runs end with the server, so wait a short, fixed time for them to
+      // finish. Past it they are checkpointed and retried, as before (GRE-746).
+      const acpRunning = job.overridden ? 0 : (await deps.runningAcpRunIds()).length;
+      job.waitingForAcpRuns = acpRunning;
+      const acpWaitOver = now.getTime() >= Date.parse(job.createdAt) + LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS;
+      if (acpRunning > 0 && !acpWaitOver) {
+        saveJob(job);
+        return;
+      }
+      if (acpRunning > 0) {
+        await comment(job, `${acpRunning} ACP run(s) still running after ${LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS / 60000} min. The restart stops them and they are retried.`);
       }
       job.state = "switching";
       job.launcherStartedAt = now.toISOString();
@@ -699,9 +767,12 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       const result = readJson<LiveReleaseResult>(path.join(dir, "result.json"));
       if (result) {
         const report = deps.readRestartReport();
-        if (report && job.launcherStartedAt && Date.parse(report.requestedAt) >= Date.parse(job.launcherStartedAt)) {
-          job.restartReport = summarizeRestartReport(report);
-        }
+        const fresh = report && job.launcherStartedAt && Date.parse(report.requestedAt) >= Date.parse(job.launcherStartedAt);
+        // The launcher writes result.json once health shows the new process,
+        // which can be before this server's startup recovery has adopted the
+        // runs and written the report (GRE-242). Wait for it; the next tick records.
+        if (!fresh && !deps.startupRecoveryReady()) return;
+        if (fresh) job.restartReport = summarizeRestartReport(report);
         job.liveTag = result.outcome === "released" ? (result.liveTag ?? (job.kind === "rollback" ? job.tag : null)) : null;
         job.previousTag = result.previousTag ?? job.previousTag;
         const state = stateOfResult(result);
@@ -742,7 +813,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       return { ok: true, job, progress: toProgress(job) };
     });
 
-  /** The board releases without waiting for flagged runs. */
+  /** The board releases without waiting for flagged runs or ACP runs. */
   const override = (actor: { actorType: string; actorId: string }) =>
     serial(async (): Promise<StartReleaseResult> => {
       const job = activeJob();
@@ -751,7 +822,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       }
       job.overridden = true;
       saveJob(job);
-      await comment(job, `${actor.actorId} chose not to wait for flagged runs.`);
+      await comment(job, `${actor.actorId} chose not to wait for flagged runs or ACP runs.`);
       await step(job);
       return { ok: true, job, progress: toProgress(job) };
     });
@@ -763,12 +834,17 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
   const onConfirmationAccepted = async (input: {
     issueId: string;
     interaction: { id: string; kind: string; status: string; idempotencyKey?: string | null };
-    actor: { actorType: string; actorId: string };
+    actor: ReleaseCardActor;
   }) => {
     const { interaction } = input;
     if (interaction.kind !== "request_confirmation" || interaction.status !== "accepted") return null;
     const rcTag = parseLiveReleaseKey(interaction.idempotencyKey);
     if (!rcTag) return null;
+    // A person must be an owner or admin; start() refuses agents itself.
+    if (input.actor.actorType === "user" && !(await deps.mayReleaseFromCard({ issueId: input.issueId, actor: input.actor }))) {
+      await deps.postComment(input.issueId, RELEASE_CARD_OWNER_OR_ADMIN_COMMENT);
+      return null;
+    }
     const result = await start({ kind: "release", tag: rcTag, actor: input.actor, issueId: input.issueId, interactionId: interaction.id });
     if (!result.ok) {
       await deps.postComment(input.issueId, `Not released: ${result.error}. Live is unchanged.`);
@@ -922,6 +998,13 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     const progress = checking ?? (latest && !failureMoot ? toProgress(latest) : null);
     const releasedBy = (tag: string | null) => (tag ? (jobs.find((j) => j.liveTag === tag && j.state === "healthy")?.startedBy ?? null) : null);
     const reportOf = (tag: string) => jobs.find((j) => j.liveTag === tag)?.restartReport ?? null;
+    // Before GRE-239 a release that failed after the switch still pushed its
+    // live-* tag. Such a tag never ran: a job to its commit failed after the
+    // launcher started, no job made it healthy, and live does not run it now.
+    const neverRan = (tag: string, commit: string) =>
+      running?.commit !== commit &&
+      !jobs.some((j) => j.liveTag === tag && j.state === "healthy") &&
+      jobs.some((j) => j.kind === "release" && j.commit === commit && j.launcherStartedAt !== null && (j.state === "failed" || j.state === "rolled_back"));
 
     const liveTags = tags.filter((t) => LIVE_TAG_RE.test(t.tag));
     const rcTags = tags.filter((t) => RC_TAG_RE.test(t.tag));
@@ -950,6 +1033,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
         candidateTag: rcTags.find((rc) => rc.commit === t.commit)?.tag ?? null,
         stableTag: stableTags.find((st) => st.commit === t.commit)?.tag ?? null,
         restartReport: reportOf(t.tag),
+        neverRan: neverRan(t.tag, t.commit),
       };
     });
 
@@ -968,34 +1052,6 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       };
     }
 
-    const liveCommits = new Set(liveTags.map((t) => t.commit));
-    // Only an rc strictly newer than live (GRE-172); when git cannot tell, offer none.
-    const newerThanLive = (commit: string) =>
-      running && repo && commit !== running.commit
-        ? cached(`ancestor:${running.commit}:${commit}`, async () => deps.isAncestor(repo, running.commit, commit) === true)
-        : Promise.resolve(false);
-    let newestRc: ReleaseTagInfo | null = null;
-    for (const t of rcTags) {
-      if (liveCommits.has(t.commit)) continue;
-      if (await newerThanLive(t.commit)) {
-        newestRc = t;
-        break;
-      }
-    }
-    let candidate: ReleasesOverview["candidate"] = null;
-    if (newestRc && repo) {
-      const { title, changelog } = changelogOf(newestRc.message, newestRc.tag);
-      candidate = {
-        tag: newestRc.tag,
-        title,
-        date: newestRc.date,
-        commit: newestRc.commit,
-        changelog,
-        forkCi: await cached(`ci:${newestRc.commit}`, () => deps.readForkCi(repo, newestRc.commit)),
-        flintCheck: { status: "unknown", summary: null, issueIdentifier: null },
-      };
-    }
-
     let next: NextVersion | null = null;
     if (repo) {
       try {
@@ -1005,7 +1061,7 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
       }
     }
 
-    return { live, candidate, history, next, flaggedRuns: await listFlaggedRuns(companyId), progress, disabledReason };
+    return { live, history, next, flaggedRuns: await listFlaggedRuns(companyId), progress, disabledReason };
   };
 
   /**
@@ -1152,8 +1208,33 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
         .where(and(inArray(heartbeatRuns.id, runIds), eq(heartbeatRuns.status, "running")));
       return rows.map((row) => row.id);
     },
+    runningAcpRunIds: async () => {
+      const rows = await db
+        .select({
+          run: { id: heartbeatRuns.id, contextSnapshot: heartbeatRuns.contextSnapshot },
+          adapterType: agents.adapterType,
+          adapterConfig: agents.adapterConfig,
+        })
+        .from(heartbeatRuns)
+        .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+        .where(eq(heartbeatRuns.status, "running"));
+      return rows.filter(isServerStdioBoundHotRestartRun).map((row) => row.run.id);
+    },
     postComment: async (issueId, body) => {
       await issues.addComment(issueId, body, {}, { authorType: "system" });
+    },
+    mayReleaseFromCard: async ({ issueId, actor }) => {
+      if (actor.actorType !== "user") return false;
+      if (actor.actorSource === "local_implicit") return true;
+      const [issue] = await db
+        .select({ companyId: issuesTable.companyId })
+        .from(issuesTable)
+        .where(eq(issuesTable.id, issueId));
+      if (!issue) return false;
+      const access = accessService(db);
+      if (await access.isInstanceAdmin(actor.actorId)) return true;
+      const membership = await access.getMembership(issue.companyId, "user", actor.actorId);
+      return membership?.status === "active" && isCompanyOwnerOrAdminRole(membership.membershipRole);
     },
     applyHold: (hold) => applyTaskDrain(hold),
     liftHold: (startedAt) => {
@@ -1185,7 +1266,6 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
       return { commit: info.fullSha, tag: tags?.split("\n")[0]?.trim() || null };
     },
     containsRef: (commit, ref) => repoContainsRef(repoRoot, commit, ref),
-    isAncestor: repoIsAncestor,
     announce: async (event, isRefLive) => {
       const result = await announceLiveRelease(db, event, isRefLive);
       logger.info({ commit: event.commit, ...result }, "live release: announced");
@@ -1194,12 +1274,14 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     checkTarget: checkReleaseTarget,
     runCandidate: runCandidateScript,
     nextTagName: (repo) => nextCandidateTagName(repo, new Date()),
+    deleteUnpushedTag,
     nextStableTagName: (repo) => nextStableTagName(repo, new Date()),
     createStableTag,
     readForkCi,
     readTags: readReleaseTags,
-    readMainCommit: async (repo) => git(repo, ["rev-parse", "--verify", "--quiet", "origin/main^{commit}"]),
+    readMainCommit: (repo) => readReleaseMainCommit(repo),
     readRestartReport: () => readHotRestartReportSync(),
+    startupRecoveryReady: () => getStartupRecoveryState().phase === "ready",
     describeRuns: async (runIds) => {
       const out = new Map<string, { agentName: string | null; issueIdentifier: string | null }>();
       if (runIds.length === 0) return out;

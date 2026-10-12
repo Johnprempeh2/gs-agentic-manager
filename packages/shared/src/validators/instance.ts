@@ -5,8 +5,12 @@ import {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  TEAM_CATALOG_ADD_MODES,
+  TEAM_CATALOG_FILTERS,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
 } from "../types/instance.js";
 import { feedbackDataSharingPreferenceSchema } from "./feedback.js";
+import { aiAccessRouteSchema } from "../ai-connections.js";
 import { shapeWithoutDefaults } from "./partial.js";
 
 function presetSchema<T extends readonly number[]>(presets: T, label: string) {
@@ -31,6 +35,12 @@ export const runAdmissionSettingsSchema = z.object({
   minFreeDiskGb: z.number().int().min(0).max(100_000).optional(),
 }).strict();
 
+export const strategyBoardEmailSettingsSchema = z.object({
+  meetingReminders: z.boolean().default(true),
+  slippageAlerts: z.boolean().default(true),
+  whyRequests: z.boolean().default(true),
+}).strict();
+
 export const instanceGeneralSettingsSchema = z.object({
   censorUsernameInLogs: z.boolean().default(false),
   keyboardShortcuts: z.boolean().default(false),
@@ -43,6 +53,19 @@ export const instanceGeneralSettingsSchema = z.object({
   executionMode: z.enum(["kubernetes", "any"]).optional(),
   // Run admission guard. Absent => built-in defaults (see run-admission.ts).
   runAdmission: runAdmissionSettingsSchema.optional(),
+  // Install-wide AI access route (GRE-139). Absent/null => each agent's own setting.
+  aiAccessRoute: aiAccessRouteSchema.nullable().optional(),
+  // Which teams the Team Catalogue and the new-company flow offer (GRE-427).
+  // "greatstone" (default) shows only teams tagged `greatstone`; "all" also
+  // shows the upstream teams, for our own instance.
+  teamCatalogFilter: z.enum(TEAM_CATALOG_FILTERS).default("greatstone"),
+  // What the catalogue's add button does for a team not yet installed (GRE-434).
+  // "request" (default) asks Greatstone through a board approval card instead
+  // of installing; "install" installs directly, for our own instance.
+  teamCatalogAddMode: z.enum(TEAM_CATALOG_ADD_MODES).default("request"),
+  // Which board emails go out (GRE-1187). Nothing is sent while
+  // enableStrategyBoard is off or a company has no secretary inbox.
+  strategyBoardEmail: strategyBoardEmailSettingsSchema.default(DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z
@@ -68,6 +91,20 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableMemoryConnectors: z.boolean().default(false),
   enablePipelines: z.boolean().default(false),
   enableCases: z.boolean().default(false),
+  // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.
+  enableDeepDive: z.boolean().default(false),
+  // Greatstone: Strategy module (GRE-1382): the KPI cascade and KPI readings.
+  // On for self-hosted so existing instances keep their plan; client editions
+  // and the signed entitlement document turn it off unless it is sold.
+  enableStrategy: z.boolean().default(true),
+  // Greatstone: board control panel (GRE-1135). Off by default; set per instance.
+  // Needs enableStrategy: with Strategy off it reads off and cannot be turned on.
+  enableStrategyBoard: z.boolean().default(false),
+  // Greatstone: the board secretary agent (GRE-1200). It may make draft board
+  // packs that a board member accepts. One per instance; null = none.
+  strategyBoardSecretaryAgentId: z.string().uuid().nullable().default(null),
+  // Greatstone: read-only Website view (GA4 and Search Console), GRE-1085.
+  enableWebsiteView: z.boolean().default(false),
   enableAgentChat: z.boolean().default(false),
   enableConferenceRoomChat: z.boolean().default(false),
   enableClassicTaskInterface: z.boolean().default(false),

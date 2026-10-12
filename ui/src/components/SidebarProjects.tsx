@@ -241,7 +241,7 @@ function SortableProjectItem(props: ProjectItemProps) {
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        zIndex: isDragging ? 10 : undefined,
+        zIndex: isDragging ? "var(--z-index-raised)" : undefined,
       }}
       className={cn(isDragging && "opacity-80")}
       {...attributes}

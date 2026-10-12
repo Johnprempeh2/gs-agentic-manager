@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
 import { githubLauncherSource } from "./github-launcher.js";
+import { processKillGuardFiles, type ProcessKillGuard } from "./process-kill-guard.js";
 import type { SshRemoteExecutionSpec } from "./ssh.js";
 import {
   prepareCommandManagedRuntime,
@@ -78,6 +79,8 @@ import {
   runChildProcess,
   type RunProcessResult,
   type TerminalResultCleanupOptions,
+  type ChildOutputCaptureOptions,
+  type ChildOutputCapturePaths,
 } from "./server-utils.js";
 import { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 import { preferredShellForSandbox, shellCommandArgs } from "./sandbox-shell.js";
@@ -278,8 +281,15 @@ export interface AdapterExecutionTargetProcessOptions {
   graceSec: number;
   onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
   onRuntimeProgress?: RuntimeStatusSink;
-  onSpawn?: (meta: { pid: number; processGroupId: number | null; startedAt: string }) => Promise<void>;
+  onSpawn?: (meta: {
+    pid: number;
+    processGroupId: number | null;
+    startedAt: string;
+    outputCapture?: ChildOutputCapturePaths | null;
+  }) => Promise<void>;
   terminalResultCleanup?: TerminalResultCleanupOptions;
+  /** Local targets only: write stdout/stderr to files under this dir. */
+  outputCapture?: ChildOutputCaptureOptions | null;
   /**
    * Sandbox-only: factory from the GS Agentic Manager bridge handle that streams the
    * CLI's stdout/stderr during the run. When provided, the batched provider
@@ -635,7 +645,7 @@ export function formatAdapterExecutionTimeoutErrorMessage(
 
 /**
  * One-line start-of-run statement of the effective wall-clock timeout and its
- * source. Callers prefix with `[paperclip] ` and append a newline.
+ * source. Callers prefix with `[gsam] ` and append a newline.
  */
 export function formatAdapterExecutionTimeoutStartLogLine(
   resolution: AdapterExecutionTargetTimeoutResolution,
@@ -841,7 +851,7 @@ function applyRunDispositionSeam(
   const disposition = settleRunDisposition();
   if (!disposition.failed) return result;
   const lossReason = disposition.lossReason ?? "other";
-  const note = `[paperclip] The sandbox duplex control channel was lost (${lossReason}) before the run completed.\n`;
+  const note = `[gsam] The sandbox duplex control channel was lost (${lossReason}) before the run completed.\n`;
   const separator = result.stderr.length > 0 && !result.stderr.endsWith("\n") ? "\n" : "";
   return {
     ...result,
@@ -922,6 +932,7 @@ export async function runAdapterExecutionTargetProcess(
     terminalResultCleanup: options.terminalResultCleanup,
     localProcessSandbox: target?.kind === "local" || !target ? options.localProcessSandbox : null,
     remoteExecution: adapterExecutionTargetToRemoteSpec(target),
+    outputCapture: target?.kind === "local" || !target ? options.outputCapture : null,
   });
 }
 
@@ -1213,7 +1224,7 @@ export async function ensureAdapterExecutionTargetRuntimeCommandInstalled(input:
         const reason = result.timedOut ? "timed out" : `exited ${result.exitCode ?? "?"}`;
         await input.onLog(
           "stderr",
-          `[paperclip] Install command ${reason} (${installCommand}) but ${detectCommand} is on PATH; continuing.\n`,
+          `[gsam] Install command ${reason} (${installCommand}) but ${detectCommand} is on PATH; continuing.\n`,
         );
       }
       return;
@@ -1702,6 +1713,12 @@ printf '\0GSAM_GIT_CONTEXT_END\0'
 /** Stage token-free launchers next to the execution, not in shared global Git config. */
 export async function prepareGitHubOperationLaunchers(input: {
   runId: string; target: AdapterExecutionTarget | null | undefined; cwd: string; env: Record<string, string>;
+  /**
+   * Live processes the run's pkill/killall must leave alone. Local runs on
+   * Linux and macOS get guard wrappers in this directory, which is first on
+   * PATH; remote targets do not share the controller's processes.
+   */
+  processGuard?: ProcessKillGuard | null;
 }): Promise<Record<string, string>> {
   const remote = input.target?.kind === "remote" ? input.target : null;
   const directory = githubOperationLauncherDirectory(input);
@@ -1741,6 +1758,14 @@ export async function prepareGitHubOperationLaunchers(input: {
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     await fs.mkdir(configDirectory, { recursive: true, mode: 0o700 });
     for (const [program, body] of Object.entries(files)) await fs.writeFile(path.join(directory, program), body, { mode: 0o700 });
+    const guards = processKillGuardFiles(input.processGuard
+      ? { ...input.processGuard, ownWorkspace: input.processGuard.ownWorkspace ?? input.cwd }
+      : null);
+    for (const [program, body] of Object.entries(guards)) {
+      const file = path.join(directory, program);
+      await fs.writeFile(file, body, { mode: 0o700 });
+      await fs.chmod(file, 0o700);
+    }
   }
   return { ...input.env, PATH: managedPath, ZDOTDIR: directory, BASH_ENV: `${directory}/.bashrc`,
     GH_CONFIG_DIR: configDirectory, GSAM_GITHUB_LAUNCHER_DIR: directory };
@@ -2073,7 +2098,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
   // event files with the host poll below. The streamed path launches the wrapper
   // as one foreground session command further down instead, so skip this.
   if (!streamOutput) {
-    await onLog("stdout", `[paperclip] Starting ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`);
+    await onLog("stdout", `[gsam] Starting ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`);
     const startResult = await runner.execute({
       command: shellCommand,
       args: shellCommandArgs(
@@ -2293,7 +2318,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      await onLog("stderr", `[paperclip] ACP process session bridge poll failed: ${message}\n`);
+      await onLog("stderr", `[gsam] ACP process session bridge poll failed: ${message}\n`);
       deliverRemoteEvent({ type: "error", message });
       return;
     } finally {
@@ -2367,7 +2392,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
 
     await onLog(
       "stdout",
-      `[paperclip] Starting streamed ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`,
+      `[gsam] Starting streamed ACP process session bridge in sandbox (${target.providerKey ?? "provider"}).\n`,
     );
     // Fire the long-lived command; do NOT await it here. `useSession` forces the
     // persistent session so the provider streams the wrapper stdout back through
@@ -2538,7 +2563,7 @@ export async function startAdapterExecutionTargetProcessSessionBridge(input: {
       if (!acknowledgedInTime) {
         await onLog(
           "stderr",
-          `[paperclip] ACP process session wrapper did not acknowledge shutdown within ${DEFAULT_PROCESS_SESSION_SHUTDOWN_WAIT_MS}ms; removing the session directory anyway.\n`,
+          `[gsam] ACP process session wrapper did not acknowledge shutdown within ${DEFAULT_PROCESS_SESSION_SHUTDOWN_WAIT_MS}ms; removing the session directory anyway.\n`,
         ).catch(() => undefined);
       }
       // Unconditional: this removal runs whether or not the wrapper
@@ -4324,7 +4349,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
 
   await onLog(
     "stdout",
-    `[paperclip] Starting sandbox callback bridge for ${input.adapterKey} in ${bridgeRuntimeDir}.\n`,
+    `[gsam] Starting sandbox callback bridge for ${input.adapterKey} in ${bridgeRuntimeDir}.\n`,
   );
 
   const bridgeAsset = await createSandboxCallbackBridgeAsset();
@@ -4382,7 +4407,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
     if (emitDebugLog) {
       await onLog(
         "stdout",
-        `[paperclip] Bridge proxy ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
+        `[gsam] Bridge proxy ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
       );
     }
     const headers = new Headers();
@@ -4416,7 +4441,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
     if (emitDebugLog) {
       await onLog(
         "stdout",
-        `[paperclip] Bridge proxy response ${response.status} for ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
+        `[gsam] Bridge proxy response ${response.status} for ${method} ${request.path}${request.query ? `?${request.query}` : ""}\n`,
       );
     }
     // The host delivered response headers, so the response-body read starts after
@@ -4584,7 +4609,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
       duplexChannelOpen.fallback(reason);
       await onLog(
         "stderr",
-        `[paperclip] Could not open the sandbox duplex channel (${reason}). Using the file bridge.\n`,
+        `[gsam] Could not open the sandbox duplex channel (${reason}). Using the file bridge.\n`,
       );
       channel = null;
     }
@@ -4606,7 +4631,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
         duplexChannelOpen.fallback(duplexReadinessFallbackReason(readiness.reason));
         await onLog(
           "stderr",
-          `[paperclip] Sandbox duplex readiness failed (${readiness.reason}). Using the file bridge.\n`,
+          `[gsam] Sandbox duplex readiness failed (${readiness.reason}). Using the file bridge.\n`,
         );
       } else {
         // Readiness passed. The gate retained every byte that followed the
@@ -4632,7 +4657,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
           duplexChannelOpen.fallback("preface_missing");
           await onLog(
             "stderr",
-            "[paperclip] Sandbox HTTP/2 client preface did not appear inside the bounded readiness buffer (preface_missing). Using the file bridge.\n",
+            "[gsam] Sandbox HTTP/2 client preface did not appear inside the bounded readiness buffer (preface_missing). Using the file bridge.\n",
           );
         } else {
           // The run disposition latch for the http2_v1 path, in the same
@@ -4656,7 +4681,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
             }
             const lossClass = anyStreamDispatched ? "post_dispatch" : "pre_dispatch";
             duplexObservability.recordLoss(lossClass, reason);
-            void onLog("stderr", `[paperclip] Sandbox HTTP/2 channel lost (${reason}). The run fails.\n`);
+            void onLog("stderr", `[gsam] Sandbox HTTP/2 channel lost (${reason}). The run fails.\n`);
           };
 
           // The forward handler applies the real host token and the run id
@@ -4738,7 +4763,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
           duplexChannelOpen.ready();
           await onLog(
             "stdout",
-            "[paperclip] Sandbox HTTP/2 transport ready; serving the host-assigned origin.\n",
+            "[gsam] Sandbox HTTP/2 transport ready; serving the host-assigned origin.\n",
           );
           // Stream run logs on the http2 path with the same gate and the same
           // log line as the file path. The http2 path starts no file-bridge
@@ -4759,7 +4784,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
               logsDir: duplexLogsDir,
               shellCommand,
             });
-            await onLog("stdout", "[paperclip] Sandbox run log streaming enabled for this run.\n");
+            await onLog("stdout", "[gsam] Sandbox run log streaming enabled for this run.\n");
           }
           return {
             env: {
@@ -4843,7 +4868,7 @@ export async function startAdapterExecutionTargetPaperclipBridge(input: {
       logsDir: sandboxCallbackBridgeDirectories(queueDir).logsDir,
       shellCommand,
     });
-    await onLog("stdout", "[paperclip] Sandbox run log streaming enabled for this run.\n");
+    await onLog("stdout", "[gsam] Sandbox run log streaming enabled for this run.\n");
   }
 
   return {

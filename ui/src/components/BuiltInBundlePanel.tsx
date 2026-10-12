@@ -213,7 +213,7 @@ function driftDetail(resource: BuiltInManagedResourceState): string | undefined 
     case "stock_update_available":
       return "GS Agentic Manager shipped a newer default.";
     case "missing":
-      return "Not materialized yet — recreate it from the shipped default.";
+      return "Not materialised yet. Recreate it from the shipped default.";
     default:
       return undefined;
   }
@@ -369,7 +369,7 @@ export function BuiltInBundlePanel({
           detail={
             scheduleEnabled
               ? "The weekly schedule is enabled and can create background work."
-              : "Nothing runs until you enable the weekly schedule — it costs zero tokens by default."
+              : "Nothing runs until you enable the weekly schedule. It costs zero tokens by default."
           }
           actions={
             routine ? (

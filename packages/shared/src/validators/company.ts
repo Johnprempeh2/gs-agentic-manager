@@ -43,6 +43,8 @@ export const updateCompanySchema = objectWithoutDefaults(
       feedbackDataSharingConsentByUserId: z.string().min(1).nullable().optional(),
       feedbackDataSharingTermsVersion: feedbackDataSharingTermsVersionSchema,
       logoAssetId: logoAssetIdSchema,
+      /** Hourly wage in cents used to value agent hours; null clears it. */
+      minimumWageHourlyCents: z.number().int().nonnegative().max(100_000_000).nullable().optional(),
     }),
 );
 
@@ -64,3 +66,22 @@ export const updateCompanyBrandingSchema = z
   );
 
 export type UpdateCompanyBranding = z.infer<typeof updateCompanyBrandingSchema>;
+
+/** GRE-1364: pause a company. The reason is recorded on the activity log. */
+export const pauseCompanySchema = z
+  .object({
+    reason: z.string().trim().min(1).max(2000).nullable().optional(),
+  })
+  .strict();
+
+export type PauseCompany = z.infer<typeof pauseCompanySchema>;
+
+/** GRE-1364: resume is a deliberate act; it names the operator and gives a reason. */
+export const resumeCompanySchema = z
+  .object({
+    operator: z.string().trim().min(1).max(200),
+    reason: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+
+export type ResumeCompany = z.infer<typeof resumeCompanySchema>;

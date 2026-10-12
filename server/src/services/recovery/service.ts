@@ -17,8 +17,11 @@ import {
   gt,
   gte,
   inArray,
+  isNotNull,
   isNull,
+  lte,
   not,
+  notExists,
   notInArray,
   or,
   sql,
@@ -139,10 +142,18 @@ import {
 import { withRecoveryContext } from "./status-only-context.js";
 import { isAutomaticRecoverySuppressedByPauseHold } from "./pause-hold-guard.js";
 import {
+  HUMAN_WAIT_RECHECK_WAKE_REASON,
+  buildHumanWaitRecheckIdempotencyKey,
+  humanWaitRecheckCutoff,
+  needsHumanWaitRecheckWake,
+} from "./human-wait-deadline.js";
+import {
   REVIEW_WAIT_ACTIVITY_SOURCE,
   REVIEW_WAIT_MONITOR_SERVICE_NAME,
-  REVIEW_WAIT_RECHECK_MS,
+  decideReviewWait,
   isReviewerWaitingOnCheck,
+  readReviewWaitEvidence,
+  reviewWaitRecheckMs,
 } from "./review-wait.js";
 import {
   collectDispositionRepairSourceState,
@@ -176,9 +187,18 @@ const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const EXECUTION_REVIEW_PARTICIPANT_RECOVERY_REASON =
   "execution_review_participant_recovery";
 const STRANDED_BOARD_ESCALATION_POLICY = "board_escalation_no_takeover_v1";
+// GRE-753: an exhausted disposition repair on an agent's task goes to the
+// agent's manager once before the board.
+const MANAGER_ESCALATION_POLICY = "manager_escalation_once_v1";
+const MANAGER_ESCALATION_WAKE_POLICY = "manager_escalation";
+// The run-dispatch policy lets the active recovery owner run on a task it is
+// not assigned to only under this wake reason.
+const SOURCE_SCOPED_RECOVERY_WAKE_REASON = "source_scoped_recovery_action";
+const HAND_BACK_EXCERPT_MAX_CHARS = 600;
 const DISPOSITION_REPAIR_IDEMPOTENCY_INDEX =
   "agent_wakeup_requests_disposition_repair_idempotency_uq";
 const RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT = 500;
+const HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT = 200;
 
 // GGU-809: when a stranded `in_progress` issue would otherwise hit the
 // `isRepeatedProductiveContinuationRecovery` escalation path, exempt the
@@ -219,6 +239,8 @@ type ResolvedDependencyWakeBackstopOptions = {
   runId?: string | null;
   companyId?: string | null;
   blockerIssueId?: string | null;
+  /** Limit both passes to these dependent issues (event path after a blocker change). */
+  issueIds?: string[] | null;
   source?: ResolvedDependencyWakeBackstopSource;
 };
 
@@ -323,6 +345,18 @@ function recoveryCauseTitle(cause: StrandedRecoveryCause) {
     default:
       return "execution path recovery failed";
   }
+}
+
+/**
+ * True when automatic recovery has handed the action to a decision owner: the
+ * board, or the assignee's manager after an exhausted disposition repair.
+ * Generic recovery must not start another turn on top of either.
+ */
+function isEscalatedRecoveryOwner(action: { ownerType: string; wakePolicy: unknown }) {
+  return (
+    action.ownerType === "board" ||
+    parseObject(action.wakePolicy).type === MANAGER_ESCALATION_WAKE_POLICY
+  );
 }
 
 function recoveryNoticeMetadata(input: {
@@ -949,6 +983,15 @@ export function recoveryService(
     isHostSleepLoss?: (run: NonNullable<LatestIssueRun>) => boolean;
     liveRunExecutions?: Readonly<{ has(id: string): boolean }>;
     beforeOrphanedRunTerminalWrite?: (runId: string) => Promise<void>;
+    /**
+     * GRE-25: runs the normal release drain for an issue whose dead lock the
+     * stale-lock sweep just cleared, so wakes deferred behind that lock are
+     * promoted instead of staying `deferred_issue_execution` forever.
+     */
+    promoteDeferredWakesAfterStaleLockClear?: (input: {
+      companyId: string;
+      issueId: string;
+    }) => Promise<void>;
   },
 ) {
   const issuesSvc = issueService(db);
@@ -2784,7 +2827,7 @@ export function recoveryService(
       {
         authorType: "system",
         presentation: compactRecoveryPresentation(
-          "Recovery: recovery attempt failed — remains blocked",
+          "Recovery: recovery attempt failed; remains blocked",
         ),
         metadata: {
           version: 1,
@@ -2963,14 +3006,14 @@ export function recoveryService(
     await issuesSvc.addComment(
       issue.id,
       `This task is waiting on ${waitingOn} to finish. ` +
-        "It will continue automatically when that work is done — there's nothing you need to do. " +
+        "It will continue automatically when that work is done, and there's nothing you need to do. " +
         "(It was paused because the latest run reported it was waiting for review/approval; " +
         "GS Agentic Manager turned that into a normal dependency wait instead of flagging it as stuck.)",
       {},
       {
         authorType: "system",
         presentation: compactRecoveryPresentation(
-          "Recovery: waiting on dependencies — moved to blocked",
+          "Recovery: waiting on dependencies; moved to blocked",
         ),
         metadata: {
           version: 1,
@@ -3446,7 +3489,7 @@ export function recoveryService(
       if (
         wakePolicyType !== "bounded_recovery_owner" &&
         wakePolicyType !== "bounded_owner_disposition_repair" &&
-        action.ownerType !== "board"
+        !isEscalatedRecoveryOwner(action)
       ) {
         continue;
       }
@@ -3557,13 +3600,195 @@ export function recoveryService(
         continue;
       }
 
-      if (action.ownerType === "board") continue;
+      if (isEscalatedRecoveryOwner(action)) continue;
 
       // Legacy takeover actions remain readable and resolvable, but recovery no
       // longer schedules another agent-owned wake for them.
       result.skipped += 1;
     }
     return result;
+  }
+
+  function managerEscalationIdempotencyKey(issueId: string) {
+    // Shares the disposition-repair prefix so the partial unique index allows
+    // one live manager wake per task, across every later give-up.
+    return `issue_disposition_repair:${issueId}:manager_escalation`;
+  }
+
+  async function findManagerEscalationWake(companyId: string, issueId: string) {
+    return db
+      .select({ id: agentWakeupRequests.id })
+      .from(agentWakeupRequests)
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, companyId),
+          eq(
+            agentWakeupRequests.idempotencyKey,
+            managerEscalationIdempotencyKey(issueId),
+          ),
+          sql`${agentWakeupRequests.status} <> 'skipped'`,
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+  }
+
+  /**
+   * The assignee's manager, when it can take an exhausted disposition repair:
+   * an invokable agent in the same company with budget, that this task has
+   * not woken before. Anything else leaves the board as owner.
+   */
+  async function resolveDispositionRepairManager(
+    issue: typeof issues.$inferSelect,
+  ) {
+    if (!issue.assigneeAgentId || issue.assigneeUserId) return null;
+    const assignee = await getAgent(issue.assigneeAgentId);
+    const managerId = assignee?.reportsTo ?? null;
+    if (!managerId || managerId === issue.assigneeAgentId) return null;
+    const manager = await getAgent(managerId);
+    if (!manager || manager.companyId !== issue.companyId) return null;
+    if (
+      !(await isAgentInvokable(manager)) ||
+      !isHeartbeatWakeOnDemandEnabled(manager)
+    ) {
+      return null;
+    }
+    if (await isInvocationBudgetBlocked(issue, manager.id)) return null;
+    if (await findManagerEscalationWake(issue.companyId, issue.id)) return null;
+    return manager;
+  }
+
+  async function latestHandBackComment(issue: typeof issues.$inferSelect) {
+    if (!issue.assigneeAgentId) return null;
+    const [comment] = await db
+      .select({ id: issueComments.id, body: issueComments.body })
+      .from(issueComments)
+      .where(
+        and(
+          eq(issueComments.issueId, issue.id),
+          eq(issueComments.authorAgentId, issue.assigneeAgentId),
+        ),
+      )
+      .orderBy(desc(issueComments.createdAt))
+      .limit(1);
+    if (!comment) return null;
+    const body = redactSensitiveText(comment.body ?? "").trim();
+    return {
+      id: comment.id,
+      excerpt:
+        body.length > HAND_BACK_EXCERPT_MAX_CHARS
+          ? `${body.slice(0, HAND_BACK_EXCERPT_MAX_CHARS)}…`
+          : body,
+    };
+  }
+
+  /** Returns true when the manager has a live wake for this task. */
+  async function wakeDispositionRepairManager(input: {
+    issue: typeof issues.$inferSelect;
+    manager: typeof agents.$inferSelect;
+    actionId: string;
+    commentId: string | null;
+    attemptCount: number;
+    maxAttempts: number;
+    terminalReason: string;
+    handBack: Awaited<ReturnType<typeof latestHandBackComment>>;
+  }) {
+    const issueId = input.issue.id;
+    try {
+      await deps.enqueueWakeup(input.manager.id, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: SOURCE_SCOPED_RECOVERY_WAKE_REASON,
+        idempotencyKey: managerEscalationIdempotencyKey(issueId),
+        payload: {
+          issueId,
+          commentId: input.commentId,
+          recoveryActionId: input.actionId,
+        },
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        contextSnapshot: {
+          issueId,
+          taskId: issueId,
+          commentId: input.commentId,
+          wakeCommentId: input.commentId,
+          wakeReason: SOURCE_SCOPED_RECOVERY_WAKE_REASON,
+          source: "issue.disposition_repair_manager_escalation",
+          recoveryActionId: input.actionId,
+          recoveryCause: "deliberate_wait_without_target",
+          dispositionRepairEscalation: {
+            assigneeAgentId: input.issue.assigneeAgentId,
+            attemptCount: input.attemptCount,
+            maxAttempts: input.maxAttempts,
+            terminalReason: input.terminalReason,
+            lastHandBackCommentId: input.handBack?.id ?? null,
+            lastHandBackExcerpt: input.handBack?.excerpt ?? null,
+          },
+        },
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error, DISPOSITION_REPAIR_IDEMPOTENCY_INDEX)) {
+        logger.warn(
+          { err: error, issueId, managerAgentId: input.manager.id },
+          "disposition repair manager wake failed; falling back to the board",
+        );
+        return false;
+      }
+    }
+    return Boolean(
+      await findManagerEscalationWake(input.issue.companyId, issueId),
+    );
+  }
+
+  async function setDispositionRepairEscalationOwner(input: {
+    issue: typeof issues.$inferSelect;
+    action: Awaited<ReturnType<typeof ensureDispositionRepairAction>>;
+    latestRun: LatestIssueRun;
+    attemptCount: number;
+    maxAttempts: number;
+    terminalReason: string;
+    manager: typeof agents.$inferSelect | null;
+  }) {
+    await db
+      .update(issueRecoveryActions)
+      .set({
+        status: "active",
+        ownerType: input.manager ? "agent" : "board",
+        ownerAgentId: input.manager?.id ?? null,
+        ownerUserId: null,
+        maxAttempts: null,
+        evidence: {
+          ...input.action.evidence,
+          latestRunId: input.latestRun?.id ?? null,
+          latestRunStatus: input.latestRun?.status ?? null,
+          latestRunErrorCode: input.latestRun?.errorCode ?? null,
+          terminalReason: input.terminalReason,
+          sourceAttemptCount: input.attemptCount,
+          sourceMaxAttempts: input.maxAttempts,
+          routingPolicy: input.manager
+            ? MANAGER_ESCALATION_POLICY
+            : STRANDED_BOARD_ESCALATION_POLICY,
+        },
+        nextAction: input.manager
+          ? "The assigned agent's manager must inspect the evidence and unblock and hand back, reassign, split, or resolve the source issue."
+          : "Inspect the evidence and choose whether to repair, retry the original owner, explicitly reassign, or resolve the source issue.",
+        wakePolicy: {
+          type: input.manager
+            ? MANAGER_ESCALATION_WAKE_POLICY
+            : "board_escalation",
+          reason: input.terminalReason,
+          preservesSourceAssignee: true,
+        },
+        timeoutAt: null,
+        resolutionNote: input.terminalReason,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(issueRecoveryActions.id, input.action.id),
+          eq(issueRecoveryActions.companyId, input.issue.companyId),
+        ),
+      );
   }
 
   async function escalateDispositionRepair(input: {
@@ -3581,42 +3806,19 @@ export function recoveryService(
       attemptCount: input.attemptCount,
       legacyEpisode: input.legacyEpisode,
     });
-    const now = new Date();
-    await db
-      .update(issueRecoveryActions)
-      .set({
-        status: "active",
-        ownerType: "board",
-        ownerAgentId: null,
-        ownerUserId: null,
-        maxAttempts: null,
-        evidence: {
-          ...action.evidence,
-          latestRunId: input.latestRun?.id ?? null,
-          latestRunStatus: input.latestRun?.status ?? null,
-          latestRunErrorCode: input.latestRun?.errorCode ?? null,
-          terminalReason: input.terminalReason,
-          sourceAttemptCount: input.attemptCount,
-          sourceMaxAttempts: input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS,
-          routingPolicy: STRANDED_BOARD_ESCALATION_POLICY,
-        },
-        nextAction:
-          "Inspect the evidence and choose whether to repair, retry the original owner, explicitly reassign, or resolve the source issue.",
-        wakePolicy: {
-          type: "board_escalation",
-          reason: input.terminalReason,
-          preservesSourceAssignee: true,
-        },
-        timeoutAt: null,
-        resolutionNote: input.terminalReason,
-        updatedAt: now,
-      })
-      .where(
-        and(
-          eq(issueRecoveryActions.id, action.id),
-          eq(issueRecoveryActions.companyId, input.issue.companyId),
-        ),
-      );
+    const maxAttempts =
+      input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS;
+    let manager = await resolveDispositionRepairManager(input.issue);
+    const handBack = manager ? await latestHandBackComment(input.issue) : null;
+    const ownerInput = {
+      issue: input.issue,
+      action,
+      latestRun: input.latestRun,
+      attemptCount: input.attemptCount,
+      maxAttempts,
+      terminalReason: input.terminalReason,
+    };
+    await setDispositionRepairEscalationOwner({ ...ownerInput, manager });
 
     const updated = await issuesSvc.update(input.issue.id, {
       status: "blocked",
@@ -3626,17 +3828,24 @@ export function recoveryService(
       updated.assigneeAgentId === input.issue.assigneeAgentId &&
       updated.assigneeUserId === input.issue.assigneeUserId;
 
-    await issuesSvc.addComment(
+    const escalationComment = await issuesSvc.addComment(
       input.issue.id,
       [
         "GS Agentic Manager exhausted the bounded original-owner disposition repair without a durable source-state change.",
         "",
-        `- Attempts: ${input.attemptCount}/${input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS}`,
+        `- Attempts: ${input.attemptCount}/${maxAttempts}`,
         `- Terminal reason: \`${input.terminalReason}\``,
-        "- Recovery owner: board",
+        manager
+          ? `- Recovery owner: ${manager.name} (manager of the assigned agent)`
+          : "- Recovery owner: board",
         "- Source ownership: unchanged; reassignment requires an explicit decision or a policy-defined serious failure.",
+        ...(handBack
+          ? ["", "Last hand-back comment from the assigned agent:", "", ...handBack.excerpt.split("\n").map((line) => `> ${line}`)]
+          : []),
         "",
-        "Next action: repair the liveness disposition or request an explicit source-owner decision.",
+        manager
+          ? "Next action: the manager unblocks and hands back, reassigns, splits, or resolves this task. If repair gives up again, the board owns it."
+          : "Next action: repair the liveness disposition or request an explicit source-owner decision.",
       ].join("\n"),
       {},
       {
@@ -3650,7 +3859,7 @@ export function recoveryService(
             latestRun: input.latestRun,
             recoveryActionId: action.id,
             previousStatus: input.issue.status,
-            recoveryOwner: null,
+            recoveryOwner: manager,
           }),
           recovery: {
             kind: "disposition_repair_escalated",
@@ -3663,6 +3872,30 @@ export function recoveryService(
         },
       },
     );
+
+    if (manager) {
+      const woken = await wakeDispositionRepairManager({
+        issue: input.issue,
+        manager,
+        actionId: action.id,
+        commentId: escalationComment?.id ?? null,
+        attemptCount: input.attemptCount,
+        maxAttempts,
+        terminalReason: input.terminalReason,
+        handBack,
+      });
+      if (!woken) {
+        // An owner with no wake is a strand. Hand the action to the board.
+        manager = null;
+        await setDispositionRepairEscalationOwner({ ...ownerInput, manager });
+        await issuesSvc.addComment(
+          input.issue.id,
+          "The manager of the assigned agent could not be woken. Recovery owner: board.",
+          {},
+          { authorType: "system" },
+        );
+      }
+    }
 
     await logActivity(db, {
       companyId: input.issue.companyId,
@@ -3682,9 +3915,11 @@ export function recoveryService(
         maxAttempts: input.legacyEpisode?.maxAttempts ?? DISPOSITION_REPAIR_MAX_ATTEMPTS,
         terminalReason: input.terminalReason,
         recoveryActionId: action.id,
-        recoveryOwnerAgentId: null,
-        recoveryOwnerType: "board",
-        routingPolicy: STRANDED_BOARD_ESCALATION_POLICY,
+        recoveryOwnerAgentId: manager?.id ?? null,
+        recoveryOwnerType: manager ? "agent" : "board",
+        routingPolicy: manager
+          ? MANAGER_ESCALATION_POLICY
+          : STRANDED_BOARD_ESCALATION_POLICY,
         sourceAssigneeBefore: {
           agentId: input.issue.assigneeAgentId,
           userId: input.issue.assigneeUserId,
@@ -4326,7 +4561,18 @@ export function recoveryService(
     if (getAdapterFailureRecoveryTargetAgentId(input.issue) !== input.reviewerAgentId)
       return null;
 
-    const nextCheckAt = new Date(Date.now() + REVIEW_WAIT_RECHECK_MS);
+    // A wait on a pending board card is rechecked less often (GRE-290).
+    const now = new Date();
+    const decision = decideReviewWait(
+      await readReviewWaitEvidence(db, {
+        companyId: input.issue.companyId,
+        issueId: input.issue.id,
+        reviewerAgentId: input.reviewerAgentId,
+        now,
+      }),
+      now,
+    );
+    const nextCheckAt = new Date(now.getTime() + reviewWaitRecheckMs(decision));
     const previousPolicy = normalizeIssueExecutionPolicy(
       input.issue.executionPolicy ?? null,
     );
@@ -4681,7 +4927,7 @@ export function recoveryService(
         issue.companyId,
         issue.id,
       );
-      if (activeRecoveryAction?.ownerType === "board") {
+      if (activeRecoveryAction && isEscalatedRecoveryOwner(activeRecoveryAction)) {
         result.skipped += 1;
         continue;
       }
@@ -5728,7 +5974,9 @@ export function recoveryService(
       source === "workspace.finalize"
         ? "workspace_finalize_reconciliation"
         : "issue_graph_liveness_reconciliation";
-    const useCursor = !opts?.blockerIssueId;
+    const scopedIssueIds = opts?.issueIds ?? null;
+    if (scopedIssueIds && scopedIssueIds.length === 0) return result;
+    const useCursor = !opts?.blockerIssueId && !scopedIssueIds;
 
     const queryCandidates = (afterIssueId: string | null) => {
       const filters = [
@@ -5738,6 +5986,7 @@ export function recoveryService(
         sql`${issues.assigneeAgentId} is not null`,
       ];
       if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+      if (scopedIssueIds) filters.push(inArray(issues.id, scopedIssueIds));
       if (afterIssueId) filters.push(gt(issues.id, afterIssueId));
 
       if (opts?.blockerIssueId) {
@@ -5975,6 +6224,313 @@ export function recoveryService(
       );
     }
 
+    if (!opts?.blockerIssueId) {
+      const cleared = await reconcileClearedDependencyWakes({
+        companyId: opts?.companyId ?? null,
+        issueIds: scopedIssueIds,
+        runId: opts?.runId ?? null,
+      });
+      result.checked += cleared.checked;
+      result.healed += cleared.healed;
+      result.issueIds.push(...cleared.issueIds);
+    }
+
+    return result;
+  }
+
+  // GRE-1082: a run cancelled (or a retry suppressed) because dependencies were
+  // still blocked promises to wake the assignee when blockers resolve. Only a
+  // blocker reaching `done` used to keep that promise, so a blocker that stopped
+  // counting any other way (relation removed, blockedByIssueIds edited, blocker
+  // deleted) stranded the issue. This keys on the promise itself: the latest
+  // run on the issue was cancelled for blocked dependencies and the issue is now
+  // dependency ready. The idempotency key is per cancelled run, so each
+  // cancellation earns exactly one wake; the next run clears the condition.
+  async function reconcileClearedDependencyWakes(opts: {
+    companyId: string | null;
+    issueIds: string[] | null;
+    runId: string | null;
+  }) {
+    const result = { checked: 0, healed: 0, issueIds: [] as string[] };
+    const filters = [
+      inArray(issues.status, ["todo", "in_progress", "blocked"]),
+      isNull(issues.conversationAgentId),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      isNull(issues.monitorNextCheckAt),
+      // Cheap pre-filter: the newest run on the issue is a dependency cancel.
+      sql`(
+        select ${heartbeatRuns.errorCode} from ${heartbeatRuns}
+        where ${heartbeatRuns.companyId} = ${issues.companyId}
+          and ${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issues.id}::text
+        order by ${heartbeatRuns.createdAt} desc limit 1
+      ) = 'issue_dependencies_blocked'`,
+    ];
+    if (opts.companyId) filters.push(eq(issues.companyId, opts.companyId));
+    if (opts.issueIds) filters.push(inArray(issues.id, opts.issueIds));
+    // ponytail: no cursor; the pre-filter keeps this set tiny. Page it if it ever is not.
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.id))
+      .limit(RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT);
+    result.checked = candidates.length;
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      if (!agentId) continue;
+      const companyId = candidate.companyId;
+      const readiness = (
+        await issuesSvc.listDependencyReadiness(companyId, [candidate.id])
+      ).get(candidate.id);
+      if (readiness && !readiness.isDependencyReady) continue;
+      const blockerIssueIds = readiness?.blockerIssueIds ?? [];
+
+      const cancelledRun = await db
+        .select({
+          id: heartbeatRuns.id,
+          errorCode: heartbeatRuns.errorCode,
+          createdAt: heartbeatRuns.createdAt,
+        })
+        .from(heartbeatRuns)
+        .where(
+          and(
+            eq(heartbeatRuns.companyId, companyId),
+            sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${candidate.id}`,
+          ),
+        )
+        .orderBy(desc(heartbeatRuns.createdAt))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (cancelledRun?.errorCode !== "issue_dependencies_blocked") continue;
+
+      // The cancelled run's creation time stamps this transition, so one
+      // cancellation maps to one key and a later cancellation earns a new wake.
+      const keyInput = {
+        dependentIssueId: candidate.id,
+        blockerIssueIds,
+        blockedTransitionAt: cancelledRun.createdAt,
+      };
+      const idempotencyKey = buildIssueBlockersResolvedWakeStateKey(keyInput);
+      if (
+        (await findExistingIssueBlockersResolvedWakeForReadyState(db, {
+          companyId,
+          ...keyInput,
+        })) ||
+        (await hasActiveExecutionPath(companyId, candidate.id, agentId)) ||
+        (await hasQueuedIssueWake(companyId, candidate.id, agentId)) ||
+        (await hasPendingWakeInteraction(companyId, candidate.id)) ||
+        (await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          companyId,
+          candidate.id,
+          treeControlSvc,
+        ))
+      ) {
+        continue;
+      }
+
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            resolvedBlockerIssueId: blockerIssueIds[0] ?? null,
+            blockerIssueIds,
+            cancelledRunId: cancelledRun.id,
+            backstop: "dependency_blockers_cleared",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "issue_graph_liveness_backstop",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+            source: "issue.blockers_cleared",
+            blockerIssueIds,
+          },
+        });
+        if (!wake) continue;
+        result.healed += 1;
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId,
+          actorType: "system",
+          actorId: "issue_graph_liveness_backstop",
+          agentId,
+          runId: opts.runId,
+          action: "issue.blockers_resolved_wake_emitted",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            source: "issue.blockers_cleared",
+            wakeupRunId: wake.id,
+            idempotencyKey,
+            cancelledRunId: cancelledRun.id,
+            blockerIssueIds,
+          },
+        });
+      } catch (err) {
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue dependency wake after blockers cleared",
+        );
+      }
+    }
+    return result;
+  }
+
+  // GRE-500: a wait on John or the board older than 24h wakes its assignee
+  // once to re-check that the block is still true. The claim is a guarded
+  // update on this blocked cycle's `blockedOwnerNotifiedAt`, so two sweeps
+  // cannot both wake, and a new wait (new transition) resets it.
+  async function reconcileOverdueHumanWaits(opts?: { companyId?: string | null; now?: Date }) {
+    const result = {
+      checked: 0,
+      woken: 0,
+      pauseHoldSkipped: 0,
+      claimLost: 0,
+      deferred: 0,
+      enqueueFailed: 0,
+      issueIds: [] as string[],
+    };
+    const now = opts?.now ?? new Date();
+    const filters = [
+      eq(issues.status, "blocked"),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      sql`(${issues.unblockDescriptor}->>'owner' = 'board' or ${issues.unblockDescriptor}->'owner'->>'userId' is not null)`,
+      isNull(issues.blockedOwnerNotifiedAt),
+      lte(issues.blockedTransitionAt, humanWaitRecheckCutoff(now)),
+    ];
+    if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        status: issues.status,
+        assigneeAgentId: issues.assigneeAgentId,
+        unblockDescriptor: issues.unblockDescriptor,
+        blockedTransitionAt: issues.blockedTransitionAt,
+        blockedOwnerNotifiedAt: issues.blockedOwnerNotifiedAt,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.blockedTransitionAt))
+      .limit(HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT);
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      const blockedTransitionAt = candidate.blockedTransitionAt;
+      if (!agentId || !blockedTransitionAt || !needsHumanWaitRecheckWake(candidate, now)) continue;
+      result.checked += 1;
+
+      if (
+        await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          candidate.companyId,
+          candidate.id,
+          treeControlSvc,
+        )
+      ) {
+        result.pauseHoldSkipped += 1;
+        continue;
+      }
+
+      const claimedAt = new Date();
+      const claimed = await db
+        .update(issues)
+        .set({ blockedOwnerNotifiedAt: claimedAt })
+        .where(and(
+          eq(issues.id, candidate.id),
+          eq(issues.companyId, candidate.companyId),
+          eq(issues.status, "blocked"),
+          eq(issues.assigneeAgentId, agentId),
+          eq(issues.blockedTransitionAt, blockedTransitionAt),
+          isNull(issues.blockedOwnerNotifiedAt),
+        ))
+        .returning({ id: issues.id });
+      if (claimed.length === 0) {
+        result.claimLost += 1;
+        continue;
+      }
+
+      const descriptor = candidate.unblockDescriptor;
+      const waitingSinceAt = blockedTransitionAt.toISOString();
+      const idempotencyKey = buildHumanWaitRecheckIdempotencyKey(candidate.id, blockedTransitionAt);
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: HUMAN_WAIT_RECHECK_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            waitingSinceAt,
+            unblockOwner: descriptor?.owner ?? null,
+            unblockAction: descriptor?.action ?? null,
+            instruction:
+              "This task has waited on John or the board for more than 24 hours. Check once that the block is still true. " +
+              "If it is, leave it blocked; you will not be woken again for this wait. If it is not, move the task forward.",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "human_wait_deadline",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: HUMAN_WAIT_RECHECK_WAKE_REASON,
+            waitingSinceAt,
+          },
+          issueStateGuard: { statuses: ["blocked"], assigneeAgentId: agentId },
+        });
+        // A null wake is a normal deferral (wake-on-demand off, budget,
+        // concurrency). The one attempt for this wait is spent either way;
+        // the wait still shows in the needs-me list for John.
+        if (wake) {
+          result.woken += 1;
+        } else {
+          result.deferred += 1;
+        }
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId: candidate.companyId,
+          actorType: "system",
+          actorId: "human_wait_deadline",
+          agentId,
+          action: "issue.human_wait_recheck_woken",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            waitingSinceAt,
+            wakeupRunId: wake?.id ?? null,
+            deferred: !wake,
+            idempotencyKey,
+          },
+        });
+      } catch (err) {
+        // Release the claim so the next sweep can retry this wait.
+        result.enqueueFailed += 1;
+        await db
+          .update(issues)
+          .set({ blockedOwnerNotifiedAt: null })
+          .where(and(eq(issues.id, candidate.id), eq(issues.blockedOwnerNotifiedAt, claimedAt)))
+          .catch(() => undefined);
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue 24h human-wait re-check wake",
+        );
+      }
+    }
+
     return result;
   }
 
@@ -6091,32 +6647,6 @@ export function recoveryService(
       }
     }
 
-    // A result-less native run may intentionally have no live provider process
-    // while the native finalization coordinator waits to resume the same
-    // provider session. That coordinator, rather than this generic
-    // process-death backstop, owns retryable/resumed attempts. Preserve issue
-    // terminality as the stronger authority, but never interrupt coordinator-
-    // owned recovery merely because the provider process has exited.
-    if (!issueTerminalStatus && processGone && run.runtimeMode === "native") {
-      const coordinator = await db
-        .select({
-          phase: nativeRunFinalizations.phase,
-          resultId: nativeRunFinalizations.resultId,
-          attempt: nativeRunFinalizations.attempt,
-        })
-        .from(nativeRunFinalizations)
-        .where(eq(nativeRunFinalizations.runId, run.id))
-        .limit(1)
-        .then((rows) => rows[0] ?? null);
-      const nativeResumeOwnsRun =
-        coordinator?.resultId === null &&
-        (coordinator.phase === "retryable_failure" ||
-          (coordinator.phase === "observed" && coordinator.attempt > 0));
-      if (nativeResumeOwnsRun) {
-        return { terminalized: false, status: run.status };
-      }
-    }
-
     // Neither authority applies. The run is still live, so leave it alone.
     if (!issueTerminalStatus && !processGone) {
       return { terminalized: false, status: run.status };
@@ -6151,6 +6681,35 @@ export function recoveryService(
           eq(heartbeatRuns.status, "running"),
           eq(heartbeatRuns.runtimeMode, run.runtimeMode),
           nativeRunnerOwnershipNotHeldCondition(),
+          // Provider exit is expected while the native coordinator resumes a
+          // session or copies its completed workspace back. The coordinator
+          // owns those retries, including expired leases and future attempts.
+          // Check at the write so a newly recorded result cannot be orphaned
+          // using the earlier liveness snapshot. Terminal issue status remains
+          // the stronger authority.
+          !issueTerminalStatus && run.runtimeMode === "native"
+            ? notExists(db.select({ runId: nativeRunFinalizations.runId })
+                .from(nativeRunFinalizations).where(and(
+                  eq(nativeRunFinalizations.runId, heartbeatRuns.id),
+                  eq(nativeRunFinalizations.companyId, heartbeatRuns.companyId),
+                  or(
+                    and(
+                      isNotNull(nativeRunFinalizations.resultId),
+                      inArray(nativeRunFinalizations.phase, [
+                        "observed", "workspace_finalizing", "ready_for_assessment",
+                        "arbitrating", "retryable_failure",
+                      ]),
+                    ),
+                    and(
+                      isNull(nativeRunFinalizations.resultId),
+                      or(
+                        eq(nativeRunFinalizations.phase, "retryable_failure"),
+                        and(eq(nativeRunFinalizations.phase, "observed"), gt(nativeRunFinalizations.attempt, 0)),
+                      ),
+                    ),
+                  ),
+                )))
+            : undefined,
           // Recheck ownership in the write: a controller can renew or claim
           // the run after the liveness read. An old snapshot cannot end a new
           // controller's run, even if that controller's lease later expires.
@@ -6379,6 +6938,19 @@ export function recoveryService(
           referencedRunStatuses: Object.fromEntries(runStatusById),
         },
       });
+
+      // The dead owner never ran its release, so nothing else drains the
+      // wakes deferred behind this lock. Once the lock columns are null this
+      // sweep never revisits the issue, so drain it now.
+      await deps.promoteDeferredWakesAfterStaleLockClear?.({
+        companyId: issue.companyId,
+        issueId: updated.id,
+      }).catch((err) => {
+        logger.warn(
+          { err, issueId: updated.id },
+          "failed to promote deferred wakes after clearing stale issue lock",
+        );
+      });
     }
 
     if (result.cleared > 0 || result.terminalizedRunIds.length > 0) {
@@ -6407,6 +6979,7 @@ export function recoveryService(
     legacyRepairDispatchBlock,
     sweepStaleIssueLocks,
     reconcileResolvedDependencyWakeBackstop,
+    reconcileOverdueHumanWaits,
     readRecoveryTimerIntervalMs,
   };
 }

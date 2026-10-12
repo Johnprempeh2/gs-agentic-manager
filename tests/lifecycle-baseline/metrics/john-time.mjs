@@ -1,0 +1,202 @@
+// Pure computation of how John spends his time on the board (GRE-397). One
+// line for the 08:00 digest, for the last 24 hours plus a 7-day trend:
+//
+//   Chase     — John's comments that ask for status or a reason
+//   Unstick   — John's comments that only tell an agent to start, continue or
+//               retry, plus repair notes posted under his name
+//   Decisions — cards (interactions) and approvals John answered
+//   Failed    — runs that failed, by cause (error code)
+//   Rejected  — approval cards John rejected (GRE-453)
+//   Rounds    — cards per approval: 1 + the cards John rejected on the same
+//               task before he accepted one, averaged over 7 days (GRE-453)
+//
+// Classification is best effort: simple keyword rules on the comment text,
+// limited to comments whose author is one of John's user ids. A small error
+// rate is accepted; every counted comment is listed by id so it can be audited.
+// The snapshot comes from john-time-collect.mjs; tests build it by hand.
+
+const DAY = 86_400_000;
+const time = (value) => (value == null ? null : new Date(value).getTime());
+const inWindow = (value, since, now) => value != null && time(value) > since && time(value) <= now;
+const wordCount = (text) => text.split(/\s+/).filter(Boolean).length;
+
+// Normalise what the editor and phone keyboards add: HTML entities (`&#x20;`),
+// curly apostrophes, markdown links and images.
+export function normaliseComment(body) {
+  return String(body ?? "")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/&#x?[0-9a-f]+;|&\w+;/gi, " ")
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// A repair note: a diagnosis of a stopped run written for the agent and posted
+// under John's name (by John, or by a helper acting for him), usually ending in
+// "please continue" or "please pick this up again". Counted under Unstick.
+// One word may sit between "your" and "run" ("your earlier run", GRE-1181).
+export const REPAIR_RULE =
+  /\byour (\w+ )?(run|runs|wake)\b.{0,80}\b(failed|hung|ended|stopped)\b|\bsetup (kept )?fail(ed|ing)?\b|\b(connection|token) (is|was) (fixed|expired)\b|\bplease (continue|retry|re-?run)\b|\bpick (this|it) up again\b/i;
+
+// Unstick, short form: the whole comment is a nudge to start, continue or
+// retry. Only comments of at most UNSTICK_MAX_WORDS words count, so an
+// instruction that also carries content ("start now, but use X") is not one.
+export const UNSTICK_MAX_WORDS = 8;
+export const UNSTICK_SHORT_RULE =
+  /^(ok(ay)?[, ]+)?(please )?(you can )?(start|continue|resume|retry|re-?run|run|go( ahead)?|carry on|proceed|try again|keep going)( (it|this|now|again|the run|please|it again|with it))*( now)?[.!]*$|\b(it'?s|it is) (free|unlocked) now\b|\bshould be unlocked\b/i;
+
+// Unstick, any length: John restarting or pacing agents by hand (wake them
+// after the laptop slept, let the next batch run).
+export const UNSTICK_ANY_RULE =
+  /\b(re-?activate|reactivate|boot up|wake up)\b.{0,40}\b(agents?|everybody|everyone|the others|mica|them)\b|\bactivate the others\b|\bget (all )?the agents (working|going|active)\b|\b(allow|start|run) the next batch\b|\byou can (add|let|allow|start) (some )?more\b|\badd more tasks\b/i;
+
+// Chase: John had to ask what is going on, or why.
+export const CHASE_RULE = new RegExp(
+  [
+    String.raw`\bhow(?:'s| is| are)\b.{0,40}\bgoing\b`,
+    // "update when there is an update" is a request, not a chase (GRE-1181).
+    String.raw`(?<!\b(?:when|once|if) there(?:'s| is) )\b(any|an) (update|news|progress)\b`,
+    String.raw`\b(is|are) (everything|it|this|things|all) (ok|okay|fine|alright|good)\b`,
+    String.raw`\bwhat do you need\b`,
+    String.raw`\bwhat'?s (wrong|happening|going on|the status)\b`,
+    String.raw`\bwhat (is|are) \w+ doing\b`,
+    String.raw`\b(are )?you (still )?working\s*\?`,
+    String.raw`\bare you (there|receiving|awake|alive|on it)\b`,
+    String.raw`\bhow long\b.{0,40}\b(take|left|until)\b`,
+    String.raw`\bwhy (is|are|was|has|hasn't|isn't|did|didn't|does|doesn't|do|don't)\b.{0,60}\b(blocked|stuck|fail\w*|slow|taking|long|stop|stopped|waiting|access|done|working|running)\b`,
+    String.raw`\bwhat (caused|cased|made)\b.{0,40}\b(fail|stop|block|hang|hung)`,
+    String.raw`\bis (this|it) (done|stuck|blocked|finished)\b`,
+    String.raw`\bstill (working|running|waiting|blocked|stuck)\b`,
+    String.raw`\b(have been|has been|keeps?|kept) (stopping|failing|crashing|hanging|stalling)\b.{0,80}\b(can|could) you (just |please )?(check|look)\b`,
+  ].join("|"),
+  "i",
+);
+
+// Not a chase even when a chase rule matches: a feature request about starting
+// or restarting something from the UI (GRE-1181).
+export const NOT_CHASE_RULE = /\bshould be able to (start|restart)\b/i;
+
+// One class per comment, first match wins: short nudge, repair, restart
+// agents, chase, other. A short nudge comes first so "please retry" on its own
+// is a plain unstick, not a repair note.
+export function classifyJohnComment(body) {
+  const text = normaliseComment(body);
+  if (!text) return "other";
+  if (wordCount(text) <= UNSTICK_MAX_WORDS && UNSTICK_SHORT_RULE.test(text)) return "unstick";
+  if (REPAIR_RULE.test(text)) return "repair";
+  if (UNSTICK_ANY_RULE.test(text)) return "unstick";
+  if (CHASE_RULE.test(text) && !NOT_CHASE_RULE.test(text)) return "chase";
+  return "other";
+}
+
+// Decisions: interactions John resolved with an answer (expired and cancelled
+// cards are not decisions) and approvals he decided.
+const DECIDED_INTERACTION = new Set(["accepted", "rejected", "answered"]);
+const DECIDED_APPROVAL = new Set(["approved", "rejected", "revision_requested"]);
+
+// Failed runs: the run ended in error, or a watchdog stopped it. Routine
+// cancels (reassigned, dependency blocked, a person pressing stop) are not
+// failures; L1 in lost-time.mjs measures hung runs a person cancelled.
+const FAILED_STATUSES = new Set(["failed", "timed_out", "interrupted"]);
+const WATCHDOG_CANCEL_CODES = new Set(["run_silent_timeout", "process_lost", "adapter_failed"]);
+export const isFailedRun = (run) => FAILED_STATUSES.has(run.status) || (run.status === "cancelled" && WATCHDOG_CANCEL_CODES.has(run.errorCode));
+
+// Approval cards: the interactions that ask John to accept or reject. Only
+// cards John resolved count; expired and cancelled cards are not rework.
+export const APPROVAL_CARD_KINDS = new Set(["request_confirmation", "request_checkbox_confirmation"]);
+const johnApprovalCards = (snapshot, john) =>
+  snapshot.interactions
+    .filter((row) => APPROVAL_CARD_KINDS.has(row.kind) && john.has(row.resolvedByUserId) && (row.status === "accepted" || row.status === "rejected"))
+    .sort((a, b) => time(a.resolvedAt) - time(b.resolvedAt));
+
+// Rounds for each card John accepted in the window: 1 + the cards he rejected
+// on the same task since the last card he accepted there. Rejections before the
+// window count, so the snapshot must reach back further than the window.
+export function approvalRounds(snapshot, { since, now }) {
+  const rejectedSinceAccept = new Map();
+  const rounds = [];
+  for (const card of johnApprovalCards(snapshot, new Set(snapshot.johnUserIds))) {
+    if (time(card.resolvedAt) > now) break;
+    const pending = rejectedSinceAccept.get(card.issueId) ?? 0;
+    if (card.status === "rejected") {
+      rejectedSinceAccept.set(card.issueId, pending + 1);
+      continue;
+    }
+    rejectedSinceAccept.set(card.issueId, 0);
+    if (time(card.resolvedAt) > since) rounds.push(pending + 1);
+  }
+  return rounds;
+}
+
+const average = (values) => (values.length ? Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10 : null);
+
+export function computeWindow(snapshot, { since, now }) {
+  const john = new Set(snapshot.johnUserIds);
+  const comments = snapshot.comments
+    .filter((comment) => john.has(comment.authorUserId) && inWindow(comment.createdAt, since, now))
+    .map((comment) => ({ id: comment.id ?? null, issueIdentifier: comment.issueIdentifier ?? null, createdAt: comment.createdAt, class: classifyJohnComment(comment.body) }));
+  const count = (name) => comments.filter((comment) => comment.class === name).length;
+  const decisions =
+    snapshot.interactions.filter((row) => john.has(row.resolvedByUserId) && DECIDED_INTERACTION.has(row.status) && inWindow(row.resolvedAt, since, now)).length +
+    snapshot.approvals.filter((row) => john.has(row.decidedByUserId) && DECIDED_APPROVAL.has(row.status) && inWindow(row.decidedAt, since, now)).length;
+  const cardsRejected = johnApprovalCards(snapshot, john).filter((card) => card.status === "rejected" && inWindow(card.resolvedAt, since, now)).length;
+  const rounds = approvalRounds(snapshot, { since, now });
+  const failed = snapshot.runs.filter((run) => isFailedRun(run) && inWindow(run.finishedAt, since, now));
+  const causes = {};
+  for (const run of failed) {
+    const cause = run.errorCode ?? run.status;
+    causes[cause] = (causes[cause] ?? 0) + 1;
+  }
+  return {
+    johnComments: comments.length,
+    chase: count("chase"),
+    unstick: count("unstick") + count("repair"),
+    repair: count("repair"),
+    decisions,
+    cardsRejected,
+    cardsApproved: rounds.length,
+    roundsPerApproval: average(rounds),
+    failedRuns: failed.length,
+    failedByCause: Object.fromEntries(Object.entries(causes).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))),
+    // Ids only: reports never carry comment bodies.
+    counted: comments.filter((comment) => comment.class !== "other"),
+  };
+}
+
+// Today is the 24 hours up to `now`; the trend is the seven 24-hour windows
+// before and including today, oldest first. Rounds per approval is also given
+// over the whole `days` window, since one day rarely holds enough approvals.
+export function computeJohnTime(snapshot, { now, days = 7 }) {
+  const end = time(now);
+  const trend = Array.from({ length: days }, (_, index) => {
+    const windowEnd = end - (days - 1 - index) * DAY;
+    return { windowEnd: new Date(windowEnd).toISOString(), ...computeWindow(snapshot, { since: windowEnd - DAY, now: windowEnd }) };
+  });
+  const rounds = approvalRounds(snapshot, { since: end - days * DAY, now: end });
+  return {
+    windowEnd: new Date(end).toISOString(),
+    today: trend[trend.length - 1],
+    trend,
+    week: { cardsApproved: rounds.length, roundsPerApproval: average(rounds) },
+  };
+}
+
+export function formatDigestLine({ today, trend, week }, { topCauses = 3 } = {}) {
+  const causes = Object.entries(today.failedByCause);
+  const shown = causes.slice(0, topCauses).map(([cause, n]) => `${cause} ${n}`);
+  const rest = causes.slice(topCauses).reduce((total, [, n]) => total + n, 0);
+  if (rest) shown.push(`other ${rest}`);
+  const series = (key) => trend.map((day) => day[key]).join(",");
+  const oneDecimal = (value) => (value == null ? "-" : value.toFixed(1));
+  const roundsSeries = trend.map((day) => oneDecimal(day.roundsPerApproval)).join(",");
+  return (
+    `**John's time (24h):** Chase ${today.chase} · Unstick ${today.unstick}` +
+    (today.repair ? ` (${today.repair} repair)` : "") +
+    ` · Decisions ${today.decisions} · Cards rejected ${today.cardsRejected} · Failed runs ${today.failedRuns}` +
+    (shown.length ? ` (${shown.join(", ")})` : "") +
+    `. Rounds per approved card (7d): ${oneDecimal(week.roundsPerApproval)} over ${week.cardsApproved}.` +
+    ` 7 days, oldest first: Chase ${series("chase")} · Unstick ${series("unstick")} · Decisions ${series("decisions")}` +
+    ` · Rejected ${series("cardsRejected")} · Rounds ${roundsSeries} · Failed ${series("failedRuns")}.`
+  );
+}

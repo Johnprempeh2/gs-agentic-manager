@@ -56,7 +56,7 @@ export function InteractionAudienceLine({
         {compact ? null : (
           <>
             <span className="font-medium text-foreground">{audience.label}</span>
-            {" — "}
+            {": "}
           </>
         )}
         <span data-testid="interaction-audience-summary">

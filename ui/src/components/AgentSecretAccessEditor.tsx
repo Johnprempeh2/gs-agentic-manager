@@ -478,7 +478,7 @@ export function AgentSecretAccessEditor({
                   </div>
                   {aliasInvalid ? (
                     <p className="pl-0.5 text-(length:--text-micro) text-destructive">
-                      Invalid alias — use letters, digits and _
+                      Invalid alias: use letters, digits and _
                     </p>
                   ) : aliasDuplicate ? (
                     <p className="pl-0.5 text-(length:--text-micro) text-destructive">Duplicate alias</p>

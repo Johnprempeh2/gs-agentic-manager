@@ -2,11 +2,15 @@ import {
   API_PRICE_TABLE_CHECKED_AT,
   agentAvatarUrl,
   computeApiEquivalentCents,
+  minimumWageEquivalentCents,
   resolveAgentAppearance,
   type ApiEquivalentModelRow,
+  type ApiEquivalentAgentRow,
   type ApiEquivalentProviderRow,
   type ApiEquivalentSummary,
   type CreateCompanySubscription,
+  type IssueCostModelRow,
+  type IssueCostSummary,
   type UpdateCompanySubscription,
 } from "@greatstone/shared";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
@@ -15,6 +19,8 @@ import type { Db } from "@greatstone/db";
 import { activityLog, agents, companies, companySubscriptions, costEvents, heartbeatRuns, issues, projects } from "@greatstone/db";
 import { notFound, unprocessable } from "../errors.js";
 import { budgetService, type BudgetServiceHooks } from "./budgets.js";
+import { noteBillingUsageWarning } from "./billing-account.js";
+import { logger } from "../middleware/logger.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 
 export interface CostDateRange {
@@ -140,6 +146,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .where(eq(companies.id, companyId));
 
       await budgets.evaluateCostEvent(event);
+      // The event is stored; a failed warn check must not make the caller send it again.
+      await noteBillingUsageWarning(db, event.occurredAt).catch((err) => {
+        logger.warn({ err, companyId }, "billing usage warning not checked");
+      });
 
       return event;
     },
@@ -182,7 +192,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       companyId: string,
       issueId: string,
       options: { excludeRoot?: boolean } = {},
-    ) => {
+    ): Promise<IssueCostSummary> => {
       // Callers must resolve and authorize a visible root issue before invoking this.
       // The route does that so zero counts are not mistaken for a missing root.
       const childIssues = alias(issues, "child");
@@ -274,7 +284,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       // Run cost-event aggregation and run-duration aggregation in parallel.
       // They're separate queries because cost_events fan out per-event and
       // joining heartbeat_runs through them would double-count run durations.
-      const [costRowResult, runRowResult] = await Promise.all([
+      const [costRowResult, runRowResult, modelRows] = await Promise.all([
         db
           .select({
             issueCount: sql<number>`count(distinct ${issues.id})::int`,
@@ -299,12 +309,64 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
             ),
           ),
         db.execute(runSummarySql),
+        // Same tree and rows as the totals above, grouped per model so each
+        // model is priced like the company API-equivalent view.
+        db
+          .select({
+            provider: costEvents.provider,
+            model: costEvents.model,
+            costCents: sumAsNumber(costEvents.costCents),
+            inputTokens: sumAsNumber(costEvents.inputTokens),
+            cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+            outputTokens: sumAsNumber(costEvents.outputTokens),
+          })
+          .from(issues)
+          .innerJoin(
+            costEvents,
+            and(
+              eq(costEvents.companyId, companyId),
+              eq(costEvents.issueId, issues.id),
+            ),
+          )
+          .where(
+            and(
+              eq(issues.companyId, companyId),
+              visibleIssueCondition(),
+              issueTreeCondition,
+            ),
+          )
+          .groupBy(costEvents.provider, costEvents.model)
+          .orderBy(costEvents.provider, costEvents.model),
       ]);
 
       const costRow = costRowResult[0];
       const runRow = Array.isArray(runRowResult)
         ? (runRowResult[0] as { runCount?: number | string | null; runtimeMs?: number | string | null } | undefined)
         : undefined;
+
+      const byModel: IssueCostModelRow[] = modelRows.map((row) => {
+        const usage = {
+          inputTokens: Number(row.inputTokens),
+          cachedInputTokens: Number(row.cachedInputTokens),
+          outputTokens: Number(row.outputTokens),
+        };
+        return {
+          provider: row.provider,
+          model: row.model,
+          ...usage,
+          costCents: Number(row.costCents),
+          apiEquivalentCents: computeApiEquivalentCents({ provider: row.provider, model: row.model, ...usage }),
+        };
+      });
+      let apiEquivalentCents = 0;
+      let unpricedTokens = 0;
+      for (const row of byModel) {
+        if (row.apiEquivalentCents === null) {
+          unpricedTokens += row.inputTokens + row.cachedInputTokens + row.outputTokens;
+        } else {
+          apiEquivalentCents += row.apiEquivalentCents;
+        }
+      }
 
       return {
         issueId,
@@ -316,6 +378,9 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         outputTokens: Number(costRow?.outputTokens ?? 0),
         runCount: Number(runRow?.runCount ?? 0),
         runtimeMs: Number(runRow?.runtimeMs ?? 0),
+        apiEquivalentCents,
+        unpricedTokens,
+        byModel,
       };
     },
 
@@ -587,7 +652,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
 
       const isSubscription = sql`${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)})`;
-      const [usageRows, subscriptions, firstEvent] = await Promise.all([
+      const runConditions = [eq(heartbeatRuns.companyId, companyId), isNotNull(heartbeatRuns.startedAt)];
+      if (range?.from) runConditions.push(gte(heartbeatRuns.startedAt, range.from));
+      if (range?.to) runConditions.push(lte(heartbeatRuns.startedAt, range.to));
+      const [usageRows, subscriptions, agentRows, firstEvent, agentRunRows, company] = await Promise.all([
         db
           .select({
             provider: costEvents.provider,
@@ -603,6 +671,18 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           .groupBy(costEvents.provider, costEvents.model)
           .orderBy(costEvents.provider, costEvents.model),
         db.select().from(companySubscriptions).where(eq(companySubscriptions.companyId, companyId)),
+        db
+          .select({
+            agentId: costEvents.agentId,
+            provider: costEvents.provider,
+            model: costEvents.model,
+            inputTokens: sumAsNumber(costEvents.inputTokens),
+            cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+            outputTokens: sumAsNumber(costEvents.outputTokens),
+          })
+          .from(costEvents)
+          .where(and(...conditions))
+          .groupBy(costEvents.agentId, costEvents.provider, costEvents.model),
         range?.from
           ? Promise.resolve(null)
           : db
@@ -610,6 +690,22 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
             .from(costEvents)
             .where(eq(costEvents.companyId, companyId))
             .then((rows) => rows[0]?.first ?? null),
+        // Every run that started counts, failed ones too, not only runs that reported usage.
+        // A run still going counts up to now.
+        db
+          .select({
+            agentId: heartbeatRuns.agentId,
+            runCount: sql<number>`count(*)::int`,
+            workMs: sql<number>`coalesce(sum(greatest(extract(epoch from (coalesce(${heartbeatRuns.finishedAt}, ${now.toISOString()}::timestamptz) - ${heartbeatRuns.startedAt})), 0) * 1000), 0)::double precision`,
+          })
+          .from(heartbeatRuns)
+          .where(and(...runConditions))
+          .groupBy(heartbeatRuns.agentId),
+        db
+          .select({ minimumWageHourlyCents: companies.minimumWageHourlyCents })
+          .from(companies)
+          .where(eq(companies.id, companyId))
+          .then((rows) => rows[0] ?? null),
       ]);
 
       // Period used to prorate subscriptions: the requested range; an open
@@ -676,6 +772,27 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         );
       }
 
+      const agentsById = new Map<string, ApiEquivalentAgentRow>();
+      for (const row of agentRows) {
+        const entry = agentsById.get(row.agentId) ?? { agentId: row.agentId, apiEquivalentCents: 0, runCount: 0 };
+        entry.apiEquivalentCents += computeApiEquivalentCents({
+          provider: row.provider,
+          model: row.model,
+          inputTokens: Number(row.inputTokens),
+          cachedInputTokens: Number(row.cachedInputTokens),
+          outputTokens: Number(row.outputTokens),
+        }) ?? 0;
+        agentsById.set(row.agentId, entry);
+      }
+      for (const row of agentRunRows) {
+        const entry = agentsById.get(row.agentId) ?? { agentId: row.agentId, apiEquivalentCents: 0, runCount: 0 };
+        entry.runCount = Number(row.runCount);
+        agentsById.set(row.agentId, entry);
+      }
+      const byAgent = [...agentsById.values()].sort((a, b) => b.apiEquivalentCents - a.apiEquivalentCents);
+      const agentWorkMs = agentRunRows.reduce((total, row) => total + Number(row.workMs), 0);
+      const minimumWageHourlyCents = company?.minimumWageHourlyCents ?? null;
+
       const byProvider = [...providers.values()].sort((a, b) => a.provider.localeCompare(b.provider));
       const sum = (pick: (row: ApiEquivalentProviderRow) => number) =>
         byProvider.reduce((total, row) => total + pick(row), 0);
@@ -699,6 +816,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         unpricedModels: [...unpricedModels].sort(),
         byProvider,
         byModel,
+        byAgent,
+        agentWorkMs,
+        minimumWageHourlyCents,
+        minimumWageEquivalentCents: minimumWageEquivalentCents(agentWorkMs, minimumWageHourlyCents),
       };
     },
 

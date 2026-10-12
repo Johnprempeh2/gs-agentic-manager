@@ -1,4 +1,5 @@
 import type {
+  Agent,
   Approval,
   DashboardSummary,
   HeartbeatRun,
@@ -728,7 +729,14 @@ export function getInboxKeyboardSelectionIndex(
     : Math.max(previousIndex - 1, 0);
 }
 
-export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[] {
+// A terminated agent will not run again, so its last failure is not actionable.
+export function getLatestFailedRunsByAgent(
+  runs: HeartbeatRun[],
+  agents?: ReadonlyArray<Pick<Agent, "id" | "status">>,
+): HeartbeatRun[] {
+  const terminatedAgentIds = new Set(
+    (agents ?? []).filter((agent) => agent.status === "terminated").map((agent) => agent.id),
+  );
   const sorted = [...runs].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
@@ -740,7 +748,9 @@ export function getLatestFailedRunsByAgent(runs: HeartbeatRun[]): HeartbeatRun[]
     }
   }
 
-  return Array.from(latestByAgent.values()).filter((run) => FAILED_RUN_STATUSES.has(run.status));
+  return Array.from(latestByAgent.values()).filter(
+    (run) => FAILED_RUN_STATUSES.has(run.status) && !terminatedAgentIds.has(run.agentId),
+  );
 }
 
 export function normalizeTimestamp(value: string | Date | null | undefined): number {
@@ -813,16 +823,25 @@ export function approvalActivityTimestamp(approval: Approval): number {
   return normalizeTimestamp(approval.createdAt);
 }
 
+// Read issues sink below everything else; other kinds stay in the attention group.
+function inboxWorkItemReadRank(item: InboxWorkItem, unreadFirst: boolean): number {
+  if (!unreadFirst || item.kind !== "issue") return 0;
+  return item.issue.isUnreadForMe ? 0 : 1;
+}
+
 export function getInboxWorkItems({
   issues,
   approvals,
   failedRuns = [],
   joinRequests = [],
+  unreadFirst = false,
 }: {
   issues: Issue[];
   approvals: Approval[];
   failedRuns?: HeartbeatRun[];
   joinRequests?: JoinRequest[];
+  /** "Mine" tab: unread issues above read ones, then latest activity (GRE-356). */
+  unreadFirst?: boolean;
 }): InboxWorkItem[] {
   return [
     ...issues.map((issue) => ({
@@ -846,6 +865,9 @@ export function getInboxWorkItems({
       joinRequest,
     })),
   ].sort((a, b) => {
+    const readRankDiff = inboxWorkItemReadRank(a, unreadFirst) - inboxWorkItemReadRank(b, unreadFirst);
+    if (readRankDiff !== 0) return readRankDiff;
+
     const timestampDiff = b.timestamp - a.timestamp;
     if (timestampDiff !== 0) return timestampDiff;
 
@@ -1083,7 +1105,10 @@ export function buildInboxIssueGroupCreateDefaults(
  *   with a recently-updated child floats to the top.
  * - If a parent is absent (e.g. archived), children remain as independent roots.
  */
-export function buildInboxNesting(items: InboxWorkItem[]): {
+export function buildInboxNesting(
+  items: InboxWorkItem[],
+  { unreadFirst = false }: { unreadFirst?: boolean } = {},
+): {
   displayItems: InboxWorkItem[];
   childrenByIssueId: Map<string, Issue[]>;
 } {
@@ -1140,8 +1165,23 @@ export function buildInboxNesting(items: InboxWorkItem[]): {
       return { ...item, timestamp: Math.max(item.timestamp, maxChildTs) };
     });
 
+  // A parent row counts as unread when anything nested under it is unread.
+  const subtreeHasUnread = (issue: Issue, seen: ReadonlySet<string> = new Set()): boolean => {
+    if (issue.isUnreadForMe) return true;
+    if (seen.has(issue.id)) return false;
+    const nextSeen = new Set(seen);
+    nextSeen.add(issue.id);
+    return (childrenByIssueId.get(issue.id) ?? []).some((child) => subtreeHasUnread(child, nextSeen));
+  };
+  const readRank = (item: InboxWorkItem): number => {
+    if (!unreadFirst || item.kind !== "issue") return 0;
+    return subtreeHasUnread(item.issue) ? 0 : 1;
+  };
+
   // Merge and re-sort
   const displayItems = [...rootIssueItems, ...nonIssueItems].sort((a, b) => {
+    const readRankDiff = readRank(a) - readRank(b);
+    if (readRankDiff !== 0) return readRankDiff;
     const diff = b.timestamp - a.timestamp;
     if (diff !== 0) return diff;
     if (a.kind === "issue" && b.kind === "issue") {
@@ -1157,18 +1197,24 @@ export function buildGroupedInboxSections(
   items: InboxWorkItem[],
   groupBy: InboxWorkItemGroupBy,
   workspaceGrouping: InboxWorkspaceGroupingOptions,
-  options?: { keyPrefix?: string; searchSection?: InboxSearchSection; nestingEnabled?: boolean },
+  options?: {
+    keyPrefix?: string;
+    searchSection?: InboxSearchSection;
+    nestingEnabled?: boolean;
+    unreadFirst?: boolean;
+  },
 ): InboxGroupedSection[] {
   const keyPrefix = options?.keyPrefix ?? "";
   const searchSection = options?.searchSection ?? "none";
   const nestingEnabled = options?.nestingEnabled ?? false;
+  const unreadFirst = options?.unreadFirst ?? false;
   if (searchSection !== "none" && items.length === 0) {
     return [];
   }
 
   return groupInboxWorkItems(items, groupBy, workspaceGrouping).map((group) => {
     const nestedGroup = nestingEnabled && group.items.some((item) => item.kind === "issue")
-      ? buildInboxNesting(group.items)
+      ? buildInboxNesting(group.items, { unreadFirst })
       : { displayItems: group.items, childrenByIssueId: new Map<string, Issue[]>() };
 
     return {
@@ -1266,6 +1312,7 @@ export function computeInboxBadgeData({
   joinRequests,
   dashboard,
   heartbeatRuns,
+  agents,
   mineIssues,
   dismissedAlerts,
   dismissedAtByKey,
@@ -1275,6 +1322,7 @@ export function computeInboxBadgeData({
   joinRequests: JoinRequest[];
   dashboard: DashboardSummary | undefined;
   heartbeatRuns: HeartbeatRun[];
+  agents?: ReadonlyArray<Pick<Agent, "id" | "status">>;
   mineIssues: Issue[];
   dismissedAlerts: Set<string>;
   dismissedAtByKey: ReadonlyMap<string, number>;
@@ -1286,7 +1334,7 @@ export function computeInboxBadgeData({
       ACTIONABLE_APPROVAL_STATUSES.has(approval.status) &&
       !isInboxEntityDismissed(dismissedAtByKey, `approval:${approval.id}`, approval.updatedAt),
   ).length;
-  const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns).filter(
+  const failedRuns = getLatestFailedRunsByAgent(heartbeatRuns, agents).filter(
     (run) => !isInboxEntityDismissed(dismissedAtByKey, `run:${run.id}`, run.createdAt),
   ).length;
   const visibleJoinRequests = joinRequests.filter(

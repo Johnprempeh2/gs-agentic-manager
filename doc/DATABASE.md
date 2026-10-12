@@ -13,11 +13,12 @@ pnpm dev
 That's it. On first start the server:
 
 1. Creates a `~/.gsam/instances/default/db/` directory for storage
-2. Ensures the `paperclip` database exists
-3. Runs migrations automatically for empty databases
-4. Starts serving requests
+2. Creates a random password for the `paperclip` database role and keeps it in `~/.gsam/instances/default/secrets/embedded-postgres.password` (mode 600). The database accepts only that password. An instance created before this change is moved onto a random password on its next start; its data is not touched.
+3. Ensures the `paperclip` database exists
+4. Runs migrations automatically for empty databases
+5. Starts serving requests
 
-Data persists across restarts in `~/.gsam/instances/default/db/`. To reset local dev data, delete that directory.
+Data persists across restarts in `~/.gsam/instances/default/db/`. To reset local dev data, delete that directory. Keep the `secrets/` folder with the `db/` folder: a database without its password file cannot be opened. Scripts and CLI commands that connect to a local instance read the password from that file.
 
 If you need to apply pending migrations manually, run:
 
@@ -144,7 +145,19 @@ DATABASE_URL=postgres://postgres.[PROJECT-REF]:[PASSWORD]@...5432/postgres \
 
 See [Supabase pricing](https://supabase.com/pricing) for current details.
 
-## Connection loss during a transaction
+## Connection loss and retries
+
+The database client does not replay arbitrary statements after a disconnect.
+PostgreSQL may have committed a statement before the connection loses its
+response. The postgres.js message `write CONNECTION_CLOSED` does not prove
+that the statement was never sent: the driver also uses it when an in-flight
+query loses its connection. SQL text cannot establish replay safety either;
+a `SELECT` can call a function with side effects.
+
+The affected operation fails and a new operation can reconnect through the
+pool. Callers may retry only when the complete operation is idempotent or has
+a durable receipt that prevents duplicate effects. Some transient statement
+failures therefore reach the caller instead of being retried automatically.
 
 When a database connection closes, its transaction fails. GS Agentic Manager does not
 replay that transaction. New requests can use a fresh connection from the pool.
@@ -198,6 +211,21 @@ When authoring migrations or one-time backfills:
 - Do not hand-edit a snapshot to resolve a merge conflict. Renumber your migration and run `generate` again, as `packages/db/.gitattributes` describes.
 - The repo keeps only the newest 5 snapshots. `generate` runs `prune:snapshots` afterwards to delete older ones. Drizzle only reads the newest snapshot, and each snapshot is a full copy of the schema (over 1 MB each). Older snapshots are still in git history.
 - `packages/db/src/migration-snapshot-drift.test.ts` is the enforcement backstop. It repeats the diff that `generate` performs and fails when the newest snapshot no longer matches `packages/db/src/schema/`.
+
+## Taking upstream migrations
+
+Since the split from upstream (`01d9a1218`), both sides number new migrations from `0285`, so the numbers clash. Two files with different names merge without a conflict, so a clash check by file does not see it. `scripts/upstream-pending.sh` tags each upstream commit that adds a migration with `[migration: NNNN clash]` (we have our own `NNNN`) or `NNNN free`.
+
+When a sync pull request takes such a commit:
+
+1. Take the commit without its migration files: apply only its `packages/db/src/schema/` change (for example `git show <sha> -- packages/db/src/schema | git apply`). Do not take its `.sql`, snapshot or `_journal.json`.
+2. Run `pnpm --filter @greatstone/db generate`. It writes the next number after our last migration and a new journal entry and snapshot.
+3. Compare the new `.sql` with upstream's. If upstream hand-edited it (for example `IF NOT EXISTS`), copy upstream's body into the new file.
+4. Name the mapping in the commit message, for example `0294_chilly_marvel_apes -> 0295_glamorous_thaddeus_ross`, next to the `Upstream-Commit:` line.
+5. Never rename, renumber or edit a migration that is in a release. The live database finds each applied migration by a hash of its content and by its place in the journal; a changed file can run again or fail. Renumber only upstream's files, which our databases never ran.
+6. Run `pnpm --filter @greatstone/db check:migrations`, then apply the migrations to a copy of live data before the pull request leaves draft.
+
+Dry run (GRE-705, 5 Oct 2026), not on live: `cad26c6bf` (upstream `0294_chilly_marvel_apes`, one index on `tool_mcp_gateway_tokens`) on `main` at `6536cd3fc`. `generate` wrote `0295_glamorous_thaddeus_ross` and a journal entry with `idx` 295; its SQL matched upstream's except upstream's `IF NOT EXISTS`, so upstream's body was kept. `check:migrations` passed. On a scratch PostgreSQL restored from the newest live backup (`paperclip-20261005-013700.sql.gz`), `migrate` applied 2 pending migrations (our unreleased `0294` and the new `0295`), the index was present, and a second `migrate` said "No pending migrations".
 
 ## Cloud runtime identity singleton
 

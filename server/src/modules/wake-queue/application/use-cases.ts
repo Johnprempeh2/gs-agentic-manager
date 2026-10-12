@@ -13,6 +13,7 @@ import {
   isWorkspaceValidationFailedRun,
   readNonEmptyString,
   parseObject,
+  SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY,
 } from "../domain/values.js";
 import type {
   AdmitWakeBehindIssueExecutionResult,
@@ -353,8 +354,11 @@ async function promoteDeferredWake(
 ): Promise<ReleaseTransactionResult | null> {
   let currentIssue = issue;
   let shouldReopen = false;
+  // A board close that landed after this wake was queued is the newer
+  // decision: the queued comment may still be read, but cannot undo it.
   if (
     !workingCandidate.authorizedFailedChatRetry &&
+    !workingCandidate.supersededByBoardClose &&
     workingCandidate.deferredCommentIds.length > 0 &&
     (currentIssue.status === "done" || currentIssue.status === "cancelled")
   ) {
@@ -429,6 +433,7 @@ async function promoteDeferredWake(
   const promotedPayload = { ...workingCandidate.payload };
   delete promotedPayload["_paperclipWakeContext"];
   delete promotedPayload["queuedCommentInterrupt"];
+  delete promotedPayload[SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY];
 
   const promotedContextSeed: Record<string, unknown> = { ...workingCandidate.deferredContextSeed };
   if (pauseHold.activePauseHold) {
@@ -599,8 +604,11 @@ async function runReleaseRecoveryTail(
         })
       : false;
 
+  // GRE-755: the review lane reads the same open-blocker fact. A reviewer run
+  // queued behind an open blocker is cancelled at dispatch, so the review
+  // waits for the blockers-resolved wake instead.
   const hasExplicitBlockerPath =
-    immediateApplies && !reviewParticipantApplies
+    immediateApplies || reviewParticipantApplies
       ? await transaction.hasExplicitBlockerPath({
           companyId: issue.companyId,
           issueId: issue.id,
@@ -640,6 +648,7 @@ async function runReleaseRecoveryTail(
       isExecutionReviewParticipantRecoveryRun:
         isExecutionReviewParticipantRecoveryRun(run),
       reviewerWaitingOnCheck,
+      hasOpenBlocker: hasExplicitBlockerPath,
     },
     immediate: {
       applies: immediateApplies,

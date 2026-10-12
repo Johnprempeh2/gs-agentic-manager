@@ -1,3 +1,4 @@
+import * as executionContinuation from "../services/execution-continuation.js";
 import { legacyDispositionFingerprint, LEGACY_DISPOSITION_REPAIR_INSTRUCTION } from "../services/recovery/legacy-continuation.js";
 import * as controllerLeases from "../services/legacy-controller-lease.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
@@ -81,7 +82,9 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { runningProcesses } from "../adapters/index.ts";
+import { getServerAdapter, runningProcesses } from "../adapters/index.ts";
+import { recoverClaudeResultFromOutput } from "@greatstone/adapter-claude-local/server";
+import { getRunLogStore } from "../services/run-log-store.ts";
 import {
   resolveDefaultAgentWorkspaceDir,
   resolvePaperclipInstanceRoot,
@@ -1528,6 +1531,62 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
         ),
       );
     expect(missingCommentWakeups).toHaveLength(0);
+  });
+
+  it.each([
+    "continuation_task_ownership_changed",
+  ] as const)("cancels obsolete continuation setup: %s", async (code) => {
+    const { agentId, runId, wakeupRequestId } = await seedQueuedIssueRunFixture();
+    const build = vi.spyOn(executionContinuation, "buildExecutionContinuation")
+      .mockRejectedValueOnce(new executionContinuation.StaleExecutionContinuationError(code));
+    try {
+      const heartbeat = heartbeatService(db);
+      await heartbeat.resumeQueuedRuns();
+      await waitForRunToSettle(heartbeat, runId);
+      await heartbeat.waitForRunExecutionDrain(runId);
+      expect(build).toHaveBeenCalled();
+      expect(await heartbeat.getRun(runId)).toMatchObject({ status: "cancelled", errorCode: code });
+      const [wakeup] = await db.select().from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.id, wakeupRequestId));
+      expect(wakeup.status).toBe("cancelled");
+      const [agent] = await db.select().from(agents).where(eq(agents.id, agentId));
+      expect(agent.status).not.toBe("error");
+      expect(mockAdapterExecute.mock.calls.some(
+        ([input]) => (input as { runId?: string } | undefined)?.runId === runId,
+      )).toBe(false);
+      const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
+      expect(runs).toHaveLength(1);
+    } finally {
+      build.mockRestore();
+    }
+  });
+
+  it.each([
+    "continuation_source_context_missing",
+    "continuation_user_authorization_missing",
+    "continuation_task_ownership_changed",
+  ])("retains untyped continuation setup failures: %s", async (message) => {
+    const { runId, wakeupRequestId } = await seedQueuedIssueRunFixture();
+    const build = vi.spyOn(executionContinuation, "buildExecutionContinuation")
+      .mockRejectedValueOnce(new Error(message));
+    try {
+      const heartbeat = heartbeatService(db);
+      await heartbeat.resumeQueuedRuns();
+      await waitForRunToSettle(heartbeat, runId);
+      await heartbeat.waitForRunExecutionDrain(runId);
+      expect(build).toHaveBeenCalled();
+      expect(await heartbeat.getRun(runId)).toMatchObject({
+        status: "failed", errorCode: "setup_failed", error: message,
+      });
+      const [wakeup] = await db.select().from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.id, wakeupRequestId));
+      expect(wakeup.status).toBe("failed");
+      expect(mockAdapterExecute.mock.calls.some(
+        ([input]) => (input as { runId?: string } | undefined)?.runId === runId,
+      )).toBe(false);
+    } finally {
+      build.mockRestore();
+    }
   });
 
   it("does not immediately continue a low-trust preflight setup failure", async () => {
@@ -3498,6 +3557,479 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     });
   });
 
+  // GRE-246: the new server has no stdout for an adopted child, so when the
+  // child exits its result is gone. The loss must say so, not look like a
+  // bare crash, and the bounded retry is the only way the work finishes.
+  it("marks an adopted run whose child exits after the restart as lost with an uncaptured-output message", async () => {
+    const child = spawnAliveProcess();
+    childProcesses.add(child);
+    expect(child.pid).toBeGreaterThan(0);
+    const { runId } = await seedRunFixture({
+      agentStatus: "running",
+      processPid: child.pid ?? null,
+      processGroupId: null,
+      contextSnapshot: {
+        executionEngine: "cli",
+        processTopology: "detached",
+      },
+    });
+
+    await withTempPaperclipHome(async () => {
+      const heartbeat = heartbeatService(db);
+      await writeHotRestartIntent({
+        previousServerPid: process.pid,
+        previousServerVersion: "old-version",
+        requestedAt: new Date("2026-03-19T00:05:00.000Z"),
+      });
+      await heartbeat.prepareHotRestartShutdown(
+        "SIGTERM",
+        new Date("2026-03-19T00:06:00.000Z"),
+      );
+      const adoption = await heartbeat.reconcileHotRestartAdoption(
+        new Date("2026-03-19T00:07:00.000Z"),
+      );
+      expect(adoption.adoptedRunIds).toEqual([runId]);
+
+      child.kill("SIGKILL");
+      await new Promise((resolve) => child.once("exit", resolve));
+
+      const reap = await heartbeat.reapOrphanedRuns();
+      expect(reap.runIds).toEqual([runId]);
+      const run = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+      expect(run?.status).toBe("failed");
+      expect(run?.errorCode).toBe("process_lost");
+      expect(run?.error).toBe(
+        `Process lost -- child pid ${child.pid} is no longer running after hot-restart adoption; its output after the restart was not captured; retrying once`,
+      );
+      expect(run?.resultJson).toMatchObject({ hotRestart: { adopted: true } });
+
+      const retries = await db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.retryOfRunId, runId));
+      expect(retries).toHaveLength(1);
+      const events = await db
+        .select()
+        .from(heartbeatRunEvents)
+        .where(eq(heartbeatRunEvents.runId, runId));
+      expect(
+        events.some(
+          (event) =>
+            (event.payload as Record<string, unknown> | null)
+              ?.adoptedAfterHotRestart === true,
+        ),
+      ).toBe(true);
+    });
+  });
+
+  // GRE-250: the child's output is in a capture file, so the new server can
+  // finish an adopted run from the child's terminal result.
+  describe("adopted runs with captured output", () => {
+    const SESSION_ID = "0b6f1c1e-2a8d-4b5e-9c3f-1d2e3f4a5b6c";
+    const line = (event: Record<string, unknown>) =>
+      `${JSON.stringify(event)}\n`;
+    const init = line({
+      type: "system",
+      subtype: "init",
+      session_id: SESSION_ID,
+      model: "claude-opus-5-5",
+    });
+    const assistant = (text: string) =>
+      line({ type: "assistant", message: { content: [{ type: "text", text }] } });
+    const resultEvent = (fields: Record<string, unknown>) =>
+      line({ type: "result", session_id: SESSION_ID, ...fields });
+
+    async function adoptCapturedRun(input: {
+      stdout: string;
+      loggedStdout?: string;
+    }) {
+      const child = spawnAliveProcess();
+      childProcesses.add(child);
+      expect(child.pid).toBeGreaterThan(0);
+      const fixture = await seedRunFixture({
+        adapterType: "claude_local",
+        agentStatus: "running",
+        processPid: child.pid ?? null,
+        processGroupId: null,
+        contextSnapshot: { executionEngine: "cli", processTopology: "detached" },
+      });
+      const dir = path.join(resolvePaperclipInstanceRoot(), "run-output");
+      await fs.mkdir(dir, { recursive: true });
+      const stdoutPath = path.join(dir, `${fixture.runId}.1-test.stdout`);
+      const stderrPath = path.join(dir, `${fixture.runId}.1-test.stderr`);
+      await fs.writeFile(stdoutPath, input.stdout);
+      await fs.writeFile(stderrPath, "");
+
+      // The old server logged the start of the output before the restart.
+      const logStore = getRunLogStore();
+      const handle = await logStore.begin({
+        companyId: fixture.companyId,
+        agentId: fixture.agentId,
+        runId: fixture.runId,
+      });
+      if (input.loggedStdout) {
+        await logStore.append(handle, {
+          stream: "stdout",
+          chunk: input.loggedStdout,
+          ts: new Date().toISOString(),
+          seq: 1,
+        });
+      }
+      await db
+        .update(heartbeatRuns)
+        .set({
+          logStore: handle.store,
+          logRef: handle.logRef,
+          lastOutputSeq: input.loggedStdout ? 1 : 0,
+          processStartedAt: new Date(await readProcessStartedAt(child.pid!)),
+          resultJson: {
+            outputCapture: {
+              stdoutPath,
+              stderrPath,
+              recoveryContext: {
+                kind: "claude_local_result_v1",
+                timeoutSec: 0,
+                cwd: "/work/repo",
+                promptBundleKey: "bundle-1",
+                mcpServerIdentity: "[]",
+                remoteExecutionIdentity: null,
+                workspaceId: null,
+                workspaceRepoUrl: null,
+                workspaceRepoRef: null,
+                biller: "anthropic",
+                model: "claude-opus-5-5",
+                billingType: "subscription",
+                fallbackSessionId: null,
+                clearSessionOnMissingSession: false,
+              },
+              finalizeContext: { configuredModel: "claude-opus-5-5" },
+              stdoutLoggedBytes: Buffer.byteLength(input.loggedStdout ?? ""),
+              stderrLoggedBytes: 0,
+            },
+          },
+        })
+        .where(eq(heartbeatRuns.id, fixture.runId));
+
+      vi.mocked(getServerAdapter).mockReturnValue({
+        supportsLocalAgentJwt: false,
+        execute: mockAdapterExecute,
+        recoverResultFromOutput: recoverClaudeResultFromOutput,
+      } as unknown as ReturnType<typeof getServerAdapter>);
+
+      const heartbeat = heartbeatService(db);
+      await writeHotRestartIntent({
+        previousServerPid: process.pid,
+        previousServerVersion: "old-version",
+        requestedAt: new Date("2026-03-19T00:05:00.000Z"),
+      });
+      await heartbeat.prepareHotRestartShutdown(
+        "SIGTERM",
+        new Date("2026-03-19T00:06:00.000Z"),
+      );
+      const adoption = await heartbeat.reconcileHotRestartAdoption(
+        new Date("2026-03-19T00:07:00.000Z"),
+      );
+      expect(adoption.adoptedRunIds).toEqual([fixture.runId]);
+      // The Releases page reads this flag to drop the "result is lost" caveat.
+      const report = JSON.parse(
+        await fs.readFile(resolveHotRestartReportPath(), "utf8"),
+      ) as { runs: Array<{ runId: string; outputCaptured?: boolean }> };
+      expect(
+        report.runs.find((entry) => entry.runId === fixture.runId)?.outputCaptured,
+      ).toBe(true);
+      return { ...fixture, child, heartbeat, stdoutPath, stderrPath, handle };
+    }
+
+    async function killChild(child: ChildProcess) {
+      child.kill("SIGKILL");
+      await new Promise((resolve) => child.once("exit", resolve));
+    }
+
+    async function loadRun(runId: string) {
+      return db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.id, runId))
+        .then((rows) => rows[0] ?? null);
+    }
+
+    async function retriesOf(runId: string) {
+      return db
+        .select()
+        .from(heartbeatRuns)
+        .where(eq(heartbeatRuns.retryOfRunId, runId));
+    }
+
+    afterEach(() => {
+      vi.mocked(getServerAdapter).mockImplementation(
+        () =>
+          ({
+            supportsLocalAgentJwt: false,
+            execute: mockAdapterExecute,
+          }) as unknown as ReturnType<typeof getServerAdapter>,
+      );
+    });
+
+    it("finishes an adopted run from its captured result with no retry", async () => {
+      await withTempPaperclipHome(async () => {
+        const before = init + assistant("before restart");
+        const adopted = await adoptCapturedRun({
+          loggedStdout: before,
+          stdout:
+            before +
+            assistant("after restart") +
+            resultEvent({
+              subtype: "success",
+              is_error: false,
+              result: "Work finished after the restart.",
+              total_cost_usd: 0.5,
+              usage: { input_tokens: 10, output_tokens: 20 },
+            }),
+        });
+        await killChild(adopted.child);
+
+        const reap = await adopted.heartbeat.reapOrphanedRuns();
+        expect(reap.runIds).toEqual([adopted.runId]);
+
+        const run = await loadRun(adopted.runId);
+        expect(run?.status).toBe("succeeded");
+        expect(run?.errorCode).toBeNull();
+        expect(run?.sessionIdAfter).toBe(SESSION_ID);
+        expect(run?.resultJson).toMatchObject({
+          recoveredFromCapturedOutput: true,
+          hotRestart: { adopted: true },
+        });
+        expect(await retriesOf(adopted.runId)).toHaveLength(0);
+
+        // The next wake can resume the same Claude session.
+        const taskSession = await db
+          .select()
+          .from(agentTaskSessions)
+          .where(eq(agentTaskSessions.agentId, adopted.agentId))
+          .then((rows) => rows[0] ?? null);
+        expect(taskSession?.sessionDisplayId).toBe(SESSION_ID);
+
+        // The transcript gets the post-restart output once, with no gap and
+        // no repeat of what the old server already logged.
+        const log = await getRunLogStore().read(adopted.handle);
+        const content = String(log.content);
+        expect(content.split("before restart").length - 1).toBe(1);
+        expect(content.split("after restart").length - 1).toBe(1);
+
+        const events = await db
+          .select()
+          .from(heartbeatRunEvents)
+          .where(eq(heartbeatRunEvents.runId, adopted.runId));
+        expect(
+          events.some(
+            (event) =>
+              event.message === "Finished from captured output after hot restart",
+          ),
+        ).toBe(true);
+        await expect(fs.stat(adopted.stdoutPath)).rejects.toThrow();
+        await expect(fs.stat(adopted.stderrPath)).rejects.toThrow();
+      });
+    });
+
+    // GRE-281: the scheduler does not wait for one reaper pass before the next.
+    it("logs the tail and the finish event once when two reaper passes overlap", async () => {
+      await withTempPaperclipHome(async () => {
+        const before = init + assistant("before restart");
+        const adopted = await adoptCapturedRun({
+          loggedStdout: before,
+          stdout:
+            before +
+            assistant("after restart") +
+            resultEvent({
+              subtype: "success",
+              is_error: false,
+              result: "Work finished after the restart.",
+            }),
+        });
+        await killChild(adopted.child);
+
+        const [first, second] = await Promise.all([
+          adopted.heartbeat.reapOrphanedRuns(),
+          adopted.heartbeat.reapOrphanedRuns(),
+        ]);
+        expect([...first.runIds, ...second.runIds]).toEqual([adopted.runId]);
+
+        const run = await loadRun(adopted.runId);
+        expect(run?.status).toBe("succeeded");
+        expect(await retriesOf(adopted.runId)).toHaveLength(0);
+
+        const log = await getRunLogStore().read(adopted.handle);
+        const content = String(log.content);
+        expect(content.split("before restart").length - 1).toBe(1);
+        expect(content.split("after restart").length - 1).toBe(1);
+
+        const events = await db
+          .select()
+          .from(heartbeatRunEvents)
+          .where(eq(heartbeatRunEvents.runId, adopted.runId));
+        expect(
+          events.filter(
+            (event) =>
+              event.message === "Finished from captured output after hot restart",
+          ),
+        ).toHaveLength(1);
+      });
+    });
+
+    // GRE-269: the run page shows what the adopted child writes after the
+    // restart while it runs, and the finished transcript has it exactly once.
+    it("streams an adopted child's new output to its run log while it runs", async () => {
+      await withTempPaperclipHome(async () => {
+        const before = init + assistant("before restart");
+        const adopted = await adoptCapturedRun({ loggedStdout: before, stdout: before });
+        const logStore = getRunLogStore();
+        const readLog = async () => String((await logStore.read(adopted.handle)).content);
+
+        await fs.appendFile(adopted.stdoutPath, assistant("live after restart"));
+        const appendedAt = Date.now();
+        while (!(await readLog()).includes("live after restart")) {
+          expect(Date.now() - appendedAt).toBeLessThan(1_000);
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect((await loadRun(adopted.runId))?.status).toBe("running");
+
+        // A slow log write is in flight when the child writes its last output
+        // and exits: finalize must append only what the tail had not logged.
+        const realAppend = logStore.append.bind(logStore);
+        const appendSpy = vi
+          .spyOn(logStore, "append")
+          .mockImplementation(async (...args: Parameters<typeof logStore.append>) => {
+            await new Promise((resolve) => setTimeout(resolve, 300));
+            return realAppend(...args);
+          });
+        try {
+          await fs.appendFile(adopted.stdoutPath, assistant("in flight at exit"));
+          await new Promise((resolve) => setTimeout(resolve, 150));
+          await fs.appendFile(
+            adopted.stdoutPath,
+            assistant("written just before exit") +
+              resultEvent({ subtype: "success", is_error: false, result: "Done." }),
+          );
+          await killChild(adopted.child);
+          const reap = await adopted.heartbeat.reapOrphanedRuns();
+          expect(reap.runIds).toEqual([adopted.runId]);
+        } finally {
+          appendSpy.mockRestore();
+        }
+
+        expect((await loadRun(adopted.runId))?.status).toBe("succeeded");
+        const content = await readLog();
+        const markers = [
+          "before restart",
+          "live after restart",
+          "in flight at exit",
+          "written just before exit",
+        ];
+        for (const marker of markers) {
+          expect(content.split(marker).length - 1).toBe(1);
+        }
+        const positions = markers.map((marker) => content.indexOf(marker));
+        expect(positions).toEqual([...positions].sort((a, b) => a - b));
+      });
+    });
+
+    it("fails an adopted run from an is_error result instead of marking it lost", async () => {
+      await withTempPaperclipHome(async () => {
+        const adopted = await adoptCapturedRun({
+          stdout:
+            init +
+            resultEvent({
+              subtype: "error_during_execution",
+              is_error: true,
+              result: "The tool crashed.",
+            }),
+        });
+        await killChild(adopted.child);
+
+        const reap = await adopted.heartbeat.reapOrphanedRuns();
+        expect(reap.runIds).toEqual([adopted.runId]);
+        const run = await loadRun(adopted.runId);
+        expect(run?.status).toBe("failed");
+        expect(run?.errorCode).not.toBe("process_lost");
+        expect(run?.resultJson).toMatchObject({ recoveredFromCapturedOutput: true });
+        const dbg = await retriesOf(adopted.runId);
+        expect(run?.errorCode).toBe("adapter_failed");
+        expect(run?.error).toContain("The tool crashed.");
+        // A failed result gets the normal failed-run policy from the shared
+        // finalizer (it may schedule its own bounded retry). It is not a
+        // process loss: no process_lost write and no "Process lost" event.
+        const events = await db
+          .select()
+          .from(heartbeatRunEvents)
+          .where(eq(heartbeatRunEvents.runId, adopted.runId));
+        expect(
+          events.some((event) => (event.message ?? "").startsWith("Process lost")),
+        ).toBe(false);
+        expect(
+          events.some(
+            (event) =>
+              event.message === "Finished from captured output after hot restart",
+          ),
+        ).toBe(true);
+      });
+    });
+
+    it("keeps process_lost and one retry when the captured output has no result", async () => {
+      await withTempPaperclipHome(async () => {
+        const adopted = await adoptCapturedRun({
+          stdout: init + assistant("still working when it died"),
+        });
+        await killChild(adopted.child);
+
+        const reap = await adopted.heartbeat.reapOrphanedRuns();
+        expect(reap.runIds).toEqual([adopted.runId]);
+        const run = await loadRun(adopted.runId);
+        expect(run?.status).toBe("failed");
+        expect(run?.errorCode).toBe("process_lost");
+        expect(await retriesOf(adopted.runId)).toHaveLength(1);
+        await expect(fs.stat(adopted.stdoutPath)).rejects.toThrow();
+      });
+    });
+
+    it("stops an adopted child that hangs after its result, then finishes the run", async () => {
+      await withTempPaperclipHome(async () => {
+        const adopted = await adoptCapturedRun({
+          stdout:
+            init +
+            resultEvent({ subtype: "success", is_error: false, result: "Done." }),
+        });
+        // The result was written longer ago than the cleanup grace period.
+        const past = new Date(Date.now() - 60_000);
+        await fs.utimes(adopted.stdoutPath, past, past);
+
+        const reap = await adopted.heartbeat.reapOrphanedRuns();
+        expect(reap.runIds).toEqual([adopted.runId]);
+        expect(await waitForPidExit(adopted.child.pid!, 3_000)).toBe(true);
+        const run = await loadRun(adopted.runId);
+        expect(run?.status).toBe("succeeded");
+        expect(await retriesOf(adopted.runId)).toHaveLength(0);
+      });
+    });
+
+    it("leaves a live adopted child alone while its result is newer than the grace period", async () => {
+      await withTempPaperclipHome(async () => {
+        const adopted = await adoptCapturedRun({
+          stdout:
+            init +
+            resultEvent({ subtype: "success", is_error: false, result: "Done." }),
+        });
+        const reap = await adopted.heartbeat.reapOrphanedRuns();
+        expect(reap.runIds).toEqual([]);
+        expect(isPidAlive(adopted.child.pid)).toBe(true);
+        expect((await loadRun(adopted.runId))?.status).toBe("running");
+      });
+    });
+  });
+
   it.skipIf(process.platform === "win32")(
     "keeps process-group-only hot-restart adoptions out of process_lost reaping",
     async () => {
@@ -4220,7 +4752,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       createdByRunId: runId,
-      body: "Agent failed to resume after approval: `adapter_failed` — retrying (attempt 1/2)",
+      body: "Agent failed to resume after approval: `adapter_failed`, retrying (attempt 1/2)",
     });
 
     const interaction = await db
@@ -4771,7 +5303,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       body: expect.stringContaining(
-        "Agent failed to resume after approval: `adapter_failed` — needs attention",
+        "Agent failed to resume after approval: `adapter_failed`, needs attention",
       ),
     });
 
@@ -4872,7 +5404,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       body: expect.stringContaining(
-        "Agent failed to resume after approval: `adapter_failed` — needs attention",
+        "Agent failed to resume after approval: `adapter_failed`, needs attention",
       ),
     });
     expect(
@@ -5027,7 +5559,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments).toHaveLength(1);
     expect(comments[0]).toMatchObject({
       authorType: "system",
-      body: "Agent failed to resume after approval: `process_lost` — retrying (attempt 1/2)",
+      body: "Agent failed to resume after approval: `process_lost`, retrying (attempt 1/2)",
     });
 
     const interaction = await db
@@ -6171,7 +6703,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
       tone: "warning",
-      title: "Recovery: waiting on dependencies — moved to blocked",
+      title: "Recovery: waiting on dependencies; moved to blocked",
       density: "compact",
     });
     expect(comments[0]?.metadata).toMatchObject({
@@ -6710,7 +7242,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     });
   });
 
-  it("escalates exhausted source-owner repair to the board without a substitute wake", async () => {
+  it("escalates exhausted source-owner repair to the manager without reassigning the source (GRE-753)", async () => {
     const { companyId, agentId, runId, issueId } =
       await seedStrandedIssueFixture({
         status: "in_progress",
@@ -6808,19 +7340,19 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(action).toMatchObject({
       kind: "deliberate_wait_without_target",
       status: "active",
-      ownerType: "board",
-      ownerAgentId: null,
+      ownerType: "agent",
+      ownerAgentId: managerId,
       previousOwnerAgentId: agentId,
       returnOwnerAgentId: agentId,
       maxAttempts: null,
       resolutionNote: "unchanged_source_state_exhausted",
       wakePolicy: expect.objectContaining({
-        type: "board_escalation",
+        type: "manager_escalation",
         reason: "unchanged_source_state_exhausted",
         preservesSourceAssignee: true,
       }),
       evidence: expect.objectContaining({
-        routingPolicy: "board_escalation_no_takeover_v1",
+        routingPolicy: "manager_escalation_once_v1",
         sourceAttemptCount: 5,
         sourceMaxAttempts: 5,
       }),
@@ -6829,7 +7361,8 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(notices.some(comment => comment.metadata?.recovery?.kind === "disposition_repair_escalated")).toBe(true);
     const snapshot = notices.find(comment => comment.metadata?.recovery?.kind === "disposition_repair_escalated")!.metadata!.recovery;
     expect(snapshot).toEqual({ kind: "disposition_repair_escalated", actionId: action!.id, assigneeAgentId: agentId, attemptCount: 5, maxAttempts: 5, reason: "unchanged_source_state_exhausted" });
-    expect(substituteWakes).toHaveLength(0);
+    expect(substituteWakes).toHaveLength(1);
+    expect(substituteWakes[0]).toMatchObject({ reason: "source_scoped_recovery_action" });
     expect(sourceAttemptSix).toHaveLength(0);
   });
 
@@ -10529,7 +11062,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
       tone: "warning",
-      title: "Recovery: recovery attempt failed — remains blocked",
+      title: "Recovery: recovery attempt failed; remains blocked",
       density: "compact",
     });
     expect(comments[0]?.metadata).toMatchObject({ version: 1 });

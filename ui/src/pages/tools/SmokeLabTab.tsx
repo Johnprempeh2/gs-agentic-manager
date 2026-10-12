@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  BookOpen,
   Check,
   CircleSlash,
   FlaskConical,
@@ -40,9 +39,9 @@ const DEMO_EMAIL = "smoke@paperclip.test";
 const DEMO_PASSWORD = "smoke-password";
 
 function formatTime(value: string | Date | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "not yet";
   const date = new Date(value as string | Date);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "unknown";
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
 }
 
@@ -199,29 +198,13 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
           <FlaskConical className="h-5 w-5 text-muted-foreground" />
           <h1 className="text-xl font-bold text-foreground">Smoke Lab</h1>
           <Badge variant="outline">Experimental</Badge>
-          <a
-            href="https://github.com/paperclipai/paperclip/blob/master/doc/connections/SMOKE-LAB-TUTORIAL.md"
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-          >
-            <BookOpen className="h-4 w-4" /> Hands-on tutorial
-          </a>
         </div>
         <p className="mt-1.5 max-w-3xl text-sm text-muted-foreground">
-          Exercise every integration path (P1–P7) end-to-end against deterministic local fixtures —
+          Exercise every integration path (P1 to P7) end-to-end against deterministic local fixtures:
           a fake OAuth provider and loopback MCP servers. Nothing here touches a real vendor or a
           real credential. Start the services, install the fixture apps, then drive the governed
-          lifecycle from a browser smoke run. New here? Follow the{" "}
-          <a
-            href="https://github.com/paperclipai/paperclip/blob/master/doc/connections/SMOKE-LAB-TUTORIAL.md"
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium text-primary hover:underline"
-          >
-            hands-on tutorial
-          </a>
-          .
+          lifecycle from a browser smoke run. New here? The hands-on tutorial is in the repository at{" "}
+          <span className="font-mono text-(length:--text-micro)">doc/connections/SMOKE-LAB-TUTORIAL.md</span>.
         </p>
       </header>
 
@@ -317,7 +300,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
           <p className="text-xs font-semibold text-foreground">Fake OAuth demo credentials</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Type these into the fake provider's real consent page during a P1 (OAuth) smoke. Fixed
-            fixture values — safe to show.
+            fixture values (safe to show).
           </p>
           <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 font-mono text-xs text-foreground">
             <span>email: {DEMO_EMAIL}</span>
@@ -341,7 +324,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
           <table className="w-full border-collapse text-xs">
             <thead>
               <tr className="border-b border-border bg-muted/40">
-                <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 text-left font-semibold text-foreground">Path</th>
+                <th className="sticky left-0 z-raised bg-muted/40 px-3 py-2 text-left font-semibold text-foreground">Path</th>
                 {LIFECYCLE_STAGES.map((stage) => (
                   <th key={stage.key} className="px-2 py-2 text-center font-medium text-muted-foreground">
                     {stage.label}
@@ -352,7 +335,7 @@ export function SmokeLabTab({ companyId }: { companyId: string }) {
             <tbody>
               {SMOKE_PATHS.map((path) => (
                 <tr key={path} className="border-b border-border last:border-0">
-                  <th scope="row" className="sticky left-0 z-10 bg-card px-3 py-2 text-left">
+                  <th scope="row" className="sticky left-0 z-raised bg-card px-3 py-2 text-left">
                     <span className="font-mono font-semibold text-foreground">{path}</span>
                     <span className="ml-2 text-foreground">{SMOKE_PATH_LABELS[path].title}</span>
                     <span className="block text-(length:--text-micro) font-normal text-muted-foreground">

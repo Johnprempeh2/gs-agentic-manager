@@ -101,6 +101,9 @@ function registerServiceMocks() {
     agentService: () => ({
       getById: vi.fn(async () => null),
     }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),
     }),

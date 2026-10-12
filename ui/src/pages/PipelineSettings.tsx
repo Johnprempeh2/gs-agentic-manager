@@ -57,9 +57,11 @@ import type {
   PipelineTransitionEdge,
 } from "../api/pipelines";
 import { pipelinesApi } from "../api/pipelines";
+import { PipelineFieldsEditor } from "../components/PipelineFieldsEditor";
 import { EmptyState } from "../components/EmptyState";
 import { StageSecretsPanel } from "../components/StageSecretsPanel";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { MarkdownEditor, type MarkdownEditorRef } from "../components/MarkdownEditor";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
 import { PipelineStageHistoryPanel } from "../components/PipelineStageHistoryPanel";
@@ -87,6 +89,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { useToastActions } from "../context/ToastContext";
+import { PipelineAgentAccessSection } from "../components/PipelineAgentAccessSection";
 import { buildCompanyUserInlineOptions, isAgentTaskTarget } from "../lib/company-members";
 import { useStandardMarkdownMentionOptions } from "../hooks/useStandardMarkdownMentionOptions";
 import { formatPipelineItemEvent, INTERNAL_FIELD_KEYS } from "../lib/pipeline-item-detail";
@@ -101,6 +104,7 @@ import {
 import { orderReusableExecutionWorkspaces } from "../lib/reusable-execution-workspaces";
 import { cn, relativeTime } from "../lib/utils";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { StageHealthWarnings } from "../components/PipelineHealthWarnings";
 import {
@@ -1280,6 +1284,10 @@ export function PipelineSettings() {
   const { pushToast } = useToastActions();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  // Rename, archive, stage and move controls show only to people who may
+  // administer this pipeline (GRE-1073); the server checks every change.
+  const { canAdministerPipeline, rightsError } = usePipelineAdminRights(selectedCompanyId);
+  const canAdminister = pipelineId ? canAdministerPipeline(pipelineId) : false;
   const queryClient = useQueryClient();
   const [activeStageSection, setActiveStageSection] = useState<StageSectionKey>("instructions");
   const [selectedStageId, setSelectedStageId] = useState<string | null>(null);
@@ -2135,7 +2143,7 @@ export function PipelineSettings() {
   }
 
   if (pipelineQuery.error) {
-    return <p className="text-sm text-destructive">{pipelineQuery.error.message}</p>;
+    return <ErrorState error={pipelineQuery.error} onRetry={() => void pipelineQuery.refetch()} />;
   }
 
   if (!pipeline) {
@@ -2568,6 +2576,7 @@ export function PipelineSettings() {
           <Link to={`/pipelines/${pipeline.id}`} className="text-sm text-muted-foreground hover:text-foreground">
             Back to board
           </Link>
+          {canAdminister ? (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" size="icon" className="h-8 w-8" title="Pipeline actions">
@@ -2588,7 +2597,18 @@ export function PipelineSettings() {
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+          ) : null}
         </div>
+        {canAdminister ? null : rightsError ? (
+          <p className="mb-3 text-sm text-destructive">
+            Could not check your rights on this pipeline, so its edit controls are hidden. Reload the page to try again.
+          </p>
+        ) : (
+          <p className="mb-3 text-sm text-muted-foreground">
+            You can view this pipeline. Only people who administer it can rename it, archive it or change its stages and moves.
+          </p>
+        )}
+        <fieldset disabled={!canAdminister} className="contents">
         <div className="grid gap-3 md:grid-cols-(--gtc-13) md:items-end">
           <div className="space-y-3">
             <label className="block space-y-1.5 text-sm font-medium">
@@ -2620,6 +2640,7 @@ export function PipelineSettings() {
             </Button>
           ) : null}
         </div>
+        </fieldset>
         {savePipelineDetails.error ? (
           <p className="mt-3 text-sm text-destructive">{savePipelineDetails.error.message}</p>
         ) : null}
@@ -2630,8 +2651,8 @@ export function PipelineSettings() {
             <EmptyState
               icon={GitBranch}
               message="No stages configured."
-              action="Add first stage"
-              onAction={() => addStage.mutate(null)}
+              action={canAdminister ? "Add first stage" : undefined}
+              onAction={canAdminister ? () => addStage.mutate(null) : undefined}
             />
           ) : (
             <div className="overflow-x-auto border-y border-border py-4">
@@ -2684,7 +2705,7 @@ export function PipelineSettings() {
                           <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
                         </Link>
                       </div>
-                      {canInsertAfter ? (
+                      {canInsertAfter && canAdminister ? (
                         <button
                           type="button"
                           aria-label={`Insert stage after ${stage.name}`}
@@ -2724,7 +2745,7 @@ export function PipelineSettings() {
                     <h2 className="text-lg font-semibold text-foreground">
                       {STAGE_SECTION_TITLES[activeStageSection]}
                     </h2>
-                    {activeStageSection === "instructions" ? (
+                    {activeStageSection === "instructions" && canAdminister ? (
                       <div className="flex items-center gap-2">
                         <Button
                           type="button"
@@ -2760,6 +2781,8 @@ export function PipelineSettings() {
                     className="mb-4"
                     warnings={healthWarningsByStage[selectedStage.id] ?? []}
                   />
+
+                  <fieldset disabled={!canAdminister} className="contents">
 
                   {activeStageSection === "instructions" ? (
                     <div className="w-full max-w-3xl">
@@ -3093,9 +3116,10 @@ export function PipelineSettings() {
                               onChange={setInstructionsBody}
                               placeholder={
                                 breakdownEnabled
-                                  ? "Describe the judgment the agent should make — what counts as a piece worth splitting out?"
+                                  ? "Describe the judgement the agent should make: what counts as a piece worth splitting out?"
                                   : "Tell the agent exactly what to do when an item enters this step..."
                               }
+                              readOnly={!canAdminister}
                               bordered={false}
                               contentClassName="min-h-(--sz-120px) text-sm leading-7"
                               mentions={mentionOptions}
@@ -3288,13 +3312,14 @@ export function PipelineSettings() {
                       ) : null}
                     </div>
                   ) : null}
+                  </fieldset>
                 </div>
               </div>
 
               {saveStage.error ? <p className="text-sm text-destructive">{saveStage.error.message}</p> : null}
 
-              {stageDirty || saveStage.isPending ? (
-                <div className="sticky bottom-0 z-10 -mx-6 mt-6 flex items-center justify-between gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2">
+              {canAdminister && (stageDirty || saveStage.isPending) ? (
+                <div className="sticky bottom-0 z-raised -mx-6 mt-6 flex items-center justify-between gap-3 border-t border-border bg-background/95 px-6 py-3 backdrop-blur motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2">
                   <span className="text-sm text-muted-foreground">
                     {saveStage.isPending ? "Saving changes…" : "You have unsaved changes."}
                   </span>
@@ -3310,6 +3335,16 @@ export function PipelineSettings() {
             </form>
           ) : null}
       </div>
+      <PipelineFieldsEditor pipelineId={pipeline.id} canEdit={canAdminister} />
+
+      {pipeline.companyId ? (
+        <PipelineAgentAccessSection
+          companyId={pipeline.companyId}
+          pipelineId={pipeline.id}
+          pipelineName={pipeline.name}
+        />
+      ) : null}
+
       <Dialog
         open={deleteStageDialogOpen}
         onOpenChange={setDeleteStageDialogOpen}

@@ -121,7 +121,7 @@ export function ExternalObjectPill({
   const livenessLabel = externalObjectLivenessLabel(object.liveness);
   const ProviderIcon = externalObjectIconForKey(object.iconKey);
   const ariaKey = displayKey;
-  const ariaLabel = `${ariaKey} — ${statusLabel}${
+  const ariaLabel = `${ariaKey}, ${statusLabel}${
     object.liveness === "fresh" || object.liveness === "unknown" ? "" : ` (${livenessLabel})`
   }${object.displayTitle ? `: ${object.displayTitle}` : ""}`;
 
@@ -138,7 +138,7 @@ export function ExternalObjectPill({
     className,
   );
   const titleAttr = sourceSummary
-    ? `${object.displayTitle ?? displayKey} — ${sourceSummary}`
+    ? `${object.displayTitle ?? displayKey} (${sourceSummary})`
     : object.displayTitle ?? displayKey;
   const labelText = children ?? (
     <>

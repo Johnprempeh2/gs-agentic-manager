@@ -17,12 +17,18 @@ import {
   updateProjectSchema,
   updateProjectWorkspaceSchema,
   workspaceRuntimeControlTargetSchema,
+  setProjectWorkspacePreviewAutoUpdateSchema,
 } from "@greatstone/shared";
-import type { WorkspaceRuntimeDesiredState, WorkspaceRuntimeServiceStateMap } from "@greatstone/shared";
+import type {
+  ProjectWorkspaceCheckoutHead,
+  WorkspaceRuntimeDesiredState,
+  WorkspaceRuntimeServiceStateMap,
+} from "@greatstone/shared";
 import { trackProjectCreated } from "@greatstone/shared/telemetry";
 import { validate } from "../middleware/validate.js";
 import { accessService, projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { conflict, forbidden, unprocessable } from "../errors.js";
+import { conflict, forbidden, HttpError, unprocessable } from "../errors.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { externalObjectService } from "../services/external-objects.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
@@ -39,6 +45,9 @@ import {
   collectProjectWorkspaceCommandPaths,
 } from "./workspace-command-authz.js";
 import { assertCanManageProjectWorkspaceRuntimeServices } from "./workspace-runtime-service-authz.js";
+import { findExistingManagedProjectCheckout, readCheckoutHead } from "../services/managed-project-checkout.js";
+import { previewUpdateService, type PreviewUpdateOutcome } from "../services/preview-update.js";
+import { logger } from "../middleware/logger.js";
 import { getTelemetryClient } from "../telemetry.js";
 import { appendWithCap } from "../adapters/utils.js";
 import { assertEnvironmentSelectionForCompany } from "./environment-selection.js";
@@ -68,6 +77,7 @@ export function projectRoutes(db: Db) {
   const access = accessService(db);
   const secretsSvc = secretService(db);
   const workspaceOperations = workspaceOperationService(db);
+  const previewUpdates = previewUpdateService(db);
   const instanceSettings = instanceSettingsService(db);
   const externalObjectsSvc = externalObjectService(db, {
     enabled: async () => (await instanceSettings.getExperimental()).enableExternalObjects === true,
@@ -222,13 +232,17 @@ export function projectRoutes(db: Db) {
     res.json(project);
   });
 
-  router.get("/projects/:id/external-object-summary", async (req, res) => {
-    const id = req.params.id as string;
-    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
-    if (!project) return;
-    const summary = await externalObjectsSvc.getProjectSummary(project.id);
-    res.json(summary);
-  });
+  router.get(
+    "/projects/:id/external-object-summary",
+    requireEntitlement(instanceSettings, "enableExternalObjects"),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+      if (!project) return;
+      const summary = await externalObjectsSvc.getProjectSummary(project.id);
+      res.json(summary);
+    },
+  );
 
   router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -385,6 +399,21 @@ export function projectRoutes(db: Db) {
     res.json(workspaces);
   });
 
+  router.get("/projects/:id/workspaces/:workspaceId/checkout-head", async (req, res) => {
+    const id = req.params.id as string;
+    const workspaceId = req.params.workspaceId as string;
+    const project = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
+    if (!project) return;
+    const workspace = project.workspaces.find((entry) => entry.id === workspaceId) ?? null;
+    if (!workspace) {
+      res.status(404).json({ error: "Project workspace not found" });
+      return;
+    }
+    const cwd = workspace.cwd ?? await findExistingManagedProjectCheckout(project, workspace);
+    const head: ProjectWorkspaceCheckoutHead = { workspaceId: workspace.id, ...(await readCheckoutHead(cwd)) };
+    res.json(head);
+  });
+
   router.post("/projects/:id/workspaces", validate(createProjectWorkspaceSchema), async (req, res) => {
     const id = req.params.id as string;
     const existing = await getAccessibleResource(req, res, svc.getById(id), "Project not found");
@@ -496,7 +525,8 @@ export function projectRoutes(db: Db) {
       projectWorkspaceId: workspace.id,
     });
 
-    const workspaceCwd = workspace.cwd;
+    // A repo-only workspace has no cwd, but runs may already have cloned its managed checkout.
+    const workspaceCwd = workspace.cwd ?? await findExistingManagedProjectCheckout(project, workspace);
     if (!workspaceCwd) {
       res.status(422).json({ error: "Project workspace needs a local path before GS Agentic Manager can run workspace commands" });
       return;
@@ -559,7 +589,7 @@ export function projectRoutes(db: Db) {
     const operation = await recorder.recordOperation({
       phase: action === "stop" ? "workspace_teardown" : "workspace_provision",
       command: workspaceCommand?.command ?? `workspace command ${action}`,
-      cwd: workspace.cwd,
+      cwd: workspaceCwd,
       metadata: {
         action,
         projectId: project.id,
@@ -711,6 +741,16 @@ export function projectRoutes(db: Db) {
           },
         };
       },
+    }).catch((error: unknown) => {
+      // A service that will not start is a workspace config problem, not a server
+      // crash. Return its reason instead of a bare 500 (GRE-1002).
+      if (action === "stop" || error instanceof HttpError || !(error instanceof Error)) throw error;
+      throw unprocessable(error.message, {
+        code: "workspace_runtime_command_failed",
+        action,
+        runtimeServiceId: selectedRuntimeServiceId,
+        serviceIndex: selectedServiceIndex,
+      });
     });
 
     const updatedWorkspace = (await svc.listWorkspaces(project.id)).find((entry) => entry.id === workspace.id) ?? workspace;
@@ -742,6 +782,90 @@ export function projectRoutes(db: Db) {
 
   router.post("/projects/:id/workspaces/:workspaceId/runtime-services/:action", validate(workspaceRuntimeControlTargetSchema), handleProjectWorkspaceRuntimeCommand);
   router.post("/projects/:id/workspaces/:workspaceId/runtime-commands/:action", validate(workspaceRuntimeControlTargetSchema), handleProjectWorkspaceRuntimeCommand);
+
+  /** Same checks as a workspace restart: updating pulls into the checkout and restarts the preview. */
+  async function loadPreviewWorkspaceForControl(req: Request, res: Response) {
+    const project = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Project not found");
+    if (!project) return null;
+    const workspace = project.workspaces.find((entry) => entry.id === req.params.workspaceId) ?? null;
+    if (!workspace) {
+      res.status(404).json({ error: "Project workspace not found" });
+      return null;
+    }
+    if (!(await assertRuntimeManageAllowed(req, res, project.companyId))) return null;
+    if (req.actor.type === "agent" && workspace.sharedWorkspaceKey) {
+      throw forbidden("Missing permission to manage workspace runtime services");
+    }
+    await assertCanManageProjectWorkspaceRuntimeServices(db, req, {
+      companyId: project.companyId,
+      projectWorkspaceId: workspace.id,
+    });
+    return { project, workspace };
+  }
+
+  router.post("/projects/:id/workspaces/:workspaceId/preview-update", async (req, res) => {
+    const loaded = await loadPreviewWorkspaceForControl(req, res);
+    if (!loaded) return;
+    const { project, workspace } = loaded;
+    const actor = getActorInfo(req);
+    // Answer once the update has started; pulling and installing can take minutes.
+    // The card follows progress through the workspace's previewUpdate state.
+    const outcome = await new Promise<PreviewUpdateOutcome | "started">((resolve) => {
+      previewUpdates
+        .update({
+          projectId: project.id,
+          workspaceId: workspace.id,
+          trigger: "manual",
+          actor: { actorType: actor.actorType === "agent" ? "agent" : "user", actorId: actor.actorId, agentId: actor.agentId ?? null },
+          onStarted: () => resolve("started"),
+        })
+        .then(resolve, (err) => {
+          logger.error({ err, workspaceId: workspace.id }, "preview update failed");
+          resolve({ kind: "finished", state: "failed" });
+        });
+    });
+    if (outcome !== "started") {
+      if (outcome.kind === "busy") {
+        res.status(409).json({ error: "The preview is already updating" });
+        return;
+      }
+      if (outcome.kind === "no_update_job") {
+        res.status(422).json({ error: "This workspace has no update job. Add a workspace job with id \"update\" that pulls the latest code." });
+        return;
+      }
+      if (outcome.kind === "no_checkout" || outcome.kind === "not_found") {
+        res.status(422).json({ error: "Project workspace needs a local path before GS Agentic Manager can update it" });
+        return;
+      }
+    }
+    const updatedWorkspace = (await svc.listWorkspaces(project.id)).find((entry) => entry.id === workspace.id) ?? workspace;
+    res.status(outcome === "started" ? 202 : 200).json({ workspace: updatedWorkspace });
+  });
+
+  router.patch(
+    "/projects/:id/workspaces/:workspaceId/preview-auto-update",
+    validate(setProjectWorkspacePreviewAutoUpdateSchema),
+    async (req, res) => {
+      const loaded = await loadPreviewWorkspaceForControl(req, res);
+      if (!loaded) return;
+      const { project, workspace } = loaded;
+      const { enabled } = req.body as { enabled: boolean };
+      await previewUpdates.setAutoUpdate(workspace.id, enabled);
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.workspace_preview_auto_update_set",
+        entityType: "project",
+        entityId: project.id,
+        details: { projectWorkspaceId: workspace.id, enabled },
+      });
+      const updatedWorkspace = (await svc.listWorkspaces(project.id)).find((entry) => entry.id === workspace.id) ?? workspace;
+      res.json({ workspace: updatedWorkspace });
+    },
+  );
 
   router.delete("/projects/:id/workspaces/:workspaceId", async (req, res) => {
     const id = req.params.id as string;

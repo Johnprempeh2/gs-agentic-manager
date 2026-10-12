@@ -1,10 +1,11 @@
-import type { ExecutionReconciliation } from "@greatstone/shared";
+import type { ExecutionReconciliation, IssueWorkFilter } from "@greatstone/shared";
 import type {
   AcceptedPlanDecompositionSummary,
   AskUserQuestionsAnswer,
   Approval,
   CompactIssue,
   CreateIssueTreeHold,
+  DocumentEvidenceView,
   DocumentRevision,
   FeedbackTargetType,
   FeedbackTrace,
@@ -37,6 +38,7 @@ import type {
 } from "@greatstone/shared";
 import { api, ApiError, type RequestOptions } from "./client";
 import { CommentSubmissionUnknownError } from "../lib/comment-submit-result";
+import { sendWithBlockedDependentsHandoff } from "../lib/blocked-dependents-handoff";
 
 function hasCommentReceipt(value: unknown): boolean {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
@@ -103,6 +105,7 @@ export type IssueListFilters = {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  work?: IssueWorkFilter;
   q?: string;
   limit?: number;
   offset?: number;
@@ -150,6 +153,7 @@ function issueListSearchParams(filters?: IssueListFilters) {
   if (filters?.hasPlanDocument !== undefined) {
     params.set("hasPlanDocument", filters.hasPlanDocument ? "true" : "false");
   }
+  if (filters?.work) params.set("work", filters.work);
   if (filters?.q) params.set("q", filters.q);
   if (filters?.limit) params.set("limit", String(filters.limit));
   if (filters?.offset !== undefined)
@@ -260,14 +264,15 @@ export const issuesApi = {
     ),
   create: (companyId: string, data: Record<string, unknown>) =>
     api.post<Issue>(`/companies/${companyId}/issues`, data),
-  update: (id: string, data: Record<string, unknown>) => {
-    const response = api.patch<IssueUpdateResponse>(`/issues/${id}`, data);
-    return typeof data.comment === "string"
-      ? confirmedCommentResponse(response, (value) =>
-          hasCommentReceipt(value?.comment),
-        )
-      : response;
-  },
+  update: (id: string, data: Record<string, unknown>) =>
+    sendWithBlockedDependentsHandoff(id, data, (payload) => {
+      const response = api.patch<IssueUpdateResponse>(`/issues/${id}`, payload);
+      return typeof payload.comment === "string"
+        ? confirmedCommentResponse(response, (value) =>
+            hasCommentReceipt(value?.comment),
+          )
+        : response;
+    }),
   decideStalledReview: (id: string, data: StalledReviewDecision) =>
     api.post<StalledReviewDecisionResponse>(
       `/issues/${id}/stalled-review-decision`,
@@ -556,6 +561,10 @@ export const issuesApi = {
     api.post<IssueDocument>(
       `/issues/${id}/documents/${encodeURIComponent(key)}/unlock`,
       {},
+    ),
+  getDocumentEvidence: (id: string, key: string) =>
+    api.get<DocumentEvidenceView>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/evidence`,
     ),
   listDocumentRevisions: (id: string, key: string) =>
     api.get<DocumentRevision[]>(

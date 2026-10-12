@@ -31,8 +31,10 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  issueFilterArraysEqual,
   issueFilterLabel,
   issuePriorityOrder,
+  issueQuickFilterPresets,
   normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
   shouldIncludeIssueFilterWorkspaceOption,
@@ -58,11 +60,15 @@ import {
   issueTrailingColumns,
 } from "./IssueColumns";
 import { StatusIcon } from "./StatusIcon";
+import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { EmptyState } from "./EmptyState";
 import { Identity } from "./Identity";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueFiltersPopover } from "./IssueFiltersPopover";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
+import { TeamBadge } from "./TeamBadge";
+import { agentTeamsApi } from "../api/agentTeams";
+import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { CollectionToolbar, type CollectionToolbarProps } from "./CollectionToolbar";
 import { IssuesList as LegacyIssuesList } from "./LegacyIssuesList";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
@@ -96,7 +102,7 @@ import {
   type TaskCollectionPreferenceLocation,
 } from "../lib/task-collection-preferences";
 import { taskDateGroup, taskDateGroupSeparator, type TaskDateGroup } from "../lib/task-date-groups";
-import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type Project } from "@greatstone/shared";
+import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type IssueWorkFilter, type Project } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 const ISSUE_SEARCH_DEBOUNCE_MS = 250;
 const ISSUE_SEARCH_RESULT_LIMIT = 200;
@@ -231,14 +237,18 @@ function normalizeIssueViewState(value: unknown): IssueViewState {
   };
 }
 
-function getInitialViewState(
+export function getInitialViewState(
   stored: { viewState: IssueViewState; source: "current" | "legacy" | "default" },
   initialAssignees?: string[],
   defaultSortField?: IssueSortField,
+  defaultStatuses?: readonly string[],
 ): IssueViewState {
-  const base = stored.source === "default" && defaultSortField
-    ? { ...stored.viewState, sortField: defaultSortField, sortDir: "asc" as const }
-    : stored.viewState;
+  let base = stored.viewState;
+  // Page defaults only fill in for a viewer who has never saved a view.
+  if (stored.source === "default") {
+    if (defaultSortField) base = { ...base, sortField: defaultSortField, sortDir: "asc" };
+    if (defaultStatuses) base = { ...base, statuses: [...defaultStatuses] };
+  }
   if (!initialAssignees) return base;
   return {
     ...base,
@@ -253,8 +263,9 @@ function getInitialWorkspaceViewState(
   initialWorkspaces?: string[],
   defaultSortField?: IssueSortField,
   hasCustomGrouping = false,
+  defaultStatuses?: readonly string[],
 ): IssueViewState {
-  const base = getInitialViewState(stored, initialAssignees, defaultSortField);
+  const base = getInitialViewState(stored, initialAssignees, defaultSortField, defaultStatuses);
   const initial = hasCustomGrouping && stored.source === "default" ? { ...base, groupBy: "custom" as const } : base;
   if (!initialWorkspaces) return initial;
   return {
@@ -481,6 +492,14 @@ interface IssuesListProps {
   baseCreateIssueDefaults?: Record<string, unknown>;
   createIssueLabel?: string;
   defaultSortField?: IssueSortField;
+  /** Status filter for a viewer who has never saved a view of this list. */
+  defaultStatuses?: readonly string[];
+  /** Show the All / Active / Blocked / Done chips beside search. */
+  showStatusChips?: boolean;
+  /** Reports the status filter so the page can ask the server for just those tasks. */
+  onStatusFilterChange?: (statuses: string[]) => void;
+  /** Reports the work filter (strategic or day-to-day) so the page can ask the server for just that work. */
+  onWorkFilterChange?: (work: IssueWorkFilter | null) => void;
   showProgressSummary?: boolean;
   /**
    * When set together with `showProgressSummary`, the progress strip fetches
@@ -503,6 +522,12 @@ interface IssuesListProps {
   customGrouping?: IssuesCustomGrouping;
   /** Neutral tags shown after the title, for example why a task is on My tasks. */
   issueTagsById?: Map<string, readonly string[]>;
+  /** Page control before the status, for example My tasks' tick box. */
+  renderRowLeading?: (issue: Issue) => ReactNode;
+  /** Page buttons on the row; on a phone they sit under the title. */
+  renderRowActions?: (issue: Issue) => ReactNode;
+  /** Page content under the row, for example an inline question box. */
+  renderRowFooter?: (issue: Issue) => ReactNode;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
 }
 
@@ -586,6 +611,35 @@ function IssueSearchInput({
         aria-label="Search tasks"
         data-page-search-target="true"
       />
+    </div>
+  );
+}
+
+const STATUS_CHIP_LABELS = ["All", "Recent", "Active", "Blocked", "Done"];
+const statusChipPresets = issueQuickFilterPresets.filter((preset) => STATUS_CHIP_LABELS.includes(preset.label));
+
+function IssueStatusChips({ statuses, onChange }: { statuses: string[]; onChange: (statuses: string[]) => void }) {
+  return (
+    <div role="group" aria-label="Show tasks" className="flex items-center gap-1">
+      {statusChipPresets.map((preset) => {
+        const active = issueFilterArraysEqual(statuses, preset.statuses);
+        return (
+          <button
+            key={preset.label}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange([...preset.statuses])}
+            className={cn(
+              "gs-press h-8 rounded-full border px-3 text-xs font-medium transition-colors",
+              active
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+            )}
+          >
+            {preset.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -732,6 +786,10 @@ function StreamlinedIssuesList({
   baseCreateIssueDefaults,
   createIssueLabel,
   defaultSortField,
+  defaultStatuses,
+  showStatusChips = false,
+  onStatusFilterChange,
+  onWorkFilterChange,
   showProgressSummary = false,
   parentIssueIdForCostSummary,
   enableRoutineVisibilityFilter = false,
@@ -745,6 +803,9 @@ function StreamlinedIssuesList({
   toolbarPresentation = "legacy",
   customGrouping,
   issueTagsById,
+  renderRowLeading,
+  renderRowActions,
+  renderRowFooter,
   onUpdateIssue,
 }: IssuesListProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -814,7 +875,7 @@ function StreamlinedIssuesList({
   const initialPreferences = initialPreferencesRef.current;
 
   const [viewState, setViewState] = useState<IssueViewState>(() =>
-    getInitialWorkspaceViewState(initialPreferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping)),
+    getInitialWorkspaceViewState(initialPreferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping), defaultStatuses),
   );
   const [assigneePickerIssueId, setAssigneePickerIssueId] = useState<string | null>(null);
   const [assigneeSearch, setAssigneeSearch] = useState("");
@@ -830,6 +891,9 @@ function StreamlinedIssuesList({
     setIssueSearch(initialSearch ?? "");
   }, [initialSearch]);
 
+  // The status filter the viewer picked on this mount, if any.
+  const pickedStatusesRef = useRef<string[] | null>(null);
+
   // Reload view state whenever the persisted context changes.
   const prevViewStateContextKey = useRef(`${scopedKey}::${initialAssigneesKey}::${initialWorkspacesKey}`);
   useEffect(() => {
@@ -837,7 +901,11 @@ function StreamlinedIssuesList({
     if (prevViewStateContextKey.current !== nextContextKey) {
       prevViewStateContextKey.current = nextContextKey;
       const preferences = loadIssueCollectionPreferences(preferenceLocation);
-      setViewState(getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping)));
+      const next = getInitialWorkspaceViewState(preferences, initialAssignees, initialWorkspaces, defaultSortField, Boolean(customGrouping), defaultStatuses);
+      // The company can settle after the list mounts (cold load, route sync). A chip
+      // picked before then must not snap back to the page default; a saved view still wins.
+      const keepPick = preferences.source === "default" && pickedStatusesRef.current && !initialAssignees && !initialWorkspaces;
+      setViewState(keepPick ? { ...next, statuses: [...pickedStatusesRef.current!] } : next);
       setVisibleIssueColumns(preferences.columns);
     }
   }, [
@@ -854,6 +922,7 @@ function StreamlinedIssuesList({
   ]);
 
   const updateView = useCallback((patch: Partial<IssueViewState>) => {
+    if (patch.statuses) pickedStatusesRef.current = patch.statuses;
     setViewState((prev) => {
       const next = { ...prev, ...patch };
       saveTaskCollectionPreferences(preferenceLocation, {
@@ -869,6 +938,16 @@ function StreamlinedIssuesList({
     preferenceLocation.legacyViewStorageKey,
     visibleIssueColumns,
   ]);
+
+  const statusFilterKey = viewState.statuses.join(",");
+  useEffect(() => {
+    onStatusFilterChange?.(statusFilterKey ? statusFilterKey.split(",") : []);
+  }, [onStatusFilterChange, statusFilterKey]);
+
+  const workFilter = viewState.work ?? null;
+  useEffect(() => {
+    onWorkFilterChange?.(workFilter);
+  }, [onWorkFilterChange, workFilter]);
 
   useEffect(() => {
     if (!experimentalSettingsLoaded || externalObjectsEnabled || viewState.externalObjectStatuses.length === 0) return;
@@ -948,6 +1027,14 @@ function StreamlinedIssuesList({
   const companyUserLabelMap = useMemo(
     () => buildCompanyUserLabelMap(companyMembers?.users),
     [companyMembers?.users],
+  );
+  const stopReasonContext = useMemo(
+    () => ({
+      currentUserId,
+      agentNames: new Map((agents ?? []).map((agent) => [agent.id, { name: agent.name }])),
+      userLabels: companyUserLabelMap,
+    }),
+    [agents, companyUserLabelMap, currentUserId],
   );
   const companyUserProfileMap = useMemo(
     () => buildCompanyUserProfileMap(companyMembers?.users),
@@ -1262,6 +1349,12 @@ function StreamlinedIssuesList({
     queryFn: () => issuesApi.listLabels(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: agentTeams } = useQuery({
+    queryKey: queryKeys.agentTeams.list(selectedCompanyId!),
+    queryFn: () => agentTeamsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const teamById = useMemo(() => new Map((agentTeams ?? []).map((team) => [team.id, team])), [agentTeams]);
 
   const activeFilterCount = countActiveIssueFilters(viewState, enableRoutineVisibilityFilter);
   const boardHighVolume = viewState.viewMode === "board" && filtered.length > KANBAN_BOARD_HIGH_VOLUME_THRESHOLD;
@@ -1738,6 +1831,15 @@ function StreamlinedIssuesList({
 
   let remainingRowsToRender = viewState.viewMode === "list" ? renderedIssueRowLimit : Number.POSITIVE_INFINITY;
   const IssuesToolbar = toolbarPresentation === "collection" ? CollectionToolbar : LegacyIssuesToolbar;
+  const searchInput = (
+    <IssueSearchInput
+      value={issueSearch}
+      onDebouncedChange={(nextSearch) => {
+        setIssueSearch(nextSearch);
+        onSearchChange?.(nextSearch);
+      }}
+    />
+  );
 
   return (
     <div ref={rootRef} className="space-y-4">
@@ -1759,19 +1861,17 @@ function StreamlinedIssuesList({
             <span className="hidden sm:inline">{createButtonLabel}</span>
           </Button>
         )}
-        search={(
-          <IssueSearchInput
-            value={issueSearch}
-            onDebouncedChange={(nextSearch) => {
-              setIssueSearch(nextSearch);
-              onSearchChange?.(nextSearch);
-            }}
-          />
-        )}
+        search={showStatusChips ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {searchInput}
+            <IssueStatusChips statuses={viewState.statuses} onChange={(statuses) => updateView({ statuses })} />
+          </div>
+        ) : searchInput}
         controls={(
           <>
-          {/* View mode toggle */}
-          <div className="gs-toolbar-divider flex items-center gap-0.5" role="group" aria-label="View mode">
+          {/* View mode toggle. Phones use the list; board lanes and table
+              columns are desktop layouts, so both controls stay off there. */}
+          <div className="gs-toolbar-divider flex items-center gap-0.5 max-sm:hidden" role="group" aria-label="View mode">
             <button
               className={`gs-press flex h-8 w-8 items-center justify-center rounded-md transition-colors ${viewState.viewMode === "list" ? "text-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
               onClick={() => updateView({ viewMode: "list" })}
@@ -1903,6 +2003,7 @@ function StreamlinedIssuesList({
             creators={creatorOptions}
             projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
             labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
+            teams={agentTeams?.map((team) => ({ id: team.id, name: team.name, color: team.color }))}
             currentUserId={currentUserId}
             enableExternalObjectFilters={externalObjectsEnabled}
             enableRoutineVisibilityFilter={enableRoutineVisibilityFilter}
@@ -2025,6 +2126,7 @@ function StreamlinedIssuesList({
         <KanbanBoard
           issues={filtered}
           agents={agents}
+          ownerContext={{ currentUserId, userLabels: companyUserLabelMap }}
           liveIssueIds={liveIssueIds}
           compactCards={boardCompactCards}
           collapsedStatuses={boardCollapsedStatuses}
@@ -2105,6 +2207,9 @@ function StreamlinedIssuesList({
                   const parentIssue = issue.parentId ? issueById.get(issue.parentId) ?? null : null;
                   const issueBadge = issueBadgeById?.get(issue.id);
                   const issueTags = issueTagsById?.get(issue.id) ?? [];
+                  const rowLeading = renderRowLeading?.(issue) ?? null;
+                  const rowFooter = renderRowFooter?.(issue) ?? null;
+                  const issueTeam = issue.teamId ? teamById.get(issue.teamId) ?? null : null;
                   const isMutedIssue = mutedIssueIds?.has(issue.id) === true;
                   const assigneeUserProfile = issue.assigneeUserId
                     ? companyUserProfileMap.get(issue.assigneeUserId) ?? null
@@ -2206,6 +2311,8 @@ function StreamlinedIssuesList({
                         checklistDependencyChips={checklistDependencyChips}
                         checklistRowId={checklistRowId}
                         titleClassName={doneRowTitleClass}
+                        ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
+                        stopReasonContext={stopReasonContext}
                         externalObjectSummary={externalObjectSummaryByIssueId.get(issue.id) ?? null}
                         titleSuffix={(
                           <>
@@ -2214,6 +2321,7 @@ function StreamlinedIssuesList({
                                 ({totalDescendants} sub-task{totalDescendants !== 1 ? "s" : ""})
                               </span>
                             ) : null}
+                            {issueTeam ? <TeamBadge team={issueTeam} className="ml-1.5 px-1.5 py-0 text-(length:--text-nano)" /> : null}
                             {issueTags.map((tag) => (
                               <Badge key={tag} variant="outline" className="ml-1.5 px-1.5 text-(length:--text-nano) text-muted-foreground">
                                 {tag}
@@ -2248,7 +2356,8 @@ function StreamlinedIssuesList({
                           </>
                         )}
                         className={cn(isMutedIssue && "opacity-70", selectedNavKey === `issue:${issue.id}` && "bg-accent/50 hover:bg-accent/50")}
-                        leadingControl={rowPresentation === "task" ? (
+                        actions={renderRowActions?.(issue) ?? undefined}
+                        leadingControl={rowPresentation === "task" ? (<>{rowLeading}{
                           hasChildren ? (
                             <button
                               type="button"
@@ -2262,10 +2371,10 @@ function StreamlinedIssuesList({
                           ) : (
                             <span data-slot="task-row-disclosure-spacer" className="h-4 w-4 shrink-0" aria-hidden="true" />
                           )
-                        ) : undefined}
+                        }</>) : undefined}
                         statusSlot={rowPresentation === "task" ? (
                           <span className="relative inline-flex items-start self-stretch sm:items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                            <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
+                            <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                             {hasChildren && isExpanded ? (
                               <span aria-hidden="true" className="pointer-events-none absolute top-5 -bottom-2.5 left-1/2 w-px bg-border sm:hidden" />
                             ) : null}
@@ -2282,24 +2391,25 @@ function StreamlinedIssuesList({
                           />
                         ) : undefined}
                         showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
-                        mobileLeading={
+                        mobileLeading={<>{rowLeading}{
                           hasChildren ? (
                             <button type="button" data-slot="icon-button" onClick={toggleCollapse}>
                               <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
                             </button>
                           ) : (
                             <span className="inline-flex items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                              <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
+                              <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                             </span>
                           )
-                        }
+                        }</>}
                         desktopMetaLeading={rowPresentation === "legacy" ? (
                           <>
+                            {rowLeading ? <span className="hidden shrink-0 items-center sm:inline-flex">{rowLeading}</span> : null}
                             {hasChildren ? (
                               <button
                                 type="button"
                                 data-slot="icon-button"
-                                className="relative z-10 hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
+                                className="relative z-raised hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
                                 onClick={toggleCollapse}
                               >
                                 <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
@@ -2316,7 +2426,7 @@ function StreamlinedIssuesList({
                               checklistStepNumber={checklistStepNumber}
                               statusSlot={(
                                 <span className="inline-flex items-center" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-                                  <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
+                                  <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} size="md" blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} onChange={(s) => onUpdateIssue(issue.id, { status: s })} />
                                 </span>
                               )}
                             />
@@ -2459,6 +2569,7 @@ function StreamlinedIssuesList({
                           ) : undefined
                         )}
                       />
+                      {rowFooter}
                     </div>
                   );
                 };
@@ -2475,7 +2586,12 @@ function StreamlinedIssuesList({
                   // Skip rows the render budget dropped so separators never
                   // dangle above an unrendered (or absent) row.
                   if (node === null) return;
-                  if (separatorField && rowPresentation === "task") {
+                  // Only top-level rows start a date section. A sub-task stays
+                  // under its parent, so an older child never splits the list
+                  // into Today / Yesterday / Today again.
+                  if (depth > 0) {
+                    // no separator
+                  } else if (separatorField && rowPresentation === "task") {
                     const currentDateGroup = taskDateGroup(issue[separatorField], separatorNow);
                     const separatorLabel = taskDateGroupSeparator(previousDateGroup, currentDateGroup);
                     if (separatorLabel) {

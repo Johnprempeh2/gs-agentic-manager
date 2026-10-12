@@ -2,6 +2,9 @@ import { defineConfig } from "@playwright/test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { scrubParentInstanceEnv } from "../fixtures/sandbox-env";
+
+scrubParentInstanceEnv(["GSAM_CANARY_SMOKE_", "GSAM_PLAYWRIGHT_CHANNEL"]);
 
 const canaryVersion = process.env.PAPERCLIPAI_VERSION?.trim();
 if (!canaryVersion || !/^[0-9A-Za-z.+-]+$/.test(canaryVersion)) {
@@ -78,7 +81,6 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 300_000,
     env: {
-      ...process.env,
       PORT: parsedBaseUrl.port,
       GSAM_NO_BROWSER: "1",
       GSAM_OPEN_ON_LISTEN: "false",

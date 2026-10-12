@@ -84,6 +84,7 @@ import {
   type ToolGatewayService,
 } from "../services/tool-gateway.js";
 import { toolAccessRoutes } from "../routes/tool-access.js";
+import { connectionIntentService } from "../services/connection-intents.js";
 import { errorHandler } from "../middleware/index.js";
 import * as sentry from "../sentry.js";
 import type { VercelConnectClient } from "../services/vercel-connect.js";
@@ -1598,6 +1599,42 @@ describeEmbeddedPostgres("tool access service", () => {
 
     expect(response.status).toBe(403);
     expect(response.body.error).toContain("need access to this connection");
+  });
+
+  // GRE-335: a tool repaired from Connections left every waiting task's
+  // "Connect" card open, so the tasks stayed paused.
+  it("closes the cards of tasks waiting on a tool once a health check shows it works again", async () => {
+    const company = await createCompany(db);
+    const agent = await createAgent(db, company.id);
+    const userId = "board-user";
+    await db.insert(companyMemberships).values({ companyId: company.id, principalType: "user", principalId: userId, status: "active", membershipRole: "owner" });
+    const [issue] = await db.insert(issues).values({ companyId: company.id, title: "Read Notion", status: "in_progress", assigneeAgentId: agent.id }).returning();
+    const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent.id, status: "running", responsibleUserId: userId, contextSnapshot: { issueId: issue!.id } }).returning();
+    const card = await connectionIntentService(db).request(
+      { sub: agent.id, company_id: company.id, run_id: run!.id, responsible_user_id: userId }, "notion",
+    );
+    expect(card.state).toBe("needs_user_action");
+
+    const [application] = await db.insert(toolApplications).values({ companyId: company.id, applicationKey: `notion-${randomUUID()}`, name: "Notion", type: "mcp_http", status: "active", metadata: { sourceTemplateKey: "notion" } }).returning();
+    const [connection] = await db.insert(toolConnections).values({
+      companyId: company.id, applicationId: application!.id, name: "Notion", uid: `notion/${randomUUID()}`,
+      transport: "mcp_remote", authKind: "api_key", credentialPolicy: "shared", status: "active", enabled: true,
+      healthStatus: "error", lastError: "Remote MCP server returned an HTTP error.",
+      config: { url: PUBLIC_MCP_FIXTURE_URL, sourceTemplateKey: "notion" }, transportConfig: { sourceTemplateKey: "notion" },
+    }).returning();
+    await db.insert(connectionGrants).values({ companyId: company.id, connectionId: connection!.id, kind: "organization", status: "active", isDefault: true });
+    await db.insert(toolConnectionInstalls).values({ companyId: company.id, connectionId: connection!.id, targetType: "agent", targetId: agent.id });
+    const [profile] = await db.insert(toolProfiles).values({ companyId: company.id, name: "Notion reads", profileKey: `notion-reads-${randomUUID()}`, defaultAction: "allow", status: "active" }).returning();
+    await db.insert(toolProfileBindings).values({ companyId: company.id, profileId: profile!.id, targetType: "agent", targetId: agent.id });
+    await db.insert(toolCatalogEntries).values({ companyId: company.id, connectionId: connection!.id, toolName: "notion-read", name: "notion-read", versionHash: "fixture-v1", status: "active", entryKind: "tool" });
+    mockToolsList([{ name: "notion-read", description: "Read a page.", annotations: { readOnlyHint: true } }]);
+
+    const response = await request(createRouteApp(db)).post(`/api/tool-connections/${connection!.id}/health-check`);
+    expect(response.status).toBe(200);
+    expect(response.body.connection.healthStatus).toBe("ok");
+
+    const [closed] = await db.select().from(issueThreadInteractions).where(eq(issueThreadInteractions.id, card.interactionId!));
+    expect(closed).toMatchObject({ status: "accepted", result: expect.objectContaining({ outcome: "connected", connectionId: connection!.id }) });
   });
 
   it("serializes delegation creation behind membership removal so reauthorization cannot revive stale consent", async () => {
@@ -5092,7 +5129,7 @@ describeEmbeddedPostgres("tool access service", () => {
         "youcom",
       ]),
     );
-    expect(res.body.apps).toHaveLength(56);
+    expect(res.body.apps).toHaveLength(57);
     expect(
       res.body.apps.find((app: { slug: string }) => app.slug === "gmail")
         .ownershipAvailability,
@@ -5690,6 +5727,49 @@ describeEmbeddedPostgres("tool access service", () => {
     for (const ref of connection.credentialSecretRefs) {
       expect(personalSecretIds.has(ref.secretId)).toBe(false);
     }
+  });
+
+  it("commits a dedicated-agent API key to the named agent's grant (GRE-351)", async () => {
+    const company = await createCompany(db);
+    const agent = await createAgent(db, company.id);
+    const service = createTestToolAccessService(db);
+    mockToolsList([
+      { name: "query_insight", annotations: { readOnlyHint: true } },
+    ]);
+
+    const connected = await service.connectGalleryApp(
+      company.id,
+      {
+        galleryKey: "posthog",
+        connectionMethodKey: "mcp-api-key",
+        credentialValues: { "credentials.authorization": "phx_agent-secret" },
+        configValues: { projectId: "12345", mode: "tools" },
+        grantKind: "agent",
+        subjectAgentId: agent.id,
+      },
+      { actorType: "user", actorId: "board" },
+    );
+
+    const { grants } = await service.listConnectionGrants(
+      connected.connectionId,
+      company.id,
+    );
+    const connection = await service.getConnection(
+      connected.connectionId,
+      company.id,
+    );
+
+    // Before GRE-351 there was no grant here at all, so every agent got `no_grant`.
+    expect(grants).toHaveLength(1);
+    expect(grants[0]).toMatchObject({
+      kind: "agent",
+      subjectAgentId: agent.id,
+      status: "active",
+      isDefault: false,
+    });
+    expect(grants[0]!.credentialSecretRefs.length).toBeGreaterThan(0);
+    expect(connection.credentialPolicy).toBe("per_agent");
+    expect(connection.credentialSecretRefs).toEqual([]);
   });
 
   it("keeps the shared-credential default when no grant kind is chosen", async () => {
@@ -7236,7 +7316,7 @@ describeEmbeddedPostgres("tool access service", () => {
     ).toBe(false);
   });
 
-  it.each(["none", "event", "same-time-refresh", "one-conflict"])(
+  it.each(["none", "event", "same-time-refresh", "one-conflict", "company-pause"])(
     "binds a managed GitHub identity and protects refresh from concurrent access changes (%s)",
     async (concurrentChange) => {
       const company = await createCompany(db);
@@ -7433,6 +7513,38 @@ describeEmbeddedPostgres("tool access service", () => {
             ),
         ).resolves.toHaveLength(1);
         vi.mocked(connector.setWebhookBinding).mockClear();
+        if (concurrentChange === "company-pause") {
+          // GRE-1364: the company is paused while the refresh's GitHub requests
+          // are in flight. The refresh must not write the suspended grant back to active.
+          const { companyService } = await import("../services/companies.js");
+          beforeRepositoryResponse = async () => {
+            beforeRepositoryResponse = async () => {};
+            await companyService(db).pause(company.id, actor, {});
+          };
+          await expect(
+            service.checkHealth(connected.connectionId, actor),
+          ).rejects.toThrow("This GitHub authorization is suspended while the company is paused.");
+          const [latest] = await db
+            .select()
+            .from(connectionGrants)
+            .where(eq(connectionGrants.id, grant!.id));
+          expect(latest?.status).toBe("suspended");
+          expect(connector.setWebhookBinding).not.toHaveBeenCalled();
+          // A later refresh (continuity sweep, webhook follow-up) changes nothing either.
+          await expect(
+            service.refreshManagedGitHubGrantAccess(
+              (await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId)))[0]!,
+              latest!,
+              actor,
+            ),
+          ).rejects.toMatchObject({ status: 409, details: { code: "grant_suspended" } });
+          const [after] = await db
+            .select()
+            .from(connectionGrants)
+            .where(eq(connectionGrants.id, grant!.id));
+          expect(after?.status).toBe("suspended");
+          return;
+        }
         if (concurrentChange !== "none") {
           beforeRepositoryResponse = async () => {
             if (concurrentChange === "one-conflict")
@@ -11596,7 +11708,7 @@ describeEmbeddedPostgres("tool access service", () => {
     try {
       const response = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
       expect(response.body.apps.some((app: { slug: string }) => app.slug === provider)).toBe(false);
-      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "memory_connectors_disabled" } });
+      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "not_entitled", feature: "enableMemoryConnectors" } });
       expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toHaveLength(0);
       expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toHaveLength(0);
     } finally {

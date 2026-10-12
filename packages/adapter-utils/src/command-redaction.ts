@@ -33,6 +33,14 @@ const COMMAND_OPENAI_KEY_RE = /\bsk-[A-Za-z0-9_-]{12,}\b/g;
 const COMMAND_GITHUB_TOKEN_RE = /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g;
 const COMMAND_JWT_RE =
   /\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?:\.[A-Za-z0-9_-]{8,})?\b/g;
+// Vendor MIME subtypes such as
+// `application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+// have long dotted segments that fit the JWT shape. A JWT match that starts
+// inside a `type/vnd.`, `type/prs.` or `type/x.` subtype is a public media
+// type, not a credential. The exemption needs the full registered top-level
+// type and tree prefix directly before the match.
+const MIME_VENDOR_SUBTYPE_PREFIX_RE =
+  /(?:^|[^A-Za-z0-9_.+/-])(?:application|audio|font|image|message|model|multipart|text|video)\/(?:vnd|prs|x)\.(?:[A-Za-z0-9_+-]+\.)*$/i;
 const COMMAND_SECRET_HINTS = [
   "api",
   "key",
@@ -91,7 +99,10 @@ export function redactCommandText(
       // The JWT heuristic may match only the first three segments; inspect the
       // complete address so a longer secret sharing a prefix stays redacted.
       const address = source.slice(offset).match(/^[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*/)?.[0];
-      return address && isPublicExecutorToolSelector(address) ? match : redactedValue;
+      if (address && isPublicExecutorToolSelector(address)) return match;
+      const before = source.slice(Math.max(0, offset - 256), offset);
+      if (MIME_VENDOR_SUBTYPE_PREFIX_RE.test(before)) return match;
+      return redactedValue;
     });
 }
 

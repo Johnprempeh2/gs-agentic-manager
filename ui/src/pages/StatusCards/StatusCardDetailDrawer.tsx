@@ -126,7 +126,7 @@ export function StatusCardDetailDrawer({
     },
     onSuccess: async () => {
       await invalidateCard();
-      setActionNote("Refresh queued — the Summarizer is updating this card.");
+      setActionNote("Refresh queued. The Summarizer is updating this card.");
     },
     onError: (err) => setActionError(err instanceof Error ? err.message : "Could not refresh the card."),
   });
@@ -139,7 +139,7 @@ export function StatusCardDetailDrawer({
     },
     onSuccess: async () => {
       await invalidateCard();
-      setActionNote("Run queued — the Summarizer is updating this card.");
+      setActionNote("Run queued. The Summarizer is updating this card.");
     },
     onError: (err) => setActionError(err instanceof Error ? err.message : "Could not run the card."),
   });
@@ -317,7 +317,7 @@ export function StatusCardDetailDrawer({
                     <>
                       <MarkdownBody className="text-sm leading-7">{selectedRevision.changeSummary}</MarkdownBody>
                       <p className="text-xs text-subtle-foreground">
-                        The full summary text for this revision is unavailable — showing its change summary. The
+                        The full summary text for this revision is unavailable. Showing its change summary. The
                         integrated changes below are the live ledger for this revision.
                       </p>
                     </>
@@ -338,7 +338,7 @@ export function StatusCardDetailDrawer({
                       <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
                     )}
                     {setupRunning
-                      ? "Setting up — the first summary is generated automatically once this finishes."
+                      ? "Setting up. The first summary is generated automatically once this finishes."
                       : "Setup didn’t finish. Run it now to try again."}
                   </p>
                   {setupRunning && card.generatingIssueId ? (
@@ -353,7 +353,7 @@ export function StatusCardDetailDrawer({
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  No summary yet — the first one is generated automatically once this card finishes setting up.
+                  No summary yet. The first one is generated automatically once this card finishes setting up.
                 </p>
               )}
 
@@ -419,7 +419,7 @@ export function StatusCardDetailDrawer({
             <TabsContent value="watched" className="mt-0 space-y-3">
               {card.queries.length === 0 && (card.mentionedIssueIds?.length ?? 0) === 0 ? (
                 <div className="rounded-md border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
-                  This card is still setting up — the issues it watches appear here once it's ready.
+                  This card is still setting up. The issues it watches appear here once it's ready.
                 </div>
               ) : dryRunQuery.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">

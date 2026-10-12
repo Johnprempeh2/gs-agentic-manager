@@ -17,6 +17,7 @@ import {
   connectionDisplaySecondaryHint,
   humanizeConnectionDisplayName,
   aiSubscriptionNeedsIsolatedLogin,
+  aiCredentialExpired,
   isToolConnectionAttentionHealth as isAttentionHealthStatus,
 } from "@greatstone/shared";
 import { Navigate, useParams, useNavigate, useSearchParams } from "@/lib/router";
@@ -50,6 +51,7 @@ import { appTabHref, appTabLabel, isAppTabKey, type AppTabKey } from "./app-tabs
 import { ConnectionProvenanceChip } from "./ConnectionProvenanceChip";
 import { IdentitiesSection } from "./app-detail/IdentitiesSection";
 import { PermissionsPanel } from "./app-detail/PermissionsPanel";
+import { ShareWithAgentsSection } from "./app-detail/ShareWithAgentsSection";
 import { RailwayAccessPanel } from "./app-detail/RailwayAccessPanel";
 import { ReviewPanel } from "./app-detail/ReviewPanel";
 import {
@@ -63,6 +65,7 @@ import {
   connectionDisplayNameForOwner,
   connectionOwnerProfile,
 } from "./connection-owner";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export { connectionAddress, connectionTransportLabel };
 
@@ -577,7 +580,7 @@ export function AppDetail({ renderActions, onReconnect }: {
           galleryEntry={logoEntry}
           canReconnect={canReconnect}
           reconnectUnavailableMessage={reconnectUnavailableMessage}
-          onReconnect={onReconnect ? () => onReconnect(connection) : (connection.connectionPurpose === "ai" || isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey)) ? () => navigate(`/apps/connect?source=${connection.config?.sourceTemplateKey}&reconnect=${connection.id}`) : undefined}
+          onReconnect={onReconnect ? () => onReconnect(connection) : (connection.connectionPurpose === "ai" || isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey)) ? () => navigate(aiReconnectPath(connection) ?? `/apps/connect?source=${connection.config?.sourceTemplateKey}&reconnect=${connection.id}`) : undefined}
           onReconnected={() => {
             queryClient.invalidateQueries({ queryKey: queryKeys.tools.connection(connectionId) });
             queryClient.invalidateQueries({ queryKey: queryKeys.tools.connections(selectedCompanyId) });
@@ -648,7 +651,10 @@ export function AppDetail({ renderActions, onReconnect }: {
                 onReplaceAudience={(grant, memberUserIds) =>
                   replaceAudience.mutate({ grantId: grant.id, memberUserIds })}
               />
-              {isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey) && <p className="text-sm text-muted-foreground">GS Agentic Manager controls access to the tools listed here. App and action permissions inside these tools are managed in {baseAppName}.</p>}
+              {currentUserPersonalGrant && (connection.config?.sourceTemplateKey === "github" || currentUserPersonalGrant.providerTenant?.github) && (
+                <ShareWithAgentsSection connectionId={connection.id} grant={currentUserPersonalGrant} agents={agents} />
+              )}
+              {isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey) && <p className="text-sm text-muted-foreground">{CLIENT_BRAND_NAME} controls access to the tools listed here. App and action permissions inside these tools are managed in {baseAppName}.</p>}
               <PermissionsPanel
                 actions={actionsContent}
                 connectionId={connectionId}
@@ -829,6 +835,16 @@ function unverifiedRemoteHost(connection: ToolConnection): string | null {
   }
 }
 
+/** An AI account reconnects through its provider step (sign in or paste a token). */
+function aiReconnectPath(connection: ToolConnection): string | null {
+  const ai = connection.connectionPurpose === "ai"
+    ? connection.config?.ai as { provider?: string; method?: string } | undefined
+    : undefined;
+  return ai?.provider && ai.method
+    ? `/apps/connect?source=${ai.provider}&reconnect=${connection.id}&method=ai-${ai.method}`
+    : null;
+}
+
 type StatusInfo = { label: string; tone: "connected" | "attention" | "paused" };
 
 function statusFor(connection: ToolConnection): StatusInfo {
@@ -837,6 +853,9 @@ function statusFor(connection: ToolConnection): StatusInfo {
   }
   if (isAttentionHealthStatus(connection.healthStatus) || (connection.connectionPurpose === "ai" && (connection.healthStatus !== "ok" || aiSubscriptionNeedsIsolatedLogin(connection.config)))) {
     return { label: "Needs attention", tone: "attention" };
+  }
+  if (connection.connectionPurpose === "ai" && aiCredentialExpired(connection.config)) {
+    return { label: "Expired", tone: "attention" };
   }
   return { label: "Connected", tone: "connected" };
 }

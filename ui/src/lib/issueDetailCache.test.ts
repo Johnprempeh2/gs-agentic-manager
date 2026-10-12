@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { issuesApi } from "@/api/issues";
 import {
   fetchIssueDetail,
+  findIssueInCachedLists,
   getCachedIssueDetail,
   prefetchIssueDetail,
   seedIssueDetailCache,
@@ -128,6 +129,20 @@ describe("issueDetailCache", () => {
 
     expect(queryClient.getQueryData(queryKeys.issues.detail(issue.identifier!))).toBeUndefined();
     expect(getCachedIssueDetail(queryClient, issue.identifier)).toBeUndefined();
+  });
+
+  it("finds a mentioned issue in the freshest cached list, by identifier in any case", () => {
+    const older = createIssue({ status: "todo" });
+    const newer = createIssue({ status: "done" });
+    queryClient.setQueryData(queryKeys.issues.list("company-1"), [older], { updatedAt: 1_000 });
+    queryClient.setQueryData(queryKeys.issues.mentionPool("company-1"), [newer], { updatedAt: 2_000 });
+    // Run rows share the "issues" prefix but are not issue snapshots.
+    queryClient.setQueryData(queryKeys.issues.runs("issue-1"), [{ id: "issue-1", runId: "run-1" }]);
+
+    expect(findIssueInCachedLists(queryClient, "PAP-1")).toEqual({ issue: newer, updatedAt: 2_000 });
+    expect(findIssueInCachedLists(queryClient, "pap-1")?.issue).toBe(newer);
+    expect(findIssueInCachedLists(queryClient, "issue-1")?.issue).toBe(newer);
+    expect(findIssueInCachedLists(queryClient, "PAP-2")).toBeUndefined();
   });
 
   it("hydrates both cache aliases from a fetched issue detail response", async () => {

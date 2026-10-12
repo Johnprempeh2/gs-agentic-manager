@@ -134,6 +134,8 @@ describe("tool activity vocabulary", () => {
       });
     }
     expect(humanizeToolName("someFuture-extension.v2")).toBe("Some future extension v2");
+    expect(humanizeToolName("paperclipListIssues")).toBe("List issues");
+    expect(humanizeToolName("mcp__paperclip__paperclip_get_issue")).toBe("Get issue");
   });
 });
 

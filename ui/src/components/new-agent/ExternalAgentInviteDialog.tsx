@@ -56,7 +56,7 @@ export function ExternalAgentInviteDialog({ companyId, onClose, onBack }: {
     },
   });
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent className="max-h-(--sz-calc-16) overflow-y-auto sm:max-w-2xl">
+    <DialogContent scrollBody className="max-h-(--sz-calc-16) sm:max-w-2xl">
       <DialogTitle>{prompt ? "Agent onboarding prompt" : "Invite an external agent"}</DialogTitle>
       <DialogDescription>
         {prompt ? "Send this one-time prompt to the agent that should join your organization."

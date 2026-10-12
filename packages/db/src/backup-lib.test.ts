@@ -559,6 +559,72 @@ describeEmbeddedPostgres("runDatabaseBackup", () => {
   );
 
   it(
+    "backs up and restores CHECK constraints, keeping NOT VALID ones not validated",
+    async () => {
+      const sourceConnectionString = await createTempDatabase();
+      const restoreConnectionString = await createSiblingDatabase(
+        sourceConnectionString,
+        "paperclip_restore_checks",
+      );
+      const backupDir = createTempDir("paperclip-db-backup-checks-");
+      const sourceSql = postgres(sourceConnectionString, { max: 1, onnotice: () => {} });
+      const restoreSql = postgres(restoreConnectionString, { max: 1, onnotice: () => {} });
+
+      try {
+        await sourceSql.unsafe(`
+          CREATE TABLE "public"."check_test_events" (
+            "id" serial PRIMARY KEY,
+            "type" text NOT NULL,
+            "amount" integer NOT NULL,
+            CONSTRAINT "check_test_events_type_check" CHECK ("type" IN ('created', 'moved'))
+          );
+          INSERT INTO "public"."check_test_events" ("type", "amount") VALUES ('created', -5), ('moved', 3);
+          ALTER TABLE "public"."check_test_events"
+            ADD CONSTRAINT "check_test_events_amount_check" CHECK ("amount" >= 0) NOT VALID;
+        `);
+
+        const result = await runDatabaseBackup({
+          connectionString: sourceConnectionString,
+          backupDir,
+          retention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
+          filenamePrefix: "paperclip-test",
+          backupEngine: "javascript",
+        });
+
+        await runDatabaseRestore({
+          connectionString: restoreConnectionString,
+          backupFile: result.backupFile,
+        });
+
+        const constraints = await restoreSql.unsafe<{ conname: string; convalidated: boolean }[]>(`
+          SELECT c.conname, c.convalidated
+          FROM pg_constraint c
+          JOIN pg_class t ON t.oid = c.conrelid
+          WHERE t.relname = 'check_test_events' AND c.contype = 'c'
+          ORDER BY c.conname
+        `);
+        expect(constraints).toEqual([
+          { conname: "check_test_events_amount_check", convalidated: false },
+          { conname: "check_test_events_type_check", convalidated: true },
+        ]);
+
+        const counts = await restoreSql.unsafe<{ count: number }[]>(`
+          SELECT count(*)::int AS count FROM "public"."check_test_events"
+        `);
+        expect(counts[0]?.count).toBe(2);
+
+        await expect(restoreSql.unsafe(`
+          INSERT INTO "public"."check_test_events" ("type", "amount") VALUES ('bogus', 1)
+        `)).rejects.toThrow(/check_test_events_type_check/);
+      } finally {
+        await sourceSql.end();
+        await restoreSql.end();
+      }
+    },
+    60_000,
+  );
+
+  it(
     "restores legacy public-only backups without migration history",
     async () => {
       const restoreConnectionString = await createTempDatabase();

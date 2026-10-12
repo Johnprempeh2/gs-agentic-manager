@@ -1,0 +1,182 @@
+{
+  "$comment": "Synthetic only. D9, the phase 3 graph and contribution fixture (GRE-866, plan GRE-646 section 8). Several agents contribute, John reviews (client and restricted scopes are owner-only), the engine infers. Every topic is unique so no phase 2 conflict opens. `at` is the contribution time; the runner backdates records and review events in the sandbox so date ranges have something to split.",
+  "synthetic": true,
+  "title": "Memory graph and agent contributions",
+  "records": [
+    {
+      "id": "R-901",
+      "scope": "cl-alder",
+      "contributor": "ag-mason-syn",
+      "at": "2026-09-29T10:00:00Z",
+      "source": { "kind": "issue", "id": "TASK-ALD-12" },
+      "title": "Alder allergen list per menu item",
+      "entities": ["Alder Bakery"],
+      "topics": ["menu allergen listing"],
+      "text": "Alder Bakery wants the menu page to list allergens for each item."
+    },
+    {
+      "id": "R-902",
+      "scope": "cl-alder",
+      "contributor": "ag-mason-syn",
+      "at": "2026-09-30T09:30:00Z",
+      "source": { "kind": "document_revision", "id": "DOC-ALD-SUPPLIER" },
+      "title": "Alder allergen data source",
+      "entities": ["Alder Bakery", "supplier sheet"],
+      "topics": ["allergen data source"],
+      "text": "Alder Bakery allergen data comes from the supplier sheet, refreshed every Monday."
+    },
+    {
+      "id": "R-903",
+      "scope": "cl-alder",
+      "contributor": "ag-scribe-syn",
+      "at": "2026-10-01T11:00:00Z",
+      "source": { "kind": "issue", "id": "TASK-ALD-14" },
+      "title": "Alder menu page launch (first draft)",
+      "entities": ["Alder Bakery"],
+      "topics": ["menu page launch"],
+      "text": "Alder menu page launch is planned for 14 October."
+    },
+    {
+      "id": "R-904",
+      "scope": "cl-alder",
+      "contributor": "ag-scribe-syn",
+      "at": "2026-10-02T08:45:00Z",
+      "source": { "kind": "issue", "id": "TASK-ALD-14" },
+      "title": "Alder menu page launch (edited)",
+      "entities": ["Alder Bakery"],
+      "topics": ["menu page launch"],
+      "edits": "R-903",
+      "text": "Alder menu page launch moves to 21 October after the photo shoot."
+    },
+    {
+      "id": "R-905",
+      "scope": "cl-brook",
+      "contributor": "ag-wren-syn",
+      "at": "2026-10-02T14:00:00Z",
+      "source": { "kind": "issue", "id": "TASK-BRK-3" },
+      "title": "Brookfield patient forms move to WAGTAIL booking",
+      "entities": ["Brookfield Dental", "WAGTAIL booking system"],
+      "topics": ["patient form migration"],
+      "marker": "WAGTAIL",
+      "text": "Brookfield Dental patient forms move to the WAGTAIL booking system."
+    },
+    {
+      "id": "R-906",
+      "scope": "cl-brook",
+      "contributor": "ag-wren-syn",
+      "at": "2026-10-03T10:15:00Z",
+      "source": { "kind": "document_revision", "id": "DOC-BRK-REMINDERS" },
+      "title": "WAGTAIL reminder timing",
+      "entities": ["Brookfield Dental", "WAGTAIL booking system"],
+      "topics": ["appointment reminder timing"],
+      "marker": "WAGTAIL",
+      "text": "The WAGTAIL booking system sends Brookfield reminders 48 hours before each visit."
+    },
+    {
+      "id": "R-907",
+      "scope": "org",
+      "contributor": "ag-rogue-syn",
+      "at": "2026-09-28T16:00:00Z",
+      "source": { "kind": "run", "id": "run-rogue-live" },
+      "title": "Shared supplier sheet template",
+      "entities": ["supplier sheet template"],
+      "topics": ["supplier sheet template"],
+      "text": "Kestrel Works keeps one supplier sheet template for every client."
+    },
+    {
+      "id": "R-908",
+      "scope": "pj-alder-site",
+      "contributor": "ag-scribe-syn",
+      "at": "2026-10-01T15:30:00Z",
+      "source": { "kind": "document_revision", "id": "DOC-SITE-TABLES" },
+      "title": "PLOVER allergen table layout",
+      "entities": ["supplier sheet template"],
+      "topics": ["allergen table layout"],
+      "marker": "PLOVER",
+      "text": "The PLOVER allergen table on the rebuilt site reads its columns from the supplier sheet template."
+    },
+    {
+      "id": "R-909",
+      "scope": "pj-kestrel-acq",
+      "contributor": "ag-scribe-syn",
+      "at": "2026-10-02T17:00:00Z",
+      "source": { "kind": "document_revision", "id": "DOC-ACQ-DD" },
+      "title": "KINGFISHER due diligence call",
+      "entities": ["KINGFISHER"],
+      "topics": ["due diligence schedule"],
+      "marker": "KINGFISHER",
+      "text": "KINGFISHER due diligence call is booked for the second week of October."
+    },
+    {
+      "id": "R-910",
+      "scope": "org",
+      "contributor": "ag-mason-syn",
+      "at": "2026-10-04T09:00:00Z",
+      "source": { "kind": "issue", "id": "TASK-ORG-7" },
+      "title": "Weekly status notes on Fridays",
+      "entities": ["status notes"],
+      "topics": ["status note cadence"],
+      "text": "Kestrel Works weekly status notes go out on Fridays."
+    },
+    {
+      "id": "R-911",
+      "scope": "org",
+      "contributor": "ag-rogue-syn",
+      "at": "2026-10-04T15:00:00Z",
+      "source": { "kind": "run", "id": "run-rogue-live" },
+      "title": "Two supplier sheet templates",
+      "entities": ["supplier sheet template"],
+      "topics": ["supplier sheet template"],
+      "afterReviews": true,
+      "$comment": "Contributed after R-907 is approved, so the conflict check opens a possible conflict: the one inferred edge in D9.",
+      "text": "Kestrel Works keeps two supplier sheet templates for every client, refreshed 2 times a year."
+    }
+  ],
+  "reviews": [
+    { "record": "R-901", "actor": "hu-john-syn", "action": "approve", "at": "2026-09-30T12:00:00Z", "reason": "Synthetic D9: confirmed with the client brief" },
+    { "record": "R-902", "actor": "hu-john-syn", "action": "dispute", "at": "2026-10-01T09:00:00Z", "reason": "Synthetic D9: the supplier sheet is refreshed on Tuesdays, not Mondays" },
+    { "record": "R-905", "actor": "hu-john-syn", "action": "approve", "at": "2026-10-03T09:00:00Z", "reason": "Synthetic D9: confirmed by the practice manager" },
+    { "record": "R-907", "actor": "hu-john-syn", "action": "approve", "at": "2026-09-29T09:00:00Z", "reason": "Synthetic D9: company template" }
+  ],
+  "$supersessionsComment": "Phase 2 has no edit action. An edit is a revised record that supersedes the first one (asked on GRE-864).",
+  "supersessions": [
+    { "old": "R-903", "replacement": "R-904", "actor": "hu-john-syn", "at": "2026-10-02T10:00:00Z", "reason": "Synthetic D9: launch date edited after the photo shoot moved" }
+  ],
+  "relationships": [
+    { "id": "E-901", "from": "R-902", "to": "R-901", "type": "supports", "author": "ag-mason-syn", "source": { "kind": "issue", "id": "TASK-ALD-12" }, "at": "2026-09-30T09:45:00Z", "note": "The allergen list needs this data source." },
+    { "id": "E-902", "from": "R-906", "to": "R-905", "type": "refines", "author": "ag-wren-syn", "source": { "kind": "document_revision", "id": "DOC-BRK-REMINDERS" }, "at": "2026-10-03T10:20:00Z", "note": "WAGTAIL reminder detail for the form move." },
+    { "id": "E-903", "from": "R-909", "to": "R-303", "type": "depends_on", "author": "hu-john-syn", "source": { "kind": "document_revision", "id": "DOC-ACQ-DD" }, "at": "2026-10-02T17:10:00Z", "note": "KINGFISHER call follows the code name decision." },
+    { "id": "E-904", "from": "R-910", "to": "R-907", "type": "same_subject", "author": "ag-mason-syn", "source": { "kind": "issue", "id": "TASK-ORG-7" }, "at": "2026-10-04T09:05:00Z", "note": "Both are company-wide working habits." }
+  ],
+  "$inferredComment": "Inferred edges are open possible conflicts from the phase 2 contribution check (GRE-864). Engine entity links are not stored in GSAM, so they are never edges.",
+  "expectedInferred": [
+    { "a": "R-911", "b": "R-907", "type": "possible_conflict", "why": "same topic as the approved R-907 in org" }
+  ],
+  "noEdgePairs": [
+    { "a": "R-902", "b": "R-907", "why": "shared words ('supplier sheet') but different banks and no stated relationship" },
+    { "a": "R-901", "b": "R-905", "why": "different clients, nothing stated" },
+    { "a": "R-910", "b": "R-908", "why": "same company bank, no shared entity, nothing stated" },
+    { "a": "R-907", "b": "R-908", "why": "shared entity, but different scopes and nothing stated: an engine might link them, the graph must not" },
+    { "a": "R-909", "b": "R-907", "why": "restricted project bank: the engine cannot link across banks" }
+  ],
+  "dateRanges": [
+    { "from": "2026-09-28", "to": "2026-09-30" },
+    { "from": "2026-10-01", "to": "2026-10-04" },
+    { "from": "2026-09-28", "to": "2026-10-04" }
+  ],
+  "$restrictedComment": "Callers whose views must hide data. hiddenRecords are D9 records outside the caller's read grants; the strings are labels, entities and markers of hidden records that appear in no record the caller may read.",
+  "restricted": {
+    "ag-mason-syn": {
+      "hiddenRecords": ["R-905", "R-906", "R-908", "R-909", "R-302", "R-303"],
+      "hiddenStrings": ["WAGTAIL", "Brookfield", "PLOVER", "KINGFISHER", "HERON", "patient form", "allergen table layout"]
+    },
+    "ag-lintel-syn": {
+      "hiddenRecords": ["R-901", "R-902", "R-903", "R-904", "R-908", "R-909", "R-301", "R-303"],
+      "hiddenStrings": ["Alder Bakery", "menu page", "PLOVER", "KINGFISHER", "HERON", "allergen"]
+    },
+    "ag-quill-syn": {
+      "hiddenRecords": ["R-901", "R-902", "R-903", "R-904", "R-905", "R-906", "R-908", "R-909", "R-301", "R-302", "R-303"],
+      "hiddenStrings": ["Alder Bakery", "Brookfield", "WAGTAIL", "PLOVER", "KINGFISHER", "HERON", "menu page", "allergen"]
+    }
+  }
+}

@@ -257,7 +257,7 @@ export function ProfilesIndex({
                       {assigned.unassigned ? (
                         <span className="text-muted-foreground">
                           {assigned.text}
-                          <span className="ml-1 text-xs text-subtle-foreground">— does not change access</span>
+                          <span className="ml-1 text-xs text-subtle-foreground">(does not change access)</span>
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5 text-foreground">

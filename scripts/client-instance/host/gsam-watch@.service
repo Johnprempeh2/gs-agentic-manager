@@ -1,0 +1,15 @@
+# Host watch for one client instance (GRE-666). %i is the instance code.
+# Every 5 minutes through gsam-watch@.timer; see doc/CLIENT-INSTANCES.md, "Host watch".
+[Unit]
+Description=GS Agentic Manager host watch %i
+
+[Service]
+Type=oneshot
+User=gsam
+Group=gsam
+Environment=GSAM_HOSTED_ROOT=/srv/gsam
+ExecStart=/usr/local/lib/gsam/instance-ctl.sh watch %i
+TimeoutStartSec=2min
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

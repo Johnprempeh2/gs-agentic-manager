@@ -60,6 +60,9 @@ jobs:
       - name: Nothing left to rebrand
         run: node scripts/greatstone-rebrand.mjs --check
 
+      - name: No em or en dashes in user-facing copy
+        run: node scripts/check-no-dashes.mjs
+
       - name: Only fork-owned workflows
         run: node scripts/check-fork-workflows.mjs
 

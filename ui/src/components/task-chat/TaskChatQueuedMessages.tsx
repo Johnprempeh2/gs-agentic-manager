@@ -121,7 +121,7 @@ function SortableQueuedMessage({
       className={cn(
         "group flex h-11 min-w-0 items-center gap-1 border-b border-border/55 bg-card/95 px-2.5 text-sm last:border-b-0",
         sortable.isDragging &&
-          "relative z-20 rounded-lg border border-border shadow-lg",
+          "relative z-sticky rounded-lg border border-border shadow-lg",
       )}
       data-testid={`task-chat-queued-message-${entry.comment.id}`}
     >
@@ -364,7 +364,7 @@ export function TaskChatQueuedMessages({
 
   return (
     <div
-      className="relative z-0 mx-3 -mb-px overflow-hidden rounded-t-xl rounded-b-none border border-b-0 border-border/75 bg-card shadow-sm"
+      className="relative z-page mx-3 -mb-px overflow-hidden rounded-t-xl rounded-b-none border border-b-0 border-border/75 bg-card shadow-sm"
       data-testid="task-chat-queued-messages"
       aria-label="Queued messages"
     >

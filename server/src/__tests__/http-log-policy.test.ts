@@ -1,9 +1,56 @@
+import { Writable } from "node:stream";
+import express from "express";
+import pino from "pino";
+import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { createHttpLogger } from "../middleware/logger.js";
 import {
+  isMcpSseStreamRefusal,
   isPrivateWebhookHttpRequest,
   isSecretSensitiveHttpRequest,
   shouldSilenceHttpSuccessLog,
 } from "../middleware/http-log-policy.js";
+
+describe("isMcpSseStreamRefusal", () => {
+  it("treats the 405 answer to an MCP client's SSE GET as expected", () => {
+    for (const path of [
+      "/mcp/gateways/gw_0123456789abcdef0123456789abcdef",
+      "/mcp/runtime-tools",
+      "/mcp/runtime-tools?ignored=1",
+      "/api/mcp/project-tools",
+      "/api/tool-gateway/gateways/5cbe79ee-acb3-4597-896e-7662742593cd/mcp",
+    ]) {
+      expect(isMcpSseStreamRefusal("GET", path, 405)).toBe(true);
+    }
+  });
+
+  it("keeps every other failure a warning", () => {
+    expect(isMcpSseStreamRefusal("POST", "/mcp/runtime-tools", 405)).toBe(false);
+    expect(isMcpSseStreamRefusal("GET", "/mcp/runtime-tools", 409)).toBe(false);
+    expect(isMcpSseStreamRefusal("GET", "/mcp/gateways/gw_1/extra", 405)).toBe(false);
+    expect(isMcpSseStreamRefusal("GET", "/api/issues/PAP-1", 405)).toBe(false);
+    expect(isMcpSseStreamRefusal(undefined, "/mcp/runtime-tools", 405)).toBe(false);
+  });
+
+  it("is what the HTTP logger uses to pick the level", async () => {
+    const lines: Array<{ level: number; msg: string }> = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        lines.push(JSON.parse(chunk.toString()));
+        callback();
+      },
+    });
+    const app = express();
+    app.use(createHttpLogger(pino(stream)));
+    const api = express.Router();
+    api.get("/mcp/project-tools", (_req, res) => { res.setHeader("Allow", "POST"); res.status(405).end(); });
+    app.use("/api", api);
+    app.get("/mcp/runtime-tools", (_req, res) => { res.status(409).end(); });
+    await request(app).get("/api/mcp/project-tools").expect(405);
+    await request(app).get("/mcp/runtime-tools").expect(409);
+    expect(lines.map((line) => line.level)).toEqual([30, 40]);
+  });
+});
 
 describe("isPrivateWebhookHttpRequest", () => {
   it("protects the native webhook namespace, including rejected methods and query data", () => {

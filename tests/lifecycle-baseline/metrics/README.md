@@ -67,6 +67,36 @@ weekly number counts stranded trees whose last activity falls in the window,
 i.e. trees that stopped this week. The report also lists every stranded tree
 of any age, with the uncovered issues in it.
 
+**R1 detail — parked wakes with no live run** (`parkedWakes` in
+`metrics.json`, GRE-685). Count of `deferred_issue_execution` wakes requested at
+least 10 minutes ago whose issue has no `execution_run_id`, split by wake
+`reason`. Nothing will drain such a wake, and the stranded-queue sweep promotes
+it only when it carries comment ids or an interaction answer, so review
+hand-offs, "blockers resolved" and assignment wakes stay parked. Report only:
+it sizes the problem before the sweep change. Zero is printed as zero.
+
+**R1 detail — repair escalations to the board** (`repairEscalations` in
+`metrics.json`, register row 76, GRE-725). Count of
+`issue.disposition_repair_escalated` activity in the window whose
+`terminalReason` is `unchanged_source_state_exhausted`, in a 2x2 split:
+agent-only task or not (agent assignee before escalation, no user assignee, no
+chat user, every execution stage participant an agent), and whether any repair
+run for that escalation posted a comment (agent `issue.comment_added` on a run
+woken with `issue_disposition_repair` on the same issue, with the same
+source-state fingerprint, started no later than the escalation; recovery action
+ids differ per attempt, so they are not matched). Each cell lists its issue identifiers. Report only:
+it sizes row 75 (who owns the escalation). Zero is printed as zero.
+
+**R1 detail — throttled rewakes** (`throttledRewakes` in `metrics.json`,
+register row 126, GRE-893). Count of `agent_wakeup_requests` with status
+`skipped` and reason `issue_rewake_throttled` requested in the window: wakes
+the rewake throttle refused because the agent had a streak of no-progress runs
+on the issue. Split per agent and per (issue, agent), each with the highest
+`heartbeatSkip.noProgressStreak` seen, the last skip time and the original wake
+reasons; the report lists the top 10 pairs with issue ids. The throttle slows
+such a loop but never stops it, and the run API does not show skipped wakes.
+Report only: it sizes row 125 (cut-off to the manager). Zero is printed as zero.
+
 **R2 — run failure rate and unattended recovery.** Among runs that finished in
 the window, failure rate is `failed + timed_out + interrupted` divided by those
 plus `succeeded`. Cancelled runs are reported but excluded, because
@@ -76,6 +106,24 @@ succeeds, or the issue reaches `done`, and no human acted on that issue in
 between. Reading, starring and trace inspection do not count as acting. The
 unattended share is auto-recovered failures divided by failures that have an
 issue. Failures with no issue are counted separately.
+
+The **platform failure rate** is the same rate with rejected logins (below)
+left out of both the failed count and the finished count. A refused login is
+an account problem for the board, not a platform fault, so the R2 budget
+checks the platform rate and the report shows login refusals as a separate
+count (GRE-590). The all-in `failureRate` is still saved. The unattended
+share still includes rejected logins.
+
+Account and setup refusals are left out the same way and counted as
+`r2.accountRefusals`, split by reason in `r2.accountRefusalsByReason`
+(GRE-745): an expired credential, no personal default account, a connection
+not permitted for the agent, low trust with no sandbox environment
+(`low_trust_requires_sandbox_environment`), and a task with no project
+workspace. Each is matched on its error code plus the fixed server message for
+that one reason, never on a whole code: `configuration_incomplete` also carried
+the GRE-236 platform bug, which stays counted, and so does `acpx_turn_failed`.
+The collector reads a failed run's error text in memory for this match; the
+text is not saved in the report.
 
 **R2 detail — rejected logins.** A failed run whose login the provider
 refused: its error code is `<provider>_auth_required`, or (servers before
@@ -190,3 +238,84 @@ can turn the watchdog off (`silentTimeoutSec: 0`) and older windows predate
 it. If GRE-34 or GRE-36 ship a different
 stop code than the ones above, add it to `SILENT_STOP_CODES` or
 `REASSIGN_STOP_CODE` before taking the after number.
+
+## John's time — Chase, Unstick, Decisions, Cards rejected, Rounds, Failed runs (GRE-397, GRE-453)
+
+One line for the 08:00 digest: how much of John's board time went on chasing
+and unsticking rather than decisions. `john-time.mjs` holds the rules;
+`john-time-collect.mjs` reads a database the same way as `collect.mjs` (read
+only, loopback hosts only) and prints the line.
+
+```sh
+pnpm metrics:john-time --company <id>                 # line for the digest, last 24 h + 7-day trend
+pnpm metrics:john-time --company <id> --json          # counts per day and the ids of counted comments
+pnpm metrics:john-time --company <id> --now 2026-10-02T08:00:00Z --john-user-ids local-board,<user id>
+```
+
+Example: `**John's time (24h):** Chase 4 · Unstick 1 · Decisions 14 · Failed
+runs 12 (workspace_validation_failed 4, …). 7 days, oldest first: Chase
+0,0,3,1,2,4,4 · Unstick …`. Today is the 24 hours up to `--now`; the trend is
+the seven 24-hour windows ending at `--now`, oldest first.
+
+**Whose comments.** Only comments with `author_type = 'user'` from one of
+John's user ids: by default every signed-in user plus the `local-board`
+sentinel (one-person board). `board-concierge`, system and agent comments
+never count. Override with `--john-user-ids`.
+
+**Classes.** Each John comment gets one class; the first rule that matches wins.
+Text is normalised first (HTML entities, curly quotes, markdown links and
+images removed).
+
+1. **Unstick, short nudge** (`UNSTICK_SHORT_RULE`): the whole comment is at
+   most 8 words and is only "start", "continue", "run", "retry", "go ahead",
+   "carry on", "proceed", "try again", "keep going" (with "now", "please",
+   "it", "you can"), or "it's free now" / "should be unlocked".
+2. **Repair** (`REPAIR_RULE`, counted under Unstick): a diagnosis of a stopped
+   run posted under John's name — "your last run/wake … failed/hung/ended",
+   "setup failed", "connection/token is fixed/expired", or "please continue /
+   retry" inside a longer note.
+3. **Unstick, restart agents** (`UNSTICK_ANY_RULE`, any length): reactivate /
+   boot up / wake up agents, "activate the others", "get the agents working",
+   "allow the next batch", "you can add/let more".
+4. **Chase** (`CHASE_RULE`): asks for status or a reason — "how is it going",
+   "any update", "is everything okay", "what do you need", "what's wrong",
+   "what is X doing", "you working?", "are you receiving", "how long … take",
+   "why is/doesn't … blocked/failing/taking/access", "what caused … fail",
+   "is it done/stuck", "still working".
+5. Everything else is **other** (instructions, decisions in text, questions
+   about the product).
+
+**Decisions.** Interactions John resolved as `accepted`, `rejected` or
+`answered` (expired and cancelled cards are not decisions), plus approvals he
+decided (`approved`, `rejected`, `revision_requested`).
+
+**Cards rejected and rounds per approved card (GRE-453).** Rework on approval
+cards: interactions of kind `request_confirmation` or
+`request_checkbox_confirmation` that John resolved as `accepted` or
+`rejected`. *Cards rejected* is the number he rejected in the 24 hours.
+*Rounds* for a card he accepted is 1 plus the cards he rejected on the same
+task since the last card he accepted there (rejections before the window
+count; the collector reads 30 extra days of approval cards for this). The line
+gives the average over the 7 days and how many approvals it covers, e.g.
+`Rounds per approved card (7d): 1.2 over 47`; the history shows `Rejected` per
+day and `Rounds` per day (`-` when nothing was approved that day). A task
+rejected and never accepted adds to Cards rejected but not to Rounds.
+
+Baseline (GRE-449 assessment): 15 of 33 approval cards rejected, 30 Sep to
+3 Oct 2026. These rules give 16 rejected of 34 decided for the four 24-hour
+windows ending 3 Oct 08:00 UTC, and 1.2 rounds over 47 approvals for the 7
+days to then (`pnpm metrics:john-time --now 2026-10-03T08:00:00Z`).
+
+**Failed runs, by cause.** Runs finished in the window with status `failed`,
+`timed_out` or `interrupted`, or cancelled by a watchdog
+(`run_silent_timeout`, `process_lost`, `adapter_failed`). Cause is the
+`error_code` (status when empty); the line shows the top three and "other".
+Routine cancels (`cancelled` by a person, `issue_reassigned`, dependency
+blocked) are not failures; L1 above covers hung runs a person cancelled.
+
+Error rate: on the 128 John comments from 27 Sep to 2 Oct 2026, the rules
+counted 14 chase, 15 unstick and 8 repair (29 %, close to the "about 1 in 3"
+of the GRE-394 assessment); one known false positive is a status relay that
+ends "I see you are still working". The rules miss wording they do not know.
+Use `--json` to audit by comment id; add misses to the rules and to the
+sample comments in `john-time.test.mjs`.

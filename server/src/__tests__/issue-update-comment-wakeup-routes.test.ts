@@ -75,6 +75,9 @@ vi.mock("../services/index.js", () => ({
       agent: { id: raw },
     })),
   }),
+  agentTeamService: () => ({
+    applyTeamAssignment: vi.fn(async () => undefined),
+  }),
   companySkillService: () => ({
     completeTestRunForIssue: vi.fn(async () => null),
   }),
@@ -145,6 +148,9 @@ function registerModuleMocks() {
         ambiguous: false,
         agent: { id: raw },
       })),
+    }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
     }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),
@@ -261,7 +267,7 @@ describe("issue update comment wakeups", () => {
     mockIssueService.getByIdentifier.mockResolvedValue(null);
     mockIssueService.getByIdForUpdate.mockImplementation(async () => mockIssueService.getById());
     mockIssueService.getRelationSummaries.mockResolvedValue({ blockedBy: [], blocks: [] });
-    mockIssueService.getDependencyReadiness.mockResolvedValue({ unresolvedBlockerCount: 1 });
+    mockIssueService.getDependencyReadiness.mockResolvedValue({ unresolvedBlockerCount: 1, unresolvedBlockerIssueIds: ["blocker-1"] });
     mockIssueService.listWakeableBlockedDependents.mockResolvedValue([]);
     mockIssueService.getWakeableParentAfterChildCompletion.mockResolvedValue(null);
     mockIssueService.getCurrentScheduledRetry.mockResolvedValue(null);

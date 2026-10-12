@@ -3,6 +3,7 @@ import { Check, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export function buildSetupPrompt(instanceUrl: string, instructions: string) {
   let instanceOrigin: string | null = null;
@@ -13,8 +14,8 @@ export function buildSetupPrompt(instanceUrl: string, instructions: string) {
     // A preview can have no configured instance. Do not substitute its own URL.
   }
   const context = instanceOrigin
-    ? `GS Agentic Manager instance URL: ${instanceOrigin}\nUse this instance for setup. Do not ask me for its URL again unless it is unavailable or I ask to use a different instance.`
-    : "GS Agentic Manager instance URL is unavailable. Ask me for it before starting setup.";
+    ? `${CLIENT_BRAND_NAME} instance URL: ${instanceOrigin}\nUse this instance for setup. Do not ask me for its URL again unless it is unavailable or I ask to use a different instance.`
+    : `${CLIENT_BRAND_NAME} instance URL is unavailable. Ask me for it before starting setup.`;
   return `${context}\n\n${instructions}`;
 }
 

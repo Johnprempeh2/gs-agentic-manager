@@ -1,7 +1,7 @@
 import { logActivity } from "./activity-log.js";
 import { aiConnectionService } from "./ai-connections.js";
 import { aiConnectionBindingSchema } from "@greatstone/shared";
-import { and, eq, desc, isNull } from "drizzle-orm";
+import { and, asc, eq, desc, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -522,7 +522,9 @@ export function connectionIntentService(db: Db) {
     const route = parseAggregatorRoute(selected);
     if (!route || expected.id !== `connection-provider:${route.targetService}`) return null;
     const providerName = AGGREGATOR_NAMES[route.provider];
-    if (option?.label !== providerName && option?.label !== `${providerName} — Recommended`) return null;
+    // The label used an em dash before the house-style change; answers stored then stay valid.
+    const labels = [providerName, `${providerName} (Recommended)`, `${providerName} \u2014 Recommended`];
+    if (!labels.includes(option?.label ?? "")) return null;
     // Eligibility is checked separately. A changed recommendation order must not
     // erase the human's choice or silently replace it with another provider.
     return selected;
@@ -766,8 +768,12 @@ export function connectionIntentService(db: Db) {
         if (managed.binding.mode === "responsible_user") {
           const selected = await service.select({ companyId: loaded.issue.companyId, agentId: payload.requestingAgentId, userId, adapterType: managed.agent.adapterType, model: managed.agent.adapterConfig.model, runnerProvider: managed.agent.adapterConfig.provider, acpxAgent: managed.agent.adapterConfig.acpxAgent, binding: managed.binding, allowUninstalledPersonal: true });
           if (selected.connection.id !== selectedConnection.id) throw conflict("Choose this account as your personal default in Connections first");
+          // The owner's personal default serves every run they start, so one
+          // fix covers every agent ("Any agent") instead of one card per agent.
           const installs = await txAccess.listConnectionInstalls(selectedConnection.id, loaded.issue.companyId);
-          await txAccess.putConnectionInstalls(selectedConnection.id, { installs: [...installs, { targetType: "agent", targetId: payload.requestingAgentId }] }, { actorType: "user", actorId: userId });
+          if (!installs.some((install) => install.targetType === "company")) {
+            await txAccess.putConnectionInstalls(selectedConnection.id, { installs: [{ targetType: "company", targetId: loaded.issue.companyId }] }, { actorType: "user", actorId: userId });
+          }
         }
         const selected = await service.select({ companyId: loaded.issue.companyId, agentId: payload.requestingAgentId, userId, adapterType: managed.agent.adapterType, model: managed.agent.adapterConfig.model, runnerProvider: managed.agent.adapterConfig.provider, acpxAgent: managed.agent.adapterConfig.acpxAgent, binding: managed.binding });
         if (selected.connection.id !== selectedConnection.id) throw conflict("This is not the account selected for the agent");
@@ -878,9 +884,183 @@ export function connectionIntentService(db: Db) {
     );
   }
 
+  /**
+   * One reconnect repairs every task that paused on it (GRE-289 for AI,
+   * GRE-335 for tools). Close each open card addressed to this user for the
+   * same service and purpose whose agent now resolves to the repaired
+   * connection, as if the user had clicked each card. Returns the closed
+   * cards. Delivery owns the wake, so admission guards and the per-card wake
+   * key still apply, and each paused task gets one continuation.
+   */
+  async function resolvePendingIntents(input: {
+    companyId: string;
+    userId: string;
+    serviceSlug: string;
+    purpose?: "ai";
+    connectionId: string;
+    source: string;
+    bypassCurrentMembershipCheck?: boolean;
+  }): Promise<string[]> {
+    await assertCurrentUserWriteAccess(input.companyId, input.userId, input.bypassCurrentMembershipCheck);
+    const pending = await db
+      .select({ interaction: issueThreadInteractions, issue: issues })
+      .from(issueThreadInteractions)
+      .innerJoin(issues, eq(issues.id, issueThreadInteractions.issueId))
+      .where(and(
+        eq(issueThreadInteractions.companyId, input.companyId),
+        eq(issues.companyId, input.companyId),
+        eq(issueThreadInteractions.kind, "connection_intent"),
+        eq(issueThreadInteractions.status, "pending"),
+        eq(issueThreadInteractions.addresseeUserId, input.userId),
+        sql`coalesce(${issueThreadInteractions.payload}->>'purpose', '') = ${input.purpose ?? ""}`,
+        sql`${issueThreadInteractions.payload}->>'serviceSlug' = ${input.serviceSlug}`,
+      ))
+      .orderBy(desc(issueThreadInteractions.createdAt));
+    const toDeliver: string[] = [];
+    const inventory = input.purpose === "ai" ? undefined : await connectionInventory(input.companyId);
+    for (const { interaction, issue } of pending) {
+      const payload = connectionIntentPayloadSchema.safeParse(interaction.payload).data;
+      if (!payload || ["done", "cancelled"].includes(issue.status) || issue.assigneeAgentId !== payload.requestingAgentId) continue;
+      // An aggregator connection can be healthy while the app behind it is
+      // still unauthorized. Those cards stay with their own answer path.
+      if (payload.upstreamService) continue;
+      const usable = await usableConnectionForAgent({
+        companyId: input.companyId, agentId: payload.requestingAgentId,
+        responsibleUserId: input.userId, serviceSlug: input.serviceSlug, purpose: input.purpose, inventory,
+      });
+      if (usable?.id !== input.connectionId) continue;
+      try {
+        await interactions.resolveConnectionIntent(
+          issue, interaction.id,
+          { version: 1, outcome: "connected", connectionId: input.connectionId },
+          { userId: input.userId },
+        );
+      } catch (error) {
+        // Another resolver closed it first; its own outcome stands.
+        if ((error as { status?: number }).status === 409) continue;
+        throw error;
+      }
+      toDeliver.push(interaction.id);
+      await logActivity(db, {
+        companyId: input.companyId, actorType: "user", actorId: input.userId,
+        action: "issue.connection_intent_connected", entityType: "issue", entityId: issue.id,
+        details: { interactionId: interaction.id, connectionId: input.connectionId,
+          requestingAgentId: payload.requestingAgentId, source: input.source },
+      });
+    }
+    return toDeliver;
+  }
+
+  function resolveAiIntentsForConnection(input: {
+    companyId: string;
+    userId: string;
+    serviceSlug: string;
+    connectionId: string;
+    bypassCurrentMembershipCheck?: boolean;
+  }): Promise<string[]> {
+    return resolvePendingIntents({ ...input, purpose: "ai", source: "ai_reconnect" });
+  }
+
+  /**
+   * A tool connection was reconnected or tested healthy. Close every open
+   * tool card it now serves, for any agent, addressed to this user.
+   */
+  async function resolveToolIntentsForConnection(input: {
+    companyId: string;
+    userId: string;
+    connectionId: string;
+    bypassCurrentMembershipCheck?: boolean;
+  }): Promise<string[]> {
+    const { applicationsById, connections } = await connectionInventory(input.companyId);
+    const connection = connections.find((candidate) => candidate.id === input.connectionId);
+    if (!connection || connection.connectionPurpose === "ai") return [];
+    if (connection.status !== "active" || !connection.enabled || isToolConnectionAttentionHealth(connection.healthStatus)) return [];
+    return resolvePendingIntents({
+      ...input,
+      serviceSlug: sourceSlugForConnection(connection, applicationsById),
+      source: "tool_reconnect",
+    });
+  }
+
+  /**
+   * One answer covers every task one agent paused on the same missing
+   * connection (GRE-316). Close the agent's other open cards for this service,
+   * addressed to the same user, with the answer given on the answered card.
+   * A connect only closes a sibling when its task now resolves to the same
+   * connection. Returns the closed cards; delivery owns the wake, and the
+   * per-card wake key gives each waiting task one continuation.
+   */
+  async function resolveSiblingIntents(
+    answeredId: string,
+    options: { bypassCurrentMembershipCheck?: boolean } = {},
+  ): Promise<string[]> {
+    const answered = await loadIntent(answeredId);
+    const { interaction } = answered;
+    if (interaction.status !== "accepted" && interaction.status !== "rejected") return [];
+    const userId = interaction.addresseeUserId;
+    if (!userId) return [];
+    const payload = connectionIntentPayloadSchema.parse(interaction.payload);
+    const connectionId = interaction.status === "accepted" ? interaction.result?.connectionId ?? null : null;
+    if (interaction.status === "accepted" && !connectionId) return [];
+    await assertCurrentUserWriteAccess(answered.issue.companyId, userId, options.bypassCurrentMembershipCheck);
+    const pending = await db
+      .select({ interaction: issueThreadInteractions, issue: issues })
+      .from(issueThreadInteractions)
+      .innerJoin(issues, eq(issues.id, issueThreadInteractions.issueId))
+      .where(and(
+        eq(issueThreadInteractions.companyId, answered.issue.companyId),
+        eq(issues.companyId, answered.issue.companyId),
+        eq(issueThreadInteractions.kind, "connection_intent"),
+        eq(issueThreadInteractions.status, "pending"),
+        eq(issueThreadInteractions.addresseeUserId, userId),
+        sql`${issueThreadInteractions.id} <> ${interaction.id}`,
+        sql`${issueThreadInteractions.payload}->>'requestingAgentId' = ${payload.requestingAgentId}`,
+        sql`${issueThreadInteractions.payload}->>'serviceSlug' = ${payload.serviceSlug}`,
+        sql`coalesce(${issueThreadInteractions.payload}->>'purpose', '') = ${payload.purpose ?? ""}`,
+        sql`coalesce(${issueThreadInteractions.payload}->'upstreamService'->>'slug', '') = ${payload.upstreamService?.slug ?? ""}`,
+      ))
+      .orderBy(asc(issueThreadInteractions.createdAt));
+    const toDeliver: string[] = [];
+    for (const sibling of pending) {
+      if (["done", "cancelled"].includes(sibling.issue.status) || sibling.issue.assigneeAgentId !== payload.requestingAgentId) continue;
+      if (connectionId) {
+        const usable = await usableConnectionForAgent({
+          companyId: sibling.issue.companyId, agentId: payload.requestingAgentId,
+          responsibleUserId: userId, serviceSlug: payload.serviceSlug, purpose: payload.purpose,
+        });
+        if (usable?.id !== connectionId) continue;
+      }
+      try {
+        await interactions.resolveConnectionIntent(
+          sibling.issue, sibling.interaction.id,
+          connectionId
+            ? { ...interaction.result!, version: 1, outcome: "connected", connectionId }
+            : { version: 1, outcome: "declined", reason: interaction.result?.reason ?? null },
+          { userId },
+        );
+      } catch (error) {
+        // Another resolver closed it first; its own outcome stands.
+        if ((error as { status?: number }).status === 409) continue;
+        throw error;
+      }
+      toDeliver.push(sibling.interaction.id);
+      await logActivity(db, {
+        companyId: sibling.issue.companyId, actorType: "user", actorId: userId,
+        action: connectionId ? "issue.connection_intent_connected" : "issue.connection_intent_declined",
+        entityType: "issue", entityId: sibling.issue.id,
+        details: { interactionId: sibling.interaction.id, connectionId,
+          requestingAgentId: payload.requestingAgentId, source: "shared_card", answeredInteractionId: interaction.id },
+      });
+    }
+    return toDeliver;
+  }
+
   return {
     validate: loadRunContext,
     usableConnectionForAgent,
+    resolveAiIntentsForConnection,
+    resolveToolIntentsForConnection,
+    resolveSiblingIntents,
     search,
     request,
     loadIntent,

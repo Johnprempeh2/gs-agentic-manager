@@ -2,6 +2,7 @@ import { Router } from "express";
 import type { Db } from "@greatstone/db";
 import type { AttentionSortMode } from "@greatstone/shared";
 import { attentionService } from "../services/attention.js";
+import { viewerPrincipalUserIds } from "../services/board-identity.js";
 import { badRequest } from "../errors.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 
@@ -38,8 +39,11 @@ export function attentionRoutes(db: Db) {
     const limitValue = optionalQueryString(req.query.limit, "limit");
     const limit = limitValue === undefined ? undefined : Number(limitValue);
     if (limit !== undefined && !Number.isInteger(limit)) throw badRequest("limit must be an integer");
+    const userId = req.actor.userId;
     const feed = await svc.list(companyId, {
-      userId: req.actor.userId,
+      userId,
+      // An owner also sees asks addressed to the legacy `local-board` user.
+      userIdAliases: (await viewerPrincipalUserIds(db, companyId, userId)).filter((id) => id !== userId),
       includeDismissed,
       archived,
       all,

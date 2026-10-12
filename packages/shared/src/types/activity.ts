@@ -11,4 +11,7 @@ export interface ActivityEvent {
   responsibleUserId?: string | null;
   details: Record<string, unknown> | null;
   createdAt: Date;
+  /** For a row about a task: its identifier and title, when the company list returns them. */
+  issueIdentifier?: string | null;
+  issueTitle?: string | null;
 }

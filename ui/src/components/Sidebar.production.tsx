@@ -3,7 +3,9 @@ import {
   ListChecks,
   CircleDot,
   Target,
+  Landmark,
   LayoutDashboard,
+  CreditCard,
   DollarSign,
   History,
   Search,
@@ -12,6 +14,7 @@ import {
   Boxes,
   Repeat,
   Layers,
+  Microscope,
   GitBranch,
   Package,
   Settings,
@@ -21,6 +24,10 @@ import {
   GanttChartSquare,
   LayoutGrid,
   UserCheck,
+  FileCheck2,
+  Brain,
+  Workflow,
+  Globe,
 } from "lucide-react";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -29,16 +36,17 @@ import { SidebarNavItem } from "./SidebarNavItem.production";
 import { SidebarAgents } from "./SidebarAgents.production";
 import { SidebarProjects } from "./SidebarProjects";
 import { SidebarStarredProjects } from "./SidebarStarredProjects.production";
+import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
-import { attentionApi } from "../api/attention";
-import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
-import { attentionBadgeCount } from "../lib/attention";
+import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
-import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
+import { useLiveAgents } from "../hooks/useLiveAgents";
+import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
+import { useHasBillingAccount } from "../hooks/useBillingAccount";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, SIDEBAR_RAIL_HIDDEN_LABEL } from "../lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
@@ -56,42 +64,29 @@ export function Sidebar() {
   const { collapsed, peeking } = useSidebar();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
+  // Organisation memory is per company: the link shows only once it is switched on.
+  const { enabled: memoryEnabled } = useMemoryEnabled(selectedCompanyId);
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const liveRunsQueryKey = queryKeys.liveRuns(selectedCompanyId!);
-  const sharedLiveRuns = useSharedPollingQuery({
-    companyId: selectedCompanyId,
-    resourceKey: "live-runs",
-    queryKey: liveRunsQueryKey,
-    enabled: !!selectedCompanyId,
-    // Event-sourced via LiveUpdatesProvider (GitHub issue 9627) + reconnect reconcile — no
-    // interval poll needed. Polling here also re-armed React Query's timer on
-    // every live-event cache write, a major source of steady-state churn.
-    refetchInterval: false,
-    leaderOnly: true,
-  });
-  const { data: liveRuns, dataUpdatedAt: liveRunsUpdatedAt } = useQuery({
-    queryKey: liveRunsQueryKey,
-    queryFn: () => heartbeatsApi.liveRunsForCompany(selectedCompanyId!),
-    enabled: sharedLiveRuns.enabled,
-    refetchInterval: sharedLiveRuns.refetchInterval,
-  });
-  usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const liveRunCount = liveRuns?.length ?? 0;
+  const { liveAgents } = useLiveAgents(selectedCompanyId);
+  const liveRunCount = liveAgents.length;
   const showWorkspacesLink = experimentalSettings?.enableIsolatedWorkspaces === true;
   const showApps = experimentalSettings?.enableApps === true;
   const showPipelines = experimentalSettings?.enablePipelines === true;
+  // Website view (GRE-1088): hidden while the managed switch is off.
+  const showWebsite = experimentalSettings?.enableWebsiteView === true;
+  // Client instances only (GRE-1370): the link shows when the instance has a billing account.
+  const showBilling = useHasBillingAccount();
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
-  const { data: attentionFeed } = useQuery({
-    queryKey: queryKeys.attention(selectedCompanyId!),
-    queryFn: () => attentionApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
-    refetchInterval: 60_000,
-  });
-  const attentionCount = attentionBadgeCount(attentionFeed);
+  // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
+  const attentionCount = useDecisionsCount(selectedCompanyId);
+  // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
+  const myTasksCount = useMyTasksCount(selectedCompanyId);
   const showCases = experimentalSettings?.enableCases === true;
+  // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
+  const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
   // Streamlined left navigation (top-level Projects link + starred children) is
   // now the standard product sidebar (PAP-12472). The former experimental
   // opt-out was retired; classic per-project collapsible mode is no longer
@@ -148,6 +143,9 @@ export function Sidebar() {
               collapsed rail, where the old header icon was dropped entirely.
               Cmd/Ctrl+K remains the keyboard path (command palette). */}
           <SidebarNavItem to="/search" label="Search" icon={Search} />
+          {/* GRE-585: finished documents sit in the top group, under Search. */}
+          <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
+          {memoryEnabled ? <SidebarNavItem to="/memory" label="Memory" icon={Brain} /> : null}
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />
           <SidebarNavItem
             to="/inbox"
@@ -155,10 +153,16 @@ export function Sidebar() {
             icon={Inbox}
             badge={inboxBadge.inbox}
             badgeLabel="unread"
-            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "default"}
+            badgeTone={inboxBadge.failedRuns > 0 ? "danger" : "quiet"}
             alert={inboxBadge.failedRuns > 0}
           />
-          <SidebarNavItem to="/my-tasks" label="My tasks" icon={UserCheck} />
+          <SidebarNavItem
+            to="/my-tasks"
+            label="My tasks"
+            icon={UserCheck}
+            badge={myTasksCount}
+            badgeLabel="open"
+          />
           {/* Decisions (attention home, PAP-13481) graduated out of
               Experimental (GRE-66): always shown, whatever the stored
               enableDecisions value says. */}
@@ -182,12 +186,21 @@ export function Sidebar() {
           {showCases ? (
             <SidebarNavItem to="/cases" label="Cases" icon={Layers} textBadge="beta" />
           ) : null}
+          {showDeepDive ? (
+            <SidebarNavItem to="/deep-dive" label="Deep Dive" icon={Microscope} textBadge="beta" />
+          ) : null}
           <SidebarNavItem to="/routines" label="Routines" icon={Repeat} />
+          <SidebarNavItem to="/workflows" label="Workflows" icon={Workflow} />
           {showPipelines ? (
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
+          <SidebarStarredPipelines />
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
+          {/* GRE-1135: board control panel, behind enableStrategyBoard. */}
+          {experimentalSettings?.enableStrategyBoard === true ? (
+            <SidebarNavItem to="/strategy-board" label="Board" icon={Landmark} />
+          ) : null}
           <SidebarNavItem to="/artifacts" label="Artifacts" icon={Package} />
           <SidebarNavItem to="/skills" label="Skills" icon={Boxes} />
           {showWorkspacesLink ? (
@@ -222,10 +235,12 @@ export function Sidebar() {
         <SidebarSection label="Company" collapsible={{ open: companyOpen, onOpenChange: setCompanyOpen }}>
           <SidebarNavItem to="/org" label="Org" icon={Network} />
           {showApps ? <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} /> : null}
+          {showWebsite ? <SidebarNavItem to="/website" label="Website" icon={Globe} /> : null}
           <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
           <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
           {/* One entry — /audit merged into the rich Activity feed (PAP-16302). */}
           <SidebarNavItem to="/activity" label="Activity" icon={History} />
+          {showBilling ? <SidebarNavItem to="/billing" label="Billing" icon={CreditCard} /> : null}
           <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
         </SidebarSection>
 

@@ -176,7 +176,7 @@ export function RoutineSectionPicker({
   isSectionDirty: (section: RoutineSectionKey) => boolean;
 }) {
   return (
-    <div className="sticky top-0 z-10 border-b border-border bg-background px-4 py-2 md:hidden">
+    <div className="sticky top-0 z-raised border-b border-border bg-background px-4 py-2 md:hidden">
       <Select
         value={activeSection}
         onValueChange={(value) => {

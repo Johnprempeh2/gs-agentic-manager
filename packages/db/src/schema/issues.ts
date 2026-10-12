@@ -12,6 +12,7 @@ import {
   unique,
   bigint,
   check,
+  date,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
 import { projects } from "./projects.js";
@@ -20,6 +21,7 @@ import { companies } from "./companies.js";
 import { heartbeatRuns } from "./heartbeat_runs.js";
 import { projectWorkspaces } from "./project_workspaces.js";
 import { executionWorkspaces } from "./execution_workspaces.js";
+import { agentTeams } from "./agent_teams.js";
 import type { IssueReviewPolicy, IssueUnblockDescriptor, SourceTrustMetadata } from "@greatstone/shared";
 
 export const issues = pgTable(
@@ -48,6 +50,9 @@ export const issues = pgTable(
     reviewPolicy: text("review_policy").$type<IssueReviewPolicy>(),
     assigneeAgentId: uuid("assignee_agent_id").references(() => agents.id),
     assigneeUserId: text("assignee_user_id"),
+    // The team the task was assigned to (GRE-437). Assigning to a team sets
+    // the assignee to the team lead; the team stays for filtering and badges.
+    teamId: uuid("team_id").references(() => agentTeams.id, { onDelete: "set null" }),
     checkoutRunId: uuid("checkout_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     executionRunId: uuid("execution_run_id").references(() => heartbeatRuns.id, { onDelete: "set null" }),
     executionAgentNameKey: text("execution_agent_name_key"),
@@ -86,6 +91,15 @@ export const issues = pgTable(
     completedAt: timestamp("completed_at", { withTimezone: true }),
     cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     hiddenAt: timestamp("hidden_at", { withTimezone: true }),
+    // "Not now": a tabled task is parked in backlog, gets no agent wakes, and
+    // leaves the Decisions feed until tabledUntil passes or it is brought back.
+    tabledAt: timestamp("tabled_at", { withTimezone: true }),
+    tabledUntil: timestamp("tabled_until", { withTimezone: true }),
+    tabledByUserId: text("tabled_by_user_id"),
+    tabledFromStatus: text("tabled_from_status"),
+    // Deadline of a plan action (GRE-1188): only tasks under a plan objective
+    // carry one, so the board can list the overdue ones.
+    dueDate: date("due_date", { mode: "string" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -116,10 +130,17 @@ export const issues = pgTable(
     responsibleUserIdx: index("issues_company_responsible_user_idx").on(table.companyId, table.responsibleUserId),
     parentIdx: index("issues_company_parent_idx").on(table.companyId, table.parentId),
     projectIdx: index("issues_company_project_idx").on(table.companyId, table.projectId),
+    teamIdx: index("issues_company_team_idx").on(table.companyId, table.teamId),
     originIdx: index("issues_company_origin_idx").on(table.companyId, table.originKind, table.originId),
     projectWorkspaceIdx: index("issues_company_project_workspace_idx").on(table.companyId, table.projectWorkspaceId),
     executionWorkspaceIdx: index("issues_company_execution_workspace_idx").on(table.companyId, table.executionWorkspaceId),
     dueMonitorIdx: index("issues_company_monitor_due_idx").on(table.companyId, table.monitorNextCheckAt),
+    dueDateIdx: index("issues_company_due_date_idx")
+      .on(table.companyId, table.dueDate)
+      .where(sql`${table.dueDate} is not null`),
+    tabledIdx: index("issues_tabled_until_idx")
+      .on(table.tabledUntil)
+      .where(sql`${table.tabledAt} is not null`),
     companyUpdatedIdx: index("issues_company_updated_idx").on(table.companyId, table.updatedAt),
     companyCreatedIdx: index("issues_company_created_idx").on(table.companyId, table.createdAt),
     openNormalizedTitleCreatedIdx: index("issues_open_normalized_title_created_idx")

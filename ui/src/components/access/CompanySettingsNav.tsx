@@ -2,8 +2,12 @@ import { PageTabBar } from "@/components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useShowGetHelp } from "@/hooks/useShowGetHelp";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { useLocation, useNavigate } from "@/lib/router";
+import { useQuery } from "@tanstack/react-query";
+import { instanceSettingsApi } from "@/api/instanceSettings";
+import { queryKeys } from "@/lib/queryKeys";
 
 const items = [
   { value: "general", label: "General", href: "/company/settings" },
@@ -11,9 +15,11 @@ const items = [
   { value: "import", label: "Import", href: "/company/import" },
   { value: "members", label: "Members", href: "/company/settings/members" },
   { value: "secrets", label: "Secrets", href: "/company/settings/secrets" },
+  { value: "pipelines-access", label: "Pipelines access", href: "/company/settings/pipelines-access" },
   { value: "instance-profile", label: "Profile", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/profile` },
   { value: "instance-environments", label: "Environments", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/environments` },
   { value: "instance-access", label: "Access", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/access` },
+  { value: "get-help", label: "Get help", href: "/company/settings/get-help" },
   { value: "instance-experimental", label: "Experimental", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/experimental` },
   { value: "instance-plugins", label: "Plugins", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/plugins` },
   { value: "instance-adapters", label: "Adapters", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/adapters` },
@@ -89,6 +95,14 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
     return "secrets";
   }
 
+  if (pathname.includes("/company/settings/pipelines-access")) {
+    return "pipelines-access";
+  }
+
+  if (pathname.includes("/company/settings/get-help")) {
+    return "get-help";
+  }
+
   return "general";
 }
 
@@ -99,9 +113,16 @@ export function CompanySettingsNav() {
   // Import is floored server-side on cloud-managed instances (403 cloud_managed), so the
   // tab is suppressed there rather than dead-ending.
   const isCloud = Boolean(useCloudInstance());
+  const { data: experimentalSettings } = useQuery({
+    queryKey: queryKeys.instance.experimentalSettings,
+    queryFn: () => instanceSettingsApi.getExperimental(),
+  });
+  const showGetHelp = useShowGetHelp();
   const activeTab = getCompanySettingsTab(location.pathname);
   const visibleItems = items.filter((item) => {
+    if (item.value === "get-help" && !showGetHelp) return false;
     if (item.value === "import" && isCloud) return false;
+    if (item.value === "pipelines-access" && experimentalSettings?.enablePipelines !== true) return false;
     const hiddenKey = hiddenSettingKeyByTab[item.value];
     return !hiddenKey || !hiddenSettings.has(hiddenKey);
   });

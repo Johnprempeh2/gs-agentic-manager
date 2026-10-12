@@ -25,6 +25,8 @@ export interface Company {
   issueCounter: number;
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
+  /** Hourly wage in cents used to value agent hours; null when not set. */
+  minimumWageHourlyCents: number | null;
   defaultResponsibleUserId: string | null;
   requireBoardApprovalForNewAgents: boolean;
   interactionResolverGovernance: InteractionResolverGovernance;

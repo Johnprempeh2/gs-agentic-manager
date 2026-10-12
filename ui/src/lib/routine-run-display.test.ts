@@ -55,13 +55,13 @@ describe("runRowSubtitle", () => {
       { status: "skipped", failureReason: "no_external_activity", triggerPayload: null },
       variables,
     );
-    expect(subtitle).toBe("Skipped — no activity since last run");
+    expect(subtitle).toBe("Skipped: no activity since last run");
   });
 
   it("labels other known skip reasons", () => {
     expect(
       runRowSubtitle({ status: "skipped", failureReason: "paused", triggerPayload: null }, variables),
-    ).toBe("Skipped — routine paused");
+    ).toBe("Skipped: routine paused");
   });
 
   it("falls back to variable values for a skip with no known reason", () => {

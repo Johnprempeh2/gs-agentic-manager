@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AcpRuntimeOptions } from "acpx/runtime";
+import { createRuntimeStore, type AcpRuntimeOptions, type AcpSessionRecord, type AcpSessionStore } from "acpx/runtime";
 import type { AdapterExecutionContext, AdapterRuntimeMcpAccess } from "@greatstone/adapter-utils";
 import {
   DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC,
@@ -375,6 +376,42 @@ const ALLOWED_TURN_SPAN_ATTRIBUTE_KEYS = new Set<string>([
 ]);
 
 describe("shared ACPX engine runtime behavior", () => {
+  it("integrates the env-free store while delivering current credentials and options to the provider", async () => {
+    const root = await makeTempRoot();
+    const stateDir = path.join(root, "state");
+    const first = await runExecutor({ agent: "claude", agentCommand: "node ./fake-acp.js", cwd: root, stateDir,
+      env: { ANTHROPIC_API_KEY: "first-fixture-credential" } });
+    const liveEnvironment = (first.sessionInputs[0]!.sessionOptions as { env: Record<string, string> }).env;
+    expect(liveEnvironment.ANTHROPIC_API_KEY).toBe("first-fixture-credential");
+    const store = first.runtimeOptions[0]!.sessionStore as AcpSessionStore;
+    const record: AcpSessionRecord = {
+      schema: "acpx.session.v1", acpxRecordId: "integration-record", acpSessionId: "integration-session",
+      agentCommand: "fixture-provider", cwd: root, name: "fixture", createdAt: "2026-10-03T00:00:00.000Z",
+      lastUsedAt: "2026-10-03T00:00:01.000Z", lastSeq: 0,
+      eventLog: { active_path: path.join(stateDir, "fixture.jsonl"), segment_count: 1, max_segment_bytes: 1024, max_segments: 2 },
+      messages: [], updated_at: "2026-10-03T00:00:01.000Z", cumulative_token_usage: {}, request_token_usage: {},
+      acpx: { session_options: { env: { ...liveEnvironment }, model: "retained-model", max_turns: 4 } },
+    };
+    await store.save(record);
+    const file = path.join(stateDir, "sessions", "integration-record.json");
+    const saved = await fs.readFile(file, "utf8");
+    expect(saved).not.toContain("first-fixture-credential");
+    expect(JSON.parse(saved).acpx.session_options).toEqual({ model: "retained-model", max_turns: 4 });
+    expect(record.acpx?.session_options?.env).toEqual(liveEnvironment);
+    // A file written by the prior engine is loaded with the current run's env,
+    // without altering the provider launch or deleting unrelated options.
+    record.acpx!.session_options!.env = { ANTHROPIC_API_KEY: "legacy-fixture-credential" };
+    await createRuntimeStore({ stateDir }).save(record);
+    const second = await runExecutor({ agent: "claude", agentCommand: "node ./fake-acp.js", cwd: root, stateDir,
+      env: { ANTHROPIC_API_KEY: "rotated-fixture-credential" } }, { runtime: { sessionParams: first.result.sessionParams } });
+    expect((second.sessionInputs[0]!.sessionOptions as { env: Record<string, string> }).env.ANTHROPIC_API_KEY).toBe("rotated-fixture-credential");
+    const rotatedStore = second.runtimeOptions[0]!.sessionStore as AcpSessionStore;
+    const loaded = await rotatedStore.load(record.acpxRecordId);
+    expect(loaded?.acpx?.session_options).toMatchObject({ env: { ANTHROPIC_API_KEY: "rotated-fixture-credential" }, model: "retained-model", max_turns: 4 });
+    await rotatedStore.save(loaded!);
+    const resaved = await fs.readFile(file, "utf8");
+    for (const value of ["first-fixture-credential", "legacy-fixture-credential", "rotated-fixture-credential"]) expect(resaved).not.toContain(value);
+  });
   it.each(["claude", "codex", "gemini", "kimi", "custom"])("defaults the legacy %s engine to full auto on fresh and resumed runs", async (agent) => {
     const root = await makeTempRoot();
     const config = {
@@ -559,7 +596,7 @@ describe("shared ACPX engine runtime behavior", () => {
     });
     expect(logs).toContainEqual({
       stream: "stderr",
-      text: "[paperclip] Ignoring invalid user CODEX_CONFIG while applying runtime Codex settings; expected a JSON object.\n",
+      text: "[gsam] Ignoring invalid user CODEX_CONFIG while applying runtime Codex settings; expected a JSON object.\n",
     });
   });
 
@@ -2468,6 +2505,37 @@ describe("shared ACPX engine runtime behavior", () => {
     expect(note).toBeTruthy();
   });
 
+  it("adds the pattern-kill hook to .claude/settings.local.json once, keeping user hooks (GRE-746)", async () => {
+    const root = await makeTempRoot();
+    const stateDir = path.join(root, "state");
+    const cwd = path.join(root, "worktree");
+    const userHook = { matcher: "Edit", hooks: [{ type: "command", command: "lint" }] };
+    await fs.mkdir(path.join(cwd, ".claude"), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, ".claude", "settings.local.json"),
+      JSON.stringify({ hooks: { PreToolUse: [userHook] } }),
+      "utf8",
+    );
+
+    await runExecutor({ agent: "claude", stateDir, cwd }, { context: { paperclipWorkspace: { cwd } } });
+    await runExecutor({ agent: "claude", stateDir, cwd }, { context: { paperclipWorkspace: { cwd } } });
+
+    const written = JSON.parse(await fs.readFile(path.join(cwd, ".claude", "settings.local.json"), "utf8")) as {
+      hooks: { PreToolUse: Array<{ matcher: string; hooks: Array<{ command: string }> }> };
+    };
+    const [kept, killHook, ...rest] = written.hooks.PreToolUse;
+    expect(kept).toEqual(userHook);
+    expect(rest).toEqual([]);
+    expect(killHook?.matcher).toBe("Bash");
+    const hookCommand = killHook!.hooks[0]!.command;
+    expect(hookCommand).toContain(path.join(stateDir, "hooks", "gsam-kill-command-hook.cjs"));
+    const refused = spawnSync("sh", ["-c", hookCommand], {
+      input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "pgrep -f dev-runner | xargs kill" } }),
+      encoding: "utf8",
+    });
+    expect(refused.status).toBe(2);
+  });
+
   it("merges GS Agentic Manager allowlist into an existing .claude/settings.local.json without losing user entries", async () => {
     const root = await makeTempRoot();
     const stateDir = path.join(root, "state");
@@ -2805,7 +2873,7 @@ describe("gemini ACP flag selection", () => {
     );
     expect(startLine).toBeTruthy();
     expect(startLine!.text).toContain(
-      `[paperclip] Adapter execution timeout: timeoutSec=${DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC} ` +
+      `[gsam] Adapter execution timeout: timeoutSec=${DEFAULT_REMOTE_SANDBOX_ADAPTER_TIMEOUT_SEC} ` +
         "(sandbox default; set adapterConfig.timeoutSec to override).",
     );
   });
@@ -3553,7 +3621,7 @@ describe("ACPX engine remote managed-home seam (PR 2: per-adapter home seed)", (
       (entry) => entry.stream === "stderr" && entry.text.includes("proj-x"),
     );
     expect(failureLine?.text).toBe(
-      "[paperclip] Referenced project proj-x failed to stage; the run continues without it: extract failed: boom\n",
+      "[gsam] Referenced project proj-x failed to stage; the run continues without it: extract failed: boom\n",
     );
   });
 });
@@ -7273,6 +7341,9 @@ describe("ACPX startup handshake guard and late-completion fence", () => {
       expect(result.exitCode).not.toBe(0);
       expect(result.errorCode).toBe("acpx_handshake_timeout");
       expect(result.resultJson).toMatchObject({ phase: "ensure_session" });
+      // GRE-295: the turn never started, so the server may retry instead of
+      // holding the task for manual reconciliation.
+      expect(result.executionRecovery).toEqual({ kind: "bootstrap", providerWorkStarted: false });
     } finally {
       vi.useRealTimers();
     }

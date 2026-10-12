@@ -6,6 +6,7 @@ export const lanes = {
     files: [
       "tests/lifecycle-baseline/authority.test.ts",
       "tests/lifecycle-baseline/accounting.test.ts",
+      "tests/lifecycle-baseline/github-setup-guidance.test.ts",
       "server/src/services/execution-recovery-attempt.test.ts",
       "server/src/services/recovery/legacy-continuation.test.ts",
       // GRE-15: a rejected login is a board-owned blocker, never a retried transient.
@@ -36,6 +37,8 @@ export const lanes = {
   integration: {
     files: [
       "server/test-baselines/lifecycle-heartbeat.test.ts",
+      // GRE-1108: an unusable GitHub grant must not strand an eligible host-backed run.
+      `${server}github-operation-credentials.test.ts`,
       `${server}activity-service.test.ts`,
       `${server}legacy-continuation-authority.test.ts`,
       `${server}native-status-arbiter-corpus.test.ts`,
@@ -49,6 +52,10 @@ export const lanes = {
       `${server}issue-thread-interactions-service.test.ts`,
       // GRE-36: the new assignee's wake carries the old run's progress.
       "server/src/services/reassignment-handover-payload.test.ts",
+      // GRE-750: a parked hand-off wake on a task with no live run is restarted.
+      `${server}parked-handoff-wake-restart.test.ts`,
+      // GRE-753: a repair give-up wakes the assignee's manager once, then the board.
+      `${server}disposition-repair-manager-escalation.test.ts`,
     ],
   },
   grading: {

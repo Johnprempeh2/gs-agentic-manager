@@ -8,10 +8,12 @@ import { BreadcrumbBar } from "./BreadcrumbBar";
 
 const viewport = vi.hoisted(() => ({ isMobile: false }));
 
+const navigateMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/router", () => ({
   Link: ({ children, className, to }: { children: ReactNode; className?: string; to: string }) => (
     <a className={className} href={to}>{children}</a>
   ),
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock("../context/SidebarContext", () => ({
@@ -154,7 +156,13 @@ describe("BreadcrumbBar", () => {
     expect(identifier?.textContent).toBe("TES-3");
     expect(identifier?.previousElementSibling?.textContent).toBe("Hire your first engineer and create a hiring plan");
     expect(identifier?.previousElementSibling?.className).toContain("truncate");
-    expect(container.querySelector('button[aria-label="Open sidebar"]')).not.toBeNull();
+    // An inner page on a phone: a back arrow (to the task list when there is
+    // no in-app history) instead of the menu.
+    expect(container.querySelector('button[aria-label="Open sidebar"]')).toBeNull();
+    const back = container.querySelector<HTMLButtonElement>('button[aria-label="Back"]');
+    expect(back).not.toBeNull();
+    act(() => back?.click());
+    expect(navigateMock).toHaveBeenCalled();
   });
 
   it("renders a page toolbar in the same persistent row as the task breadcrumb", async () => {

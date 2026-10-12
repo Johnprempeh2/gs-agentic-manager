@@ -108,7 +108,7 @@ export function getStartupTracer(name = "paperclip.startup"): StartupTracerHandl
       tracerApiLoadFailed = true;
       // eslint-disable-next-line no-console
       console.warn(
-        "[paperclip] @opentelemetry/api is not available; startup tracing uses a no-op tracer.",
+        "[gsam] @opentelemetry/api is not available; startup tracing uses a no-op tracer.",
         err,
       );
     }
@@ -177,7 +177,7 @@ export function getStartupTraceContext(name = "paperclip.startup"): StartupTrace
       traceContextApiLoadFailed = true;
       // eslint-disable-next-line no-console
       console.warn(
-        "[paperclip] @opentelemetry/api is not available; startup tracing uses a no-op trace context.",
+        "[gsam] @opentelemetry/api is not available; startup tracing uses a no-op trace context.",
         err,
       );
     }
@@ -319,7 +319,7 @@ export function shutdownInstrumentation(): Promise<void> {
       await sdkShutdown();
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] OpenTelemetry shutdown failed", err);
+      console.error("[gsam] OpenTelemetry shutdown failed", err);
     }
   })();
   return shutdownPromise;
@@ -353,7 +353,7 @@ export function resolveProtocol(): {
     default:
       // eslint-disable-next-line no-console
       console.warn(
-        `[paperclip] Unknown OTEL_EXPORTER_OTLP_PROTOCOL=${raw}; falling back to grpc. ` +
+        `[gsam] Unknown OTEL_EXPORTER_OTLP_PROTOCOL=${raw}; falling back to grpc. ` +
           `Valid values: grpc, http/protobuf, http/json.`,
       );
       return {
@@ -488,7 +488,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
     );
     // Log the resolved value once so an operator can confirm the built commit.
     // eslint-disable-next-line no-console
-    console.log(`[paperclip] OpenTelemetry service.version=${serviceVersion}`);
+    console.log(`[gsam] OpenTelemetry service.version=${serviceVersion}`);
 
     const sdk = new NodeSDK({
       resource: resourceFromAttributes({
@@ -525,7 +525,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
       // rejects the SDK's handshake should not take down the server.
       // eslint-disable-next-line no-console
       console.error(
-        "[paperclip] OpenTelemetry SDK failed to start; continuing without tracing",
+        "[gsam] OpenTelemetry SDK failed to start; continuing without tracing",
         err,
       );
       return;
@@ -558,7 +558,7 @@ async function bootstrapOtel(endpoint: string): Promise<void> {
     // single diagnostic so the opt-in path is self-documenting.
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] OTEL_EXPORTER_OTLP_ENDPOINT is set and the @opentelemetry/* " +
+      "[gsam] OTEL_EXPORTER_OTLP_ENDPOINT is set and the @opentelemetry/* " +
         "packages passed the version check, but one of them failed to load. " +
         "Continuing without tracing.",
       err,

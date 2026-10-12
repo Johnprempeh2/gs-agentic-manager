@@ -25,6 +25,16 @@ The approved plan for this package lives at [PAP-10206 plan document](/PAP/issue
 
 - `paperclipai/optional/content/content-machine` — vendored local `content-calendar` skill, single content lead, recurring weekly content review. Kept from Phase B as the canonical fixture for local-skill resolution.
 
+## Optional Greatstone teams (managed service)
+
+Designed by Greatstone for client installs. Each has one human overseer (the installing board user), states the role each agent replaces and its rough share, and requires approval before publishing, external email or spending. Recurring routines ship `status: paused` with a schedule in `.paperclip.yaml`, so nothing runs until the overseer switches it on (this makes their trust level `assets`, like product-engineering).
+
+- `paperclipai/optional/research/research-and-reporting`: Research Lead, Data Analyst, Report Writer; `monthly-report-cycle` routine; local `survey-to-report-outline` skill.
+- `paperclipai/optional/operations/executive-assistant`: Executive Assistant; `daily-inbox-sweep` and `friday-weekly-briefing` routines; local `weekly-briefing` skill.
+- `paperclipai/optional/marketing/marketing-content`: Marketing Lead, Content Writer, Social Media Coordinator; `weekly-content-planning` routine; local `content-planning` skill (a team cannot reference another team's local skill, so content-machine's `content-calendar` could not be reused directly).
+
+Keys stay under `paperclipai/`: the builder derives every key from kind/category/slug, so a `greatstone/` namespace would need a builder change.
+
 ## Intentionally deferred
 
 The plan in [PAP-10206](/PAP/issues/PAP-10206#document-plan) lists additional recommended entry classes that are **not** part of the Phase H catalog. They wait on:

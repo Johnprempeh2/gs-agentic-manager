@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import type { IssueReviewPolicy, StalledReviewDecisionAction } from "@greatstone/shared";
@@ -24,13 +24,48 @@ interface StalledReviewActionsProps {
    * approve" is what every issue already does.
    */
   reviewPolicy?: IssueReviewPolicy | null;
+  /** Names who gets the work back in the choice hints; falls back to "the assignee". */
+  assigneeName?: string | null;
   className?: string;
 }
 
+/**
+ * What each choice does, in plain words (GRE-1421). Shown beside each button
+ * so the operator knows the result before clicking.
+ */
+export function stalledReviewChoiceHints(assigneeName?: string | null) {
+  const who = assigneeName?.trim() || "the assignee";
+  return [
+    { action: "approve" as const, label: "Approve", hint: "The task is marked done." },
+    {
+      action: "request_changes" as const,
+      label: "Request changes",
+      hint: `The task goes back to ${who} with your note. Write a note first.`,
+    },
+    {
+      action: "send_back" as const,
+      label: "Send back to work",
+      hint: `The task goes back to ${who} to continue. No note is necessary.`,
+    },
+  ];
+}
+
+const CHOICE_ICON: Record<StalledReviewDecisionAction, typeof CheckCircle2> = {
+  approve: CheckCircle2,
+  request_changes: RotateCcw,
+  send_back: Undo2,
+};
+
+const CHOICE_TEST_ID: Record<StalledReviewDecisionAction, string> = {
+  approve: "stalled-review-approve",
+  request_changes: "stalled-review-request-changes",
+  send_back: "stalled-review-send-back",
+};
+
 const ACTION_PAST_TENSE: Record<StalledReviewDecisionAction, string> = {
-  approve: "Review approved — issue marked done.",
-  request_changes: "Changes requested — issue returned to the assignee.",
-  send_back: "Sent back to work — issue returned to the assignee.",
+  approve: "Review approved. Issue marked done.",
+  request_changes: "Changes requested. Issue returned to the assignee.",
+  send_back: "Sent back to work. Issue returned to the assignee.",
 };
 
 /**
@@ -49,6 +84,7 @@ export function StalledReviewActions({
   footerSlot,
   onResolved,
   reviewPolicy,
+  assigneeName,
   className,
 }: StalledReviewActionsProps) {
   const queryClient = useQueryClient();
@@ -83,6 +119,7 @@ export function StalledReviewActions({
   const runningFor = (action: StalledReviewDecisionAction) =>
     pending && decide.variables === action;
   const policyBadge = issueReviewPolicyBadge(reviewPolicy);
+  const hintIdPrefix = `stalled-review-hint-${useId()}`;
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -104,64 +141,61 @@ export function StalledReviewActions({
       <Textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        placeholder="Add a note — required to request changes, optional otherwise…"
+        placeholder="Write a note (necessary to request changes)…"
+        aria-label="Note to the assignee"
         className="min-h-16 text-sm"
         data-testid="stalled-review-note"
         disabled={pending}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        {footerSlot ?? <span className="hidden sm:block" />}
-        <div className="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end @xl:flex-none">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
-            disabled={pending}
-            onClick={() => decide.mutate("send_back")}
-            data-testid="stalled-review-send-back"
-          >
-            {runningFor("send_back") ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Undo2 className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Send back to work
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full border-amber-400/70 text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:text-amber-100 dark:hover:bg-amber-500/15 sm:w-auto sm:flex-1 @xl:flex-none"
-            disabled={pending || noteEmpty}
-            title={noteEmpty ? "Add a note to request changes" : undefined}
-            onClick={() => decide.mutate("request_changes")}
-            data-testid="stalled-review-request-changes"
-          >
-            {runningFor("request_changes") ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Request changes
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
-            disabled={pending}
-            onClick={() => decide.mutate("approve")}
-            data-testid="stalled-review-approve"
-          >
-            {runningFor("approve") ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Approve
-          </Button>
-        </div>
-      </div>
+      {/* Each choice sits with what it does, so the result is read at the
+          point of choice (GRE-1421). */}
+      <section className="flex flex-col gap-1.5" aria-label="Your choices" data-testid="stalled-review-choices">
+        <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
+        <ul className="flex flex-col gap-2">
+          {stalledReviewChoiceHints(assigneeName).map((choice) => {
+            const Icon = CHOICE_ICON[choice.action];
+            const hintId = `${hintIdPrefix}-${choice.action}`;
+            const needsNote = choice.action === "request_changes" && noteEmpty;
+            return (
+              <li
+                key={choice.action}
+                className="flex flex-col gap-1 sm:grid sm:grid-cols-(--gtc-41) sm:items-center sm:gap-3"
+              >
+                <Button
+                  type="button"
+                  variant={choice.action === "approve" ? "default" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start",
+                    choice.action === "request_changes"
+                      && "border-amber-400/70 text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:text-amber-100 dark:hover:bg-amber-500/15",
+                  )}
+                  disabled={pending || needsNote}
+                  title={needsNote ? "Add a note to request changes" : undefined}
+                  onClick={() => decide.mutate(choice.action)}
+                  aria-describedby={hintId}
+                  data-testid={CHOICE_TEST_ID[choice.action]}
+                >
+                  {runningFor(choice.action) ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Icon className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  {choice.label}
+                </Button>
+                <p
+                  id={hintId}
+                  className="text-sm text-muted-foreground"
+                  data-testid={`stalled-review-hint-${choice.action}`}
+                >
+                  {choice.hint}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      {footerSlot ? <div className="flex flex-wrap items-center">{footerSlot}</div> : null}
     </div>
   );
 }

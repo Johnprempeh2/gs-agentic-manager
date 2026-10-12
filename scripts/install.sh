@@ -58,11 +58,11 @@ EOF
 }
 
 log() {
-  printf '[paperclip] %s\n' "$*"
+  printf '[gsam] %s\n' "$*"
 }
 
 fail() {
-  printf '[paperclip] error: %s\n' "$*" >&2
+  printf '[gsam] error: %s\n' "$*" >&2
   exit 1
 }
 
@@ -211,7 +211,7 @@ has_supported_node() {
 }
 
 print_command() {
-  printf '[paperclip] +'
+  printf '[gsam] +'
   printf ' %q' "$@"
   printf '\n'
 }
@@ -223,7 +223,7 @@ confirm_command() {
   fi
 
   local answer
-  printf '[paperclip] Run this command? [y/N] ' >/dev/tty
+  printf '[gsam] Run this command? [y/N] ' >/dev/tty
   IFS= read -r answer </dev/tty || answer=""
   case "$answer" in
     y|Y|yes|YES|Yes) ;;

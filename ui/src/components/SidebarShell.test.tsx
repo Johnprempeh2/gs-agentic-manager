@@ -202,7 +202,7 @@ describe("SidebarShell", () => {
     expect(panel().style.width).toBe("300px");
     expect(panel().getAttribute("data-sidebar-overlay")).toBe("");
     expect(panel().className).toContain("shadow-lg");
-    expect(panel().className).toContain("z-30");
+    expect(panel().className).toContain("z-chrome");
   });
 
   it("opens and closes instantly with no width transition (PAP-10676)", () => {

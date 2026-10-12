@@ -24,7 +24,15 @@ export type IssueThreadInteractionResolutionDenialCode =
   (typeof ISSUE_THREAD_INTERACTION_RESOLUTION_DENIAL_CODES)[number];
 
 export type IssueThreadInteractionResolverActor =
-  | { type: "user"; userId: string }
+  | {
+      type: "user";
+      userId: string;
+      /**
+       * Other user ids this user answers for, already checked by the caller
+       * (an owner standing in for `local-board`, see `board-identity.ts`).
+       */
+      userIdAliases?: readonly string[];
+    }
   | { type: "agent"; agentId: string | null | undefined; runId: string | null | undefined }
   | { type: "system"; systemId: string };
 
@@ -184,6 +192,7 @@ export function evaluateIssueThreadInteractionResolverAudience(
     if (
       input.interaction.addresseeUserId
       && input.interaction.addresseeUserId !== input.actor.userId
+      && !input.actor.userIdAliases?.includes(input.interaction.addresseeUserId)
     ) {
       return {
         allowed: false,

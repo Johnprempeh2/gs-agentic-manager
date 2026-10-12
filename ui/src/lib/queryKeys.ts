@@ -31,6 +31,10 @@ export const queryKeys = {
     gallery: (companyId: string) => ["apps", companyId, "gallery"] as const,
     attention: (companyId: string) => ["apps", companyId, "attention"] as const,
   },
+  mailboxes: {
+    list: (companyId: string) => ["mailboxes", companyId] as const,
+    oauthApps: (companyId: string) => ["mailboxes", companyId, "oauth-apps"] as const,
+  },
   chatEndpoints: {
     list: (companyId: string) => ["chat-endpoints", companyId] as const,
     detail: (endpointId: string) => ["chat-endpoints", "detail", endpointId] as const,
@@ -369,6 +373,8 @@ export const queryKeys = {
       ["issues", "document", issueId, key] as const,
     documentRevisions: (issueId: string, key: string) =>
       ["issues", "document-revisions", issueId, key] as const,
+    documentEvidence: (issueId: string, key: string) =>
+      ["issues", "document-evidence", issueId, key] as const,
     documentAnnotations: (
       issueId: string,
       key: string,
@@ -378,6 +384,8 @@ export const queryKeys = {
     runs: (issueId: string) => ["issues", "runs", issueId] as const,
     approvals: (issueId: string) => ["issues", "approvals", issueId] as const,
     liveRuns: (issueId: string) => ["issues", "live-runs", issueId] as const,
+    runTranscriptDigests: (issueId: string, runIdsKey: string) =>
+      ["issues", "run-transcript-digests", issueId, runIdsKey] as const,
     activeRun: (issueId: string) => ["issues", "active-run", issueId] as const,
     runnerGoal: (issueId: string, agentId?: string | null) =>
       ["issues", "runner-goal", issueId, agentId ?? "__effective__"] as const,
@@ -444,11 +452,13 @@ export const queryKeys = {
     list: (companyId: string, kind: string) =>
       ["folders", companyId, kind] as const,
   },
+  pipelineAccess: (companyId: string) => ["pipeline-access", companyId] as const,
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
     detail: (pipelineId: string) =>
       ["pipelines", "detail", pipelineId] as const,
     cases: (pipelineId: string) => ["pipelines", "cases", pipelineId] as const,
+    fields: (pipelineId: string) => ["pipelines", "fields", pipelineId] as const,
     caseDetail: (caseId: string) => ["pipelines", "item", caseId] as const,
     caseChildren: (caseId: string) =>
       ["pipelines", "item", caseId, "children"] as const,
@@ -456,8 +466,25 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "events"] as const,
     caseIssueLinks: (caseId: string) =>
       ["pipelines", "item", caseId, "issue-links"] as const,
+    caseProjectLinks: (caseId: string) =>
+      ["pipelines", "item", caseId, "project-links"] as const,
+    caseCrmSync: (caseId: string) =>
+      ["pipelines", "item", caseId, "crm-sync"] as const,
+    /** Open "Sync conflicts" items for a company, or for one case. */
+    crmSyncConflicts: (companyId: string, caseId?: string) =>
+      ["pipelines", "crm-sync-conflicts", companyId, caseId ?? "all"] as const,
+    crmSyncFieldMap: (bindingId: string) =>
+      ["pipelines", "crm-sync-field-map", bindingId] as const,
+    caseContacts: (caseId: string) =>
+      ["pipelines", "item", caseId, "contacts"] as const,
+    projectCases: (projectId: string) =>
+      ["pipelines", "project-cases", projectId] as const,
     caseOutputs: (caseId: string) =>
       ["pipelines", "item", caseId, "outputs"] as const,
+    caseFiles: (caseId: string) =>
+      ["pipelines", "item", caseId, "files"] as const,
+    caseEvidenceCandidates: (caseId: string) =>
+      ["pipelines", "item", caseId, "evidence-candidates"] as const,
     caseDocument: (caseId: string, key: string) =>
       ["pipelines", "item", caseId, "document", key] as const,
     caseDocumentRevisions: (caseId: string, key: string) =>
@@ -515,6 +542,8 @@ export const queryKeys = {
         { includeArchived: opts.includeArchived === true },
       ] as const,
     detail: (id: string) => ["projects", "detail", id] as const,
+    checkoutHead: (projectId: string, workspaceId: string) =>
+      ["projects", "checkout-head", projectId, workspaceId] as const,
   },
   cases: {
     list: (companyId: string) => ["cases", companyId] as const,
@@ -542,10 +571,29 @@ export const queryKeys = {
       ["external-objects", "project-summary", projectId] as const,
   },
   releases: (companyId: string) => ["releases", companyId] as const,
+  clientVersion: (companyId: string) => ["client-version", companyId] as const,
+  agentTeams: {
+    list: (companyId: string) => ["agent-teams", companyId] as const,
+  },
+  workflowTemplates: {
+    list: (companyId: string) => ["workflow-templates", companyId] as const,
+  },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
     checkIns: (id: string) => ["goals", "check-ins", id] as const,
+    readings: (id: string) => ["goals", "readings", id] as const,
+  },
+  strategyBoard: {
+    summary: (companyId: string) => ["strategy-board", companyId] as const,
+    members: (companyId: string) => ["strategy-board", companyId, "members"] as const,
+    settings: (companyId: string) => ["strategy-board", companyId, "settings"] as const,
+    emails: (companyId: string) => ["strategy-board", companyId, "emails"] as const,
+    packs: (companyId: string) => ["strategy-board", companyId, "packs"] as const,
+    pack: (id: string) => ["strategy-board", "pack", id] as const,
+    whyRequests: (goalId: string) => ["strategy-board", "why-requests", goalId] as const,
+    agents: (companyId: string) => ["strategy-board", companyId, "agents"] as const,
+    chat: (companyId: string, agentId: string) => ["strategy-board", companyId, "chat", agentId] as const,
   },
   artifacts: {
     list: (
@@ -564,9 +612,40 @@ export const queryKeys = {
         groupIssueId ?? "",
       ] as const,
   },
+  deliverables: {
+    all: (companyId: string) => ["deliverables", companyId] as const,
+    list: (companyId: string, params: Record<string, string | undefined>) =>
+      ["deliverables", companyId, "list", params] as const,
+    detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
+    comments: (companyId: string, id: string) => ["deliverables", companyId, "comments", id] as const,
+  },
+  website: {
+    overview: (companyId: string) => ["website", companyId, "overview"] as const,
+    report: (companyId: string, propertyId: string) =>
+      ["website", companyId, "report", propertyId] as const,
+  },
   budgets: {
     overview: (companyId: string) =>
       ["budgets", "overview", companyId] as const,
+  },
+  memory: {
+    settings: (companyId: string) => ["memory", companyId, "settings"] as const,
+  },
+  memoryReview: {
+    all: (companyId: string) => ["memory-review", companyId] as const,
+    queue: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-review", companyId, "queue", filters] as const,
+    stewards: (companyId: string) => ["memory-review", companyId, "stewards"] as const,
+  },
+  memoryGraph: {
+    graph: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-graph", companyId, "graph", filters] as const,
+    node: (companyId: string, recordId: string) => ["memory-graph", companyId, "node", recordId] as const,
+    edge: (companyId: string, edgeId: string) => ["memory-graph", companyId, "edge", edgeId] as const,
+    activity: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-graph", companyId, "activity", filters] as const,
+    activityCounts: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-graph", companyId, "activity-counts", filters] as const,
   },
   approvals: {
     list: (companyId: string, status?: string) =>
@@ -604,9 +683,12 @@ export const queryKeys = {
   sidebarPreferences: {
     companyOrder: (userId: string) =>
       ["sidebar-preferences", "company-order", userId] as const,
+    sectionOrder: (userId: string) =>
+      ["sidebar-preferences", "section-order", userId] as const,
     projectOrder: (companyId: string, userId: string) =>
       ["sidebar-preferences", "project-order", companyId, userId] as const,
   },
+  tourDismissals: (userId: string) => ["tour-dismissals", userId] as const,
   resourceMemberships: {
     mine: (companyId: string) =>
       ["resource-memberships", companyId, "me"] as const,
@@ -615,8 +697,14 @@ export const queryKeys = {
     settings: ["instance", "settings"] as const,
     generalSettings: ["instance", "general-settings"] as const,
     experimentalSettings: ["instance", "experimental-settings"] as const,
+    entitlements: ["instance", "entitlements"] as const,
     systemMemory: ["instance", "system-memory"] as const,
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
+    billingAccount: ["instance", "billing-account"] as const,
+    fleetInstances: ["instance", "fleet-instances"] as const,
+  },
+  clientSupport: {
+    tickets: (companyId: string) => ["client-support", companyId, "tickets"] as const,
   },
   health: ["health"] as const,
   cloud: {
@@ -649,7 +737,18 @@ export const queryKeys = {
     ) => ["company-search", companyId, q, scope, limit, offset] as const,
   },
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
+  /** "Since you were last here" (GRE-357). */
+  agentWorkDigest: (companyId: string) => ["agent-work-digest", companyId] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
+  /** One Decisions feed (GRE-263). Under the `attention` prefix so every
+   *  existing attention invalidation also refreshes the feed and its count. */
+  decisionsFeed: {
+    feed: (companyId: string) => ["attention", companyId, "decisions-feed"] as const,
+    count: (companyId: string) => ["attention", companyId, "decisions-feed", "count"] as const,
+    needsMe: (companyId: string) => ["attention", companyId, "needs-me"] as const,
+  },
+  /** Tasks set aside with "Not now" (GRE-262). */
+  tabledIssues: (companyId: string) => ["attention", companyId, "tabled-issues"] as const,
   decisions: {
     list: (companyId: string, status?: string) =>
       ["decisions", companyId, status ?? "__all-statuses__"] as const,

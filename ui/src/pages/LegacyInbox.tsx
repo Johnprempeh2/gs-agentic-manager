@@ -7,6 +7,7 @@ import { approvalsApi } from "../api/approvals";
 import { accessApi } from "../api/access";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
+import { rebrandRunLogText } from "../adapters";
 import { dashboardApi } from "../api/dashboard";
 import { executionWorkspacesApi } from "../api/execution-workspaces";
 import { issuesApi } from "../api/issues";
@@ -220,7 +221,7 @@ function firstNonEmptyLine(value: string | null | undefined): string | null {
 }
 
 function runFailureMessage(run: HeartbeatRun): string {
-  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt) ?? "Run exited with an error.";
+  return firstNonEmptyLine(run.error) ?? firstNonEmptyLine(run.stderrExcerpt && rebrandRunLogText(run.stderrExcerpt)) ?? "Run exited with an error.";
 }
 
 function approvalStatusLabel(status: Approval["status"]): string {
@@ -368,7 +369,7 @@ export function FailedRunInboxRow({
                   {issue.title}
                 </>
               ) : (
-                <>Failed run{linkedAgentName ? ` — ${linkedAgentName}` : ""}</>
+                <>Failed run{linkedAgentName ? `: ${linkedAgentName}` : ""}</>
               )}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -1188,10 +1189,10 @@ export function Inbox() {
 
   const failedRuns = useMemo(
     () =>
-      getLatestFailedRunsByAgent(heartbeatRuns ?? []).filter(
+      getLatestFailedRunsByAgent(heartbeatRuns ?? [], agents).filter(
         (r) => !isInboxEntityDismissed(dismissedAtByKey, `run:${r.id}`, r.createdAt),
       ),
-    [heartbeatRuns, dismissedAtByKey],
+    [heartbeatRuns, agents, dismissedAtByKey],
   );
   const approvalsToRender = useMemo(() => {
     let filtered = getApprovalsForTab(approvals ?? [], tab, allApprovalFilter, currentUserId);
@@ -1233,6 +1234,7 @@ export function Inbox() {
         approvals: tab === "all" && !showApprovalsCategory ? [] : approvalsToRender,
         failedRuns: failedRunsForTab,
         joinRequests: joinRequestsForTab,
+        unreadFirst: tab === "mine",
       }),
     [approvalsToRender, issuesToRender, showApprovalsCategory, showTouchedCategory, tab, failedRunsForTab, joinRequestsForTab],
   );
@@ -1384,7 +1386,10 @@ export function Inbox() {
     });
   }, [selectedCompanyId]);
   const freshGroupedSections = useMemo<InboxGroupedSection[]>(() => [
-    ...buildGroupedInboxSections(filteredWorkItems, groupBy, inboxWorkspaceGrouping, { nestingEnabled }),
+    ...buildGroupedInboxSections(filteredWorkItems, groupBy, inboxWorkspaceGrouping, {
+      nestingEnabled,
+      unreadFirst: tab === "mine",
+    }),
     ...buildGroupedInboxSections(
       getInboxWorkItems({ issues: archivedSearchIssues, approvals: [] }),
       groupBy,
@@ -1404,6 +1409,7 @@ export function Inbox() {
     inboxWorkspaceGrouping,
     issueSearchSupplementResults,
     nestingEnabled,
+    tab,
   ]);
 
   // --- Order pinning (PAP-16015) ---

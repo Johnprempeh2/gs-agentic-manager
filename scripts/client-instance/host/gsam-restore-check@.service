@@ -1,0 +1,13 @@
+# Weekly restore-check of one client instance (GRE-616, GRE-666). %i is the instance code.
+[Unit]
+Description=GS Agentic Manager restore-check %i
+
+[Service]
+Type=oneshot
+User=gsam
+Group=gsam
+Environment=GSAM_HOSTED_ROOT=/srv/gsam
+ExecStart=/usr/local/lib/gsam/instance-ctl.sh restore-check %i
+TimeoutStartSec=1h
+NoNewPrivileges=true
+ProtectSystem=full

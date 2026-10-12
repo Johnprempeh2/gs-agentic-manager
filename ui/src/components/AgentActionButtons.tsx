@@ -13,6 +13,7 @@ import {
   Trash2,
   CheckCircle2,
   Bug,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -35,6 +36,7 @@ import { agentsApi } from "../api/agents";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { agentRouteRef } from "../lib/utils";
+import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { useDialogActions } from "../context/DialogContext";
 import { useToastActions } from "../context/ToastContext";
@@ -218,6 +220,7 @@ export function AgentActionButtons({
   className?: string;
 }) {
   const navigate = useNavigate();
+  const agentChat = useAgentChatEnabled();
   const queryClient = useQueryClient();
   const { openNewIssue } = useDialogActions();
   const { pushToast } = useToastActions();
@@ -399,6 +402,14 @@ export function AgentActionButtons({
           Raw tracing on
         </span>
       ) : null}
+      {agentChat.enabled ? (
+        // Chatting is what an owner does with an agent, so it leads.
+        <Button size={size} onClick={() => navigate(`/chats/${agentRouteRef(agent)}`)}>
+          <MessageCircle className="h-3.5 w-3.5 sm:mr-1" />
+          <span className="hidden sm:inline">Chat</span>
+          <span className="sr-only sm:hidden">Chat with {agent.name}</span>
+        </Button>
+      ) : null}
       <Button
         variant="outline"
         size={size}
@@ -418,21 +429,6 @@ export function AgentActionButtons({
         label={runLabel}
         size={size}
       />}
-      {canRunWithProviderTrace && (
-        <Button
-          variant="outline"
-          size={size}
-          onClick={async () => {
-            if (navigateToRunOnInvoke && !(await confirmNavigationStart(agentActionStartedDirtyRef))) return;
-            providerTraceAction.mutate();
-          }}
-          disabled={assignAndRunDisabled}
-          title="Capture exact provider traffic for this run (expires after 24 hours)"
-        >
-          <Bug className="h-3.5 w-3.5 sm:mr-1" />
-          <span className="hidden sm:inline">Run with provider trace</span>
-        </Button>
-      )}
       {isError ? (
         <ClearErrorButton
           onClick={() => agentAction.mutate("clear_error")}
@@ -478,7 +474,23 @@ export function AgentActionButtons({
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent className="w-44 p-1" align="end">
+        <PopoverContent className="w-52 p-1" align="end">
+          {canRunWithProviderTrace ? (
+            // A debugging tool: in the menu, not beside the owner's actions.
+            <button
+              className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 disabled:opacity-50"
+              disabled={assignAndRunDisabled}
+              title="Capture exact provider traffic for this run (expires after 24 hours)"
+              onClick={async () => {
+                setMoreOpen(false);
+                if (navigateToRunOnInvoke && !(await confirmNavigationStart(agentActionStartedDirtyRef))) return;
+                providerTraceAction.mutate();
+              }}
+            >
+              <Bug className="h-3 w-3" />
+              Run with provider trace
+            </button>
+          ) : null}
           <button
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
             disabled={duplicateAgent.isPending}

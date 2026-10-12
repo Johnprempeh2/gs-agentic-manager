@@ -2,7 +2,17 @@
 # Try a version before it goes live (see doc/GREATSTONE-WAY-OF-WORKING.md).
 #
 #   scripts/greatstone-preview.sh start <tag>   run <tag> at http://localhost:3200 on a copy of the live data
-#   scripts/greatstone-preview.sh status        say what the preview runs and whether any agent run started
+#   scripts/greatstone-preview.sh status        say what the preview runs, which migrations it applied on
+#                                               start, and whether any agent run started
+#   scripts/greatstone-preview.sh switch-tests  run the tests of every Experimental switch that is on
+#                                               (the preview has live's values); fails when one fails
+#   scripts/greatstone-preview.sh shot <path> <name>
+#                                               screenshot http://localhost:3200<path> at laptop and
+#                                               phone size into ~/GSAM/preview/shots/<tag>-<name>-*.png
+#                                               and its console errors and failed requests into <tag>-<name>-console.txt
+#   scripts/greatstone-preview.sh evidence [<tag>]
+#                                               print a Markdown table of the shots of <tag> (default: the
+#                                               running preview's) with console error and failed request counts
 #   scripts/greatstone-preview.sh stop          stop the preview (only the preview)
 #
 # The preview lives in ~/GSAM/preview: code/ is its own clone at <tag>, data/
@@ -34,13 +44,69 @@ PREVIEW_ENV=(
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# Writes the state file for a started preview: <tag> <commit> <pid> <source repo>,
+# and the agent run and issue that started it (empty outside an agent run).
+write_preview_state() {
+  cat >"$PREVIEW_STATE_FILE" <<EOF
+tag=$1
+commit=$2
+pid=$3
+port=$PREVIEW_PORT
+source_repo=$4
+started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+run_id=$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')
+issue_id=$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')
+EOF
+}
+
+# Says when and by whom the running preview was started, e.g. "started 3h ago
+# by run <id> for issue <id>", so a preview left by a run that ended early can
+# be traced (GRE-525). State files written before that have no run or issue.
+preview_origin() {
+  local age
+  age="$(perl -MTime::Local -e '
+    my ($y, $mo, $d, $h, $mi, $s) = ($ARGV[0] // "") =~ /^(\d+)-(\d+)-(\d+)T(\d+):(\d+):(\d+)Z$/ or exit;
+    my $t = time - timegm($s, $mi, $h, $d, $mo - 1, $y);
+    $t = 0 if $t < 0;
+    print $t < 60 ? "${t}s ago" : $t < 3600 ? int($t / 60) . "m ago" : $t < 86400 ? int($t / 3600) . "h ago" : int($t / 86400) . "d ago";
+  ' "$(preview_state started_at)" 2>/dev/null || true)"
+  printf 'started %s by run %s for issue %s' "${age:-at an unknown time}" \
+    "$(preview_state run_id | grep . || echo unknown)" "$(preview_state issue_id | grep . || echo unknown)"
+}
+
+# Says which migrations the preview server applied to its data copy when it
+# started, from its "Applying N pending migrations" log line(s), so the
+# release task's "Migrations:" line can be checked (GRE-827). The server logs
+# "Applying N pending migrations for <db> {"pendingMigrations":[...]}"; the
+# dev runner's `pnpm db:migrate`, which applies them first in the preview,
+# logs "Applying N pending migration(s): a.sql, b.sql" (GRE-902; older tags
+# end with "..." and no names). Reads only the preview log; a missing or
+# unreadable log gives "unknown (no log)".
+preview_migrations() {
+  local names
+  if [ ! -r "$PREVIEW_LOG" ] || ! names="$(perl -ne '
+    s/\e\[[0-9;]*m//g;
+    next unless /Applying (\d+) pending migration(?:s|\(s\))/;
+    my $n = $1;
+    my @found = /"pendingMigrations":\[([^\]]*)\]/ ? ($1 =~ /"([^"]+)"/g)
+      : /pending migration\(s\): (.+?)\s*$/ ? split(/,\s*/, $1) : ();
+    @found = ("$n migrations (names not in the log)") unless @found;
+    for (@found) { print "$_\n" unless $seen{$_}++ }
+  ' "$PREVIEW_LOG" 2>/dev/null)"; then
+    printf 'migrations applied on start: unknown (no log)'
+    return 0
+  fi
+  printf 'migrations applied on start: %s' "$(printf '%s' "${names:-none}" | paste -sd ',' - | sed 's/,/, /g')"
+}
+
 cmd_start() {
   local tag="${1:-}"
   [ -n "$tag" ] || die "usage: greatstone-preview.sh start <tag>"
   if preview_running; then
-    die "a preview of $(preview_state tag) is already running; run 'greatstone-preview.sh stop' first."
+    die "a preview of $(preview_state tag) is already running ($(preview_origin)); run 'greatstone-preview.sh stop' first."
   fi
   port_in_use "$PREVIEW_PORT" && die "port $PREVIEW_PORT is in use by another process."
+  gs_tools_installed || exit 1
   case "$PREVIEW_ROOT/" in "$LIVE_DIR/"* | "$LIVE_DATA_DIR/"*) die "the preview folder must be outside the live folders." ;; esac
   [ -d "$LIVE_DATA_DIR/instances/$INSTANCE_ID" ] || die "no live data at $LIVE_DATA_DIR"
   local source_url
@@ -85,7 +151,7 @@ cmd_start() {
     --exclude "/instances/*/.env" \
     "$LIVE_DATA_DIR/" "$PREVIEW_DATA_DIR/"
   say "Files: copied to $PREVIEW_DATA_DIR (without the database, secrets, locks and backups)"
-  gs_db seed-preview \
+  PGPASSWORD="$(live_database_password)" gs_db seed-preview \
     --source-url "$source_url" \
     --target-db-dir "$PREVIEW_DATA_DIR/instances/$INSTANCE_ID/db" \
     --work-dir "$PREVIEW_ROOT/seed" \
@@ -99,14 +165,7 @@ cmd_start() {
   (cd "$PREVIEW_CODE_DIR" && exec env -i "${PREVIEW_ENV[@]}" pnpm dev:once --data-dir "$PREVIEW_DATA_DIR") >"$PREVIEW_LOG" 2>&1 &
   local pid=$!
   set +m
-  cat >"$PREVIEW_STATE_FILE" <<EOF
-tag=$tag
-commit=$commit
-pid=$pid
-port=$PREVIEW_PORT
-source_repo=$(dirname "$source_git")
-started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-EOF
+  write_preview_state "$tag" "$commit" "$pid" "$(dirname "$source_git")"
   record_release_repo "$(dirname "$source_git")"
 
   for _ in $(seq 1 150); do
@@ -114,6 +173,7 @@ EOF
     kill -0 "$pid" 2>/dev/null || die "the preview server exited; see $PREVIEW_LOG"
     if [ "$(health_commit "$PREVIEW_URL")" = "$commit" ]; then
       say "Preview is up: $PREVIEW_URL runs $tag ($commit). Agents are off."
+      say "$(preview_migrations)"
       return 0
     fi
   done
@@ -132,8 +192,10 @@ cmd_status() {
   say "  tag:        $(preview_state tag)"
   say "  commit:     ${commit:-<no answer from /api/health>} (expected $(preview_state commit))"
   say "  process:    $(preview_state pid) (started $started)"
+  say "  origin:     $(preview_origin)"
   say "  data:       $PREVIEW_DATA_DIR"
   say "  agents off: HEARTBEAT_SCHEDULER_ENABLED=false GSAM_RESTORE_IN_PROGRESS=true"
+  say "  $(preview_migrations)"
   node --input-type=module -e '
     const [base, since] = process.argv.slice(1);
     const get = async (p) => (await fetch(base + p)).json();
@@ -148,6 +210,24 @@ cmd_status() {
   ' "$PREVIEW_URL" "$started" || say "  agent runs: could not ask the preview"
 }
 
+# The preview is a copy of the live data, so its Experimental switches are the
+# ones on in live. Runs the candidate's test files for each switch that is on
+# (tests/release-switch-tests/switch-tests.json) and fails, naming the switch
+# and the test, when one fails (GRE-101). The report is saved next to the log.
+cmd_switch_tests() {
+  preview_running || die "no preview is running; start the candidate first."
+  local report="$PREVIEW_ROOT/switch-tests-$(preview_state tag).json" code=0
+  node "$GS_TOOLS_ROOT/tests/release-switch-tests/run.mjs" \
+    --repo "$PREVIEW_CODE_DIR" --settings-url "$PREVIEW_URL" --json "$report" || code=$?
+  if [ ! -f "$report" ]; then
+    say "No report was written to $report; the switch tests did not run."
+    [ "$code" -ne 0 ] || code=1
+    return "$code"
+  fi
+  say "Report: $report"
+  return "$code"
+}
+
 cmd_stop() {
   if ! preview_running; then
     say "No preview is running."
@@ -158,8 +238,12 @@ cmd_stop() {
   pid="$(preview_state pid)"
   say "Stopping the preview (process group $pid)..."
   kill -TERM -- "-$pid" 2>/dev/null || true
+  # Wait for the whole group, not just its leader: the dev runner in it starts
+  # the server in a process group of its own and needs time to stop it (up to
+  # ~20s, then it kills it). Killing the runner early would leave that server
+  # unsupervised.
   for _ in $(seq 1 30); do
-    kill -0 "$pid" 2>/dev/null || break
+    kill -0 -- "-$pid" 2>/dev/null || break
     sleep 1
   done
   kill -KILL -- "-$pid" 2>/dev/null || true
@@ -177,9 +261,98 @@ cmd_stop() {
   say "Preview stopped."
 }
 
+# Playwright's default browser folder in the account home (not $HOME).
+shared_browsers_path() {
+  case "$(uname -s)" in
+    Darwin) printf '%s/Library/Caches/ms-playwright' "${GS_USER_HOME:-$HOME}" ;;
+    *) printf '%s/.cache/ms-playwright' "${GS_USER_HOME:-$HOME}" ;;
+  esac
+}
+
+# Screenshots one page of the running preview at laptop and phone size, named
+# after the preview's tag, for the preview check (GRE-606). Only ever opens
+# http://localhost:3200: any other port, from the caller or the state file, is
+# refused, so it can never shoot the live app on 3100.
+cmd_shot() {
+  local page="${1:-}" name="${2:-}"
+  [ -n "$page" ] && [ -n "$name" ] || die "usage: greatstone-preview.sh shot <page path> <name>"
+  case "$page" in /*) ;; *) die "the page path must start with /, e.g. /GRE/issues" ;; esac
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "the name may use only letters, digits, '.', '_' and '-'."
+  [ "$PREVIEW_PORT" = 3200 ] || die "shot only opens the preview on port 3200, not port $PREVIEW_PORT."
+  preview_running || die "no preview is running; start one with 'greatstone-preview.sh start <tag>'."
+  local port tag
+  port="$(preview_state port)"
+  [ "$port" = 3200 ] || die "the running preview is on port ${port:-<unknown>}; shot only opens port 3200."
+  tag="$(preview_state tag)"
+  [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "the preview state has no usable tag ('$tag')."
+  local dir="$PREVIEW_ROOT/shots"
+  local laptop="$dir/$tag-$name-laptop.png" phone="$dir/$tag-$name-phone.png"
+  local console_log="$dir/$tag-$name-console.txt"
+  mkdir -p "$dir"
+  # Agent runs have a temp HOME, so Playwright's default browser folder is new
+  # and empty in each run. Use the account's own folder instead, where a
+  # one-time install puts the browser (GRE-732).
+  export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-$(shared_browsers_path)}"
+  (cd "$GS_TOOLS_ROOT" && node scripts/preview-shot.mjs "http://localhost:3200$page" "$laptop" "$phone" "$console_log") \
+    || die "the screenshot of http://localhost:3200$page failed."
+  say "$laptop"
+  say "$phone"
+  say "$console_log"
+}
+
+# Prints the preview check's evidence for one tag as a Markdown table: one row
+# per shot name with its laptop and phone files, the console errors (console
+# and uncaught page errors) and failed requests counted from its console file,
+# and "check" when either is above 0 or a file is missing (GRE-700). Shots of
+# other tags are left out. Only reads ~/GSAM/preview/shots: writes nothing and
+# opens no port. The tag is the running preview's unless one is given.
+cmd_evidence() {
+  local tag="${1:-}"
+  if [ -z "$tag" ]; then
+    preview_running || die "no preview is running; give the tag: greatstone-preview.sh evidence <tag>"
+    tag="$(preview_state tag)"
+  fi
+  [[ "$tag" =~ ^[A-Za-z0-9._-]+$ ]] || die "the tag may use only letters, digits, '.', '_' and '-' ('$tag')."
+  local dir="$PREVIEW_ROOT/shots" names
+  names="$(
+    shopt -s nullglob
+    for f in "$dir/$tag-"*-laptop.png "$dir/$tag-"*-phone.png "$dir/$tag-"*-console.txt; do
+      f="${f#"$dir/$tag-"}"
+      f="${f%-laptop.png}"; f="${f%-phone.png}"; f="${f%-console.txt}"
+      printf '%s\n' "$f"
+    done | sort -u
+  )"
+  if [ -z "$names" ]; then
+    say "No shots for $tag in $dir."
+    return 0
+  fi
+  say "Preview evidence for $tag ($dir)"
+  say ""
+  say "| Shot | Laptop | Phone | Console errors | Failed requests | Result |"
+  say "|---|---|---|---|---|---|"
+  local name laptop phone console_log errors failed result
+  while IFS= read -r name; do
+    laptop="$tag-$name-laptop.png" phone="$tag-$name-phone.png" console_log="$dir/$tag-$name-console.txt"
+    result=ok
+    [ -f "$dir/$laptop" ] || { laptop="missing"; result=check; }
+    [ -f "$dir/$phone" ] || { phone="missing"; result=check; }
+    if [ -f "$console_log" ]; then
+      errors="$(grep -cE '^\[[^]]*\] (console|pageerror): ' "$console_log" || true)"
+      failed="$(grep -cE '^\[[^]]*\] http [0-9]+: ' "$console_log" || true)"
+      [ "$errors" -eq 0 ] && [ "$failed" -eq 0 ] || result=check
+    else
+      errors="no console file" failed="no console file" result=check
+    fi
+    say "| $name | $laptop | $phone | $errors | $failed | $result |"
+  done <<<"$names"
+}
+
 case "${1:-}" in
   start) shift; cmd_start "$@" ;;
   status) cmd_status ;;
+  switch-tests) cmd_switch_tests ;;
+  shot) shift; cmd_shot "$@" ;;
+  evidence) shift; cmd_evidence "$@" ;;
   stop) cmd_stop ;;
-  *) die "usage: greatstone-preview.sh start <tag> | status | stop" ;;
+  *) die "usage: greatstone-preview.sh start <tag> | status | switch-tests | shot <page path> <name> | evidence [<tag>] | stop" ;;
 esac

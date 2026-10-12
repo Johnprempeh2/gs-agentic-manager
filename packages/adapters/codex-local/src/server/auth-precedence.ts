@@ -1,7 +1,7 @@
 export const CODEX_SANDBOX_AUTH_PRECEDENCE_WARNING =
   "snapshot login present but configured or host credentials take precedence";
 export const CODEX_SANDBOX_AUTH_PRECEDENCE_WARNING_LOG_LINE =
-  `[paperclip] Warning: ${CODEX_SANDBOX_AUTH_PRECEDENCE_WARNING}.\n`;
+  `[gsam] Warning: ${CODEX_SANDBOX_AUTH_PRECEDENCE_WARNING}.\n`;
 export const CODEX_SANDBOX_AUTH_EXISTS_COMMAND =
   'test -f "$HOME/.codex/auth.json"';
 

@@ -68,7 +68,8 @@ describe("TrustPresetSection", () => {
     expect(view.text()).toContain("Containment active");
     expect(view.text()).toContain("Boundary type");
     expect(view.text()).toContain("GS Agentic Manager App");
-    expect(view.text()).toContain("Get GS Agentic Manager EE.");
+    // No upstream Enterprise Edition upsell.
+    expect(view.text()).not.toContain("Get GS Agentic Manager EE.");
     expect(view.text()).not.toContain("Managed by EE/API");
   });
 

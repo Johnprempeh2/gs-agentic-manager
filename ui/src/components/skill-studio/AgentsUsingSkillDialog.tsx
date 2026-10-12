@@ -341,7 +341,7 @@ function AgentRow({
       <div className="flex shrink-0 flex-col items-end gap-0.5">
         {!hasVersions ? (
           <span className="text-sm text-muted-foreground" aria-label={`${agent.name} version`}>
-            —
+            None
           </span>
         ) : canManage ? (
           <select

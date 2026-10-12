@@ -73,7 +73,7 @@ function composite(
  * text over an arbitrary background" logic. Byte-identical values were
  * previously duplicated in lib/worktree-branding.ts (DECISION-SHEET.md A2);
  * this is the single source. NOT the same thing as ThemeContext.tsx's
- * <meta theme-color> pair (#18181b/#ffffff), which stays separate.
+ * <meta theme-color> pair (#121212/#f7f8f4, matching index.html), which stays separate.
  */
 export const READABLE_TEXT_LIGHT = "#f8fafc";
 export const READABLE_TEXT_DARK = "#111827";

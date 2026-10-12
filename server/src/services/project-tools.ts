@@ -1,14 +1,22 @@
-import { createProjectSchema, createIssueSchema } from "@greatstone/shared";
+import { createProjectSchema, createIssueSchema, mcpToolHints, type McpToolHints } from "@greatstone/shared";
 import { z } from "zod";
 import { CAPABILITY_SEMANTIC_TOOL_CATALOG } from "../vendor/paperclip-runner/index.js";
 import { badRequest } from "../errors.js";
 
 export const PROJECT_TOOL_NAMES = ["create_project", "list_project_repositories", "list_projects"];
+// Creates take a required idempotency key, so a retry returns the same record.
+const PROJECT_TOOL_HINTS: Record<string, McpToolHints> = {
+  list_projects: mcpToolHints("read"),
+  list_project_repositories: mcpToolHints("read"),
+  create_project: mcpToolHints("write", { idempotent: true }),
+  create_task: mcpToolHints("write", { idempotent: true }),
+};
 export function projectToolDefinitions(workMode: string, includeTask = false) {
   return CAPABILITY_SEMANTIC_TOOL_CATALOG.filter(tool =>
     (PROJECT_TOOL_NAMES.includes(tool.operationId) || includeTask && tool.operationId === "create_task")
     && tool.allowedModes.includes(workMode as "standard"),
   ).map(tool => ({ name: tool.operationId, description: tool.description,
+    annotations: PROJECT_TOOL_HINTS[tool.operationId],
     inputSchema: tool.operationId === "create_project"
       ? z.toJSONSchema(createProjectSchema.extend({ idempotencyKey: z.string().min(1).max(255) }))
       : tool.inputSchema,

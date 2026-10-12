@@ -2,6 +2,7 @@ import { and, asc, eq, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { heartbeatRunEvents, heartbeatRuns } from "@greatstone/db";
 import { nativeSha256 } from "./native-runtime/canonical.js";
+import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 
 export interface AppendHeartbeatRunEventInput {
   companyId: string;
@@ -69,11 +70,15 @@ export async function appendHeartbeatRunEvent(
   input: AppendHeartbeatRunEventInput,
 ): Promise<AppendHeartbeatRunEventResult> {
   return db.transaction(async (tx) => {
+    // NO KEY UPDATE serialises appenders and sequence allocation on this run
+    // exactly as FOR UPDATE did; this transaction only updates next_event_seq.
+    // It no longer waits for the many writers that merely reference the run,
+    // which deadlocked callers that had already changed the task.
     const run = await tx
       .select()
       .from(heartbeatRuns)
       .where(eq(heartbeatRuns.id, input.runId))
-      .for("update")
+      .for(REFERENCED_ROW_LOCK)
       .limit(1)
       .then((rows) => rows[0] ?? null);
     if (!run || run.companyId !== input.companyId || run.agentId !== input.agentId) {

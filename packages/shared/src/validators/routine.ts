@@ -84,6 +84,8 @@ export type CreateRoutine = z.infer<typeof createRoutineSchema>;
 
 export const updateRoutineSchema = objectWithoutDefaults(createRoutineSchema).partial().extend({
   baseRevisionId: z.string().guid().optional().nullable(),
+  // Owner or admin only (checked by the server); agents cannot change it.
+  responsibleUserId: z.string().trim().min(1).optional(),
 });
 export type UpdateRoutine = z.infer<typeof updateRoutineSchema>;
 

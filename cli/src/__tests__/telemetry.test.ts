@@ -100,6 +100,8 @@ describe("cli telemetry", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-cli-telemetry-"));
     process.env.GSAM_HOME = path.join(root, "home");
     process.env.GSAM_INSTANCE_ID = "telemetry-test";
+    // Telemetry stays off unless an endpoint is configured (no default phone-home).
+    process.env.GSAM_TELEMETRY_ENDPOINT = "https://telemetry.example.test/ingest";
 
     const { initTelemetry, flushTelemetry } = await import("../telemetry.js");
     const client = initTelemetry({ enabled: true });

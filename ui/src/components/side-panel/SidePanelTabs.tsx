@@ -70,7 +70,7 @@ function SortableSidePanelTab({
                 : "min-w-(--side-panel-streamlined-tab-min-width) max-w-(--side-panel-streamlined-tab-max-width) basis-0",
             )
           : "relative",
-        sortable.isDragging && "z-20 opacity-80",
+        sortable.isDragging && "z-sticky opacity-80",
       )}
     >
       {showLeadingSeparator ? (

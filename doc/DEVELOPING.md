@@ -78,6 +78,28 @@ pnpm dev:list --data-dir ./tmp/paperclip-dev
 pnpm dev:stop --data-dir ./tmp/paperclip-dev
 ```
 
+A server started from an agent's shell (the dev runner, `gsam run` or
+`pnpm dev:server` with `GSAM_RUN_ID` set) first removes that run's variables:
+its API key, agent, company and task ids, wake context, workspace and scratch
+folders, GitHub access and the parent server's URL, each with its legacy alias
+(the list is in `packages/shared/src/agent-run-env.ts`). It keeps `GSAM_RUN_ID`
+and records the parent's URL as `GSAM_PARENT_RUN_API_URL`, so the leftover
+cleanup (see "Leftover Run Processes") still stops it. A server started without
+`GSAM_RUN_ID` (live, the preview, client instances) is unchanged.
+
+An inherited value and a deliberate one look the same, so to give the sandbox
+one of the removed names on purpose, set it with a `GSAM_SANDBOX_` prefix:
+
+```sh
+GSAM_SANDBOX_RUNNER_NETWORK_ACCESS=disabled pnpm dev:once --data-dir ./tmp/sandbox
+```
+
+The server then gets `GSAM_RUNNER_NETWORK_ACCESS=disabled`, and no
+`GSAM_SANDBOX_*` name reaches anything the sandbox starts. Credentials and
+tokens (`SANDBOX_OVERRIDE_REFUSED_KEYS`) and the run marker are refused; a name
+the scrub does not remove is ignored (set it directly). The start line lists
+what was applied, refused and ignored.
+
 Issue execution may also use project execution workspace policies and workspace runtime services for per-project worktrees, preview servers, and managed dev commands. Configure those through the project workspace/runtime surfaces rather than starting long-running unmanaged processes when a task needs a reusable service.
 
 ### Mobile-friendly preview (`pnpm dev:mobile`)
@@ -87,7 +109,7 @@ The vite dev server serves an unbundled module graph. This is fast to reload on 
 - `pnpm dev:mobile` — build the UI and start the preview server on `:3101`. Rebuild manually to pick up UI source changes.
 - `pnpm dev:both` — run `pnpm dev` and `pnpm dev:mobile` together with prefixed output and shared signal handling.
 
-The preview server binds `0.0.0.0` and accepts any Host, so a tailnet or LAN address (e.g. `http://<host>.ts.net:3101/`) works out of the box. The `/api` proxy sets `x-forwarded-host` and `x-forwarded-proto`, which the server's board mutation guard uses to trust the browser's Origin — mutations from `:3101` succeed against the API on `:3100` without further configuration. An HTTPS tunnel in front of the preview server (ngrok, tailscale funnel) is also supported: the tunnel's `x-forwarded-proto` header is preserved when set.
+The preview server listens on `127.0.0.1` only and accepts only `localhost` and IP addresses as Host (see "Dev servers listen on 127.0.0.1" below). To open it from a phone or another device, opt in for that run with `GSAM_DEV_HOST=0.0.0.0 pnpm dev:mobile` (or `GSAM_DEV_HOST=0.0.0.0 pnpm dev:both`): it then listens on every interface and accepts any Host, so a tailnet or LAN address (e.g. `http://<host>.ts.net:3101/`) works. The `/api` proxy sets `x-forwarded-host` and `x-forwarded-proto`, which the server's board mutation guard uses to trust the browser's Origin, so mutations from `:3101` succeed against the API on `:3100` without further configuration. An HTTPS tunnel in front of the preview server (ngrok, tailscale funnel) is also supported with the same opt-in, so the preview accepts the tunnel's Host: the tunnel's `x-forwarded-proto` header is preserved when set.
 
 ## Storybook
 
@@ -99,6 +121,37 @@ pnpm build-storybook
 ```
 
 These run the `@greatstone/ui` Storybook on port `6006` and build the static output to `ui/storybook-static/`.
+
+### Dev servers listen on 127.0.0.1
+
+Storybook (`pnpm storybook`, or `storybook dev` run directly), the Vite dev and
+preview servers (`pnpm dev:ui`, `pnpm dev:mobile`) and
+`scripts/serve-storybook-static.mjs` listen on `127.0.0.1` only. That is all a
+screenshot or a Playwright check needs. On 5 Oct 2026 two Storybook servers
+started by agent runs listened on every interface, so every device on the
+tailnet could open them.
+
+To open one from another device, for example your phone over Tailscale, opt in
+for that command only:
+
+```sh
+GSAM_DEV_HOST=0.0.0.0 pnpm storybook
+GSAM_DEV_HOST=0.0.0.0 pnpm dev:mobile
+```
+
+- An explicit `--host` (Storybook or Vite) still wins over `GSAM_DEV_HOST`.
+- Storybook's start-up box still prints an "On your network" address. It does
+  not answer unless you opted in.
+- Storybook and `pnpm dev:ui` check the Host header, so with `GSAM_DEV_HOST`
+  open them by the machine's IP address. `pnpm dev:mobile` then accepts any
+  name, such as `<host>.ts.net`.
+- Agent runs do not opt in. The main server is not affected: it has its own
+  bind setting (see "Tailscale/private-auth dev mode" below).
+
+The setting lives in `ui/src/lib/dev-server-host.mjs`. Storybook has no
+`main.ts` option for its host, so `ui/storybook/.storybook/main.ts` sets it
+through Storybook's `experimental_devServer` hook. After a Storybook upgrade,
+check that `ss -ltnp` still shows `127.0.0.1:<port>` for `pnpm storybook`.
 
 Use **Chat & Comments → Issue Thread Interactions → Composer Questions Auto Advance**
 to try the paged composer form. A single selection shows a brief checked-state animation before advancing to the
@@ -303,6 +356,25 @@ jq -e --arg run "$RUN_ID" \
 An alive child appears in `adoptedRunIds`; a child that completed during the
 restart window appears in `finalizedWhileDownRunIds`. Either is continuous. A
 `lostRunIds` entry remains a failed deploy and must not be waived.
+
+A `claude_local` CLI child writes its stdout/stderr to append-only files in
+`$GSAM_HOME/instances/<id>/run-output/` instead of pipes, so the files outlive
+the old server. Its adoption entry in the report has `outputCaptured: true`.
+When the adopted child writes its terminal `result` and exits, the reaper
+finishes the run from that result through the normal finalizer (status, cost,
+session, issue comment); no process-loss retry is queued. If the child is still
+alive after its result for longer than `terminalResultCleanupGraceMs`, the
+reaper stops it first. Files are removed when the run finishes; a startup sweep
+removes files older than 7 days.
+
+Without a capture file (other adapters, or `GSAM_CHILD_OUTPUT_FILES=0`), or when
+the file has no terminal result, the old behaviour stays: the reaper marks the
+run `failed` / `process_lost` with "after hot-restart adoption; its output
+after the restart was not captured" and queues the one bounded retry, and the
+Releases page shows a caveat for those runs.
+
+Rollback: set `GSAM_CHILD_OUTPUT_FILES=0` in the server environment and restart.
+New children then use pipes again; nothing else changes.
 
 For a recovery from a version that can stop embedded PostgreSQL before writing
 its shutdown snapshot, use `--drain-required` once to cross the broken boundary.
@@ -682,6 +754,41 @@ If the `codex` CLI is not installed or not on `PATH`, `codex_local` agent runs f
 
 Local adapters require their corresponding CLI/session setup on the machine running GS Agentic Manager. External adapters are installed through the adapter/plugin flow and should not require hardcoded imports in `server/` or `ui/`.
 
+## Leftover Run Processes
+
+A process an agent starts in the background (a dev server, a Storybook, a
+sandbox with its database) can outlive the run: when the agent exits it is
+reparented to init and nothing stops it. Every process an agent starts inherits
+the run's `GSAM_RUN_ID` (and its legacy alias), so on Linux the server stops
+them (`server/src/services/run-process-cleanup.ts`):
+
+- **At the end of a local run**, every process that still carries that run's
+  marker gets SIGTERM, and SIGKILL 5 seconds later if it is still there. The
+  run log gets one `lifecycle` event listing what was stopped. Runs that end
+  during a hot restart are left to the sweep, so the restart stays quick.
+- **A sweep at server start and then every five minutes** stops processes
+  whose marker names a run of this instance that ended at least 10 minutes ago
+  (and whose `GSAM_PARENT_RUN_API_URL`, set by a sandbox started from the run,
+  else `GSAM_API_URL`, points at this server's port), but only while that
+  run's agent has no queued, running or scheduled-retry run: a warm ACP session
+  keeps the id of the run that started it, so what it starts during a later run
+  carries the earlier run's id. It also stops orphans with no
+  run marker and no terminal whose working directory is a deleted
+  `.gsam/worktrees/` folder and that have run for at least 10 minutes.
+
+It never stops the server, the processes that started it or any process it
+still parents (running agents, warm ACP sessions, plugin workers); anything
+whose command, executable or working directory lies in the live install, its
+data (`GSAM_HOME`), `~/GSAM` (live, data and the preview) or
+`~/gsam-client-instances`; or a workspace runtime service in the registry. Only
+the server user's processes are considered, and each PID is checked against its
+start time before each signal. Every stopped process is logged with its PID,
+a short redacted command and the run id.
+
+Where `/proc` or a process environment cannot be read (macOS, other users'
+processes) it does nothing and says so once in the log. Turn it off with
+`GSAM_RUN_PROCESS_CLEANUP=false` in the server environment.
+
 ## Project Repository Checkouts
 
 Tasks use every distinct repository attached to their project, including repository-only sources with no local folder. GS Agentic Manager creates a managed checkout when no local folder is configured. The selected repository remains at the task workspace root. Other project repositories have editable, independent Git checkouts under `.paperclip-repositories/<name>-<key>`. Workspace hints expose each checkout path to the agent.
@@ -704,7 +811,9 @@ When effective run config changes, GS Agentic Manager may intentionally skip a s
 
 GS Agentic Manager applies one process-wide scheduler to expensive host-side workspace Git enumeration, including changed-file browsing, runtime/finalization cleanliness guards, and adapter sandbox-sync snapshots. The scheduler defaults to two active scans and a bounded queue of 32. Identical scans of the same canonical worktree share one subprocess, while successful changed-file listings are cached for 10 seconds. Correctness-sensitive runtime guards bypass the result cache.
 
-Workspace snapshots list ignored paths with `git ls-files --others --ignored --exclude-standard --directory -z` so ignored directory contents do not require a full status walk. Snapshot failures retain their typed cause instead of becoming a non-Git-folder result. During pre-provider setup, scan timeouts and queue saturation use the existing two automatic failure retries with a 30-second delay. Cancellation, output limits, and other Git errors stop with specific recovery guidance. See `doc/execution-semantics.md` for the ownership and retry-budget contract.
+Workspace snapshots list ignored paths with `git ls-files --others --ignored --exclude-standard --directory -z` so ignored directory contents do not require a full status walk. The untracked-file snapshot has a 32 MiB output bound so generated trees with thousands of long filenames can be staged. It still records explicit file paths; files created after the scan do not enter that overlay. Other scan bounds stay unchanged. Snapshot failures retain their typed cause instead of becoming a non-Git-folder result. During pre-provider setup, scan timeouts and queue saturation use the existing two automatic failure retries with a 30-second delay. Cancellation, output limits, and other Git errors stop with specific recovery guidance. See `doc/execution-semantics.md` for the ownership and retry-budget contract.
+
+Workspace preparation resolves an existing root symlink before reading the snapshot and uses that resolved directory for the rest of the operation. Overlay staging checks the captured root identity and each selected path's ancestors before and after copying. A replaced root or a symlink in an ancestor directory stops staging before upload. A missing source file can be skipped; other source inspection errors stop staging. Selected symlink entries remain symlinks.
 
 The cache intentionally trades up to a few seconds of changed-file freshness for stable server latency. The file browser retains an explicit refresh action, does not start its query while the panel or browser tab is hidden, and presents overloads as retryable failures rather than an empty workspace. A full queue returns `503` with code `workspace_git_scan_saturated`; a scan exceeding its wall-clock limit returns `504` with code `workspace_git_scan_timeout`. Both responses include `Retry-After: 1`.
 
@@ -794,7 +903,7 @@ The seed manifest never grants source-path authority. Its source path and instan
 **Unverified-seed guard.** `pnpm dev` (the dev-runner) refuses to boot a worktree whose manifest is pending, running, failed, malformed, or missing required verification evidence and points you at the fix:
 
 ```
-[paperclip] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`.
+[gsam] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`.
 ```
 
 This guard (`isWorktreeSeedPending` in `server/src/dev-runner-worktree.ts`) prevents `pnpm dev` from starting the app against an empty or partially restored database — run `worktree ensure-seeded` once and re-run `pnpm dev`.
@@ -1355,6 +1464,14 @@ Environment overrides:
   with no uncommitted files whose commits are merged or pushed; otherwise it
   keeps it and posts one comment on the issue naming what would be lost. A
   negative or non-numeric value falls back to the default.
+- `GSAM_UNRECORDED_WORKTREE_IDLE_DAYS=<days>` turns on an hourly sweep of git
+  worktrees under a project checkout's `.gsam/worktrees/` that no execution
+  workspace records (an agent added them by hand). A worktree is removed with
+  `git worktree remove` (never `--force`, so the branch ref stays) only when it
+  has been idle that many days, no process is working inside it, every commit
+  on its HEAD is on a remote branch, and it has no uncommitted or untracked
+  files. Off when unset or not a positive number. Leave it off on sandboxes and
+  previews: an instance cannot see worktrees another instance records.
 
 Without `GSAM_DB_BACKUP_ALERT_FILE`, health checks look for
 `db-backup-to-s3.failure` in the backup directory, beside the backup directory,

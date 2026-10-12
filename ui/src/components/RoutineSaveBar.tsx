@@ -70,7 +70,7 @@ export function RoutineSaveBar({
     <>
       <div
         className={cn(
-          "sticky bottom-0 z-10 -mx-8 mt-6 flex h-14 items-center justify-between border-t px-8 backdrop-blur",
+          "sticky bottom-0 z-raised -mx-8 mt-6 flex h-14 items-center justify-between border-t px-8 backdrop-blur",
           "motion-safe:transition-colors motion-safe:duration-200",
           "motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2",
           saveConflict
@@ -197,7 +197,7 @@ export function RoutineSaveBar({
 export function RoutineReadOnlyStrip() {
   return (
     <div className="-mx-8 mt-6 border-t border-border bg-muted/20 px-8 py-3 text-xs text-muted-foreground">
-      Read-only — you don't own this routine.
+      Read-only: you don't own this routine.
     </div>
   );
 }

@@ -199,6 +199,12 @@
       ]
     },
     {
+      "slug": "higgsfield",
+      "provider": "Higgsfield",
+      "catalogVisible": true,
+      "localAsset": "/brands/apps/higgsfield.png"
+    },
+    {
       "slug": "hugging-face",
       "provider": "Hugging Face",
       "catalogVisible": true,

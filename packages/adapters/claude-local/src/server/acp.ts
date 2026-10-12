@@ -21,6 +21,7 @@ import {
   runAdapterExecutionTargetProcess,
 } from "@greatstone/adapter-utils/execution-target";
 import type { AdapterExecutionTarget } from "@greatstone/adapter-utils/execution-target";
+import { redactDiagnosticText } from "@greatstone/adapter-utils/command-redaction";
 import {
   DEFAULT_ACP_ENGINE_MODE,
   DEFAULT_ACP_ENGINE_NON_INTERACTIVE_PERMISSIONS,
@@ -222,8 +223,8 @@ async function prepareClaudeRemoteManagedHome(
     createWorkspaceRestoreTeardown({
       stagedRuntime,
       onLog,
-      startMessage: "[paperclip] Restoring workspace changes from the sandbox.\n",
-      failurePrefix: "[paperclip] Claude ACP teardown workspace restore failed",
+      startMessage: "[gsam] Restoring workspace changes from the sandbox.\n",
+      failurePrefix: "[gsam] Claude ACP teardown workspace restore failed",
     });
   const envConfig = parseObject(input.config.env);
   const explicitClaudeConfigDir =
@@ -258,13 +259,13 @@ async function prepareClaudeRemoteManagedHome(
       env.CLAUDE_CONFIG_DIR = remappedConfigDir;
       await onLog(
         "stdout",
-        `[paperclip] Remapped operator CLAUDE_CONFIG_DIR from host path ${explicitClaudeConfigDir} onto the in-sandbox workspace path ${remappedConfigDir} for the remote ACP run.\n`,
+        `[gsam] Remapped operator CLAUDE_CONFIG_DIR from host path ${explicitClaudeConfigDir} onto the in-sandbox workspace path ${remappedConfigDir} for the remote ACP run.\n`,
       );
       return { stagedRuntime, teardown: registerWorkspaceSyncBack(stagedRuntime) };
     }
     await onLog(
       "stderr",
-      `[paperclip] operator-provided CLAUDE_CONFIG_DIR=${explicitClaudeConfigDir} is outside the staged workspace and cannot reach the remote sandbox; ignoring the host-only path and seeding the managed Claude config instead.\n`,
+      `[gsam] operator-provided CLAUDE_CONFIG_DIR=${explicitClaudeConfigDir} is outside the staged workspace and cannot reach the remote sandbox; ignoring the host-only path and seeding the managed Claude config instead.\n`,
     );
   }
 
@@ -297,7 +298,7 @@ async function prepareClaudeRemoteManagedHome(
     stagedRuntime.assetDirs["config-seed"] ?? path.posix.join(remoteClaudeRuntimeRoot, "config-seed");
   const remoteClaudeConfigDir = path.posix.join(remoteClaudeRuntimeRoot, "config");
 
-  await onLog("stdout", `[paperclip] Materializing Claude auth/config into ${remoteClaudeConfigDir}.\n`);
+  await onLog("stdout", `[gsam] Materializing Claude auth/config into ${remoteClaudeConfigDir}.\n`);
   await materializeRemoteClaudeConfig({
     runId,
     target: executionTarget,
@@ -316,6 +317,19 @@ async function prepareClaudeRemoteManagedHome(
   return { stagedRuntime, teardown: registerWorkspaceSyncBack(stagedRuntime) };
 }
 
+const CLAUDE_PROVIDER_REASON_MAX_CHARS = 300;
+
+/** The provider's failure text with secrets removed, one line, bounded. */
+export function claudeProviderReason(failure: AcpxTerminalSessionFailure): string | null {
+  const text = redactDiagnosticText([failure.title, failure.details].filter(Boolean).join(" - "))
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  return text.length > CLAUDE_PROVIDER_REASON_MAX_CHARS
+    ? `${text.slice(0, CLAUDE_PROVIDER_REASON_MAX_CHARS - 3)}...`
+    : text;
+}
+
 export function classifyClaudeTerminalSessionFailure(
   failure: AcpxTerminalSessionFailure,
   now: Date,
@@ -323,7 +337,13 @@ export function classifyClaudeTerminalSessionFailure(
   // `access` is claude-agent-acp's typed category for a rejected or expired
   // login. Retrying cannot repair it, so report the same code as the Claude CLI
   // lane; recovery hands it to the board instead of burning retries.
-  if (failure.category === "access") return { errorCode: CLAUDE_AUTH_REQUIRED_ERROR_CODE };
+  //
+  // The category alone does not prove the token is dead, so keep the
+  // provider's own words (redacted, bounded) for the server and the operator.
+  if (failure.category === "access") {
+    const providerReason = claudeProviderReason(failure);
+    return { errorCode: CLAUDE_AUTH_REQUIRED_ERROR_CODE, ...(providerReason ? { providerReason } : {}) };
+  }
   // `limit` also includes context, turn, rate and configured budget limits.
   // Only the provider's quota wording qualifies for a quota wait.
   if (failure.category !== "limit") return null;

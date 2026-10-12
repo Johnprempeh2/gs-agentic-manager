@@ -1,8 +1,52 @@
 import { describe, expect, it } from "vitest";
 import {
   REDACTED_COMMAND_TEXT_VALUE,
+  redactCommandText,
   redactDiagnosticText,
 } from "./command-redaction.js";
+
+describe("redactCommandText MIME types (GRE-809)", () => {
+  const officeMimeTypes = [
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    "application/vnd.ms-excel.sheet.macroEnabled.12",
+  ];
+
+  it.each(officeMimeTypes)("keeps %s intact", (mimeType) => {
+    expect(redactCommandText(mimeType)).toBe(mimeType);
+    const field = `{"mimeType":"${mimeType}","filename":"report.docx"}`;
+    expect(redactCommandText(field)).toBe(field);
+    const header = `Content-Type: ${mimeType}; charset=binary`;
+    expect(redactCommandText(header)).toBe(header);
+  });
+
+  it("still redacts a JWT next to a MIME type", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huIn0.c2lnbmF0dXJlLXZhbHVl";
+    const input = `application/vnd.openxmlformats-officedocument.wordprocessingml.document token ${jwt}`;
+    const output = redactCommandText(input);
+    expect(output).not.toContain(jwt);
+    expect(output).toContain(
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    );
+  });
+
+  it("still redacts a JWT that is not in a vendor MIME subtype", () => {
+    const jwt =
+      "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqb2huIn0.c2lnbmF0dXJlLXZhbHVl";
+    expect(redactCommandText(`application/${jwt}`)).toBe(
+      `application/${REDACTED_COMMAND_TEXT_VALUE}`,
+    );
+    expect(redactCommandText(`notamime/vnd.${jwt}`)).toBe(
+      `notamime/vnd.${REDACTED_COMMAND_TEXT_VALUE}`,
+    );
+    expect(redactCommandText(`path/to/${jwt}`)).toBe(
+      `path/to/${REDACTED_COMMAND_TEXT_VALUE}`,
+    );
+  });
+});
 
 describe("redactDiagnosticText", () => {
   it("redacts a JSON secret field value", () => {

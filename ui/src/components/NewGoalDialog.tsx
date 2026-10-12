@@ -1,14 +1,16 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { GOAL_STATUSES, GOAL_LEVELS } from "@greatstone/shared";
+import { GOAL_STATUSES, GOAL_LEVELS, GOAL_KINDS, GOAL_KIND_LABELS, type GoalKind } from "@greatstone/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useStrategyEnabled } from "../hooks/useStrategyEnabled";
 import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +23,7 @@ import {
   Minimize2,
   Target,
   Layers,
+  Network,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
@@ -42,12 +45,16 @@ export function NewGoalDialog() {
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("planned");
   const [level, setLevel] = useState("task");
+  const [kind, setKind] = useState<GoalKind | "">("");
   const [parentId, setParentId] = useState("");
   const [expanded, setExpanded] = useState(false);
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [levelOpen, setLevelOpen] = useState(false);
+  const [kindOpen, setKindOpen] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
+  // GRE-1382: strategy layers are the Strategy module; plain goals need nothing.
+  const { enabled: strategyOn } = useStrategyEnabled();
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   // Apply defaults when dialog opens
@@ -81,7 +88,9 @@ export function NewGoalDialog() {
     setDescription("");
     setStatus("planned");
     setLevel("task");
+    setKind("");
     setParentId("");
+    createGoal.reset();
     setExpanded(false);
   }
 
@@ -91,7 +100,8 @@ export function NewGoalDialog() {
       title: title.trim(),
       description: description.trim() || undefined,
       status,
-      level,
+      // A kind picks its own level on the server.
+      ...(kind && strategyOn ? { kind } : { level }),
       ...(appliedParentId ? { parentId: appliedParentId } : {}),
     });
   }
@@ -117,6 +127,7 @@ export function NewGoalDialog() {
     >
       <DialogContent
         showCloseButton={false}
+        aria-describedby={undefined}
         className={cn("p-0 gap-0", expanded ? "sm:max-w-2xl" : "sm:max-w-lg")}
         onKeyDown={handleKeyDown}
       >
@@ -129,10 +140,14 @@ export function NewGoalDialog() {
               </span>
             )}
             <span className="text-subtle-foreground">&rsaquo;</span>
-            <span>{newGoalDefaults.parentId ? "New sub-goal" : "New goal"}</span>
+            <DialogTitle className="text-sm font-normal">
+              {newGoalDefaults.parentId ? "New sub-goal" : "New goal"}
+            </DialogTitle>
           </div>
           <div className="flex items-center gap-1">
             <Button
+              aria-label={expanded ? "Collapse" : "Expand"}
+              title={expanded ? "Collapse" : "Expand"}
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
@@ -141,6 +156,8 @@ export function NewGoalDialog() {
               {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             </Button>
             <Button
+              aria-label="Close"
+              title="Close"
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
@@ -234,6 +251,41 @@ export function NewGoalDialog() {
             </PopoverContent>
           </Popover>
 
+          {/* Strategy layer */}
+          {strategyOn ? (
+            <Popover open={kindOpen} onOpenChange={setKindOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                  <Network className="h-3 w-3 text-muted-foreground" />
+                  {kind ? GOAL_KIND_LABELS[kind] : "Kind"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-52 p-1" align="start">
+                <button
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    !kind && "bg-accent"
+                  )}
+                  onClick={() => { setKind(""); setKindOpen(false); }}
+                >
+                  Plain goal
+                </button>
+                {GOAL_KINDS.map((k) => (
+                  <button
+                    key={k}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      k === kind && "bg-accent"
+                    )}
+                    onClick={() => { setKind(k); setKindOpen(false); }}
+                  >
+                    {GOAL_KIND_LABELS[k]}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+
           {/* Parent goal */}
           <Popover open={parentOpen} onOpenChange={setParentOpen}>
             <PopoverTrigger asChild>
@@ -269,7 +321,12 @@ export function NewGoalDialog() {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end px-4 py-2.5 border-t border-border">
+        <div className="flex items-center justify-end gap-3 px-4 py-2.5 border-t border-border">
+          {createGoal.error ? (
+            <p role="alert" className="mr-auto min-w-0 text-xs text-destructive">
+              {createGoal.error.message}
+            </p>
+          ) : null}
           <Button
             size="sm"
             disabled={!title.trim() || createGoal.isPending}

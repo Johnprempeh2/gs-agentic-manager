@@ -544,7 +544,7 @@ describe("WorkspaceFileBrowser", () => {
   it("discloses truncation in the footer", () => {
     useQueryMock.mockReturnValue(ok(availableResponse([createItem()], true)));
     renderBrowser();
-    expect(container.textContent).toContain("refine the search to narrow");
+    expect(container.textContent).toContain("Refine the search to narrow");
   });
 
   it("renders newly loaded current-folder rows after Load more", () => {

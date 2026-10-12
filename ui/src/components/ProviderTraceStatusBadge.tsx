@@ -64,8 +64,8 @@ export function ProviderTraceStatusBadge({
         label === "Trace off" || label === "Trace deleted" || label === "Trace expired"
           ? "border-border bg-background text-muted-foreground"
           : warning
-            ? "border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300"
-            : "border-amber-500/30 bg-amber-500/10 text-amber-800 dark:text-amber-200",
+            ? "border-status-danger/30 bg-status-danger/10 text-status-danger-foreground"
+            : "border-status-warning/30 bg-status-warning/10 text-status-warning-foreground",
         className,
       )}
       title={

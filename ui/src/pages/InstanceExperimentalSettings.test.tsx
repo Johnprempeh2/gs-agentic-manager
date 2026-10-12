@@ -3,7 +3,7 @@
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { INSTANCE_FEATURE_KEYS } from "@greatstone/shared";
+import { GRADUATED_INSTANCE_FEATURE_KEYS, INSTANCE_FEATURE_CATALOG, INSTANCE_FEATURE_KEYS } from "@greatstone/shared";
 import type {
   InstanceExperimentalSettings as InstanceExperimentalSettingsPayload,
   InstanceExperimentalSettingsWithManaged,
@@ -15,11 +15,16 @@ import { queryKeys } from "../lib/queryKeys";
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
   updateExperimental: vi.fn(),
+  getEntitlements: vi.fn(),
+  syncEntitlements: vi.fn(),
 }));
 
 vi.mock("@/api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
+
+// The secretary picker reads the company context; the Board tests only need the toggles.
+vi.mock("@/components/strategy-board/BoardSecretarySetting", () => ({ BoardSecretarySetting: () => null }));
 
 vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
@@ -65,6 +70,12 @@ const SUMMARIES_TOGGLE_SELECTOR =
   'button[aria-label="Toggle summaries experimental setting"]';
 const STATUS_CARDS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle status cards experimental setting"]';
+const CASES_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle cases experimental setting"]';
+const DEEP_DIVE_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle deep dive experimental setting"]';
+const STRATEGY_TOGGLE_SELECTOR = 'button[aria-label="Toggle strategy setting"]';
+const BOARD_TOGGLE_SELECTOR = 'button[aria-label="Toggle board control panel experimental setting"]';
 const GSAM_RUNNER_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager Runner experimental setting"]';
 
@@ -83,6 +94,11 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableMemoryConnectors: false,
     enablePipelines: false,
     enableCases: false,
+    enableDeepDive: false,
+    enableStrategy: false,
+    enableStrategyBoard: false,
+    strategyBoardSecretaryAgentId: null,
+    enableWebsiteView: false,
     enableAgentChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
@@ -178,6 +194,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     mockInstanceSettingsApi.getExperimental.mockImplementation(async () => ({
       ...currentExperimentalSettings,
     }));
+    mockInstanceSettingsApi.getEntitlements.mockResolvedValue({ state: "disabled", features: {} });
     mockInstanceSettingsApi.updateExperimental.mockImplementation(async (patch) => {
       currentExperimentalSettings = { ...currentExperimentalSettings, ...patch };
       return { ...currentExperimentalSettings };
@@ -203,6 +220,42 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     );
     expect(warning?.textContent).toContain("Experimental features may break at any time.");
     expect(warning?.textContent).toContain("no compatibility guarantees");
+  });
+
+  it("locks features the signed plan does not grant and offers sync now (GRE-1078)", async () => {
+    const entitlements = {
+      state: "active",
+      document: {
+        client: "acme",
+        version: 3,
+        issuedAt: "2026-10-01T00:00:00.000Z",
+        issuedBy: "hub-admin",
+        validUntil: "2026-11-01T00:00:00.000Z",
+        graceEndsAt: "2026-11-15T00:00:00.000Z",
+      },
+      features: {
+        enableBuiltInAgents: { entitled: false, effective: false, pendingRestart: false },
+        enableConferenceRoomChat: { entitled: true, effective: false, pendingRestart: true },
+      },
+      limits: {},
+      ignoredFeatureKeys: [],
+      lastCheckedAt: null,
+      lastError: null,
+    };
+    mockInstanceSettingsApi.getEntitlements.mockResolvedValue(entitlements);
+    mockInstanceSettingsApi.syncEntitlements.mockResolvedValue({ applied: false, error: null, entitlements });
+    await renderPage();
+
+    expect(container.textContent).toContain("Plan v3 for acme");
+    expect(container.textContent).toContain("Not in your plan");
+    expect(container.textContent).toContain("Pending restart");
+    expect(container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR)?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR)?.disabled).toBe(false);
+
+    const syncButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Sync now");
+    await act(() => syncButton!.click());
+    await flushReact();
+    expect(mockInstanceSettingsApi.syncEntitlements).toHaveBeenCalledTimes(1);
   });
 
   it("does not render an Apps experimental setting", async () => {
@@ -245,22 +298,12 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("renders the Conference Room Chat card default-off and patches it on and off (GRE-193)", async () => {
+  it("renders the Conference Room Chat toggle off by default (GRE-230)", async () => {
     await renderPage();
 
     const titles = [...container.querySelectorAll("h3")].map((h) => h.textContent);
     expect(titles).toContain("Conference Room Chat");
-    const toggle = container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    for (const enabled of [true, false]) {
-      await act(() => toggle?.click());
-      await flushReact();
-      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-        enableConferenceRoomChat: enabled,
-      });
-      expect(toggle?.getAttribute("aria-checked")).toBe(String(enabled));
-    }
+    expect(container.querySelector(CONFERENCE_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
   });
 
   it("does not render the Pipelines experimental setting for now", async () => {
@@ -271,16 +314,26 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.querySelector('button[aria-label="Toggle pipelines experimental setting"]')).toBeNull();
   });
 
-  it("reflects a stored Conference Room Chat flag as checked without writing it", async () => {
+  it("reflects a stored Conference Room Chat value and saves it off and on (GRE-230)", async () => {
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
       enableConferenceRoomChat: true,
     };
     await renderPage();
 
-    const toggle = container.querySelector(CONFERENCE_TOGGLE_SELECTOR);
+    const toggle = container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR);
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+
+    for (const enabled of [false, true]) {
+      await act(() => toggle?.click());
+      await flushReact();
+      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+        enableConferenceRoomChat: enabled,
+      });
+      expect(toggle?.getAttribute("aria-checked")).toBe(String(enabled));
+      expect(currentExperimentalSettings.enableConferenceRoomChat).toBe(enabled);
+    }
   });
 
   it("renders and patches the Streamlined UI experimental toggle on and off", async () => {
@@ -384,6 +437,16 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
 
     expect(container.querySelector(GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR)).toBeNull();
     expect(container.textContent).not.toContain("Goals Sidebar Link");
+  });
+
+  it("shows no card for any graduated switch in the shared list (GRE-848)", async () => {
+    await renderPage();
+
+    expect(GRADUATED_INSTANCE_FEATURE_KEYS.length).toBeGreaterThan(0);
+    for (const { key } of GRADUATED_INSTANCE_FEATURE_KEYS) {
+      expect(container.textContent, key).not.toContain(INSTANCE_FEATURE_CATALOG[key].title);
+      expect(container.textContent, key).not.toContain(INSTANCE_FEATURE_CATALOG[key].description);
+    }
   });
 
   it("hides the isolated-workspaces-by-default toggle while isolated workspaces are off", async () => {
@@ -665,6 +728,92 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     ).toBe("false");
   });
 
+  it("enables Cases when enabling the Deep Dive experimental toggle", async () => {
+    await renderPage();
+
+    const toggle = container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR);
+    expect(toggle?.getAttribute("aria-checked")).toBe("false");
+
+    await act(async () => {
+      toggle?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableCases: true,
+      enableDeepDive: true,
+    });
+    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(
+      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("disables Deep Dive when disabling Cases", async () => {
+    currentExperimentalSettings = {
+      ...currentExperimentalSettings,
+      enableCases: true,
+      enableDeepDive: true,
+    };
+    await renderPage();
+
+    const casesToggle = container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR);
+    await act(async () => {
+      casesToggle?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableCases: false,
+      enableDeepDive: false,
+    });
+    expect(
+      container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
+    ).toBe("false");
+  });
+
+  it("turns only Deep Dive off and leaves Cases on", async () => {
+    currentExperimentalSettings = {
+      ...currentExperimentalSettings,
+      enableCases: true,
+      enableDeepDive: true,
+    };
+    await renderPage();
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableDeepDive: false });
+    expect(
+      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
+    ).toBe("true");
+  });
+
+  it("turns Strategy on with the Board, and the Board off with Strategy (GRE-1382)", async () => {
+    await renderPage();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableStrategy: true,
+      enableStrategyBoard: true,
+    });
+    expect(container.querySelector<HTMLButtonElement>(STRATEGY_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(STRATEGY_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+      enableStrategy: false,
+      enableStrategyBoard: false,
+    });
+    expect(container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
+  });
+
   it("renders and patches the Server Info Debug View experimental toggle", async () => {
     await renderPage();
 
@@ -689,7 +838,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
 });
 
 describe("InstanceExperimentalSettings — cloud-managed keys", () => {
-  const MANAGED_BADGE_TEXT = "Managed by Paperclip Cloud";
+  const MANAGED_BADGE_TEXT = "Managed by your hosting service";
 
   let container: HTMLDivElement;
   let root: Root | null = null;

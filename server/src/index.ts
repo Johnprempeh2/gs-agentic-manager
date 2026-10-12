@@ -8,8 +8,10 @@ import "@greatstone/shared/legacy-env-bootstrap";
 import { instrumentationReady, shutdownInstrumentation } from "./instrumentation.js";
 import { sentryReady, shutdownSentry, captureException } from "./sentry.js";
 import { waitForPendingRunFailureReports } from "./services/run-failure-report.js";
+import { setBoardIdentityDeploymentMode } from "./services/board-identity.js";
 import { verifyStoppedNativeSessionForReplacement } from "./services/native-runtime/native-session-executor.js";
 import { embeddedPostgresOwnerPort } from "./embedded-postgres-owner.js";
+import { isPortInUseFailure, startOnFreePort } from "./embedded-postgres-port.js";
 import { deliverExecutionStatuses } from "./services/execution-status-delivery.js";
 import { deliverReconciledExecutions, settleUnrecoverableExecutions } from "./services/execution-recovery-resolution.js";
 import { reconcileSafeNativeReplacements } from "./services/native-runtime/native-safe-replacement.js";
@@ -24,12 +26,18 @@ import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
 import type { Request as ExpressRequest, RequestHandler } from "express";
 import { warnIfUnsupportedNodeVersion } from "@greatstone/shared/node-version";
+import { describeAgentRunEnvScrub, scrubAgentRunEnvForServer } from "@greatstone/shared/agent-run-env";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   getPostgresDataDirectory,
+  EMBEDDED_POSTGRES_USER,
+  embeddedPostgresConnectionString,
+  ensureEmbeddedPostgresPasswordFile,
+  ensureEmbeddedPostgresRolePassword,
+  resolveEmbeddedPostgresPasswordFile,
   inspectMigrations,
   applyPendingMigrations,
   createEmbeddedPostgresLogBuffer,
@@ -56,7 +64,11 @@ import {
   getManagedInstanceConfig,
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
+import { readEntitlementConfig } from "./services/entitlement-document.js";
+import { createEntitlementRuntime, setEntitlementRuntime } from "./services/entitlement-runtime.js";
+import { entitlementActivityAuditSink } from "./services/entitlement-audit.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
+import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { setupRunnerPrpWebSocketServer } from "./realtime/runner-prp-ws.js";
@@ -82,10 +94,12 @@ import {
   reconcileCodexLocalManagedHomesOnStartup,
   reconcilePersistedRuntimeServicesOnStartup,
   routineService,
+  returnDueTabledIssues,
   statusCardService,
   toolAccessService,
   workspaceOperationService,
 } from "./services/index.js";
+import { websiteService } from "./services/website/index.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -98,18 +112,34 @@ import {
 } from "./services/device-login-reaper.js";
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
+import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
+import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
+import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
+import { emailChannelService } from "./services/email-channels.js";
+import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
+import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
+import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
 import { resolveWorktreeRunExecutionActivationState } from "./services/instance-settings.js";
 import {
   parseAdapterRegistryEnv,
   reconcileAdapterAvailability,
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
+import { pushNotificationService } from "./services/push-notifications.js";
+import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
+import { supportQueueService } from "./services/support-queue.js";
+import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
+import {
+  LEFTOVER_PROCESS_SWEEP_INTERVAL_MS,
+  sweepLeftoverRunProcesses,
+} from "./services/run-process-cleanup.js";
+import { resolvePaperclipInstanceRoot } from "./home-paths.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
 import { initTelemetry, getTelemetryClient } from "./telemetry.js";
@@ -128,6 +158,7 @@ import { initializeCloudRuntimeIdentity } from "./services/cloud-runtime-identit
 import { systemdNotify } from "./services/systemd-notify.js";
 import { flushInFlightRunLogMirrors } from "./services/run-log-store.js";
 import { startLiveReleaseTicker } from "./services/live-release.js";
+import { startPreviewAutoUpdateTicker } from "./services/preview-update.js";
 import { hostBlindTime } from "./services/host-blind-time.js";
 import {
   createEmbeddedPostgresSupervisor,
@@ -459,11 +490,32 @@ async function startServerWithDatabaseTeardown(
   
     const dataDir = resolve(config.embeddedPostgresDataDir);
     const configuredPort = config.embeddedPostgresPort;
+    // Random per-instance password (GRE-930). Written before any role change
+    // so an interrupted move off the old fixed password resumes next start.
+    const embeddedPostgresPasswordFile = ensureEmbeddedPostgresPasswordFile(dataDir);
+    const embeddedPostgresPassword = embeddedPostgresPasswordFile.password;
+    if (embeddedPostgresPasswordFile.created) {
+      logger.info(
+        { passwordFile: resolveEmbeddedPostgresPasswordFile(dataDir) },
+        "Created embedded PostgreSQL password file",
+      );
+    }
+    const ensureEmbeddedRolePassword = async (rolePort: number) => {
+      const status = await ensureEmbeddedPostgresRolePassword({ dataDir, port: rolePort, password: embeddedPostgresPassword });
+      if (status === "migrated") {
+        logger.info("Embedded PostgreSQL role moved from the old fixed password to the stored random password");
+      }
+    };
+    const embeddedUrl = (urlPort: number, database: string) =>
+      embeddedPostgresConnectionString({ password: embeddedPostgresPassword, port: urlPort, database });
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
     const verboseEmbeddedPostgresLogs = process.env.GSAM_EMBEDDED_POSTGRES_VERBOSE === "true";
+    // Logs of the current start attempt only; null once Postgres is up.
+    let embeddedPostgresStartLogs: string[] | null = null;
     const appendEmbeddedPostgresLog = (message: unknown) => {
       logBuffer.append(message);
+      embeddedPostgresStartLogs?.push(String(message ?? ""));
       if (!verboseEmbeddedPostgresLogs) {
         return;
       }
@@ -524,14 +576,16 @@ async function startServerWithDatabaseTeardown(
     const runningPid = getRunningPid();
     if (runningPid) {
       port = embeddedPostgresOwnerPort(readFileSync(postmasterPidFile, "utf8"), dataDir, runningPid);
-      const actualDataDir = await getPostgresDataDirectory(`postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`);
+      await ensureEmbeddedRolePassword(port);
+      const actualDataDir = await getPostgresDataDirectory(embeddedUrl(port, "postgres"));
       if (typeof actualDataDir !== "string" || resolve(actualDataDir) !== resolve(dataDir)) {
         throw new Error("Refusing to reuse PostgreSQL: its data directory belongs to another instance.");
       }
       logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
     } else {
-      const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
+      const configuredAdminConnectionString = embeddedUrl(configuredPort, "postgres");
       try {
+        await ensureEmbeddedRolePassword(configuredPort);
         const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
         if (
           typeof actualDataDir !== "string" ||
@@ -544,16 +598,11 @@ async function startServerWithDatabaseTeardown(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
       } catch {
-        const detectedPort = await detectPort(configuredPort);
-        if (detectedPort !== configuredPort) {
-          logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
-        }
-        port = detectedPort;
-        logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
+        logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, requestedPort=${configuredPort})`);
         const createEmbeddedPostgres = () => new EmbeddedPostgres({
           databaseDir: dataDir,
-          user: "paperclip",
-          password: "paperclip",
+          user: EMBEDDED_POSTGRES_USER,
+          password: embeddedPostgresPassword,
           port,
           persistent: true,
           initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -581,7 +630,28 @@ async function startServerWithDatabaseTeardown(
           rmSync(postmasterPidFile, { force: true });
         }
         try {
-          await embeddedPostgres.start();
+          port = await startOnFreePort({
+            requestedPort: configuredPort,
+            findFreePort: async (from) => {
+              const detectedPort = await detectPort(from);
+              if (detectedPort !== from) {
+                logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${from}, selectedPort=${detectedPort})`);
+              }
+              return detectedPort;
+            },
+            start: async (candidatePort) => {
+              port = candidatePort;
+              embeddedPostgres = createEmbeddedPostgres();
+              embeddedPostgresStartLogs = [];
+              await embeddedPostgres.start();
+            },
+            lostBindRace: () => isPortInUseFailure(embeddedPostgresStartLogs ?? []),
+            onRetry: (lostPort, attempt) => logger.warn(
+              { lostPort, attempt },
+              "Embedded PostgreSQL port was taken before it could bind; retrying on the next free port",
+            ),
+          });
+          embeddedPostgresStartLogs = null;
         } catch (err) {
           logEmbeddedPostgresFailure("start", err);
           throw formatEmbeddedPostgresError(err, {
@@ -623,13 +693,14 @@ async function startServerWithDatabaseTeardown(
       }
     }
   
-    const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
+    await ensureEmbeddedRolePassword(port);
+    const embeddedAdminConnectionString = embeddedUrl(port, "postgres");
     const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
     if (dbStatus === "created") {
       logger.info("Created embedded PostgreSQL database: paperclip");
     }
   
-    const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
+    const embeddedConnectionString = embeddedUrl(port, "paperclip");
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
@@ -660,6 +731,8 @@ async function startServerWithDatabaseTeardown(
   // Auth, routes, or child-runtime configuration capture any public URL.
   const restoredCloudRuntimeIdentity = await initializeCloudRuntimeIdentity(db as any);
   if (restoredCloudRuntimeIdentity) config = loadConfig();
+  // New default "board" work goes to a real owner once sign-in is on.
+  setBoardIdentityDeploymentMode(config.deploymentMode);
 
   if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
     throw new Error(
@@ -802,10 +875,49 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // Client install limits (GSAM_INSTALL_LIMITS, GRE-141): fail closed like the two above.
+  try {
+    const installLimits = getInstallLimits();
+    if (installLimits) logger.warn({ installLimits }, "client install limits active");
+  } catch (err) {
+    logger.error({ err }, "invalid GSAM_INSTALL_LIMITS; refusing to start (fail closed)");
+    throw err;
+  }
+
+  // Signed entitlement document (GRE-1078). Off unless GSAM_ENTITLEMENT_PUBLIC_KEY
+  // is set; a malformed key refuses startup (fail closed). The document is read
+  // before routes serve, then re-read every minute and on "sync now".
+  let entitlementRuntime: ReturnType<typeof createEntitlementRuntime> | null = null;
+  try {
+    const entitlementConfig = readEntitlementConfig();
+    if (entitlementConfig) {
+      entitlementRuntime = createEntitlementRuntime({
+        ...entitlementConfig,
+        onAudit: entitlementActivityAuditSink(db as any),
+        onError: (err, context) => logger.error({ err }, context),
+      });
+      const started = await entitlementRuntime.start();
+      setEntitlementRuntime(entitlementRuntime);
+      entitlementRuntime.startPolling();
+      logger.warn(
+        {
+          filePath: entitlementConfig.filePath,
+          state: started.entitlements.state,
+          version: started.entitlements.document?.version ?? null,
+          error: started.error,
+        },
+        "signed entitlements active",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "invalid entitlement configuration; refusing to start (fail closed)");
+    throw err;
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
-    shareClient: createFeedbackTraceShareClientFromConfig(config),
+    shareClient: createFeedbackTraceShareClientFromConfig(config) ?? undefined,
   });
   const backupSettingsSvc = instanceSettingsService(db);
   const databaseBackupMaxAgeHours = Math.max(
@@ -920,6 +1032,9 @@ async function startServerWithDatabaseTeardown(
     bindHost: config.host,
     authPublicBaseUrl: config.authPublicBaseUrl,
     chatWebhookPublicBaseUrl: config.chatWebhookPublicBaseUrl,
+    connectivityWatch: process.env.GSAM_CONNECTIVITY_WATCH?.trim().toLowerCase() === "false"
+      ? undefined
+      : { stateFile: defaultConnectivityStateFile() },
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
     announcements: { enabled: config.announcementsEnabled, feedUrl: config.announcementsFeedUrl },
@@ -962,6 +1077,29 @@ async function startServerWithDatabaseTeardown(
   process.env.GSAM_RUNTIME_API_URL = runtimeApiUrl;
   process.env.GSAM_RUNTIME_API_CANDIDATES_JSON = JSON.stringify(runtimeApiCandidates);
   process.env.GSAM_API_URL = configuredApiUrl;
+
+  // Remove run credentials from ACP session records saved before #290
+  // (GRE-510). Runs before the listener binds so no session saves race it.
+  // Never fails startup.
+  await scrubAcpSessionEnvironments(resolvePaperclipInstanceRoot())
+    .then((result) => {
+      if (result.alreadyDone) return;
+      const skipped = result.unparseable + result.failed;
+      (skipped > 0 ? logger.warn.bind(logger) : logger.info.bind(logger))(
+        {
+          scanned: result.scanned,
+          cleaned: result.cleaned,
+          skipped,
+          unparseable: result.unparseable,
+          failed: result.failed,
+          skippedPaths: result.skippedPaths,
+        },
+        "scrubbed run environment from saved ACP session records",
+      );
+    })
+    .catch((err) => {
+      logger.error({ err }, "startup scrub of ACP session records failed");
+    });
 
   let startupListenerBound = false;
   try {
@@ -1168,6 +1306,11 @@ async function startServerWithDatabaseTeardown(
     }
   };
   const executionControlSweepsInFlight = new Set<string>();
+  // GRE-1187: board emails are only queued here; the app's email service
+  // (started in app.ts) delivers them on its own tick.
+  const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
+  // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
+  const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
     ["finalization", () => reconcileAbandonedExecutionControl(db)],
     ["replacement", () => heartbeat ? reconcileSafeNativeReplacements(db, new Date(), { verifyStoppedSession: run => verifyStoppedNativeSessionForReplacement(db, run) }) : undefined],
@@ -1175,6 +1318,18 @@ async function startServerWithDatabaseTeardown(
     ["status_delivery", () => deliverExecutionStatuses(db)],
     ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
+    // GRE-933: Everest's renew reminder 3 days before a live steward grant ends.
+    ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
+    // Memory linking: the link check, at most every 6 hours per company with memory on.
+    ["memory_link_check", () => runScheduledMemoryLinkChecks(db)],
+    // GRE-1079: the 90/180/365-day retention rules, once a day per company with memory on.
+    ["memory_retention", () => runScheduledMemoryRetention(db)],
+    // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
+    ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
+    // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
+    ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
+    // GRE-1187: meeting reminders, slippage alerts and "Why?" requests by email.
+    ["strategy_board_emails", () => runScheduledStrategyBoardEmails(db, { sender: boardEmailSender, publicBaseUrl: config.authPublicBaseUrl ?? null })],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
@@ -1194,6 +1349,8 @@ async function startServerWithDatabaseTeardown(
   // Before queued runs resume: a one-click release that restarted this server
   // keeps holding new runs until its outcome is reported.
   startLiveReleaseTicker(db);
+  // GRE-1004: pull new commits into running live previews whose auto-update switch is on.
+  startPreviewAutoUpdateTicker(db, Number(process.env.GSAM_PREVIEW_AUTO_UPDATE_INTERVAL_MS) || undefined);
   // GRE-181: sleep and event-loop stalls are not run silence.
   hostBlindTime.start();
   let silentRunStopInFlight = false;
@@ -1326,6 +1483,7 @@ async function startServerWithDatabaseTeardown(
     const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
     const routines = routineService(db as any, { pluginWorkerManager });
     const statusCards = statusCardService(db as any);
+    const website = websiteService(db as any);
     const issues = issueService(db as any);
     const mergedPullRequestConfirmations = issueThreadInteractionService(db as any, {
       wakeup: heartbeat.wakeup,
@@ -1333,6 +1491,20 @@ async function startServerWithDatabaseTeardown(
     const terminalWorkspaces = executionWorkspaceService(db as any, {
       workspaceReaperCooldownDays: config.workspaceReaperCooldownDays,
     });
+    const supportQueue = supportQueueService(db as any, { wakeup: heartbeat.wakeup });
+    const scheduleSupportClockSweep = () => {
+      if (heartbeatSchedulerStopped) return;
+      trackHeartbeatSchedulerWork(supportQueue
+        .sweep()
+        .then((result) => {
+          if (result.repaired + result.responded + result.warned + result.breached > 0) {
+            logger.info(result, "support clock sweep changed tickets");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "support clock sweep failed");
+        }));
+    };
     const scheduleMergedPullRequestConfirmationSweep = () => {
       if (heartbeatSchedulerStopped) return;
       trackHeartbeatSchedulerWork(mergedPullRequestConfirmations
@@ -1363,6 +1535,7 @@ async function startServerWithDatabaseTeardown(
           const skipped =
             result.skippedActiveRun
             + result.skippedNonTerminalTree
+            + result.skippedOpenLinkedIssue
             + result.skippedUndelivered
             + result.skippedRace
             + result.skippedCooldown;
@@ -1374,6 +1547,43 @@ async function startServerWithDatabaseTeardown(
         })
         .catch((err) => {
           logger.error({ err }, "terminal issue workspace reaper failed");
+        }));
+    };
+    // Opt-in (GSAM_UNRECORDED_WORKTREE_IDLE_DAYS), at most once an hour: remove
+    // idle git worktrees that agents made by hand and nothing records.
+    let lastUnrecordedWorktreeSweepAt = 0;
+    const scheduleUnrecordedWorktreeSweep = () => {
+      if (heartbeatSchedulerStopped || !(config.unrecordedWorktreeIdleDays > 0)) return;
+      if (Date.now() - lastUnrecordedWorktreeSweepAt < 60 * 60 * 1000) return;
+      lastUnrecordedWorktreeSweepAt = Date.now();
+      trackHeartbeatSchedulerWork(terminalWorkspaces
+        .sweepUnrecordedWorktrees(config.unrecordedWorktreeIdleDays)
+        .then((result) => {
+          if (result.removed.length > 0) {
+            logger.info(result, "removed idle git worktrees that no execution workspace records");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "unrecorded worktree sweep failed");
+        }));
+    };
+    // Processes agent runs left behind (a dev server started in the background
+    // outlives the run): once at start, then at most every five minutes. The
+    // end of each run stops its own; this catches runs that ended before a
+    // restart. GSAM_RUN_PROCESS_CLEANUP=false turns both off.
+    let lastRunProcessSweepAt = 0;
+    let runProcessSweepInFlight = false;
+    const scheduleRunProcessSweep = () => {
+      if (heartbeatSchedulerStopped || runProcessSweepInFlight) return;
+      if (Date.now() - lastRunProcessSweepAt < LEFTOVER_PROCESS_SWEEP_INTERVAL_MS) return;
+      lastRunProcessSweepAt = Date.now();
+      runProcessSweepInFlight = true;
+      trackHeartbeatSchedulerWork(sweepLeftoverRunProcesses({ db: db as any, apiPort: listenPort })
+        .catch((err) => {
+          logger.error({ err }, "leftover run process sweep failed");
+        })
+        .finally(() => {
+          runProcessSweepInFlight = false;
         }));
     };
 
@@ -1449,15 +1659,44 @@ async function startServerWithDatabaseTeardown(
       "worktree run-execution cutoff state",
     );
     const heartbeatSchedulingSuppression = await heartbeat.resolveSchedulingSuppression();
+    // A release hold (task drain) holds new run admission only (GRE-242). The
+    // restart recovery re-attaches runs that lived through the hot restart and
+    // writes hot-restart-report.json, so it runs under the hold too. Admission
+    // work waits: the periodic recovery runs it once the hold lifts, and the
+    // session-goal recovery below is deferred to that first tick.
+    const startupRestartRecoveryAllowed =
+      !heartbeatSchedulingSuppression.suppressed ||
+      heartbeatSchedulingSuppression.reason === "task_drain";
+    let sessionGoalRecoveryDeferred = false;
+    const recoverSessionGoals = async (phase: "startup" | "deferred") => {
+      const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
+      if (
+        recoveredGoalActions.enqueued > 0 ||
+        recoveredGoalActions.invalid > 0
+      ) {
+        logger.warn(
+          { ...recoveredGoalActions, phase },
+          "startup session-goal action outbox recovery reconciled pending controls",
+        );
+      }
+      const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
+      if (recoveredGoals.enqueued > 0) {
+        logger.warn(
+          { ...recoveredGoals, phase },
+          "startup session-goal recovery resumed durable agent goals",
+        );
+      }
+    };
 
-    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
-    // into a dead "running" row during startup recovery.
     if (heartbeatSchedulingSuppression.suppressed) {
       logger.warn(
         { reason: heartbeatSchedulingSuppression.reason },
         "heartbeat scheduling suppressed for this runtime instance",
       );
-    } else {
+    }
+    // Reap orphaned runs before timer ticks start so wakeups cannot coalesce
+    // into a dead "running" row during startup recovery.
+    if (startupRestartRecoveryAllowed) {
       const startupHeartbeatRecovery = (async () => {
         // Legacy remote recovery releases sandbox leases. Wait for provider
         // workers before cleanup or retry admission, including unmanaged installs.
@@ -1502,6 +1741,9 @@ async function startServerWithDatabaseTeardown(
             "startup hot-restart adoption reconciliation failed - orphan reaper will serve as degraded backstop",
           );
         }
+        await heartbeat.sweepStaleRunOutputFiles().catch((err) => {
+          logger.warn({ err }, "startup sweep of stale run output files failed");
+        });
 
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
@@ -1523,25 +1765,14 @@ async function startServerWithDatabaseTeardown(
           }
         }
 
+        if (heartbeatSchedulingSuppression.suppressed) {
+          sessionGoalRecoveryDeferred = true;
+          return;
+        }
+
         const promotion = await heartbeat.promoteDueScheduledRetries();
         await heartbeat.resumeQueuedRuns();
-        const recoveredGoalActions = await heartbeat.recoverPendingSessionGoalActions();
-        if (
-          recoveredGoalActions.enqueued > 0 ||
-          recoveredGoalActions.invalid > 0
-        ) {
-          logger.warn(
-            recoveredGoalActions,
-            "startup session-goal action outbox recovery reconciled pending controls",
-          );
-        }
-        const recoveredGoals = await heartbeat.recoverActiveSessionGoals();
-        if (recoveredGoals.enqueued > 0) {
-          logger.warn(
-            recoveredGoals,
-            "startup session-goal recovery resumed durable agent goals",
-          );
-        }
+        await recoverSessionGoals("startup");
         const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
         if (
           promotion.promoted > 0 ||
@@ -1642,6 +1873,7 @@ async function startServerWithDatabaseTeardown(
       return { archived, ...notifications };
     };
     await runRetentionSweep();
+    scheduleRunProcessSweep();
 
     startHeartbeatSchedulerInterval(() => {
       // Track the outer async callback as well as the work it starts. Shutdown
@@ -1684,6 +1916,9 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionEventPoll();
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
+        scheduleSupportClockSweep();
+        scheduleUnrecordedWorktreeSweep();
+        scheduleRunProcessSweep();
         scheduleAdapterLoginReaperSweep();
         scheduleSetupTokenReaperSweep();
         scheduleEnvironmentLeaseCleanupSweep();
@@ -1698,6 +1933,17 @@ async function startServerWithDatabaseTeardown(
           })
           .catch((err) => {
             logger.error({ err }, "routine scheduler tick failed");
+          }));
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork(returnDueTabledIssues(db, { heartbeat })
+          .then((result) => {
+            if (result.returned > 0) {
+              logger.info({ ...result }, "brought back tabled issues on their return date");
+            }
+          })
+          .catch((err) => {
+            logger.error({ err }, "tabled issue return sweep failed");
           }));
 
         if (heartbeatSchedulerStopped) return;
@@ -1727,6 +1973,21 @@ async function startServerWithDatabaseTeardown(
           }
         })().catch((err) => {
           logger.error({ err }, "status-card scheduler tick failed");
+        }));
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork((async () => {
+          const experimental = await instanceSettingsService(db).getExperimental();
+          if (experimental.enableWebsiteView !== true) return;
+          const result = await website.tickDuePulls(new Date());
+          const failed = result.results.filter((entry) => entry.status === "failed" || entry.status === "error");
+          if (failed.length > 0) {
+            logger.warn({ failed }, "website daily pull failed for some properties; errors are on each property");
+          } else if (result.results.length > 0) {
+            logger.info({ pulled: result.results.length }, "website daily pull complete");
+          }
+        })().catch((err) => {
+          logger.error({ err }, "website daily pull tick failed");
         }));
 
         if (heartbeatSchedulerStopped) return;
@@ -1802,6 +2063,10 @@ async function startServerWithDatabaseTeardown(
             .then(() => heartbeat.promoteDueScheduledRetries())
             .then(async (promotion) => {
               await heartbeat.resumeQueuedRuns();
+              if (sessionGoalRecoveryDeferred) {
+                await recoverSessionGoals("deferred");
+                sessionGoalRecoveryDeferred = false;
+              }
               const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
               if (
                 promotion.promoted > 0 ||
@@ -1828,6 +2093,12 @@ async function startServerWithDatabaseTeardown(
               const reconciled = await heartbeat.reconcileTaskWatchdogs();
               if (reconciled.triggered > 0) {
                 logger.warn({ ...reconciled }, "periodic task-watchdog reconciliation triggered watchdog work");
+              }
+            })
+            .then(async () => {
+              const reconciled = await heartbeat.reconcileOverdueHumanWaits();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic 24h human-wait sweep woke assignees to re-check");
               }
             })
             .then(async () => {
@@ -1864,6 +2135,26 @@ async function startServerWithDatabaseTeardown(
     });
   }
   
+  /** How often new decisions are checked for phone notifications. */
+  const DECISION_PUSH_INTERVAL_MS = 60_000;
+  // Phone notifications for new decisions (Web Push). Each round only acts for
+  // users who turned notifications on, so it costs nothing until someone does.
+  // A self-rescheduling timer: a slow round never overlaps the next.
+  const decisionPushes = pushNotificationService(db as any);
+  let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
+  let decisionPushStopped = false;
+  const scheduleDecisionPushRound = () => {
+    if (decisionPushStopped) return;
+    decisionPushTimer = setTimeout(() => {
+      void decisionPushes
+        .notifyNewDecisions()
+        .catch((err) => logger.warn({ err }, "decision push round failed"))
+        .finally(scheduleDecisionPushRound);
+    }, DECISION_PUSH_INTERVAL_MS);
+    decisionPushTimer.unref?.();
+  };
+  scheduleDecisionPushRound();
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
 
@@ -1958,6 +2249,9 @@ async function startServerWithDatabaseTeardown(
     await systemdNotify(["--stopping", `--status=Stopping after ${signal}`]);
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
+    entitlementRuntime?.stop();
+    decisionPushStopped = true;
+    if (decisionPushTimer) clearTimeout(decisionPushTimer);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;
@@ -2109,6 +2403,13 @@ function isMainModule(metaUrl: string): boolean {
 }
 
 if (isMainModule(import.meta.url)) {
+  // Run directly from an agent's shell (`pnpm dev:server`), not through the dev
+  // runner or `gsam run`, which already did this: drop the run's identity,
+  // credentials and context, keep its run id, apply GSAM_SANDBOX_* overrides
+  // (packages/shared/src/agent-run-env.ts). After the dev runner it only keeps
+  // what the runner set on purpose, and logs nothing.
+  const agentRunScrubLine = describeAgentRunEnvScrub(scrubAgentRunEnvForServer(process.env));
+  if (agentRunScrubLine) logger.info(agentRunScrubLine);
   void startServer().catch(async (err) => {
     logger.error({ err }, "GS Agentic Manager server failed to start");
     // Supervised-transient refusals in managed-cloud deployments are an

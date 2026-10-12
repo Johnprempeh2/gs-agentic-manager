@@ -1,5 +1,6 @@
 export { companyService } from "./companies.js";
 export { companyArtifactsService } from "./company-artifacts.js";
+export { deliverableService } from "./deliverables.js";
 export { companySearchService } from "./company-search.js";
 export { companySearchExtractService } from "./company-search-extract.js";
 export { feedbackService } from "./feedback.js";
@@ -48,6 +49,11 @@ export {
   type IssueReviewVerdictActor,
 } from "./issue-review-policy.js";
 export { issueTreeControlService } from "./issue-tree-control.js";
+export {
+  bringBackTabledIssue,
+  issueTablingService,
+  returnDueTabledIssues,
+} from "./issue-tabling.js";
 export { issueApprovalService } from "./issue-approvals.js";
 export { issueReferenceService } from "./issue-references.js";
 export { issueRecoveryActionService } from "./issue-recovery-actions.js";
@@ -72,6 +78,8 @@ export {
   type ExternalObjectResolverSnapshot,
 } from "./external-objects.js";
 export { goalService } from "./goals.js";
+export { workflowTemplateService } from "./workflow-templates.js";
+export { documentEvidenceService } from "./document-evidence.js";
 export { activityService, type ActivityFilters } from "./activity.js";
 export { workTimelineService, normalizeTimelineWindow } from "./work-timeline.js";
 export { attentionService } from "./attention.js";
@@ -103,6 +111,7 @@ export { backfillLegacyToolOAuthTokens } from "./tool-oauth-legacy-backfill.js";
 export { toolAccessPolicyService } from "./tool-access-policy.js";
 export { routineService } from "./routines.js";
 export { costService } from "./costs.js";
+export { costLedgerService, costLedgerToCsv, parseLedgerMonth } from "./cost-ledger.js";
 export { financeService } from "./finance.js";
 export { heartbeatService, resolveHeartbeatSchedulingSuppression } from "./heartbeat.js";
 export {
@@ -217,3 +226,4 @@ export {
   type RemoteAgentProfileInput,
   type RemoteAgentService,
 } from "./remote-agent-profiles.js";
+export { agentTeamService } from "./agent-teams.js";

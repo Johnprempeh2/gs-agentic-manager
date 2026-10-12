@@ -94,7 +94,7 @@ export function EditGatewayDialog({
             >
               {activeProfiles.map((profile) => (
                 <option key={profile.id} value={profile.id}>
-                  {profile.name} — {allowedToolsLabel(profile)}
+                  {profile.name} ({allowedToolsLabel(profile)})
                 </option>
               ))}
             </select>

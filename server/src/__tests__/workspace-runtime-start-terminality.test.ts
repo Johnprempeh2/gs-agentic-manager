@@ -48,6 +48,25 @@ describe("managed runtime start terminality", () => {
     });
   });
 
+  it("fails at once with a clear reason when Node fetch blocks the readiness port (GRE-1002)", async () => {
+    let probes = 0;
+    const badPortFetch = (async () => {
+      probes += 1;
+      throw new TypeError("fetch failed", { cause: new Error("bad port") });
+    }) as typeof fetch;
+
+    await expect(waitForRuntimeServiceReadiness({
+      service: { readiness: { type: "http", timeoutSec: 5, intervalMs: 100 } },
+      url: "http://127.0.0.1:4190/",
+      readinessUrl: null,
+      fetchImpl: badPortFetch,
+    })).rejects.toThrow(
+      /Readiness check failed for http:\/\/127\.0\.0\.1:4190\/: port 4190 is blocked by Node fetch \(WHATWG "bad port" list\)/,
+    );
+    // Retrying a blocked port can never succeed, so the first probe ends the wait.
+    expect(probes).toBe(1);
+  });
+
   it("fails a readiness check whose probes never answer instead of hanging forever", async () => {
     let probes = 0;
     const abortedProbes: string[] = [];

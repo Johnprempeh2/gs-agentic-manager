@@ -18,6 +18,7 @@ import {
   buildInboxKeyboardNavEntries,
   buildInboxDismissedAtByKey,
   computeInboxBadgeData,
+  getLatestFailedRunsByAgent,
   filterInboxIssues,
   getArchivedInboxSearchIssues,
   getAvailableInboxIssueColumns,
@@ -367,6 +368,47 @@ describe("inbox helpers", () => {
     });
   });
 
+  it("ignores the failed latest run of a terminated agent but keeps an active agent's", () => {
+    const heartbeatRuns = [
+      makeRun("run-terminated", "failed", "2026-03-11T00:00:00.000Z", "agent-terminated"),
+      makeRun("run-active", "failed", "2026-03-11T01:00:00.000Z", "agent-active"),
+    ];
+    const agents = [
+      { id: "agent-terminated", status: "terminated" as const },
+      { id: "agent-active", status: "active" as const },
+    ];
+
+    expect(getLatestFailedRunsByAgent(heartbeatRuns, agents).map((run) => run.id)).toEqual(["run-active"]);
+
+    const result = computeInboxBadgeData({
+      approvals: [],
+      joinRequests: [],
+      dashboard: undefined,
+      heartbeatRuns,
+      agents,
+      mineIssues: [],
+      dismissedAlerts: new Set<string>(),
+      dismissedAtByKey: new Map<string, number>(),
+      currentUserId: "user-1",
+    });
+    expect(result.failedRuns).toBe(1);
+    expect(result.inbox).toBe(1);
+
+    const onlyTerminated = computeInboxBadgeData({
+      approvals: [],
+      joinRequests: [],
+      dashboard: undefined,
+      heartbeatRuns: [heartbeatRuns[0]!],
+      agents,
+      mineIssues: [],
+      dismissedAlerts: new Set<string>(),
+      dismissedAtByKey: new Map<string, number>(),
+      currentUserId: "user-1",
+    });
+    expect(onlyTerminated.failedRuns).toBe(0);
+    expect(onlyTerminated.inbox).toBe(0);
+  });
+
   it("excludes read mine issues from the inbox badge count", () => {
     const result = computeInboxBadgeData({
       approvals: [],
@@ -531,6 +573,52 @@ describe("inbox helpers", () => {
       "approval:approval-between",
       "issue:2",
     ]);
+  });
+
+  it("sorts an answered (read) task below older unread work on mine (GRE-356)", () => {
+    const answeredIssue = makeIssue("answered", false);
+    answeredIssue.lastActivityAt = new Date("2026-03-11T05:00:00.000Z");
+
+    const olderUnreadIssue = makeIssue("unread", true);
+    olderUnreadIssue.lastActivityAt = new Date("2026-03-11T02:00:00.000Z");
+
+    const olderReadIssue = makeIssue("read", false);
+    olderReadIssue.lastActivityAt = new Date("2026-03-11T01:00:00.000Z");
+
+    const issueIds = (unreadFirst?: boolean) =>
+      getInboxWorkItems({
+        issues: [olderReadIssue, answeredIssue, olderUnreadIssue],
+        approvals: [],
+        unreadFirst,
+      }).map((item) => (item.kind === "issue" ? item.issue.id : item.kind));
+
+    expect(issueIds(true)).toEqual(["unread", "answered", "read"]);
+    // Other tabs keep the plain latest-activity order.
+    expect(issueIds()).toEqual(["answered", "unread", "read"]);
+  });
+
+  it("keeps unread-first order on mine when inbox nesting is on (GRE-356)", () => {
+    const answeredIssue = makeIssue("answered", false);
+    answeredIssue.lastActivityAt = new Date("2026-03-11T05:00:00.000Z");
+
+    const readParent = makeIssue("parent", false);
+    readParent.lastActivityAt = new Date("2026-03-11T01:00:00.000Z");
+    const unreadChild = makeIssue("child", true);
+    unreadChild.parentId = "parent";
+    unreadChild.lastActivityAt = new Date("2026-03-11T02:00:00.000Z");
+
+    const [section] = buildGroupedInboxSections(
+      getInboxWorkItems({ issues: [answeredIssue, readParent, unreadChild], approvals: [], unreadFirst: true }),
+      "none",
+      {},
+      { nestingEnabled: true, unreadFirst: true },
+    );
+
+    expect(section.displayItems.map((item) => (item.kind === "issue" ? item.issue.id : item.kind))).toEqual([
+      "parent",
+      "answered",
+    ]);
+    expect(section.childrenByIssueId.get("parent")?.map((issue) => issue.id)).toEqual(["child"]);
   });
 
   it("prefers canonical lastActivityAt over comment-only timestamps", () => {
@@ -1136,6 +1224,7 @@ describe("inbox helpers", () => {
         labels: ["label-1"],
         projects: ["project-1"],
         workspaces: ["workspace-1"],
+        teams: [],
         liveOnly: true,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,
@@ -1152,6 +1241,7 @@ describe("inbox helpers", () => {
         labels: [],
         projects: [],
         workspaces: [],
+        teams: [],
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: true,
@@ -1187,6 +1277,7 @@ describe("inbox helpers", () => {
         labels: [],
         projects: ["project-1"],
         workspaces: ["workspace-1"],
+        teams: [],
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,

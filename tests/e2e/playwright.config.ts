@@ -2,6 +2,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { scrubParentInstanceEnv } from "../fixtures/sandbox-env";
+
+scrubParentInstanceEnv([
+  "GSAM_E2E_",
+  "GSAM_PLAYWRIGHT_CHANNEL",
+  // Knobs for the configs that extend this one.
+  "GSAM_STOP_",
+  "GSAM_REVIEW_RESTART_FILE",
+]);
 
 // Use a dedicated port so e2e tests always start their own server in local_trusted mode,
 // even when the dev server is running on :3100 in authenticated mode.
@@ -76,7 +85,6 @@ export default defineConfig({
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      ...process.env,
       NODE_ENV: "test",
       GSAM_UI_DEV_MIDDLEWARE: "false",
       NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${path.resolve(import.meta.dirname, "fixtures/agent-chat-github.mjs")}`,

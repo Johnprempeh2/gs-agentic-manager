@@ -25,6 +25,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
 import { ProjectWorkspacesContent } from "../components/ProjectWorkspacesContent";
 import { SummarySlotCard } from "../components/SummarySlotCard";
+import { LivePreviewCard } from "../components/LivePreviewCard";
 import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { buildProjectWorkspaceSummaries } from "../lib/project-workspaces-tab";
@@ -45,6 +46,8 @@ import {
   useResourceMembershipMutation,
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
+import { ErrorState } from "../components/ErrorState";
+import { ProjectClientChips } from "../components/ProjectClientChips";
 
 /* ── Top-level tab types ── */
 
@@ -353,7 +356,7 @@ export function ProjectDetail() {
   }, [location.search]);
   const activeTab = activeRouteTab ?? pluginTabFromSearch;
 
-  const { data: project, isLoading, error } = useQuery({
+  const { data: project, isLoading, error, refetch } = useQuery({
     queryKey: [...queryKeys.projects.detail(routeProjectRef), lookupCompanyId ?? null],
     queryFn: () => projectsApi.get(routeProjectRef, lookupCompanyId),
     enabled: canFetchProject,
@@ -680,7 +683,7 @@ export function ProjectDetail() {
   }
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!project) return null;
   const showLeftProjectNotice =
     projectMembershipState === "left" && !dismissedLeftProjectIds.has(project.id);
@@ -778,6 +781,10 @@ export function ProjectDetail() {
               Managed by {project.managedByPlugin.pluginDisplayName}
             </div>
           ) : null}
+          <ProjectClientChips
+            projectId={project.id}
+            enabled={experimentalSettingsQuery.data?.enablePipelines === true}
+          />
         </div>
         <div className="ml-auto flex items-center gap-2">
           <StarToggle
@@ -794,6 +801,8 @@ export function ProjectDetail() {
           />
         </div>
       </div>
+
+      <LivePreviewCard project={project} companyId={resolvedCompanyId} />
 
       <SummarySlotCard
         companyId={resolvedCompanyId}

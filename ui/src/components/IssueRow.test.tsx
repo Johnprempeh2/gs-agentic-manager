@@ -97,6 +97,111 @@ describe("IssueRow", () => {
     container.remove();
   });
 
+  it("says why a blocked task is stuck", () => {
+    const root = createRoot(container);
+    const blockerAttention = {
+      state: "covered", reason: "active_child", unresolvedBlockerCount: 1, coveredBlockerCount: 1,
+      stalledBlockerCount: 0, attentionBlockerCount: 0, sampleBlockerIdentifier: "GRE-12", sampleStalledBlockerIdentifier: null,
+    } as NonNullable<Issue["blockerAttention"]>;
+    act(() => root.render(<IssueRow issue={createIssue({ status: "blocked", blockerAttention })} />));
+    expect(container.querySelector('[data-slot="task-row-blocked"]')?.textContent).toBe("waiting on active sub-task GRE-12");
+    act(() => root.render(<IssueRow issue={createIssue({ status: "todo", blockerAttention })} />));
+    expect(container.querySelector('[data-slot="task-row-blocked"]')).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("shows the plain stop reason on failed and blocked rows only", () => {
+    const stopReasonContext = {
+      currentUserId: "user-1",
+      agentNames: new Map([["agent-ridge", { name: "Ridge" }], ["agent-mica", { name: "Mica" }]]),
+    };
+    const failedRun = { status: "failed", errorCode: "claude_auth_required", finishedAt: "2026-10-04T10:00:00.000Z" };
+    const line = () => container.querySelector('[data-slot="task-row-stop-reason"]');
+    const root = createRoot(container);
+    for (const presentation of ["legacy", "task"] as const) {
+      act(() => root.render(
+        <IssueRow
+          presentation={presentation}
+          issue={createIssue({ status: "todo", assigneeAgentId: "agent-mica", latestRun: failedRun })}
+          stopReasonContext={stopReasonContext}
+        />,
+      ));
+      expect(line()?.textContent).toBe("Claude is signed out · You to act");
+      expect(line()?.getAttribute("title")).toBe(
+        "Claude is signed out · You to act · Waiting for you to reconnect Claude",
+      );
+    }
+
+    // Blocked rows name the blocker's owner straight from the list row.
+    const blockedBy = [{
+      id: "issue-2", identifier: "GRE-306", title: "Fix login", status: "in_progress",
+      priority: "medium", assigneeAgentId: "agent-ridge", assigneeUserId: null,
+    }] as NonNullable<Issue["blockedBy"]>;
+    act(() => root.render(
+      <IssueRow issue={createIssue({ status: "blocked", blockedBy })} stopReasonContext={stopReasonContext} />,
+    ));
+    expect(line()?.textContent).toBe("Waiting for GRE-306 · Ridge to act");
+
+    // Nothing for a running row, a done row, or a run that went fine.
+    act(() => root.render(
+      <IssueRow
+        issue={createIssue({ status: "in_progress", latestRun: failedRun, executionRunId: "run-2" })}
+        stopReasonContext={stopReasonContext}
+      />,
+    ));
+    expect(line()).toBeNull();
+    act(() => root.render(
+      <IssueRow issue={createIssue({ status: "done", latestRun: failedRun })} stopReasonContext={stopReasonContext} />,
+    ));
+    expect(line()).toBeNull();
+    act(() => root.render(
+      <IssueRow
+        issue={createIssue({ status: "todo", latestRun: { status: "succeeded", errorCode: null, finishedAt: null } })}
+        stopReasonContext={stopReasonContext}
+      />,
+    ));
+    expect(line()).toBeNull();
+
+    // Without names (other lists) the row keeps its old note.
+    act(() => root.render(<IssueRow issue={createIssue({ status: "todo", latestRun: failedRun })} />));
+    expect(line()).toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("flags linked work on the row only when it needs a look", () => {
+    const summary = (tone: "success" | "danger") => ({
+      total: 2,
+      byStatusCategory: { [tone === "success" ? "succeeded" : "failed"]: 2 },
+      byLiveness: {},
+      highestSeverity: tone,
+      staleCount: 0,
+      objects: [1, 2].map((n) => ({
+        id: `obj-${n}`, providerKey: "github", objectType: "deployment", displayTitle: null,
+        statusCategory: tone === "success" ? "succeeded" : "failed", statusTone: tone,
+        liveness: "fresh", isTerminal: true,
+      })),
+    }) as unknown as NonNullable<Parameters<typeof IssueRow>[0]["externalObjectSummary"]>;
+    const root = createRoot(container);
+    act(() => root.render(<IssueRow issue={createIssue()} externalObjectSummary={summary("success")} />));
+    expect(container.querySelector("[data-external-status]")).toBeNull();
+    act(() => root.render(<IssueRow issue={createIssue()} externalObjectSummary={summary("danger")} />));
+    expect(container.querySelector("[data-external-status]")).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("shows the Strategic badge only for work linked to an objective or initiative", () => {
+    const root = createRoot(container);
+    for (const presentation of ["task", "legacy"] as const) {
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: "initiative" })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")?.textContent).toBe("Strategic");
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: "kpi" })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")).toBeNull();
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: null })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")).toBeNull();
+    }
+    act(() => root.unmount());
+  });
+
   it("renders the list status glyph at md (16px)", () => {
     const root = createRoot(container);
 

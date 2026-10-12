@@ -1,4 +1,4 @@
-import type { ServerInfoSnapshot } from "@greatstone/shared";
+import type { PartnerBranding, ServerInfoSnapshot } from "@greatstone/shared";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 
 export type DevServerHealthStatus = {
@@ -43,7 +43,25 @@ export type HealthStatus = {
    * settings-visibility registry). Absent when nothing is hidden.
    */
   hiddenSettings?: string[];
+  /**
+   * Partner branding from the GSAM_BRAND_* env vars. Absent on an unbranded
+   * instance. The UI reads the same object from the HTML head
+   * (`lib/partner-branding`) so it is known on first paint.
+   */
+  branding?: PartnerBranding;
 };
+
+/**
+ * Layout's health poll exists for the dev-server restart banner. Poll every 2 s
+ * while a restart is pending (the banner is on screen and tracks it), every 30 s
+ * otherwise so a new backend change still raises the banner, and never on a
+ * server without the dev watcher.
+ */
+export function healthPollInterval(health: HealthStatus | undefined): number | false {
+  const devServer = health?.devServer;
+  if (!devServer?.enabled) return false;
+  return devServer.restartRequired ? 2000 : 30_000;
+}
 
 export const healthApi = {
   get: async (): Promise<HealthStatus> => {

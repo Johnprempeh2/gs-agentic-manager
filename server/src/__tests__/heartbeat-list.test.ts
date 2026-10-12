@@ -6,6 +6,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
 import { boundHeartbeatRunEventPayloadForStorage, heartbeatService } from "../services/heartbeat.ts";
+import { summarizeRunFailureRate } from "../services/run-failure-rate.ts";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -33,6 +34,54 @@ describeEmbeddedPostgres("heartbeat list", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
+  });
+
+  it("counts more than 1,000 finished runs by status in one query, inside the window only (GRE-1325)", async () => {
+    const companyId = randomUUID();
+    const otherCompanyId = randomUUID();
+    const agentId = randomUUID();
+    const otherAgentId = randomUUID();
+    for (const id of [companyId, otherCompanyId]) {
+      await db.insert(companies).values({
+        id,
+        name: "GS Agentic Manager",
+        issuePrefix: `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+      });
+    }
+    const agentRow = (id: string, company: string) => ({
+      id, companyId: company, name: `Agent ${id.slice(0, 4)}`, role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(agents).values([agentRow(agentId, companyId), agentRow(otherAgentId, otherCompanyId)]);
+
+    const since = new Date("2026-10-01T00:00:00Z");
+    const before = new Date("2026-10-08T00:00:00Z");
+    const inside = new Date("2026-10-04T12:00:00Z");
+    const run = (status: string, finishedAt: Date | null, overrides: { companyId?: string; agentId?: string } = {}) => ({
+      companyId, agentId, invocationSource: "assignment", status, finishedAt, ...overrides,
+    });
+    await db.insert(heartbeatRuns).values([
+      ...Array.from({ length: 1150 }, () => run("succeeded", inside)),
+      ...Array.from({ length: 40 }, () => run("failed", inside)),
+      ...Array.from({ length: 6 }, () => run("timed_out", inside)),
+      ...Array.from({ length: 4 }, () => run("interrupted", inside)),
+      ...Array.from({ length: 25 }, () => run("cancelled", inside)),
+      run("succeeded", since), // inclusive start
+      run("failed", before), // exclusive end
+      run("failed", new Date("2026-09-20T00:00:00Z")), // before the window
+      run("running", null), // not finished
+      run("failed", inside, { companyId: otherCompanyId, agentId: otherAgentId }), // another company
+    ]);
+
+    const heartbeat = heartbeatService(db);
+    const counts = await heartbeat.countFinishedByStatus(companyId, { since, before });
+    const rate = summarizeRunFailureRate({ since, before, counts });
+    expect(rate.byStatus).toEqual({ succeeded: 1151, failed: 40, timed_out: 6, interrupted: 4, cancelled: 25 });
+    expect(rate).toMatchObject({ failed: 50, judged: 1201, failedPer100: 4.2 });
+
+    const none = await heartbeat.countFinishedByStatus(companyId, { since, before, agentId: otherAgentId });
+    expect(summarizeRunFailureRate({ since, before, counts: none })).toMatchObject({ judged: 0, failedPer100: null });
   });
 
   it("returns runs even when the linked db schema lacks processGroupId", async () => {
@@ -99,6 +148,76 @@ describeEmbeddedPostgres("heartbeat list", () => {
         delete (heartbeatRuns as Record<string, unknown>).processGroupId;
       }
     }
+  });
+
+  it("filters by status and bounds by createdAt (GRE-794)", async () => {
+    const companyId = randomUUID();
+    const otherCompanyId = randomUUID();
+    const agentId = randomUUID();
+    const otherAgentId = randomUUID();
+
+    for (const id of [companyId, otherCompanyId]) {
+      await db.insert(companies).values({
+        id,
+        name: "GS Agentic Manager",
+        issuePrefix: `T${id.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+        requireBoardApprovalForNewAgents: false,
+      });
+    }
+    for (const [id, company] of [[agentId, companyId], [otherAgentId, otherCompanyId]] as const) {
+      await db.insert(agents).values({
+        id,
+        companyId: company,
+        name: "CodexCoder",
+        role: "engineer",
+        status: "idle",
+        adapterType: "codex_local",
+        adapterConfig: {},
+        runtimeConfig: {},
+        permissions: {},
+      });
+    }
+
+    const run = (status: string, createdAt: string, company = companyId, agent = agentId) => ({
+      id: randomUUID(),
+      companyId: company,
+      agentId: agent,
+      invocationSource: "assignment",
+      status,
+      createdAt: new Date(createdAt),
+    });
+    const rows = [
+      run("failed", "2026-09-27T10:00:00Z"),
+      run("succeeded", "2026-09-28T10:00:00Z"),
+      run("interrupted", "2026-09-29T10:00:00Z"),
+      run("failed", "2026-10-01T10:00:00Z"),
+      run("cancelled", "2026-10-02T10:00:00Z"),
+      run("failed", "2026-09-30T10:00:00Z", otherCompanyId, otherAgentId),
+    ];
+    await db.insert(heartbeatRuns).values(rows);
+    const ids = (list: { id: string }[]) => list.map((r) => r.id);
+    const svc = heartbeatService(db);
+
+    // No new filter: every company row, newest first, as before.
+    expect(ids(await svc.list(companyId))).toEqual([rows[4].id, rows[3].id, rows[2].id, rows[1].id, rows[0].id]);
+
+    const failed = await svc.list(companyId, undefined, undefined, { statuses: ["failed"] });
+    expect(failed.map((r) => r.status)).toEqual(["failed", "failed"]);
+    expect(ids(failed)).toEqual([rows[3].id, rows[0].id]);
+
+    // since is inclusive, before is exclusive.
+    const window = await svc.list(companyId, undefined, undefined, {
+      since: new Date("2026-09-28T10:00:00Z"),
+      before: new Date("2026-10-01T10:00:00Z"),
+    });
+    expect(ids(window)).toEqual([rows[2].id, rows[1].id]);
+
+    const combined = await svc.list(companyId, agentId, 1, {
+      summary: true,
+      statuses: ["failed", "interrupted", "cancelled"],
+      before: new Date("2026-10-02T10:00:00Z"),
+    });
+    expect(ids(combined)).toEqual([rows[3].id]);
   });
 
   it("returns small result json payloads unchanged from getRun", async () => {

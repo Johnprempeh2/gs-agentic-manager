@@ -65,7 +65,7 @@ const { backend: dsn, legacyFallbackUsed } = resolveSentryDsns();
 if (legacyFallbackUsed) {
   // eslint-disable-next-line no-console
   console.warn(
-    "[paperclip] SENTRY_DSN_FRONTEND or SENTRY_DSN_BACKEND is not set. " +
+    "[gsam] SENTRY_DSN_FRONTEND or SENTRY_DSN_BACKEND is not set. " +
       "The server uses the legacy SENTRY_DSN value for the affected " +
       "component. Set SENTRY_DSN_FRONTEND and SENTRY_DSN_BACKEND to send " +
       "each component to its own Sentry project.",
@@ -108,7 +108,7 @@ export function captureException(error: unknown): void {
     sentryHandle.captureException(error);
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error("[paperclip] Sentry captureException failed", err);
+    console.error("[gsam] Sentry captureException failed", err);
   }
 }
 
@@ -173,7 +173,7 @@ export function captureRunFailure(event: RunFailureEvent): void {
     });
   } catch (err) {
     // eslint-disable-next-line no-console
-    console.error("[paperclip] Sentry captureRunFailure failed", err);
+    console.error("[gsam] Sentry captureRunFailure failed", err);
   }
 }
 
@@ -192,7 +192,7 @@ export function shutdownSentry(): Promise<void> {
       await sentryHandle.close(5_000);
     } catch (err) {
       // eslint-disable-next-line no-console
-      console.error("[paperclip] Sentry shutdown failed", err);
+      console.error("[gsam] Sentry shutdown failed", err);
     }
   })();
   return shutdownPromise;
@@ -268,7 +268,7 @@ async function bootstrapSentry(dsn: string): Promise<void> {
   if (!versionCheck.ok) {
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] The backend Sentry DSN is set, but the @sentry/node " +
+      "[gsam] The backend Sentry DSN is set, but the @sentry/node " +
         "package is not installed, or is installed at an unsupported " +
         "version. Install the declared version of @sentry/node to enable " +
         "server error monitoring. Continuing without it.",
@@ -295,7 +295,7 @@ async function bootstrapSentry(dsn: string): Promise<void> {
     // after that point reaches this block.
     // eslint-disable-next-line no-console
     console.warn(
-      "[paperclip] The backend Sentry DSN is set, and @sentry/node passed " +
+      "[gsam] The backend Sentry DSN is set, and @sentry/node passed " +
         "the version check, but it failed to load or initialize. " +
         "Continuing without error monitoring.",
       err,

@@ -291,7 +291,7 @@ export function IssueDocumentAnnotations({
         className={cn("relative min-w-0", showDesktopGutter && "lg:flex-1")}
         data-testid={`document-annotation-body-${doc.key}`}
       >
-        <div className="relative z-(--z-1)">
+        <div className="relative z-raised">
           {children}
         </div>
         {!historicalPreview && doc.latestRevisionId ? (

@@ -1,0 +1,12 @@
+# Runs gsam-restore-check@<code>.service every week (GRE-666). The host watch
+# fails when the last check is older than 7 days.
+[Unit]
+Description=GS Agentic Manager restore-check %i, weekly
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

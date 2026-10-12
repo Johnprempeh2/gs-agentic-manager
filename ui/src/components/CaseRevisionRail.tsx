@@ -79,7 +79,7 @@ function CaseDocumentDiffModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!max-w-(--pct-90) flex max-h-(--sz-85vh) w-full flex-col overflow-hidden">
+      <DialogContent aria-describedby={undefined} className="!max-w-(--pct-90) flex max-h-(--sz-85vh) w-full flex-col overflow-hidden">
         <div className="flex items-center justify-between gap-4">
           <DialogHeader className="shrink-0">
             <DialogTitle>

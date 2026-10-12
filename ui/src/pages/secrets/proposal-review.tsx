@@ -79,7 +79,7 @@ export function FingerprintChip({
           .then(() => pushToast({ title: "Fingerprint copied", tone: "success" }))
           .catch(() => pushToast({ title: "Couldn’t copy fingerprint", tone: "error" }));
       }}
-      title={`Copy full digest — ${full}`}
+      title={`Copy full digest: ${full}`}
       className={cn(
         "inline-flex items-center gap-1 font-mono hover:text-foreground",
         className,
@@ -537,7 +537,7 @@ function BindingApproveBody({
           {proposal.target ? (
             <AgentRefChip agent={proposal.target} className="text-sm font-medium" />
           ) : (
-            <span className="text-muted-foreground">—</span>
+            <span className="text-muted-foreground">None</span>
           )}
         </div>
         <div className="flex items-center justify-between gap-2">

@@ -11,6 +11,11 @@ import type {
   PaperclipQuestionSet,
 } from "@greatstone/adapter-utils";
 import type { MentionOption } from "@/components/MarkdownEditor";
+import { MarkdownBody } from "@/components/MarkdownBody";
+import {
+  InteractionGuideSheet,
+  InteractionGuideText,
+} from "@/components/InteractionGuide";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,6 +23,7 @@ import {
   loadStructuredDraft,
   saveStructuredDraft,
 } from "@/lib/composer-draft";
+import { needsInteractionGuide } from "@/lib/interaction-guide";
 import { cn } from "@/lib/utils";
 import {
   TaskChatComposerTakeoverControls,
@@ -177,9 +183,9 @@ function SelectOption({
           ) : null}
         </span>
         {description ? (
-          <span className="block text-xs leading-4 text-muted-foreground">
+          <MarkdownBody className="text-xs leading-4 text-muted-foreground">
             {description}
-          </span>
+          </MarkdownBody>
         ) : null}
       </span>
     </button>
@@ -274,11 +280,13 @@ export function QuestionForm({
   const [working, setWorking] = useState<"submit" | "cancel" | null>(null);
   const [inputUploading, setInputUploading] = useState(false);
   const [error, setError] = useState<FormError | null>(null);
+  const [guideOpen, setGuideOpen] = useState(false);
   const promptRef = useRef<HTMLParagraphElement>(null);
   const previousPage = useRef(page);
 
   useEffect(() => {
     if (previousPage.current !== page) {
+      setGuideOpen(false);
       promptRef.current?.focus();
       previousPage.current = page;
     }
@@ -490,71 +498,8 @@ export function QuestionForm({
     }
     void submit();
   }
-  return (
-    <div
-      key={question.id}
-      className="tc-question-page"
-      onKeyDown={(event) => {
-        if (
-          disabled ||
-          working ||
-          event.repeat ||
-          question.answerMode === "text" ||
-          event.metaKey ||
-          event.ctrlKey ||
-          event.altKey
-        )
-          return;
-        const target = event.target as HTMLElement;
-        if (target.matches("input, textarea, [contenteditable='true']")) return;
-        const optionIndex = Number.parseInt(event.key, 10) - 1;
-        const option = visibleOptions[optionIndex];
-        if (!option || optionIndex < 0 || optionIndex > 8) return;
-        event.preventDefault();
-        toggleOption(option.id);
-      }}
-    >
-      {questionSet.description ? (
-        <p className="mb-3 text-sm text-muted-foreground">
-          {questionSet.description}
-        </p>
-      ) : null}
-      {question.answerMode === "text" ? (
-        <div className="mb-2 flex items-center gap-3 text-xs text-muted-foreground">
-          {question.answerMode === "text" ? <span>Write an answer</span> : null}
-        </div>
-      ) : null}
-      {pagination ? (
-        takeoverActions ? (
-          <TaskChatComposerTakeoverControls>
-            {pagination}
-          </TaskChatComposerTakeoverControls>
-        ) : (
-          <div className="mb-2 flex justify-end text-xs text-muted-foreground">
-            {pagination}
-          </div>
-        )
-      ) : null}
-      <div>
-        {question.header ? (
-          <p className="mb-1 text-xs font-medium text-muted-foreground">
-            {question.header}
-          </p>
-        ) : null}
-        <p
-          ref={promptRef}
-          tabIndex={-1}
-          id={`${id}-${question.id}-prompt`}
-          className="text-sm font-medium leading-5 text-foreground"
-        >
-          {question.prompt}
-        </p>
-        {question.helpText ? (
-          <p className="mt-1 text-xs leading-4 text-muted-foreground">
-            {question.helpText}
-          </p>
-        ) : null}
-      </div>
+  const answerArea = (
+    <>
       {question.answerMode === "text" ? (
         <div className="mt-3">
           <TaskChatRichInput
@@ -698,6 +643,87 @@ export function QuestionForm({
           {isLastPage ? (questionSet.submitLabel ?? "Submit answers") : "Next"}
         </Button>
       </div>
+    </>
+  );
+
+  return (
+    <div
+      key={question.id}
+      className="tc-question-page"
+      onKeyDown={(event) => {
+        if (
+          disabled ||
+          working ||
+          event.repeat ||
+          question.answerMode === "text" ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.altKey
+        )
+          return;
+        const target = event.target as HTMLElement;
+        if (target.matches("input, textarea, [contenteditable='true']")) return;
+        const optionIndex = Number.parseInt(event.key, 10) - 1;
+        const option = visibleOptions[optionIndex];
+        if (!option || optionIndex < 0 || optionIndex > 8) return;
+        event.preventDefault();
+        toggleOption(option.id);
+      }}
+    >
+      {questionSet.description ? (
+        <MarkdownBody className="mb-3 text-sm text-muted-foreground">
+          {questionSet.description}
+        </MarkdownBody>
+      ) : null}
+      {question.answerMode === "text" ? (
+        <div className="mb-2 flex items-center gap-3 text-xs text-muted-foreground">
+          {question.answerMode === "text" ? <span>Write an answer</span> : null}
+        </div>
+      ) : null}
+      {pagination ? (
+        takeoverActions ? (
+          <TaskChatComposerTakeoverControls>
+            {pagination}
+          </TaskChatComposerTakeoverControls>
+        ) : (
+          <div className="mb-2 flex justify-end text-xs text-muted-foreground">
+            {pagination}
+          </div>
+        )
+      ) : null}
+      <div>
+        {question.header ? (
+          <p className="mb-1 text-xs font-medium text-muted-foreground">
+            {question.header}
+          </p>
+        ) : null}
+        <p
+          ref={promptRef}
+          tabIndex={-1}
+          id={`${id}-${question.id}-prompt`}
+          className="text-sm font-medium leading-5 text-foreground"
+        >
+          {question.prompt}
+        </p>
+        <InteractionGuideText
+          markdown={question.helpText}
+          onOpenGuide={() => setGuideOpen(true)}
+          className="mt-1 text-xs leading-4 text-muted-foreground"
+        />
+      </div>
+      {/* While the guide is open the answer controls live in the guide. */}
+      {guideOpen ? null : answerArea}
+      {question.helpText && needsInteractionGuide(question.helpText) ? (
+        <InteractionGuideSheet
+          open={guideOpen}
+          onOpenChange={setGuideOpen}
+          title={questionSet.title ?? question.prompt}
+          lead={questionSet.title && questionSet.title !== question.prompt ? question.prompt : null}
+          markdown={question.helpText}
+        >
+          {answerArea}
+        </InteractionGuideSheet>
+      ) : null}
     </div>
   );
 }

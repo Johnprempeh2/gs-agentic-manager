@@ -28,6 +28,7 @@ import {
   type CompanyArtifactsResponse,
 } from "@greatstone/shared";
 import { badRequest, notFound } from "../errors.js";
+import { latestDeliverableIdsByAttachment } from "./deliverables.js";
 import type { StorageService } from "../storage/types.js";
 
 const TEXT_PREVIEW_BYTES = 4096;
@@ -347,6 +348,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
       const artifacts: CompanyArtifact[] = [];
       const artifactSortDates = new Map<string, string>();
       const workProductAttachmentIds = new Set<string>();
+      const artifactAttachmentIds = new Map<string, string>();
 
       if (query.kind === "all" || query.kind === "document") {
         const createdAgent = alias(agents, "document_created_agent");
@@ -588,6 +590,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
           const attachmentMetadata = metadata.success ? metadata.data : null;
           if (attachmentMetadata) {
             workProductAttachmentIds.add(attachmentMetadata.attachmentId);
+            artifactAttachmentIds.set(row.artifactId, attachmentMetadata.attachmentId);
           }
           const contentType = attachmentMetadata?.contentType ?? null;
           const identifier = row.issueIdentifier ?? row.issueId;
@@ -688,6 +691,7 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
 
         const attachmentArtifacts = await Promise.all(attachmentRows.map(async (row): Promise<CompanyArtifact | null> => {
           if (workProductAttachmentIds.has(row.attachmentId)) return null;
+          artifactAttachmentIds.set(row.artifactId, row.attachmentId);
           const mediaKind = classifyMediaKind(row.contentType);
           const contentPath = attachmentContentPath(row.attachmentId);
           const identifier = row.issueIdentifier ?? row.issueId;
@@ -718,6 +722,12 @@ export function companyArtifactsService(db: Db, storage?: StorageService) {
         }));
 
         artifacts.push(...attachmentArtifacts.filter((artifact): artifact is CompanyArtifact => artifact !== null));
+      }
+
+      const deliverableIds = await latestDeliverableIdsByAttachment(db, companyId, [...artifactAttachmentIds.values()]);
+      for (const artifact of artifacts) {
+        const deliverableId = deliverableIds.get(artifactAttachmentIds.get(artifact.id) ?? "");
+        if (deliverableId) artifact.deliverableId = deliverableId;
       }
 
       const sorted = sortArtifacts(artifacts, artifactSortDates);

@@ -24,7 +24,9 @@ const RUN_WATCHDOG = "d0000000-0000-4000-8000-000000000003";
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
   listReviewAttention: vi.fn(),
+  listDependencyReadiness: vi.fn(),
   addComment: vi.fn(),
+  markRead: vi.fn(),
 }));
 
 const mockInteractionService = vi.hoisted(() => ({
@@ -158,7 +160,13 @@ vi.mock("../services/trust-preset-resolver.js", () => ({
   resolveCoreTrustPreset: mockResolveCoreTrustPreset,
 }));
 
+const mockIssueHasApprovalEvidence = vi.hoisted(() => vi.fn(async () => true));
+
 function registerModuleMocks() {
+  vi.doMock("../services/approval-evidence.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../services/approval-evidence.js")>()),
+    issueHasApprovalEvidence: mockIssueHasApprovalEvidence,
+  }));
   vi.doMock("../services/question-response-delivery.js", () => ({
     questionResponseDeliveryService: () => mockQuestionResponseDeliveries,
   }));
@@ -177,6 +185,9 @@ function registerModuleMocks() {
         ambiguous: false,
         agent: { id: raw },
       })),
+    }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
     }),
     clampIssueListLimit: (value: number) => value,
     companySkillService: () => ({
@@ -346,6 +357,8 @@ describe.sequential("issue thread interaction routes", () => {
     }));
     mockIssueService.getById.mockResolvedValue(createIssue());
     mockIssueService.listReviewAttention.mockResolvedValue(new Map());
+    mockIssueService.listDependencyReadiness.mockResolvedValue(new Map());
+    mockIssueService.markRead.mockResolvedValue({ lastReadAt: new Date() });
     mockInteractionService.listForIssue.mockResolvedValue([]);
     mockInteractionService.expireRequestConfirmationsSupersededByHistoricalComments.mockResolvedValue([]);
     mockInteractionService.expirePendingInteractionsForTerminalIssue.mockResolvedValue([]);
@@ -910,6 +923,58 @@ describe.sequential("issue thread interaction routes", () => {
     );
   });
 
+  // GRE-356: an answered decision must not stay unread in the answerer's Inbox.
+  it.each([
+    ["accept", "interaction-1/accept", {}],
+    ["reject", "interaction-3/reject", { reason: "Needs changes" }],
+    ["respond", "interaction-2/respond", { answers: [{ questionId: "scope", optionIds: ["phase-1"] }] }],
+    ["verdicts", "interaction-verdicts/verdicts", { verdicts: [{ id: "docs", verdict: "reject", reason: "Missing examples" }] }],
+  ])("marks the issue read for the board user who answers (%s)", async (_name, path, body) => {
+    const app = await createApp();
+
+    const res = await request(app)
+      .post(`/api/issues/${ISSUE_ID}/interactions/${path}`)
+      .send(body);
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.markRead).toHaveBeenCalledTimes(1);
+    expect(mockIssueService.markRead).toHaveBeenCalledWith(
+      "company-1",
+      ISSUE_ID,
+      "local-board",
+      expect.any(Date),
+    );
+  });
+
+  it("does not mark the issue read when an agent answers", async () => {
+    mockIssueService.getById.mockResolvedValueOnce(createIssue({ status: "todo" }));
+    const app = await createApp({
+      type: "agent",
+      agentId: ASSIGNEE_AGENT_ID,
+      companyId: "company-1",
+      runId: RUN_2,
+    });
+
+    const res = await request(app)
+      .post(`/api/issues/${ISSUE_ID}/interactions/interaction-2/respond`)
+      .send({ answers: [{ questionId: "scope", optionIds: ["phase-1"] }] });
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.markRead).not.toHaveBeenCalled();
+  });
+
+  it("still returns the saved answer when marking the issue read fails", async () => {
+    mockIssueService.markRead.mockRejectedValueOnce(new Error("read state write failed"));
+    const app = await createApp();
+
+    const res = await request(app)
+      .post(`/api/issues/${ISSUE_ID}/interactions/interaction-2/respond`)
+      .send({ answers: [{ questionId: "scope", optionIds: ["phase-1"] }] });
+
+    expect(res.status).toBe(200);
+    expect(mockQuestionResponseDeliveries.deliver).toHaveBeenCalledWith("interaction-2");
+  });
+
   it("allows a board user to withdraw and wakes the assignee", async () => {
     const app = await createApp();
     const res = await request(app)
@@ -1224,7 +1289,7 @@ describe.sequential("issue thread interaction routes", () => {
       decision: "accepted",
       executionStatus: "executed",
       resultSummary: "Added row 42",
-      instructions: "the approved google_sheets_add_row action already ran — do not call the tool again; continue with this result.",
+      instructions: "the approved google_sheets_add_row action already ran. Do not call the tool again; continue with this result.",
     };
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
       ASSIGNEE_AGENT_ID,
@@ -1278,7 +1343,7 @@ describe.sequential("issue thread interaction routes", () => {
             decision: "accepted",
             executionStatus: "failed",
             error: "Connector timed out",
-            instructions: "the approved action ran and failed with Connector timed out; adjust your approach — a fresh call will open a new approval.",
+            instructions: "the approved action ran and failed with Connector timed out; adjust your approach, as a fresh call will open a new approval.",
           },
         }),
       }),
@@ -2199,6 +2264,92 @@ describe.sequential("issue thread interaction routes", () => {
     );
   });
 
+  describe("GRE-780: rejected card on a blocked issue", () => {
+    function rejectedOnAcceptConfirmation(issueId: string) {
+      return {
+        id: "interaction-blocked-only-path",
+        companyId: "company-1",
+        issueId,
+        kind: "request_confirmation",
+        status: "rejected",
+        continuationPolicy: "wake_assignee_on_accept",
+        idempotencyKey: null,
+        sourceCommentId: null,
+        sourceRunId: "run-blocked-only-path",
+        payload: { version: 1, prompt: "Apps added on dry01?" },
+        result: { version: 1, outcome: "rejected", reason: "lets pause this" },
+        createdAt: "2026-10-04T21:34:00.000Z",
+        updatedAt: "2026-10-04T21:37:00.000Z",
+        resolvedAt: "2026-10-04T21:37:00.000Z",
+      };
+    }
+
+    it("wakes the assignee with the reason when the card was the only path", async () => {
+      const issue = createIssue({ status: "blocked" });
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockInteractionService.rejectInteraction.mockResolvedValueOnce(
+        rejectedOnAcceptConfirmation(issue.id),
+      );
+
+      const res = await request(await createApp())
+        .post(`/api/issues/${issue.id}/interactions/interaction-blocked-only-path/reject`)
+        .send({ reason: "lets pause this" });
+
+      expect(res.status).toBe(200);
+      expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+        ASSIGNEE_AGENT_ID,
+        expect.objectContaining({
+          idempotencyKey: "interaction:interaction-blocked-only-path:rejected",
+          payload: expect.objectContaining({
+            blockedPathLost: true,
+            blockedPathConsumedRef: "interaction-blocked-only-path",
+            paperclipAgentMessage: expect.objectContaining({ text: "lets pause this" }),
+          }),
+          contextSnapshot: expect.objectContaining({
+            blockedPathInstruction: expect.stringContaining("move it to backlog"),
+          }),
+        }),
+      );
+    });
+
+    it("does not wake when an unresolved blocker still owns the wait", async () => {
+      const issue = createIssue({ status: "blocked" });
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockIssueService.listDependencyReadiness.mockResolvedValue(new Map([[
+        issue.id,
+        { issueId: issue.id, unresolvedBlockerCount: 1 },
+      ]]));
+      mockInteractionService.rejectInteraction.mockResolvedValueOnce(
+        rejectedOnAcceptConfirmation(issue.id),
+      );
+
+      const res = await request(await createApp())
+        .post(`/api/issues/${issue.id}/interactions/interaction-blocked-only-path/reject`)
+        .send({ reason: "lets pause this" });
+
+      expect(res.status).toBe(200);
+      expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+    });
+
+    it("does not wake when another card is still pending", async () => {
+      const issue = createIssue({ status: "blocked" });
+      mockIssueService.getById.mockResolvedValue(issue);
+      mockInteractionService.listForIssue.mockResolvedValue([
+        { id: "interaction-other", status: "pending" },
+      ]);
+      mockInteractionService.rejectInteraction.mockResolvedValueOnce(
+        rejectedOnAcceptConfirmation(issue.id),
+      );
+
+      const res = await request(await createApp())
+        .post(`/api/issues/${issue.id}/interactions/interaction-blocked-only-path/reject`)
+        .send({ reason: "lets pause this" });
+
+      expect(res.status).toBe(200);
+      expect(mockHeartbeatService.wakeup).not.toHaveBeenCalled();
+    });
+  });
+
   it("wakes with decline instructions when a tool-action confirmation is rejected", async () => {
     mockInteractionService.rejectInteraction.mockResolvedValueOnce({
       id: "interaction-tool-action-rejected",
@@ -2241,7 +2392,7 @@ describe.sequential("issue thread interaction routes", () => {
       decision: "rejected",
       executionStatus: "rejected",
       declineReason: "Use the sandbox sheet instead",
-      instructions: "the action was declined: Use the sandbox sheet instead; do not retry the same call — adjust your approach or mark the task blocked/in_review with the decline reason.",
+      instructions: "the action was declined: Use the sandbox sheet instead; do not retry the same call. Adjust your approach or mark the task blocked/in_review with the decline reason.",
     };
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
       ASSIGNEE_AGENT_ID,
@@ -2317,6 +2468,74 @@ describe.sequential("issue thread interaction routes", () => {
         userId: null,
       },
     );
+  });
+
+  describe("approval cards for visual work (GRE-451)", () => {
+    const agentActor = {
+      type: "agent",
+      agentId: CREATED_AGENT_ID,
+      companyId: "company-1",
+      runId: RUN_1,
+    };
+    const designCard = {
+      kind: "request_confirmation",
+      idempotencyKey: "confirmation:design-1",
+      payload: { version: 1, prompt: "Approve the new Decisions card design?" },
+    };
+
+    it("returns 422 with a plain message when the task has nothing attached", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValueOnce(false);
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send(designCard);
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toContain("John approves what he can see");
+      expect(res.body.error).toContain("/attachments");
+      expect(mockIssueHasApprovalEvidence).toHaveBeenCalledWith(mockDb, "company-1", ISSUE_ID);
+      expect(mockInteractionService.create).not.toHaveBeenCalled();
+    });
+
+    it("creates the card when the task has an attachment or deliverable", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValueOnce(true);
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send(designCard);
+
+      expect(res.status).toBe(201);
+      expect(mockInteractionService.create).toHaveBeenCalled();
+    });
+
+    it("does not ask for an attachment on cards that are not about visual work", async () => {
+      const app = await createApp(agentActor);
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send({
+          kind: "request_confirmation",
+          idempotencyKey: "confirmation:migration-1",
+          payload: { version: 1, prompt: "Run the backfill on the sandbox database?" },
+        });
+
+      expect(res.status).toBe(201);
+      expect(mockIssueHasApprovalEvidence).not.toHaveBeenCalled();
+    });
+
+    it("does not apply to board users", async () => {
+      mockIssueHasApprovalEvidence.mockResolvedValue(false);
+      const app = await createApp();
+
+      const res = await request(app)
+        .post(`/api/issues/${ISSUE_ID}/interactions`)
+        .send(designCard);
+
+      expect(res.status).toBe(201);
+      expect(mockIssueHasApprovalEvidence).not.toHaveBeenCalled();
+    });
   });
 
   it("allows a different in-scope agent run to respond when policy permits", async () => {

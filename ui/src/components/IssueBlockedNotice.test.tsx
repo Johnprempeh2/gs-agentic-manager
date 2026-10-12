@@ -226,7 +226,7 @@ describe("IssueBlockedNotice", () => {
     expect(calm).not.toBeNull();
     expect(calm!.getAttribute("data-successful-run-handoff")).toBe("in_flight");
     expect(node.textContent).toContain(
-      "A correction run is in progress — the agent is working. This alert returns if the run stops without choosing a next step.",
+      "A correction run is in progress. The agent is working. This alert returns if the run stops without choosing a next step.",
     );
     const runLink = calm!.querySelector("a");
     expect(runLink?.getAttribute("href")).toBe(

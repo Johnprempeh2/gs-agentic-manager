@@ -5,6 +5,7 @@ import {
   isCodexLocalFastModeSupported,
   normalizeCodexModel,
 } from "../index.js";
+import { codexManagedLinkedAppsConfigArgs } from "./linked-apps-policy.js";
 
 const SKIP_GIT_REPO_CHECK_FLAG = "--skip-git-repo-check";
 
@@ -86,6 +87,8 @@ export function buildCodexExecArgs(
     args.push("-c", 'service_tier="fast"', "-c", "features.fast_mode=true");
   }
   if (extraArgs.length > 0) args.push(...extraArgs);
+  // Linked ChatGPT apps keep read tools; send/write tools are off (GRE-798).
+  args.push(...codexManagedLinkedAppsConfigArgs());
   if (!bypass && options.networkAccess === false) {
     args.push("-c", "sandbox_workspace_write.network_access=false");
   }

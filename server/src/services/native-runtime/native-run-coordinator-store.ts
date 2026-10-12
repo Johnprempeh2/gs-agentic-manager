@@ -18,6 +18,7 @@ import {
   validatePrpEvent,
   validatePrpStructuredRunResult,
 } from "../../vendor/paperclip-runner/index.js";
+import { REFERENCED_ROW_LOCK } from "../../row-locks.js";
 
 export interface NativeRunStoreBinding {
   readonly companyId: string;
@@ -232,7 +233,10 @@ export class NativeRunCoordinatorStore {
             eq(heartbeatRuns.runtimeMode, "native"),
           ),
         )
-        .for("update")
+        // Serialises event sequencing on this run; only next_event_seq is
+        // updated, so NO KEY UPDATE is enough and does not wait on writes that
+        // merely reference the run.
+        .for(REFERENCED_ROW_LOCK)
         .limit(1);
       if (!run) throw new Error("native_event_run_not_authorized");
 
@@ -345,11 +349,14 @@ export class NativeRunCoordinatorStore {
       await tx.select({ id: issues.id }).from(issues)
         .where(and(eq(issues.id, this.#binding.issueId), eq(issues.companyId, this.#binding.companyId)))
         .for("key share");
+      // Only non-key run columns change below, so NO KEY UPDATE serialises
+      // result commits as before without waiting on writes that reference
+      // the run and then the task this transaction already key-shares.
       const [run] = await tx
         .select()
         .from(heartbeatRuns)
         .where(eq(heartbeatRuns.id, this.#binding.runId))
-        .for("update")
+        .for(REFERENCED_ROW_LOCK)
         .limit(1);
       if (
         !run ||

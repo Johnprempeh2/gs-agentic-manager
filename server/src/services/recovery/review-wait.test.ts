@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   activityLog,
@@ -9,6 +10,7 @@ import {
   issueComments,
   issueRelations,
   issues,
+  issueThreadInteractions,
 } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
@@ -19,9 +21,12 @@ import {
   REVIEW_WAIT_ACTIVITY_WINDOW_MS,
   REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS,
   REVIEW_WAIT_MAX_DEFERRALS,
+  REVIEW_WAIT_PENDING_CARD_RECHECK_MS,
+  REVIEW_WAIT_RECHECK_MS,
   decideReviewWait,
   isReviewerWaitingOnCheck,
   readReviewWaitEvidence,
+  reviewWaitRecheckMs,
 } from "./review-wait.js";
 
 const NOW = new Date("2026-09-28T07:57:19Z");
@@ -30,13 +35,13 @@ const minutesAgo = (minutes: number) => new Date(NOW.getTime() - minutes * 60 * 
 describe("decideReviewWait (GRE-97)", () => {
   it("waits when the reviewer commented within N = 30 minutes", () => {
     expect(
-      decideReviewWait({ latestReviewerCommentAt: minutesAgo(2), activeCheckIssueCount: 0, priorDeferrals: 0 }, NOW),
+      decideReviewWait({ latestReviewerCommentAt: minutesAgo(2), activeCheckIssueCount: 0, pendingLinkedCardCount: 0, priorDeferrals: 0 }, NOW),
     ).toEqual({ kind: "waiting", reason: "reviewer_comment" });
   });
 
   it("waits when a check issue is being worked, even with an old comment", () => {
     expect(
-      decideReviewWait({ latestReviewerCommentAt: minutesAgo(600), activeCheckIssueCount: 1, priorDeferrals: 0 }, NOW),
+      decideReviewWait({ latestReviewerCommentAt: minutesAgo(600), activeCheckIssueCount: 1, pendingLinkedCardCount: 0, priorDeferrals: 0 }, NOW),
     ).toEqual({ kind: "waiting", reason: "active_check_issue" });
   });
 
@@ -45,7 +50,7 @@ describe("decideReviewWait (GRE-97)", () => {
       decideReviewWait(
         {
           latestReviewerCommentAt: new Date(NOW.getTime() - REVIEW_WAIT_ACTIVITY_WINDOW_MS - 1),
-          activeCheckIssueCount: 0,
+          activeCheckIssueCount: 0, pendingLinkedCardCount: 0,
           priorDeferrals: 0,
         },
         NOW,
@@ -56,7 +61,7 @@ describe("decideReviewWait (GRE-97)", () => {
   it("is a stall once the deferral budget is spent", () => {
     expect(
       decideReviewWait(
-        { latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 1, priorDeferrals: REVIEW_WAIT_MAX_DEFERRALS },
+        { latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 1, pendingLinkedCardCount: 0, priorDeferrals: REVIEW_WAIT_MAX_DEFERRALS },
         NOW,
       ),
     ).toEqual({ kind: "stalled", reason: "budget_exhausted" });
@@ -65,9 +70,9 @@ describe("decideReviewWait (GRE-97)", () => {
 
 describe("decideReviewWait budget by evidence (GRE-218)", () => {
   const commentOnly = (priorDeferrals: number) =>
-    decideReviewWait({ latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 0, priorDeferrals }, NOW);
+    decideReviewWait({ latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 0, pendingLinkedCardCount: 0, priorDeferrals }, NOW);
   const activeCheck = (priorDeferrals: number) =>
-    decideReviewWait({ latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 1, priorDeferrals }, NOW);
+    decideReviewWait({ latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 1, pendingLinkedCardCount: 0, priorDeferrals }, NOW);
 
   it("keeps the full budget for an active check and a short one for a comment", () => {
     expect(REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS).toBe(2);
@@ -93,9 +98,33 @@ describe("decideReviewWait budget by evidence (GRE-218)", () => {
   it("no evidence: no activity, whatever the deferral count", () => {
     for (const priorDeferrals of [0, 2, 8]) {
       expect(
-        decideReviewWait({ latestReviewerCommentAt: null, activeCheckIssueCount: 0, priorDeferrals }, NOW),
+        decideReviewWait({ latestReviewerCommentAt: null, activeCheckIssueCount: 0, pendingLinkedCardCount: 0, priorDeferrals }, NOW),
       ).toEqual({ kind: "stalled", reason: "no_activity" });
     }
+  });
+});
+
+describe("decideReviewWait with a pending card on a linked issue (GRE-290)", () => {
+  it("waits with no budget while a linked card is pending, and rechecks less often", () => {
+    for (const priorDeferrals of [0, 2, REVIEW_WAIT_MAX_DEFERRALS, 50]) {
+      const decision = decideReviewWait(
+        { latestReviewerCommentAt: null, activeCheckIssueCount: 0, pendingLinkedCardCount: 1, priorDeferrals },
+        NOW,
+      );
+      expect(decision).toEqual({ kind: "waiting", reason: "pending_linked_card" });
+      expect(reviewWaitRecheckMs(decision)).toBe(REVIEW_WAIT_PENDING_CARD_RECHECK_MS);
+    }
+  });
+
+  it("uses the normal rules and recheck once no card is pending", () => {
+    const decision = decideReviewWait(
+      { latestReviewerCommentAt: minutesAgo(1), activeCheckIssueCount: 0, pendingLinkedCardCount: 0, priorDeferrals: 2 },
+      NOW,
+    );
+    expect(decision).toEqual({ kind: "stalled", reason: "budget_exhausted" });
+    expect(
+      reviewWaitRecheckMs({ kind: "waiting", reason: "reviewer_comment" }),
+    ).toBe(REVIEW_WAIT_RECHECK_MS);
   });
 });
 
@@ -112,6 +141,7 @@ describeEmbeddedPostgres("readReviewWaitEvidence (GRE-97)", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(issueThreadInteractions);
     await db.delete(activityLog);
     await db.delete(issueComments);
     await db.delete(heartbeatRuns);
@@ -161,6 +191,98 @@ describeEmbeddedPostgres("readReviewWaitEvidence (GRE-97)", () => {
     await db.insert(issues).values({ id, companyId, title: "check", status, priority: "medium", parentId });
     return id;
   }
+
+  async function addCard(
+    companyId: string,
+    issueId: string,
+    status = "pending",
+    addresseeAgentId: string | null = null,
+  ) {
+    const id = randomUUID();
+    await db.insert(issueThreadInteractions).values({
+      id,
+      companyId,
+      issueId,
+      kind: "request_confirmation",
+      status,
+      addresseeAgentId,
+      payload: { version: 1, prompt: "OK to merge?" } as never,
+    });
+    return id;
+  }
+
+  async function spendCommentBudget(companyId: string, issueId: string, reviewerAgentId: string) {
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      authorAgentId: reviewerAgentId,
+      body: "No change to the hold. John's OK is not given yet; the card on GRE-264 is pending.",
+      createdAt: minutesAgo(1),
+    });
+    await db.insert(activityLog).values(
+      Array.from({ length: REVIEW_WAIT_COMMENT_ONLY_MAX_DEFERRALS }, () => ({
+        companyId,
+        actorType: "system",
+        actorId: "recovery",
+        action: "issue.monitor_scheduled",
+        entityType: "issue",
+        entityId: issueId,
+        details: { source: REVIEW_WAIT_ACTIVITY_SOURCE },
+        createdAt: minutesAgo(10),
+      })),
+    );
+  }
+
+  // GRE-290, 2026-09-29 23:42: GRE-262 (in_review, Keystone) waited only on
+  // John's approval card on its sibling GRE-264. The comment-only budget ran
+  // out and the watchdog blocked GRE-262 "for the board".
+  it("GRE-262/GRE-264: a pending card on a sibling keeps the review waiting past the comment budget", async () => {
+    const { companyId, reviewerAgentId, issueId } = await seed();
+    const parentId = await addIssue(companyId, "in_progress");
+    await db.update(issues).set({ parentId }).where(eq(issues.id, issueId));
+    const siblingId = await addIssue(companyId, "in_review", parentId); // GRE-264
+    await spendCommentBudget(companyId, issueId, reviewerAgentId);
+
+    // Before the card: the normal rule blocks (the 23:42 behaviour).
+    expect(await isReviewerWaitingOnCheck(db, { companyId, issueId, reviewerAgentId, now: NOW })).toBe(false);
+
+    const cardId = await addCard(companyId, siblingId);
+    const evidence = await readReviewWaitEvidence(db, { companyId, issueId, reviewerAgentId, now: NOW });
+    expect(evidence.pendingLinkedCardCount).toBe(1);
+    expect(await isReviewerWaitingOnCheck(db, { companyId, issueId, reviewerAgentId, now: NOW })).toBe(true);
+
+    // John answers the card: the normal rules apply again.
+    await db.update(issueThreadInteractions).set({ status: "accepted" }).where(eq(issueThreadInteractions.id, cardId));
+    expect(await isReviewerWaitingOnCheck(db, { companyId, issueId, reviewerAgentId, now: NOW })).toBe(false);
+  });
+
+  it("counts a pending card on the parent, a child, a blocker or the issue itself", async () => {
+    const { companyId, reviewerAgentId, issueId } = await seed();
+    const parentId = await addIssue(companyId, "in_progress");
+    await db.update(issues).set({ parentId }).where(eq(issues.id, issueId));
+    const childId = await addIssue(companyId, "done", issueId);
+    const blockerId = await addIssue(companyId, "todo");
+    await db.insert(issueRelations).values({ companyId, issueId: blockerId, relatedIssueId: issueId, type: "blocks" });
+
+    for (const linkedId of [parentId, childId, blockerId, issueId]) {
+      const cardId = await addCard(companyId, linkedId);
+      const evidence = await readReviewWaitEvidence(db, { companyId, issueId, reviewerAgentId, now: NOW });
+      expect(evidence.pendingLinkedCardCount).toBe(1);
+      await db.update(issueThreadInteractions).set({ status: "expired" }).where(eq(issueThreadInteractions.id, cardId));
+    }
+    const evidence = await readReviewWaitEvidence(db, { companyId, issueId, reviewerAgentId, now: NOW });
+    expect(evidence.pendingLinkedCardCount).toBe(0);
+  });
+
+  it("ignores cards on unlinked issues and cards addressed to an agent", async () => {
+    const { companyId, reviewerAgentId, issueId } = await seed();
+    const unrelatedId = await addIssue(companyId, "in_review");
+    await addCard(companyId, unrelatedId);
+    await addCard(companyId, issueId, "pending", reviewerAgentId);
+
+    const evidence = await readReviewWaitEvidence(db, { companyId, issueId, reviewerAgentId, now: NOW });
+    expect(evidence.pendingLinkedCardCount).toBe(0);
+  });
 
   // GRE-80, 2026-09-28 07:57: Keystone commented that it waits on CI and on
   // Flint's check GRE-88 (a child issue, in progress).

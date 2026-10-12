@@ -1,4 +1,4 @@
-import { skillAccentColor } from "@/lib/skill-create";
+import { cn } from "@/lib/utils";
 
 /**
  * Minimal shape needed to render a skill's square icon. `DiscoveryCard`
@@ -24,13 +24,18 @@ export function SkillCardIcon({ card, size = 36 }: { card: SkillIconCard; size?:
       />
     );
   }
-  const accent = skillAccentColor(card.key, card.color);
+  // One calm emerald tile for every skill; only a colour someone picked for
+  // the skill (create wizard, Skill Studio) replaces it. No per-key palette.
+  const picked = card.color?.trim();
   const letter = (card.slug || card.name || "?").trim().charAt(0).toUpperCase();
   return (
     <span
       aria-hidden="true"
-      className="flex shrink-0 items-center justify-center rounded-md font-semibold text-white"
-      style={{ width: size, height: size, backgroundColor: accent, fontSize: Math.round(size * 0.42) }}
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-md font-semibold",
+        picked ? "text-white" : "bg-brand-emerald/15 text-brand-emerald",
+      )}
+      style={{ width: size, height: size, backgroundColor: picked || undefined, fontSize: Math.round(size * 0.42) }}
     >
       {letter}
     </span>

@@ -106,6 +106,15 @@ export interface TaskChatMessageItem {
   kind: "message";
   author: TaskChatAuthorKind;
   authorName?: string;
+  /**
+   * Human messages from another team member (not the viewer). They render
+   * left-aligned in a neutral bubble under the speaker's name (GRE-1012).
+   */
+  fromOtherUser?: boolean;
+  /** Profile image for another member's human message, when the directory has one. */
+  authorAvatarUrl?: string | null;
+  /** False when the previous message came from the same other member (grouped). */
+  showAuthorName?: boolean;
   text: string;
   /** Runner-authored output channel. Legacy adapters leave this unset. */
   channel?: "progress" | "final" | "unknown";
@@ -158,7 +167,7 @@ export interface TaskChatMessageItem {
   metadata?: IssueCommentMetadata | null;
   /** Agent that owns the source run, used to build run-detail links in metadata rows. */
   runAgentId?: string | null;
-  /** Raw comment timestamp (ISO) — the collapsed system row shows relative time. */
+  /** Raw comment timestamp (ISO): system rows show relative time, and the thread draws day separators from it. */
   createdAtIso?: string;
 }
 
@@ -526,6 +535,10 @@ export interface TaskChatTurnItem {
   continuedAfterSteering?: boolean;
   /** Durable response shown after the ordered GS Agentic Manager Runner timeline. */
   finalResponse?: TaskChatMessageItem;
+  /** The runs a settled row covers (several once back-to-back runs merge). */
+  runIds?: string[];
+  /** Drawn from a run digest: the activity loads when the row is opened. */
+  historyPending?: boolean;
   summary: {
     /** e.g. "38s" — omitted when unknown. */
     durationLabel?: string;

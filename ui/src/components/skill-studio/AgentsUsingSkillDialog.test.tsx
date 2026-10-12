@@ -223,7 +223,7 @@ describe("AgentsUsingSkillBadge", () => {
 });
 
 describe("AgentsUsingSkillDialog", () => {
-  it("shows a version select with Latest (vN) and a static '—' when no version history", async () => {
+  it("shows a version select with Latest (vN) and a static 'None' when no version history", async () => {
     mockCompanySkillsApi.versions.mockResolvedValue([
       makeVersion({ id: "ver-3", revisionNumber: 3 }),
       makeVersion({ id: "ver-2", revisionNumber: 2 }),
@@ -237,7 +237,7 @@ describe("AgentsUsingSkillDialog", () => {
     expect(select?.textContent).toContain("Latest (v3)");
     expect(select?.textContent).toContain("v2");
 
-    // No version history → "—" and no select.
+    // No version history → "None" and no select.
     await renderNode(
       <AgentsUsingSkillDialog
         open
@@ -247,7 +247,7 @@ describe("AgentsUsingSkillDialog", () => {
       />,
     );
     // The second render's dialog is the last-opened; its row shows an em dash.
-    expect(document.body.textContent).toContain("—");
+    expect(document.body.textContent).toContain("None");
   });
 
   it("shows a 'behind latest' hint for a stale pin", async () => {

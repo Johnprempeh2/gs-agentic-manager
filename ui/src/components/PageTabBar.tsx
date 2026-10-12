@@ -13,9 +13,11 @@ interface PageTabBarProps {
   value?: string;
   onValueChange?: (value: string) => void;
   align?: "center" | "start";
+  /** Names the phone select; give nested tab bars their own name. */
+  ariaLabel?: string;
 }
 
-export function PageTabBar({ items, value, onValueChange, align = "center" }: PageTabBarProps) {
+export function PageTabBar({ items, value, onValueChange, align = "center", ariaLabel = "Page section" }: PageTabBarProps) {
   const { isMobile } = useSidebar();
 
   if (isMobile && value !== undefined && onValueChange) {
@@ -24,8 +26,8 @@ export function PageTabBar({ items, value, onValueChange, align = "center" }: Pa
         <select
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
-          className="h-9 appearance-none rounded-md border border-border bg-background pl-3 pr-9 py-1 text-base focus:outline-none focus:ring-1 focus:ring-ring"
-          aria-label="Page section"
+          className="h-9 w-full appearance-none rounded-md border border-border bg-background pl-3 pr-9 py-1 text-base focus:outline-none focus:ring-1 focus:ring-ring"
+          aria-label={ariaLabel}
         >
           {items.map((item) => (
             <option key={item.value} value={item.value}>

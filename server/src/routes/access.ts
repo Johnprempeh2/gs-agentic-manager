@@ -1,5 +1,4 @@
 import {
-  createHash,
   generateKeyPairSync,
   randomBytes,
   timingSafeEqual
@@ -14,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Router } from "express";
 import type { Request } from "express";
-import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   assets,
@@ -101,6 +100,9 @@ import {
   resolveHumanInviteRole,
 } from "../services/company-member-roles.js";
 import { humanJoinGrantsFromDefaults } from "../services/invite-grants.js";
+import { LEGACY_BOARD_USER_ID } from "../services/board-identity.js";
+import { describeLegacyBoardControls } from "../services/legacy-board-retirement.js";
+import { describeMemberHandoverControls } from "../services/member-handover.js";
 import {
   collapseDuplicatePendingHumanJoinRequests,
   findReusableHumanJoinRequest,
@@ -113,9 +115,12 @@ import {
 import { claimFirstInstanceAdmin } from "../first-admin-claim.js";
 import { getStorageService } from "../storage/index.js";
 import { secretService } from "../services/secrets.js";
+import { hashInviteToken } from "../lib/invite-token-hash.js";
 
+// The same sha256 hex digest the invite-backed sign-up gate uses to find an
+// invite, so both always agree on which invite a token names.
 function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+  return hashInviteToken(token);
 }
 
 const INVITE_TOKEN_PREFIX = "pcp_invite_";
@@ -1392,7 +1397,15 @@ async function loadCompanyUserDirectory(db: Db, companyId: string) {
       and(
         eq(companyMemberships.companyId, companyId),
         eq(companyMemberships.principalType, "user"),
-        eq(companyMemberships.status, "active"),
+        or(
+          eq(companyMemberships.status, "active"),
+          // A retired legacy local-board stays listed as `suspended` so the
+          // work it authored keeps its name. Pickers only offer `active`.
+          and(
+            eq(companyMemberships.principalId, LEGACY_BOARD_USER_ID),
+            eq(companyMemberships.status, "suspended"),
+          ),
+        ),
       ),
     )
     .orderBy(desc(companyMemberships.updatedAt));
@@ -1402,7 +1415,7 @@ async function loadCompanyUserDirectory(db: Db, companyId: string) {
 
   return members.map((member) => ({
     principalId: member.principalId,
-    status: "active" as const,
+    status: member.status === "suspended" ? ("suspended" as const) : ("active" as const),
     user: userMap.get(member.principalId) ?? null,
   }));
 }
@@ -3300,6 +3313,7 @@ export function accessRoutes(
     res.json({
       skills: [
         { name: "paperclip", path: "/api/skills/paperclip" },
+        { name: "ponytail", path: "/api/skills/ponytail" },
         {
           name: "para-memory-files",
           path: "/api/skills/para-memory-files"
@@ -4490,13 +4504,32 @@ export function accessRoutes(
   router.get("/companies/:companyId/members", async (req, res) => {
     const companyId = req.params.companyId as string;
     await assertCompanyPermission(req, companyId, "users:manage_permissions");
+    const includeArchived = req.query.includeArchived === "true" || req.query.includeArchived === "1";
     const [members, currentAccess] = await Promise.all([
-      loadCompanyMemberRecords(db, companyId),
+      loadCompanyMemberRecords(db, companyId, { includeArchived }),
       loadCompanyAccessSummary(req, access, companyId),
     ]);
+    const legacyBoard = await describeLegacyBoardControls(db, {
+      companyId,
+      deploymentMode: opts.deploymentMode,
+      actor: req.actor,
+      legacyMembershipStatus:
+        members.find((member) => member.principalId === LEGACY_BOARD_USER_ID)?.status ?? null,
+    });
+    const handover = await describeMemberHandoverControls(db, {
+      companyId,
+      deploymentMode: opts.deploymentMode,
+      actor: req.actor,
+      members,
+    });
+    const withRemoval = await addCompanyMemberRemovalAccess(req, db, access, companyId, members);
     res.json({
-      members: await addCompanyMemberRemovalAccess(req, db, access, companyId, members),
-      access: currentAccess,
+      members: withRemoval.map((member) => ({ ...member, handover: handover.get(member.id) ?? null })),
+      access: {
+        ...currentAccess,
+        currentUserId: req.actor.type === "board" ? req.actor.userId ?? null : null,
+        legacyBoard,
+      },
     });
   });
 

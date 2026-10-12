@@ -256,6 +256,12 @@ export type ReleaseRecoveryReviewParticipantFacts = {
    * Only read when the retry run ended without a decision.
    */
   reviewerWaitingOnCheck: boolean;
+  /**
+   * The issue has an open `blocks` relation (GRE-755). Dispatch cancels a
+   * reviewer run behind it (issue_dependencies_blocked), so recovery waits for
+   * the blockers-resolved wake instead.
+   */
+  hasOpenBlocker: boolean;
 };
 
 export type ReleaseRecoveryImmediateFacts = {
@@ -430,7 +436,8 @@ export function decideReleaseRecovery(facts: ReleaseRecoveryFacts): ReleaseRecov
       shared.hasExistingExecutionPath ||
       shared.hasPersistedMonitor ||
       shared.hasPendingWakeInteraction ||
-      shared.suppressedByPauseHold
+      shared.suppressedByPauseHold ||
+      reviewParticipant.hasOpenBlocker
     ) {
       return { kind: "released" };
     }

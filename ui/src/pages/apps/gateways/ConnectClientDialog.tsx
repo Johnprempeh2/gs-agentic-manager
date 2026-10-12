@@ -39,6 +39,7 @@ import {
   tokenStatus,
 } from "./gateway-helpers";
 import { gatewaysQueryKey } from "./NewGatewayDialog";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 type PanelKey = string;
 type ClientIcon = ComponentType<{ className?: string }>;
@@ -188,7 +189,7 @@ export function ConnectClientDialog({
                 </button>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs text-xs">
-                Give this MCP gateway configuration to your tool. It does not give it access to GS Agentic Manager or
+                Give this MCP gateway configuration to your tool. It does not give it access to {CLIENT_BRAND_NAME} or
                 skills; it only gateways calls between the client and the tools exposed here.
               </TooltipContent>
             </Tooltip>

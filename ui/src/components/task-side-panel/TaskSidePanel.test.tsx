@@ -7,6 +7,7 @@ import type { Issue, IssueDocument } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
+  taskPanelArtifactsTab,
   taskPanelDocumentTab,
   taskPanelPropertiesTab,
   writeTaskSidePanelState,
@@ -263,6 +264,34 @@ describe("TaskSidePanel", () => {
     await act(async () => tasks?.click());
     expect(container.textContent).toContain("Cross-project follow-up");
     expect(container.textContent).not.toContain("Subtasks content");
+  });
+
+  it("brings a chat's Tasks forward when the agent files a task, not the empty Artifacts tab", async () => {
+    const chat = issue({ conversationAgentId: "agent-everest" } as Partial<Issue>);
+    await render(panel({ issue: chat, showSubtasksTab: true, tasksTab: { count: 0, content: <div>No tasks yet</div> } }));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Artifacts");
+
+    await render(panel({ issue: chat, showSubtasksTab: true, tasksTab: { count: 1, content: <div>Welcome note</div> } }));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Tasks");
+    expect(container.textContent).toContain("Welcome note");
+
+    await act(async () => container.querySelector<HTMLButtonElement>("#side-panel-tab-artifacts")?.click());
+    await render(panel({ issue: chat, showSubtasksTab: true, tasksTab: { count: 2, content: <div>Second note</div> } }));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Artifacts");
+  });
+
+  it("reopens a chat on Tasks when its tasks load after the panel", async () => {
+    const chat = issue({ conversationAgentId: "agent-everest" } as Partial<Issue>);
+    writeTaskSidePanelState("user-1", "company-1", "task-1", {
+      state: { tabs: [taskPanelArtifactsTab()], activeTabId: "artifacts" },
+      launcherOpen: false,
+      userInteracted: false,
+      autoPlanHandled: false,
+      updatedAt: 1,
+    });
+    await render(panel({ issue: chat, showSubtasksTab: true, tasksTab: { count: 0, content: <div>Loading</div> } }));
+    await render(panel({ issue: chat, showSubtasksTab: true, tasksTab: { count: 3, content: <div>Three tasks</div> } }));
+    expect(container.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Tasks");
   });
 
   it("exposes failed task loading even when no task count is available", async () => {

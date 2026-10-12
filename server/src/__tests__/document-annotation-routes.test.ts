@@ -125,6 +125,9 @@ function registerModuleMocks() {
       hasPermission: vi.fn(async () => false),
     }),
     agentService: () => ({ getById: vi.fn(), list: vi.fn(async () => []) }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),
     }),

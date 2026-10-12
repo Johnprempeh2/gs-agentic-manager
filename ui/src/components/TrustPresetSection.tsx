@@ -211,17 +211,6 @@ export function TrustPresetSection({
                   </p>
                 </div>
               )}
-              <p className="text-xs text-muted-foreground">
-                Want to set more than one containment boundary?{" "}
-                <a
-                  className="underline underline-offset-2 hover:text-foreground"
-                  href="https://paperclip.ing/ee"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Get GS Agentic Manager EE.
-                </a>
-              </p>
               <CollapsibleSection
                 title="View policy"
                 open={policyOpen}

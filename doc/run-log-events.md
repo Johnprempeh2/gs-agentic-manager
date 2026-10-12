@@ -81,6 +81,20 @@ The record documents why the old execution can be retired. It does not make the
 old session resumable, rewrite provider files, or authorize replay on its own.
 It remains in the local run log and adds no Telemetry or OpenTelemetry export.
 
+## Leftover Process Cleanup Run-Log Event
+
+When a local run ends and processes that carry its `GSAM_RUN_ID` are still
+running, the server stops them (see "Leftover Run Processes" in
+[`doc/DEVELOPING.md`](DEVELOPING.md)) and writes one `lifecycle` event, level
+`info` (`warn` when a process could not be signalled), with the message
+"stopped N leftover process(es) the run started". The payload has
+`kind: "run_leftover_processes"`, the counts `terminated` (exited after
+SIGTERM), `killed` (needed SIGKILL), `failed` and `leftAlone` (carried the
+marker but are protected, such as live's own processes), and `processes`: up to
+20 entries of `pid`, a short redacted `command` and `outcome`. No event is
+written when nothing was left running. It stays in the local run log and adds
+no Telemetry or OpenTelemetry data.
+
 ## Sandbox Startup Run-Log Event
 
 GS Agentic Manager writes one `run.startup.step` event to the run log for each bring-up
@@ -158,6 +172,15 @@ section in the Observability contract.
 Provider identity diagnostics remain in the local run log. They record the notification method, expected and received thread/turn identifiers, and the classification (root, verified descendant, stale, unrelated informational, or invalid authoritative). They omit the original provider payload and credentials. Repeated informational notices are bounded.
 
 Recovery lifecycle events retain the original structured failure code, retry attempt, next retry time, and predecessor/successor identifiers. Durable status delivery uses an idempotency marker; delivery grants no provider authority. Failed publication is retried without repeating provider work. These records are not first-party Telemetry.
+
+If execution-continuation setup finds that a task no longer exists, is closed,
+or its owner changed, the existing cancellation settlement records
+`continuation_task_ownership_changed`. The run and wake request become cancelled
+before adapter dispatch, with the run-log message
+`stale execution continuation cancelled before dispatch`. Immediate recovery is
+suppressed. Missing source context, authorization failures, and other setup
+errors retain their failure classification. An untyped error with the same
+message is also still a failure; cancellation requires the typed ownership guard.
 
 Bounded retry exhaustion writes one lifecycle receipt per run, retry reason,
 scheduled attempt, and retry limit. Repeated or concurrent recovery checks reuse

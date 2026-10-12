@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  BookOpen,
   Flag,
+  GraduationCap,
   LogOut,
   type LucideIcon,
   UserRound,
@@ -23,8 +23,8 @@ import { ThemeToggle } from "./ThemeToggle";
 import { SidebarServerInfo } from "./SidebarServerInfo";
 
 const PROFILE_SETTINGS_PATH = "/company/settings/instance/profile";
-const DOCS_URL = "https://docs.paperclip.ing/";
-const FEEDBACK_URL = "https://paperclip.ing/feedback";
+// Feedback goes to Greatstone, never to the upstream project.
+const FEEDBACK_URL = "mailto:info@greatstone.co.uk?subject=GS%20Agentic%20Manager%20feedback";
 
 interface SidebarAccountMenuProps {
   deploymentMode?: DeploymentMode;
@@ -48,6 +48,9 @@ function deriveInitials(name: string) {
   }
   return name.slice(0, 2).toUpperCase();
 }
+
+// The built-in local board user carries a placeholder address, never a real one.
+const LOCAL_BOARD_PLACEHOLDER_EMAIL = "local@paperclip.local";
 
 function deriveUserSlug(name: string | null | undefined, email: string | null | undefined, id: string | null | undefined) {
   const candidates = [name, email?.split("@")[0], email, id];
@@ -122,8 +125,10 @@ export function SidebarAccountMenu({
   const signOutMutation = useSignOut({ onSignedOut: closeNavigationChrome });
 
   const displayName = session?.user.name?.trim() || "Board";
+  const email = session?.user.email?.trim();
   const secondaryLabel =
-    session?.user.email?.trim() || (deploymentMode === "authenticated" ? "Signed in" : "Local workspace board");
+    (email && email !== LOCAL_BOARD_PLACEHOLDER_EMAIL ? email : null)
+    || (deploymentMode === "authenticated" ? "Signed in" : "Local workspace board");
   const initials = deriveInitials(displayName);
   const profileHref = `/u/${deriveUserSlug(session?.user.name, session?.user.email, session?.user.id)}`;
 
@@ -193,12 +198,11 @@ export function SidebarAccountMenu({
                 onClick={closeNavigationChrome}
               />
               <MenuAction
-                label="Documentation"
-                description="Open GS Agentic Manager docs in a new tab."
-                icon={BookOpen}
-                href={DOCS_URL}
-                external
-                onClick={() => setOpen(false)}
+                label="Tutorials"
+                description="Start a guided tour of any feature."
+                icon={GraduationCap}
+                href="/tutorials"
+                onClick={closeNavigationChrome}
               />
               <ThemeToggle variant="menu-action" onAfterToggle={() => setOpen(false)} />
               {deploymentMode === "authenticated" ? (
@@ -234,15 +238,13 @@ export function SidebarAccountMenu({
             <TooltipTrigger asChild>
               <a
                 href={FEEDBACK_URL}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Share feedback"
+                aria-label="Email feedback to Greatstone"
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-subtle-foreground transition-colors hover:bg-accent/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Flag className="h-4 w-4" aria-hidden="true" />
               </a>
             </TooltipTrigger>
-            <TooltipContent side="top">Share feedback</TooltipContent>
+            <TooltipContent side="top">Email feedback to Greatstone</TooltipContent>
           </Tooltip>
         ) : null}
       </div>

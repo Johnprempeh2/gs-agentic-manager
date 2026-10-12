@@ -10,6 +10,7 @@ import {
   IssueMonitorComposerStrip,
   buildMonitorSurfaceCopy,
   hasVisibleMonitorSurface,
+  isWaitingOnMonitor,
 } from "./IssueMonitorBanner";
 import type { DerivedMonitorState } from "@/lib/issue-monitor";
 
@@ -51,7 +52,7 @@ describe("buildMonitorSurfaceCopy", () => {
     );
 
     expect(copy).not.toBeNull();
-    expect(copy!.bannerTitle).toBe("Waiting on monitor — resumes in 2h 12m");
+    expect(copy!.bannerTitle).toBe("Waiting on monitor: resumes in 2h 12m");
     expect(copy!.stripTitle).toBe("Resumes in 2h 12m");
     expect(copy!.tone).toBe("info");
     expect(copy!.bannerMeta).toContain("Attempt 1");
@@ -94,7 +95,7 @@ describe("buildMonitorSurfaceCopy", () => {
       derived({ state: "due-now", nextCheckAt: NOW.toISOString(), attemptCount: 1 }),
       NOW,
     );
-    expect(dueNow!.bannerTitle).toBe("Waiting on monitor — due now");
+    expect(dueNow!.bannerTitle).toBe("Waiting on monitor: due now");
     expect(dueNow!.stripTitle).toBe("Due now");
     expect(dueNow!.bannerMeta).toContain("Checking momentarily…");
     expect(dueNow!.tone).toBe("info");
@@ -107,7 +108,7 @@ describe("buildMonitorSurfaceCopy", () => {
       }),
       NOW,
     );
-    expect(overdue!.bannerTitle).toBe("Waiting on monitor — overdue by 18m");
+    expect(overdue!.bannerTitle).toBe("Waiting on monitor: overdue by 18m");
     expect(overdue!.stripTitle).toBe("Overdue by 18m");
     expect(overdue!.bannerMeta).toContain("Fires on next tick");
     expect(overdue!.tone).toBe("warning");
@@ -158,6 +159,20 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
     flushSync(() => root.unmount());
   });
 
+  it("shows the still clock only while no agent is working the task", () => {
+    const waiting = issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString());
+    expect(isWaitingOnMonitor(waiting)).toBe(true);
+    expect(isWaitingOnMonitor({ ...waiting, executionRunId: "run-1" })).toBe(false);
+  });
+
+  it("shows the clock on list rows, which carry only the flat next-check column", () => {
+    const listRow = { ...issueWithMonitor(null), executionState: null, monitorNextCheckAt: new Date(NOW.getTime() + 3_600_000) } as Issue;
+    expect(isWaitingOnMonitor(listRow)).toBe(true);
+    expect(isWaitingOnMonitor({ ...listRow, executionRunId: "run-1" })).toBe(false);
+    expect(isWaitingOnMonitor({ ...listRow, status: "done" })).toBe(false);
+    expect(isWaitingOnMonitor({ ...listRow, monitorNextCheckAt: null })).toBe(false);
+  });
+
   it("renders the banner with a working Check now button while waiting", () => {
     const onCheckNow = vi.fn();
     expect(hasVisibleMonitorSurface(issueWithMonitor(new Date(NOW.getTime() + 2 * 60 * 60_000).toISOString()))).toBe(true);
@@ -171,7 +186,7 @@ describe("IssueMonitorBanner / IssueMonitorComposerStrip rendering", () => {
       );
     });
 
-    expect(container.textContent).toContain("Waiting on monitor — resumes in 2h");
+    expect(container.textContent).toContain("Waiting on monitor: resumes in 2h");
     expect(container.textContent).toContain("Watching: vercel-deploy");
 
     const button = Array.from(container.querySelectorAll("button")).find((b) =>

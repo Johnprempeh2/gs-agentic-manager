@@ -22,6 +22,10 @@ const CODEX_OAUTH_INVALID_GRANT_RE = /\binvalid_grant\b/i;
 const CODEX_CONTEXTUAL_REFRESH_AUTH_INVALIDATED_RE =
   /(?:(?:oauth|refresh|access[_\s-]?token|bearer|credential).{0,80}(?:\b401\b|unauthori[sz]ed|\binvalid[\s-]grant\b)|(?:\b401\b|unauthori[sz]ed|\binvalid[\s-]grant\b).{0,80}(?:oauth|refresh|access[_\s-]?token|bearer|credential))/i;
 
+// OpenAI's rejection of a pasted API key (GRE-139). A key does not refresh, so
+// a person must replace it; the server treats *_auth_required as a dead login.
+const CODEX_API_KEY_REJECTED_RE = /(?:\binvalid_api_key\b|incorrect api key provided)/i;
+
 export type CodexAuthRefreshFailureClass =
   | "refresh_token_reused"
   | "refresh_token_expired"
@@ -157,6 +161,15 @@ export function classifyCodexAuthRefreshFailure(input: {
   if (CODEX_OAUTH_INVALID_GRANT_RE.test(haystack)) return "refresh_token_invalidated";
   if (CODEX_CONTEXTUAL_REFRESH_AUTH_INVALIDATED_RE.test(haystack)) return "refresh_token_invalidated";
   return null;
+}
+
+/** OpenAI refused the API key. Reported as `codex_auth_required`, a login a person must fix. */
+export function isCodexApiKeyRejected(input: {
+  stdout?: string | null;
+  stderr?: string | null;
+  errorMessage?: string | null;
+}): boolean {
+  return CODEX_API_KEY_REJECTED_RE.test(buildCodexErrorHaystack(input));
 }
 
 function readTimeZoneParts(date: Date, timeZone: string) {

@@ -155,7 +155,7 @@ export function SourceResolvedFoldCallout({
           >
             <span>{cleanupLabel}</span>
             {fold.cleanup.error ? (
-              <span className="text-muted-foreground">— {fold.cleanup.error}</span>
+              <span className="text-muted-foreground">({fold.cleanup.error})</span>
             ) : null}
           </span>
         </MetaRow>

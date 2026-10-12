@@ -14,6 +14,8 @@ export const companies = pgTable(
     issueCounter: integer("issue_counter").notNull().default(0),
     budgetMonthlyCents: integer("budget_monthly_cents").notNull().default(0),
     spentMonthlyCents: integer("spent_monthly_cents").notNull().default(0),
+    /** Hourly wage used to value agent hours on the dashboard; null until the board sets one. */
+    minimumWageHourlyCents: integer("minimum_wage_hourly_cents"),
     defaultResponsibleUserId: text("default_responsible_user_id"),
     requireBoardApprovalForNewAgents: boolean("require_board_approval_for_new_agents")
       .notNull()

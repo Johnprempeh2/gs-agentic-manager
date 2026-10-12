@@ -1,0 +1,87 @@
+import { describe, expect, it } from "vitest";
+import { coerceCrmSyncFieldValue, crmSyncIsOwnChangeOnly, crmSyncValuesEqual, decideCrmSyncField } from "./crm-sync.js";
+
+describe("crmSyncValuesEqual", () => {
+  it("treats null, missing, blank and empty list as the same empty value", () => {
+    expect(crmSyncValuesEqual(null, undefined)).toBe(true);
+    expect(crmSyncValuesEqual("  ", null)).toBe(true);
+    expect(crmSyncValuesEqual([], null)).toBe(true);
+    expect(crmSyncValuesEqual("", "a")).toBe(false);
+  });
+
+  it("ignores surrounding spaces and compares lists in order", () => {
+    expect(crmSyncValuesEqual(" Acme ", "Acme")).toBe(true);
+    expect(crmSyncValuesEqual(["a", "b"], ["a", "b"])).toBe(true);
+    expect(crmSyncValuesEqual(["a", "b"], ["b", "a"])).toBe(false);
+    expect(crmSyncValuesEqual(5, "5")).toBe(false);
+  });
+});
+
+describe("decideCrmSyncField (three-value rule)", () => {
+  it("does nothing when both sides already agree, whatever the owner", () => {
+    for (const owner of ["crm", "gsam", "shared"] as const) {
+      expect(decideCrmSyncField({ owner, lastSynced: "old", crm: "new", gsam: "new" }))
+        .toEqual({ action: "none", value: "new" });
+    }
+  });
+
+  it("CRM-owned fields always take the CRM value", () => {
+    expect(decideCrmSyncField({ owner: "crm", lastSynced: "a", crm: "a", gsam: "edited in gsam" }))
+      .toEqual({ action: "pull_from_crm", value: "a" });
+    expect(decideCrmSyncField({ owner: "crm", lastSynced: "a", crm: "b", gsam: "c" }))
+      .toEqual({ action: "pull_from_crm", value: "b" });
+  });
+
+  it("GSAM-owned fields always push the GSAM value", () => {
+    expect(decideCrmSyncField({ owner: "gsam", lastSynced: "a", crm: "edited in crm", gsam: "a" }))
+      .toEqual({ action: "push_to_crm", value: "a" });
+  });
+
+  it("shared fields follow whichever side changed since the last sync", () => {
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: "a", crm: "b", gsam: "a" }))
+      .toEqual({ action: "pull_from_crm", value: "b" });
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: "a", crm: "a", gsam: "c" }))
+      .toEqual({ action: "push_to_crm", value: "c" });
+  });
+
+  it("shared fields changed on both sides to different values are a conflict", () => {
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: "a", crm: "b", gsam: "c" }))
+      .toEqual({ action: "conflict" });
+  });
+
+  it("a shared field cleared on one side counts as a change", () => {
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: "a", crm: null, gsam: "a" }))
+      .toEqual({ action: "pull_from_crm", value: null });
+  });
+
+  it("on first sync fills an empty side and queues two different values", () => {
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: undefined, crm: "b", gsam: null }))
+      .toEqual({ action: "pull_from_crm", value: "b" });
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: undefined, crm: "", gsam: "c" }))
+      .toEqual({ action: "push_to_crm", value: "c" });
+    expect(decideCrmSyncField({ owner: "shared", lastSynced: undefined, crm: "b", gsam: "c" }))
+      .toEqual({ action: "conflict" });
+  });
+});
+
+describe("crmSyncIsOwnChangeOnly", () => {
+  it("is true only when the caller is the sole GSAM author", () => {
+    expect(crmSyncIsOwnChangeOnly([{ actorType: "user", userId: "u1" }], "u1")).toBe(true);
+    expect(crmSyncIsOwnChangeOnly([{ actorType: "user", userId: "u1" }, { actorType: "user", userId: "u2" }], "u1")).toBe(false);
+    expect(crmSyncIsOwnChangeOnly([{ actorType: "agent", agentId: "a1" }], "u1")).toBe(false);
+    // Unknown author (for example a change made before the sync knew who): anyone may decide.
+    expect(crmSyncIsOwnChangeOnly([], "u1")).toBe(false);
+  });
+});
+
+describe("coerceCrmSyncFieldValue", () => {
+  it("shapes typed text as the field's type and leaves unreadable values as they are", () => {
+    expect(coerceCrmSyncFieldValue("20000", "number")).toBe(20000);
+    expect(coerceCrmSyncFieldValue("lots", "number")).toBe("lots");
+    expect(coerceCrmSyncFieldValue("true", "boolean")).toBe(true);
+    expect(coerceCrmSyncFieldValue("a, b", "multi_select")).toEqual(["a", "b"]);
+    expect(coerceCrmSyncFieldValue("2026-12-15T00:00:00Z", "date")).toBe("2026-12-15");
+    expect(coerceCrmSyncFieldValue(["a", "b"], "text")).toBe("a, b");
+    expect(coerceCrmSyncFieldValue("x", undefined)).toBe("x");
+  });
+});

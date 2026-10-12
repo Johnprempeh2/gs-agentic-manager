@@ -18,7 +18,7 @@ import { budgetsApi } from "../api/budgets";
 import { heartbeatsApi } from "../api/heartbeats";
 import { instanceSettingsApi } from "../api/instanceSettings";
 import { ApiError } from "../api/client";
-import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
+import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
 import { activityApi } from "../api/activity";
 import { accessApi } from "../api/access";
@@ -41,7 +41,7 @@ import { redactCommandText as redactCommandSecretText } from "@greatstone/adapte
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { toolsApi } from "../api/tools";
-import { getUIAdapter, buildTranscript, onAdapterChange } from "../adapters";
+import { getUIAdapter, buildTranscript, onAdapterChange, rebrandRunLogText } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
@@ -65,7 +65,7 @@ import { SourceResolvedFoldBadge } from "../components/SourceResolvedFoldBadge";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
-import { formatCents, formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
+import { formatCents, formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
@@ -130,6 +130,7 @@ import {
   useResourceMemberships,
 } from "../hooks/useResourceMemberships";
 import { Badge } from "@/components/ui/badge";
+import { ErrorState } from "../components/ErrorState";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -156,7 +157,7 @@ function formatOrgChainHealthPath(agent: AgentDetailRecord) {
 }
 
 function redactPathText(value: string, censorUsernameInLogs: boolean) {
-  return redactHomePathUserSegments(value, { enabled: censorUsernameInLogs });
+  return redactHomePathUserSegments(rebrandRunLogText(value), { enabled: censorUsernameInLogs });
 }
 
 function redactPathValue<T>(value: T, censorUsernameInLogs: boolean): T {
@@ -640,7 +641,7 @@ function WorkspaceOperationLogViewer({
               {chunks.map((chunk, index) => (
                 <div key={`${chunk.ts}-${index}`} className="flex gap-2">
                   <span className="shrink-0 text-neutral-500">
-                    {new Date(chunk.ts).toLocaleTimeString("en-US", { hour12: false })}
+                    {formatTime(chunk.ts)}
                   </span>
                   <span
                     className={cn(
@@ -806,7 +807,7 @@ export function AgentDetail() {
     return confirmAction(DISCARD_AGENT_CONFIG_CHANGES_OPTIONS);
   }, [configDirty, confirmAction]);
 
-  const { data: agent, isLoading, error } = useQuery<AgentDetailRecord>({
+  const { data: agent, isLoading, error, refetch } = useQuery<AgentDetailRecord>({
     queryKey: [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null],
     queryFn: () => agentsApi.get(routeAgentRef, lookupCompanyId),
     enabled: canFetchAgent,
@@ -1224,7 +1225,7 @@ export function AgentDetail() {
   }, [configDirty, prepareAgentNavigation]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!agent) return null;
   if (!urlRunId && !urlTab) {
     return <Navigate to={`/agents/${canonicalAgentRef}/dashboard`} replace />;
@@ -1402,7 +1403,7 @@ export function AgentDetail() {
           }
         >
           Ships with GS Agentic Manager and powers <strong>{builtInFeatureLabel}</strong>. Configure it like
-          any agent — model, instructions, budget. It can be paused but not deleted; pausing it
+          any agent: model, instructions, budget. It can be paused but not deleted; pausing it
           pauses {builtInFeatureLabel}.
         </InlineBanner>
       )}
@@ -1465,7 +1466,7 @@ export function AgentDetail() {
 
       {/* Floating Save/Cancel (desktop) */}
       {!isMobile && showConfigActionBar && (
-        <div className="fixed bottom-6 right-6 z-30">
+        <div className="fixed bottom-6 right-6 z-chrome">
           <div className="flex items-center gap-2 bg-background/90 backdrop-blur-sm border border-border rounded-lg px-3 py-1.5 shadow-lg">
             <Button
               variant="ghost"
@@ -1488,7 +1489,7 @@ export function AgentDetail() {
 
       {/* Mobile bottom Save/Cancel bar */}
       {isMobile && showConfigActionBar && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-background/95 backdrop-blur-sm">
+        <div className="fixed inset-x-0 bottom-0 z-chrome border-t border-border bg-background/95 backdrop-blur-sm">
           <div
             className="flex items-center justify-end gap-2 px-3 py-2"
             style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
@@ -1827,21 +1828,21 @@ function AgentOverview({
       <LatestRunCard runs={runs} agentId={agentRouteId} issuesById={issuesById} />
 
       {/* Charts */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <ChartCard title="Run Activity" subtitle="Last 14 days">
-          <RunActivityChart runs={runs} />
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <ChartCard title="Run Activity" subtitle={chartWindowLabel(agent.createdAt)}>
+          <RunActivityChart runs={runs} start={agent.createdAt} />
         </ChartCard>
         {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}
         {SHOW_TASK_PRIORITY_UI && (
-          <ChartCard title="Tasks by Priority" subtitle="Last 14 days">
-            <PriorityChart issues={assignedIssues} />
+          <ChartCard title="Tasks by Priority" subtitle={chartWindowLabel(agent.createdAt)}>
+            <PriorityChart issues={assignedIssues} start={agent.createdAt} />
           </ChartCard>
         )}
-        <ChartCard title="Tasks by Status" subtitle="Last 14 days">
-          <IssueStatusChart issues={assignedIssues} />
+        <ChartCard title="Tasks by Status" subtitle={chartWindowLabel(agent.createdAt)}>
+          <IssueStatusChart issues={assignedIssues} start={agent.createdAt} />
         </ChartCard>
-        <ChartCard title="Success Rate" subtitle="Last 14 days">
-          <SuccessRateChart runs={runs} />
+        <ChartCard title="Success Rate" subtitle={chartWindowLabel(agent.createdAt)}>
+          <SuccessRateChart runs={runs} start={agent.createdAt} />
         </ChartCard>
       </div>
 
@@ -2889,6 +2890,8 @@ export function PromptsTab({
             <div className="flex items-center gap-1">
               {!showNewFileInput && (
                 <Button
+                  aria-label="New file"
+                  title="New file"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -2900,6 +2903,8 @@ export function PromptsTab({
               )}
               {isMobile && (
                 <Button
+                  aria-label="Close files"
+                  title="Close files"
                   type="button"
                   size="icon"
                   variant="ghost"
@@ -2991,7 +2996,7 @@ export function PromptsTab({
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={4}>
-                      Legacy inline prompt — this deprecated virtual file preserves the old promptTemplate content
+                      Legacy inline prompt: this deprecated virtual file preserves the old promptTemplate content
                     </TooltipContent>
                   </Tooltip>
                 );
@@ -3018,6 +3023,8 @@ export function PromptsTab({
             <div className="flex items-center gap-2 min-w-0">
               {isMobile && (
                 <Button
+                  aria-label="Show files"
+                  title="Show files"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -3430,9 +3437,8 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
     return () => clearInterval(id);
   }, [isRunning, run.startedAt]);
 
-  const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
-  const startTime = run.startedAt ? new Date(run.startedAt).toLocaleTimeString("en-US", timeFormat) : null;
-  const endTime = run.finishedAt ? new Date(run.finishedAt).toLocaleTimeString("en-US", timeFormat) : null;
+  const startTime = run.startedAt ? formatTime(run.startedAt) : null;
+  const endTime = run.finishedAt ? formatTime(run.finishedAt) : null;
   const durationSec = run.startedAt && run.finishedAt
     ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
     : null;
@@ -3754,7 +3760,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
       {run.stderrExcerpt && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{rebrandRunLogText(run.stderrExcerpt)}</pre>
         </div>
       )}
 
@@ -3762,7 +3768,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
       {run.stdoutExcerpt && !run.logRef && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">stdout</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{rebrandRunLogText(run.stdoutExcerpt)}</pre>
         </div>
       )}
 
@@ -4347,9 +4353,9 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
               {loadingMoreLog ? "Loading..." : "Load more log"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Showing the first {Math.round(logOffset / 1024).toLocaleString("en-US")} KB
+              Showing the first {formatNumber(Math.round(logOffset / 1024))} KB
               {typeof run.logBytes === "number" && run.logBytes > 0
-                ? ` of ${Math.round(run.logBytes / 1024).toLocaleString("en-US")} KB`
+                ? ` of ${formatNumber(Math.round(run.logBytes / 1024))} KB`
                 : ""}
             </span>
           </div>
@@ -4411,7 +4417,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
               return (
                 <div key={evt.id} className="flex gap-2">
                   <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
-                    {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
+                    {formatTime(evt.createdAt)}
                   </span>
                   <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
                     {evt.stream ? `[${evt.stream}]` : ""}
@@ -4486,7 +4492,7 @@ function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }
       {newToken && (
         <div className="border border-yellow-300 dark:border-yellow-600/40 bg-yellow-50 dark:bg-yellow-500/5 rounded-lg p-4 space-y-2">
           <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
-            API key created — copy it now, it will not be shown again.
+            API key created. Copy it now, it will not be shown again.
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-neutral-100 dark:bg-neutral-950 rounded px-3 py-1.5 text-xs font-mono text-green-700 dark:text-green-300 truncate">

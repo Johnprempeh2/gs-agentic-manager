@@ -137,7 +137,7 @@ function ComboboxField({
         <input
           ref={inputRef}
           type="text"
-          className="flex-1 rounded-l-md border border-r-0 border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground focus:z-10"
+          className="flex-1 rounded-l-md border border-r-0 border-border px-2.5 py-1.5 bg-transparent outline-none text-sm font-mono placeholder:text-subtle-foreground focus:z-raised"
           value={displayValue}
           placeholder={placeholder ?? "Type or select..."}
           onChange={(e) => {

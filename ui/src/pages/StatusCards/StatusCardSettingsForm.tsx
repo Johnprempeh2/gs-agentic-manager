@@ -38,7 +38,7 @@ const TRIGGER_ROWS: { key: TriggerKey; label: string; noisy?: boolean }[] = [
   { key: "membershipChanges", label: "New issue matches the query · issue leaves the query" },
   { key: "humanComments", label: "Human comments" },
   { key: "assigneeChanges", label: "Assignee changes" },
-  { key: "anyUpdate", label: "Any update at all (noisy — includes in-progress churn)", noisy: true },
+  { key: "anyUpdate", label: "Any update at all (noisy, includes in-progress churn)", noisy: true },
 ];
 
 function RadioRow({
@@ -123,7 +123,7 @@ export function StatusCardSettingsForm({
         <div className="space-y-2">
           <RadioRow
             selected={policy.mode === "manual"}
-            title="Manual only — updates when I press refresh"
+            title="Manual only: updates when I press refresh"
             badge={
               <span className="ml-auto rounded-full bg-muted px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-wide text-muted-foreground">
                 Default
@@ -237,7 +237,7 @@ export function StatusCardSettingsForm({
                     className="h-8 w-32"
                     aria-label="Active hours start"
                   />
-                  <span className="text-muted-foreground">–</span>
+                  <span className="text-muted-foreground">to</span>
                   <Input
                     type="time"
                     value={activeHours.end}

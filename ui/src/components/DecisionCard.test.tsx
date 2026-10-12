@@ -310,7 +310,7 @@ describe("DecisionCard", () => {
 
     const dismissed = render({ decision: mkDecision({ status: "decided", executionStatus: "succeeded", chosenOptionId: "dismissed", metadata: { dismissed: true } }), executions: [] });
     expect(dismissed.textContent).toContain("Dismissed");
-    expect(dismissed.textContent).toContain("no effects were run");
+    expect(dismissed.textContent).toContain("No effects were run");
   });
 
   it("explains when a decision expires because its targets completed", () => {

@@ -12,6 +12,8 @@ export { agentRoutes } from "./agents.js";
 export { projectRoutes } from "./projects.js";
 export { issueRoutes } from "./issues.js";
 export { issueTreeControlRoutes } from "./issue-tree-control.js";
+export { issueTablingRoutes } from "./issue-tabling.js";
+export { deliverableRoutes } from "./deliverables.js";
 export {
   fileResourceRoutes,
   createFileResourceAvailabilityLimiter,
@@ -20,6 +22,7 @@ export {
 } from "./file-resources.js";
 export { routineRoutes } from "./routines.js";
 export { goalRoutes } from "./goals.js";
+export { workflowTemplateRoutes } from "./workflow-templates.js";
 export { onboardingSeedRoutes } from "./onboarding-seed.js";
 export { approvalRoutes } from "./approvals.js";
 export { secretRoutes } from "./secrets.js";
@@ -29,15 +32,20 @@ export { costRoutes } from "./costs.js";
 export { activityRoutes } from "./activity.js";
 export { dashboardRoutes } from "./dashboard.js";
 export { attentionRoutes } from "./attention.js";
+export { decisionsFeedRoutes } from "./decisions-feed.js";
+export { agentWorkDigestRoutes } from "./agent-work-digest.js";
+export { pushRoutes } from "./push.js";
 export { decisionRoutes } from "./decisions.js";
 export { decisionQueueRoutes } from "./decision-queues.js";
 export { sidebarBadgeRoutes } from "./sidebar-badges.js";
 export { sidebarPreferenceRoutes } from "./sidebar-preferences.js";
+export { tourDismissalRoutes } from "./tour-dismissals.js";
 export { resourceMembershipRoutes } from "./resource-memberships.js";
 export { inboxDismissalRoutes } from "./inbox-dismissals.js";
 export { llmRoutes } from "./llms.js";
 export { accessRoutes } from "./access.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";
+export { billingAccountRoutes } from "./billing-account.js";
 export { instanceDatabaseBackupRoutes } from "./instance-database-backups.js";
 export { managedAgentProfileRoutes } from "./managed-agent-profiles.js";
 export { remoteAgentProfileRoutes } from "./remote-agent-profiles.js";

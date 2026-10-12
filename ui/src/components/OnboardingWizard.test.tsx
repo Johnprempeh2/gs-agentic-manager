@@ -183,6 +183,15 @@ vi.mock("../api/approvals", () => ({ approvalsApi: mockApprovalsApi }));
 vi.mock("../api/secrets", () => ({ secretsApi: mockSecretsApi }));
 vi.mock("../api/issues", () => ({ issuesApi: mockIssuesApi }));
 vi.mock("../api/projects", () => ({ projectsApi: mockProjectsApi }));
+// Rejects by default: no catalogue, so the wizard skips "Pick your first team"
+// and every walk below keeps going 1 → 3. The GRE-427 suite answers it.
+const mockTeamCatalogApi = vi.hoisted(() => ({
+  catalogList: vi.fn(async (): Promise<unknown[]> => {
+    throw new Error("catalogue not stubbed");
+  }),
+  install: vi.fn(),
+}));
+vi.mock("../api/teamCatalog", () => ({ teamCatalogApi: mockTeamCatalogApi }));
 vi.mock("../api/environments", () => ({ environmentsApi: mockEnvironmentsApi }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: mockInstanceSettingsApi }));
 vi.mock("../adapters", () => ({
@@ -3397,6 +3406,218 @@ describe("OnboardingWizard restore-gate (stale localStorage across accounts)", (
         "Sign in to Claude then come back and enter authorization code",
       );
 
+      await act(async () => root.unmount());
+    });
+  });
+
+  describe("OnboardingWizard — pick your first team (GRE-427)", () => {
+    function catalogTeam<T extends Record<string, unknown>>(overrides: T) {
+      return {
+        kind: "optional",
+        description: "",
+        entrypoint: "TEAM.md",
+        schema: "agentcompanies/v1",
+        defaultInstall: false,
+        recommendedForCompanyTypes: [],
+        tags: ["greatstone"],
+        counts: { agents: 3, projects: 1, tasks: 1, routines: 2, localSkills: 0, catalogSkills: 0, externalSkillSources: 0 },
+        rootAgentSlugs: [],
+        agentSlugs: [],
+        projectSlugs: [],
+        requiredSkills: [],
+        envInputs: [],
+        sourceRefs: [],
+        files: [],
+        trustLevel: "markdown_only",
+        compatibility: "compatible",
+        contentHash: "sha256:x",
+        ...overrides,
+      };
+    }
+
+    const marketingTeam = catalogTeam({
+      id: "paperclipai:optional:marketing:marketing-content",
+      key: "paperclipai/optional/marketing/marketing-content",
+      slug: "marketing-content",
+      name: "Marketing Content Team",
+      category: "marketing",
+      path: "catalog/optional/marketing/marketing-content",
+      agentSlugs: ["marketing-lead", "content-writer"],
+      recommendedForCompanyTypes: ["small-business"],
+    });
+    const upstreamTeam = catalogTeam({
+      id: "paperclipai:optional:content:content-machine",
+      key: "paperclipai/optional/content/content-machine",
+      slug: "content-machine",
+      name: "Content Machine",
+      category: "content",
+      path: "catalog/optional/content/content-machine",
+      tags: ["content"],
+    });
+
+    beforeEach(() => {
+      window.localStorage.clear();
+      document.body.innerHTML = "";
+      vi.clearAllMocks();
+      mockDialog.onboardingOptions = {};
+      mockCompany.companies = [];
+      mockCompany.loading = false;
+      mockAdapterRegistry.list = [{ type: "claude_local" }, { type: "codex_local" }];
+      mockTeamCatalogApi.catalogList.mockResolvedValue([marketingTeam, upstreamTeam]);
+    });
+
+    afterEach(() => {
+      window.localStorage.clear();
+      document.body.innerHTML = "";
+    });
+
+    async function mount(draft: Record<string, unknown>, companies: Array<{ id: string; name: string; issuePrefix: string }> = []) {
+      window.localStorage.setItem(ONBOARDING_STORAGE_KEY, JSON.stringify(draft));
+      mockCompany.companies = companies;
+      mockCompaniesApi.list.mockResolvedValue(companies);
+      const { root, queryClient } = render();
+      await act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <OnboardingWizard />
+          </QueryClientProvider>,
+        );
+      });
+      await flushReact();
+      await flushReact();
+      return root;
+    }
+
+    async function clickButton(match: (text: string) => boolean) {
+      const el = [...document.body.querySelectorAll("button")].find((b) =>
+        match(b.textContent?.trim() ?? ""),
+      );
+      expect(el, "button not found").toBeTruthy();
+      await act(async () => {
+        el!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      });
+      await flushReact();
+    }
+
+    it("offers the Greatstone teams after the company is named, and hides upstream teams", async () => {
+      mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
+      const root = await mount({ step: 1, companyName: "Initech" });
+
+      await clickButton((t) => t.startsWith("Continue"));
+
+      expect(mockCompaniesApi.create).toHaveBeenCalledWith({ name: "Initech" });
+      expect(document.body.textContent).toContain("Pick your first team");
+      expect(document.body.textContent).toContain("Marketing Content Team");
+      expect(document.body.textContent).not.toContain("Content Machine");
+      // "Start with no team" is there and chosen until a team is picked.
+      const noTeam = [...document.body.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Start with no team"),
+      );
+      expect(noTeam?.getAttribute("aria-pressed")).toBe("true");
+
+      await clickButton((t) => t.startsWith("Marketing Content Team"));
+      expect(noTeam?.getAttribute("aria-pressed")).toBe("false");
+
+      await clickButton((t) => t.startsWith("Continue"));
+      expect(document.body.textContent).toContain("Create your first agent");
+      expect(mockTeamCatalogApi.install).not.toHaveBeenCalled();
+
+      await clickButton((t) => t === "Back" || t.startsWith("Back"));
+      expect(document.body.textContent).toContain("Pick your first team");
+
+      await act(async () => root.unmount());
+    });
+
+    it("skips the step when the catalogue has no Greatstone team", async () => {
+      mockTeamCatalogApi.catalogList.mockResolvedValue([upstreamTeam]);
+      mockCompaniesApi.create.mockResolvedValue({ id: "company-new", issuePrefix: "INI" });
+      const root = await mount({ step: 1, companyName: "Initech" });
+
+      await clickButton((t) => t.startsWith("Continue"));
+
+      expect(document.body.textContent).toContain("Create your first agent");
+      expect(document.body.textContent).not.toContain("Pick your first team");
+      await act(async () => root.unmount());
+    });
+
+    it("installs the picked team under the lead agent on launch", async () => {
+      mockIssuesApi.create.mockResolvedValue({ id: "issue-1", identifier: "INI-1" });
+      mockTeamCatalogApi.install.mockResolvedValue({ team: marketingTeam, warnings: [] });
+      const root = await mount(
+        {
+          step: 5,
+          companyName: "Initech",
+          agentName: "Ops Lead",
+          createdCompanyId: "company-1",
+          createdCompanyPrefix: "INI",
+          createdAgentId: "agent-lead",
+          createdProjectId: "project-1",
+          createdCompanyGoalId: "goal-1",
+          firstTeamId: marketingTeam.id,
+        },
+        [{ id: "company-1", name: "Initech", issuePrefix: "INI" }],
+      );
+
+      await clickButton((t) => t.startsWith("Get started"));
+
+      expect(mockTeamCatalogApi.install).toHaveBeenCalledTimes(1);
+      expect(mockTeamCatalogApi.install).toHaveBeenCalledWith(
+        "company-1",
+        marketingTeam.id,
+        expect.objectContaining({ targetManagerAgentId: "agent-lead", collisionStrategy: "rename" }),
+      );
+      expect(mockDialog.closeOnboarding).toHaveBeenCalled();
+      await act(async () => root.unmount());
+    });
+
+    it("still launches when the team install fails", async () => {
+      mockIssuesApi.create.mockResolvedValue({ id: "issue-1", identifier: "INI-1" });
+      mockTeamCatalogApi.install.mockRejectedValue(new Error("boom"));
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const root = await mount(
+        {
+          step: 5,
+          companyName: "Initech",
+          agentName: "Ops Lead",
+          createdCompanyId: "company-1",
+          createdCompanyPrefix: "INI",
+          createdAgentId: "agent-lead",
+          createdProjectId: "project-1",
+          createdCompanyGoalId: "goal-1",
+          firstTeamId: marketingTeam.id,
+        },
+        [{ id: "company-1", name: "Initech", issuePrefix: "INI" }],
+      );
+
+      await clickButton((t) => t.startsWith("Get started"));
+
+      expect(mockTeamCatalogApi.install).toHaveBeenCalledTimes(1);
+      expect(mockDialog.closeOnboarding).toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalled();
+      consoleError.mockRestore();
+      await act(async () => root.unmount());
+    });
+
+    it("installs nothing when the run starts with no team", async () => {
+      mockIssuesApi.create.mockResolvedValue({ id: "issue-1", identifier: "INI-1" });
+      const root = await mount(
+        {
+          step: 5,
+          companyName: "Initech",
+          agentName: "Ops Lead",
+          createdCompanyId: "company-1",
+          createdCompanyPrefix: "INI",
+          createdAgentId: "agent-lead",
+          createdProjectId: "project-1",
+          createdCompanyGoalId: "goal-1",
+        },
+        [{ id: "company-1", name: "Initech", issuePrefix: "INI" }],
+      );
+
+      await clickButton((t) => t.startsWith("Get started"));
+
+      expect(mockTeamCatalogApi.install).not.toHaveBeenCalled();
+      expect(mockDialog.closeOnboarding).toHaveBeenCalled();
       await act(async () => root.unmount());
     });
   });

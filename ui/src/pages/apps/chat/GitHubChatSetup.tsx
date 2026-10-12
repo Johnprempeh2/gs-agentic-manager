@@ -43,6 +43,7 @@ import {
   GitHubToggle,
   githubSelectClass,
 } from "./GitHubBotConfiguration";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const steps = [
   "Choose agent",
@@ -243,7 +244,7 @@ export function GitHubChatSetup() {
         </p>
         <h1 className="mt-2 text-2xl font-semibold">{steps[step]}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          GitHub conversations run as GS Agentic Manager tasks on one assigned agent.
+          GitHub conversations run as {CLIENT_BRAND_NAME} tasks on one assigned agent.
         </p>
       </div>
       {(error || current.error || agents.error) && (
@@ -311,13 +312,14 @@ export function GitHubChatSetup() {
             >
               A publicly reachable HTTPS address is required before App
               registration. Configure the instance’s public URL or an explicit
-              webhook ingress URL, then refresh. {" "}
-              <a className="underline" href="https://docs.paperclip.ing/reference/deploy/https/" target="_blank" rel="noreferrer">Learn how to set up HTTPS</a>
+              webhook ingress URL, then refresh. To set up HTTPS, put this
+              instance behind a reverse proxy with a trusted certificate, or
+              use a public tunnel such as Tailscale Funnel.
             </div>
           )}
           <p className="text-sm">
             Create a dedicated GitHub App for{" "}
-            {selectedAgent?.name ?? endpoint.assignedAgentName}. GS Agentic Manager
+            {selectedAgent?.name ?? endpoint.assignedAgentName}. {CLIENT_BRAND_NAME}{" "}
             stores the credentials in its vault and uses this same App for the
             agent’s GitHub tools.
           </p>
@@ -400,7 +402,7 @@ export function GitHubChatSetup() {
                   {credentials.webhookSecret && <Button variant="outline" onClick={async () => {
                     try { await copyTextToClipboard(credentials.webhookSecret); setSecretCopy("copied"); }
                     catch { setSecretCopy("failed"); pushToast({ title: "Couldn't copy to clipboard", body: "Select and copy the value manually.", tone: "error" }); }
-                  }}>{secretCopy === "copied" ? "Webhook secret copied" : secretCopy === "failed" ? "Couldn’t copy — select it manually" : "Copy webhook secret"}</Button>}
+                  }}>{secretCopy === "copied" ? "Webhook secret copied" : secretCopy === "failed" ? "Couldn’t copy. Select it manually" : "Copy webhook secret"}</Button>}
                 </div>}
 
               </div>
@@ -524,7 +526,7 @@ export function GitHubChatSetup() {
             GitHub, choose the repositories the installation can access.
           </p>
           <p className="text-sm text-muted-foreground">
-            You will choose the subset enabled in GS Agentic Manager in the next step.
+            You will choose the subset enabled in {CLIENT_BRAND_NAME} in the next step.
             Changing the installation does not automatically enable repositories
             here.
           </p>
@@ -686,7 +688,7 @@ export function GitHubChatSetup() {
           </div>
           <p className="text-xs text-muted-foreground">
             Tool assignment grants this agent the bot App’s task-scoped tools
-            through its GS Agentic Manager tool profile. Existing deny and approval
+            through its {CLIENT_BRAND_NAME} tool profile. Existing deny and approval
             policies still apply.
           </p>
           <div className="divide-y divide-border rounded-lg border border-border">
@@ -713,7 +715,7 @@ export function GitHubChatSetup() {
       {step === 5 && endpoint && (
         <>
           <p className="text-sm">
-            Choose your existing personal GitHub connection. GS Agentic Manager verifies
+            Choose your existing personal GitHub connection. {CLIENT_BRAND_NAME} verifies
             the account, then asks you to confirm ownership. This link
             identifies your requests; the bot still uses its own App
             credentials.
@@ -830,7 +832,7 @@ export function GitHubChatSetup() {
         <>
           <p className="text-sm">
             Mention the bot in an enabled repository. The request should create
-            a real GS Agentic Manager task on{" "}
+            a real {CLIENT_BRAND_NAME} task on{" "}
             {selectedAgent?.name ?? endpoint.assignedAgentName} and reply on
             GitHub.
           </p>

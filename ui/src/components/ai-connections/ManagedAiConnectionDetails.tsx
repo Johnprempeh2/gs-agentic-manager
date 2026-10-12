@@ -5,7 +5,7 @@ import { aiConnectionsApi } from "@/api/ai-connections";
 import { toolsApi } from "@/api/tools";
 import { useNavigate } from "@/lib/router";
 import { AiConnectionAccountControls } from "./AiConnectionAccountControls";
-import type { ToolConnection } from "@greatstone/shared";
+import { readAiCredentialRecord, type ToolConnection } from "@greatstone/shared";
 import { aiMethodLabel } from "./model";
 
 export function ManagedAiConnectionRow({
@@ -19,13 +19,26 @@ export function ManagedAiConnectionRow({
         method: "subscription" | "api_key";
       }
     | undefined;
+  // Accounts can share a name; the default is the one agents use.
+  const accounts = useQuery({
+    queryKey: ["ai-connections", connection.companyId],
+    queryFn: () => aiConnectionsApi.list(connection.companyId),
+    enabled: Boolean(metadata),
+  });
   if (!metadata) return null;
+  const account = accounts.data?.connections.find((a) => a.id === connection.id);
+  // Two subscriptions from one provider otherwise read identically, so say how
+  // each was connected and which provider account it is, when known.
+  const source = readAiCredentialRecord(connection.config)?.source;
+  const how = source === "setup_token" ? "setup token" : source === "imported_login" ? "subscription sign-in" : null;
   return (
     <p className="text-xs text-muted-foreground">
-      {aiMethodLabel(metadata.provider, metadata.method)} ·{" "}
-      {connection.credentialPolicy === "per_user"
-        ? "Personal"
-        : "Company shared"}
+      {[
+        `${aiMethodLabel(metadata.provider, metadata.method)}${how ? ` (${how})` : ""}`,
+        connection.credentialPolicy === "per_user" ? "Personal" : "Company shared",
+        account?.accountLabel !== connection.name ? account?.accountLabel : null,
+        account?.isDefault ? "Default" : null,
+      ].filter(Boolean).join(" · ")}
     </p>
   );
 }

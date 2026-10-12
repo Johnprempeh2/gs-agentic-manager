@@ -111,15 +111,15 @@ function ExternalObjectsSection({
   return (
     <section className="space-y-3 rounded-lg border border-border p-3">
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold">External objects</h3>
+        <h3 className="text-sm font-semibold">Linked work</h3>
         <p className="text-xs text-muted-foreground">
-          Remote work referenced from this issue — pull requests, deployments, tickets in other systems, and more.
+          Work in other systems that this task points to: pull requests, deployments, tickets and more.
         </p>
       </div>
 
       {isError ? (
         <p className="text-xs text-muted-foreground">
-          Couldn't load external objects.{" "}
+          Couldn't load linked work.{" "}
           {onRetry ? (
             <button
               type="button"
@@ -131,10 +131,10 @@ function ExternalObjectsSection({
           ) : null}
         </p>
       ) : isLoading ? (
-        <p className="text-xs text-muted-foreground">Loading external objects…</p>
+        <p className="text-xs text-muted-foreground">Loading linked work…</p>
       ) : sorted.length === 0 ? (
         <p className="text-xs text-muted-foreground">
-          This issue does not reference any external objects yet.
+          This task does not link to any work elsewhere yet.
         </p>
       ) : (
         <ul className="-mx-1 flex flex-col">

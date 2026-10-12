@@ -5,6 +5,7 @@ import { inboxDismissals, joinRequests } from "@greatstone/db";
 import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
 import { dashboardService } from "../services/dashboard.js";
+import { decisionsFeedService } from "../services/decisions-feed.js";
 import { collapseDuplicatePendingHumanJoinRequests } from "../lib/join-request-dedupe.js";
 import { assertCompanyAccess } from "./authz.js";
 
@@ -29,6 +30,7 @@ export function sidebarBadgeRoutes(db: Db) {
   const svc = sidebarBadgeService(db);
   const access = accessService(db);
   const dashboard = dashboardService(db);
+  const decisionsFeed = decisionsFeedService(db);
 
   router.get("/companies/:companyId/sidebar-badges", async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -88,6 +90,9 @@ export function sidebarBadgeRoutes(db: Db) {
       (summary.agents.error > 0 && !hasFailedRuns ? 1 : 0) +
       (summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80 ? 1 : 0);
     badges.inbox = badges.failedRuns + alertsCount + badges.joinRequests + badges.approvals;
+    if (req.actor.type === "board" && req.actor.userId) {
+      badges.decisions = (await decisionsFeed.build(companyId, { userId: req.actor.userId })).count;
+    }
 
     res.json(badges);
   });

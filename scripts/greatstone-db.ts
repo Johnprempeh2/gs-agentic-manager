@@ -8,6 +8,12 @@
 //     Copies the live database into a new embedded PostgreSQL cluster for the
 //     preview, then turns off everything that could act outside the preview.
 //
+//   greatstone-db.ts restore-legacy-password --data-dir <live db dir>
+//     Rollback to a release from before GRE-930 only: puts the database role
+//     back on the old fixed password and moves the random password file aside,
+//     so the older server can log in. Starts the cluster for the change if it
+//     is not running, and stops it again after.
+//
 // The source is only read: a backup is one read-only transaction, so the live
 // database does not need to be quiet and nothing is written under its folder.
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
@@ -18,7 +24,10 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip, createGzip } from "node:zlib";
 import {
   createDb,
+  embeddedPostgresConnectionString,
   ensurePostgresDatabase,
+  readEmbeddedPostgresPassword,
+  restoreLegacyEmbeddedPostgresPassword,
   runDatabaseBackup,
   runDatabaseRestore,
 } from "../packages/db/src/index.js";
@@ -140,8 +149,8 @@ async function seedPreview(options: Record<string, string>): Promise<void> {
 
   const handle = await ensureEmbeddedPostgres(targetDbDir, 54339, { allowExisting: false });
   try {
-    await ensurePostgresDatabase(`postgres://paperclip:paperclip@127.0.0.1:${handle.port}/postgres`, "paperclip");
-    const targetUrl = `postgres://paperclip:paperclip@127.0.0.1:${handle.port}/paperclip`;
+    await ensurePostgresDatabase(embeddedPostgresConnectionString({ ...handle, database: "postgres" }), "paperclip");
+    const targetUrl = embeddedPostgresConnectionString(handle);
     await runDatabaseRestore({ connectionString: targetUrl, backupFile: previewBackup });
     console.log("Restored the copy into the preview database");
 
@@ -163,6 +172,26 @@ async function seedPreview(options: Record<string, string>): Promise<void> {
   }
 }
 
+async function restoreLegacyPassword(options: Record<string, string>): Promise<void> {
+  const dataDir = path.resolve(required(options, "data-dir"));
+  if (!readEmbeddedPostgresPassword(dataDir)) {
+    console.log("The database has no random password file; nothing to change.");
+    return;
+  }
+  // Reuses the running cluster, or starts it just for this change.
+  const handle = await ensureEmbeddedPostgres(dataDir, 54329);
+  try {
+    const status = await restoreLegacyEmbeddedPostgresPassword({ dataDir, port: handle.port });
+    console.log(
+      status === "restored"
+        ? "Put the database back on the old fixed password for the older release."
+        : "The database was already on the old fixed password; moved the password file aside.",
+    );
+  } finally {
+    if (handle.startedByThisProcess) await handle.stop();
+  }
+}
+
 async function main(): Promise<void> {
   const { command, options } = parseArgs(process.argv.slice(2));
   if (command === "backup") {
@@ -174,8 +203,10 @@ async function main(): Promise<void> {
     console.log(file);
   } else if (command === "seed-preview") {
     await seedPreview(options);
+  } else if (command === "restore-legacy-password") {
+    await restoreLegacyPassword(options);
   } else {
-    throw new Error("usage: greatstone-db.ts backup|seed-preview --option value ...");
+    throw new Error("usage: greatstone-db.ts backup|seed-preview|restore-legacy-password --option value ...");
   }
 }
 

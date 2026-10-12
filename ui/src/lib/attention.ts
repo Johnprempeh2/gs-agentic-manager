@@ -1,4 +1,5 @@
 import type {
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionFeed,
   AttentionFeedQuery,
@@ -61,6 +62,7 @@ const SOURCE_META: Record<AttentionSourceKind, SourceMeta> = {
   budget_alert: { label: "Budget" },
   agent_error_alert: { label: "Agent error" },
   ai_connection_alert: { label: "AI connection" },
+  connectivity_outage: { label: "Internet outage" },
 };
 
 export function sourceMeta(kind: AttentionSourceKind): SourceMeta {
@@ -212,27 +214,27 @@ export function attentionDetailLine(item: AttentionItem): string | null {
       return quote(detail.promptExcerpt);
     case "checkbox_confirmation": {
       const q = quote(detail.promptExcerpt);
-      return q ? `${countNoun(detail.optionCount, "option")} — ${q}` : countNoun(detail.optionCount, "option");
+      return q ? `${countNoun(detail.optionCount, "option")}: ${q}` : countNoun(detail.optionCount, "option");
     }
     case "questions": {
       const q = quote(detail.firstQuestionText);
       const label = countNoun(detail.questionCount, "question");
-      return q ? `${label} — ${q}` : label;
+      return q ? `${label}: ${q}` : label;
     }
     case "suggested_tasks": {
       const q = quote(detail.firstTaskTitle);
       const label = countNoun(detail.taskCount, "suggested task");
-      return q ? `${label} — ${q}` : label;
+      return q ? `${label}: ${q}` : label;
     }
     case "item_verdicts": {
       const q = quote(detail.promptExcerpt);
       const label = `${countNoun(detail.itemCount, "item")} to verdict`;
-      return q ? `${label} — ${q}` : label;
+      return q ? `${label}: ${q}` : label;
     }
     case "failed_run":
     case "agent_error": {
       const reason = quote(detail.failureReasonExcerpt);
-      if (detail.agentName && reason) return `${detail.agentName} — ${reason}`;
+      if (detail.agentName && reason) return `${detail.agentName}: ${reason}`;
       return detail.agentName ?? reason;
     }
     case "blocker": {
@@ -243,6 +245,10 @@ export function attentionDetailLine(item: AttentionItem): string | null {
     }
     case "budget":
       return `${Math.round(detail.observedPercent)}% of budget used ($${detail.amountObserved} / $${detail.amountLimit})`;
+    case "review": {
+      const q = quote(detail.lastUpdate?.excerpt);
+      return q ? `Ready for your review: ${q}` : null;
+    }
     case "generic":
       return quote(detail.summaryExcerpt);
     default:
@@ -253,6 +259,12 @@ export function attentionDetailLine(item: AttentionItem): string | null {
 /** Screenshot / thumbnail images attached to the detail block, if any. */
 export function attentionDetailImages(item: AttentionItem): AttentionDetailImage[] {
   return (item.detail as AttentionItemDetail | null)?.images ?? [];
+}
+
+/** The task's latest deliverables an approval card shows inline (GRE-451). */
+export function attentionDetailDeliverables(item: AttentionItem): AttentionDetailDeliverable[] {
+  const detail = item.detail as AttentionItemDetail | null;
+  return detail && "deliverables" in detail ? detail.deliverables ?? [] : [];
 }
 
 /**

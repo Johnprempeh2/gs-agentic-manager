@@ -1,0 +1,17 @@
+# Nightly off-host backup of one client instance (GRE-666). %i is the instance code.
+# See doc/CLIENT-INSTANCES.md, "Off-host backups".
+[Unit]
+Description=GS Agentic Manager off-host backup %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=gsam
+Group=gsam
+Environment=GSAM_HOSTED_ROOT=/srv/gsam
+ExecStart=/usr/local/lib/gsam/instance-ctl.sh offsite-backup %i
+TimeoutStartSec=2h
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true

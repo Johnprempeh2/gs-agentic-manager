@@ -135,6 +135,32 @@ export function isAiConnectionCompatible(
       (typeof model === "string" && model.startsWith("openrouter/")))
   );
 }
+/**
+ * Install-wide AI access route (GRE-139). One instance setting selects the
+ * harness and sign-in method for every Claude/Codex agent on the install, so a
+ * provider change is a settings change, not a code change. Runs on a route use
+ * only an account connected inside the install, never the host's login.
+ */
+export const AI_ACCESS_ROUTES = [
+  "claude_subscription",
+  "claude_api_key",
+  "codex_subscription",
+  "codex_api_key",
+] as const;
+export const aiAccessRouteSchema = z.enum(AI_ACCESS_ROUTES);
+export type AiAccessRoute = z.infer<typeof aiAccessRouteSchema>;
+export const AI_ACCESS_ROUTE_DEFINITIONS: Record<
+  AiAccessRoute,
+  { label: string; provider: AiProvider; method: AiAuthMethod; adapterType: string }
+> = {
+  claude_subscription: { label: "Claude subscription", provider: "anthropic", method: "subscription", adapterType: "claude_local" },
+  claude_api_key: { label: "Claude API key", provider: "anthropic", method: "api_key", adapterType: "claude_local" },
+  codex_subscription: { label: "ChatGPT/Codex subscription", provider: "openai", method: "subscription", adapterType: "codex_local" },
+  codex_api_key: { label: "OpenAI API key", provider: "openai", method: "api_key", adapterType: "codex_local" },
+};
+/** Harnesses a route may switch between. Other adapters keep their own configuration. */
+export const AI_ACCESS_ROUTABLE_ADAPTER_TYPES = ["claude_local", "codex_local"] as const;
+
 export type AiConnectionUnavailableReason =
   | "responsible_user_missing"
   | "membership_missing"
@@ -191,9 +217,15 @@ export function readAiCredentialRecord(config: Record<string, unknown> | undefin
   const parsed = aiCredentialRecordSchema.safeParse(config?.aiCredential);
   return parsed.success ? parsed.data : null;
 }
-/** Run error codes that mean the provider refused the credential. Env-test probe codes are excluded. */
+/**
+ * Run error codes that mean the provider refused the credential. Env-test probe
+ * codes are excluded. Codex reports a dead ChatGPT login as an expired or
+ * invalidated refresh token (GRE-139). A reused refresh token is a local race
+ * that the freshest-write-back rule resolves, so it is not a rejection.
+ */
 export function isAiAuthRequiredErrorCode(code: string | null | undefined): boolean {
-  return typeof code === "string" && /^[a-z]+_auth_required$/.test(code);
+  return typeof code === "string" &&
+    (/^[a-z]+_auth_required$/.test(code) || code === "refresh_token_expired" || code === "refresh_token_invalidated");
 }
 
 export interface AiManagedConnectionSummary {
@@ -219,6 +251,8 @@ export const createAiConnectionSchema = z
     ownership: z.enum(["personal", "shared"]),
     apiKey: z.string().trim().min(1).max(32768).optional(),
     loginSessionId: z.string().max(128).optional(),
+    /** A Claude subscription token printed by `claude setup-token`, pasted by the user. */
+    setupToken: z.string().trim().min(1).max(4096).optional(),
     connectionId: z.string().uuid().optional(),
     agentIds: z.array(z.string().uuid()).max(1000).default([]),
     allAgents: z.boolean().default(false),
@@ -227,10 +261,12 @@ export const createAiConnectionSchema = z
   .superRefine((v, ctx) => {
     if (!AI_CONNECTION_CAPABILITIES[v.provider].methods[v.method])
       ctx.addIssue({ code: "custom", message: "Unsupported sign-in method" });
+    if (v.setupToken && (v.provider !== "anthropic" || v.method !== "subscription"))
+      ctx.addIssue({ code: "custom", message: "A setup token only connects a Claude subscription" });
     if (
       v.method === "api_key"
-        ? !v.apiKey || Boolean(v.loginSessionId)
-        : !v.loginSessionId || Boolean(v.apiKey)
+        ? !v.apiKey || Boolean(v.loginSessionId) || Boolean(v.setupToken)
+        : Boolean(v.loginSessionId) === Boolean(v.setupToken) || Boolean(v.apiKey)
     ) {
       ctx.addIssue({
         code: "custom",
@@ -269,6 +305,14 @@ export interface LocalAiLoginAttempt {
   sessionId: string;
   command: string;
   expiresAt: string;
+}
+
+/**
+ * The stored credential's known expiry has passed. The connection's health
+ * stays "ok" (the provider never refused it), so status views must ask this too.
+ */
+export function aiCredentialExpired(config: Record<string, unknown> | undefined, now = new Date()): boolean {
+  return aiCredentialExpiryState(readAiCredentialRecord(config)?.expiresAt, now) === "expired";
 }
 
 /** Preview-era copies of rotating local credentials must be reconnected. */

@@ -1,8 +1,10 @@
+import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
 import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
 import { settleSlackConversation } from "./slack-conversation-lifecycle.js";
 import { publicChatTaskUrl } from "./chat-task-url.js";
+import { bindLegacyBoardUserId } from "./board-identity.js";
 import { toolActionDeliveryService } from "./tool-action-delivery.js";
 import { githubBotConnectionIdsForRun } from "./chat-github-tools.js";
 import { readQueuedInteractionResponse } from "./queued-interaction-response.js";
@@ -15,9 +17,11 @@ import { hasRemoteTerminationReceipt, remoteExecutionHasStopped, remoteTerminati
 import { applyConnectorSkills, prepareConnectorSkillDelivery, resolveConnectorAssignments } from "./connector-runtime.js";
 import { admitExplicitNativeContinuation, undeliveredLegacyUserCommentIds } from "./explicit-native-continuation.js";
 import { connectionIntentService } from "./connection-intents.js";
+import { agentAiAccessRoute, applyAiAccessRoute, readAiAccessRoute, resolveAiAccessRouteBinding } from "./ai-access-route.js";
 import { managedAiSessionFingerprintConfig, prepareManagedAiRuntime, assertManagedAiProjectAuth, stripAiAuthBindings, isAiConnectionBusy, AI_AUTH_ENV_KEYS } from "./ai-connection-runtime.js";
+import { managedAiCleanupLogFields } from "./managed-ai-cleanup.js";
 import { aiConnectionService } from "./ai-connections.js";
-import { aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
+import { AI_ACCESS_ROUTE_DEFINITIONS, aiConnectionBindingSchema, isAiAuthRequiredErrorCode } from "@greatstone/shared";
 import { executionBlockerPredicate, getExecutionBlocker } from "./execution-blocker.js";
 import { CONVERSATION_CONTINUATION_POLICY, claimedAdapterType, runUsedConversationAdapter, hasConversationContinuationPolicy, isConversationAdapter } from "./conversation-continuation.js";
 import { recordExecutionWait } from "./execution-wait.js";
@@ -38,12 +42,14 @@ import {
 import { executionFailureRetryCount, executionRetryAttemptCount, accountingForScheduledRetry } from "./execution-recovery-attempt.js";
 import { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
 export { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
-import { buildExecutionContinuation } from "./execution-continuation.js";
+import { buildExecutionContinuation, StaleExecutionContinuationError } from "./execution-continuation.js";
 import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
+import { rebrandRunLogText } from "@greatstone/adapter-utils/run-log-transcript";
+import { collectRunSecretValues, redactRunSecretValues } from "@greatstone/adapter-utils/run-secret-values";
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
 import { isWorkspaceGitScanError, WorkspaceGitScanError, WORKSPACE_GIT_SCAN_ERROR_CODES } from "./workspace-git-operation-scheduler.js";
 import { captureDirectorySnapshot, mergeDirectoryWithBaseline } from "@greatstone/adapter-utils/workspace-restore-merge";
-import { initializeRunIdentity, explicitOperatorRunIdentity } from "./run-identity.js";
+import { initializeRunIdentity, explicitOperatorRunIdentity, QUEUED_INTERRUPT_SPENT } from "./run-identity.js";
 import {
   assertDurableChatWakeupReceipt,
   assertDurableChatWakeupRequest,
@@ -85,6 +91,7 @@ import {
   sql,
 } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
+import { companyMemoryEnabled } from "./memory-gateway/service.js";
 import {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   CHAT_PROVIDERS,
@@ -167,7 +174,8 @@ import {
   toolProfiles,
   workspaceOperations,
 } from "@greatstone/db";
-import { conflict, HttpError, notFound } from "../errors.js";
+import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
+import { REFERENCED_ROW_LOCK } from "../row-locks.js";
 import {
   getStartupTraceContext,
   getStartupTracer,
@@ -177,7 +185,6 @@ import { incrementToolRuntimeMetricCounter } from "./tool-runtime-metrics.js";
 import { logger } from "../middleware/logger.js";
 import {
   createGitRemoteAuthProvider,
-  resolveManagedGitHubIdentitySelection,
   describeGitAuthFailure,
   filterResolvedGitHubConnectionsForRun,
   scrubGitCredentialText,
@@ -292,6 +299,7 @@ import {
   EXTERNAL_CHAT_QUESTION_RESPONSE_KEY,
   resolveExternalChatQuestionResponse,
 } from "./native-runtime/external-chat-question-response.js";
+import { isBoardQuestionChat, strategyBoardChatService } from "./strategy-board-chat.js";
 import { materializeExternalChatQuestionResponseInput } from "./native-runtime/external-chat-question-response-input.js";
 import {
   NativeRunnerOwnershipUnverifiedError,
@@ -391,6 +399,7 @@ import {
   WORKTREE_INSTANCE_ROOT_METADATA_KEY,
 } from "./workspace-instance-cleanup.js";
 import { issueService } from "./issues.js";
+import { agentTeamService } from "./agent-teams.js";
 import {
   blockRunnerGoalRecovery,
   failRunnerGoalAction,
@@ -410,6 +419,7 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 import { ISSUE_BLOCKERS_RESOLVED_WAKE_REASON } from "./issue-dependency-wakeups.js";
 import {
   buildIssueMonitorClearedPatch,
+  buildIssueMonitorDeferredPatch,
   buildIssueMonitorRestoredPatch,
   buildIssueMonitorTriggeredPatch,
   normalizeIssueExecutionPolicy,
@@ -454,6 +464,10 @@ import {
   type HeartbeatRunScratch,
 } from "./run-scratch.js";
 import {
+  cleanupRunLeftoverProcesses,
+  summarizeStopped,
+} from "./run-process-cleanup.js";
+import {
   applyDefaultIsolatedExecutionWorkspacePolicy,
   buildExecutionWorkspaceAdapterConfig,
   gateProjectExecutionWorkspacePolicy,
@@ -494,7 +508,7 @@ import {
   SUCCESSFUL_RUN_HANDOFF_REQUIRED_NOTICE_BODY,
   readContinuationAttempt,
 } from "./recovery/index.js";
-import { REVIEW_WAIT_MONITOR_SERVICE_NAME } from "./recovery/review-wait.js";
+import { REVIEW_WAIT_MONITOR_SERVICE_NAME, REVIEW_WAIT_RECHECK_MS } from "./recovery/review-wait.js";
 import {
   buildConfigurationIncompleteRecoveryNoticeSeed,
   buildExecutionReviewParticipantRecoveryNoticeSeed,
@@ -504,6 +518,25 @@ import {
   type StrandedRecoveryNoticeSeed,
 } from "./recovery/stranded-notice.js";
 import { withRecoveryContext } from "./recovery/status-only-context.js";
+import {
+  buildSetupRepairBlockedComment,
+  buildSetupRepairResumeComment,
+  buildSetupRepairUnblockAction,
+  classifySetupRepairCause,
+  decideSetupRepair,
+  inspectWorktreeSafety,
+  readSetupRepairWorkspaceHint,
+  repointWorktreeToTaskBranch,
+  SETUP_REPAIR_BLOCK_OWNER,
+  SETUP_REPAIR_REPEAT_WINDOW_MS,
+  SETUP_REPAIR_RETRY_REASON,
+  SETUP_REPAIR_WAKE_REASON,
+  type GitRunner,
+  type SetupRepairCause,
+  type SetupRepairDecision,
+  type WorktreeSafety,
+} from "./recovery/setup-repair.js";
+import { systemNoticePresentation } from "./recovery/notice-format.js";
 import {
   FRESH_SESSION_ON_RETRY_KEY,
   RUN_SILENT_TIMEOUT_ERROR_CODE,
@@ -519,6 +552,7 @@ import {
   type SilentRetryPressure,
 } from "./run-silent-timeout.js";
 import {
+  HOST_RESUME_SETTLE_MS,
   NO_HOST_BLIND_TIME,
   hostBlindTime as processHostBlindTime,
   type HostBlindTimeTracker,
@@ -598,13 +632,20 @@ import {
   type SessionCompactionPolicy,
 } from "@greatstone/adapter-utils";
 import {
+  CapturedOutputTailer,
+  freezeRunOutputCapture,
+  readCapturedOutputFile,
   readPaperclipSkillSyncPreference,
+  registerActiveOutputCapture,
+  removeChildOutputCaptureFiles,
+  unregisterActiveOutputCapture,
   selectPaperclipTaskMarkdown,
   UNMANAGED_BACKGROUND_TASK_LIVENESS_REASON,
   UNMANAGED_BACKGROUND_TASK_STOP_REASON,
   writePaperclipSkillSyncPreference,
 } from "@greatstone/adapter-utils/server-utils";
 import { extractSkillMentionIds, isUuidLike } from "@greatstone/shared";
+import { isIssueTabledById } from "./issue-tabling.js";
 import { evaluateCodexCredentialReadiness } from "@greatstone/adapter-codex-local/server";
 import { environmentService } from "./environments.js";
 import { parseExecutionPolicyBootstrapEnv } from "./execution-policy-bootstrap.js";
@@ -923,6 +964,9 @@ const MAX_TURN_CONTINUATION_DEFAULT_MAX_ATTEMPTS = 2;
 const MAX_TURN_CONTINUATION_MAX_ATTEMPTS_CAP = 10;
 const MAX_TURN_CONTINUATION_DEFAULT_DELAY_MS = 1_000;
 const MAX_TURN_CONTINUATION_MAX_DELAY_MS = 5 * 60 * 1000;
+// GRE-750: how long a parked hand-off wake waits on a task with no live run
+// before the sweep restarts it.
+const PARKED_HANDOFF_RESTART_AFTER_MS = 2 * 60 * 1000;
 const MAX_TURN_CONTINUATION_LIVE_RUN_STATUSES = [
   "scheduled_retry",
   "queued",
@@ -1316,6 +1360,10 @@ const activeRunExecutions = new Set<string>();
 // the running count before another gate's claim has committed.
 let runAdmissionReservedSlots = 0;
 const runAdmissionAdmittedRunIds = new Set<string>();
+// Consecutive passes on which a queued run failed to claim. ponytail: in
+// memory, so a restart gives a stuck run a fresh five tries.
+const claimFailureCounts = new Map<string, number>();
+const CLAIM_FAILURE_LIMIT = 5;
 // Queued runs currently held by the admission guard, keyed by run id.
 const runAdmissionHeldRuns = new Map<
   string,
@@ -1396,6 +1444,40 @@ export function computeTaskDrain(opts: { ttlMs?: number | null } = {}): {
   const expiresAt =
     ttlMs === null ? null : new Date(startedAt.getTime() + ttlMs);
   return { startedAt, expiresAt };
+}
+
+/**
+ * A run whose agent process is tied to this server's stdio (ACP). A hot
+ * restart cannot adopt it: it is drained, checkpointed and retried.
+ */
+export function isServerStdioBoundHotRestartRun(input: {
+  run: Pick<typeof heartbeatRuns.$inferSelect, "contextSnapshot">;
+  adapterType: string;
+  adapterConfig: unknown;
+}) {
+  const context = parseObject(input.run.contextSnapshot);
+  if (
+    context.processTopology === "server_stdio" ||
+    context.executionEngine === "acp"
+  ) {
+    return true;
+  }
+  if (
+    context.processTopology === "detached" ||
+    context.executionEngine === "cli"
+  ) {
+    return false;
+  }
+  if (
+    !["claude_local", "codex_local", "gemini_local"].includes(
+      input.adapterType,
+    )
+  ) {
+    return false;
+  }
+  return (
+    readNonEmptyString(parseObject(input.adapterConfig).engine) !== "cli"
+  );
 }
 
 /** Assign the given drain as the current task-drain state. */
@@ -3692,13 +3774,13 @@ export function compactRunLogChunk(
   chunk: string,
   maxChars = MAX_PERSISTED_LOG_CHUNK_CHARS,
 ) {
-  const normalized = redactSensitiveText(redactInlineBase64ImageData(chunk));
+  const normalized = rebrandRunLogText(redactSensitiveText(redactInlineBase64ImageData(chunk)));
   if (normalized.length <= maxChars) return normalized;
 
   const headChars = Math.max(0, Math.floor(maxChars * 0.6));
   const tailChars = Math.max(0, Math.floor(maxChars * 0.25));
   const omittedChars = Math.max(0, normalized.length - headChars - tailChars);
-  const marker = `\n[paperclip truncated run log chunk: omitted ${omittedChars} chars]\n`;
+  const marker = `\n[gsam truncated run log chunk: omitted ${omittedChars} chars]\n`;
   return `${normalized.slice(0, headChars)}${marker}${normalized.slice(normalized.length - tailChars)}`;
 }
 
@@ -4790,6 +4872,11 @@ export async function buildPaperclipRuntimeMcpServers(input: {
     }
   }
 
+  if (profile!.metadata?.source !== "paperclip_runner" || profile!.metadata?.agentId !== input.agent.id ||
+      profile!.metadata?.assignmentDigest !== assignmentDigest) {
+    throw new Error("Invalid native runtime profile provenance");
+  }
+
   let [gateway] = (
     await input.db
       .select()
@@ -4803,8 +4890,32 @@ export async function buildPaperclipRuntimeMcpServers(input: {
       )
   ).filter(
     (candidate) =>
-      candidate.metadata?.nativeRuntimeAssignmentDigest === assignmentDigest,
+      candidate.metadata?.nativeRuntimeAssignmentDigest === assignmentDigest &&
+      candidate.metadata?.agentId === input.agent.id &&
+      candidate.profileId === profile!.id &&
+      (!candidate.agentId || candidate.agentId === input.agent.id),
   );
+  // Gateways created before the agent binding existed have a null agentId, and
+  // named-gateway auth only rejects another agent's run token when it is set.
+  // The assignment digest includes the agent id, so a reused gateway is this
+  // agent's own: bind it here instead of waiting for the assignment to change.
+  if (gateway && !gateway.agentId) {
+    await input.db
+      .update(toolMcpGateways)
+      .set({ agentId: input.agent.id, contextScopeType: "agent", contextScopeId: input.agent.id, updatedAt: new Date() })
+      .where(
+        and(
+          eq(toolMcpGateways.id, gateway.id),
+          eq(toolMcpGateways.companyId, input.agent.companyId),
+          isNull(toolMcpGateways.agentId),
+        ),
+      );
+    [gateway] = await input.db
+      .select()
+      .from(toolMcpGateways)
+      .where(eq(toolMcpGateways.id, gateway.id))
+      .limit(1);
+  }
   if (!gateway) {
     const slug = `native-${input.agent.id.replaceAll("-", "").slice(0, 12)}-${assignmentDigest.slice(0, 16)}`;
     try {
@@ -4816,6 +4927,9 @@ export async function buildPaperclipRuntimeMcpServers(input: {
           description: "Run-scoped GS Agentic Manager Runner MCP gateway.",
           profileId: profile!.id,
           defaultProfileMode: "gateway_only",
+          agentId: input.agent.id,
+          contextScopeType: "agent",
+          contextScopeId: input.agent.id,
           metadata: {
             nativeRuntimeAssignmentDigest: assignmentDigest,
             agentId: input.agent.id,
@@ -4841,6 +4955,12 @@ export async function buildPaperclipRuntimeMcpServers(input: {
         .limit(1);
       if (!gateway) throw error;
     }
+  }
+
+  if (gateway!.agentId !== input.agent.id || gateway!.profileId !== profile!.id ||
+      gateway!.metadata?.agentId !== input.agent.id ||
+      gateway!.metadata?.nativeRuntimeAssignmentDigest !== assignmentDigest) {
+    throw new Error("Invalid native runtime gateway provenance");
   }
 
   const token = await service.createNamedGatewayToken({
@@ -5050,6 +5170,15 @@ export async function createManagedMcpRunConfig(input: {
         eq(toolMcpGateways.companyId, input.agent.companyId),
         eq(toolMcpGateways.status, "active"),
         isNull(toolMcpGateways.archivedAt),
+        // A native profile remains an immutable assignment even if gateway
+        // metadata is cleared. Explicit shared gateways use ordinary profiles.
+        sql`not exists (
+          select 1 from ${toolProfiles}
+          where ${toolProfiles.id} = ${toolMcpGateways.profileId}
+            and ${toolProfiles.companyId} = ${toolMcpGateways.companyId}
+            and (${toolProfiles.profileKey} like 'native:%'
+              or ${toolProfiles.metadata}->>'source' = 'paperclip_runner')
+        )`,
       ),
     )
     .orderBy(asc(toolMcpGateways.name));
@@ -5120,7 +5249,9 @@ export async function createManagedMcpRunConfig(input: {
   );
 
   const applicableGateways = rows.filter((gateway) =>
-    gatewayAppliesToRun({
+    // The immutable native assignment is delivered separately. Including any
+    // historical native gateway here duplicates and broadens that assignment.
+    !Object.hasOwn(gateway.metadata ?? {}, "nativeRuntimeAssignmentDigest") && gatewayAppliesToRun({
       gateway,
       agentId: input.agent.id,
       projectId: input.projectId,
@@ -5737,7 +5868,7 @@ async function listUnresolvedBlockerSummaries(
 export function formatRuntimeWorkspaceWarningLog(warning: string) {
   return {
     stream: "stdout" as const,
-    chunk: `[paperclip] ${warning}\n`,
+    chunk: `[gsam] ${warning}\n`,
   };
 }
 
@@ -5945,6 +6076,9 @@ export type ExecutionWorkspaceReuseRequestForIssue = {
   requestedExecutionWorkspaceId: string | null;
   requestedShouldReuseExisting: boolean;
   existingExecutionWorkspaceAvailable: boolean;
+  // The issue asked to reuse a workspace that is already archived. The run
+  // realizes a fresh workspace instead of failing at setup (GRE-229).
+  archivedWorkspaceFallback: boolean;
 };
 
 /**
@@ -5980,14 +6114,22 @@ export function resolveExecutionWorkspaceReuseRequestForIssue(input: {
     requestedExistingBranch === null ||
     readNonEmptyString(input.existingExecutionWorkspaceBranchName) ===
       requestedExistingBranch;
-  const requestedShouldReuseExisting =
+  const reuseRequested =
     input.issueExecutionWorkspacePreference === "reuse_existing" &&
     requestedExecutionWorkspaceId !== null &&
     existingWorkspaceMatchesRequestedBranch;
+  // An archived workspace cannot be restored: its worktree may already be
+  // removed. Realize a fresh workspace so the open issue keeps a way forward,
+  // and let the caller rebind the issue and say so once.
+  const archivedWorkspaceFallback =
+    reuseRequested && input.existingExecutionWorkspaceStatus === "archived";
+  const requestedShouldReuseExisting =
+    reuseRequested && !archivedWorkspaceFallback;
 
   return {
     requestedExecutionWorkspaceId,
     requestedShouldReuseExisting,
+    archivedWorkspaceFallback,
     existingExecutionWorkspaceAvailable:
       requestedShouldReuseExisting &&
       input.existingExecutionWorkspaceStatus !== null &&
@@ -6013,6 +6155,22 @@ export function resolveExecutionWorkspaceReuseProvisioningPolicy(input: {
       input.workspaceConfigFreshness.shouldRefreshConfigSnapshot,
     shouldPersistLatestWorkspaceConfigMetadata: !replacementClassDrift,
   };
+}
+
+export function formatArchivedWorkspaceFallbackComment(input: {
+  archivedWorkspaceId: string | null;
+  workspace: { id: string; branchName?: string | null; cwd?: string | null };
+}) {
+  const lines = [
+    `This issue was bound to execution workspace \`${input.archivedWorkspaceId ?? "unknown"}\`, but that workspace is archived, so it could not be reused.`,
+    "This run started in a fresh workspace instead, and the issue now uses it.",
+    "",
+    `- Workspace: \`${input.workspace.id}\``,
+  ];
+  if (input.workspace.branchName) lines.push(`- Branch: \`${input.workspace.branchName}\``);
+  if (input.workspace.cwd) lines.push(`- Worktree: \`${input.workspace.cwd}\``);
+  lines.push("", "Work that was only in the archived worktree is not in the new one. Check the old branch if you need it.");
+  return lines.join("\n");
 }
 
 function formatInheritedExecutionWorkspaceReuseFailure(input: {
@@ -6043,6 +6201,19 @@ function formatInheritedExecutionWorkspaceReuseFailure(input: {
     : `Issue ${issueLabel} requested inherited execution workspace reuse for ${workspaceLabel}, but the workspace could not be restored.`;
 
   return `${message} ${remediation}`;
+}
+
+// A reuse_existing workspace that could not be restored. Still recorded as
+// `setup_failed`, but the structured id lets setup repair (GRE-395) give the
+// task a fresh workspace from its own branch.
+export class InheritedWorkspaceReuseFailure extends Error {
+  executionWorkspaceId: string | null;
+
+  constructor(message: string, executionWorkspaceId: string | null) {
+    super(message);
+    this.name = "InheritedWorkspaceReuseFailure";
+    this.executionWorkspaceId = executionWorkspaceId;
+  }
 }
 
 export async function provisionExecutionWorkspaceForFreshnessDecision<
@@ -6104,7 +6275,12 @@ export async function provisionExecutionWorkspaceForFreshnessDecision<
       });
   }
 
-  if (reuseFailure) throw new Error(reuseFailure);
+  if (reuseFailure) {
+    throw new InheritedWorkspaceReuseFailure(
+      reuseFailure,
+      readNonEmptyString(input.existingExecutionWorkspaceId),
+    );
+  }
   if (!restored) {
     throw new Error(
       "Expected restored execution workspace after reuse fallback handling",
@@ -6336,7 +6512,7 @@ export function buildWorkspaceConfigFreshnessOperation(
       previousWorkspaceId: input.previousWorkspaceId,
       activeWorkspaceId: input.activeWorkspaceId,
     },
-    system: `[paperclip] ${workspaceConfigFreshnessActionLabel(input.decision.action)} after config freshness check${categorySummary}: ${reasonSummary}\n`,
+    system: `[gsam] ${workspaceConfigFreshnessActionLabel(input.decision.action)} after config freshness check${categorySummary}: ${reasonSummary}\n`,
   };
 }
 
@@ -8588,6 +8764,16 @@ function buildRunEventRuntimeProgress(input: {
   };
 }
 
+/** The board directive and plan brief when the issue is a board question chat (GRE-1186), else null. */
+async function boardQuestionDirectiveFor(db: Db, companyId: string, issueId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ originKind: issues.originKind, conversationAgentId: issues.conversationAgentId })
+    .from(issues)
+    .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)));
+  if (!isBoardQuestionChat(row)) return null;
+  return strategyBoardChatService(db).directiveFor(companyId);
+}
+
 export function buildPaperclipTaskMarkdown(input: {
   issue: {
     id: string;
@@ -8597,6 +8783,8 @@ export function buildPaperclipTaskMarkdown(input: {
     conversationAgentId?: string | null;
     description?: string | null;
   } | null;
+  /** A board question chat (GRE-1186): replaces the chat directive, with the plan brief. */
+  boardQuestionDirective?: string | null;
   ancestors?: Array<{
     id: string;
     identifier?: string | null;
@@ -8604,6 +8792,12 @@ export function buildPaperclipTaskMarkdown(input: {
     status?: string | null;
     priority?: string | null;
   }> | null;
+  /** Set when the woken agent leads the team the task is assigned to (GRE-437). */
+  team?: {
+    id: string;
+    name: string;
+    members: Array<{ id: string; name: string; role: string; title: string | null }>;
+  } | null;
   wakeComment?: {
     id: string;
     body: string;
@@ -8767,7 +8961,11 @@ export function buildPaperclipTaskMarkdown(input: {
       `- Title: ${quoteTaskScalar(issue.title)}`,
     );
     if (issue.conversationAgentId) {
-      lines.push("", "Chat mode directive:", AGENT_CHAT_DIRECTIVE, `Current composer mode: ${issue.workMode ?? "standard"}.`);
+      if (input.boardQuestionDirective) {
+        lines.push("", "Board question directive:", input.boardQuestionDirective, "Current composer mode: ask.");
+      } else {
+        lines.push("", "Chat mode directive:", AGENT_CHAT_DIRECTIVE, `Current composer mode: ${issue.workMode ?? "standard"}.`);
+      }
       if (acceptedChatPlan) {
         lines.push(
           "",
@@ -8866,6 +9064,20 @@ export function buildPaperclipTaskMarkdown(input: {
       );
     }
   }
+  if (input.team) {
+    lines.push(
+      "",
+      `Team context: this task is assigned to team "${input.team.name}" and you are its lead.`,
+      "Delegate parts of it by creating child issues assigned to team members:",
+    );
+    if (input.team.members.length === 0) {
+      lines.push("- The team has no other members yet.");
+    }
+    for (const member of input.team.members) {
+      const role = member.title ? `${member.title}, ${member.role}` : member.role;
+      lines.push(`- ${member.name} (${role}): agent ${member.id}`);
+    }
+  }
   if (effectiveWakeComments.length === 1) {
     lines.push(
       "",
@@ -8936,7 +9148,15 @@ function isProcessAlive(pid: number | null | undefined) {
 export async function persistHeartbeatRunProcessMetadata(
   db: Db,
   runId: string,
-  meta: { pid: number; processGroupId: number | null; startedAt: string },
+  meta: {
+    pid: number;
+    processGroupId: number | null;
+    startedAt: string;
+    // Where the child's output files are and what is needed to finish the
+    // run from them after a hot restart (GRE-250). Replaces any earlier
+    // spawn's record, so it always names the live child's files.
+    outputCapture?: RunOutputCaptureRecord | null;
+  },
 ) {
   const observedStartedAt = await readProcessStartedAt(meta.pid).catch(
     () => null,
@@ -8951,6 +9171,11 @@ export async function persistHeartbeatRunProcessMetadata(
         processStartedAt: Number.isNaN(startedAt.getTime())
           ? new Date()
           : startedAt,
+        ...(meta.outputCapture
+          ? {
+              resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({ outputCapture: meta.outputCapture })}::jsonb`,
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(eq(heartbeatRuns.id, runId))
@@ -9019,6 +9244,65 @@ function readHotRestartAdoptionMetadata(
   if (hotRestart.adopted !== true || typeof hotRestart.adoptedAt !== "string")
     return null;
   return hotRestart;
+}
+
+// GRE-250: a local child writes its output to files under the instance, so a
+// server that adopts it after a hot restart can still read its result.
+interface RunOutputCaptureRecord {
+  stdoutPath: string;
+  stderrPath: string;
+  recoveryContext: Record<string, unknown> | null;
+  finalizeContext: Record<string, unknown> | null;
+  // Bytes of each file already in the run log, recorded when the old server
+  // froze its tailers at hot-restart shutdown.
+  stdoutLoggedBytes?: number;
+  stderrLoggedBytes?: number;
+}
+
+const RUN_OUTPUT_FILE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function resolveRunOutputCaptureDir() {
+  return path.resolve(resolvePaperclipInstanceRoot(), "run-output");
+}
+
+function isInsideRunOutputCaptureDir(filePath: string) {
+  const dir = resolveRunOutputCaptureDir() + path.sep;
+  return path.resolve(filePath).startsWith(dir);
+}
+
+function readRunOutputCapture(
+  resultJson: Record<string, unknown> | null | undefined,
+): RunOutputCaptureRecord | null {
+  const capture = parseObject(parseObject(resultJson).outputCapture);
+  const stdoutPath = readNonEmptyString(capture.stdoutPath);
+  const stderrPath = readNonEmptyString(capture.stderrPath);
+  // Only files this server family wrote; never read or delete elsewhere.
+  if (
+    !stdoutPath ||
+    !stderrPath ||
+    !isInsideRunOutputCaptureDir(stdoutPath) ||
+    !isInsideRunOutputCaptureDir(stderrPath)
+  ) {
+    return null;
+  }
+  const readBytes = (value: unknown) =>
+    typeof value === "number" && Number.isInteger(value) && value >= 0
+      ? value
+      : undefined;
+  return {
+    stdoutPath,
+    stderrPath,
+    recoveryContext:
+      capture.recoveryContext && typeof capture.recoveryContext === "object"
+        ? (capture.recoveryContext as Record<string, unknown>)
+        : null,
+    finalizeContext:
+      capture.finalizeContext && typeof capture.finalizeContext === "object"
+        ? (capture.finalizeContext as Record<string, unknown>)
+        : null,
+    stdoutLoggedBytes: readBytes(capture.stdoutLoggedBytes),
+    stderrLoggedBytes: readBytes(capture.stderrLoggedBytes),
+  };
 }
 
 function mergeHotRestartAdoptionResultJson(
@@ -9527,6 +9811,13 @@ export function heartbeatService(
     hostBlindTime.sample();
     return isHostSleepLoss(run, hostBlindTime.blindMsBetween);
   };
+  // GRE-317: a scheduler tick in a macOS dark wake used to start timer,
+  // monitor and retry runs that froze mid-startup seconds later. Hold that
+  // work until the host has stayed awake; the next tick picks it up.
+  const hostSettlingAfterResume = () => {
+    hostBlindTime.sample();
+    return hostBlindTime.resumedWithin(HOST_RESUME_SETTLE_MS);
+  };
   const hostLoadReader =
     options.hostLoadReader ?? (runtimeEnv.VITEST ? () => null : readHostLoad);
   const inWorktreeRuntime = isTruthyRuntimeEnvValue(
@@ -9612,6 +9903,7 @@ export function heartbeatService(
   };
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
+    noticeHardStop: noticeBudgetHardStop,
   };
   const budgets = budgetService(db, budgetHooks);
   const recovery = recoveryService(db, {
@@ -9635,6 +9927,7 @@ export function heartbeatService(
       executionFailureRetryCount(run) >=
       BOUNDED_TRANSIENT_HEARTBEAT_RETRY_MAX_ATTEMPTS,
     isHostSleepLoss: runLostToHostSleep,
+    promoteDeferredWakesAfterStaleLockClear,
   });
   const runDispatch = createRunDispatch(db);
 
@@ -9745,12 +10038,13 @@ export function heartbeatService(
   }
 
   const wakeQueue = createWakeQueue(db, {
-    resolveResponsibleUserId: async (input) => {
+    // These three run inside the wake-queue release transaction: `executor`
+    // is that transaction, so every read below stays on its connection.
+    resolveResponsibleUserId: async (input, executor) => {
       // `input.issue` is the wake-queue module's own transaction-scoped
       // snapshot; using it here, instead of re-reading the issue through
-      // `getIssueExecutionContext`, keeps this read off a second connection
-      // while the module's transaction is open, and keeps it seeing the
-      // in-transaction issue status rather than a stale one.
+      // `getIssueExecutionContext`, keeps it seeing the in-transaction issue
+      // status rather than a stale one.
       return resolveResponsibleUserIdForRunSeed({
         companyId: input.companyId,
         contextSnapshot: input.contextSnapshot,
@@ -9766,25 +10060,30 @@ export function heartbeatService(
         source: input.source as WakeupOptions["source"],
         triggerDetail: input.triggerDetail as WakeupOptions["triggerDetail"],
         existingRunResponsibleUserId: input.existingRunResponsibleUserId,
+        executor,
       });
     },
-    getRoutineEnv: async (input) => {
+    getRoutineEnv: async (input, executor) => {
       // Same reason as `resolveResponsibleUserId` above: use the passed-in
       // transaction-scoped issue snapshot instead of reading the issue again.
-      return getRoutineEnvForExecutionIssue(input.companyId, input.issue);
+      return getRoutineEnvForExecutionIssue(input.companyId, input.issue, executor);
     },
-    resolveSessionBeforeForWakeup: async (input) => {
+    resolveSessionBeforeForWakeup: async (input, executor) => {
       // Scoped to this port only, so a wake-queue agent id can never resolve
       // a session against another company's agent row. The shared `getAgent`
       // helper below has no company predicate, so this reads the agent
       // directly with the company named in its own `WHERE` clause.
-      const agent = await db
+      const agent = await executor
         .select()
         .from(agents)
         .where(and(eq(agents.id, input.agentId), eq(agents.companyId, input.companyId)))
         .then((rows) => rows[0] ?? null);
       if (!agent) return null;
-      return resolveSessionBeforeForWakeup(agent, input.taskKey);
+      return resolveSessionBeforeForWakeup(
+        await withAiAccessRoute(agent, executor),
+        input.taskKey,
+        executor,
+      );
     },
     // These four helpers stay in this file today; the wake-queue module
     // receives them here so it never imports this file, the service it is
@@ -9943,9 +10242,9 @@ export function heartbeatService(
   }) {
     const errorCode = planApprovalResumeFailureErrorCode(input.run);
     if (input.status === "retrying") {
-      return `Agent failed to resume after approval: \`${errorCode}\` — retrying (attempt ${input.attempt}/${input.maxAttempts})`;
+      return `Agent failed to resume after approval: \`${errorCode}\`, retrying (attempt ${input.attempt}/${input.maxAttempts})`;
     }
-    return `Agent failed to resume after approval: \`${errorCode}\` — needs attention`;
+    return `Agent failed to resume after approval: \`${errorCode}\`, needs attention`;
   }
 
   function buildPlanApprovalResumeFailureResult(input: {
@@ -10651,12 +10950,21 @@ export function heartbeatService(
     return unsafeTextProjectionPromise;
   }
 
+  // The install-wide AI access route (GRE-139) decides the harness and account
+  // type of every Claude/Codex agent. Runs, claims and session lookups all read
+  // the agent through here, so they agree on the harness.
+  async function withAiAccessRoute<T extends typeof agents.$inferSelect>(agent: T, executor: Db = db): Promise<T> {
+    return applyAiAccessRoute(agent, readAiAccessRoute(await instanceSettings.getGeneral({ db: executor })));
+  }
+
   async function getAgent(agentId: string) {
-    return db
+    const agent = await db
       .select()
       .from(agents)
       .where(eq(agents.id, agentId))
       .then((rows) => rows[0] ?? null);
+    // Keeps the row lookup's type and its null for a missing agent.
+    return agent && withAiAccessRoute(agent);
   }
 
   async function getAgentInvokability(
@@ -10757,8 +11065,10 @@ export function heartbeatService(
       .then((rows) => rows[0] ?? null);
   }
 
-  async function getIssueExecutionContext(companyId: string, issueId: string) {
-    return db
+  // `executor` lets a caller inside an open transaction read through it
+  // instead of asking the pool for a second connection.
+  async function getIssueExecutionContext(companyId: string, issueId: string, executor: Db = db) {
+    return executor
       .select({
         chatCommunicationGuidance: chatConversations.communicationGuidance,
         chatAssignedAgentId: chatEndpoints.assignedAgentId,
@@ -10781,6 +11091,7 @@ export function heartbeatService(
         executionWorkspaceId: issues.executionWorkspaceId,
         executionWorkspacePreference: issues.executionWorkspacePreference,
         assigneeAgentId: issues.assigneeAgentId,
+        teamId: issues.teamId,
         assigneeAdapterOverrides: issues.assigneeAdapterOverrides,
         executionPolicy: issues.executionPolicy,
         executionState: issues.executionState,
@@ -10868,6 +11179,7 @@ export function heartbeatService(
   async function getRoutineEnvForExecutionIssue(
     companyId: string,
     issueContext: { originKind: string | null; originId: string | null; originRunId: string | null } | null,
+    executor: Db = db,
   ) {
     if (
       !issueContext ||
@@ -10878,7 +11190,7 @@ export function heartbeatService(
     }
 
     const routineRun = issueContext.originRunId
-      ? await db
+      ? await executor
           .select({
             routineRevisionId: routineRuns.routineRevisionId,
             responsibleUserId: routineRuns.responsibleUserId,
@@ -10895,7 +11207,7 @@ export function heartbeatService(
       : null;
 
     if (routineRun?.routineRevisionId) {
-      const revision = await db
+      const revision = await executor
         .select({
           snapshot: routineRevisions.snapshot,
           responsibleUserId: routineRevisions.responsibleUserId,
@@ -10924,7 +11236,7 @@ export function heartbeatService(
       }
     }
 
-    const routine = await db
+    const routine = await executor
       .select({
         env: routines.env,
         responsibleUserId: routines.responsibleUserId,
@@ -10945,8 +11257,8 @@ export function heartbeatService(
     };
   }
 
-  async function resolveCompanyDefaultResponsibleUserId(companyId: string) {
-    const company = await db
+  async function resolveCompanyDefaultResponsibleUserId(companyId: string, executor: Db = db) {
+    const company = await executor
       .select({ defaultResponsibleUserId: companies.defaultResponsibleUserId })
       .from(companies)
       .where(eq(companies.id, companyId))
@@ -10954,9 +11266,10 @@ export function heartbeatService(
     const explicitDefault = readNonEmptyString(
       company?.defaultResponsibleUserId,
     );
-    if (explicitDefault) return explicitDefault;
+    // A legacy `local-board` default becomes the primary owner once sign-in is on.
+    if (explicitDefault) return bindLegacyBoardUserId(executor, companyId, explicitDefault);
 
-    const owner = await db
+    const owner = await executor
       .select({ userId: companyMemberships.principalId })
       .from(companyMemberships)
       .where(
@@ -10970,9 +11283,9 @@ export function heartbeatService(
       .orderBy(asc(companyMemberships.createdAt), asc(companyMemberships.id))
       .limit(1)
       .then((rows) => rows[0] ?? null);
-    if (owner?.userId) return owner.userId;
+    if (owner?.userId) return bindLegacyBoardUserId(executor, companyId, owner.userId);
 
-    const firstUser = await db
+    const firstUser = await executor
       .select({ userId: companyMemberships.principalId })
       .from(companyMemberships)
       .where(
@@ -10991,9 +11304,10 @@ export function heartbeatService(
   async function resolveParentIssueResponsibleUserId(
     companyId: string,
     parentId: string | null | undefined,
+    executor: Db = db,
   ) {
     if (!parentId) return null;
-    const parent = await db
+    const parent = await executor
       .select({
         responsibleUserId: issues.responsibleUserId,
         createdByUserId: issues.createdByUserId,
@@ -11017,7 +11331,23 @@ export function heartbeatService(
     return input.source === "on_demand" || input.triggerDetail === "manual";
   }
 
-  async function resolveResponsibleUserIdForRunSeed(input: {
+  /**
+   * The responsible user a run starts with. A legacy `local-board` (from the
+   * issue, its routine, its parent, a retried run or an old comment) becomes
+   * the company's primary owner once sign-in is on, so the active-member
+   * check at run start never fails on an account nobody can sign in as.
+   */
+  async function resolveResponsibleUserIdForRunSeed(
+    input: Parameters<typeof resolveRawResponsibleUserIdForRunSeed>[0],
+  ) {
+    return bindLegacyBoardUserId(
+      input.executor ?? db,
+      input.companyId,
+      await resolveRawResponsibleUserIdForRunSeed(input),
+    );
+  }
+
+  async function resolveRawResponsibleUserIdForRunSeed(input: {
     companyId: string;
     contextSnapshot: Record<string, unknown>;
     issueContext: { id: string; responsibleUserId: string | null; parentId: string | null } | null;
@@ -11029,7 +11359,9 @@ export function heartbeatService(
     source?: WakeupOptions["source"] | null;
     triggerDetail?: WakeupOptions["triggerDetail"] | null;
     existingRunResponsibleUserId?: string | null;
+    executor?: Db;
   }) {
+    const executor = input.executor ?? db;
     const contextResponsibleUserId = readNonEmptyString(
       input.contextSnapshot.responsibleUserId,
     );
@@ -11049,7 +11381,7 @@ export function heartbeatService(
       messageIds.length &&
       !input.contextSnapshot.retryOfRunId
     ) {
-      const messages = await db
+      const messages = await executor
         .select({
           id: issueComments.id,
           authorUserId: issueComments.authorUserId,
@@ -11074,7 +11406,7 @@ export function heartbeatService(
     }
     const retryOfRunId = readNonEmptyString(input.contextSnapshot.retryOfRunId);
     if (retryOfRunId) {
-      const [origin] = await db
+      const [origin] = await executor
         .select({ responsibleUserId: heartbeatRuns.responsibleUserId })
         .from(heartbeatRuns)
         .where(
@@ -11096,11 +11428,12 @@ export function heartbeatService(
     const parentResponsibleUserId = await resolveParentIssueResponsibleUserId(
       input.companyId,
       input.issueContext?.parentId,
+      executor,
     );
     if (parentResponsibleUserId) return parentResponsibleUserId;
     if (!input.issueContext && requestedUserId) return requestedUserId;
     input.contextSnapshot.executionIdentityCause = "company_default";
-    return resolveCompanyDefaultResponsibleUserId(input.companyId);
+    return resolveCompanyDefaultResponsibleUserId(input.companyId, executor);
   }
 
   async function resolveResponsibleUserIdForRun(input: {
@@ -11112,7 +11445,9 @@ export function heartbeatService(
     >;
   }) {
     const operatorIdentity = await explicitOperatorRunIdentity(db, input.run);
-    const responsibleUserId = operatorIdentity?.actorId ?? await resolveResponsibleUserIdForRunSeed({
+    const responsibleUserId = operatorIdentity?.actorId
+      ? await bindLegacyBoardUserId(db, input.run.companyId, operatorIdentity.actorId)
+      : await resolveResponsibleUserIdForRunSeed({
       companyId: input.run.companyId,
       contextSnapshot: input.contextSnapshot,
       issueContext: input.issueContext,
@@ -11161,8 +11496,8 @@ export function heartbeatService(
     });
   }
 
-  async function getRuntimeState(agentId: string) {
-    return db
+  async function getRuntimeState(agentId: string, executor: Db = db) {
+    return executor
       .select()
       .from(agentRuntimeState)
       .where(eq(agentRuntimeState.agentId, agentId))
@@ -11199,8 +11534,9 @@ export function heartbeatService(
     agentId: string,
     adapterType: string,
     taskKey: string,
+    executor: Db = db,
   ) {
-    return db
+    return executor
       .select()
       .from(agentTaskSessions)
       .where(
@@ -11727,6 +12063,55 @@ export function heartbeatService(
         runId: input.runId,
         activitySource: input.activitySource,
       });
+    }
+
+    // GRE-589: a reviewer run for an in_review issue with an open blocker is
+    // cancelled at dispatch (issue_dependencies_blocked), so starting one only
+    // wastes a run. Keep the monitor armed and check again later; the attempt
+    // count is unchanged because nothing was dispatched. Once the blocker is
+    // done, the next check wakes the reviewer once, as before.
+    if (isReviewWaitMonitor) {
+      const readiness = (
+        await issuesSvc.listDependencyReadiness(claimed.companyId, [claimed.id])
+      ).get(claimed.id);
+      if (readiness && !readiness.isDependencyReady) {
+        const nextCheckAt = new Date(input.now.getTime() + REVIEW_WAIT_RECHECK_MS);
+        const patch = buildIssueMonitorDeferredPatch({
+          issue: claimed,
+          executionPolicy: claimed.executionPolicy,
+          nextCheckAt,
+        });
+        if (patch) {
+          await db
+            .update(issues)
+            .set({ ...patch, updatedAt: new Date() })
+            .where(eq(issues.id, claimed.id));
+          await logActivity(db, {
+            companyId: claimed.companyId,
+            actorType: input.actorType,
+            actorId: input.actorId,
+            agentId: input.agentId,
+            runId: input.runId,
+            action: "issue.monitor_deferred",
+            entityType: "issue",
+            entityId: claimed.id,
+            details: {
+              identifier: claimed.identifier,
+              reason: "issue_dependencies_blocked",
+              unresolvedBlockerIssueIds: readiness.unresolvedBlockerIssueIds,
+              previousNextCheckAt: scheduledAtIso,
+              nextCheckAt: nextCheckAt.toISOString(),
+              attemptCount: claimed.monitorAttemptCount ?? 0,
+              targetAgentId,
+              source: input.activitySource,
+            },
+          });
+          return {
+            outcome: "skipped" as const,
+            reason: "issue_dependencies_blocked",
+          };
+        }
+      }
     }
 
     try {
@@ -12334,6 +12719,7 @@ export function heartbeatService(
   async function resolveSessionBeforeForWakeup(
     agent: typeof agents.$inferSelect,
     taskKey: string | null,
+    executor: Db = db,
   ) {
     if (taskKey) {
       const codec = getAdapterSessionCodec(agent.adapterType);
@@ -12342,6 +12728,7 @@ export function heartbeatService(
         agent.id,
         agent.adapterType,
         taskKey,
+        executor,
       );
       const parsedParams = normalizeSessionParams(
         codec.deserialize(existingTaskSession?.sessionParamsJson ?? null),
@@ -12353,7 +12740,7 @@ export function heartbeatService(
       );
     }
 
-    const runtimeForRun = await getRuntimeState(agent.id);
+    const runtimeForRun = await getRuntimeState(agent.id, executor);
     return runtimeForRun?.sessionId ?? null;
   }
 
@@ -14030,7 +14417,7 @@ export function heartbeatService(
 
   async function persistRunProcessMetadata(
     runId: string,
-    meta: { pid: number; processGroupId: number | null; startedAt: string },
+    meta: Parameters<typeof persistHeartbeatRunProcessMetadata>[2],
   ) {
     return persistHeartbeatRunProcessMetadata(db, runId, meta);
   }
@@ -14604,36 +14991,6 @@ export function heartbeatService(
     };
   }
 
-  function isServerStdioBoundHotRestartRun(input: {
-    run: typeof heartbeatRuns.$inferSelect;
-    adapterType: string;
-    adapterConfig: unknown;
-  }) {
-    const context = parseObject(input.run.contextSnapshot);
-    if (
-      context.processTopology === "server_stdio" ||
-      context.executionEngine === "acp"
-    ) {
-      return true;
-    }
-    if (
-      context.processTopology === "detached" ||
-      context.executionEngine === "cli"
-    ) {
-      return false;
-    }
-    if (
-      !["claude_local", "codex_local", "gemini_local"].includes(
-        input.adapterType,
-      )
-    ) {
-      return false;
-    }
-    return (
-      readNonEmptyString(parseObject(input.adapterConfig).engine) !== "cli"
-    );
-  }
-
   async function prepareHotRestartShutdown(
     signal: "SIGINT" | "SIGTERM",
     now = new Date(),
@@ -14691,6 +15048,11 @@ export function heartbeatService(
       .from(heartbeatRuns)
       .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
       .where(eq(heartbeatRuns.status, "running"));
+    // Stop feeding captured output into run logs and record how far each log
+    // got, so the adopting server appends exactly the rest (GRE-250).
+    for (const { run } of activeRuns) {
+      await recordFrozenRunOutputCapture(run.id);
+    }
     const snapshotRuns = activeRuns.map(toHotRestartIntentRun);
     const intentWithVersion = {
       ...intent,
@@ -14854,7 +15216,7 @@ export function heartbeatService(
       candidate: HotRestartIntentRun,
       classification: HotRestartReportRun["classification"],
       reason: string,
-      patch?: Partial<HotRestartIntentRun>,
+      patch?: Partial<HotRestartIntentRun> & { outputCaptured?: boolean },
     ) => {
       const run = {
         ...candidate,
@@ -15034,11 +15396,21 @@ export function heartbeatService(
           processGroupId,
         },
       });
+      const outputCapture = readRunOutputCapture(parseObject(updated.resultJson));
+      if (outputCapture) {
+        await startAdoptedRunOutputTail(updated, outputCapture).catch((err) =>
+          logger.warn({ err, runId: run.id }, "failed to start adopted run output tail"),
+        );
+      }
       classify(
         candidate,
         "adopted",
         processPidAlive ? "process_pid_alive" : "process_group_alive",
-        patch,
+        {
+          ...patch,
+          outputCaptured:
+            !!outputCapture && !!getServerAdapter(adapterType).recoverResultFromOutput,
+        },
       );
     }
 
@@ -15454,6 +15826,14 @@ export function heartbeatService(
       wakeReason?: string;
       maxAttempts?: number;
       delayMs?: number;
+      // GRE-395: the cause the app repaired before this retry. When
+      // quarantineWorkspace is set, the failed workspace is archived and
+      // unbound so the retry realizes a fresh one from the task branch.
+      setupRepair?: {
+        cause: string;
+        quarantineWorkspace: boolean;
+        executionWorkspaceId: string | null;
+      };
     },
   ) {
     const now = opts?.now ?? new Date();
@@ -15663,10 +16043,21 @@ export function heartbeatService(
           }
         : {};
     const workspaceValidationRetryPayload =
-      retryReason === INTERACTION_CONTINUATION_INFRA_RETRY_REASON &&
-      isWorkspaceValidationFailedRun(run)
-        ? readWorkspaceValidationPayloadFromRun(run)
-        : null;
+      opts?.setupRepair?.quarantineWorkspace
+        ? {
+            ...readWorkspaceValidationPayloadFromRun(run),
+            reason:
+              readNonEmptyString(
+                readWorkspaceValidationPayloadFromRun(run).reason,
+              ) ??
+              run.errorCode ??
+              "setup_repair",
+            executionWorkspaceId: opts.setupRepair.executionWorkspaceId,
+          }
+        : retryReason === INTERACTION_CONTINUATION_INFRA_RETRY_REASON &&
+            isWorkspaceValidationFailedRun(run)
+          ? readWorkspaceValidationPayloadFromRun(run)
+          : null;
     const shouldQuarantineWorkspaceForRetry =
       workspaceValidationRetryPayload !== null &&
       Object.keys(workspaceValidationRetryPayload).length > 0;
@@ -15688,6 +16079,15 @@ export function heartbeatService(
           : {}),
         ...(retryReason === HOST_SLEEP_RETRY_REASON
           ? { [FAILURE_RETRIES_BEFORE_HOST_SLEEP_KEY]: executionFailureRetryCount(run) }
+          : {}),
+        ...(opts?.setupRepair
+          ? {
+              setupRepair: {
+                cause: opts.setupRepair.cause,
+                sourceRunId: run.id,
+                repairedAt: now.toISOString(),
+              },
+            }
           : {}),
         ...(shouldQuarantineWorkspaceForRetry
           ? {
@@ -16158,7 +16558,7 @@ export function heartbeatService(
             ) {
               const existingMetadata = parseObject(failedWorkspace.metadata);
               const quarantine = {
-                reason: WORKSPACE_VALIDATION_FAILURE_CODE,
+                reason: run.errorCode ?? WORKSPACE_VALIDATION_FAILURE_CODE,
                 retryReason,
                 sourceRunId: run.id,
                 retryRunId: scheduledRun.id,
@@ -16173,7 +16573,8 @@ export function heartbeatService(
                   status: "archived",
                   closedAt: now,
                   cleanupEligibleAt: null,
-                  cleanupReason: WORKSPACE_VALIDATION_FAILURE_CODE,
+                  cleanupReason:
+                    run.errorCode ?? WORKSPACE_VALIDATION_FAILURE_CODE,
                   metadata: {
                     ...existingMetadata,
                     workspaceValidationQuarantine: quarantine,
@@ -16603,7 +17004,306 @@ export function heartbeatService(
     });
   }
 
+  // GRE-395: a run that failed on a known setup cause is repaired here and
+  // the agent is woken once through a normal scheduled retry, so the RAM, disk
+  // and run-cap admission gate still applies when it starts. An unsafe repair,
+  // or the same cause twice in 30 minutes, blocks the task with the board as
+  // the named owner instead of retrying.
+  async function repairAndResumeSetupFailure(
+    run: typeof heartbeatRuns.$inferSelect,
+    agent: typeof agents.$inferSelect,
+    opts?: { now?: Date; git?: GitRunner },
+  ): Promise<
+    | { outcome: "skipped" }
+    | { outcome: "resumed"; cause: SetupRepairCause; retryRunId: string }
+    | { outcome: "blocked"; cause: SetupRepairCause; reason: string }
+  > {
+    const now = opts?.now ?? new Date();
+    const cause = classifySetupRepairCause(run);
+    // Native runs have their own same-run controller, and a run whose provider
+    // actions are unverified already goes to the board's reconciliation path.
+    if (
+      !cause ||
+      run.runtimeMode === "native" ||
+      legacyExecutionNeedsReconciliation(run)
+    ) {
+      return { outcome: "skipped" };
+    }
+    const issueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
+    if (!issueId) return { outcome: "skipped" };
+    const issue = await db
+      .select()
+      .from(issues)
+      .where(and(eq(issues.id, issueId), eq(issues.companyId, run.companyId)))
+      .then((rows) => rows[0] ?? null);
+    if (
+      !issue ||
+      (issue.status !== "todo" && issue.status !== "in_progress") ||
+      issue.assigneeUserId ||
+      issue.assigneeAgentId !== run.agentId
+    ) {
+      return { outcome: "skipped" };
+    }
+
+    // Repair retries of this cause on this task inside the window, not
+    // counting the successor of this same run (a repeated call reuses it).
+    const recentRepairCount = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          eq(heartbeatRuns.scheduledRetryReason, SETUP_REPAIR_RETRY_REASON),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+          sql`${heartbeatRuns.contextSnapshot} -> 'setupRepair' ->> 'cause' = ${cause}`,
+          sql`${heartbeatRuns.retryOfRunId} is distinct from ${run.id}`,
+          gte(
+            heartbeatRuns.createdAt,
+            new Date(now.getTime() - SETUP_REPAIR_REPEAT_WINDOW_MS),
+          ),
+        ),
+      )
+      .then((rows) => Number(rows[0]?.count ?? 0));
+
+    let safety: WorktreeSafety | null = null;
+    let executionWorkspaceId: string | null = null;
+    let cwd: string | null = null;
+    let expectedBranchName: string | null = null;
+    if (cause !== "process_lost") {
+      const hint = readSetupRepairWorkspaceHint(run);
+      executionWorkspaceId =
+        hint.executionWorkspaceId ??
+        readNonEmptyString(issue.executionWorkspaceId);
+      const workspace = executionWorkspaceId
+        ? await db
+            .select({
+              cwd: executionWorkspaces.cwd,
+              branchName: executionWorkspaces.branchName,
+            })
+            .from(executionWorkspaces)
+            .where(
+              and(
+                eq(executionWorkspaces.id, executionWorkspaceId),
+                eq(executionWorkspaces.companyId, run.companyId),
+              ),
+            )
+            .then((rows) => rows[0] ?? null)
+        : null;
+      cwd = hint.cwd ?? readNonEmptyString(workspace?.cwd);
+      expectedBranchName =
+        hint.expectedBranchName ?? readNonEmptyString(workspace?.branchName);
+      safety = await inspectWorktreeSafety({
+        cwd,
+        expectedBranchName,
+        git: opts?.git,
+      });
+    }
+
+    let decision: SetupRepairDecision = decideSetupRepair({
+      cause,
+      recentRepairCount,
+      safety,
+    });
+    // A clean worktree on the wrong branch is put back on the task branch in
+    // place. A missing or unusable workspace is archived and unbound, so the
+    // retry realizes a fresh one from the task branch. Neither discards work:
+    // safety already proved every commit is on the task branch or a remote.
+    let quarantineWorkspace = false;
+    if (decision.kind === "repair") {
+      if (
+        cause === "workspace_mismatch" &&
+        safety?.state === "safe" &&
+        cwd &&
+        safety.currentBranch !== expectedBranchName
+      ) {
+        const repointed = expectedBranchName
+          ? await repointWorktreeToTaskBranch({
+              cwd,
+              expectedBranchName,
+              git: opts?.git,
+            })
+          : { ok: false as const, reason: "the task branch is not recorded" };
+        if (!repointed.ok) decision = { kind: "block", reason: repointed.reason };
+      } else {
+        quarantineWorkspace = executionWorkspaceId !== null;
+      }
+    }
+
+    if (decision.kind === "repair") {
+      const scheduled = await scheduleBoundedRetryForRun(run, agent, {
+        now,
+        retryReason: SETUP_REPAIR_RETRY_REASON,
+        wakeReason: SETUP_REPAIR_WAKE_REASON,
+        maxAttempts: 1,
+        delayMs: 0,
+        setupRepair: { cause, quarantineWorkspace, executionWorkspaceId },
+      });
+      if (scheduled.outcome === "scheduled") {
+        if (!("reusedExisting" in scheduled && scheduled.reusedExisting)) {
+          await issuesSvc.addComment(
+            issueId,
+            buildSetupRepairResumeComment(cause as Exclude<SetupRepairCause, "process_lost">),
+            {},
+            {
+              authorType: "system",
+              presentation: systemNoticePresentation({
+                tone: "info",
+                title: "Run repaired and resumed",
+              }),
+              metadata: {
+                version: 1,
+                sourceRunId: run.id,
+                sections: [
+                  {
+                    title: "Repair",
+                    rows: [
+                      { type: "key_value", label: "Cause", value: cause },
+                      { type: "run_link", label: "Failed run", runId: run.id, title: run.status },
+                      { type: "run_link", label: "Resume run", runId: scheduled.run.id, title: scheduled.run.status },
+                    ],
+                  },
+                ],
+              },
+            },
+          );
+          await logActivity(db, {
+            companyId: run.companyId,
+            actorType: "system",
+            actorId: "heartbeat",
+            agentId: run.agentId,
+            runId: run.id,
+            action: "issue.setup_repaired",
+            entityType: "issue",
+            entityId: issueId,
+            details: {
+              cause,
+              quarantineWorkspace,
+              executionWorkspaceId,
+              retryRunId: scheduled.run.id,
+            },
+          });
+        }
+        return { outcome: "resumed", cause, retryRunId: scheduled.run.id };
+      }
+      decision = {
+        kind: "block",
+        reason:
+          scheduled.outcome === "retry_exhausted"
+            ? "the one automatic repair was already used"
+            : scheduled.reason,
+      };
+    }
+
+    const blockedComment = buildSetupRepairBlockedComment(cause, decision.reason);
+    const blockedCommentOptions = {
+      authorType: "system" as const,
+      presentation: systemNoticePresentation({
+        tone: "danger",
+        title: "Run stopped: board must act",
+      }),
+      metadata: {
+        version: 1 as const,
+        sourceRunId: run.id,
+        sections: [
+          {
+            title: "Repair",
+            rows: [
+              { type: "key_value" as const, label: "Cause", value: cause },
+              { type: "key_value" as const, label: "Owner", value: "board" },
+              { type: "run_link" as const, label: "Failed run", runId: run.id, title: run.status },
+            ],
+          },
+        ],
+      },
+    };
+    // A workspace cause still ends `blocked` through the release path's
+    // board escalation, which keeps the board-owned recovery action and its
+    // evidence. This only adds the plain line, once per failed run.
+    if (cause !== "process_lost") {
+      const alreadyPosted = await db
+        .select({ id: issueComments.id })
+        .from(issueComments)
+        .where(
+          and(
+            eq(issueComments.issueId, issueId),
+            eq(issueComments.body, blockedComment),
+            sql`${issueComments.metadata} ->> 'sourceRunId' = ${run.id}`,
+          ),
+        )
+        .limit(1)
+        .then((rows) => rows.length > 0);
+      if (!alreadyPosted) {
+        await issuesSvc.addComment(issueId, blockedComment, {}, blockedCommentOptions);
+      }
+      return { outcome: "blocked", cause, reason: decision.reason };
+    }
+
+    // A lost process retry would get another generic continuation retry from
+    // the release path, so it is blocked here with the board as owner.
+    const blocked = await db
+      .update(issues)
+      .set({
+        status: "blocked",
+        unblockDescriptor: {
+          owner: SETUP_REPAIR_BLOCK_OWNER,
+          action: buildSetupRepairUnblockAction(cause),
+        },
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(issues.id, issueId),
+          eq(issues.companyId, run.companyId),
+          inArray(issues.status, ["todo", "in_progress"]),
+          eq(issues.assigneeAgentId, run.agentId),
+        ),
+      )
+      .returning({ id: issues.id })
+      .then((rows) => rows[0] ?? null);
+    if (!blocked) return { outcome: "skipped" };
+    await issuesSvc.addComment(issueId, blockedComment, {}, blockedCommentOptions);
+    await logActivity(db, {
+      companyId: run.companyId,
+      actorType: "system",
+      actorId: "heartbeat",
+      agentId: run.agentId,
+      runId: run.id,
+      action: "issue.updated",
+      entityType: "issue",
+      entityId: issueId,
+      details: {
+        identifier: issue.identifier,
+        status: "blocked",
+        previousStatus: issue.status,
+        source: "heartbeat.setup_repair",
+        cause,
+        reason: decision.reason,
+      },
+    });
+    return { outcome: "blocked", cause, reason: decision.reason };
+  }
+
+  // Setup repair first; any failure it does not own keeps the existing path.
+  async function repairSetupFailureOrRetry(
+    run: typeof heartbeatRuns.$inferSelect,
+    agent: typeof agents.$inferSelect,
+    fallback: () => Promise<unknown>,
+  ) {
+    const repair = await repairAndResumeSetupFailure(run, agent).catch(
+      (error) => {
+        logger.warn(
+          { err: error, runId: run.id },
+          "setup repair failed; falling back to the existing retry path",
+        );
+        return { outcome: "skipped" as const };
+      },
+    );
+    if (repair.outcome === "skipped") await fallback();
+    return repair;
+  }
+
   async function promoteDueScheduledRetries(now = new Date()) {
+    if (hostSettlingAfterResume()) return { promoted: 0, runIds: [] as string[] };
     const cutoff = await getWorktreeExecutionCutoff();
     const result = await runDispatch.promoteDueScheduledRetries({
       now,
@@ -17478,6 +18178,24 @@ export function heartbeatService(
         .limit(1);
       if (settlingOwner) return null;
     }
+    // Runs inserted without enqueueWakeup (retries, recovery, promoted
+    // deferred wakes) and runs queued just before "Not now" stop here.
+    if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
+      await cancelQueuedRunForTabledIssue(run, issueId);
+      await logActivity(db, {
+        companyId: run.companyId,
+        actorType: "system",
+        actorId: "system",
+        agentId: run.agentId,
+        runId: run.id,
+        action: "issue.tabled_run_cancelled",
+        entityType: "heartbeat_run",
+        entityId: run.id,
+        issueId,
+        details: { issueId, source: "heartbeat.claim_queued_run" },
+      });
+      return null;
+    }
     if (issueId) {
       const activePauseHold = await treeControlSvc.getActivePauseHoldGate(
         run.companyId,
@@ -17555,6 +18273,7 @@ export function heartbeatService(
       });
       if (staleness.outcome === "cancelled") {
         applyRunDispatchPostCommitEffects(staleness.postCommitEffects);
+        await promoteDeferredWakesAfterStaleRunCancel(run);
         logger.info(
           { runId: run.id, issueId, errorCode: staleness.errorCode },
           "claimQueuedRun: cancelled stale queued run",
@@ -17564,20 +18283,35 @@ export function heartbeatService(
     }
 
     const claimedAt = new Date();
-    const responsibleUserId = await resolveResponsibleUserIdForRun({
-      run,
-      contextSnapshot: context,
-      issueContext: issueId
-        ? await getIssueExecutionContext(run.companyId, issueId)
-        : null,
-      routineEnvContext: {
-        routineId: null,
-        env: null,
-        responsibleUserId: null,
-      },
-    });
+    let responsibleUserId: Awaited<ReturnType<typeof resolveResponsibleUserIdForRun>>;
+    try {
+      responsibleUserId = await resolveResponsibleUserIdForRun({
+        run,
+        contextSnapshot: context,
+        issueContext: issueId
+          ? await getIssueExecutionContext(run.companyId, issueId)
+          : null,
+        routineEnvContext: {
+          routineId: null,
+          env: null,
+          responsibleUserId: null,
+        },
+      });
+    } catch (err) {
+      // A queued-message interrupt whose messages another run already
+      // delivered has no authority left. Refused every pass, it would stall
+      // the agent's queue, so it is discarded like any spent queued message.
+      const code = err instanceof HttpError ? (err.details as { code?: unknown } | undefined)?.code : undefined;
+      if (code !== QUEUED_INTERRUPT_SPENT) throw err;
+      await cancelRunInternal(run.id, "Cancelled because its queued messages were already delivered", { errorCode: QUEUED_INTERRUPT_SPENT });
+      logger.warn({ runId: run.id }, "claimQueuedRun: discarded a spent queued-message interrupt");
+      return null;
+    }
     // All ordinary and comment claims use the same company-scoped issue
     // lock. A batch may claim several runs before executeRun tracks any owner.
+    // Claims only update non-key issue columns, so NO KEY UPDATE still
+    // serialises claimants and every other writer of the issue, without
+    // waiting on writes that merely reference the task.
     async function lockIssueExecutionClaim(tx: Db) {
       const [owner] = issueId ? await tx.select({
         assigneeAgentId: issues.assigneeAgentId,
@@ -17585,7 +18319,7 @@ export function heartbeatService(
         checkoutRunId: issues.checkoutRunId,
       }).from(issues).where(and(
         eq(issues.id, issueId), eq(issues.companyId, run.companyId),
-      )).for("update") : [];
+      )).for(REFERENCED_ROW_LOCK) : [];
       const ownsIssue = owner?.assigneeAgentId === run.agentId &&
         context.wakeReason !== "source_scoped_recovery_action";
       if (ownsIssue && run.scheduledRetryReason === "native_safe_replacement" &&
@@ -18175,6 +18909,43 @@ export function heartbeatService(
       },
     });
 
+    return cancelled;
+  }
+
+  // Same shape as cancelQueuedRunForBlockedDependencies: claimQueuedRun holds
+  // the agent start lock, so this must not go through cancelRunInternal.
+  async function cancelQueuedRunForTabledIssue(
+    run: typeof heartbeatRuns.$inferSelect,
+    issueId: string,
+  ) {
+    const now = new Date();
+    const reason = "Cancelled because the task is tabled (Not now); it wakes again when it is brought back";
+    const cancelled = await setRunStatus(run.id, "cancelled", {
+      finishedAt: now,
+      error: reason,
+      errorCode: "issue_tabled",
+      resultJson: {
+        ...parseObject(run.resultJson),
+        stopReason: "issue_tabled",
+        effectiveTimeoutSec: 0,
+        timeoutConfigured: false,
+        timeoutSource: "tabled_gate",
+        timeoutFired: false,
+      },
+    });
+    if (!cancelled) return null;
+    await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: now, error: reason });
+    await db
+      .update(issues)
+      .set({ executionRunId: null, executionAgentNameKey: null, executionLockedAt: null, updatedAt: now })
+      .where(and(eq(issues.companyId, run.companyId), eq(issues.id, issueId), eq(issues.executionRunId, run.id)));
+    await appendRunEvent(cancelled, {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "warn",
+      message: reason,
+      payload: { issueId },
+    });
     return cancelled;
   }
 
@@ -19439,6 +20210,28 @@ export function heartbeatService(
         checksPersistedChildLiveness &&
         run.processGroupId &&
         isProcessGroupAlive(run.processGroupId);
+      const adoptedOutputCapture = readHotRestartAdoptionMetadata(
+        parseObject(run.resultJson),
+      )
+        ? readRunOutputCapture(parseObject(run.resultJson))
+        : null;
+      if (adoptedOutputCapture && tracksLegacyLocalChild) {
+        // GRE-250: the adopted child's output is in a file. Finish the run
+        // from its terminal result instead of calling it lost.
+        const outcome = await finishAdoptedRunFromCapturedOutput({
+          run,
+          adapterType,
+          adapterConfig,
+          capture: adoptedOutputCapture,
+          processAlive: Boolean(processPidAlive || processGroupAlive),
+          now,
+        });
+        if (outcome === "finalized") {
+          reaped.push(run.id);
+          continue;
+        }
+        if (outcome === "still_running") continue;
+      }
       if (
         (processPidAlive || processGroupAlive) &&
         readHotRestartAdoptionMetadata(parseObject(run.resultJson))
@@ -19486,7 +20279,14 @@ export function heartbeatService(
           (!!run.processPid || !!run.processGroupId)) ||
           monitorDispatchLostWithoutFutureWake);
       if (!(await revokeExpiredLegacyController(db, run))) continue;
-      const baseMessage = buildProcessLossMessage(run);
+      // An adopted child's stdout pipe closed with the old server, so its
+      // result never reaches this server. Say so instead of a bare loss.
+      const adoptedAfterHotRestart = !!readHotRestartAdoptionMetadata(
+        parseObject(run.resultJson),
+      );
+      const baseMessage = adoptedAfterHotRestart
+        ? `${buildProcessLossMessage(run)} after hot-restart adoption; its output after the restart was not captured`
+        : buildProcessLossMessage(run);
       const conversationContinuationEligible = await runUsedConversationAdapter(db, run);
 
       const failureWrite = await setRunStatusFromLive(
@@ -19515,6 +20315,10 @@ export function heartbeatService(
         },
       );
       if (!failureWrite.updated || !failureWrite.run) continue;
+      await stopAdoptedRunOutputTail(run.id);
+      if (adoptedOutputCapture) {
+        await removeChildOutputCaptureFiles(adoptedOutputCapture);
+      }
       let finalizedRun: typeof heartbeatRuns.$inferSelect | null =
         failureWrite.run;
       await setWakeupStatus(run.wakeupRequestId, "failed", {
@@ -19555,6 +20359,19 @@ export function heartbeatService(
         retriedRun = scheduled?.outcome === "scheduled" ? scheduled.run : null;
       }
 
+      // GRE-395: the process-loss retry was lost too. Do not retry again;
+      // block the task with one plain line naming who must act.
+      if (!retriedRun && retryAgent && finalizedRun.retryOfRunId) {
+        await repairAndResumeSetupFailure(finalizedRun, retryAgent, { now }).catch(
+          (error) => {
+            logger.warn(
+              { err: error, runId: finalizedRun?.id },
+              "failed to block task after repeated process loss",
+            );
+          },
+        );
+      }
+
       if (!retriedRun) {
         await releaseIssueExecutionAndPromote(finalizedRun);
       }
@@ -19570,6 +20387,7 @@ export function heartbeatService(
           ...(run.processPid ? { processPid: run.processPid } : {}),
           ...(run.processGroupId ? { processGroupId: run.processGroupId } : {}),
           ...(retriedRun ? { retryRunId: retriedRun.id } : {}),
+          ...(adoptedAfterHotRestart ? { adoptedAfterHotRestart: true } : {}),
         },
       });
 
@@ -19699,6 +20517,7 @@ export function heartbeatService(
         logger.warn({ err, queueId: wake.id }, "failed to promote stranded legacy comments");
       });
     }
+    await restartParkedHandoffWakes(cutoff);
 
     // The cancellation marker is durable intent. Retry while its exact queue
     // is still deferred, including after a failed cleanup promotion or restart.
@@ -19726,6 +20545,74 @@ export function heartbeatService(
     }
 
     await drainQueuedRunsFairly();
+  }
+
+  // GRE-750: a parked review hand-off, "blockers resolved" or assignment wake
+  // carries no comment ids, so the stranded-queue sweep above skips it. When
+  // the release that should have sent it is lost, nothing else ever does.
+  // After two quiet minutes with no live run on the task, replay the release
+  // through the task's latest run so the normal admission gates (operator
+  // Stop, recovery hold, scope) decide. A paused agent or a held task tree
+  // leaves the wake parked, so it can still start after resume.
+  async function restartParkedHandoffWakes(cutoff: Date | null) {
+    const parked = await db.select({ wake: agentWakeupRequests, issueId: issues.id })
+      .from(agentWakeupRequests)
+      .innerJoin(issues, and(eq(issues.companyId, agentWakeupRequests.companyId),
+        sql`${issues.id}::text = ${agentWakeupRequests.payload}->>'issueId'`))
+      .innerJoin(companies, and(eq(companies.id, issues.companyId), eq(companies.status, "active")))
+      .where(and(eq(agentWakeupRequests.status, "deferred_issue_execution"),
+        isNull(issues.executionRunId),
+        notInArray(issues.status, ["done", "cancelled"]),
+        lte(agentWakeupRequests.updatedAt, new Date(Date.now() - PARKED_HANDOFF_RESTART_AFTER_MS)),
+        sql`${agentWakeupRequests.payload}->'queuedCommentInterrupt' is null`,
+        sql`coalesce(jsonb_array_length(case when jsonb_typeof(${agentWakeupRequests.payload} #> '{_paperclipWakeContext,wakeCommentIds}') = 'array'
+          then ${agentWakeupRequests.payload} #> '{_paperclipWakeContext,wakeCommentIds}' end), 0) = 0`,
+        sql`${agentWakeupRequests.payload}->>'mutation' is distinct from 'interaction'`,
+        sql`not exists (select 1 from ${heartbeatRuns} where ${heartbeatRuns.companyId} = ${issues.companyId}
+          and coalesce(${heartbeatRuns.nativeIssueId}::text, ${heartbeatRuns.contextSnapshot}->>'issueId') = ${issues.id}::text
+          and ${heartbeatRuns.status} in ('queued', 'running', 'scheduled_retry'))`,
+        sql`not exists (select 1 from ${agentWakeupRequests} parked_wake join ${agents} on ${agents.id} = parked_wake.agent_id
+          where parked_wake.company_id = ${issues.companyId} and parked_wake.status = 'deferred_issue_execution'
+          and parked_wake.payload->>'issueId' = ${issues.id}::text and ${agents.status} = 'paused')`,
+        // GRE-755: a task that still waits on an open blocker gets no run; the
+        // blockers-resolved wake (or this sweep, once it is done) sends it.
+        sql`not exists (select 1 from ${issueRelations} join ${issues} blocker on blocker.id = ${issueRelations.issueId}
+          where ${issueRelations.companyId} = ${issues.companyId} and ${issueRelations.relatedIssueId} = ${issues.id}
+          and ${issueRelations.type} = 'blocks' and blocker.company_id = ${issues.companyId}
+          and blocker.status not in ('done', 'cancelled') and blocker.hidden_at is null)`,
+        cutoff ? gte(agentWakeupRequests.requestedAt, cutoff) : undefined))
+      .orderBy(asc(agentWakeupRequests.updatedAt)).limit(50);
+    const seenIssueIds = new Set<string>();
+    for (const { wake, issueId } of parked) {
+      if (seenIssueIds.has(issueId)) continue;
+      seenIssueIds.add(issueId);
+      // Back off this wake before any check, so a held task is revisited
+      // every two minutes rather than on every tick.
+      await db.update(agentWakeupRequests).set({ updatedAt: new Date() }).where(and(
+        eq(agentWakeupRequests.id, wake.id), eq(agentWakeupRequests.status, "deferred_issue_execution"),
+      ));
+      if (await treeControlSvc.getActivePauseHoldGate(wake.companyId, issueId)) continue;
+      if (await getExecutionBlocker(db, wake.companyId, issueId)) continue;
+      const [latest] = await db.select().from(heartbeatRuns).where(and(
+        eq(heartbeatRuns.companyId, wake.companyId),
+        or(eq(heartbeatRuns.nativeIssueId, issueId), sql`${heartbeatRuns.contextSnapshot}->>'issueId' = ${issueId}`),
+      )).orderBy(desc(heartbeatRuns.createdAt), desc(heartbeatRuns.id)).limit(1);
+      // With no run there is nothing to release through; stranded-issue
+      // recovery owns that case.
+      if (!latest || !isHeartbeatRunTerminalStatus(latest.status)) continue;
+      const restarted = await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true }).then(() => true, err => {
+        logger.warn({ err, queueId: wake.id }, "failed to restart parked hand-off wake");
+        return false;
+      });
+      if (!restarted) continue;
+      // Log only when the release moved the wake on; a refused release
+      // leaves it parked and is revisited quietly two minutes later.
+      const [after] = await db.select({ status: agentWakeupRequests.status }).from(agentWakeupRequests)
+        .where(eq(agentWakeupRequests.id, wake.id)).limit(1);
+      if (after && after.status !== "deferred_issue_execution") {
+        logger.warn({ queueId: wake.id, issueId, latestRunId: latest.id }, "restarted parked hand-off wake");
+      }
+    }
   }
 
   async function recoverActiveSessionGoals() {
@@ -20371,8 +21258,13 @@ export function heartbeatService(
   async function reconcileResolvedDependencyWakes(opts?: {
     runId?: string | null;
     companyId?: string | null;
+    issueIds?: string[] | null;
   }) {
     return recovery.reconcileResolvedDependencyWakeBackstop(opts);
+  }
+
+  async function reconcileOverdueHumanWaits(opts?: { companyId?: string | null; now?: Date }) {
+    return recovery.reconcileOverdueHumanWaits(opts);
   }
 
   async function updateRuntimeState(
@@ -20778,7 +21670,35 @@ export function heartbeatService(
       const claimedRuns: Array<typeof heartbeatRuns.$inferSelect> = [];
       for (const queuedRun of prioritizedRuns) {
         if (claimedRuns.length >= availableSlots) break;
-        const claimed = await claimQueuedRun(queuedRun, companyAgents);
+        // One failing run must not abort the pass: runs already claimed
+        // above would sit "running" with no process, and the queue stalls.
+        let claimed: Awaited<ReturnType<typeof claimQueuedRun>>;
+        try {
+          claimed = await claimQueuedRun(queuedRun, companyAgents);
+          claimFailureCounts.delete(queuedRun.id);
+        } catch (err) {
+          // Only a refusal (HttpError) is the run's own fault. A database or
+          // pool error under load is the server's, so it just retries next pass.
+          const refused = err instanceof HttpError;
+          const failures = refused ? (claimFailureCounts.get(queuedRun.id) ?? 0) + 1 : 0;
+          logger.error({ err, runId: queuedRun.id, failures }, "claimQueuedRunsForAgent: claim failed, skipping this run");
+          if (!refused) continue;
+          if (failures < CLAIM_FAILURE_LIMIT) {
+            // ponytail: entries for runs that leave the queue another way are
+            // never removed; clearing at 1,000 keeps that bounded.
+            if (claimFailureCounts.size >= 1_000) claimFailureCounts.clear();
+            claimFailureCounts.set(queuedRun.id, failures);
+            continue;
+          }
+          // Settle it, so it stops absorbing later wakes for the same task.
+          claimFailureCounts.delete(queuedRun.id);
+          await cancelRunInternal(
+            queuedRun.id,
+            `Cancelled because it could not start after ${CLAIM_FAILURE_LIMIT} tries: ${err.message}`,
+            { errorCode: "claim_failed" },
+          ).catch((cancelErr) => logger.error({ err: cancelErr, runId: queuedRun.id }, "claimQueuedRunsForAgent: could not cancel a run that keeps failing to claim"));
+          continue;
+        }
         if (claimed) {
           claimedRuns.push(claimed);
           // Counted by the admission gate until its execution settles.
@@ -20906,6 +21826,1126 @@ export function heartbeatService(
         activeWakeupPromises.delete(promise);
       });
     return promise;
+  }
+
+  async function recordFrozenRunOutputCapture(runId: string) {
+    const progress = await freezeRunOutputCapture(runId).catch((err) => {
+      logger.warn({ err, runId }, "failed to freeze run output capture");
+      return null;
+    });
+    if (!progress) return;
+    const patch = {
+      stdoutLoggedBytes: progress.stdoutBytes,
+      stderrLoggedBytes: progress.stderrBytes,
+    };
+    // Only when the record names the same files as the frozen tailers.
+    await db
+      .update(heartbeatRuns)
+      .set({
+        resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || jsonb_build_object('outputCapture', coalesce(${heartbeatRuns.resultJson} -> 'outputCapture', '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb)`,
+      })
+      .where(
+        and(
+          eq(heartbeatRuns.id, runId),
+          sql`${heartbeatRuns.resultJson} -> 'outputCapture' ->> 'stdoutPath' = ${progress.stdoutPath}`,
+        ),
+      );
+  }
+
+  // The run-log path for output this server did not spawn: the same log
+  // append, output progress, and live log event as executeRun's onLog.
+  // Appends are serialized so stdout and stderr keep one seq order.
+  function createAdoptedRunLogSink(
+    run: typeof heartbeatRuns.$inferSelect,
+    redaction: Awaited<ReturnType<typeof getCurrentUserRedactionOptions>>,
+  ) {
+    const logHandle =
+      run.logStore && run.logRef
+        ? ({ store: run.logStore, logRef: run.logRef } as RunLogHandle)
+        : null;
+    const issueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
+    let outputSeq = Number(run.lastOutputSeq ?? 0);
+    let persistedLogBytes = Number(run.logBytes ?? 0);
+    let lastOutputFlushMs = 0;
+    let lastRuntimeStatusTouchMs = 0;
+    let chain: Promise<void> = Promise.resolve();
+    const append = async (stream: "stdout" | "stderr", chunk: string) => {
+      const sanitizedChunk = compactRunLogChunk(redactCurrentUserText(chunk, redaction));
+      if (!logHandle) return;
+      const ts = new Date().toISOString();
+      const at = new Date(ts);
+      outputSeq += 1;
+      const seq = outputSeq;
+      persistedLogBytes += await runLogStore.append(logHandle, {
+        stream,
+        chunk: sanitizedChunk,
+        ts,
+        seq,
+      });
+      if (at.getTime() - lastOutputFlushMs >= ACTIVE_RUN_OUTPUT_PROGRESS_FLUSH_INTERVAL_MS) {
+        lastOutputFlushMs = at.getTime();
+        await db
+          .update(heartbeatRuns)
+          .set({
+            lastOutputAt: at,
+            lastOutputSeq: seq,
+            lastOutputStream: stream,
+            lastOutputBytes: persistedLogBytes,
+            updatedAt: new Date(),
+          })
+          .where(eq(heartbeatRuns.id, run.id));
+      }
+      if (
+        at.getTime() - lastRuntimeStatusTouchMs >=
+        ACTIVE_RUN_LOG_RUNTIME_STATUS_REFRESH_INTERVAL_MS
+      ) {
+        lastRuntimeStatusTouchMs = at.getTime();
+        const touchedStatus = touchHeartbeatRunRuntimeStatus({
+          companyId: run.companyId,
+          issueId,
+          agentId: run.agentId,
+          runId: run.id,
+          at,
+        });
+        if (touchedStatus) publishHeartbeatRunRuntimeProgress(touchedStatus);
+      }
+      const payloadChunk =
+        sanitizedChunk.length > MAX_LIVE_LOG_CHUNK_BYTES
+          ? sanitizedChunk.slice(sanitizedChunk.length - MAX_LIVE_LOG_CHUNK_BYTES)
+          : sanitizedChunk;
+      publishLiveEvent({
+        companyId: run.companyId,
+        type: "heartbeat.run.log",
+        payload: {
+          runId: run.id,
+          agentId: run.agentId,
+          issueId,
+          ts,
+          seq,
+          stream,
+          chunk: payloadChunk,
+          truncated: payloadChunk.length !== sanitizedChunk.length,
+        },
+      });
+    };
+    return (stream: "stdout" | "stderr", chunk: string) => {
+      const next = chain.then(() => append(stream, chunk));
+      chain = next.catch(() => undefined);
+      return next;
+    };
+  }
+
+  // GRE-269: tail an adopted child's capture files from the offsets the old
+  // server logged, so the run page shows new output while the child runs.
+  // Registered like a spawned child's capture, so another hot restart freezes
+  // it and records how far it got.
+  const adoptedRunOutputTails = new Map<
+    string,
+    {
+      stdout: CapturedOutputTailer;
+      stderr: CapturedOutputTailer;
+      onLog: ReturnType<typeof createAdoptedRunLogSink>;
+    }
+  >();
+
+  async function startAdoptedRunOutputTail(
+    run: typeof heartbeatRuns.$inferSelect,
+    capture: RunOutputCaptureRecord,
+  ) {
+    if (adoptedRunOutputTails.has(run.id)) return;
+    // Without frozen offsets the split point is unknown: tailing from 0
+    // would repeat what the old server logged.
+    if (capture.stdoutLoggedBytes === undefined || capture.stderrLoggedBytes === undefined)
+      return;
+    const onLog = createAdoptedRunLogSink(run, await getCurrentUserRedactionOptions());
+    const feed = (stream: "stdout" | "stderr") => async (text: string) => {
+      await onLog(stream, text).catch((err) =>
+        logger.warn({ err, runId: run.id, stream }, "failed to append adopted run output"),
+      );
+    };
+    const tail = {
+      stdout: new CapturedOutputTailer(
+        capture.stdoutPath,
+        feed("stdout"),
+        undefined,
+        capture.stdoutLoggedBytes,
+      ),
+      stderr: new CapturedOutputTailer(
+        capture.stderrPath,
+        feed("stderr"),
+        undefined,
+        capture.stderrLoggedBytes,
+      ),
+      onLog,
+    };
+    adoptedRunOutputTails.set(run.id, tail);
+    registerActiveOutputCapture(run.id, {
+      paths: { stdoutPath: capture.stdoutPath, stderrPath: capture.stderrPath },
+      stdout: tail.stdout,
+      stderr: tail.stderr,
+    });
+    tail.stdout.start();
+    tail.stderr.start();
+  }
+
+  // Read the adopted child's files to EOF, then stop tailing. After this the
+  // run log holds everything the child wrote, once. Returns the tail so the
+  // finalizer can keep logging with the same seq.
+  async function stopAdoptedRunOutputTail(runId: string) {
+    const tail = adoptedRunOutputTails.get(runId);
+    if (!tail) return null;
+    adoptedRunOutputTails.delete(runId);
+    unregisterActiveOutputCapture(runId, tail.stdout);
+    await Promise.all([tail.stdout.drainToEnd(), tail.stderr.drainToEnd()]).catch(
+      (err) => logger.warn({ err, runId }, "failed to drain adopted run output"),
+    );
+    return tail;
+  }
+
+  // GRE-281: reaper passes can overlap (the scheduler does not wait for one
+  // to end), so only one pass at a time may finish a given adopted run.
+  const capturedOutputFinishesInFlight = new Set<string>();
+
+  // GRE-250: finish a hot-restart-adopted run from the terminal result its
+  // child wrote to the capture file. "no_result" leaves the caller on the
+  // process_lost + retry-once path; "still_running" leaves the run alone.
+  async function finishAdoptedRunFromCapturedOutput(
+    input: Parameters<typeof finishAdoptedRunFromCapturedOutputOnce>[0],
+  ) {
+    const runId = input.run.id;
+    if (capturedOutputFinishesInFlight.has(runId)) return "still_running";
+    capturedOutputFinishesInFlight.add(runId);
+    try {
+      return await finishAdoptedRunFromCapturedOutputOnce(input);
+    } finally {
+      capturedOutputFinishesInFlight.delete(runId);
+    }
+  }
+
+  async function finishAdoptedRunFromCapturedOutputOnce(input: {
+    run: typeof heartbeatRuns.$inferSelect;
+    adapterType: string;
+    adapterConfig: unknown;
+    capture: RunOutputCaptureRecord;
+    processAlive: boolean;
+    now: Date;
+  }): Promise<"finalized" | "still_running" | "no_result"> {
+    const { capture } = input;
+    let run = input.run;
+    const adapter = getServerAdapter(input.adapterType);
+    const recoverResultFromOutput = adapter.recoverResultFromOutput;
+    if (!recoverResultFromOutput) {
+      return input.processAlive ? "still_running" : "no_result";
+    }
+    const readRecovered = async () => {
+      try {
+        const [stdout, stderr] = await Promise.all([
+          readCapturedOutputFile(capture.stdoutPath),
+          readCapturedOutputFile(capture.stderrPath, {
+            headBytes: 0,
+            tailBytes: 1024 * 1024,
+          }),
+        ]);
+        if (!stdout) return null;
+        const result = recoverResultFromOutput({
+          stdout: stdout.text,
+          stderr: stderr?.text ?? "",
+          recoveryContext: capture.recoveryContext,
+        });
+        return result ? { result, stdout, stderr } : null;
+      } catch (err) {
+        logger.warn(
+          { err, runId: run.id },
+          "failed to read captured output of adopted run",
+        );
+        return null;
+      }
+    };
+
+    let recovered = await readRecovered();
+    if (input.processAlive) {
+      if (!recovered) return "still_running";
+      // Claude can hang after writing its result. Before the restart the old
+      // server stopped it after a grace period; do the same here.
+      const graceMs = Math.max(
+        0,
+        asNumber(parseObject(input.adapterConfig).terminalResultCleanupGraceMs, 5_000),
+      );
+      if (input.now.getTime() - recovered.stdout.mtimeMs < graceMs) {
+        return "still_running";
+      }
+      // A reused pid is not our child: only stop it when its start time
+      // still matches the one recorded at spawn.
+      if (!run.processPid || !run.processStartedAt) return "still_running";
+      const observedStartedAt = await readProcessStartedAt(run.processPid).catch(
+        () => null,
+      );
+      if (
+        !observedStartedAt ||
+        Math.abs(
+          new Date(observedStartedAt).getTime() - run.processStartedAt.getTime(),
+        ) > 2_000
+      ) {
+        return "still_running";
+      }
+      await terminateHeartbeatRunProcess({
+        pid: run.processPid,
+        processGroupId: run.processGroupId,
+        graceMs: 2_000,
+      });
+      await appendRunEvent(run, {
+        eventType: "lifecycle",
+        stream: "system",
+        level: "warn",
+        message:
+          "Adopted child was still running after its final result; stopped it",
+        payload: {
+          processPid: run.processPid,
+          processGroupId: run.processGroupId ?? null,
+          stopReason: UNMANAGED_BACKGROUND_TASK_STOP_REASON,
+        },
+      });
+      recovered = (await readRecovered()) ?? recovered;
+    }
+    if (!recovered) return "no_result";
+
+    const agent = await getAgent(run.agentId);
+    if (!agent) return "no_result";
+    const context = parseObject(run.contextSnapshot);
+    const finalizeContext = parseObject(capture.finalizeContext);
+    const currentUserRedactionOptions = await getCurrentUserRedactionOptions();
+    const logHandle =
+      run.logStore && run.logRef
+        ? ({ store: run.logStore, logRef: run.logRef } as RunLogHandle)
+        : null;
+
+    // Another path (a Stop, or an earlier pass) may already have finished the
+    // run; then its log is closed and must not get the tail again.
+    const latest = await getRun(run.id);
+    if (!latest || latest.status !== "running") {
+      await stopAdoptedRunOutputTail(run.id);
+      return "still_running";
+    }
+    run = latest;
+
+    // The live tail (GRE-269) already logged up to its committed offsets;
+    // draining it appends only the rest. Without a tail, append from the
+    // offsets the old server froze. Without those, the split point is
+    // unknown, so log nothing rather than duplicate.
+    const tail = await stopAdoptedRunOutputTail(run.id);
+    const onLog = tail?.onLog ?? createAdoptedRunLogSink(run, currentUserRedactionOptions);
+    if (!tail) {
+      for (const stream of ["stdout", "stderr"] as const) {
+        const loggedBytes =
+          stream === "stdout" ? capture.stdoutLoggedBytes : capture.stderrLoggedBytes;
+        if (loggedBytes === undefined) continue;
+        const unlogged = await readCapturedOutputFile(
+          stream === "stdout" ? capture.stdoutPath : capture.stderrPath,
+          { fromOffset: loggedBytes },
+        ).catch(() => null);
+        if (unlogged?.text) await onLog(stream, unlogged.text);
+      }
+    }
+    // The excerpts show the end of the output, as for a normal run.
+    const stdoutExcerpt = appendExcerpt("", rebrandRunLogText(redactCurrentUserText(recovered.stdout.text, currentUserRedactionOptions)));
+    const stderrExcerpt = appendExcerpt("", rebrandRunLogText(redactCurrentUserText(recovered.stderr?.text ?? "", currentUserRedactionOptions)));
+
+    const issueId = readNonEmptyString(context.issueId);
+    const issueContext = issueId
+      ? await getIssueExecutionContext(agent.companyId, issueId)
+      : null;
+    const runtimeSession = parseObject(finalizeContext.runtimeSession);
+    const sessionCompaction = parseObject(finalizeContext.sessionCompaction);
+    const adoption = readHotRestartAdoptionMetadata(parseObject(run.resultJson));
+    const adapterResult: AdapterExecutionResult = {
+      ...recovered.result,
+      resultJson: {
+        ...parseObject(recovered.result.resultJson),
+        ...(adoption ? { hotRestart: adoption } : {}),
+        recoveredFromCapturedOutput: true,
+      },
+    };
+
+    const won = await finalizeLegacyRunFromAdapterResult({
+      run,
+      agent,
+      adapterResult,
+      isAborted: () => false,
+      sessionCodec: getAdapterSessionCodec(agent.adapterType),
+      previousSessionParams:
+        finalizeContext.previousSessionParams &&
+        typeof finalizeContext.previousSessionParams === "object"
+          ? (finalizeContext.previousSessionParams as Record<string, unknown>)
+          : null,
+      runtimeForAdapter: {
+        sessionId: readNonEmptyString(runtimeSession.sessionId),
+        sessionDisplayId: readNonEmptyString(runtimeSession.sessionDisplayId),
+      },
+      currentUserRedactionOptions,
+      finalizeRunLog: async () =>
+        logHandle ? await runLogStore.finalize(logHandle) : null,
+      finalizeProviderTrace: async () => {},
+      taskSessionReused: finalizeContext.taskSessionReused === true,
+      sessionCompaction: {
+        rotate: sessionCompaction.rotate === true,
+        reason: readNonEmptyString(sessionCompaction.reason),
+      },
+      configFreshnessResultMetadata:
+        finalizeContext.configFreshness &&
+        typeof finalizeContext.configFreshness === "object"
+          ? (finalizeContext.configFreshness as Record<string, unknown>)
+          : null,
+      stdoutExcerpt,
+      stderrExcerpt,
+      issueId,
+      issueRef: issueContext
+        ? {
+            id: issueContext.id,
+            identifier: issueContext.identifier,
+            title: issueContext.title,
+            workMode: issueContext.workMode,
+          }
+        : null,
+      issueContext,
+      onLog,
+      taskKey: deriveTaskKeyWithHeartbeatFallback(context, null),
+      configuredModel: readNonEmptyString(finalizeContext.configuredModel),
+      sessionConfigMetadata:
+        finalizeContext.sessionConfigMetadata &&
+        typeof finalizeContext.sessionConfigMetadata === "object"
+          ? (finalizeContext.sessionConfigMetadata as Parameters<
+              typeof attachPaperclipSessionMetadataToSessionParams
+            >[2])
+          : null,
+    });
+    // A lost compare-and-set means another path owns the terminal outcome.
+    if (!won) return "still_running";
+
+    const finalizedRun = await getRun(run.id);
+    if (!finalizedRun || finalizedRun.status === "running") return "no_result";
+    await appendRunEvent(finalizedRun, {
+      eventType: "lifecycle",
+      stream: "system",
+      level: "info",
+      message: "Finished from captured output after hot restart",
+      payload: {
+        recoveredFromCapturedOutput: true,
+        status: finalizedRun.status,
+        ...(run.processPid ? { processPid: run.processPid } : {}),
+      },
+    });
+    await releaseEnvironmentLeasesForRun({
+      runId: finalizedRun.id,
+      companyId: finalizedRun.companyId,
+      agentId: finalizedRun.agentId,
+      status: finalizedRun.status,
+      failureReason: finalizedRun.error ?? undefined,
+    });
+    await removeChildOutputCaptureFiles(capture);
+    runningProcesses.delete(run.id);
+    await startNextQueuedRunForAgent(run.agentId);
+    return "finalized";
+  }
+
+  // Remove capture files whose run finished long ago or no longer exists.
+  async function sweepStaleRunOutputFiles(now = new Date()) {
+    const dir = resolveRunOutputCaptureDir();
+    const entries = await fs.readdir(dir).catch(() => [] as string[]);
+    let removed = 0;
+    for (const name of entries) {
+      const filePath = path.join(dir, name);
+      const stat = await fs.stat(filePath).catch(() => null);
+      if (!stat || now.getTime() - stat.mtimeMs < RUN_OUTPUT_FILE_RETENTION_MS) continue;
+      const runId = name.split(".")[0] ?? "";
+      const run = isUuidLike(runId) ? await getRun(runId).catch(() => null) : null;
+      if (run && run.status === "running") continue;
+      await fs.rm(filePath, { force: true }).catch(() => undefined);
+      removed += 1;
+    }
+    return { removed };
+  }
+
+  // The one place a legacy (child-process) run is finalized from its adapter
+  // result: outcome, usage and cost, session, run log, issue comment and
+  // status, wakes, and agent status. executeRun calls it after the adapter
+  // returns; the reaper calls it for a hot-restart-adopted child whose result
+  // was recovered from its captured output (GRE-250). Returns false when
+  // another path already moved the run out of running.
+  async function finalizeLegacyRunFromAdapterResult(input: {
+    run: typeof heartbeatRuns.$inferSelect;
+    agent: typeof agents.$inferSelect;
+    adapterResult: AdapterExecutionResult;
+    isAborted: () => boolean;
+    sessionCodec: ReturnType<typeof getAdapterSessionCodec>;
+    previousSessionParams: Record<string, unknown> | null;
+    runtimeForAdapter: {
+      sessionId: string | null;
+      sessionDisplayId: string | null;
+    };
+    currentUserRedactionOptions: Awaited<
+      ReturnType<typeof getCurrentUserRedactionOptions>
+    >;
+    finalizeRunLog: () => Promise<{
+      bytes: number;
+      sha256?: string;
+      compressed: boolean;
+    } | null>;
+    finalizeProviderTrace: () => Promise<void>;
+    taskSessionReused: boolean;
+    sessionCompaction: { rotate: boolean; reason: string | null };
+    configFreshnessResultMetadata: Record<string, unknown> | null;
+    stdoutExcerpt: string;
+    stderrExcerpt: string;
+    issueId: string | null;
+    issueRef: Pick<
+      NonNullable<Awaited<ReturnType<typeof getIssueExecutionContext>>>,
+      "id" | "identifier" | "title" | "workMode"
+    > | null;
+    issueContext: Awaited<ReturnType<typeof getIssueExecutionContext>> | null;
+    onLog: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
+    taskKey: string | null;
+    configuredModel: string | null;
+    sessionConfigMetadata: Parameters<
+      typeof attachPaperclipSessionMetadataToSessionParams
+    >[2];
+  }) {
+    const {
+      run,
+      agent,
+      adapterResult,
+      isAborted,
+      sessionCodec,
+      previousSessionParams,
+      runtimeForAdapter,
+      currentUserRedactionOptions,
+      finalizeRunLog,
+      finalizeProviderTrace,
+      taskSessionReused,
+      sessionCompaction,
+      configFreshnessResultMetadata,
+      stdoutExcerpt,
+      stderrExcerpt,
+      issueId,
+      issueRef,
+      issueContext,
+      onLog,
+      taskKey,
+      configuredModel,
+      sessionConfigMetadata,
+    } = input;
+    const processCancellation =
+      processRunCancellationSettlements.get(run.id) ??
+      failedProcessRunCancellations.get(run.id);
+    await processCancellation?.settled;
+    let outcome: RunSessionOutcome;
+    const latestRun = await getRun(run.id);
+    if (isHeartbeatRunTerminalStatus(latestRun?.status)) {
+      outcome = latestRun.status;
+    } else if (isAborted()) {
+      outcome = "cancelled";
+    } else if (adapterResult.nativeFinalization) {
+      const nativeTerminal =
+        adapterResult.nativeFinalization.terminal.runTerminalState;
+      outcome =
+        nativeTerminal === "succeeded"
+          ? "succeeded"
+          : nativeTerminal === "cancelled"
+            ? "cancelled"
+            : "failed";
+    } else if (adapterResult.timedOut) {
+      outcome = "timed_out";
+    } else if (
+      (adapterResult.exitCode ?? 0) === 0 &&
+      !adapterResult.errorMessage &&
+      !adapterResult.signal &&
+      !processCancellation?.failed
+    ) {
+      outcome = "succeeded";
+    } else {
+      outcome = "failed";
+    }
+
+    const nextSessionState = resolveNextSessionState({
+      adapterType: agent.adapterType,
+      codec: sessionCodec,
+      adapterResult,
+      outcome,
+      previousParams: previousSessionParams,
+      previousDisplayId: runtimeForAdapter.sessionDisplayId,
+      previousLegacySessionId: runtimeForAdapter.sessionId,
+    });
+    const rawUsage = normalizeUsageTotals(adapterResult.usage);
+    const sessionUsageResolution = await resolveNormalizedUsageForSession({
+      agentId: agent.id,
+      runId: run.id,
+      sessionId:
+        nextSessionState.displayId ?? nextSessionState.legacySessionId,
+      rawUsage,
+      usageBasis: adapterResult.usageBasis ?? null,
+    });
+    const normalizedUsage = sessionUsageResolution.normalizedUsage;
+    const runErrorMessage =
+      outcome === "cancelled"
+        ? (latestRun?.error ?? adapterResult.errorMessage ?? "Cancelled")
+        : outcome === "succeeded"
+          ? null
+          : redactCurrentUserText(
+              adapterResult.errorMessage ??
+                (outcome === "timed_out" ? "Timed out" : "Adapter failed"),
+              currentUserRedactionOptions,
+            );
+    const recordedResponsibleUserDenialCode =
+      normalizeResponsibleUserDenialCode(latestRun?.errorCode);
+    const runErrorCode =
+      outcome === "timed_out"
+        ? "timeout"
+        : outcome === "cancelled"
+          ? (latestRun?.errorCode ?? "cancelled")
+          : outcome === "failed"
+            ? (adapterResult.errorCode ??
+              recordedResponsibleUserDenialCode ??
+              "adapter_failed")
+            : null;
+
+    const logSummary = await finalizeRunLog();
+    await finalizeProviderTrace();
+
+    const status =
+      outcome === "succeeded"
+        ? "succeeded"
+        : outcome === "cancelled"
+          ? "cancelled"
+          : outcome === "timed_out"
+            ? "timed_out"
+            : "failed";
+
+    const cacheAdjustedCostUsd = resolveCacheAdjustedCostUsd(adapterResult);
+    const usageJson =
+      normalizedUsage ||
+      adapterResult.costUsd != null ||
+      cacheAdjustedCostUsd != null
+        ? ({
+            ...(normalizedUsage ?? {}),
+            ...(rawUsage
+              ? {
+                  rawInputTokens: rawUsage.inputTokens,
+                  rawCachedInputTokens: rawUsage.cachedInputTokens,
+                  rawOutputTokens: rawUsage.outputTokens,
+                }
+              : {}),
+            ...(sessionUsageResolution.derivedFromSessionTotals
+              ? { usageSource: "session_delta" }
+              : adapterResult.usageBasis === "per_run"
+                ? { usageSource: "per_run" }
+                : {}),
+            ...((nextSessionState.displayId ??
+            nextSessionState.legacySessionId)
+              ? {
+                  persistedSessionId:
+                    nextSessionState.displayId ??
+                    nextSessionState.legacySessionId,
+                }
+              : {}),
+            sessionReused:
+              runtimeForAdapter.sessionId != null ||
+              runtimeForAdapter.sessionDisplayId != null,
+            taskSessionReused,
+            freshSession:
+              runtimeForAdapter.sessionId == null &&
+              runtimeForAdapter.sessionDisplayId == null,
+            sessionRotated: sessionCompaction.rotate,
+            sessionRotationReason: sessionCompaction.reason,
+            configFreshness: configFreshnessResultMetadata,
+            provider:
+              readNonEmptyString(adapterResult.provider) ?? "unknown",
+            biller: resolveLedgerBiller(adapterResult),
+            model: readNonEmptyString(adapterResult.model) ?? "unknown",
+            ...(adapterResult.costUsd != null
+              ? { costUsd: adapterResult.costUsd }
+              : {}),
+            ...(cacheAdjustedCostUsd != null
+              ? { cacheAdjustedCostUsd }
+              : {}),
+            costStatus: resolveLedgerCostStatus({
+              costUsd: cacheAdjustedCostUsd,
+              inputTokens: normalizedUsage?.inputTokens ?? 0,
+              cachedInputTokens: normalizedUsage?.cachedInputTokens ?? 0,
+              outputTokens: normalizedUsage?.outputTokens ?? 0,
+            }),
+            billingType: normalizeLedgerBillingType(
+              adapterResult.billingType,
+            ),
+          } as Record<string, unknown>)
+        : null;
+
+    const persistedResultJson = mergeHeartbeatRunResultJson(
+      mergeRunStopMetadataForAgent(agent, outcome, {
+        resultJson: mergeAdapterRecoveryMetadata({
+          resultJson: {
+            ...(adapterResult.nativeFinalization || outcome === "cancelled"
+              ? parseObject(latestRun?.resultJson)
+              : {}),
+            ...parseObject(adapterResult.resultJson),
+            ...(adapterResult.executionRecovery
+              ? { executionRecovery: adapterResult.executionRecovery }
+              : {}),
+            configFreshness: configFreshnessResultMetadata,
+          },
+          errorFamily: adapterResult.errorFamily ?? null,
+          retryNotBefore: adapterResult.retryNotBefore ?? null,
+        }),
+        errorCode: runErrorCode,
+        errorMessage: runErrorMessage,
+      }),
+      adapterResult.summary ?? null,
+    );
+
+    const finalRunPatch: Partial<typeof heartbeatRuns.$inferInsert> = {
+      finishedAt: new Date(),
+      error: runErrorMessage,
+      errorCode: runErrorCode,
+      exitCode: adapterResult.exitCode,
+      signal: adapterResult.signal,
+      usageJson,
+      resultJson: persistedResultJson,
+      sessionIdAfter:
+        nextSessionState.displayId ?? nextSessionState.legacySessionId,
+      stdoutExcerpt,
+      stderrExcerpt,
+      logBytes: logSummary?.bytes,
+      logSha256: logSummary?.sha256,
+      logCompressed: logSummary?.compressed ?? false,
+    };
+    const persistedRunWrite = await setRunStatusIfRunning(
+      run.id,
+      status,
+      finalRunPatch,
+    );
+    let persistedRun: typeof heartbeatRuns.$inferSelect | null =
+      persistedRunWrite.run;
+    if (!persistedRunWrite.updated) {
+      persistedRun = null;
+      // Native reconciliation can commit and project the terminal status in
+      // the narrow window between adapter completion and this live write.
+      // The status is authoritative, but it must not make us discard the
+      // adapter's semantic result, usage, logs, or presentation decision.
+      // Only complete the late metadata write when the reconciler chose the
+      // same terminal status; a conflicting terminal outcome remains owned
+      // by the path that won the compare-and-set. Owned legacy cancellation
+      // likewise keeps the provider session, logs, and usage after Stop wins.
+      if (
+        (adapterResult.nativeFinalization ||
+          (processCancellation && !processCancellation.failed && status === "cancelled")) &&
+        persistedRunWrite.run?.status === status
+      ) {
+        persistedRun = await db
+          .update(heartbeatRuns)
+          .set({
+            ...finalRunPatch,
+            finishedAt:
+              persistedRunWrite.run.finishedAt ?? finalRunPatch.finishedAt,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(heartbeatRuns.id, run.id),
+              eq(heartbeatRuns.status, status),
+            ),
+          )
+          .returning()
+          .then((rows) => rows[0] ?? null);
+      }
+      if (!persistedRun) {
+        logger.info(
+          {
+            runId: run.id,
+            attemptedStatus: status,
+            currentStatus: persistedRunWrite.run?.status ?? null,
+          },
+          "skipping late run finalization because the run already left running state",
+        );
+        return false;
+      }
+    }
+    if (persistedRun) {
+      persistedRun =
+        (await classifyAndPersistRunLiveness(
+          persistedRun,
+          persistedResultJson,
+        )) ?? persistedRun;
+    }
+
+    await setWakeupStatus(
+      run.wakeupRequestId,
+      outcome === "succeeded" ? "completed" : status,
+      {
+        finishedAt: new Date(),
+        error: runErrorMessage,
+      },
+    );
+
+    const finalizedRun = persistedRun ?? (await getRun(run.id));
+    if (finalizedRun) {
+      await appendRunEvent(finalizedRun, {
+        eventType: "lifecycle",
+        stream: "system",
+        level: outcome === "succeeded" ? "info" : "error",
+        message: `run ${outcome}`,
+        payload: {
+          status,
+          exitCode: adapterResult.exitCode,
+        },
+      });
+      try {
+        await completeSkillTestRunForHeartbeatOutcome({
+          run: finalizedRun,
+          issueId,
+          issueWorkMode: issueRef?.workMode ?? null,
+          outcome,
+          error: runErrorMessage,
+        });
+      } catch (err) {
+        logger.warn(
+          { err, runId: finalizedRun.id, issueId },
+          "failed to complete skill test run after heartbeat finalization",
+        );
+        await onLog(
+          "stderr",
+          `[gsam] Failed to complete skill test run: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+      const livenessRun = finalizedRun;
+      await refreshContinuationSummaryForRun(livenessRun, agent);
+      const skipRunIssueComment =
+        parseObject(livenessRun.contextSnapshot).skipIssueComment === true;
+      let resolvedPresentationDecision: RunPresentationDecision | null =
+        null;
+      try {
+        const existingRunComment = issueId
+          ? await findRunIssueComment(
+              livenessRun.id,
+              livenessRun.companyId,
+              issueId,
+              persistedResultJson,
+            )
+          : null;
+        const finalAgentMessage =
+          await findLatestCompletedFinalAgentMessage(
+            livenessRun.id,
+            livenessRun.companyId,
+          );
+        const externalChatPresentationCandidate =
+          isExternalChatPresentationContext(livenessRun.contextSnapshot) ||
+          parseObject(livenessRun.contextSnapshot).source === "tool_action_review" ||
+          String(parseObject(livenessRun.contextSnapshot).source ?? "").startsWith("issue.comment") ||
+          parseObject(livenessRun.contextSnapshot).source === "issue.update";
+        const externalChatPresentationAuthorization =
+          issueId && externalChatPresentationCandidate
+            ? await resolveChatRunPresentationAuthorizationReason(db, {
+                companyId: livenessRun.companyId,
+                issueId,
+                runId: livenessRun.id,
+              })
+            : null;
+        const externalChatPresentationContext = isExternalChatPresentationContext(
+          livenessRun.contextSnapshot,
+          externalChatPresentationAuthorization === CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
+        );
+        const resolved = resolveHeartbeatRunResponse({
+          resultJson: persistedResultJson,
+          conversationTurnFinished: isConversation(issueContext) &&
+            persistedResultJson?.finalizationReasonCode === "conversation_turn_finished",
+          existingComment: existingRunComment,
+          finalAgentMessage,
+          preferFinalResponseOverExistingComment:
+            externalChatPresentationContext,
+          externalChatReviewResponseSummaryAuthorized:
+            persistedResultJson?.finalizationReasonCode ===
+              "governed_response_waiting" &&
+            externalChatPresentationAuthorization ===
+              CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
+          externalChatResponseWakeSummaryAuthorized:
+            Boolean(adapterResult.nativeFinalization) &&
+            externalChatPresentationAuthorization ===
+              CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
+        });
+        let presentationDecision: RunPresentationDecision =
+          resolved.decision;
+
+        if (
+          issueId &&
+          !skipRunIssueComment &&
+          presentationDecision.commentAction === "create" &&
+          resolved.text
+        ) {
+          // The presentation resolver exposes only the final assistant
+          // surface selected from completed final messages or accepted
+          // semantic results. For an exactly bound external-chat run,
+          // authorize that narrow presentation as the provider reply;
+          // ordinary internal runs retain the private default.
+          const presentationAuthorizationReason =
+            await resolveChatRunPresentationAuthorizationReason(db, {
+              companyId: livenessRun.companyId,
+              issueId,
+              runId: livenessRun.id,
+            });
+          const comment = await issuesSvc.addComment(
+            issueId,
+            resolved.text,
+            { agentId: agent.id, runId: livenessRun.id },
+            { authorizationReason: presentationAuthorizationReason },
+          );
+          presentationDecision = {
+            ...presentationDecision,
+            commentId: comment.id,
+            reasonCodes: [
+              ...presentationDecision.reasonCodes,
+              "resolved_response_materialized",
+            ],
+          };
+          await logActivity(db, {
+            companyId: livenessRun.companyId,
+            actorType: "agent",
+            actorId: agent.id,
+            agentId: agent.id,
+            runId: livenessRun.id,
+            issueId,
+            action: "issue.comment_added",
+            entityType: "issue",
+            entityId: issueId,
+            details: {
+              commentId: comment.id,
+              bodySnippet: comment.body.slice(0, 120),
+              identifier: issueRef?.identifier ?? null,
+              issueTitle: issueRef?.title ?? null,
+              authorizationReason: presentationAuthorizationReason,
+              source: "run_presentation_resolver",
+              presentationSource: presentationDecision.chosenSource,
+            },
+          });
+        } else if (presentationDecision.commentAction === "create") {
+          presentationDecision = {
+            ...presentationDecision,
+            commentAction: "none",
+            reasonCodes: [
+              ...presentationDecision.reasonCodes,
+              skipRunIssueComment
+                ? "issue_comment_suppressed"
+                : "run_has_no_issue",
+            ],
+          };
+        }
+
+        await db
+          .update(heartbeatRuns)
+          .set({
+            resultJson: {
+              ...persistedResultJson,
+              presentationDecision,
+            },
+            updatedAt: new Date(),
+          })
+          .where(eq(heartbeatRuns.id, livenessRun.id));
+        await appendRunEvent(livenessRun, {
+          eventType: "run.presentation.resolved",
+          stream: "system",
+          level: "info",
+          message: "run presentation resolved",
+          payload: { presentationDecision },
+        });
+        resolvedPresentationDecision = presentationDecision;
+      } catch (err) {
+        await onLog(
+          "stderr",
+          `[gsam] Failed to resolve run presentation: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      }
+      if (outcome === "failed" && isMaxTurnExhaustionRun(livenessRun)) {
+        const policy = parseMaxTurnContinuationPolicy(agent);
+        if (policy.enabled && policy.maxAttempts > 0) {
+          await scheduleBoundedRetryForRun(livenessRun, agent, {
+            retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
+            wakeReason: MAX_TURN_CONTINUATION_WAKE_REASON,
+            maxAttempts: policy.maxAttempts,
+            delayMs: policy.delayMs,
+          });
+        } else {
+          await appendRunEvent(livenessRun, {
+            eventType: "lifecycle",
+            stream: "system",
+            level: "warn",
+            message:
+              "Max-turn continuation suppressed because the policy is disabled",
+            payload: {
+              retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
+              policy,
+            },
+          });
+        }
+      } else if (
+        (outcome === "failed" &&
+          readTransientRecoveryContractFromRun(livenessRun)) ||
+        runLostToHostSleep(livenessRun)
+      ) {
+        await scheduleBoundedRetryForRun(livenessRun, agent);
+      } else if (
+        outcome === "failed" &&
+        !legacyExecutionNeedsReconciliation(livenessRun)
+      ) {
+        await scheduleInteractionContinuationInfrastructureRetryIfEligible(
+          livenessRun,
+          agent,
+        );
+      }
+      // Before the issue is released, so recovery sees the re-armed monitor.
+      if (outcome !== "succeeded") {
+        try {
+          await restoreIssueMonitorForUnstartedRun(livenessRun);
+        } catch (err) {
+          logger.error({ err, runId: livenessRun.id }, "failed to give back the issue monitor of an unstarted run");
+        }
+      }
+      const issueCommentPolicyResult = await finalizeIssueCommentPolicy(
+        livenessRun,
+        agent,
+        resolvedPresentationDecision,
+      );
+      const conversationSettled = await settleConversationTurn(db, livenessRun);
+      await releaseIssueExecutionAndPromote(livenessRun, {
+        suppressImmediateRecovery: conversationSettled ||
+          readNonEmptyString(
+            parseObject(livenessRun.contextSnapshot).goalControlRequestId,
+          ) !== null ||
+          parseObject(livenessRun.contextSnapshot)
+            .resumeSessionGoalHeartbeat === true,
+      });
+      if (!conversationSettled) {
+        await handleIssueReviewPathDisposition(livenessRun);
+        if (livenessRun.runtimeMode !== "native") {
+          await recovery.reconcileLegacyContinuation(livenessRun.id);
+        } else {
+          await handleRunLivenessContinuation(livenessRun);
+          await handleSuccessfulRunHandoff(
+            issueCommentPolicyResult.outcome === "retry_queued" ||
+              issueCommentPolicyResult.outcome === "retry_exhausted"
+              ? { ...livenessRun, issueCommentStatus: issueCommentPolicyResult.outcome }
+              : livenessRun,
+            agent,
+          );
+        }
+      }
+      if (
+        outcome === "succeeded" &&
+        issueId &&
+        parseObject(adapterResult.resultJson).goalRolloverRequired === true
+      ) {
+        const rolloverProjection = await runnerGoalService(db).projection(
+          livenessRun.companyId,
+          issueId,
+          agent.id,
+        );
+        if (rolloverProjection?.goal?.status === "active") {
+          await enqueueWakeup(agent.id, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "goal_control",
+            payload: {
+              issueId,
+              intent: "goal_rollover",
+              predecessorRunId: livenessRun.id,
+            },
+            idempotencyKey: `goal_rollover:${livenessRun.id}`,
+            requestedByActorType: "system",
+            contextSnapshot: {
+              issueId,
+              taskKey: issueId,
+              resumeSessionGoalHeartbeat: true,
+              skipIssueComment: true,
+              goalRolloverFromRunId: livenessRun.id,
+            },
+          });
+        }
+      }
+
+      // Dependency wake re-check: if this run's issue was marked done mid-run,
+      // the route-time `issue_blockers_resolved` wake may have been gated by
+      // workspace finalization or merged into this run. Reuse the level-triggered
+      // dependency backstop so finalize and periodic recovery share idempotency,
+      // readiness, active-path, and observability rules.
+      if (issueId && finalizedRun) {
+        try {
+          const blockerIssueStatus = await db
+            .select({ status: issues.status })
+            .from(issues)
+            .where(eq(issues.id, issueId))
+            .then((rows) => rows[0]?.status ?? null);
+          if (blockerIssueStatus === "done") {
+            await recovery.reconcileResolvedDependencyWakeBackstop({
+              runId: finalizedRun.id,
+              companyId: finalizedRun.companyId,
+              blockerIssueId: issueId,
+              source: "workspace.finalize",
+            });
+          }
+        } catch (finalizeWakeErr) {
+          logger.warn(
+            { err: finalizeWakeErr, runId: run.id, issueId },
+            "failed to evaluate dependent wakes after workspace_finalize",
+          );
+        }
+      }
+    }
+
+    if (finalizedRun) {
+      await updateRuntimeState(
+        agent,
+        finalizedRun,
+        adapterResult,
+        {
+          legacySessionId: nextSessionState.legacySessionId,
+        },
+        normalizedUsage,
+      );
+      if (taskKey) {
+        if (
+          adapterResult.clearSession ||
+          (!nextSessionState.params && !nextSessionState.displayId)
+        ) {
+          await clearTaskSessions(agent.companyId, agent.id, {
+            taskKey,
+            adapterType: agent.adapterType,
+            expectedRunId: finalizedRun.id,
+          });
+        } else {
+          await upsertTaskSession({
+            companyId: agent.companyId,
+            agentId: agent.id,
+            adapterType: agent.adapterType,
+            taskKey,
+            sessionParamsJson:
+              attachPaperclipSessionMetadataToSessionParams(
+                nextSessionState.params,
+                configuredModel,
+                sessionConfigMetadata,
+              ),
+            sessionDisplayId: nextSessionState.displayId,
+            lastRunId: finalizedRun.id,
+            lastError: runErrorMessage,
+          });
+        }
+      }
+    }
+    await finalizeAgentStatus(agent.id, outcome, runErrorMessage, {
+      keepIdleOnFailure:
+        outcome === "failed" &&
+        ((finalizedRun
+          ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota" ||
+            runLostToHostSleep(finalizedRun)
+          : runErrorCode === "provider_quota") ||
+          isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
+      wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
+    });
+    return true;
   }
 
   async function executeRun(
@@ -21210,6 +23250,7 @@ export function heartbeatService(
           });
           if (staleness.outcome === "cancelled") {
             applyRunDispatchPostCommitEffects(staleness.postCommitEffects);
+            await promoteDeferredWakesAfterStaleRunCancel(run);
             return;
           }
           throw error;
@@ -21450,7 +23491,9 @@ export function heartbeatService(
       });
       // Initialization has persisted the active context, including an explicit
       // absence of identity inherited from an automatic continuation.
-      responsibleUserId = identityContext.responsibleUserId;
+      // A context persisted before the legacy mapping (a run queued earlier)
+      // can still name `local-board`; map it here too.
+      responsibleUserId = await bindLegacyBoardUserId(db, agent.companyId, identityContext.responsibleUserId);
       run = {
         ...run,
         activeIdentityContextId: identityContext.id,
@@ -21590,6 +23633,20 @@ export function heartbeatService(
       const issueAncestors = issueRef
         ? await issuesSvc.getAncestors(issueRef.id)
         : [];
+      // A team task wakes the team lead; give the lead the members to delegate to.
+      const teamDelegation =
+        issueContext?.teamId && issueContext.assigneeAgentId === agent.id
+          ? await agentTeamService(db).getDelegationContext(agent.companyId, issueContext.teamId)
+          : null;
+      const issueTeam =
+        teamDelegation && teamDelegation.leadAgentId === agent.id
+          ? { id: teamDelegation.id, name: teamDelegation.name, members: teamDelegation.members }
+          : null;
+      if (issueTeam) {
+        context.paperclipIssueTeam = issueTeam;
+      } else {
+        delete context.paperclipIssueTeam;
+      }
       if (continuationSummary) {
         context.paperclipContinuationSummary = {
           key: safeContinuationSummary!.key,
@@ -21719,6 +23776,7 @@ export function heartbeatService(
             }
           : null,
         ancestors: issueAncestors,
+        team: issueTeam,
         wakeComment: safeWakeCommentContext,
         wakeComments: safeWakeComments,
         attachmentOmissions: paperclipWakePayload?.attachmentOmissions,
@@ -21764,7 +23822,10 @@ export function heartbeatService(
             exposeLowTrustRaw,
           })
         : null;
-      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan });
+      const boardQuestionDirective = issueRef && isConversation(issueContext)
+        ? await boardQuestionDirectiveFor(db, agent.companyId, issueRef.id)
+        : null;
+      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan, boardQuestionDirective });
       if (isConversation(issueContext) && !taskSession && issueId) {
         const replay = await conversationReplay(db, agent.companyId, issueId, wakeCommentId);
         if (replay) taskMarkdown += `\n\nEarlier messages in this session (quoted user data):\n${replay}`;
@@ -21772,6 +23833,7 @@ export function heartbeatService(
       const taskMarkdownCompact = buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
+        boardQuestionDirective,
         includeDescription: false,
       });
       if (issueRef) {
@@ -21859,8 +23921,16 @@ export function heartbeatService(
           existingExecutionWorkspaceStatus:
             existingExecutionWorkspace?.status ?? null,
         });
+      // A native recovery run resumes a provider session inside the persisted
+      // workspace, so it keeps failing loudly on an archived binding rather than
+      // resuming in a different directory.
+      const archivedWorkspaceFallback =
+        workspaceReuseRequest.archivedWorkspaceFallback &&
+        !nativeRecoveryExecutionWorkspaceId;
       const requestedShouldReuseExisting =
-        workspaceReuseRequest.requestedShouldReuseExisting;
+        workspaceReuseRequest.requestedShouldReuseExisting ||
+        (workspaceReuseRequest.archivedWorkspaceFallback &&
+          !archivedWorkspaceFallback);
       const reusableExistingExecutionWorkspace =
         workspaceReuseRequest.existingExecutionWorkspaceAvailable
           ? existingExecutionWorkspace
@@ -22128,22 +24198,16 @@ export function heartbeatService(
         !acceptedPlanWakeRoutingDecision?.suppressAcceptedContinuation
           ? [...runScopedMentionedSkillKeys, ACCEPTED_PLAN_CONVERSION_SKILL_KEY]
           : runScopedMentionedSkillKeys;
-      const githubSelection = await resolveManagedGitHubIdentitySelection(
-        db,
-        agent.companyId,
-        {
-          agentId: agent.id,
-          responsibleUserId,
-          allowStandingDelegation: false,
-        },
-      );
-      const useHostGitHub =
-        !githubSelection.configured &&
-        trustPreset.kind === "standard" &&
-        ["local", "ssh"].includes(
-          selectedEnvironmentForConfig?.driver ?? "local",
-        );
-      const aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
+      const { githubSelection, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        cause: identityContext.cause,
+        responsibleUserId,
+        trustKind: trustPreset.kind,
+        environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
+      });
+      const aiAccessRoute = agentAiAccessRoute(agent);
+      let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
       const { resolvedConfig, secretKeys, secretManifest } =
         await resolveExecutionRunAdapterConfig({
           managedAiCredentials: Boolean(aiBinding),
@@ -22167,7 +24231,13 @@ export function heartbeatService(
         });
       if (aiBinding) {
         try {
+          // A route run uses the responsible user's own account or a shared
+          // one connected inside this install; never the host's login.
+          if (aiAccessRoute) aiBinding = await resolveAiAccessRouteBinding(db, { companyId: agent.companyId, responsibleUserId, route: aiAccessRoute });
           managedAiRuntime = await prepareManagedAiRuntime(db, { companyId: agent.companyId, agentId: agent.id, responsibleUserId, adapterType: agent.adapterType, binding: aiBinding, config: resolvedConfig });
+          if (aiAccessRoute && managedAiRuntime.attribution.method !== aiBinding.method) {
+            throw unprocessable(`This install uses ${AI_ACCESS_ROUTE_DEFINITIONS[aiAccessRoute].label} for AI access. Your default account uses a different sign-in method. Choose a matching default in Apps.`, { code: "ai_connection_incompatible" });
+          }
         } catch (error) {
           // Only fresh executions can receive a pre-provider wait receipt. A
           // persisted native input may already have provider effects to recover.
@@ -22980,6 +25050,26 @@ export function heartbeatService(
         );
       }
       await bindIssueToPersistedExecutionWorkspace(persistedExecutionWorkspace);
+      // Say once that the run left the archived workspace. The issue is now
+      // bound to the fresh workspace, so the next run reuses it and does not
+      // reach this branch again.
+      if (
+        archivedWorkspaceFallback &&
+        issueId &&
+        persistedExecutionWorkspace &&
+        issueExecutionWorkspaceIdForRun === persistedExecutionWorkspace.id
+      ) {
+        await issuesSvc.addComment(
+          issueId,
+          formatArchivedWorkspaceFallbackComment({
+            archivedWorkspaceId:
+              workspaceReuseRequest.requestedExecutionWorkspaceId,
+            workspace: persistedExecutionWorkspace,
+          }),
+          { runId: run.id },
+          { authorType: "system" },
+        );
+      }
       const projectRepositoryPaths: string[] = [];
       if (executionWorkspace.projectId && resolvedWorkspace.source === "project_primary" && !resolvedWorkspace.baseCwdFallback) {
         const repositoryRows = await db.select().from(projectWorkspaces).where(and(
@@ -23020,6 +25110,8 @@ export function heartbeatService(
           selectedEnvironmentId,
           localEnvironmentId: localEnvironment.id,
           adapterType: agent.adapterType,
+          adapterConfig: parseObject(agent.adapterConfig),
+          admittedLifecycleMode: persistedNativeExecutionInput?.session.lifecyclePolicy.mode,
           issueId: issueId ?? null,
           heartbeatRunId: run.id,
           agentId: agent.id,
@@ -23228,6 +25320,7 @@ export function heartbeatService(
           applyRunDispatchPostCommitEffects(
             gate.cancellation.postCommitEffects,
           );
+          await promoteDeferredWakesAfterStaleRunCancel(run);
         }
         return { dispatched: false };
       };
@@ -23724,9 +25817,19 @@ export function heartbeatService(
 
         const currentUserRedactionOptions =
           await getCurrentUserRedactionOptions();
+        // Tool output that prints the environment carries the run's own
+        // credentials; redact them by value before the log is saved (GRE-517).
+        // The run API key is minted later and added to this list then.
+        let runSecretValues = collectRunSecretValues(
+          parseObject(runtimeConfig.env),
+          { secretKeys },
+        );
         const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
           const sanitizedChunk = compactRunLogChunk(
-            redactCurrentUserText(chunk, currentUserRedactionOptions),
+            redactRunSecretValues(
+              redactCurrentUserText(chunk, currentUserRedactionOptions),
+              runSecretValues,
+            ),
           );
           if (stream === "stdout")
             stdoutExcerpt = appendExcerpt(stdoutExcerpt, sanitizedChunk);
@@ -23802,7 +25905,7 @@ export function heartbeatService(
         if (runScopedMentionedSkillKeys.length > 0) {
           await onLog(
             "stdout",
-            `[paperclip] Enabled run-scoped skills from issue mentions: ${runScopedMentionedSkillKeys.join(", ")}\n`,
+            `[gsam] Enabled run-scoped skills from issue mentions: ${runScopedMentionedSkillKeys.join(", ")}\n`,
           );
         }
         for (const warning of runtimeWorkspaceWarnings) {
@@ -23882,7 +25985,7 @@ export function heartbeatService(
           } catch (err) {
             await onLog(
               "stderr",
-              `[paperclip] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
+              `[gsam] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
             );
           }
         }
@@ -24183,9 +26286,10 @@ export function heartbeatService(
           // Other managed harnesses still require per-turn credential cleanup.
           const supportsManagedWarmSession = agent.adapterType === "paperclip_runner" &&
             nativeRuntimeResolution.profile.backend === "codex_app_server";
-          const effectiveLifecyclePolicy = managedAiRuntime && !supportsManagedWarmSession
-            ? { mode: "per_turn" as const, idleTimeoutMs: null }
-            : environmentLifecyclePolicy ?? agentLifecyclePolicy;
+          const effectiveLifecyclePolicy = persistedNativeExecutionInput?.session.lifecyclePolicy ??
+            (managedAiRuntime && !supportsManagedWarmSession
+              ? { mode: "per_turn" as const, idleTimeoutMs: null }
+              : environmentLifecyclePolicy ?? agentLifecyclePolicy);
           if (
             effectiveLifecyclePolicy.mode === "warm" &&
             executionTarget?.kind === "remote" &&
@@ -24702,6 +26806,12 @@ export function heartbeatService(
                 localAgentJwtScope,
               )
             : null;
+        if (authToken) {
+          runSecretValues = collectRunSecretValues(
+            parseObject(runtimeConfig.env),
+            { secretKeys, extraValues: [authToken] },
+          );
+        }
         if (
           nativeRuntimeResolution.kind === "legacy" &&
           adapter.supportsLocalAgentJwt &&
@@ -24962,7 +27072,7 @@ export function heartbeatService(
                   .join(", ");
                 await onLog(
                   "stderr",
-                  `[paperclip] App connection${connections.length === 1 ? "" : "s"} unavailable: ${names}. Continuing this run without ${connections.length === 1 ? "it" : "them"}; reconnect from Apps to restore access.\n`,
+                  `[gsam] App connection${connections.length === 1 ? "" : "s"} unavailable: ${names}. Continuing this run without ${connections.length === 1 ? "it" : "them"}; reconnect from Apps to restore access.\n`,
                 );
               },
             });
@@ -25217,6 +27327,11 @@ export function heartbeatService(
               runtimeMcpServers.unshift({ name: "GS Agentic Manager projects", url: `${paperclipApiBaseUrl()}/api/mcp/project-tools`,
                 token: authToken, connectionId: "paperclip-project-tools" });
             }
+            // Memory tools only reach runs while the company's memory setting is on (GRE-672).
+            if (authToken && configuredPaperclipApiBaseUrl() && issueRef && await companyMemoryEnabled(db, agent.companyId)) {
+              runtimeMcpServers.unshift({ name: "GS Agentic Manager memory", url: `${paperclipApiBaseUrl()}/api/mcp/memory-tools`,
+                token: authToken, connectionId: "paperclip-memory-tools" });
+            }
             const runtimeMcp = createAdapterRuntimeMcpAccess(runtimeMcpServers);
             if (runtimeTools && runtimeToolDelivery === "invocation_context") {
               adapterContext.paperclipRuntimeTools = runtimeTools;
@@ -25306,8 +27421,34 @@ export function heartbeatService(
                             ? meta.processGroupId
                             : null,
                         startedAt: meta.startedAt,
+                        outputCapture: meta.outputCapture
+                          ? {
+                              stdoutPath: meta.outputCapture.stdoutPath,
+                              stderrPath: meta.outputCapture.stderrPath,
+                              recoveryContext: meta.recoveryContext ?? null,
+                              finalizeContext: {
+                                previousSessionParams,
+                                runtimeSession: {
+                                  sessionId: runtimeForAdapter.sessionId,
+                                  sessionDisplayId:
+                                    runtimeForAdapter.sessionDisplayId,
+                                },
+                                taskSessionReused: taskSessionForRun != null,
+                                sessionCompaction: {
+                                  rotate: sessionCompaction.rotate,
+                                  reason: sessionCompaction.reason,
+                                },
+                                configFreshness: configFreshnessResultMetadata,
+                                configuredModel,
+                                sessionConfigMetadata,
+                              },
+                            }
+                          : null,
                       });
                     },
+                    outputCapture: adapter.recoverResultFromOutput
+                      ? { dir: resolveRunOutputCaptureDir() }
+                      : null,
                     authToken: authToken ?? undefined,
                   });
                 },
@@ -25598,637 +27739,60 @@ export function heartbeatService(
             } catch (err) {
               await onLog(
                 "stderr",
-                `[paperclip] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
+                `[gsam] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
               );
             }
           }
         }
-        const processCancellation =
-          processRunCancellationSettlements.get(run.id) ??
-          failedProcessRunCancellations.get(run.id);
-        await processCancellation?.settled;
-        let outcome: RunSessionOutcome;
-        const latestRun = await getRun(run.id);
-        if (isHeartbeatRunTerminalStatus(latestRun?.status)) {
-          outcome = latestRun.status;
-        } else if (executionControl.controller.signal.aborted) {
-          outcome = "cancelled";
-        } else if (adapterResult.nativeFinalization) {
-          const nativeTerminal =
-            adapterResult.nativeFinalization.terminal.runTerminalState;
-          outcome =
-            nativeTerminal === "succeeded"
-              ? "succeeded"
-              : nativeTerminal === "cancelled"
-                ? "cancelled"
-                : "failed";
-        } else if (adapterResult.timedOut) {
-          outcome = "timed_out";
-        } else if (
-          (adapterResult.exitCode ?? 0) === 0 &&
-          !adapterResult.errorMessage &&
-          !adapterResult.signal &&
-          !processCancellation?.failed
-        ) {
-          outcome = "succeeded";
-        } else {
-          outcome = "failed";
-        }
-
-        const nextSessionState = resolveNextSessionState({
-          adapterType: agent.adapterType,
-          codec: sessionCodec,
+        await finalizeLegacyRunFromAdapterResult({
+          run,
+          agent,
           adapterResult,
-          outcome,
-          previousParams: previousSessionParams,
-          previousDisplayId: runtimeForAdapter.sessionDisplayId,
-          previousLegacySessionId: runtimeForAdapter.sessionId,
-        });
-        const rawUsage = normalizeUsageTotals(adapterResult.usage);
-        const sessionUsageResolution = await resolveNormalizedUsageForSession({
-          agentId: agent.id,
-          runId: run.id,
-          sessionId:
-            nextSessionState.displayId ?? nextSessionState.legacySessionId,
-          rawUsage,
-          usageBasis: adapterResult.usageBasis ?? null,
-        });
-        const normalizedUsage = sessionUsageResolution.normalizedUsage;
-        const runErrorMessage =
-          outcome === "cancelled"
-            ? (latestRun?.error ?? adapterResult.errorMessage ?? "Cancelled")
-            : outcome === "succeeded"
-              ? null
-              : redactCurrentUserText(
-                  adapterResult.errorMessage ??
-                    (outcome === "timed_out" ? "Timed out" : "Adapter failed"),
-                  currentUserRedactionOptions,
-                );
-        const recordedResponsibleUserDenialCode =
-          normalizeResponsibleUserDenialCode(latestRun?.errorCode);
-        const runErrorCode =
-          outcome === "timed_out"
-            ? "timeout"
-            : outcome === "cancelled"
-              ? (latestRun?.errorCode ?? "cancelled")
-              : outcome === "failed"
-                ? (adapterResult.errorCode ??
-                  recordedResponsibleUserDenialCode ??
-                  "adapter_failed")
-                : null;
-
-        let logSummary: {
-          bytes: number;
-          sha256?: string;
-          compressed: boolean;
-        } | null = null;
-        if (handle) {
-          logSummary = await runLogStore.finalize(handle);
-        }
-        const finalLogBytes = logSummary?.bytes;
-        if (outputProgressState.pending && typeof finalLogBytes === "number") {
-          outputProgressState.pending.bytes = finalLogBytes;
-        }
-        await flushOutputProgress({ force: true });
-
-        if (providerTraceCapture) {
-          try {
-            await traceStore.finalize(run.id, run.companyId);
-            providerTraceFinalized = true;
-          } catch (error) {
-            logger.warn(
-              { error, runId: run.id },
-              "provider trace finalization failed without affecting run outcome",
-            );
-          }
-        }
-
-        const status =
-          outcome === "succeeded"
-            ? "succeeded"
-            : outcome === "cancelled"
-              ? "cancelled"
-              : outcome === "timed_out"
-                ? "timed_out"
-                : "failed";
-
-        const cacheAdjustedCostUsd = resolveCacheAdjustedCostUsd(adapterResult);
-        const usageJson =
-          normalizedUsage ||
-          adapterResult.costUsd != null ||
-          cacheAdjustedCostUsd != null
-            ? ({
-                ...(normalizedUsage ?? {}),
-                ...(rawUsage
-                  ? {
-                      rawInputTokens: rawUsage.inputTokens,
-                      rawCachedInputTokens: rawUsage.cachedInputTokens,
-                      rawOutputTokens: rawUsage.outputTokens,
-                    }
-                  : {}),
-                ...(sessionUsageResolution.derivedFromSessionTotals
-                  ? { usageSource: "session_delta" }
-                  : adapterResult.usageBasis === "per_run"
-                    ? { usageSource: "per_run" }
-                    : {}),
-                ...((nextSessionState.displayId ??
-                nextSessionState.legacySessionId)
-                  ? {
-                      persistedSessionId:
-                        nextSessionState.displayId ??
-                        nextSessionState.legacySessionId,
-                    }
-                  : {}),
-                sessionReused:
-                  runtimeForAdapter.sessionId != null ||
-                  runtimeForAdapter.sessionDisplayId != null,
-                taskSessionReused: taskSessionForRun != null,
-                freshSession:
-                  runtimeForAdapter.sessionId == null &&
-                  runtimeForAdapter.sessionDisplayId == null,
-                sessionRotated: sessionCompaction.rotate,
-                sessionRotationReason: sessionCompaction.reason,
-                configFreshness: configFreshnessResultMetadata,
-                provider:
-                  readNonEmptyString(adapterResult.provider) ?? "unknown",
-                biller: resolveLedgerBiller(adapterResult),
-                model: readNonEmptyString(adapterResult.model) ?? "unknown",
-                ...(adapterResult.costUsd != null
-                  ? { costUsd: adapterResult.costUsd }
-                  : {}),
-                ...(cacheAdjustedCostUsd != null
-                  ? { cacheAdjustedCostUsd }
-                  : {}),
-                costStatus: resolveLedgerCostStatus({
-                  costUsd: cacheAdjustedCostUsd,
-                  inputTokens: normalizedUsage?.inputTokens ?? 0,
-                  cachedInputTokens: normalizedUsage?.cachedInputTokens ?? 0,
-                  outputTokens: normalizedUsage?.outputTokens ?? 0,
-                }),
-                billingType: normalizeLedgerBillingType(
-                  adapterResult.billingType,
-                ),
-              } as Record<string, unknown>)
-            : null;
-
-        const persistedResultJson = mergeHeartbeatRunResultJson(
-          mergeRunStopMetadataForAgent(agent, outcome, {
-            resultJson: mergeAdapterRecoveryMetadata({
-              resultJson: {
-                ...(adapterResult.nativeFinalization || outcome === "cancelled"
-                  ? parseObject(latestRun?.resultJson)
-                  : {}),
-                ...parseObject(adapterResult.resultJson),
-                ...(adapterResult.executionRecovery
-                  ? { executionRecovery: adapterResult.executionRecovery }
-                  : {}),
-                configFreshness: configFreshnessResultMetadata,
-              },
-              errorFamily: adapterResult.errorFamily ?? null,
-              retryNotBefore: adapterResult.retryNotBefore ?? null,
-            }),
-            errorCode: runErrorCode,
-            errorMessage: runErrorMessage,
-          }),
-          adapterResult.summary ?? null,
-        );
-
-        const finalRunPatch: Partial<typeof heartbeatRuns.$inferInsert> = {
-          finishedAt: new Date(),
-          error: runErrorMessage,
-          errorCode: runErrorCode,
-          exitCode: adapterResult.exitCode,
-          signal: adapterResult.signal,
-          usageJson,
-          resultJson: persistedResultJson,
-          sessionIdAfter:
-            nextSessionState.displayId ?? nextSessionState.legacySessionId,
+          isAborted: () => executionControl.controller.signal.aborted,
+          sessionCodec,
+          previousSessionParams,
+          runtimeForAdapter,
+          currentUserRedactionOptions,
+          finalizeRunLog: async () => {
+            let logSummary: {
+              bytes: number;
+              sha256?: string;
+              compressed: boolean;
+            } | null = null;
+            if (handle) {
+              logSummary = await runLogStore.finalize(handle);
+            }
+            const finalLogBytes = logSummary?.bytes;
+            if (outputProgressState.pending && typeof finalLogBytes === "number") {
+              outputProgressState.pending.bytes = finalLogBytes;
+            }
+            await flushOutputProgress({ force: true });
+            return logSummary;
+          },
+          finalizeProviderTrace: async () => {
+            if (!providerTraceCapture) return;
+            try {
+              await traceStore.finalize(run.id, run.companyId);
+              providerTraceFinalized = true;
+            } catch (error) {
+              logger.warn(
+                { error, runId: run.id },
+                "provider trace finalization failed without affecting run outcome",
+              );
+            }
+          },
+          taskSessionReused: taskSessionForRun != null,
+          sessionCompaction,
+          configFreshnessResultMetadata,
           stdoutExcerpt,
           stderrExcerpt,
-          logBytes: logSummary?.bytes,
-          logSha256: logSummary?.sha256,
-          logCompressed: logSummary?.compressed ?? false,
-        };
-        const persistedRunWrite = await setRunStatusIfRunning(
-          run.id,
-          status,
-          finalRunPatch,
-        );
-        let persistedRun: typeof heartbeatRuns.$inferSelect | null =
-          persistedRunWrite.run;
-        if (!persistedRunWrite.updated) {
-          persistedRun = null;
-          // Native reconciliation can commit and project the terminal status in
-          // the narrow window between adapter completion and this live write.
-          // The status is authoritative, but it must not make us discard the
-          // adapter's semantic result, usage, logs, or presentation decision.
-          // Only complete the late metadata write when the reconciler chose the
-          // same terminal status; a conflicting terminal outcome remains owned
-          // by the path that won the compare-and-set. Owned legacy cancellation
-          // likewise keeps the provider session, logs, and usage after Stop wins.
-          if (
-            (adapterResult.nativeFinalization ||
-              (processCancellation && !processCancellation.failed && status === "cancelled")) &&
-            persistedRunWrite.run?.status === status
-          ) {
-            persistedRun = await db
-              .update(heartbeatRuns)
-              .set({
-                ...finalRunPatch,
-                finishedAt:
-                  persistedRunWrite.run.finishedAt ?? finalRunPatch.finishedAt,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(heartbeatRuns.id, run.id),
-                  eq(heartbeatRuns.status, status),
-                ),
-              )
-              .returning()
-              .then((rows) => rows[0] ?? null);
-          }
-          if (!persistedRun) {
-            logger.info(
-              {
-                runId: run.id,
-                attemptedStatus: status,
-                currentStatus: persistedRunWrite.run?.status ?? null,
-              },
-              "skipping late run finalization because the run already left running state",
-            );
-            return;
-          }
-        }
-        if (persistedRun) {
-          persistedRun =
-            (await classifyAndPersistRunLiveness(
-              persistedRun,
-              persistedResultJson,
-            )) ?? persistedRun;
-        }
-
-        await setWakeupStatus(
-          run.wakeupRequestId,
-          outcome === "succeeded" ? "completed" : status,
-          {
-            finishedAt: new Date(),
-            error: runErrorMessage,
-          },
-        );
-
-        const finalizedRun = persistedRun ?? (await getRun(run.id));
-        if (finalizedRun) {
-          await appendRunEvent(finalizedRun, {
-            eventType: "lifecycle",
-            stream: "system",
-            level: outcome === "succeeded" ? "info" : "error",
-            message: `run ${outcome}`,
-            payload: {
-              status,
-              exitCode: adapterResult.exitCode,
-            },
-          });
-          try {
-            await completeSkillTestRunForHeartbeatOutcome({
-              run: finalizedRun,
-              issueId,
-              issueWorkMode: issueRef?.workMode ?? null,
-              outcome,
-              error: runErrorMessage,
-            });
-          } catch (err) {
-            logger.warn(
-              { err, runId: finalizedRun.id, issueId },
-              "failed to complete skill test run after heartbeat finalization",
-            );
-            await onLog(
-              "stderr",
-              `[paperclip] Failed to complete skill test run: ${err instanceof Error ? err.message : String(err)}\n`,
-            );
-          }
-          const livenessRun = finalizedRun;
-          await refreshContinuationSummaryForRun(livenessRun, agent);
-          const skipRunIssueComment =
-            parseObject(livenessRun.contextSnapshot).skipIssueComment === true;
-          let resolvedPresentationDecision: RunPresentationDecision | null =
-            null;
-          try {
-            const existingRunComment = issueId
-              ? await findRunIssueComment(
-                  livenessRun.id,
-                  livenessRun.companyId,
-                  issueId,
-                  persistedResultJson,
-                )
-              : null;
-            const finalAgentMessage =
-              await findLatestCompletedFinalAgentMessage(
-                livenessRun.id,
-                livenessRun.companyId,
-              );
-            const externalChatPresentationCandidate =
-              isExternalChatPresentationContext(livenessRun.contextSnapshot) ||
-              parseObject(livenessRun.contextSnapshot).source === "tool_action_review" ||
-              String(parseObject(livenessRun.contextSnapshot).source ?? "").startsWith("issue.comment") ||
-              parseObject(livenessRun.contextSnapshot).source === "issue.update";
-            const externalChatPresentationAuthorization =
-              issueId && externalChatPresentationCandidate
-                ? await resolveChatRunPresentationAuthorizationReason(db, {
-                    companyId: livenessRun.companyId,
-                    issueId,
-                    runId: livenessRun.id,
-                  })
-                : null;
-            const externalChatPresentationContext = isExternalChatPresentationContext(
-              livenessRun.contextSnapshot,
-              externalChatPresentationAuthorization === CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-            );
-            const resolved = resolveHeartbeatRunResponse({
-              resultJson: persistedResultJson,
-              conversationTurnFinished: isConversation(issueContext) &&
-                persistedResultJson?.finalizationReasonCode === "conversation_turn_finished",
-              existingComment: existingRunComment,
-              finalAgentMessage,
-              preferFinalResponseOverExistingComment:
-                externalChatPresentationContext,
-              externalChatReviewResponseSummaryAuthorized:
-                persistedResultJson?.finalizationReasonCode ===
-                  "governed_response_waiting" &&
-                externalChatPresentationAuthorization ===
-                  CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-              externalChatResponseWakeSummaryAuthorized:
-                Boolean(adapterResult.nativeFinalization) &&
-                externalChatPresentationAuthorization ===
-                  CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
-            });
-            let presentationDecision: RunPresentationDecision =
-              resolved.decision;
-
-            if (
-              issueId &&
-              !skipRunIssueComment &&
-              presentationDecision.commentAction === "create" &&
-              resolved.text
-            ) {
-              // The presentation resolver exposes only the final assistant
-              // surface selected from completed final messages or accepted
-              // semantic results. For an exactly bound external-chat run,
-              // authorize that narrow presentation as the provider reply;
-              // ordinary internal runs retain the private default.
-              const presentationAuthorizationReason =
-                await resolveChatRunPresentationAuthorizationReason(db, {
-                  companyId: livenessRun.companyId,
-                  issueId,
-                  runId: livenessRun.id,
-                });
-              const comment = await issuesSvc.addComment(
-                issueId,
-                resolved.text,
-                { agentId: agent.id, runId: livenessRun.id },
-                { authorizationReason: presentationAuthorizationReason },
-              );
-              presentationDecision = {
-                ...presentationDecision,
-                commentId: comment.id,
-                reasonCodes: [
-                  ...presentationDecision.reasonCodes,
-                  "resolved_response_materialized",
-                ],
-              };
-              await logActivity(db, {
-                companyId: livenessRun.companyId,
-                actorType: "agent",
-                actorId: agent.id,
-                agentId: agent.id,
-                runId: livenessRun.id,
-                issueId,
-                action: "issue.comment_added",
-                entityType: "issue",
-                entityId: issueId,
-                details: {
-                  commentId: comment.id,
-                  bodySnippet: comment.body.slice(0, 120),
-                  identifier: issueRef?.identifier ?? null,
-                  issueTitle: issueRef?.title ?? null,
-                  authorizationReason: presentationAuthorizationReason,
-                  source: "run_presentation_resolver",
-                  presentationSource: presentationDecision.chosenSource,
-                },
-              });
-            } else if (presentationDecision.commentAction === "create") {
-              presentationDecision = {
-                ...presentationDecision,
-                commentAction: "none",
-                reasonCodes: [
-                  ...presentationDecision.reasonCodes,
-                  skipRunIssueComment
-                    ? "issue_comment_suppressed"
-                    : "run_has_no_issue",
-                ],
-              };
-            }
-
-            await db
-              .update(heartbeatRuns)
-              .set({
-                resultJson: {
-                  ...persistedResultJson,
-                  presentationDecision,
-                },
-                updatedAt: new Date(),
-              })
-              .where(eq(heartbeatRuns.id, livenessRun.id));
-            await appendRunEvent(livenessRun, {
-              eventType: "run.presentation.resolved",
-              stream: "system",
-              level: "info",
-              message: "run presentation resolved",
-              payload: { presentationDecision },
-            });
-            resolvedPresentationDecision = presentationDecision;
-          } catch (err) {
-            await onLog(
-              "stderr",
-              `[paperclip] Failed to resolve run presentation: ${err instanceof Error ? err.message : String(err)}\n`,
-            );
-          }
-          if (outcome === "failed" && isMaxTurnExhaustionRun(livenessRun)) {
-            const policy = parseMaxTurnContinuationPolicy(agent);
-            if (policy.enabled && policy.maxAttempts > 0) {
-              await scheduleBoundedRetryForRun(livenessRun, agent, {
-                retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
-                wakeReason: MAX_TURN_CONTINUATION_WAKE_REASON,
-                maxAttempts: policy.maxAttempts,
-                delayMs: policy.delayMs,
-              });
-            } else {
-              await appendRunEvent(livenessRun, {
-                eventType: "lifecycle",
-                stream: "system",
-                level: "warn",
-                message:
-                  "Max-turn continuation suppressed because the policy is disabled",
-                payload: {
-                  retryReason: MAX_TURN_CONTINUATION_RETRY_REASON,
-                  policy,
-                },
-              });
-            }
-          } else if (
-            (outcome === "failed" &&
-              readTransientRecoveryContractFromRun(livenessRun)) ||
-            runLostToHostSleep(livenessRun)
-          ) {
-            await scheduleBoundedRetryForRun(livenessRun, agent);
-          } else if (
-            outcome === "failed" &&
-            !legacyExecutionNeedsReconciliation(livenessRun)
-          ) {
-            await scheduleInteractionContinuationInfrastructureRetryIfEligible(
-              livenessRun,
-              agent,
-            );
-          }
-          const issueCommentPolicyResult = await finalizeIssueCommentPolicy(
-            livenessRun,
-            agent,
-            resolvedPresentationDecision,
-          );
-          const conversationSettled = await settleConversationTurn(db, livenessRun);
-          await releaseIssueExecutionAndPromote(livenessRun, {
-            suppressImmediateRecovery: conversationSettled ||
-              readNonEmptyString(
-                parseObject(livenessRun.contextSnapshot).goalControlRequestId,
-              ) !== null ||
-              parseObject(livenessRun.contextSnapshot)
-                .resumeSessionGoalHeartbeat === true,
-          });
-          if (!conversationSettled) {
-            await handleIssueReviewPathDisposition(livenessRun);
-            if (livenessRun.runtimeMode !== "native") {
-              await recovery.reconcileLegacyContinuation(livenessRun.id);
-            } else {
-              await handleRunLivenessContinuation(livenessRun);
-              await handleSuccessfulRunHandoff(
-                issueCommentPolicyResult.outcome === "retry_queued" ||
-                  issueCommentPolicyResult.outcome === "retry_exhausted"
-                  ? { ...livenessRun, issueCommentStatus: issueCommentPolicyResult.outcome }
-                  : livenessRun,
-                agent,
-              );
-            }
-          }
-          if (
-            outcome === "succeeded" &&
-            issueId &&
-            parseObject(adapterResult.resultJson).goalRolloverRequired === true
-          ) {
-            const rolloverProjection = await runnerGoalService(db).projection(
-              livenessRun.companyId,
-              issueId,
-              agent.id,
-            );
-            if (rolloverProjection?.goal?.status === "active") {
-              await enqueueWakeup(agent.id, {
-                source: "automation",
-                triggerDetail: "system",
-                reason: "goal_control",
-                payload: {
-                  issueId,
-                  intent: "goal_rollover",
-                  predecessorRunId: livenessRun.id,
-                },
-                idempotencyKey: `goal_rollover:${livenessRun.id}`,
-                requestedByActorType: "system",
-                contextSnapshot: {
-                  issueId,
-                  taskKey: issueId,
-                  resumeSessionGoalHeartbeat: true,
-                  skipIssueComment: true,
-                  goalRolloverFromRunId: livenessRun.id,
-                },
-              });
-            }
-          }
-
-          // Dependency wake re-check: if this run's issue was marked done mid-run,
-          // the route-time `issue_blockers_resolved` wake may have been gated by
-          // workspace finalization or merged into this run. Reuse the level-triggered
-          // dependency backstop so finalize and periodic recovery share idempotency,
-          // readiness, active-path, and observability rules.
-          if (issueId && finalizedRun) {
-            try {
-              const blockerIssueStatus = await db
-                .select({ status: issues.status })
-                .from(issues)
-                .where(eq(issues.id, issueId))
-                .then((rows) => rows[0]?.status ?? null);
-              if (blockerIssueStatus === "done") {
-                await recovery.reconcileResolvedDependencyWakeBackstop({
-                  runId: finalizedRun.id,
-                  companyId: finalizedRun.companyId,
-                  blockerIssueId: issueId,
-                  source: "workspace.finalize",
-                });
-              }
-            } catch (finalizeWakeErr) {
-              logger.warn(
-                { err: finalizeWakeErr, runId: run.id, issueId },
-                "failed to evaluate dependent wakes after workspace_finalize",
-              );
-            }
-          }
-        }
-
-        if (finalizedRun) {
-          await updateRuntimeState(
-            agent,
-            finalizedRun,
-            adapterResult,
-            {
-              legacySessionId: nextSessionState.legacySessionId,
-            },
-            normalizedUsage,
-          );
-          if (taskKey) {
-            if (
-              adapterResult.clearSession ||
-              (!nextSessionState.params && !nextSessionState.displayId)
-            ) {
-              await clearTaskSessions(agent.companyId, agent.id, {
-                taskKey,
-                adapterType: agent.adapterType,
-                expectedRunId: finalizedRun.id,
-              });
-            } else {
-              await upsertTaskSession({
-                companyId: agent.companyId,
-                agentId: agent.id,
-                adapterType: agent.adapterType,
-                taskKey,
-                sessionParamsJson:
-                  attachPaperclipSessionMetadataToSessionParams(
-                    nextSessionState.params,
-                    configuredModel,
-                    sessionConfigMetadata,
-                  ),
-                sessionDisplayId: nextSessionState.displayId,
-                lastRunId: finalizedRun.id,
-                lastError: runErrorMessage,
-              });
-            }
-          }
-        }
-        await finalizeAgentStatus(agent.id, outcome, runErrorMessage, {
-          keepIdleOnFailure:
-            outcome === "failed" &&
-            ((finalizedRun
-              ? readHeartbeatRunErrorFamily(finalizedRun) === "provider_quota" ||
-                runLostToHostSleep(finalizedRun)
-              : runErrorCode === "provider_quota") ||
-              isWorkspaceSyncConflictFailure(adapterResult.errorMessage)),
-          wasFirstHeartbeat: timerClaimWasFirstHeartbeat(run),
+          issueId,
+          issueRef,
+          issueContext,
+          onLog,
+          taskKey,
+          configuredModel,
+          sessionConfigMetadata,
         });
       } catch (err) {
         if (err instanceof NativeControllerDetachedForRestartError) {
@@ -26500,9 +28064,11 @@ export function heartbeatService(
           }
           await (runLostToHostSleep(livenessRun)
             ? scheduleBoundedRetryForRun(livenessRun, agent)
-            : scheduleInteractionContinuationInfrastructureRetryIfEligible(
-                livenessRun,
-                agent,
+            : repairSetupFailureOrRetry(livenessRun, agent, () =>
+                scheduleInteractionContinuationInfrastructureRetryIfEligible(
+                  livenessRun,
+                  agent,
+                ),
               ));
           await releaseIssueExecutionAndPromote(livenessRun, {
             // Native recovery owns the original heartbeat run through
@@ -26577,6 +28143,15 @@ export function heartbeatService(
                 ? outerErr.reason
                 : "adopted_runner_authentication_timeout",
           }).catch(() => undefined);
+      } else if (outerErr instanceof StaleExecutionContinuationError) {
+        // The queued continuation became obsolete before adapter dispatch.
+        // Use cancellation settlement so wakeup, issue ownership, agent state,
+        // and notifications agree; do not retry work for the previous owner.
+        await cancelRunInternal(run.id, outerErr.code, {
+          errorCode: outerErr.code,
+          eventMessage: "stale execution continuation cancelled before dispatch",
+          suppressImmediateRecovery: true,
+        });
       } else if (isWorkspaceBusyDeferral(outerErr)) {
         // Expected contention on a shared project workspace, not a
         // failure: park the run as a bounded scheduled retry and leave the
@@ -26668,6 +28243,13 @@ export function heartbeatService(
                 run,
                 sandboxProviderPluginNotReadySetupFailure,
               )
+            : null) ??
+          (outerErr instanceof InheritedWorkspaceReuseFailure
+            ? {
+                workspaceReuseFailure: {
+                  executionWorkspaceId: outerErr.executionWorkspaceId,
+                },
+              }
             : null);
         const setupFailureResultJson = {
           ...setupFailureDetails,
@@ -26763,7 +28345,9 @@ export function heartbeatService(
             await (isTransientWorkspaceGitScanCode(livenessRun.errorCode) ||
               runLostToHostSleep(livenessRun)
               ? scheduleBoundedRetryForRun(livenessRun, failedAgent)
-              : scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent)
+              : repairSetupFailureOrRetry(livenessRun, failedAgent, () =>
+                  scheduleInteractionContinuationInfrastructureRetryIfEligible(livenessRun, failedAgent),
+                )
             ).catch((retryError) => {
               logger.warn(
                 { err: retryError, runId: livenessRun.id },
@@ -26811,10 +28395,12 @@ export function heartbeatService(
         }
       }
     } finally {
-      if (managedAiRuntime) await managedAiRuntime.cleanup().catch(() => logger.warn({ runId: run.id }, "AI connection refresh or cleanup failed"));
+      if (managedAiRuntime) await managedAiRuntime.cleanup().catch((error) => logger.warn({ runId: run.id, ...managedAiCleanupLogFields(error) }, "AI connection refresh or cleanup failed"));
       let latestRun = await getRun(run.id).catch(() => null);
-      // The provider refused the managed credential. Show the connection as
-      // needing attention so the next runs stop before calling the provider.
+      // The provider refused the managed credential. Once the refusal is
+      // confirmed, show the connection as needing attention so the next runs
+      // stop before calling the provider. An unconfirmed refusal fails only
+      // this run (GRE-236).
       if (managedAiRuntime && latestRun?.status === "failed" && isAiAuthRequiredErrorCode(latestRun.errorCode)) {
         await aiConnectionService(db).recordCredentialRejected({
           companyId: run.companyId,
@@ -26822,6 +28408,7 @@ export function heartbeatService(
           grantId: managedAiRuntime.attribution.grantId,
           identity: managedAiRuntime.identity,
           runId: run.id,
+          afterOutput: (readRawUsageTotals(latestRun.usageJson)?.outputTokens ?? 0) > 0,
         }).catch((error) => logger.warn({ err: error, runId: run.id }, "Could not mark the AI connection as needing attention"));
       }
       try {
@@ -26917,6 +28504,42 @@ export function heartbeatService(
             nativeLifecycleTelemetry: nativeLifecycleTelemetryForRun,
           });
           await releaseRuntimeServicesForRun(run.id).catch(() => undefined);
+        }
+        // Stop what the agent started and left running (a dev server started in
+        // the background, a sandbox). Before the scratch cleanup, which skips
+        // while the run's process group is alive. Not during a hot restart:
+        // that shutdown must stay quick, and the sweep covers it later.
+        if (
+          latestRun &&
+          isHeartbeatRunTerminalStatus(latestRun.status) &&
+          !nativeSessionResumeScheduled &&
+          !nativeWorkspaceFinalizeScheduled &&
+          !nativeOwnershipHeld &&
+          !shutdownInProgress
+        ) {
+          const runForLeftovers = latestRun;
+          const leftovers = await cleanupRunLeftoverProcesses({ runId: run.id }).catch((err) => {
+            logger.warn({ err, runId: run.id }, "failed to stop leftover processes of the run");
+            return null;
+          });
+          if (leftovers?.status === "done" && leftovers.stopped.some((entry) => entry.outcome !== "gone")) {
+            const stopped = leftovers.stopped.filter((entry) => entry.outcome !== "gone");
+            const counts = summarizeStopped(stopped);
+            await appendRunEvent(runForLeftovers, {
+              eventType: "lifecycle",
+              stream: "system",
+              level: counts.failed > 0 ? "warn" : "info",
+              message: `stopped ${stopped.length} leftover process${stopped.length === 1 ? "" : "es"} the run started`,
+              payload: {
+                kind: "run_leftover_processes",
+                ...counts,
+                leftAlone: leftovers.protectedMatches,
+                processes: stopped.slice(0, 20).map(({ pid, command, outcome }) => ({ pid, command, outcome })),
+              },
+            }).catch((eventErr) => {
+              logger.warn({ err: eventErr, runId: run.id }, "failed to record leftover process cleanup event");
+            });
+          }
         }
         if (
           runScratch &&
@@ -27064,6 +28687,52 @@ export function heartbeatService(
         throw new HttpError(422, error.message, { code: error.code, ...error.details });
       }
       throw error;
+    }
+  }
+
+  // GRE-25: the stale-lock sweep cleared a lock whose owner died without
+  // releasing it. Replay that missing release through the issue's latest run
+  // so deferred wakes get the same admission checks as a normal release.
+  async function promoteDeferredWakesAfterStaleLockClear(input: { companyId: string; issueId: string }) {
+    const [pending] = await db.select({ id: agentWakeupRequests.id }).from(agentWakeupRequests).where(and(
+      eq(agentWakeupRequests.companyId, input.companyId),
+      eq(agentWakeupRequests.status, "deferred_issue_execution"),
+      sql`${agentWakeupRequests.payload}->>'issueId' = ${input.issueId}`,
+    )).limit(1);
+    if (!pending) return;
+    const [latest] = await db.select().from(heartbeatRuns).where(and(
+      eq(heartbeatRuns.companyId, input.companyId),
+      sql`${heartbeatRuns.contextSnapshot}->>'issueId' = ${input.issueId}`,
+    )).orderBy(desc(heartbeatRuns.createdAt), desc(heartbeatRuns.id)).limit(1);
+    // A live latest run owns the next release. With no run at all there is
+    // nothing to release through; leave the issue to stranded-issue recovery.
+    if (!latest || !isHeartbeatRunTerminalStatus(latest.status)) {
+      logger.warn({ ...input, latestRunId: latest?.id ?? null },
+        "stale lock cleared with deferred wakes but no terminal run to release through");
+      return;
+    }
+    await releaseIssueExecutionAndPromote(latest, { suppressImmediateRecovery: true });
+  }
+
+  // GRE-631: the stale-run gate cancels a queued or starting run and clears
+  // its issue lock without the release drain. Wakes parked behind that run
+  // (for example the new owner's review wake after a reassignment) would stay
+  // deferred_issue_execution forever. Replay the release through the
+  // cancelled run so they get the normal admission gates.
+  async function promoteDeferredWakesAfterStaleRunCancel(run: Pick<typeof heartbeatRuns.$inferSelect, "id" | "companyId">) {
+    try {
+      const cancelled = await getRun(run.id);
+      const issueId = readNonEmptyString(parseObject(cancelled?.contextSnapshot).issueId);
+      if (!cancelled || !issueId || cancelled.status !== "cancelled") return;
+      const [pending] = await db.select({ id: agentWakeupRequests.id }).from(agentWakeupRequests).where(and(
+        eq(agentWakeupRequests.companyId, run.companyId),
+        eq(agentWakeupRequests.status, "deferred_issue_execution"),
+        sql`${agentWakeupRequests.payload}->>'issueId' = ${issueId}`,
+      )).limit(1);
+      if (!pending) return;
+      await releaseIssueExecutionAndPromote(cancelled, { suppressImmediateRecovery: true });
+    } catch (err) {
+      logger.warn({ err, runId: run.id }, "failed to promote deferred wakes after stale run cancel");
     }
   }
 
@@ -27449,15 +29118,20 @@ export function heartbeatService(
       : false;
     let operatorResponsibleUserId: string | null = opts.manualUserWake ? opts.requestedByActorId! : null;
     let queuedResponsibleUserIdPromise: Promise<string> | null = null;
-    const resolveQueuedResponsibleUserId = () => {
+    // Called inside the admission transaction: pass its `tx` so these reads
+    // stay on the connection that transaction already holds. Reading through
+    // the pool here needs a second connection, and a burst of wakes then
+    // holds every connection while each waits for one more (pool deadlock).
+    const resolveQueuedResponsibleUserId = (executor: Db = db) => {
       if (operatorResponsibleUserId) return Promise.resolve(operatorResponsibleUserId);
       queuedResponsibleUserIdPromise ??= (async () => {
         const queuedIssueContext = issueId
-          ? await getIssueExecutionContext(agent.companyId, issueId)
+          ? await getIssueExecutionContext(agent.companyId, issueId, executor)
           : null;
         const queuedRoutineEnvContext = await getRoutineEnvForExecutionIssue(
           agent.companyId,
           queuedIssueContext,
+          executor,
         );
         const queuedResponsibleUserId =
           await resolveResponsibleUserIdForRunSeed({
@@ -27469,6 +29143,7 @@ export function heartbeatService(
             requestedByActorId: opts.requestedByActorId ?? null,
             source,
             triggerDetail,
+            executor,
           });
         if (!queuedResponsibleUserId) {
           throw new HttpError(
@@ -27552,6 +29227,15 @@ export function heartbeatService(
           "No assigned todo or in_progress issue requires this agent before timer adapter invocation.",
       });
       await markTimerHeartbeatChecked(agentId, source);
+      return null;
+    }
+
+    // "Not now" (GRE-262): a tabled task gets no wakes of any kind. The wake
+    // is dropped, not saved; bringing the task back sends one fresh wake.
+    if (issueId && isUuidLike(issueId) && await isIssueTabledById(db, issueId)) {
+      await writeSkippedRequest("issue_tabled", {
+        error: "This task is tabled (Not now). Bring it back to resume work.",
+      });
       return null;
     }
 
@@ -28930,7 +30614,7 @@ export function heartbeatService(
               invocationSource: source,
               triggerDetail,
               status: "queued",
-              responsibleUserId: await resolveQueuedResponsibleUserId(),
+              responsibleUserId: await resolveQueuedResponsibleUserId(tx as unknown as Db),
               wakeupRequestId: wakeupRequest.id,
               retryOfRunId: failedChatRetry
                 ? durableRequest!.failedRunRetry!.failedRunId
@@ -29202,7 +30886,7 @@ export function heartbeatService(
           invocationSource: source,
           triggerDetail,
           status: "queued",
-          responsibleUserId: await resolveQueuedResponsibleUserId(),
+          responsibleUserId: await resolveQueuedResponsibleUserId(tx as unknown as Db),
           wakeupRequestId: wakeupRequest.id,
           contextSnapshot: enrichedContextSnapshot,
           sessionIdBefore: sessionBefore,
@@ -29603,6 +31287,41 @@ export function heartbeatService(
     return rows.map((row) => row.id);
   }
 
+  /**
+   * GRE-1364: a company pause cancels every live run and every queued or
+   * deferred wake of the company. Cancelled wakes are not replayed on resume.
+   */
+  async function cancelCompanyPauseWork(companyId: string, reason: string) {
+    const runIds = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(heartbeatRuns.status, [...CANCELLABLE_HEARTBEAT_RUN_STATUSES]),
+        ),
+      )
+      .then((rows) => rows.map((row) => row.id));
+    for (const runId of runIds) {
+      await cancelRunInternal(runId, reason);
+    }
+
+    const now = new Date();
+    const wakeups = await db
+      .update(agentWakeupRequests)
+      .set({ status: "cancelled", finishedAt: now, error: reason, updatedAt: now })
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, companyId),
+          inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution"]),
+          sql`${agentWakeupRequests.runId} is null`,
+        ),
+      )
+      .returning({ id: agentWakeupRequests.id });
+
+    return { runsCancelled: runIds.length, wakeupsCancelled: wakeups.length };
+  }
+
   async function cancelPendingWakeupsForBudgetScope(
     scope: BudgetEnforcementScope,
   ) {
@@ -29686,7 +31405,14 @@ export function heartbeatService(
    * trigger (same attempt, not re-armed or cleared, same agent assignee), so a
    * second call does nothing.
    */
-  async function restoreIssueMonitorForCancelledRun(run: typeof heartbeatRuns.$inferSelect) {
+  async function restoreIssueMonitorForCancelledRun(
+    run: typeof heartbeatRuns.$inferSelect,
+    options: {
+      reason?: "monitor_run_cancelled" | "monitor_run_not_started";
+      refundAttempt?: (timeoutAt: Date | null, nextCheckAt: Date) => boolean;
+    } = {},
+  ) {
+    const reason = options.reason ?? "monitor_run_cancelled";
     const context = parseObject(run.contextSnapshot);
     const issueId = readNonEmptyString(context.issueId);
     const triggeredAttempt = context.monitorAttemptCount;
@@ -29717,11 +31443,16 @@ export function heartbeatService(
     }
     const now = new Date();
     const nextCheckAt = new Date(now.getTime() + CANCELLED_MONITOR_RUN_RECHECK_MS);
+    const previousMonitor = parseIssueExecutionState(issue.executionState)?.monitor ?? null;
+    const timeoutAt = previousMonitor?.timeoutAt ? new Date(previousMonitor.timeoutAt) : null;
+    const attemptCount = !options.refundAttempt || options.refundAttempt(timeoutAt, nextCheckAt)
+      ? triggeredAttempt - 1
+      : triggeredAttempt;
     const patch = buildIssueMonitorRestoredPatch({
       issue,
       policy: normalizeIssueExecutionPolicy(issue.executionPolicy ?? null),
       nextCheckAt,
-      attemptCount: triggeredAttempt - 1,
+      attemptCount,
     });
     if (!patch) return false;
     const restored = await db
@@ -29751,13 +31482,48 @@ export function heartbeatService(
       entityId: issue.id,
       details: {
         identifier: issue.identifier,
-        reason: "monitor_run_cancelled",
+        reason,
         cancelledRunId: run.id,
         nextCheckAt: nextCheckAt.toISOString(),
-        attemptCount: triggeredAttempt - 1,
+        attemptCount,
       },
     });
     return true;
+  }
+
+  /**
+   * GRE-295: a monitor-started run that ended before the provider did any work
+   * (for example an ACP startup deadline that passed while the host slept) used
+   * up the monitor without reaching the agent. When no retry or other run is
+   * queued for the issue, give the monitor back. The attempt is refunded only
+   * while the monitor has a future timeout, so repeated startup failures stay
+   * bounded by that timeout; without one the re-armed check spends its normal
+   * attempt budget.
+   */
+  async function restoreIssueMonitorForUnstartedRun(run: typeof heartbeatRuns.$inferSelect) {
+    if (run.status === "succeeded") return false;
+    const recovery = parseObject(parseObject(run.resultJson).executionRecovery);
+    if (recovery.providerWorkStarted !== false) return false;
+    const context = parseObject(run.contextSnapshot);
+    const issueId = readNonEmptyString(context.issueId);
+    if (!issueId || context.source !== "issue.monitor") return false;
+    const [pending] = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, run.companyId),
+          ne(heartbeatRuns.id, run.id),
+          inArray(heartbeatRuns.status, ["queued", "running", "scheduled_retry"]),
+          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issueId}`,
+        ),
+      )
+      .limit(1);
+    if (pending) return false;
+    return restoreIssueMonitorForCancelledRun(run, {
+      reason: "monitor_run_not_started",
+      refundAttempt: (timeoutAt, nextCheckAt) => timeoutAt !== null && timeoutAt > nextCheckAt,
+    });
   }
 
   function cancellationTerminationGraceMs(
@@ -30062,6 +31828,7 @@ export function heartbeatService(
       }
 
       if (cancellation.updated && cancelled) {
+        await stopAdoptedRunOutputTail(run.id);
         await setWakeupStatus(run.wakeupRequestId, "cancelled", {
           finishedAt: cancelled.finishedAt ?? new Date(),
           error: reason,
@@ -30260,6 +32027,36 @@ export function heartbeatService(
     await cancelPendingWakeupsForBudgetScope(scope);
   }
 
+  /**
+   * An agent stopped by its budget says so on each task it holds (GRE-141).
+   * The task keeps its assignee; the board raises the budget or reassigns it.
+   */
+  async function noticeBudgetHardStop(scope: BudgetEnforcementScope) {
+    if (scope.scopeType !== "agent") return;
+    const agent = await getAgent(scope.scopeId);
+    if (!agent) return;
+    const openIssues = await db
+      .select({ id: issues.id })
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, scope.companyId),
+          eq(issues.assigneeAgentId, scope.scopeId),
+          inArray(issues.status, ["todo", "in_progress"]),
+        ),
+      );
+    for (const issue of openIssues) {
+      await issuesSvc.addComment(
+        issue.id,
+        `Stopped: agent ${agent.name} reached its monthly budget and is paused. ` +
+          "It keeps this task and does no more work on it. " +
+          "To continue, a board member raises the agent's budget on the Costs page or gives the task to another agent.",
+        {},
+        { authorType: "system" },
+      );
+    }
+  }
+
   return {
     waitForRunExecutionDrain: async (
       runId: string,
@@ -30282,10 +32079,25 @@ export function heartbeatService(
       companyId: string,
       agentId?: string,
       limit?: number,
-      options: { summary?: boolean } = {},
+      options: {
+        summary?: boolean;
+        // Optional filters (GRE-794). `since` is inclusive and `before` is
+        // exclusive, both on `createdAt`, so a caller pages back by passing
+        // the oldest `createdAt` of the last page as `before`.
+        statuses?: readonly string[];
+        since?: Date;
+        before?: Date;
+      } = {},
     ) => {
       const safeForLegacyEncoding = await hasUnsafeTextProjectionDatabase();
       const summary = options.summary === true;
+      const conditions = [eq(heartbeatRuns.companyId, companyId)];
+      if (agentId) conditions.push(eq(heartbeatRuns.agentId, agentId));
+      if (options.statuses && options.statuses.length > 0) {
+        conditions.push(inArray(heartbeatRuns.status, [...options.statuses]));
+      }
+      if (options.since) conditions.push(gte(heartbeatRuns.createdAt, options.since));
+      if (options.before) conditions.push(lt(heartbeatRuns.createdAt, options.before));
       const query = db
         .select(
           summary
@@ -30306,14 +32118,7 @@ export function heartbeatService(
                 },
         )
         .from(heartbeatRuns)
-        .where(
-          agentId
-            ? and(
-                eq(heartbeatRuns.companyId, companyId),
-                eq(heartbeatRuns.agentId, agentId),
-              )
-            : eq(heartbeatRuns.companyId, companyId),
-        )
+        .where(conditions.length === 1 ? conditions[0] : and(...conditions))
         .orderBy(desc(heartbeatRuns.createdAt));
 
       const rows = limit ? await query.limit(limit) : await query;
@@ -30371,6 +32176,25 @@ export function heartbeatService(
                 }),
         };
       });
+    },
+
+    // Runs that finished in [since, before), counted by status (GRE-1325).
+    // One grouped query, so a week of runs reads in one call however many there are.
+    countFinishedByStatus: async (
+      companyId: string,
+      options: { agentId?: string; since: Date; before: Date },
+    ) => {
+      const conditions = [
+        eq(heartbeatRuns.companyId, companyId),
+        gte(heartbeatRuns.finishedAt, options.since),
+        lt(heartbeatRuns.finishedAt, options.before),
+      ];
+      if (options.agentId) conditions.push(eq(heartbeatRuns.agentId, options.agentId));
+      return db
+        .select({ status: heartbeatRuns.status, count: sql<number>`count(*)::int` })
+        .from(heartbeatRuns)
+        .where(and(...conditions))
+        .groupBy(heartbeatRuns.status);
     },
 
     getRun,
@@ -30567,6 +32391,7 @@ export function heartbeatService(
 
     prepareHotRestartShutdown,
     reconcileHotRestartAdoption,
+    sweepStaleRunOutputFiles,
     recoverNativeRunsAfterRestart,
     reapOrphanedRuns,
     sweepOrphanedActiveLeases,
@@ -30607,6 +32432,17 @@ export function heartbeatService(
       return scheduleBoundedRetryForRun(run, agent, opts);
     },
 
+    repairAndResumeSetupFailure: async (
+      runId: string,
+      opts?: { now?: Date; git?: GitRunner },
+    ) => {
+      const run = await getRun(runId, { unsafeFullResultJson: true });
+      if (!run) return { outcome: "skipped" as const };
+      const agent = await getAgent(run.agentId);
+      if (!agent) return { outcome: "skipped" as const };
+      return repairAndResumeSetupFailure(run, agent, opts);
+    },
+
     reconcileStrandedAssignedIssues,
     recoverPendingSessionGoalActions,
     recoverActiveSessionGoals,
@@ -30622,6 +32458,8 @@ export function heartbeatService(
 
     reconcileResolvedDependencyWakes,
 
+    reconcileOverdueHumanWaits,
+
     scanSilentActiveRuns,
     stopSilentRuns,
 
@@ -30630,7 +32468,7 @@ export function heartbeatService(
     buildRunOutputSilence,
 
     tickTimers: async (now = new Date()) => {
-      if ((await getSchedulingSuppression()).suppressed) {
+      if (hostSettlingAfterResume() || (await getSchedulingSuppression()).suppressed) {
         return {
           checked: 0,
           enqueued: 0,
@@ -30731,6 +32569,8 @@ export function heartbeatService(
       cancelInvocationsForAgentsInternal(agentIds, reason),
 
     cancelBudgetScopeWork,
+    cancelCompanyPauseWork,
+    noticeBudgetHardStop,
 
     getRunIssueSummary: async (runId: string) => {
       const [run] = await db

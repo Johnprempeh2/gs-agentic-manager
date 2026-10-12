@@ -74,7 +74,17 @@ export function ActiveAgentsPanel({
   });
   usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
 
-  const runs = liveRuns ?? [];
+  // One card per task, the newest run: four finished runs of the same chat
+  // read as four identical cards.
+  const runs = useMemo(() => {
+    const seenIssues = new Set<string>();
+    return (liveRuns ?? []).filter((run) => {
+      if (!run.issueId) return true;
+      if (seenIssues.has(run.issueId)) return false;
+      seenIssues.add(run.issueId);
+      return true;
+    });
+  }, [liveRuns]);
   const visibleRuns = useMemo(() => runs.slice(0, cardLimit), [cardLimit, runs]);
   const hiddenRunCount = Math.max(0, runs.length - visibleRuns.length);
   const visibleIssueIds = useMemo(
@@ -187,8 +197,8 @@ export const AgentRunCard = memo(function AgentRunCard({
       <div className={cn("flex shrink-0 flex-col gap-3 p-3", showTranscript && "border-b border-border/60")}>
         <Link
           to={runUrl}
-          title={`${run.agentName} — ${statusLabel} · ${timestamp}`}
-          aria-label={`${run.agentName} — ${statusLabel}. View run`}
+          title={`${run.agentName}: ${statusLabel} · ${timestamp}`}
+          aria-label={`${run.agentName}: ${statusLabel}. View run`}
           className="flex min-w-0 items-center gap-2 rounded-md text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <AgentIdentity agent={{ id: run.agentId, name: run.agentName, appearance: run.agentAppearance }} size="sm" className="gap-2 font-medium" />

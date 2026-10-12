@@ -88,6 +88,8 @@ describe("instanceSettingsService operator setting defaults", () => {
     const svc = instanceSettingsService(db, { runtimeEnv: {} });
     const general = await svc.getGeneral();
     expect(general.feedbackDataSharingPreference).toBe("prompt");
+    expect(general.teamCatalogFilter).toBe("greatstone");
+    expect(general.teamCatalogAddMode).toBe("request");
   });
 
   it("overlays reads but never persists the operator value", async () => {

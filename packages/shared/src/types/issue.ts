@@ -33,6 +33,7 @@ import type {
   IssueThreadInteractionResolverPolicyProvenance,
   IssueThreadInteractionStatus,
   IssueStatus,
+  GoalKind,
 } from "../constants.js";
 import type { Goal } from "./goal.js";
 import type { Project, ProjectWorkspace } from "./project.js";
@@ -597,6 +598,13 @@ export interface IssueScheduledRetry {
   errorCode?: string | null;
 }
 
+/** The task's most recent finished run, so list rows can say why it stopped (GRE-403). */
+export interface IssueLatestRun {
+  status: string;
+  errorCode: string | null;
+  finishedAt: Date | string | null;
+}
+
 export type IssueRetryNowOutcome =
   | "promoted"
   | "already_promoted"
@@ -784,6 +792,8 @@ export interface Issue {
   projectId: string | null;
   projectWorkspaceId: string | null;
   goalId: string | null;
+  /** Kind of the linked goal; list reads include it so rows can show strategic work. */
+  goalKind?: GoalKind | null;
   parentId: string | null;
   ancestors?: IssueAncestor[];
   title: string;
@@ -795,6 +805,8 @@ export interface Issue {
   reviewPolicy: IssueReviewPolicy | null;
   assigneeAgentId: string | null;
   assigneeUserId: string | null;
+  /** The team the task was assigned to (GRE-437); the assignee is its lead. */
+  teamId?: string | null;
   checkoutRunId: string | null;
   executionRunId: string | null;
   executionAgentNameKey: string | null;
@@ -827,6 +839,18 @@ export interface Issue {
   completedAt: Date | null;
   cancelledAt: Date | null;
   hiddenAt: Date | null;
+  /** "Not now": set while the task is tabled (parked, no agent wakes). */
+  tabledAt?: Date | null;
+  /** Optional return date; null means tabled until brought back. */
+  tabledUntil?: Date | null;
+  tabledByUserId?: string | null;
+  /** Status the task returns to when it comes back. */
+  tabledFromStatus?: IssueStatus | null;
+  /**
+   * Deadline "YYYY-MM-DD" of a plan action (GRE-1188). Only tasks under a
+   * plan objective carry one; the board lists the overdue ones.
+   */
+  dueDate?: string | null;
   sourceTrust?: SourceTrustMetadata | null;
   labelIds?: string[];
   labels?: IssueLabel[];
@@ -843,6 +867,7 @@ export interface Issue {
   executionBlocker?: ExecutionBlocker | null;
   watchdog?: IssueWatchdogSummary | null;
   scheduledRetry?: IssueScheduledRetry | null;
+  latestRun?: IssueLatestRun | null;
   liveDescendantCount?: number;
   relatedWork?: IssueRelatedWorkSummary;
   referencedIssueIdentifiers?: string[];
@@ -857,6 +882,10 @@ export interface Issue {
   externalChannelBinding?: import("./chat-channels.js").ExternalChannelBindingSummary | null;
   mentionedProjects?: Project[];
   myLastTouchAt?: Date | null;
+  /** When the signed-in user last commented; only on lists asked for with a user context. */
+  myLastCommentAt?: Date | null;
+  /** When the signed-in user last opened the task; same lists as myLastCommentAt. */
+  myLastReadAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   lastActivityAt?: Date | null;
   isUnreadForMe?: boolean;
@@ -876,6 +905,7 @@ export type CompactIssue = Pick<
   | "projectId"
   | "projectWorkspaceId"
   | "goalId"
+  | "goalKind"
   | "parentId"
   | "title"
   | "description"
@@ -911,9 +941,17 @@ export type CompactIssue = Pick<
   blockerAttention?: IssueBlockerAttention;
   reviewAttention?: IssueReviewAttention;
   blockedInboxAttention?: IssueBlockedInboxAttention | null;
+  unblockDescriptor?: IssueUnblockDescriptor | null;
   scheduledRetry?: IssueScheduledRetry | null;
+  latestRun?: IssueLatestRun | null;
+  /** Lets list rows show the waiting clock without the full monitor object. */
+  monitorNextCheckAt?: Date | null;
   liveDescendantCount?: number;
   myLastTouchAt?: Date | null;
+  /** When the signed-in user last commented; only on lists asked for with a user context. */
+  myLastCommentAt?: Date | null;
+  /** When the signed-in user last opened the task; same lists as myLastCommentAt. */
+  myLastReadAt?: Date | null;
   lastExternalCommentAt?: Date | null;
   lastActivityAt?: Date | null;
   isUnreadForMe?: boolean;
@@ -1221,6 +1259,14 @@ export interface AskUserQuestionsPayload {
   questionSet?: PaperclipQuestionSetPayload;
   /** Correlates a recovered interaction with the live runtime request it replaces. */
   runtimeRequestId?: string | null;
+  /** Needs the board user at the computer (GRE-450). */
+  atDesk?: InteractionAtDesk | null;
+}
+
+/** A card that needs the board user at the computer, not on the phone (GRE-450). */
+export interface InteractionAtDesk {
+  /** The exact command to run, shown in a copy box. */
+  command?: string | null;
 }
 
 export interface AskUserQuestionsAnswer {
@@ -1388,6 +1434,8 @@ export interface RequestConfirmationPayload {
   toolAction?: RequestConfirmationToolActionPayload;
   secretProposal?: RequestConfirmationSecretProposalPayload;
   connectionAuthorization?: RequestConfirmationConnectionAuthorizationPayload;
+  /** Needs the board user at the computer (GRE-450). */
+  atDesk?: InteractionAtDesk | null;
 }
 
 export interface RequestCheckboxConfirmationOption {

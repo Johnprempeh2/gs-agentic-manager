@@ -29,15 +29,18 @@ import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
+import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsList";
+import { AgentPipelinesAccessSection } from "../components/AgentPipelinesAccessSection";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { AgentMemoryRightsToggles } from "@/components/AgentMemoryRightsToggles";
 import { useAdapterCapabilities } from "@/adapters/use-adapter-capabilities";
 import { redactCommandText as redactCommandSecretText } from "@greatstone/adapter-utils";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { toolsApi } from "../api/tools";
-import { getUIAdapter, buildTranscript, onAdapterChange } from "../adapters";
+import { getUIAdapter, buildTranscript, onAdapterChange, rebrandRunLogText } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
@@ -59,7 +62,7 @@ import { SourceResolvedFoldBadge } from "../components/SourceResolvedFoldBadge";
 import { readSourceResolvedWatchdogFold } from "../lib/source-resolved-watchdog-fold";
 import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
-import { formatDate, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
+import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
@@ -140,6 +143,7 @@ import {
   parseAgentDetailView,
   type AgentDetailView,
 } from "./agent-detail-navigation";
+import { ErrorState } from "../components/ErrorState";
 
 const runStatusIcons: Record<string, { icon: typeof CheckCircle2; color: string }> = {
   succeeded: { icon: CheckCircle2, color: "text-green-600 dark:text-green-400" },
@@ -166,7 +170,7 @@ function formatOrgChainHealthPath(agent: AgentDetailRecord) {
 }
 
 function redactPathText(value: string, censorUsernameInLogs: boolean) {
-  return redactHomePathUserSegments(value, { enabled: censorUsernameInLogs });
+  return redactHomePathUserSegments(rebrandRunLogText(value), { enabled: censorUsernameInLogs });
 }
 
 function redactPathValue<T>(value: T, censorUsernameInLogs: boolean): T {
@@ -639,7 +643,7 @@ function WorkspaceOperationLogViewer({
               {chunks.map((chunk, index) => (
                 <div key={`${chunk.ts}-${index}`} className="flex gap-2">
                   <span className="shrink-0 text-neutral-500">
-                    {new Date(chunk.ts).toLocaleTimeString("en-US", { hour12: false })}
+                    {formatTime(chunk.ts)}
                   </span>
                   <span
                     className={cn(
@@ -818,7 +822,7 @@ export function AgentDetail() {
     if (!configDirty) return true;
     return confirmAction(DISCARD_AGENT_CONFIG_CHANGES_OPTIONS);
   }, [configDirty, confirmAction]);
-  const { data: agent, isLoading, error } = useQuery<AgentDetailRecord>({
+  const { data: agent, isLoading, error, refetch } = useQuery<AgentDetailRecord>({
     queryKey: [...queryKeys.agents.detail(routeAgentRef), lookupCompanyId ?? null],
     queryFn: () => agentsApi.get(routeAgentRef, lookupCompanyId),
     enabled: canFetchAgent,
@@ -1188,7 +1192,7 @@ export function AgentDetail() {
   }, [configDirty, prepareAgentNavigation]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <p className="text-sm text-destructive">{error.message}</p>;
+  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
   if (!agent) return null;
   if (!urlRunId && legacyAuditSection) {
     return <Navigate to={agentScopedAuditHref(agent.id, legacyAuditSection)} replace />;
@@ -1366,7 +1370,7 @@ export function AgentDetail() {
           }
         >
           Ships with GS Agentic Manager and powers <strong>{builtInFeatureLabel}</strong>. Configure it like
-          any agent — model, instructions, budget. It can be paused but not deleted; pausing it
+          any agent: model, instructions, budget. It can be paused but not deleted; pausing it
           pauses {builtInFeatureLabel}.
         </InlineBanner>
       )}
@@ -1528,7 +1532,7 @@ export function AgentDetail() {
         />
       )}
 
-      {showConfigActionBar && <footer className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-4">
+      {showConfigActionBar && <footer className="sticky bottom-0 z-raised flex flex-wrap items-center justify-between gap-3 border-t border-border bg-background py-4">
         <p role="status" className="text-xs text-muted-foreground">{configSaving ? "Saving changes…" : configDirty ? "You have unsaved changes." : ""}</p>
         <div className="flex gap-2">
           <Button variant="ghost" disabled={!configDirty || configSaving} onClick={() => cancelConfigActionRef.current?.()}>Discard</Button>
@@ -2203,6 +2207,16 @@ export function ConfigurationTab({
               disabled={updatePermissions.isPending}
             />
           </div>
+          <AgentMemoryRightsToggles
+            companyId={companyId}
+            agentId={agent.id}
+            grants={agent.access?.grants ?? []}
+            onChanged={() => {
+              queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
+              queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
+            }}
+            onError={(message) => pushToast({ title: "Memory rights not changed", body: message, tone: "error" })}
+          />
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
               <div>Can assign tasks</div>
@@ -2224,6 +2238,12 @@ export function ConfigurationTab({
           </div>
         </div>
       </div> : null}
+
+      {content === "permissions" && companyId ? (
+        <AgentPipelinesAccessSection companyId={companyId} agentId={agent.id} agentName={agent.name} />
+      ) : null}
+
+      {content === "permissions" ? <AgentPermissionGrantsList grants={agent.access?.grants ?? []} /> : null}
     </div>
   );
 }
@@ -2796,6 +2816,8 @@ export function PromptsTab({
             <div className="flex items-center gap-1">
               {!showNewFileInput && (
                 <Button
+                  aria-label="New file"
+                  title="New file"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -2807,6 +2829,8 @@ export function PromptsTab({
               )}
               {isMobile && (
                 <Button
+                  aria-label="Close files"
+                  title="Close files"
                   type="button"
                   size="icon"
                   variant="ghost"
@@ -2899,7 +2923,7 @@ export function PromptsTab({
                       </span>
                     </TooltipTrigger>
                     <TooltipContent side="right" sideOffset={4}>
-                      Legacy inline prompt — this deprecated virtual file preserves the old promptTemplate content
+                      Legacy inline prompt: this deprecated virtual file preserves the old promptTemplate content
                     </TooltipContent>
                   </Tooltip>
                 );
@@ -2926,6 +2950,8 @@ export function PromptsTab({
             <div className="flex items-center gap-2 min-w-0">
               {isMobile && (
                 <Button
+                  aria-label="Show files"
+                  title="Show files"
                   type="button"
                   size="icon"
                   variant="outline"
@@ -3445,9 +3471,8 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
     return () => clearInterval(id);
   }, [isRunning, run.startedAt]);
 
-  const timeFormat: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false };
-  const startTime = run.startedAt ? new Date(run.startedAt).toLocaleTimeString("en-US", timeFormat) : null;
-  const endTime = run.finishedAt ? new Date(run.finishedAt).toLocaleTimeString("en-US", timeFormat) : null;
+  const startTime = run.startedAt ? formatTime(run.startedAt) : null;
+  const endTime = run.finishedAt ? formatTime(run.finishedAt) : null;
   const durationSec = run.startedAt && run.finishedAt
     ? Math.round((new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime()) / 1000)
     : null;
@@ -3822,7 +3847,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
       {run.stderrExcerpt && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{rebrandRunLogText(run.stderrExcerpt)}</pre>
         </div>
       )}
 
@@ -3830,7 +3855,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
       {run.stdoutExcerpt && !run.logRef && (
         <div className="space-y-1">
           <span className="text-xs font-medium text-muted-foreground">stdout</span>
-          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+          <pre className="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{rebrandRunLogText(run.stdoutExcerpt)}</pre>
         </div>
       )}
 
@@ -4426,9 +4451,9 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
               {loadingMoreLog ? "Loading..." : "Load more log"}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Showing the first {Math.round(logOffset / 1024).toLocaleString("en-US")} KB
+              Showing the first {formatNumber(Math.round(logOffset / 1024))} KB
               {typeof run.logBytes === "number" && run.logBytes > 0
-                ? ` of ${Math.round(run.logBytes / 1024).toLocaleString("en-US")} KB`
+                ? ` of ${formatNumber(Math.round(run.logBytes / 1024))} KB`
                 : ""}
             </span>
           </div>
@@ -4490,7 +4515,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
               return (
                 <div key={evt.id} className="flex gap-2">
                   <span className="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
-                    {new Date(evt.createdAt).toLocaleTimeString("en-US", { hour12: false })}
+                    {formatTime(evt.createdAt)}
                   </span>
                   <span className={cn("shrink-0 w-14", evt.stream ? (streamColors[evt.stream] ?? "text-neutral-500") : "text-neutral-500")}>
                     {evt.stream ? `[${evt.stream}]` : ""}
@@ -4565,7 +4590,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
       {newToken && (
         <div className="border border-yellow-300 dark:border-yellow-600/40 bg-yellow-50 dark:bg-yellow-500/5 rounded-lg p-4 space-y-2">
           <p className="text-sm font-medium text-yellow-700 dark:text-yellow-400">
-            API key created — copy it now, it will not be shown again.
+            API key created. Copy it now, it will not be shown again.
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-neutral-100 dark:bg-neutral-950 rounded px-3 py-1.5 text-xs font-mono text-green-700 dark:text-green-300 truncate">

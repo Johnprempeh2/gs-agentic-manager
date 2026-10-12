@@ -22,6 +22,7 @@ import {
 import { heartbeatService } from "../services/heartbeat.ts";
 import { runningProcesses } from "../adapters/index.ts";
 import { drainHeartbeatRunsToQuiescence } from "./helpers/drain-heartbeat-runs.js";
+import { LEGACY_BOARD_USER_ID, setBoardIdentityDeploymentMode } from "../services/board-identity.ts";
 
 const mockAdapterExecute = vi.hoisted(() =>
   vi.fn(async () => ({
@@ -118,6 +119,7 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
     await db.delete(companySkills);
     await db.delete(companyMemberships);
     await db.delete(companies);
+    setBoardIdentityDeploymentMode("local_trusted");
   });
 
   afterAll(async () => {
@@ -395,6 +397,65 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
     },
   );
 
+  it("starts a run for a local-board issue as the primary owner once sign-in is on", async () => {
+    const { companyId, agentId, ownerUserId } = await seedCompany();
+    // local-board retired: still an owner row, but suspended.
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, membershipRole: "owner", status: "suspended",
+    });
+    const issueId = randomUUID();
+    await db.insert(issues).values({
+      id: issueId, companyId, title: "Routine work still on the board", status: "todo",
+      assigneeAgentId: agentId, responsibleUserId: LEGACY_BOARD_USER_ID,
+    });
+
+    setBoardIdentityDeploymentMode("authenticated");
+    const wakeReason = "issue_blockers_resolved";
+    const run = await heartbeat.wakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: wakeReason,
+      payload: { issueId },
+      requestedByActorType: "system",
+      requestedByActorId: null,
+      contextSnapshot: { issueId, taskId: issueId, wakeReason },
+    });
+
+    expect(run).not.toBeNull();
+    expect(run?.responsibleUserId).toBe(ownerUserId);
+    const completed = await waitForRun(db, run!.id);
+    expect(completed?.status).toBe("succeeded");
+    expect(completed?.responsibleUserId).toBe(ownerUserId);
+    await drainHeartbeatRunsToQuiescence(db, heartbeat);
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.companyId, companyId));
+    expect(runs.every((row) => row.responsibleUserId === ownerUserId)).toBe(true);
+  });
+
+  it("keeps local-board as the responsible user in local_trusted mode", async () => {
+    const { companyId, agentId } = await seedCompany();
+    await db.insert(companyMemberships).values({
+      companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, membershipRole: "owner", status: "active",
+    });
+    const issueId = randomUUID();
+    await db.insert(issues).values({
+      id: issueId, companyId, title: "Board work", status: "todo",
+      assigneeAgentId: agentId, responsibleUserId: LEGACY_BOARD_USER_ID,
+    });
+    const wakeReason = "issue_blockers_resolved";
+    const run = await heartbeat.wakeup(agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: wakeReason,
+      payload: { issueId },
+      requestedByActorType: "system",
+      requestedByActorId: null,
+      contextSnapshot: { issueId, taskId: issueId, wakeReason },
+    });
+    expect(run).not.toBeNull();
+    const completed = await waitForRun(db, run!.id);
+    expect(completed?.responsibleUserId).toBe(LEGACY_BOARD_USER_ID);
+  });
+
   it("uses the triggering user for manual UI/API runs", async () => {
     const { agentId } = await seedCompany();
     const triggeringUserId = `manual-${randomUUID()}`;
@@ -424,6 +485,83 @@ describeEmbeddedPostgres("heartbeat responsible-user invariant", () => {
     expect(run).not.toBeNull();
     const completed = await waitForRun(db, run!.id);
     expect(completed?.responsibleUserId).toBe(ownerUserId);
+  });
+
+  // The wake admission transaction resolves the run's responsible user. Those
+  // reads must go through the transaction: a read through the outer pool needs
+  // a second connection while the first is held, and a burst of such wakes
+  // (one per pool slot) left every connection idle in transaction for good.
+  // A one-connection pool turns that into a deterministic hang.
+  describe("on a single pooled connection", () => {
+    async function wakeOnSingleConnection(
+      agentId: string,
+      opts: Parameters<ReturnType<typeof heartbeatService>["wakeup"]>[1],
+    ) {
+      const singleDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+      const singleHeartbeat = heartbeatService(singleDb);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const run = await Promise.race([
+          singleHeartbeat.wakeup(agentId, opts),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error("wake admission waited for a second pooled connection")),
+              10_000,
+            );
+          }),
+        ]);
+        await drainHeartbeatRunsToQuiescence(singleDb, singleHeartbeat);
+        return run;
+      } finally {
+        clearTimeout(timer);
+        // Ends a stuck admission transaction too, so teardown is not blocked
+        // by its row locks.
+        await singleDb.$client.end({ timeout: 1 });
+      }
+    }
+
+    it("admits an issue-scoped system wake", async () => {
+      const { companyId, agentId } = await seedCompany();
+      const issueResponsibleUserId = `issue-owner-${randomUUID()}`;
+      const issueId = randomUUID();
+      await db.insert(issues).values({
+        id: issueId,
+        companyId,
+        title: "Single-connection admission",
+        status: "todo",
+        assigneeAgentId: agentId,
+        responsibleUserId: issueResponsibleUserId,
+      });
+
+      const run = await wakeOnSingleConnection(agentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "issue_assigned",
+        payload: { issueId },
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        contextSnapshot: { issueId, taskId: issueId, wakeReason: "issue_assigned" },
+      });
+
+      expect(run).not.toBeNull();
+      expect(run!.responsibleUserId).toBe(issueResponsibleUserId);
+    }, 30_000);
+
+    it("admits a system wake without an issue through the company default", async () => {
+      const { agentId, ownerUserId } = await seedCompany();
+
+      const run = await wakeOnSingleConnection(agentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: "scheduled_maintenance",
+        requestedByActorType: "system",
+        requestedByActorId: null,
+        contextSnapshot: { wakeReason: "scheduled_maintenance" },
+      });
+
+      expect(run).not.toBeNull();
+      expect(run!.responsibleUserId).toBe(ownerUserId);
+    }, 30_000);
   });
 
   it("does not use an issue creator as an implicit responsible user for automated issue runs", async () => {

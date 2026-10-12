@@ -152,7 +152,7 @@ describe("IssueRecoveryActionCard", () => {
     expect(node.textContent).toContain("RECOVERY NEEDED");
     expect(node.textContent).toContain("Missing Disposition");
     expect(node.textContent).toContain(
-      "This task's run finished, but no next step was chosen. Choose what happens next — try the task again, mark it done, or send it for review.",
+      "This task's run finished, but no next step was chosen. Choose what happens next: try the task again, mark it done, or send it for review.",
     );
     expect(node.textContent).toContain("An agent will be asked to choose the next step");
     expect(node.textContent).toContain("ClaudeCoder");
@@ -242,9 +242,9 @@ describe("IssueRecoveryActionCard", () => {
     );
   });
 
-  it("falls back to an em dash when no evidence summary is available", () => {
+  it("falls back to None when no evidence summary is available", () => {
     const node = render(<IssueRecoveryActionCard action={buildAction({ evidence: {} })} />);
-    expect(node.textContent).toContain("—");
+    expect(node.textContent).toContain("None");
   });
 
   it("renders workspace_validation with its kind attribute and the recorded next action", () => {
@@ -294,7 +294,7 @@ describe("IssueRecoveryActionCard", () => {
     expect(summary?.className).toContain("text-xs");
     expect(summary?.className).not.toContain("font-mono");
     expect(node.textContent).toContain(
-      "To get it moving, choose what happens next — try the task again, mark it done, or send it for review.",
+      "To get it moving, choose what happens next: try the task again, mark it done, or send it for review.",
     );
   });
 
@@ -781,7 +781,7 @@ describe("IssueRecoveryActionCard repair workspace (quarantine_restore)", () => 
     );
     expect(trigger?.disabled).toBe(true);
     expect(disabled?.textContent).toContain(
-      "Held by PAP-9001 — re-issue on an isolated workspace instead.",
+      "Held by PAP-9001. Re-issue on an isolated workspace instead.",
     );
     // Clicking the disabled control never fires the repair.
     click(trigger ?? null);
@@ -931,7 +931,7 @@ describe("IssueRecoveryActionCard owner-sticky retry lineage", () => {
     expect(recoveryOwner?.textContent).toContain("repairs the next step only");
     expect(recoveryOwner?.textContent).not.toContain("CodexCoder");
     expect(node.textContent).toContain(
-      "the task itself still belongs to its original owner",
+      "The task itself still belongs to its original owner",
     );
   });
 
@@ -941,7 +941,7 @@ describe("IssueRecoveryActionCard owner-sticky retry lineage", () => {
     );
     expect(
       node.querySelector("[data-testid='recovery-recovery-owner']")?.textContent,
-    ).toContain("Original owner — retrying itself");
+    ).toContain("Original owner (retrying itself)");
   });
 
   it("reports the spent source attempts once the manager lane opens", () => {
@@ -984,7 +984,7 @@ describe("IssueRecoveryActionCard owner-sticky retry lineage", () => {
     );
     // The follow-up line must not keep promising a retry that will never run, and the
     // generic timeout chip must not reintroduce a stale due time next to it.
-    expect(node.textContent).toContain("Automatic retries are finished — a decision is needed");
+    expect(node.textContent).toContain("Automatic retries are finished. A decision is needed");
     expect(node.textContent).not.toContain("GS Agentic Manager is retrying the original owner");
     expect(node.textContent).not.toContain("Times out");
   });

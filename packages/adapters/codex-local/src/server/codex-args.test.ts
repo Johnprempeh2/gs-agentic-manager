@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildCodexExecArgs } from "./codex-args.js";
 
+const LINKED_APPS_ARGS = [
+  "-c",
+  "apps._default.destructive_enabled=false",
+  "-c",
+  "apps._default.open_world_enabled=false",
+];
+
 describe("buildCodexExecArgs", () => {
   it.each([null, "existing-session"])("defaults direct and resumed launches to full bypass (%s)", (resumeSessionId) => {
     const { args } = buildCodexExecArgs({}, { resumeSessionId });
@@ -31,6 +38,7 @@ describe("buildCodexExecArgs", () => {
       'service_tier="fast"',
       "-c",
       "features.fast_mode=true",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -69,6 +77,7 @@ describe("buildCodexExecArgs", () => {
       'service_tier="fast"',
       "-c",
       "features.fast_mode=true",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -92,6 +101,7 @@ describe("buildCodexExecArgs", () => {
       'service_tier="fast"',
       "-c",
       "features.fast_mode=true",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -115,6 +125,7 @@ describe("buildCodexExecArgs", () => {
       'service_tier="fast"',
       "-c",
       "features.fast_mode=true",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -135,6 +146,7 @@ describe("buildCodexExecArgs", () => {
       'service_tier="fast"',
       "-c",
       "features.fast_mode=true",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -156,6 +168,7 @@ describe("buildCodexExecArgs", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       "--model",
       "gpt-5",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -174,6 +187,7 @@ describe("buildCodexExecArgs", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       "--model",
       "gpt-5.4-mini",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -193,6 +207,7 @@ describe("buildCodexExecArgs", () => {
       "--dangerously-bypass-approvals-and-sandbox",
       "--model",
       "gpt-5.5",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -214,6 +229,7 @@ describe("buildCodexExecArgs", () => {
       "--model",
       "gpt-5.5",
       "--skip-git-repo-check",
+      ...LINKED_APPS_ARGS,
       "-",
     ]);
   });
@@ -259,7 +275,7 @@ describe("buildCodexExecArgs", () => {
     const { args } = buildCodexExecArgs({ extraArgs });
     expect(args).not.toContain('sandbox_mode="workspace-write"');
     expect(args).not.toContain("sandbox_workspace_write.network_access=true");
-    expect(args).toEqual(["exec", "--json", ...extraArgs, "-"]);
+    expect(args).toEqual(["exec", "--json", ...extraArgs, ...LINKED_APPS_ARGS, "-"]);
   });
 
   it("preserves an explicit network denial after defaults", () => {
@@ -275,7 +291,50 @@ describe("buildCodexExecArgs", () => {
 
   it("preserves the existing explicit bypass configuration", () => {
     const { args } = buildCodexExecArgs({ dangerouslyBypassApprovalsAndSandbox: true });
-    expect(args).toEqual(["exec", "--json", "--dangerously-bypass-approvals-and-sandbox", "-"]);
+    expect(args).toEqual(["exec", "--json", "--dangerously-bypass-approvals-and-sandbox", ...LINKED_APPS_ARGS, "-"]);
+  });
+
+  describe("linked ChatGPT apps (GRE-798)", () => {
+    // Codex reads repeated `-c` keys last-wins, so the effective value is the last one.
+    function lastConfigValue(args: string[], key: string): string | undefined {
+      const values = args.flatMap((arg, i) => {
+        const raw = args[i - 1] === "-c" ? arg : /^(?:--config=|-c=)(.*)$/.exec(arg)?.[1];
+        const match = raw ? new RegExp(`^${key.replace(/\./g, "\\.")}\\s*=\\s*(.*)$`).exec(raw) : null;
+        return match ? [match[1]] : [];
+      });
+      return values.at(-1);
+    }
+
+    it.each([
+      ["default bypass", {}, {}],
+      ["resumed session", {}, { resumeSessionId: "existing-session" }],
+      ["sandboxed (no bypass)", { dangerouslyBypassApprovalsAndSandbox: false }, {}],
+      ["network disabled", {}, { networkAccess: false }],
+    ])("turns off send/write app tools for a managed run (%s)", (_label, config, options) => {
+      const { args } = buildCodexExecArgs(config, options);
+      expect(lastConfigValue(args, "apps._default.destructive_enabled")).toBe("false");
+      expect(lastConfigValue(args, "apps._default.open_world_enabled")).toBe("false");
+    });
+
+    it("keeps linked apps on so read-only tools still work", () => {
+      const { args } = buildCodexExecArgs({});
+      expect(lastConfigValue(args, "apps._default.enabled")).toBeUndefined();
+      expect(lastConfigValue(args, "features.apps")).toBeUndefined();
+    });
+
+    it("keeps the bypass default so other Codex tools are unchanged", () => {
+      const { args } = buildCodexExecArgs({});
+      expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    });
+
+    it.each([
+      [["-c", "apps._default.destructive_enabled=true", "-c", "apps._default.open_world_enabled=true"]],
+      [["--config=apps._default.destructive_enabled=true", "-c=apps._default.open_world_enabled=true"]],
+    ])("wins over operator extraArgs that re-enable sends %j", (extraArgs) => {
+      const { args } = buildCodexExecArgs({ extraArgs });
+      expect(lastConfigValue(args, "apps._default.destructive_enabled")).toBe("false");
+      expect(lastConfigValue(args, "apps._default.open_world_enabled")).toBe("false");
+    });
   });
 
 });

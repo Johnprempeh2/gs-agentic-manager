@@ -167,7 +167,7 @@ export function PluginSettings() {
     <div className="max-w-6xl space-y-6">
       <div className="flex items-center gap-4">
         <Link to="/company/settings/instance/plugins">
-          <Button variant="outline" size="icon" className="h-8 w-8">
+          <Button aria-label="Back to plugins" title="Back to plugins" variant="outline" size="icon" className="h-8 w-8">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
@@ -316,7 +316,7 @@ export function PluginSettings() {
                             </div>
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">PID</span>
-                              <span className="font-mono text-xs">{dashboardData.worker.pid ?? "—"}</span>
+                              <span className="font-mono text-xs">{dashboardData.worker.pid ?? "None"}</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-muted-foreground">Uptime</span>
@@ -1144,7 +1144,7 @@ function PluginConfigForm({ pluginId, companyId, schema, initialValues, isLoadin
  * Format an uptime value (in milliseconds) to a human-readable string.
  */
 function formatUptime(uptimeMs: number | null): string {
-  if (uptimeMs == null) return "—";
+  if (uptimeMs == null) return "None";
   const totalSeconds = Math.floor(uptimeMs / 1000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);

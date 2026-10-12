@@ -10,10 +10,13 @@ import {
   Clock3,
   Link2,
   Loader2,
+  Mail,
   MoreHorizontal,
   PauseCircle,
+  Plus,
   Search,
   ServerCog,
+  Stethoscope,
   Trash2,
 } from "lucide-react";
 import type { ToolApplication, ToolConnection } from "@greatstone/shared";
@@ -23,6 +26,7 @@ import {
   getAppStoreDefinition,
   isToolConnectionAttentionHealth,
   aiSubscriptionNeedsIsolatedLogin,
+  aiCredentialExpired,
 } from "@greatstone/shared";
 import { useNavigate } from "@/lib/router";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
@@ -39,6 +43,7 @@ import {
   type ChatProvider,
 } from "@/api/chatEndpoints";
 import { accessApi } from "@/api/access";
+import { mailboxesApi } from "@/api/mailboxes";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +64,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/StatusBadge";
 import { buildCompanyUserProfileMap } from "@/lib/company-members";
 import { AppLogo } from "./AppLogo";
 import {
@@ -81,6 +87,12 @@ import {
   connectionOwnerProfile,
   type ConnectionOwnerProfile,
 } from "./connection-owner";
+import {
+  connectionCheckedLabel,
+  connectionHealthBadge,
+  startOAuthReconnect,
+} from "./connection-health";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 type ConnectorRowModel = {
   key: string;
@@ -110,6 +122,17 @@ type ConnectionRemovalTarget = {
   remainingConnectionCount: number;
 
 };
+
+type ResumeTarget =
+  | { kind: "chat"; id: string }
+  | { kind: "tool"; id: string; status?: ToolConnection["status"]; pauseSuspended?: boolean };
+
+/** Which part of the page a card renders in; it shows only that part's accounts. */
+type CardSection = "connected" | "unfinished" | "available";
+
+function isUnfinishedEndpoint(endpoint: ChatEndpoint): boolean {
+  return endpoint.status === "draft" || endpoint.status === "verifying";
+}
 
 function chatProviderForSlug(slug: string): ChatProvider | null {
   const method = getAppStoreDefinition(slug)?.methods.find(
@@ -163,9 +186,20 @@ function additionalConnectionHref(
   return `${path}?${params.toString()}`;
 }
 
-function connectionState(connection: ToolConnection): ConnectionState {
+function connectionState(connection: ToolConnection, companyPaused = false): ConnectionState {
   if (isRetiredComposioConnection(connection)) {
     return { kind: "attention", label: "Retired", message: RETIRED_COMPOSIO_MESSAGE };
+  }
+  // GRE-1364: a company pause turns connections off; each comes back only
+  // through a health-checked re-enable, never a plain enable.
+  if (connection.pauseSuspendedAt) {
+    return {
+      kind: "paused",
+      label: "Turned off",
+      message: companyPaused
+        ? "Turned off by company pause. Resume the organization before you re-enable it."
+        : "Turned off by company pause. Re-enable runs a health check first.",
+    };
   }
   if (connection.status === "draft") {
     return {
@@ -178,7 +212,14 @@ function connectionState(connection: ToolConnection): ConnectionState {
     return {
       kind: "paused",
       label: "Paused",
-      message: "Agents can’t use this account right now.",
+      message: "This connection is paused. Agents can’t use it until you resume it.",
+    };
+  }
+  if (connection.connectionPurpose === "ai" && connection.healthStatus === "ok" && aiCredentialExpired(connection.config)) {
+    return {
+      kind: "attention",
+      label: "Needs attention",
+      message: "The token has expired. Reconnect to restore access.",
     };
   }
   if ((connection.connectionPurpose === "ai" && (connection.healthStatus !== "ok" || aiSubscriptionNeedsIsolatedLogin(connection.config))) || isToolConnectionAttentionHealth(connection.healthStatus)) {
@@ -196,17 +237,24 @@ function connectionState(connection: ToolConnection): ConnectionState {
   return { kind: "connected", label: "Connected", message: null };
 }
 
-function connectionRank(connection: ToolConnection): number {
-  return connection.status === "draft" ? 0 : 1;
-}
-
-function rowRank(row: ConnectorRowModel): number {
-  if (
-    row.chatEndpoints.some((endpoint) => endpoint.status !== "draft") ||
-    row.connections.some((connection) => connectionRank(connection) === 1)
-  )
-    return 2;
-  return row.connections.length > 0 || row.chatEndpoints.length > 0 ? 1 : 0;
+function chatEndpointState(endpoint: ChatEndpoint): ConnectionState {
+  switch (endpoint.status) {
+    case "draft":
+    case "verifying":
+      return { kind: "draft", label: "Setup incomplete", message: "Finish setup before this connection receives messages." };
+    case "paused":
+      return { kind: "paused", label: "Paused", message: "This connection is paused. Resume it to receive new messages." };
+    case "revoked":
+      return { kind: "attention", label: "Revoked", message: "Access was revoked. Reconnect to restore it." };
+    case "attention":
+      return {
+        kind: "attention",
+        label: "Needs attention",
+        message: endpoint.healthMessage ?? endpoint.lastError ?? "Reconnect to restore this connection.",
+      };
+    default:
+      return { kind: "connected", label: "Connected", message: null };
+  }
 }
 
 function connectorAction(
@@ -264,7 +312,25 @@ function accountActionHref(
   if (connection.status === "draft" && row.entry) {
     return appSourceResumeHref(row.slug, connection.id);
   }
-  return `/apps/${connection.id}/permissions`;
+  return aiReconnectHref(connection) ?? `/apps/${connection.id}/permissions`;
+}
+
+/** Straight to the provider's reconnect step for an AI account (sign in or paste a token). */
+function aiReconnectHref(connection: ToolConnection): string | null {
+  const ai = connection.connectionPurpose === "ai"
+    ? connection.config?.ai as { provider?: string; method?: string } | undefined
+    : undefined;
+  if (!ai?.provider || !ai.method) return null;
+  return `/apps/connect?source=${ai.provider}&reconnect=${connection.id}&method=ai-${ai.method}`;
+}
+
+/** OAuth accounts reconnect straight from this page by reopening the provider sign-in. */
+function reconnectsWithOAuth(connection: ToolConnection): boolean {
+  return connection.authKind === "oauth"
+    && connection.connectionPurpose !== "ai"
+    && connection.requiresReauthorization !== false
+    && connection.credentialSource !== "vercel_connect"
+    && !isRetiredComposioConnection(connection);
 }
 
 /**
@@ -272,6 +338,34 @@ function accountActionHref(
  * surface. Connected providers sort first and expand in place to show every
  * account; unconnected providers retain the same catalog setup flows.
  */
+function MailboxesCard({
+  count,
+  needsAttention,
+  onOpen,
+}: {
+  count: number;
+  needsAttention: number;
+  onOpen: () => void;
+}) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+      <Mail className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-foreground">Mailboxes</h2>
+        <p className="text-xs text-muted-foreground">
+          {count === 0
+            ? "Link IMAP mailboxes so agents can search and read them."
+            : `${count} linked${needsAttention ? ` · ${needsAttention} need${needsAttention === 1 ? "s" : ""} reconnecting` : ""}`}
+        </p>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+        {count === 0 ? <Plus /> : null}
+        {count === 0 ? "Add mailbox" : "Manage"}
+      </Button>
+    </section>
+  );
+}
+
 export function Browse({ renderAccountDetails = (connection) => connection.connectionPurpose === "ai" ? <ManagedAiConnectionRow connection={connection} /> : null }: { renderAccountDetails?: (connection: ToolConnection) => ReactNode } = {}) {
   const navigate = useNavigate();
   const preselectedChatAgentId =
@@ -281,10 +375,12 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const { selectedCompanyId } = useCompany();
+  const [resumeErrors, setResumeErrors] = useState<Record<string, string>>({});
   const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
   const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [query, setQuery] = useState("");
+  const [showCatalogue, setShowCatalogue] = useState(false);
   const [connectionToRemove, setConnectionToRemove] =
     useState<ConnectionRemovalTarget | null>(null);
 
@@ -313,12 +409,111 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     queryFn: () => chatEndpointsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && chatConnectorsEnabled,
   });
+  const mailboxesQuery = useQuery({
+    queryKey: queryKeys.mailboxes.list(selectedCompanyId ?? "__none__"),
+    queryFn: () => mailboxesApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
   const userDirectoryQuery = useQuery({
     queryKey: queryKeys.access.companyUserDirectory(
       selectedCompanyId ?? "__none__",
     ),
     queryFn: () => accessApi.listUserDirectory(selectedCompanyId!),
     enabled: !!selectedCompanyId,
+  });
+  const invalidateConnectors = () => {
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.chatEndpoints.list(selectedCompanyId!),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.tools.connections(selectedCompanyId!),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.tools.applications(selectedCompanyId!),
+    });
+    queryClient.invalidateQueries({
+      queryKey: queryKeys.apps.attention(selectedCompanyId!),
+    });
+  };
+  // Same calls the connection detail pages use to resume. A connection a
+  // company pause turned off uses the health-checked re-enable (GRE-1364).
+  const resumeConnection = useMutation({
+    mutationFn: async (target: ResumeTarget) => {
+      if (target.kind === "chat") {
+        await chatEndpointsApi.setup(target.id, { action: "resume" });
+      } else if (target.pauseSuspended) {
+        await toolsApi.reenableConnectionAfterPause(target.id);
+      } else {
+        await toolsApi.updateConnection(
+          target.id,
+          target.status === "disabled" ? { enabled: true, status: "active" } : { enabled: true },
+        );
+      }
+    },
+    onMutate: (target) => {
+      setResumeErrors((current) => {
+        if (!(target.id in current)) return current;
+        const next = { ...current };
+        delete next[target.id];
+        return next;
+      });
+    },
+    onSuccess: (_result, target) => {
+      invalidateConnectors();
+      pushToast({
+        title: target.kind === "tool" && target.pauseSuspended ? "Connection re-enabled" : "Connection resumed",
+        tone: "success",
+      });
+    },
+    onError: (error, target) => {
+      const message = error instanceof Error && error.message ? error.message : "Please try again.";
+      if (target.kind === "tool" && target.pauseSuspended) {
+        // The health check failed, so the connection stays off: say why on the row.
+        setResumeErrors((current) => ({ ...current, [target.id]: message }));
+        invalidateConnectors();
+        return;
+      }
+      pushToast({
+        title: "Couldn't resume the connection",
+        body: message,
+        tone: "error",
+      });
+    },
+  });
+  // A test or reconnect that works resumes every task waiting on the connection (GRE-335).
+  const testConnection = useMutation({
+    mutationFn: (connection: ToolConnection) => toolsApi.checkConnectionHealth(connection.id),
+    onSuccess: (result) => {
+      invalidateConnectors();
+      const badge = connectionHealthBadge(result.connection);
+      if (badge.status === "ok" || badge.status === "unchecked") {
+        pushToast({ title: "Connection works", tone: "success" });
+        return;
+      }
+      pushToast({
+        title: badge.status === "warning" ? "Connection works with warnings" : "Connection still needs reconnecting",
+        body: result.connection.healthMessage?.trim() || result.connection.lastError?.trim() || undefined,
+        tone: badge.status === "warning" ? "warn" : "error",
+      });
+    },
+    onError: (error) => {
+      invalidateConnectors();
+      pushToast({
+        title: "Connection test failed",
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      });
+    },
+  });
+  const reconnectOAuth = useMutation({
+    mutationFn: (connection: ToolConnection) => startOAuthReconnect(connection),
+    onError: (error) =>
+      pushToast({
+        title: "Couldn’t start sign-in",
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      }),
   });
   const removeConnection = useMutation({
     mutationFn: async (target: ConnectionRemovalTarget) => {
@@ -329,23 +524,12 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       }
     },
     onSuccess: (_connection, target) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.chatEndpoints.list(selectedCompanyId!),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tools.connections(selectedCompanyId!),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.tools.applications(selectedCompanyId!),
-      });
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.apps.attention(selectedCompanyId!),
-      });
+      invalidateConnectors();
       pushToast({
         title: "Connection removed",
         body:
           target.kind === "chat"
-            ? `${target.providerName} is disconnected. Existing GS Agentic Manager tasks remain available.`
+            ? `${target.providerName} is disconnected. Existing ${CLIENT_BRAND_NAME} tasks remain available.`
             : target.remainingConnectionCount > 0
             ? `${target.providerName} still has ${target.remainingConnectionCount} active ${target.remainingConnectionCount === 1 ? "connection" : "connections"} available to agents.`
             : `${target.providerName} is no longer available to agents through this connection. Its saved credentials were deleted.`,
@@ -381,13 +565,16 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     const activeConnections = (connectionsQuery.data?.connections ?? []).filter(
       (connection) =>
         connection.status !== "archived" &&
-        connection.connectionPurpose !== "channel",
+        connection.connectionPurpose !== "channel" &&
+        // Mailboxes have their own page (/apps/mailboxes).
+        connection.config?.provider !== "imap_mailbox",
     );
     const activeApplications = (
       applicationsQuery.data?.applications ?? []
     ).filter(
       (application) =>
         application.status !== "archived" &&
+        application.metadata?.sourceTemplateKey !== "imap_mailbox" &&
         (chatConnectorsEnabled ||
           (application.type !== "chat" &&
             application.metadata?.purpose !== "channel")),
@@ -576,21 +763,17 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     return [...rowsBySlug.values(), ...customRows]
       .map((row) => ({
         ...row,
-        connections: [...row.connections].sort(
-          (left, right) =>
-            connectionRank(right) - connectionRank(left) ||
-            left.name.localeCompare(right.name, undefined, {
-              sensitivity: "base",
-            }),
+        connections: [...row.connections].sort((left, right) =>
+          left.name.localeCompare(right.name, undefined, {
+            sensitivity: "base",
+          }),
         ),
       }))
       .sort(
         (left, right) =>
-          rowRank(right) - rowRank(left) ||
           left.name.localeCompare(right.name, undefined, {
             sensitivity: "base",
-          }) ||
-          left.key.localeCompare(right.key),
+          }) || left.key.localeCompare(right.key),
       );
   }, [
     applicationsQuery.data,
@@ -617,6 +800,22 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   }, [rows, trimmed]);
   const showCustomConnector =
     !trimmed || "connect your own tool custom mcp server".includes(trimmed);
+  const connectedRows = visibleRows.filter(
+    (row) =>
+      row.connections.some((connection) => connection.status !== "draft") ||
+      row.chatEndpoints.some((endpoint) => !isUnfinishedEndpoint(endpoint)),
+  );
+  const unfinishedRows = visibleRows.filter(
+    (row) =>
+      row.connections.some((connection) => connection.status === "draft") ||
+      row.chatEndpoints.some(isUnfinishedEndpoint),
+  );
+  // A provider with only an unfinished setup stays addable, so the owner can
+  // start afresh instead of having to finish or delete the draft first.
+  const availableRows = visibleRows.filter((row) => !connectedRows.includes(row));
+  const hasAccounts = connectedRows.length > 0 || unfinishedRows.length > 0;
+  // With nothing connected yet the catalogue is the whole page, so it stays open.
+  const catalogueOpen = showCatalogue || !hasAccounts;
 
   if (!selectedCompanyId) {
     return (
@@ -646,13 +845,22 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
           <Input
             type="search"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              if (event.target.value.trim()) setShowCatalogue(true);
+            }}
             placeholder="Search connectors…"
             aria-label="Search connectors"
             className="pl-9"
           />
         </div>
       </header>
+
+      <MailboxesCard
+        count={mailboxesQuery.data?.length ?? 0}
+        needsAttention={(mailboxesQuery.data ?? []).filter((m) => m.healthStatus !== "ok").length}
+        onOpen={() => navigate("/apps/mailboxes")}
+      />
 
       {loadFailed ? (
         <div
@@ -692,24 +900,80 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
           No connectors match “{query.trim()}”.
         </p>
       ) : (
-        <div className="space-y-3" role="list" aria-label="Connector list">
-          {visibleRows.map((row) => (
-            <ConnectorCard
-              renderAccountDetails={renderAccountDetails}
-              key={row.key}
-              row={row}
-              userProfileById={userProfileById}
-              onNavigate={navigate}
-              onRequestRemove={setConnectionToRemove}
-              preselectedAgentId={preselectedChatAgentId}
-              chatConnectorsEnabled={chatConnectorsEnabled}
-            />
-          ))}
-          {showCustomConnector ? (
-            <CustomConnectorCard onNavigate={navigate} />
-          ) : null}
-        </div>
+        ([
+          ["connected", "Connected", connectedRows],
+          ["unfinished", "Not finished", unfinishedRows],
+        ] as const).map(([section, title, sectionRows]) =>
+          sectionRows.length > 0 ? (
+            <section key={section} className="space-y-3">
+              <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+              <div className="space-y-3" role="list" aria-label={title}>
+                {sectionRows.map((row) => (
+                  <ConnectorCard
+                    renderAccountDetails={renderAccountDetails}
+                    key={row.key}
+                    section={section}
+                    row={row}
+                    userProfileById={userProfileById}
+                    onNavigate={navigate}
+                    onRequestRemove={setConnectionToRemove}
+                    onResume={resumeConnection.mutate}
+                    resumingId={resumeConnection.isPending ? (resumeConnection.variables?.id ?? null) : null}
+                    resumeErrors={resumeErrors}
+                    onTest={testConnection.mutate}
+                    testingId={testConnection.isPending ? (testConnection.variables?.id ?? null) : null}
+                    onReconnectOAuth={reconnectOAuth.mutate}
+                    reconnectingId={reconnectOAuth.isPending ? (reconnectOAuth.variables?.id ?? null) : null}
+                    preselectedAgentId={preselectedChatAgentId}
+                    chatConnectorsEnabled={chatConnectorsEnabled}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null,
+        )
       )}
+
+      {!loading && !nothingMatches ? (
+        <section className="space-y-3">
+          {hasAccounts ? (
+            <Button
+              type="button"
+              variant="outline"
+              aria-expanded={catalogueOpen}
+              aria-controls="connector-catalogue"
+              onClick={() => setShowCatalogue((open) => !open)}
+            >
+              <Plus />
+              Add a connector
+            </Button>
+          ) : null}
+          {catalogueOpen ? (
+            <div
+              id="connector-catalogue"
+              className="space-y-3"
+              role="list"
+              aria-label="Available connectors"
+            >
+              {availableRows.map((row) => (
+                <ConnectorCard
+                  key={row.key}
+                  section="available"
+                  row={row}
+                  userProfileById={userProfileById}
+                  onNavigate={navigate}
+                  onRequestRemove={setConnectionToRemove}
+                  preselectedAgentId={preselectedChatAgentId}
+                  chatConnectorsEnabled={chatConnectorsEnabled}
+                />
+              ))}
+              {showCustomConnector ? (
+                <CustomConnectorCard onNavigate={navigate} />
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <AlertDialog
         open={connectionToRemove !== null}
@@ -724,7 +988,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
             </AlertDialogTitle>
             <AlertDialogDescription>
               {connectionToRemove?.kind === "chat"
-                ? `This connection will stop receiving new work from ${connectionToRemove.providerName}. Existing GS Agentic Manager tasks and conversation history remain available. This does not delete the app, bot, or account in ${connectionToRemove.providerName}.`
+                ? `This connection will stop receiving new work from ${connectionToRemove.providerName}. Existing ${CLIENT_BRAND_NAME} tasks and conversation history remain available. This does not delete the app, bot, or account in ${connectionToRemove.providerName}.`
                 : connectionToRemove &&
                     connectionToRemove.remainingConnectionCount > 0
                   ? `This connection's saved credentials are deleted and agents lose access through it immediately. They can still use ${connectionToRemove.providerName} through ${connectionToRemove.remainingConnectionCount} other active ${connectionToRemove.remainingConnectionCount === 1 ? "connection" : "connections"}.`
@@ -760,18 +1024,34 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
 
 export function ConnectorCard({
   renderAccountDetails,
+  section = "connected",
   row,
   userProfileById,
   onNavigate,
   onRequestRemove,
+  onResume,
+  resumingId = null,
+  resumeErrors,
+  onTest,
+  testingId = null,
+  onReconnectOAuth,
+  reconnectingId = null,
   preselectedAgentId,
   chatConnectorsEnabled,
 }: {
   renderAccountDetails?: (connection: ToolConnection) => ReactNode;
+  section?: CardSection;
   row: ConnectorRowModel;
   userProfileById: ReadonlyMap<string, ConnectionOwnerProfile>;
   onNavigate: (href: string) => void;
   onRequestRemove: (target: ConnectionRemovalTarget) => void;
+  onResume?: (target: ResumeTarget) => void;
+  resumingId?: string | null;
+  resumeErrors?: Readonly<Record<string, string>>;
+  onTest?: (connection: ToolConnection) => void;
+  testingId?: string | null;
+  onReconnectOAuth?: (connection: ToolConnection) => void;
+  reconnectingId?: string | null;
   preselectedAgentId?: string | null;
   chatConnectorsEnabled: boolean;
 }) {
@@ -779,6 +1059,13 @@ export function ConnectorCard({
     row,
     chatConnectorsEnabled,
     preselectedAgentId,
+  );
+  const unfinished = section === "unfinished";
+  const connections = row.connections.filter(
+    (connection) => (connection.status === "draft") === unfinished,
+  );
+  const chatEndpoints = row.chatEndpoints.filter(
+    (endpoint) => isUnfinishedEndpoint(endpoint) === unfinished,
   );
   return (
     <div
@@ -791,38 +1078,45 @@ export function ConnectorCard({
       }
       className="overflow-hidden rounded-xl border border-border"
     >
-      <div className="flex flex-wrap items-center gap-3 px-4 py-4">
-        <AppLogo
-          name={row.name}
-          brandKey={row.brandKey}
-          logoUrl={row.logoUrl}
-          darkLogoUrl={row.darkLogoUrl}
-          size={36}
-        />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">{row.name}</h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {row.description}
-          </p>
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <AppLogo
+            name={row.name}
+            brandKey={row.brandKey}
+            logoUrl={row.logoUrl}
+            darkLogoUrl={row.darkLogoUrl}
+            size={36}
+          />
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-foreground">{row.name}</h3>
+            {unfinished ? null : (
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {row.description}
+              </p>
+            )}
+          </div>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={!action.href}
-          title={action.title}
-          onClick={() => {
-            if (action.href) onNavigate(action.href);
-          }}
-          aria-label={`${action.label} ${row.name}`}
-        >
-          {action.label}
-        </Button>
+        {unfinished ? null : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-12 self-start sm:ml-0 sm:self-auto"
+            disabled={!action.href}
+            title={action.title}
+            onClick={() => {
+              if (action.href) onNavigate(action.href);
+            }}
+            aria-label={`${action.label} ${row.name}`}
+          >
+            {action.label}
+          </Button>
+        )}
       </div>
 
-      {row.connections.length > 0 ? (
+      {connections.length > 0 ? (
         <div className="divide-y divide-border border-t border-border">
-          {row.connections.map((connection) => (
+          {connections.map((connection) => (
             <ConnectionAccountRow
               details={renderAccountDetails?.(connection)}
               key={connection.id}
@@ -830,6 +1124,22 @@ export function ConnectorCard({
               connection={connection}
               owner={connectionOwnerProfile(connection, userProfileById)}
               onNavigate={onNavigate}
+              resuming={resumingId === connection.id}
+              resumeError={resumeErrors?.[connection.id]}
+              onTest={onTest ? () => onTest(connection) : undefined}
+              testing={testingId === connection.id}
+              onReconnectOAuth={onReconnectOAuth ? () => onReconnectOAuth(connection) : undefined}
+              reconnecting={reconnectingId === connection.id}
+              onResume={
+                onResume
+                  ? () => onResume({
+                      kind: "tool",
+                      id: connection.id,
+                      status: connection.status,
+                      pauseSuspended: Boolean(connection.pauseSuspendedAt),
+                    })
+                  : undefined
+              }
               onRemove={() => {
                 const accountName = connectionDisplayNameForOwner(
                   connection,
@@ -852,40 +1162,56 @@ export function ConnectorCard({
           ))}
         </div>
       ) : null}
-      {row.chatEndpoints.length > 0 ? (
+      {chatEndpoints.length > 0 ? (
         <div className="divide-y divide-border border-t border-border">
-          {row.chatEndpoints.map((endpoint) => (
+          {chatEndpoints.map((endpoint) => {
+            const state = chatEndpointState(endpoint);
+            const setupHref = `/apps/chat/connect?provider=${endpoint.provider}&purpose=chat&resume=${endpoint.id}`;
+            return (
             <div
               key={endpoint.id}
-              className="flex flex-wrap items-center gap-3 px-4 py-3"
+              className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center"
             >
-              <div className="min-w-0 flex-1">
-                <button
-                  type="button"
-                  className="truncate text-left text-sm font-medium hover:underline"
-                  onClick={() =>
-                    onNavigate(`/apps/chat/${endpoint.id}/settings`)
-                  }
-                >
-                  {endpoint.assignedAgentName} · {endpoint.provider === "agentmail" ? "Email" : "Chat"}
-                </button>
-                <p className="truncate text-xs text-muted-foreground">
-                  {endpoint.providerAccountLabel ??
-                    endpoint.botLabel ??
-                    "Provider identity"}
-                </p>
+              <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                <ConnectionStatusIcon state={state} />
+                <div className="min-w-0">
+                  <button
+                    type="button"
+                    className="block max-w-full truncate text-left text-sm font-medium hover:underline"
+                    onClick={() =>
+                      onNavigate(`/apps/chat/${endpoint.id}/settings`)
+                    }
+                  >
+                    {endpoint.assignedAgentName} · {endpoint.provider === "agentmail" ? "Email" : "Chat"}
+                  </button>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {endpoint.providerAccountLabel ??
+                      endpoint.botLabel ??
+                      "Provider identity"}
+                  </p>
+                  <ConnectionStateMessage state={state} />
+                </div>
               </div>
-              <span className="text-xs text-muted-foreground">
-                {endpoint.status.replace(/_/g, " ")}
-              </span>
-              <div className="flex items-center gap-2">
-                {endpoint.status === "draft" ? (
+              <div className="flex items-center gap-2 sm:justify-end">
+                {state.kind === "draft" || state.kind === "attention" ? (
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => onNavigate(`/apps/chat/connect?provider=${endpoint.provider}&purpose=chat&resume=${endpoint.id}`)}
+                    onClick={() =>
+                      onNavigate(state.kind === "draft" ? setupHref : `${setupHref}&reconnect=1`)
+                    }
                   >
-                    Finish setup
+                    {state.kind === "draft" ? "Finish setup" : "Reconnect"}
+                  </Button>
+                ) : null}
+                {state.kind === "paused" && onResume ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={resumingId === endpoint.id}
+                    onClick={() => onResume({ kind: "chat", id: endpoint.id })}
+                  >
+                    Resume
                   </Button>
                 ) : null}
                 <DropdownMenu>
@@ -921,7 +1247,8 @@ export function ConnectorCard({
                 </DropdownMenu>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : null}
     </div>
@@ -935,6 +1262,13 @@ function ConnectionAccountRow({
   owner,
   onNavigate,
   onRemove,
+  onResume,
+  resuming,
+  resumeError,
+  onTest,
+  testing = false,
+  onReconnectOAuth,
+  reconnecting = false,
 }: {
   details?: ReactNode;
   row: ConnectorRowModel;
@@ -942,9 +1276,29 @@ function ConnectionAccountRow({
   owner: ConnectionOwnerProfile | null;
   onNavigate: (href: string) => void;
   onRemove: () => void;
+  onResume?: () => void;
+  resuming: boolean;
+  resumeError?: string;
+  onTest?: () => void;
+  testing?: boolean;
+  onReconnectOAuth?: () => void;
+  reconnecting?: boolean;
 }) {
-  const state = connectionState(connection);
+  const { selectedCompany } = useCompany();
+  const companyPaused = selectedCompany?.status === "paused";
+  const pauseSuspended = Boolean(connection.pauseSuspendedAt);
+  const state = connectionState(connection, companyPaused);
   const actionHref = accountActionHref(row, connection);
+  const reconnectHref = aiReconnectHref(connection);
+  const oauthReconnect = onReconnectOAuth && reconnectsWithOAuth(connection) ? onReconnectOAuth : null;
+  const live = state.kind === "connected" || state.kind === "attention";
+  const retired = isRetiredComposioConnection(connection);
+  const health = live && !retired
+    ? connectionHealthBadge(connection, state.kind === "attention")
+    : null;
+  const lastError = health && health.status !== "ok"
+    ? connection.lastError?.trim() || null
+    : null;
   const accountName = connectionDisplayNameForOwner(
     connection,
     row.name,
@@ -954,7 +1308,7 @@ function ConnectionAccountRow({
   return (
     <div className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center">
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
-        <ConnectionStatusIcon state={state} />
+        <ConnectionStatusIcon state={state} warning={health?.status === "warning"} />
         <div className="min-w-0">
           <button
             type="button"
@@ -964,23 +1318,34 @@ function ConnectionAccountRow({
           >
             {accountName}
           </button>
+          {health ? (
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <StatusBadge status={health.status} label={health.label} />
+              <span>{connectionCheckedLabel(connection)}</span>
+            </div>
+          ) : null}
           {details}
-          {state.message ? (
-            <div
-              className={
-                state.kind === "attention"
-                  ? "truncate text-xs text-destructive"
-                  : "truncate text-xs text-muted-foreground"
-              }
-            >
-              {state.message}
+          <ConnectionStateMessage state={state} warning={health?.status === "warning"} />
+          {resumeError ? (
+            <div role="alert" className="line-clamp-2 break-words text-xs text-destructive">
+              Still off: {resumeError}
+            </div>
+          ) : null}
+          {lastError && lastError !== state.message ? (
+            <div title={lastError} className="line-clamp-2 break-words text-xs text-muted-foreground">
+              Last error: {lastError}
             </div>
           ) : null}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {/* On a phone, give the owner its own line so an action and the menu stay together. */}
+        <div
+          className={`flex items-center gap-1.5 text-xs text-muted-foreground${
+            state.kind === "connected" ? "" : " basis-full sm:basis-auto"
+          }`}
+        >
           <span>Connected by</span>
           <ConnectionOwnerIdentity owner={owner} />
         </div>
@@ -989,13 +1354,52 @@ function ConnectionAccountRow({
             type="button"
             size="sm"
             variant="outline"
-            onClick={() => onNavigate(actionHref)}
+            disabled={state.kind === "attention" && reconnecting}
+            onClick={() => {
+              if (state.kind === "attention" && oauthReconnect) oauthReconnect();
+              else onNavigate(actionHref);
+            }}
           >
+            {state.kind === "attention" && reconnecting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : null}
             {state.kind === "attention"
               ? connection.requiresReauthorization === false
                 ? "Retry access"
-                : "Reconnect"
+                : reconnecting
+                  ? "Opening sign-in…"
+                  : "Reconnect"
               : "Finish setup"}
+          </Button>
+        ) : null}
+        {health && onTest ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={testing}
+            onClick={onTest}
+            aria-label={`Test ${accountName} connection`}
+          >
+            {testing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Stethoscope aria-hidden="true" />
+            )}
+            {testing ? "Testing…" : "Test"}
+          </Button>
+        ) : null}
+        {state.kind === "paused" && onResume ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={resuming || (pauseSuspended && companyPaused)}
+            title={pauseSuspended && companyPaused ? "Resume the organization first" : undefined}
+            onClick={onResume}
+          >
+            {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+            {pauseSuspended ? (resuming ? "Checking…" : "Re-enable") : "Resume"}
           </Button>
         ) : null}
         <DropdownMenu>
@@ -1015,6 +1419,15 @@ function ConnectionAccountRow({
             >
               Permissions
             </DropdownMenuItem>
+            {reconnectHref ? (
+              <DropdownMenuItem onSelect={() => onNavigate(reconnectHref)}>
+                Reconnect
+              </DropdownMenuItem>
+            ) : oauthReconnect && state.kind === "connected" ? (
+              <DropdownMenuItem disabled={reconnecting} onSelect={oauthReconnect}>
+                Reconnect
+              </DropdownMenuItem>
+            ) : null}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onSelect={onRemove}>
               <Trash2 />
@@ -1027,7 +1440,26 @@ function ConnectionAccountRow({
   );
 }
 
-function ConnectionStatusIcon({ state }: { state: ConnectionState }) {
+/** The short reason a connection is not usable; wraps on a phone rather than cutting off. */
+function ConnectionStateMessage({ state, warning = false }: { state: ConnectionState; warning?: boolean }) {
+  if (!state.message) return null;
+  return (
+    <div
+      title={state.message}
+      className={
+        state.kind !== "attention"
+          ? "line-clamp-2 text-xs text-muted-foreground"
+          : warning
+            ? "line-clamp-2 text-xs text-status-warning"
+            : "line-clamp-2 text-xs text-destructive"
+      }
+    >
+      {state.message}
+    </div>
+  );
+}
+
+function ConnectionStatusIcon({ state, warning = false }: { state: ConnectionState; warning?: boolean }) {
   if (state.kind === "connected") {
     return (
       <span
@@ -1041,7 +1473,7 @@ function ConnectionStatusIcon({ state }: { state: ConnectionState }) {
   }
   if (state.kind === "attention") {
     return (
-      <span className="mt-0.5 text-destructive" title={state.label}>
+      <span className={warning ? "mt-0.5 text-status-warning" : "mt-0.5 text-destructive"} title={state.label}>
         <AlertTriangle className="h-4 w-4" aria-hidden="true" />
         <span className="sr-only">{state.label}</span>
       </span>
@@ -1079,22 +1511,25 @@ function CustomConnectorCard({
       data-app-slug="custom-mcp"
       className="overflow-hidden rounded-xl border border-border"
     >
-      <div className="flex flex-wrap items-center gap-3 px-4 py-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-          <Link2 className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold text-foreground">
-            Connect your own tool
-          </h2>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Add a custom MCP server or paste an existing configuration.
-          </p>
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+            <Link2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-foreground">
+              Connect your own tool
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Add a custom MCP server or paste an existing configuration.
+            </p>
+          </div>
         </div>
         <Button
           type="button"
           size="sm"
           variant="outline"
+          className="ml-12 self-start sm:ml-0 sm:self-auto"
           aria-expanded={expanded}
           aria-controls="custom-connector-options"
           onClick={() => setExpanded((open) => !open)}

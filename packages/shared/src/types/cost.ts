@@ -43,6 +43,23 @@ export interface IssueCostSummary {
   /** sum of wall-clock duration of each run in the tree (ms);
    * still-running runs contribute (now - startedAt) so this ticks up live */
   runtimeMs: number;
+  /** What the tree's tokens would cost under API billing, priced per model.
+   * Not a bill: `costCents` is the real spend. */
+  apiEquivalentCents: number;
+  /** tokens on models with no published price; not included in apiEquivalentCents */
+  unpricedTokens: number;
+  byModel: IssueCostModelRow[];
+}
+
+export interface IssueCostModelRow {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  costCents: number;
+  /** null when the model has no published price in the price table */
+  apiEquivalentCents: number | null;
 }
 
 export interface CostByAgent {
@@ -201,4 +218,87 @@ export interface ApiEquivalentSummary {
   unpricedModels: string[];
   byProvider: ApiEquivalentProviderRow[];
   byModel: ApiEquivalentModelRow[];
+  /** Per agent: what its work would cost under API billing, and how many runs did it. */
+  byAgent: ApiEquivalentAgentRow[];
+  /** Run time of all agent runs that started in the period, in milliseconds. */
+  agentWorkMs: number;
+  /** The company's hourly wage in cents; null when not set. */
+  minimumWageHourlyCents: number | null;
+  /** agentWorkMs valued at minimumWageHourlyCents; null when no rate is set. */
+  minimumWageEquivalentCents: number | null;
+}
+
+export interface ApiEquivalentAgentRow {
+  agentId: string;
+  /** priced models only */
+  apiEquivalentCents: number;
+  runCount: number;
+}
+
+/**
+ * How a ledger amount was produced: `billed` is the cost the run recorded;
+ * `api_equivalent` is a seat-plan run priced at published API rates.
+ */
+export type CostLedgerBasis = "billed" | "api_equivalent";
+
+/** one agent + provider + tool + model + billing type, for one month */
+export interface CostLedgerLine {
+  agentId: string;
+  agentName: string | null;
+  provider: string;
+  biller: string;
+  /** the agent's adapter type (claude_local, codex_local, ...) */
+  tool: string;
+  model: string;
+  billingType: string;
+  /** true for subscription (seat-plan) runs */
+  seatPlan: boolean;
+  basis: CostLedgerBasis;
+  runCount: number;
+  eventCount: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  /** sum of cost_events.cost_cents as recorded */
+  billedCents: number;
+  /** null when the model has no published price in the price table */
+  apiEquivalentCents: number | null;
+  /** billedCents for billed lines, apiEquivalentCents for seat-plan lines (0 when unpriced) */
+  ledgerCents: number;
+  /** tokens on seat-plan lines whose model has no published price */
+  unpricedTokens: number;
+}
+
+export interface CostLedgerTotal {
+  key: string;
+  label: string | null;
+  runCount: number;
+  eventCount: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  billedCents: number;
+  /** priced lines only */
+  apiEquivalentCents: number;
+  /** ledger amount from billed lines */
+  billedLedgerCents: number;
+  /** ledger amount from seat-plan lines priced at API rates */
+  apiEquivalentLedgerCents: number;
+  ledgerCents: number;
+  unpricedTokens: number;
+}
+
+export interface CostLedger {
+  companyId: string;
+  /** YYYY-MM, UTC */
+  month: string;
+  from: string;
+  /** exclusive */
+  to: string;
+  priceTableCheckedAt: string;
+  lines: CostLedgerLine[];
+  byAgent: CostLedgerTotal[];
+  byProvider: CostLedgerTotal[];
+  byTool: CostLedgerTotal[];
+  totals: CostLedgerTotal;
 }

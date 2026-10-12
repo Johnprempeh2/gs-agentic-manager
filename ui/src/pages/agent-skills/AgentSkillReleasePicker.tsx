@@ -11,7 +11,7 @@ import {
 /** Sentinel value for the "no pin / live default" option (Radix forbids ""). */
 export const RELEASE_DEFAULT_VALUE = "default";
 
-const DEFAULT_LABEL = "Default — current (recommended)";
+const DEFAULT_LABEL = "Default (current, recommended)";
 
 /**
  * Render a bundled release's calendar date. Plain `YYYY-MM-DD` strings (like the
@@ -45,7 +45,7 @@ export function releaseOptionLabel(release: CompanySkillVersion): string {
 /** Compact badge label for a pinned release, e.g. `V7`. */
 export function releaseShortLabel(release: CompanySkillVersion): string {
   const name = release.releaseName ?? release.label ?? release.releaseId ?? "Release";
-  return name.split(" — ")[0]!.trim();
+  return name.split(" \u2014 ")[0]!.trim();
 }
 
 export interface AgentSkillReleasePickerProps {

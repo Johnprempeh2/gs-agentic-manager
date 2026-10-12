@@ -305,7 +305,7 @@ export function RoutineTriggerWizard({
                   onChange={(event) => patch({ frequency: event.target.value })}
                 >
                   <option value="daily">Every day</option>
-                  <option value="weekdays">Weekdays (Monday–Friday)</option>
+                  <option value="weekdays">Weekdays (Monday to Friday)</option>
                   <option value="weekly">Every week</option>
                 </select>
               </div>
@@ -497,7 +497,7 @@ export function RoutineTriggerWizard({
               <p className="text-sm text-muted-foreground">
                 {github
                   ? "Open this webhook in your repository settings. Under Recent Deliveries, choose Redeliver on an event."
-                  : "Look for “Send test” in your app’s webhook settings. If it doesn’t have one, do the action that should trigger the webhook—for example, complete a deployment."}
+                  : "Look for “Send test” in your app’s webhook settings. If it doesn’t have one, do the action that should trigger the webhook (for example, complete a deployment)."}
               </p>
               <p className="text-xs text-muted-foreground">
                 Keep this page open to see the test result.

@@ -1,4 +1,17 @@
 import type {
+  ClientEvidenceCandidatesResponse,
+  ClientEvidenceItem,
+  ClientFilesResponse,
+  CreateClientEvidence,
+  CreateCrmSyncSuggestion,
+  CrmSyncBinding,
+  CrmSyncCaseStatus,
+  CrmSyncConflict,
+  CrmSyncConflictKind,
+  CrmSyncFieldMap,
+  CrmSyncPage,
+  ProposeCrmSyncConflictResolution,
+  ResolveCrmSyncConflict,
   Issue,
   PipelineAutomationRetryCleanupOptions,
   PipelineAutomationRetryPlan,
@@ -8,6 +21,8 @@ import type {
   PipelineCaseDocumentRevision,
   PipelineCaseLiveness,
   PipelineCaseOutputsResponse,
+  PipelineFieldDefinition,
+  PipelineFieldType,
   PipelineHealthReport,
   RoutineEnvConfig,
 } from "@greatstone/shared";
@@ -68,6 +83,8 @@ export interface PipelineStage {
   kind: string;
   position: number;
   config?: Record<string, unknown> | null;
+  /** Open items sitting in this stage; sent by the pipelines list endpoint only. */
+  openCaseCount?: number | null;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -76,6 +93,7 @@ export interface PipelineDetail extends PipelineListItem {
   stages: PipelineStage[];
   transitions: Array<{ fromStageId: string; toStageId: string; label?: string | null }>;
   documentKeys?: Array<{ key: string; documentId: string }>;
+  fieldDefinitions?: PipelineFieldDefinition[];
 }
 
 export interface PipelineTransitionEdge {
@@ -168,6 +186,8 @@ export interface PipelineCasePendingSuggestion {
 
 export interface PipelineCaseDetail {
   case: PipelineCase;
+  /** When the case entered its current stage. */
+  stageEnteredAt?: Date | string | null;
   /** Derived from the pipeline (invisible/internal): used for display + ingest checks. */
   caseType?: string;
   stage: PipelineStage;
@@ -235,6 +255,51 @@ export interface PipelineCaseIssueLink {
 export interface PipelineCaseIssueLinkWithIssue {
   link: PipelineCaseIssueLink;
   issue: Issue;
+}
+
+export interface PipelineCaseProjectLink {
+  id: string;
+  companyId: string;
+  caseId: string;
+  projectId: string;
+  createdByUserId?: string | null;
+  createdByAgentId?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PipelineCaseProjectLinkWithProject {
+  link: PipelineCaseProjectLink;
+  project: { id: string; companyId: string; name: string; status: string; color: string | null };
+  goals: Array<{ id: string; title: string; status: string }>;
+}
+
+export interface ProjectPipelineCase {
+  case: { id: string; pipelineId: string; caseKey: string; title: string };
+  pipeline: { id: string; name: string };
+  stage: { id: string; key: string; name: string; kind: string };
+}
+
+export interface PipelineCaseContact {
+  id: string;
+  companyId: string;
+  caseId: string;
+  name: string;
+  role: string | null;
+  phone: string | null;
+  email: string | null;
+  position: number;
+  createdByUserId?: string | null;
+  createdByAgentId?: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}
+
+export interface PipelineCaseContactInput {
+  name: string;
+  role?: string | null;
+  phone?: string | null;
+  email?: string | null;
 }
 
 export interface PipelineCaseBlocker {
@@ -441,6 +506,8 @@ export interface PipelineCaseChildRow {
   parentCase?: PipelineCaseParentSummary | null;
   activeWork?: PipelineCaseActiveWork | null;
   descendantActiveWorkCount?: number;
+  /** When the case entered its current stage (board list only). */
+  stageEnteredAt?: Date | string | null;
 }
 
 export type PipelineCaseChildrenResponse = PipelineCaseChildRow[];
@@ -457,6 +524,22 @@ export type PipelineBatchIngestResult =
       };
     };
 
+export type { PipelineFieldDefinition, PipelineFieldType } from "@greatstone/shared";
+
+export interface PipelineFieldInput {
+  key: string;
+  label: string;
+  description?: string | null;
+  type: PipelineFieldType;
+  required?: boolean;
+  options?: string[];
+}
+
+export type PipelineFieldPatch = Partial<Omit<PipelineFieldInput, "key" | "type">> & {
+  position?: number;
+  archived?: boolean;
+};
+
 export const pipelinesApi = {
   list: (companyId: string) => api.get<PipelineListItem[]>(`/companies/${companyId}/pipelines`),
   create: (
@@ -469,6 +552,14 @@ export const pipelinesApi = {
     pipelineId: string,
     data: { name?: string; description?: string | null; enforceTransitions?: boolean; archived?: boolean },
   ) => api.patch<PipelineListItem>(`/pipelines/${pipelineId}`, data),
+  listFields: (pipelineId: string, options?: { includeArchived?: boolean }) =>
+    api.get<PipelineFieldDefinition[]>(
+      `/pipelines/${pipelineId}/fields${options?.includeArchived ? "?includeArchived=true" : ""}`,
+    ),
+  createField: (pipelineId: string, data: PipelineFieldInput) =>
+    api.post<PipelineFieldDefinition>(`/pipelines/${pipelineId}/fields`, data),
+  updateField: (pipelineId: string, fieldId: string, data: PipelineFieldPatch) =>
+    api.patch<PipelineFieldDefinition>(`/pipelines/${pipelineId}/fields/${fieldId}`, data),
   createStage: (
     pipelineId: string,
     data: { key: string; name: string; kind: string; position: number; config?: Record<string, unknown> },
@@ -563,8 +654,54 @@ export const pipelinesApi = {
   },
   getCaseIssueLinks: (caseId: string) =>
     api.get<PipelineCaseIssueLinkWithIssue[]>(`/cases/${caseId}/issue-links`),
+  getCaseProjectLinks: (caseId: string) =>
+    api.get<PipelineCaseProjectLinkWithProject[]>(`/cases/${caseId}/project-links`),
+  linkCaseProject: (caseId: string, projectId: string) =>
+    api.post<PipelineCaseProjectLink>(`/cases/${caseId}/project-links`, { projectId }),
+  unlinkCaseProject: (caseId: string, projectId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/project-links/${projectId}`),
+  getCaseCrmSyncStatus: (caseId: string) =>
+    api.get<CrmSyncCaseStatus>(`/cases/${caseId}/crm-sync/status`),
+  listCrmSyncBindings: (companyId: string) =>
+    api.get<CrmSyncBinding[]>(`/companies/${companyId}/crm-sync/bindings`),
+  getCrmSyncFieldMap: (bindingId: string) =>
+    api.get<CrmSyncFieldMap>(`/crm-sync/bindings/${bindingId}/field-map`),
+  listCrmSyncConflicts: (companyId: string, filters: { entityId?: string; kind?: CrmSyncConflictKind } = {}) => {
+    const params = new URLSearchParams({ status: "open", limit: "100" });
+    if (filters.entityId) params.set("entityId", filters.entityId);
+    if (filters.kind) params.set("kind", filters.kind);
+    return api.get<CrmSyncPage<CrmSyncConflict>>(`/companies/${companyId}/crm-sync/conflicts?${params.toString()}`);
+  },
+  resolveCrmSyncConflict: (conflictId: string, input: ResolveCrmSyncConflict) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/resolve`, input),
+  acceptCrmSyncProposal: (conflictId: string) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/accept-proposal`, {}),
+  proposeCrmSyncResolution: (conflictId: string, input: ProposeCrmSyncConflictResolution) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/propose`, input),
+  dismissCrmSyncConflict: (conflictId: string, reason?: string) =>
+    api.post<CrmSyncConflict>(`/crm-sync/conflicts/${conflictId}/dismiss`, reason ? { reason } : {}),
+  suggestCrmSyncChange: (caseId: string, input: CreateCrmSyncSuggestion) =>
+    api.post<CrmSyncConflict>(`/cases/${caseId}/crm-sync/suggestions`, input),
+  listCaseContacts: (caseId: string) =>
+    api.get<PipelineCaseContact[]>(`/cases/${caseId}/contacts`),
+  createCaseContact: (caseId: string, input: PipelineCaseContactInput) =>
+    api.post<PipelineCaseContact>(`/cases/${caseId}/contacts`, input),
+  updateCaseContact: (caseId: string, contactId: string, input: Partial<PipelineCaseContactInput>) =>
+    api.patch<PipelineCaseContact>(`/cases/${caseId}/contacts/${contactId}`, input),
+  deleteCaseContact: (caseId: string, contactId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/contacts/${contactId}`),
+  listProjectCases: (projectId: string) =>
+    api.get<ProjectPipelineCase[]>(`/projects/${projectId}/pipeline-cases`),
   getCaseOutputs: (caseId: string) =>
     api.get<PipelineCaseOutputsResponse>(`/cases/${caseId}/outputs`),
+  getCaseFiles: (caseId: string) =>
+    api.get<ClientFilesResponse>(`/cases/${caseId}/files`),
+  listCaseEvidenceCandidates: (caseId: string) =>
+    api.get<ClientEvidenceCandidatesResponse>(`/cases/${caseId}/evidence/candidates`),
+  addCaseEvidence: (caseId: string, input: CreateClientEvidence) =>
+    api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
+  removeCaseEvidence: (caseId: string, evidenceId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
   createIssueLink: (
     caseId: string,
     data:

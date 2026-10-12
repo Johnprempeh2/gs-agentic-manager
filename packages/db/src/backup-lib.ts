@@ -854,6 +854,30 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
         && includedTableNames.has(tableKey(fk.target_schema, fk.target_table)),
     );
 
+    // CHECK constraints are emitted after the data so restored rows are
+    // validated once against them. pg_get_constraintdef keeps NOT VALID, so a
+    // constraint that live rows were never checked against stays that way.
+    // Inherited (non-local) checks come back with their parent table.
+    const allCheckConstraints = await sql<{
+      constraint_name: string;
+      schema_name: string;
+      tablename: string;
+      definition: string;
+    }[]>`
+      SELECT c.conname AS constraint_name,
+             n.nspname AS schema_name,
+             t.relname AS tablename,
+             pg_get_constraintdef(c.oid) AS definition
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE c.contype = 'c'
+        AND c.conislocal
+        AND ${sql.unsafe(nonSystemSchemaPredicate("n.nspname"))}
+      ORDER BY n.nspname, t.relname, c.conname
+    `;
+    const checks = allCheckConstraints.filter((entry) => includedTableNames.has(tableKey(entry.schema_name, entry.tablename)));
+
     // JavaScript backups are used when a worktree seed filters or transforms
     // table data. Preserve user-defined routines before indexes because an
     // expression index may depend on a user-defined function.
@@ -966,6 +990,16 @@ export async function runDatabaseBackup(opts: RunDatabaseBackupOptions): Promise
           emitStatement(`INSERT INTO ${qualifiedTableName} (${colNames}) VALUES (${values.join(", ")});`);
         }
         await writer.drain();
+      }
+      emit("");
+    }
+
+    if (checks.length > 0) {
+      emit("-- Check constraints");
+      for (const check of checks) {
+        emitStatement(
+          `ALTER TABLE ${quoteQualifiedName(check.schema_name, check.tablename)} ADD CONSTRAINT ${quoteIdentifier(check.constraint_name)} ${check.definition};`,
+        );
       }
       emit("");
     }

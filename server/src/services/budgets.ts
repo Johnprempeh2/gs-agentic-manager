@@ -9,6 +9,7 @@ import {
   costEvents,
   projects,
 } from "@greatstone/db";
+import { DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
 import type {
   BudgetIncident,
   BudgetIncidentResolutionInput,
@@ -43,6 +44,8 @@ export type BudgetEnforcementScope = {
 
 export type BudgetServiceHooks = {
   cancelWorkForScope?: (scope: BudgetEnforcementScope) => Promise<void>;
+  /** Once per hard incident, after the scope is paused: tell the open work why it stopped. */
+  noticeHardStop?: (scope: BudgetEnforcementScope) => Promise<void>;
 };
 
 function currentUtcMonthWindow(now = new Date()) {
@@ -238,6 +241,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       return;
     }
 
+    // An operator pause (GRE-1364) is not overwritten, so a budget resume cannot lift it.
     await db
       .update(companies)
       .set({
@@ -246,7 +250,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         pausedAt: now,
         updatedAt: now,
       })
-      .where(eq(companies.id, policy.scopeId));
+      .where(and(
+        eq(companies.id, policy.scopeId),
+        sql`${companies.pauseReason} is distinct from 'manual'`,
+      ));
   }
 
   async function pauseAndCancelScopeForBudget(policy: PolicyRow) {
@@ -558,7 +565,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
             metric,
             windowKind,
             amount,
-            warnPercent: input.warnPercent ?? 80,
+            warnPercent: input.warnPercent ?? DEFAULT_BUDGET_WARN_PERCENT,
             hardStopEnabled: input.hardStopEnabled ?? true,
             notifyEnabled: input.notifyEnabled ?? true,
             isActive: nextIsActive,
@@ -695,6 +702,11 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           const hardIncident = await createIncidentIfNeeded(policy, "hard", observedAmount);
           await pauseAndCancelScopeForBudget(policy);
           if (hardIncident?.created) {
+            await hooks.noticeHardStop?.({
+              companyId: policy.companyId,
+              scopeType: policy.scopeType as BudgetScopeType,
+              scopeId: policy.scopeId,
+            });
             await logActivity(db, {
               companyId: policy.companyId,
               actorType: "system",

@@ -4,10 +4,18 @@ import type { ActivityEvent } from "@greatstone/shared";
 import { useProjectCreatedItems } from "@/hooks/useProjectCreatedItems";
 import { skillCreatedItems } from "@/components/task-chat/skill-created-items";
 import { requiresExecutionReconciliation } from "@greatstone/shared";
-import { TaskChatExpansionState } from "@/components/task-chat/expansion-state";
-import { TaskChatScrollReady } from "@/components/task-chat/scroll-navigation";
+import {
+  TaskChatExpansionState,
+  TaskChatRunHistoryRequest,
+} from "@/components/task-chat/expansion-state";
+import type { TranscriptEntry } from "@/adapters";
+import {
+  TaskChatScrollNavigation,
+  TaskChatScrollReady,
+} from "@/components/task-chat/scroll-navigation";
 import {
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -116,7 +124,7 @@ import {
 import { heartbeatsApi, type RuntimeRequestResolution } from "@/api/heartbeats";
 import { issuesApi } from "@/api/issues";
 import { queryKeys } from "@/lib/queryKeys";
-import { useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { TaskChatPresentationProvider } from "@/components/task-chat/presentation-mode";
 
 function toMs(value: Date | string | null | undefined): number {
@@ -244,6 +252,8 @@ export function shouldRepeatTaskChatBlockers(items: TaskChatItem[]): boolean {
   return conversationItems.length >= LONG_THREAD_BLOCKER_REPEAT_COUNT;
 }
 
+const NO_RUN_IDS: ReadonlySet<string> = new Set();
+
 function isNativePaperclipRunnerRun(
   run:
     | {
@@ -258,7 +268,7 @@ function isNativePaperclipRunnerRun(
   );
 }
 const LEGACY_WITHHELD_RUN_COMMENT =
-  "Run completed. Agent did not post a summary comment this run (transcript withheld — see run log).";
+  "Run completed. Agent did not post a summary comment this run (transcript withheld; see run log).";
 
 function acceptedSemanticResult(
   value: unknown,
@@ -402,9 +412,13 @@ export type TaskChatThreadProps = ComponentProps<typeof IssueChatThread> & {
   conversationMode?: boolean;
   creationActivity?: ActivityEvent[];
   initialHistoryPending?: boolean;
+  /** The first comments page is still loading (part of `initialHistoryPending`). */
+  initialCommentsPending?: boolean;
   initialHistoryError?: boolean;
   onRetryInitialHistory?: () => void;
   onOpenSkill?: (skillId: string, name: string) => void;
+  /** A board question chat (GRE-1186): the composer shows a fixed "Questions only" cue. */
+  questionsOnly?: boolean;
 };
 
 type PendingComposerInput =
@@ -473,6 +487,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const {
     initialHistoryPending = false,
+    initialCommentsPending = initialHistoryPending,
     initialHistoryError = false,
     onRetryInitialHistory,
     comments,
@@ -493,6 +508,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     stopScope,
     issueWorkMode = "standard",
     onWorkModeChange,
+    questionsOnly = false,
     composerAccessory,
     footer,
     showComposer = true,
@@ -821,6 +837,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       commentsToTaskChatItems(projectedComments, {
         agentMap,
         userLabelMap,
+        userProfileMap,
         currentUserId,
         issueAssigneeAgentId,
         verificationCaveatsByRunId,
@@ -829,6 +846,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
       projectedComments,
       agentMap,
       userLabelMap,
+      userProfileMap,
       currentUserId,
       issueAssigneeAgentId,
       verificationCaveatsByRunId,
@@ -876,8 +894,80 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     () => runs.filter((run) => run.runtimeMode === "native"),
     [runs],
   );
+
+  // A finished run that never streamed on this page draws its folded row from
+  // a server digest (its transcript structure without content). Its log loads
+  // only when the reader opens the row. A run seen unfinished here keeps the
+  // log it streamed.
+  const streamedRunIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    for (const run of runs) {
+      if (!isTerminalRunStatus(run.status)) streamedRunIdsRef.current.add(run.id);
+    }
+  }, [runs]);
+  const digestCandidateIds = useMemo(() => {
+    const liveIds = new Set((liveRuns ?? []).map((run) => run.id));
+    if (activeRun) liveIds.add(activeRun.id);
+    return (linkedRuns ?? [])
+      .filter(
+        (run) =>
+          isTerminalRunStatus(run.status) &&
+          run.runtimeMode !== "native" &&
+          !liveIds.has(run.runId) &&
+          !streamedRunIdsRef.current.has(run.runId),
+      )
+      .map((run) => run.runId)
+      // The route takes up to 200 ids; older runs beyond that read their logs.
+      .slice(0, 200)
+      .sort();
+  }, [activeRun, linkedRuns, liveRuns]);
+  const digestQuery = useQuery({
+    queryKey: queryKeys.issues.runTranscriptDigests(
+      issueId ?? "",
+      digestCandidateIds.join(","),
+    ),
+    queryFn: ({ signal }) =>
+      heartbeatsApi.transcriptDigests(issueId!, digestCandidateIds, { signal }),
+    enabled: Boolean(issueId) && digestCandidateIds.length > 0,
+    // A finished run's digest never changes.
+    staleTime: Number.POSITIVE_INFINITY,
+    placeholderData: keepPreviousData,
+    // On failure every run reads its own log, as before.
+    retry: false,
+  });
+  const digestResult = digestQuery.data?.digests;
+  const runDigests = useMemo(() => {
+    const map = new Map<string, readonly TranscriptEntry[]>();
+    for (const id of digestCandidateIds) {
+      const entries = digestResult?.[id];
+      if (entries) map.set(id, entries);
+    }
+    return map;
+  }, [digestCandidateIds, digestResult]);
+  const digestFetching = digestQuery.isFetching;
+  const deferredRunIds = useMemo(
+    () =>
+      new Set(
+        digestFetching
+          ? digestCandidateIds.filter((id) => !(digestResult && id in digestResult))
+          : [],
+      ),
+    [digestCandidateIds, digestFetching, digestResult],
+  );
+  const [openedRunIds, setOpenedRunIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const requestRunHistory = useCallback((runIds: readonly string[]) => {
+    setOpenedRunIds((previous) =>
+      runIds.every((id) => previous.has(id))
+        ? previous
+        : new Set([...previous, ...runIds]),
+    );
+  }, []);
+
   const {
     transcriptByRun: logTranscriptByRun,
+    digestRunIds = NO_RUN_IDS,
     isInitialHydrating: logsAreInitiallyHydrating,
     hydratedRunIds: hydratedLogRunIds,
     errorsByRun: logErrorsByRun,
@@ -888,6 +978,9 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     // the native event endpoint is temporarily unavailable.
     runs,
     companyId,
+    runDigests,
+    deferredRunIds,
+    fullLogRunIds: openedRunIds,
   });
   const {
     transcriptByRun: nativeTranscriptByRun,
@@ -1906,6 +1999,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
               durationMs: segmentDurationMs,
               failed,
             }),
+            runIds: [source.id],
+            historyPending: digestRunIds.has(source.id) || undefined,
           },
           anchorCommentId: segmented
             ? null
@@ -2057,6 +2152,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     runs,
     liveRun,
     transcriptByRun,
+    digestRunIds,
     linkedRunMetaById,
     lastCommentIdByRun,
     comments,
@@ -2761,18 +2857,35 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           (logTranscriptByRun.get(run.id)?.length ?? 0) === 0
         : Boolean(logErrorsByRun?.has(run.id)),
     );
+  // Opening a task lands on its latest message, and the bottom-pinned scroller
+  // keeps that message in view while older rows (finished-run digests, logs,
+  // activity) fill in above it. So show the comments as soon as they are in.
+  // A linked comment or a Back/Forward restore needs the whole history
+  // measured first, as does an empty thread (no empty-state flash).
+  const scrollNavigation = useContext(TaskChatScrollNavigation);
+  const revealWithComments =
+    !initialCommentsPending &&
+    comments.length > 0 &&
+    Boolean(scrollNavigation) &&
+    !scrollNavigation?.hash &&
+    !scrollNavigation?.restore;
   const [revealedIssue, setRevealedIssue] = useState<string | null | undefined>(
-    () => (historyPending ? undefined : issueId),
+    () => (historyPending && !revealWithComments ? undefined : issueId),
   );
-  const historyRevealed = revealedIssue === issueId;
+  const historyRevealed = revealedIssue === issueId || revealWithComments;
   // Mount and measure the real thread while concealed, then reveal in one
   // commit. A frame also lets ancestor navigation scroll restoration finish.
   // Readiness is latched per issue: refetches never hide existing conversation.
   useEffect(() => {
-    if (historyRevealed || historyPending) return;
+    if (revealedIssue === issueId) return;
+    if (revealWithComments) {
+      setRevealedIssue(issueId);
+      return;
+    }
+    if (historyPending) return;
     const frame = requestAnimationFrame(() => setRevealedIssue(issueId));
     return () => cancelAnimationFrame(frame);
-  }, [historyPending, historyRevealed, issueId]);
+  }, [historyPending, revealWithComments, revealedIssue, issueId]);
   const retryHistory = () => {
     onRetryInitialHistory?.();
     retryLogs?.();
@@ -2780,7 +2893,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     void retryPlan();
   };
 
-  return (
+  const threadView = (
     <TaskChatExpansionState.Provider value={expansionState.current}>
       <TaskChatScrollReady.Provider value={!historyPending}>
         <TaskChatWindowScroll
@@ -2791,20 +2904,27 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           mode={streamlinedUiEnabled ? "streamlined" : "production"}
         >
           <div
-            className={cn("flex flex-col", !isMobile && "min-h-0 flex-1")}
+            className={cn(
+              "flex flex-col",
+              !isMobile && "min-h-0 flex-1",
+              // A phone chat fills the screen so a short chat still docks the
+              // composer at the bottom, where the thumb is.
+              isMobile && conversationMode && "min-h-(--tc-chat-mobile-min-h)",
+            )}
             data-testid="task-chat-thread"
           >
             <div
               className={cn(
                 "relative flex flex-col",
                 !isMobile && "min-h-0 flex-1",
+                isMobile && conversationMode && "flex-1",
               )}
               aria-busy={!historyRevealed}
             >
               {historyError ? (
                 <div
                   role="status"
-                  className="absolute inset-x-0 top-0 z-20 mx-auto flex w-full max-w-(--tc-shell-max-w) items-center gap-2 border border-border bg-background px-4 py-2 text-sm text-muted-foreground"
+                  className="absolute inset-x-0 top-0 z-sticky mx-auto flex w-full max-w-(--tc-shell-max-w) items-center gap-2 border border-border bg-background px-4 py-2 text-sm text-muted-foreground"
                 >
                   Some task history could not be loaded.
                   <Button variant="ghost" size="sm" onClick={retryHistory}>
@@ -2814,7 +2934,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
               ) : null}
               {!historyRevealed ? (
                 <div
-                  className="absolute inset-0 z-10 overflow-hidden bg-background"
+                  className="absolute inset-0 z-raised overflow-hidden bg-background"
                   data-testid="task-chat-history-loading"
                   role="status"
                   aria-label="Loading conversation"
@@ -3009,10 +3129,12 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                   // row is never occluded, and drops it back to the safe-area dock
                   // when the nav auto-hides (PAP-495). transition-[bottom] rides the
                   // nav's own 200ms slide; the offset only changes on nav toggles, so
-                  // it never animates mid-scroll.
+                  // it never animates mid-scroll. While the iPhone keyboard is up,
+                  // iOS often stops panning short of the page's bottom edge, so the
+                  // dock also clears --vv-bottom-inset (lib/ios-keyboard.ts).
                   isMobile
-                    ? "bottom-(--tc-composer-bottom) z-20 transition-[bottom] duration-200 ease-out"
-                    : "bottom-0 z-10",
+                    ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] z-sticky transition-[bottom] duration-200 ease-out"
+                    : "bottom-0 z-raised",
                   "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-4 md:pb-2",
                   streamlinedUiEnabled && "md:px-0 md:pb-0",
                   (!streamlinedUiEnabled || isMobile) &&
@@ -3069,7 +3191,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       }}
                     />
                   ) : null}
-                  <div className="relative z-10">
+                  <div className="relative z-raised">
                     <TaskChatComposer
                       onAdd={handleThreadAdd}
                       confirmedSubmissionIds={new Set(comments.filter((comment) =>
@@ -3082,6 +3204,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       stopScope={stopScope}
                       workMode={issueWorkMode}
                       onWorkModeChange={onWorkModeChange}
+                      questionsOnly={questionsOnly}
                       disabled={Boolean(runtimeComposerDisabledReason)}
                       disabledReason={runtimeComposerDisabledReason}
                       onAttachImage={onAttachImage}
@@ -3124,5 +3247,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         </TaskChatPresentationProvider>
       </TaskChatScrollReady.Provider>
     </TaskChatExpansionState.Provider>
+  );
+  return (
+    <TaskChatRunHistoryRequest.Provider value={requestRunHistory}>
+      {threadView}
+    </TaskChatRunHistoryRequest.Provider>
   );
 }

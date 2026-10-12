@@ -228,14 +228,14 @@ export async function promoteDeviceLoginCredential(
 
   // 3. Decision C: only a user-initiated login seeds a home.
   if (!userInitiated) {
-    await log("[paperclip] Codex device-login promotion: skipped (an automatic background login never seeds a home).");
+    await log("[gsam] Codex device-login promotion: skipped (an automatic background login never seeds a home).");
     return { outcome: "background_skipped", accountId, accountHomeDir: null, accountHomeCreated: false };
   }
 
   // 4. Decision H: write only while the session still owns the active slot.
   const soleOwner = await isSoleActiveOwner();
   if (!soleOwner) {
-    await log("[paperclip] Codex device-login promotion: skipped (the session no longer holds the sole active claim on the slot).");
+    await log("[gsam] Codex device-login promotion: skipped (the session no longer holds the sole active claim on the slot).");
     return { outcome: "not_sole_owner", accountId, accountHomeDir: null, accountHomeCreated: false };
   }
 
@@ -258,8 +258,8 @@ export async function promoteDeviceLoginCredential(
     destinationPath: accountHomeAuthPath,
     seedIfDestAbsent: true,
     log,
-    writtenLine: "[paperclip] Codex device-login promotion: wrote this account's own home at mode 0600.",
-    keptLine: "[paperclip] Codex device-login promotion: kept this account's own home (the login is not a seed or a strictly-newer credential).",
+    writtenLine: "[gsam] Codex device-login promotion: wrote this account's own home at mode 0600.",
+    keptLine: "[gsam] Codex device-login promotion: kept this account's own home (the login is not a seed or a strictly-newer credential).",
     tempPrefix: "auth.json.promotion-account-home",
     errorLabel: "codex device-login promotion",
     env,
@@ -294,15 +294,15 @@ export async function promoteDeviceLoginCredential(
       seedIfDestAbsent: true,
       log,
       writtenLine:
-        "[paperclip] Codex device-login promotion: wrote the company default home (seed or strictly-newer refresh).",
-      keptLine: "[paperclip] Codex device-login promotion: kept the company default home.",
+        "[gsam] Codex device-login promotion: wrote the company default home (seed or strictly-newer refresh).",
+      keptLine: "[gsam] Codex device-login promotion: kept the company default home.",
       tempPrefix: "auth.json.promotion-home",
       errorLabel: "codex device-login promotion",
       env,
     });
   } catch {
     await log(
-      "[paperclip] Codex device-login promotion: seeding the company default home failed; this account's own home is durable, so the login stays successful.",
+      "[gsam] Codex device-login promotion: seeding the company default home failed; this account's own home is durable, so the login stays successful.",
     );
   }
 

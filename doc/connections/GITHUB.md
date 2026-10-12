@@ -34,6 +34,15 @@ and webhook binding uses the same order:
 
 An unavailable or ambiguous managed identity fails visibly. It never falls
 through to another person, an organization credential, or a legacy token.
+A person with no GitHub grant gets an `unavailable` result (HTTP 200) with the
+reason, not a refusal.
+
+Credentials are issued only while the run is `running`. The `git` and `gh`
+launchers ask on every command, including local ones such as `git status`, and
+a provider can still run a few as it exits. Those requests get HTTP 403 with
+code `run_not_active`; the launcher says the run has already ended and runs
+the command without credentials, and the server logs the run ID and reason.
+Nobody needs to connect anything for these.
 Agent grants are company-scoped, have exactly one `subjectAgentId`, cannot be
 organization defaults, and are installed only for that agent.
 
@@ -161,6 +170,14 @@ projected only into the child process:
 
 Tokens never appear in arguments, URLs, files, logs, events, or model context,
 and the projection never replaces `HOME`.
+
+A token-only Apps connection cannot supply managed git credentials. When none
+are available, the operation summary and `git`/`gh` launcher explain how to use
+**Apps → GitHub → Connect as me**, then **Share with agents** for agent-started
+work. Server-side git can also use the existing company-secret or server
+environment fallback (`GITHUB_TOKEN` or `GH_TOKEN`); checkout authentication
+errors name that setup path. These diagnostics do not grant access, change
+fallback eligibility, or prevent local and anonymous git operations.
 
 Cloud deployment and exact GitHub App registration settings live in
 `paperclip-cloud/docs/github-connector-deploy-bootstrap.md`.

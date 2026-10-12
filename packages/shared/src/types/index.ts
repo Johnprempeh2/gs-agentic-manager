@@ -37,6 +37,9 @@ export type {
 } from "./summary-slot.js";
 export type {
   AttentionDecisionVerb,
+  AttentionDetailDeliverable,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -55,6 +58,36 @@ export type {
   AttentionWorkspaceRef,
 } from "./attention.js";
 export { ATTENTION_SOURCE_KINDS } from "./attention.js";
+export type {
+  DecisionCard,
+  DecisionCardAction,
+  DecisionCardActionId,
+  DecisionCardActionInput,
+  DecisionCardAgentRef,
+  DecisionCardClarity,
+  DecisionCardKind,
+  DecisionCardRequest,
+  DecisionClarityRequest,
+  DecisionClarityResponse,
+  DecisionsFeed,
+  DecisionsFeedCount,
+  DecisionCardAtDesk,
+  DecisionCardReviewer,
+  DecisionCardSetup,
+  NeedsMe,
+  NeedsMeTask,
+  NeedsMeOverdueWait,
+} from "./decisions-feed.js";
+export { DECISION_CARD_KINDS } from "./decisions-feed.js";
+export type {
+  AgentWorkDigest,
+  AgentWorkDigestAgent,
+  AgentWorkDigestCounts,
+  AgentWorkDigestItem,
+  AgentWorkDigestItemKind,
+  AgentWorkDigestSinceSource,
+  AgentWorkDigestVisit,
+} from "./agent-work-digest.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -130,7 +163,14 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  type StrategyBoardEmailSettings,
   GSAM_CLOUD_MANAGED_BY,
+  GREATSTONE_TEAM_TAG,
+  TEAM_CATALOG_ADD_MODES,
+  TEAM_CATALOG_FILTERS,
+  type TeamCatalogAddMode,
+  type TeamCatalogFilter,
 } from "./instance.js";
 export {
   TRUST_PRESETS,
@@ -190,6 +230,7 @@ export type {
   CompanySkillResetRequest,
   CompanySkillImportRequest,
   CompanySkillImportResult,
+  CompanySkillImportStrippedFiles,
   CompanySkillProjectScanRequest,
   CompanySkillProjectBrowseRequest,
   CompanySkillProjectBrowseEntry,
@@ -352,7 +393,7 @@ export type {
   DocumentTextRange,
   UpdateDocumentAnnotationThreadRequest,
 } from "./document-annotation.js";
-export type { Project, ProjectRepository, ProjectRepositoryOptions, ProjectBudgetSummary, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectManagedByPlugin, ProjectWorkspace } from "./project.js";
+export type { Project, ProjectRepository, ProjectRepositoryOptions, ProjectBudgetSummary, ProjectCodebase, ProjectCodebaseOrigin, ProjectGoalRef, ProjectManagedByPlugin, ProjectWorkspace, ProjectWorkspaceCheckoutHead, ProjectWorkspacePreviewUpdateState, ProjectWorkspacePreviewUpdateStatus, ProjectWorkspacePreviewUpdateTrigger } from "./project.js";
 export type {
   CompanySearchCountType,
   CompanySearchExtractIssueResult,
@@ -607,6 +648,8 @@ export type {
   ToolConnectionAccessSummary,
   ToolConnectionTestAgent,
   ToolConnectionTestAgentAccessResponse,
+  ToolConnectionAgentCheckReason,
+  ToolConnectionAgentCheckResult,
   ToolConnectionTestAgentsResponse,
   ToolConnectionTestCallResult,
   ToolUpstreamPending,
@@ -689,6 +732,7 @@ export type {
   SuccessfulRunHandoffState,
   SuccessfulRunHandoffStateKind,
   IssueScheduledRetry,
+  IssueLatestRun,
   IssueScheduledRetryStatus,
   IssueRetryNowOutcome,
   IssueRetryNowResponse,
@@ -734,6 +778,7 @@ export type {
   PaperclipQuestionSetQuestion,
   PaperclipQuestionSetPayload,
   AskUserQuestionsPayload,
+  InteractionAtDesk,
   AskUserQuestionsAnswer,
   AskUserQuestionsResult,
   RequestConfirmationIssueDocumentTarget,
@@ -802,13 +847,40 @@ export type {
 export type {
   Goal,
   GoalBlocker,
+  GoalBlockerActor,
+  GoalBlockerReason,
+  GoalBlockerWaitingOn,
+  GoalIssueBlocker,
   GoalCheckIn,
+  GoalKpiReading,
   GoalDetail,
   GoalMilestone,
   GoalProgress,
   GoalProgressSource,
   GoalWithProgress,
 } from "./goal.js";
+export type {
+  GoalKpiAlert,
+  GoalWhyRequest,
+  StrategyBoardAgent,
+  StrategyBoardAction,
+  StrategyBoardArea,
+  StrategyBoardBrief,
+  StrategyBoardBriefAction,
+  StrategyBoardBriefCheckIn,
+  StrategyBoardKpi,
+  StrategyBoardMember,
+  StrategyBoardOwner,
+  StrategyBoardPack,
+  StrategyBoardPackListItem,
+  StrategyBoardPackSnapshot,
+  StrategyBoardSnapshotRef,
+  StrategyBoardSummary,
+  StrategyBoardViewerRights,
+  StrategyBoardEmail,
+  StrategyBoardEmailKind,
+  StrategyBoardSettings,
+} from "./strategy-board.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   BudgetPolicy,
@@ -886,7 +958,7 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, IssueCostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentSummary } from "./cost.js";
+export type { CostEvent, CostSummary, IssueCostSummary, IssueCostModelRow, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
   AgentWakeupResponse,
@@ -1079,3 +1151,5 @@ export * from "./chat-channels.js";
 export * from "./chat-github.js";
 
 export * from "./email.js";
+export * from "./crm-sync.js";
+export * from "./pipeline-fields.js";

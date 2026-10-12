@@ -45,6 +45,7 @@ import {
   resolveWorkspaceRuntimeReadinessTimeoutSec,
   resolveShell,
   sanitizeRuntimeServiceBaseEnv,
+  setGitIndexLockWaitOptionsForTests,
   setWorkspaceRuntimeExposureDepsForTests,
   startRuntimeServicesForWorkspaceControl,
   stopRuntimeServicesForExecutionWorkspace,
@@ -1159,6 +1160,53 @@ describe("realizeExecutionWorkspace", () => {
     expect(reused.warnings).toEqual([
       expect.stringContaining("is behind origin/master by 1 commit"),
     ]);
+  });
+
+  // GRE-247: restore of a reused worktree must never discard uncommitted work.
+  it("does not reset a reused worktree with staged and modified tracked files", async () => {
+    const { sourceRepo, remotePath, repoRoot } = await createClonedRepoWithRemote();
+
+    const initial = await realizeWorktreeForTest(repoRoot, null);
+    const initialHead = await readGit(initial.cwd, ["rev-parse", "HEAD"]);
+    await fs.writeFile(path.join(initial.cwd, "README.md"), "edited, not committed\n", "utf8");
+    await fs.writeFile(path.join(initial.cwd, "staged.txt"), "staged, not committed\n", "utf8");
+    await runGit(initial.cwd, ["add", "staged.txt"]);
+
+    await advanceRemoteMaster(sourceRepo, remotePath, "auth-fix.txt");
+
+    const reused = await realizeWorktreeForTest(repoRoot, null);
+
+    expect(reused.created).toBe(false);
+    expect(await readGit(reused.cwd, ["rev-parse", "HEAD"])).toBe(initialHead);
+    await expect(fs.readFile(path.join(reused.cwd, "README.md"), "utf8")).resolves.toBe("edited, not committed\n");
+    await expect(fs.readFile(path.join(reused.cwd, "staged.txt"), "utf8")).resolves.toBe("staged, not committed\n");
+    expect(await readGit(reused.cwd, ["diff", "--cached", "--name-only"])).toBe("staged.txt");
+  });
+
+  // GRE-243 / GRE-383: a stale index.lock in a reused worktree failed setup,
+  // and the task went to `blocked` (GRE-309, GRE-351). A lock that no git
+  // process holds and that is older than 2 minutes is now removed, and the
+  // worktree refreshes as normal. Held-lock waiting is covered in
+  // services/git-index-lock.test.ts.
+  it("removes a stale index.lock in a clean reused worktree and refreshes it", async () => {
+    const { sourceRepo, remotePath, repoRoot } = await createClonedRepoWithRemote();
+
+    const initial = await realizeWorktreeForTest(repoRoot, null);
+    const indexLockPath = path.resolve(
+      initial.cwd,
+      await readGit(initial.cwd, ["rev-parse", "--git-path", "index.lock"]),
+    );
+    await fs.writeFile(indexLockPath, "", "utf8");
+    const staleMtime = new Date(Date.now() - 3 * 60 * 1000);
+    await fs.utimes(indexLockPath, staleMtime, staleMtime);
+
+    const newBaseSha = await advanceRemoteMaster(sourceRepo, remotePath, "auth-fix.txt");
+
+    const reused = await realizeWorktreeForTest(repoRoot, null);
+
+    expect(reused.created).toBe(false);
+    await expect(fs.stat(indexLockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readGit(reused.cwd, ["rev-parse", "HEAD"])).toBe(newBaseSha);
   });
 
   it("bases a fresh worktree on a remote-only branch supplied as fix/foo", async () => {
@@ -4232,6 +4280,31 @@ describe("ensureRuntimeServicesForRun", () => {
     }
   });
 
+  it("fails a service start whose working folder is missing instead of crashing the server (GRE-1011)", async () => {
+    const workspaceRoot = await makeTempDir("paperclip-runtime-missing-cwd-");
+    const restorePaperclipEnv = configureRuntimeProvisionTestHome(workspaceRoot, "runtime-missing-cwd");
+    const missingCwd = path.join(workspaceRoot, "deleted-preview");
+    const base = runtimeProvisionTestConfig({});
+    const [service] = base.workspaceRuntime.services;
+    const config = { workspaceRuntime: { services: [{ ...service, cwd: missingCwd }] } };
+    const workspace = buildWorkspace(workspaceRoot);
+
+    try {
+      // Before the fix the spawn ENOENT fired while startup awaited the log
+      // handle close, with no `error` listener yet, and killed the process.
+      await expect(
+        startRuntimeServicesForWorkspaceControl(runtimeProvisionStartInput({ workspace, config })),
+      ).rejects.toThrow(`Runtime service "web" could not start because its working folder does not exist: ${missingCwd}`);
+    } finally {
+      await stopRuntimeServicesForExecutionWorkspace({
+        executionWorkspaceId: "execution-workspace-1",
+        workspaceCwd: workspaceRoot,
+      });
+      await fs.rm(workspaceRoot, { recursive: true, force: true });
+      restorePaperclipEnv();
+    }
+  });
+
   it("logs runtime provisioning failure and retries it on the next service start", async () => {
     const workspaceRoot = await makeTempDir("paperclip-runtime-provision-retry-");
     const restorePaperclipEnv = configureRuntimeProvisionTestHome(workspaceRoot, "runtime-provision-retry");
@@ -6449,7 +6522,9 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
     ])).resolves.toBe("");
   }, 20_000);
 
-  it("falls back to validation failure when git reports index-lock contention during quarantine", async () => {
+  // GRE-387: a held lock is waited on for up to 2 minutes (fake clock here),
+  // then the repair fails with index contention instead of failing at once.
+  it("waits up to 2 minutes for a held index.lock, then falls back to validation failure", async () => {
     const expectedBranch = "PAP-459-recorded";
     const actualBranch = "PAP-459-live";
     const { repoRoot, worktreePath } = await createDirtyMismatchRepo({ expectedBranch, actualBranch });
@@ -6461,8 +6536,18 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
       sourceIdentifier: "PAP-459",
       claimant: "none",
     });
-    const lockPath = await readGit(worktreePath, ["rev-parse", "--git-path", "index.lock"]);
+    const lockPath = path.resolve(worktreePath, await readGit(worktreePath, ["rev-parse", "--git-path", "index.lock"]));
     await fs.writeFile(lockPath, "locked\n", "utf8");
+    let fakeNow = Date.now();
+    let sleptMs = 0;
+    setGitIndexLockWaitOptionsForTests({
+      probe: async () => true,
+      now: () => fakeNow,
+      sleep: async (ms) => {
+        sleptMs += ms;
+        fakeNow += ms;
+      },
+    });
     try {
       await expect(restoreDirtyQuarantine({
         repoRoot,
@@ -6478,15 +6563,56 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
             safeRepair: expect.objectContaining({
               attempted: true,
               succeeded: false,
-              reason: expect.stringContaining("index contention"),
+              reason: expect.stringMatching(/index contention.*still held after 120s/),
             }),
           }),
         },
       });
     } finally {
+      setGitIndexLockWaitOptionsForTests(null);
       await fs.rm(lockPath, { force: true });
     }
+    expect(sleptMs).toBe(2 * 60 * 1000);
     await expect(readGit(worktreePath, ["branch", "--show-current"])).resolves.toBe(actualBranch);
+  }, 20_000);
+
+  // GRE-387: a stale lock (no holder, older than 2 minutes) used to block the
+  // task. It is now removed and the repair continues.
+  it("removes a stale index.lock and completes the dirty quarantine repair", async () => {
+    const expectedBranch = "PAP-461-recorded";
+    const actualBranch = "PAP-461-live";
+    const { repoRoot, worktreePath } = await createDirtyMismatchRepo({ expectedBranch, actualBranch });
+    const ids = await seedDirtyQuarantineRecords({
+      repoRoot,
+      worktreePath,
+      expectedBranch,
+      actualBranch,
+      sourceIdentifier: "PAP-461",
+      claimant: "none",
+    });
+    const lockPath = path.resolve(worktreePath, await readGit(worktreePath, ["rev-parse", "--git-path", "index.lock"]));
+    await fs.writeFile(lockPath, "", "utf8");
+    const staleMtime = new Date(Date.now() - 3 * 60 * 1000);
+    await fs.utimes(lockPath, staleMtime, staleMtime);
+    setGitIndexLockWaitOptionsForTests({ probe: async () => false });
+    const { recorder, operations } = createWorkspaceOperationRecorderDouble();
+    try {
+      const restored = await restoreDirtyQuarantine({
+        repoRoot,
+        worktreePath,
+        expectedBranch,
+        actualBranch,
+        ids,
+        recorder,
+      });
+      expect(restored?.warnings.some((entry) => entry.includes("dirty worktree state was quarantined"))).toBe(true);
+    } finally {
+      setGitIndexLockWaitOptionsForTests(null);
+    }
+    await expect(fs.stat(lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(readGit(worktreePath, ["branch", "--show-current"])).resolves.toBe(expectedBranch);
+    await expect(readGit(worktreePath, ["status", "--porcelain", "--untracked-files=all"])).resolves.toBe("");
+    expect(operations.some((op) => op.metadata?.reason === "git_index_locked")).toBe(true);
   }, 20_000);
 
   it("best-effort restores the recorded branch when the rescue commit fails", async () => {
@@ -6562,6 +6688,75 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
     await db.delete(agents);
     await db.delete(companies);
   });
+
+  it("saves a project workspace service that never becomes ready as failed, not stopped (GRE-1002)", async () => {
+    const workspaceRoot = await makeTempDir("paperclip-runtime-failed-start-");
+    const companyId = randomUUID();
+    const projectId = randomUUID();
+    const projectWorkspaceId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(projects).values({ id: projectId, companyId, name: "Failed start", status: "in_progress" });
+    await db.insert(projectWorkspaces).values({
+      id: projectWorkspaceId,
+      companyId,
+      projectId,
+      name: "Primary",
+      sourceType: "local_path",
+      cwd: workspaceRoot,
+      isPrimary: true,
+    });
+
+    try {
+      await expect(startRuntimeServicesForWorkspaceControl({
+        db,
+        actor: { id: null, name: "Board", companyId },
+        issue: null,
+        workspace: {
+          baseCwd: workspaceRoot,
+          source: "project_primary",
+          projectId,
+          workspaceId: projectWorkspaceId,
+          repoUrl: null,
+          repoRef: null,
+          strategy: "project_primary",
+          cwd: workspaceRoot,
+          branchName: null,
+          worktreePath: null,
+          warnings: [],
+          created: false,
+        },
+        config: {
+          workspaceRuntime: {
+            services: [{
+              name: "web",
+              // Exits at once, so readiness can never pass.
+              command: `${JSON.stringify(process.execPath)} -e "process.exit(1)"`,
+              cwd: ".",
+              port: { type: "auto" },
+              readiness: { type: "http", urlTemplate: "http://127.0.0.1:{{port}}", timeoutSec: 5, intervalMs: 100 },
+              lifecycle: "shared",
+              stopPolicy: { type: "manual" },
+            }],
+          },
+        },
+        adapterEnv: {},
+      })).rejects.toThrow(/Failed to start runtime service "web"/);
+
+      const rows = await db
+        .select()
+        .from(workspaceRuntimeServices)
+        .where(eq(workspaceRuntimeServices.projectWorkspaceId, projectWorkspaceId));
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ status: "failed", healthStatus: "unhealthy" });
+    } finally {
+      await fs.rm(workspaceRoot, { recursive: true, force: true });
+    }
+  }, 20_000);
 
   it("persists provisioning before starting and excludes provision time from readiness timeout", async () => {
     const workspaceRoot = await makeTempDir("paperclip-runtime-slow-control-");
@@ -7228,9 +7423,10 @@ describeEmbeddedPostgres("workspace runtime service control persistence", () => 
         new Promise<"locked">((resolve) => setTimeout(() => resolve("locked"), 2_000)),
       ]);
 
-      const readinessWaitStartedAt = Date.now();
+      // Monotonic clock: NTP / WSL2 host time sync can step Date.now() back mid-wait (GRE-369).
+      const readinessWaitStartedAt = performance.now();
       await new Promise((resolve) => setTimeout(resolve, 60_250));
-      expect(Date.now() - readinessWaitStartedAt).toBeGreaterThanOrEqual(60_000);
+      expect(performance.now() - readinessWaitStartedAt).toBeGreaterThanOrEqual(60_000);
 
       await fs.writeFile(releaseMarkerPath, "release");
       const started = (await startPromise)[0]!;

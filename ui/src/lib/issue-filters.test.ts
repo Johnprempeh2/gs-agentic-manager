@@ -6,6 +6,7 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
   searchIssueFilterOptions,
   shouldIncludeIssueFilterWorkspaceOption,
@@ -90,6 +91,20 @@ describe("issue filters", () => {
     });
 
     expect(filtered.map((issue) => issue.id)).toEqual(["agent-match", "user-match"]);
+  });
+
+  it("filters issues by team (GRE-437) and counts it as a filter group", () => {
+    const issues = [
+      makeIssue({ id: "platform", teamId: "team-platform" }),
+      makeIssue({ id: "release", teamId: "team-release" }),
+      makeIssue({ id: "loose", teamId: null }),
+    ];
+    const state = { ...defaultIssueFilterState, teams: ["team-platform"] };
+    expect(applyIssueFilters(issues, state).map((issue) => issue.id)).toEqual(["platform"]);
+    expect(countActiveIssueFilters(state)).toBe(1);
+    // Saved views from before teams existed have no `teams` key.
+    const { teams: _teams, ...legacyState } = defaultIssueFilterState;
+    expect(applyIssueFilters(issues, legacyState)).toHaveLength(3);
   });
 
   it("counts creator filters as an active filter group", () => {
@@ -251,5 +266,30 @@ describe("issue filters", () => {
     );
 
     expect(filtered).toEqual([]);
+  });
+});
+
+describe("work filter (GRE-1144)", () => {
+  const issues = [
+    makeIssue({ id: "objective", goalKind: "objective" }),
+    makeIssue({ id: "initiative", goalKind: "initiative" }),
+    makeIssue({ id: "kpi", goalKind: "kpi" }),
+    makeIssue({ id: "no-goal", goalKind: null }),
+    makeIssue({ id: "legacy" }),
+  ];
+  const ids = (list: Issue[]) => list.map((issue) => issue.id);
+
+  it("keeps only strategic or only day-to-day work", () => {
+    expect(ids(applyIssueFilters(issues, { ...defaultIssueFilterState, work: "strategic" }))).toEqual(["objective", "initiative"]);
+    expect(ids(applyIssueFilters(issues, { ...defaultIssueFilterState, work: "day_to_day" }))).toEqual(["kpi", "no-goal", "legacy"]);
+    expect(applyIssueFilters(issues, defaultIssueFilterState)).toHaveLength(5);
+  });
+
+  it("counts as an active filter and drops unknown saved values", () => {
+    expect(countActiveIssueFilters({ ...defaultIssueFilterState, work: "strategic" })).toBe(1);
+    expect(countActiveIssueFilters(defaultIssueFilterState)).toBe(0);
+    expect(normalizeIssueFilterState({ work: "day_to_day" }).work).toBe("day_to_day");
+    expect(normalizeIssueFilterState({ work: "urgent" }).work).toBeNull();
+    expect(normalizeIssueFilterState({}).work).toBeNull();
   });
 });

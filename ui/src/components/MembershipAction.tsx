@@ -42,8 +42,10 @@ export function MembershipAction({
     <span
       className={cn(
         "flex w-(--sz-66px) shrink-0 justify-end",
+        // "Leave" is a quiet hover action on desktop; on a phone, where there
+        // is no hover, it read like "remove this agent" on every row.
         !isLeft && !compact
-          ? "opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
+          ? "max-sm:hidden sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
           : "opacity-100",
       )}
     >

@@ -23,6 +23,8 @@ import {
   feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   hidesCompanyPage,
+  pauseCompanySchema,
+  resumeCompanySchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
 } from "@greatstone/shared";
@@ -67,7 +69,14 @@ import {
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getHiddenSettings, hiddenSettingWriteFloor } from "../services/settings-visibility.js";
 import type { StorageService } from "../storage/types.js";
-import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
+import {
+  assertBoard,
+  assertCompanyAccess,
+  assertCompanyOwnerOrAdmin,
+  assertInstanceAdmin,
+  getActorInfo,
+  hasCompanyAccess,
+} from "./authz.js";
 import { COMPANY_IMPORT_ROUTE_PATH } from "./company-import-paths.js";
 
 // A company import can arrive one of two ways on the import + preview routes:
@@ -372,6 +381,17 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     if (actorAgent.role !== "ceo") {
       throw forbidden(`Only CEO agents can manage ${capability}`);
     }
+  }
+
+  /**
+   * Company-wide settings: the same-company CEO agent keeps its existing
+   * (branding-only) access, and a person must be an owner or admin of the
+   * company (or an instance admin, or the implicit local board). Operators
+   * and viewers get 403.
+   */
+  async function assertSameCompanyCeoAgentOrOwnerAdmin(req: Request, companyId: string, capability: string) {
+    await assertSameCompanyCeoAgentOrBoard(req, companyId, capability);
+    if (req.actor.type === "board") assertCompanyOwnerOrAdmin(req, companyId);
   }
 
   router.get("/", async (req, res) => {
@@ -902,7 +922,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
           throw conflict("Import transfer apply is in progress; retry after it settles");
         }
         await removeImportTransferPart(importTransferSpoolRoot, run.id, partIndex);
-        res.status(410).json({ error: "Import transfer expired — re-create it" });
+        res.status(410).json({ error: "Import transfer expired; re-create it" });
         return;
       }
       res.json({ ok: true, index: partIndex, alreadyCompleted: false } satisfies CompanyImportTransferPartUploadResult);
@@ -963,7 +983,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     if (run.status === "cancelled") {
       // The abandoned-spool sweep cancelled the run and deleted its parts —
       // same contract as the part-upload route: the caller re-creates it.
-      res.status(410).json({ error: "Import transfer expired — re-create it" });
+      res.status(410).json({ error: "Import transfer expired; re-create it" });
       return null;
     }
     const manifest = storedImportTransferManifest(run);
@@ -1018,7 +1038,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
         throw conflict("Import transfer apply is in progress; retry after it settles");
       }
       if (current?.status === "cancelled") {
-        res.status(410).json({ error: "Import transfer expired — re-create it" });
+        res.status(410).json({ error: "Import transfer expired; re-create it" });
         return null;
       }
       throw error;
@@ -1198,7 +1218,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
   router.post("/", (req, _res, next) => {
     assertBoard(req);
     if (isCloudManagedInstance()) {
-      throw forbidden("Company creation is managed by Paperclip Cloud", {
+      throw forbidden("Company creation is managed by the cloud service", {
         code: "cloud_managed",
       });
     }
@@ -1246,7 +1266,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.patch("/:companyId", async (req, res) => {
     const companyId = req.params.companyId as string;
-    await assertSameCompanyCeoAgentOrBoard(req, companyId, "company settings");
+    await assertSameCompanyCeoAgentOrOwnerAdmin(req, companyId, "company settings");
 
     const actor = getActorInfo(req);
     let body: Record<string, unknown>;
@@ -1275,6 +1295,14 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
               : DEFAULT_FEEDBACK_DATA_SHARING_TERMS_VERSION,
         };
       }
+    }
+
+    // GRE-1364: pause and resume have their own actions, so a settings patch
+    // cannot pause without suspending connections or resume without a reason.
+    // svc.update refuses any move to active (from paused or archived) while an
+    // operator pause holds (GRE-1385).
+    if (body.status === "paused" && existingCompany.status !== "paused") {
+      throw conflict("Use the company pause action to pause a company", { code: "use_pause_action" });
     }
 
     const transitionsToArchived =
@@ -1323,7 +1351,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.patch("/:companyId/branding", async (req, res) => {
     const companyId = req.params.companyId as string;
-    await assertSameCompanyCeoAgentOrBoard(req, companyId, "company branding");
+    await assertSameCompanyCeoAgentOrOwnerAdmin(req, companyId, "company branding");
     const body = updateCompanyBrandingSchema.parse(req.body);
     const company = await svc.update(companyId, body);
     if (!company) {
@@ -1348,9 +1376,34 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.post("/:companyId/archive", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    assertBoard(req);
+    assertCompanyOwnerOrAdmin(req, companyId);
     const company = await svc.archive(companyId, getActorInfo(req));
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(company);
+  });
+
+  // GRE-1364: pause stops runs, wakes, routines and every connection; resume is
+  // a named act with a reason and turns no connection back on by itself.
+  router.post("/:companyId/pause", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyOwnerOrAdmin(req, companyId);
+    const body = pauseCompanySchema.parse(req.body ?? {});
+    const company = await svc.pause(companyId, getActorInfo(req), body);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(company);
+  });
+
+  router.post("/:companyId/resume", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyOwnerOrAdmin(req, companyId);
+    const body = resumeCompanySchema.parse(req.body);
+    const company = await svc.resume(companyId, getActorInfo(req), body);
     if (!company) {
       res.status(404).json({ error: "Company not found" });
       return;
@@ -1360,8 +1413,7 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
 
   router.delete("/:companyId", async (req, res) => {
     const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    assertBoard(req);
+    assertCompanyOwnerOrAdmin(req, companyId);
     const company = await svc.remove(companyId);
     if (!company) {
       res.status(404).json({ error: "Company not found" });

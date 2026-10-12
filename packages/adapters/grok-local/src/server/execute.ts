@@ -1,4 +1,5 @@
 import { withWorkspaceRestore } from "@greatstone/adapter-utils/workspace-restore-result";
+import { cancellableSandboxStartup } from "@greatstone/adapter-utils/acpx-engine/startup-cancellation";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -134,7 +135,7 @@ async function stageGrokProjectAssets(input: {
       rulesFilePath = input.instructionsFilePath;
       await input.onLog(
         "stdout",
-        `[paperclip] Grok workspace already contains ${instructionsTarget}; using --rules @${input.instructionsFilePath} instead of overwriting it.\n`,
+        `[gsam] Grok workspace already contains ${instructionsTarget}; using --rules @${input.instructionsFilePath} instead of overwriting it.\n`,
       );
     }
   } else {
@@ -165,7 +166,7 @@ async function stageGrokProjectAssets(input: {
       if (await pathExists(target)) {
         await input.onLog(
           "stdout",
-          `[paperclip] Grok skill target already exists at ${target}; leaving it unchanged.\n`,
+          `[gsam] Grok skill target already exists at ${target}; leaving it unchanged.\n`,
         );
         continue;
       }
@@ -196,6 +197,55 @@ function resolveBillingType(env: Record<string, string>): "api" | "subscription"
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
+  const target = ctx.executionTarget;
+  if (!ctx.signal || !ctx.stopRemoteStartup || target?.kind !== "remote" || target.transport !== "sandbox" || !target.runner) {
+    return executeTurn(ctx);
+  }
+
+  // Direct remote commands have no host child process to kill. Register before
+  // setup and retain ownership until the host verifies this sandbox has stopped.
+  await ctx.onCancellationReady?.();
+  const cancelled = (result?: AdapterExecutionResult): AdapterExecutionResult => ({
+    exitCode: null,
+    signal: null,
+    timedOut: false,
+    ...result,
+    errorCode: "cancelled",
+    errorMessage: "Grok execution was cancelled",
+    resultJson: {
+      ...result?.resultJson,
+      executionCancellation: { state: "acknowledged", acknowledgedAt: new Date().toISOString() },
+    },
+  });
+  if (ctx.signal.aborted) {
+    // The host may already have acquired a lease before adapter registration.
+    await ctx.stopRemoteStartup();
+    return { ...cancelled(), executionRecovery: { kind: "bootstrap", providerWorkStarted: false } };
+  }
+  // Keep the existing setup boundary armed for the whole direct CLI invocation:
+  // unlike ACP adapters, Grok has no turn-level cancellation protocol.
+  const cancellation = cancellableSandboxStartup(ctx);
+  let result: AdapterExecutionResult | undefined;
+  let failure: unknown;
+  let failed = false;
+  try {
+    result = await executeTurn(cancellation.context);
+  } catch (error) {
+    failure = error;
+    failed = true;
+  }
+  try {
+    await cancellation.finish();
+  } catch (error) {
+    failure = error;
+    failed = true;
+  }
+  if (cancellation.stopAcknowledged()) return cancelled(result);
+  if (failed) throw failure;
+  return result!;
+}
+
+async function executeTurn(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, onSpawn, authToken } = ctx;
   const executionTarget = readAdapterExecutionTarget({
     executionTarget: ctx.executionTarget,
@@ -355,7 +405,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (executionTargetIsRemote) {
       await onLog(
         "stdout",
-        `[paperclip] Syncing Grok workspace to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
+        `[gsam] Syncing Grok workspace to ${describeAdapterExecutionTarget(executionTarget)}.\n`,
       );
       // Stage only the credential file the remote lane needs into a curated
       // temp dir and ship THAT as the `home` asset, the same curated-snapshot
@@ -457,12 +507,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (executionTargetIsRemote && runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[paperclip] Grok session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
+        `[gsam] Grok session "${runtimeSessionId}" does not match the current remote execution identity and will not be resumed in "${effectiveExecutionCwd}". Starting a fresh remote session.\n`,
       );
     } else if (runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[paperclip] Grok session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
+        `[gsam] Grok session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${effectiveExecutionCwd}".\n`,
       );
     }
 
@@ -543,6 +593,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
 
     const runAttempt = async (resumeSessionId: string | null) => {
+      ctx.signal?.throwIfAborted();
       const prompt = joinPromptSections([
         selectInitialCommunicationGuidance(context, { resumedSession: Boolean(resumeSessionId) }),
         basePrompt,
@@ -655,6 +706,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
 
     const initial = await runAttempt(sessionId);
+    ctx.signal?.throwIfAborted();
     if (
       sessionId &&
       !initial.proc.timedOut &&
@@ -663,7 +715,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ) {
       await onLog(
         "stdout",
-        `[paperclip] Grok resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+        `[gsam] Grok resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toResult(retry, true, true);
@@ -680,7 +732,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       await fs.rm(stagedGrokHomeDir, { recursive: true, force: true }).catch(async (error) => {
         await onLog(
           "stderr",
-          `[paperclip] Failed to remove staged Grok home "${stagedGrokHomeDir}": ${
+          `[gsam] Failed to remove staged Grok home "${stagedGrokHomeDir}": ${
             error instanceof Error ? error.message : String(error)
           }\n`,
         );

@@ -13,12 +13,12 @@ type LabFixtureKey =
   | "public-invite-only";
 
 const FIXTURE_LABELS: Record<LabFixtureKey, string> = {
-  "signed-out-private": "1 · authenticated/private — signed out (browser claim available)",
-  "signed-in-private": "2 · authenticated/private — signed in (claim CTA primary)",
-  claiming: "3 · authenticated/private — claim in flight",
-  "claim-error": "4 · authenticated/private — claim error (e.g. 409 already claimed)",
-  "claim-success": "5 · authenticated/private — claim succeeded, redirect pending",
-  "public-invite-only": "6 · authenticated/public — invite-only (no browser claim)",
+  "signed-out-private": "1 · authenticated/private: signed out (browser claim available)",
+  "signed-in-private": "2 · authenticated/private: signed in (claim CTA primary)",
+  claiming: "3 · authenticated/private: claim in flight",
+  "claim-error": "4 · authenticated/private: claim error (e.g. 409 already claimed)",
+  "claim-success": "5 · authenticated/private: claim succeeded, redirect pending",
+  "public-invite-only": "6 · authenticated/public: invite-only (no browser claim)",
 };
 
 const FIXTURE_ORDER: LabFixtureKey[] = [

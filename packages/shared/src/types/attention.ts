@@ -19,6 +19,7 @@ export const ATTENTION_SOURCE_KINDS = [
   "budget_alert",
   "agent_error_alert",
   "ai_connection_alert",
+  "connectivity_outage",
 ] as const;
 
 export type AttentionSourceKind = (typeof ATTENTION_SOURCE_KINDS)[number];
@@ -32,8 +33,10 @@ export type AttentionSubjectKind =
   | "recovery_action"
   | "run"
   | "budget_incident"
+  | "billing_account"
   | "agent"
-  | "ai_connection";
+  | "ai_connection"
+  | "connectivity_outage";
 
 export type AttentionSeverity = "critical" | "high" | "medium" | "low";
 
@@ -102,6 +105,15 @@ export interface AttentionDetailImage {
   alt?: string | null;
 }
 
+/** The latest version of a deliverable on the task, shown inline on a Decisions card (GRE-451). */
+export interface AttentionDetailDeliverable {
+  id: string;
+  title: string;
+  contentType: string;
+  contentPath: string;
+  originalFilename?: string | null;
+}
+
 export interface AttentionItemDismissal {
   kind: InboxDismissalKind;
   dismissedAt: string;
@@ -122,36 +134,42 @@ export type AttentionItemDetail =
       planTitle: string | null;
       summaryExcerpt: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "confirmation";
       promptExcerpt: string | null;
       isPlanTarget: false;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "questions";
       questionCount: number;
       firstQuestionText: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "suggested_tasks";
       taskCount: number;
       firstTaskTitle: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "checkbox_confirmation";
       optionCount: number;
       promptExcerpt: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "item_verdicts";
       itemCount: number;
       promptExcerpt: string | null;
       images: AttentionDetailImage[];
+      deliverables?: AttentionDetailDeliverable[];
     }
   | {
       kind: "failed_run";
@@ -183,10 +201,41 @@ export type AttentionItemDetail =
       images: AttentionDetailImage[];
     }
   | {
+      /**
+       * An in-review issue the operator must decide on (GRE-1421): what the
+       * assignee last said and the main work product, so the card can be
+       * decided without opening the thread.
+       */
+      kind: "review";
+      lastUpdate: AttentionReviewLastUpdate | null;
+      workProduct: AttentionReviewWorkProduct | null;
+      images: AttentionDetailImage[];
+    }
+  | {
       kind: "generic";
       summaryExcerpt: string | null;
       images: AttentionDetailImage[];
     };
+
+/** The agent comment a review card quotes, trimmed to a short excerpt. */
+export interface AttentionReviewLastUpdate {
+  commentId: string;
+  authorAgentId: string | null;
+  excerpt: string;
+  createdAt: string;
+  /**
+   * `handoff`: the assignee's newest comment that says what was done.
+   * `latest`: no hand-off was found, so this is the newest agent comment.
+   */
+  kind: "handoff" | "latest";
+}
+
+/** The work product a reviewer should check — a pull request when one exists. */
+export interface AttentionReviewWorkProduct {
+  type: string;
+  title: string;
+  url: string;
+}
 
 /**
  * Who may resolve an issue-thread interaction, as the server evaluated it

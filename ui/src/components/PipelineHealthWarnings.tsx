@@ -52,6 +52,7 @@ export function PipelineHealthBar({
     <div
       role="region"
       aria-labelledby="pipeline-health-bar-heading"
+      data-tour="board-warnings"
       className={cn(
         "rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-amber-900 dark:border-amber-300/30 dark:bg-amber-400/10 dark:text-amber-200",
         className,
@@ -59,7 +60,7 @@ export function PipelineHealthBar({
     >
       <h2 id="pipeline-health-bar-heading" className="flex items-center gap-2 text-sm font-semibold">
         <AlertTriangle className="h-4 w-4 shrink-0" />
-        <span>Some steps won't run yet — {warningCount(warnings.length)}</span>
+        <span>Some steps won't run yet: {warningCount(warnings.length)}</span>
       </h2>
       <ul className="mt-1.5 space-y-1 pl-6 text-sm">
         {shown.map((warning, index) => {
@@ -126,7 +127,7 @@ export function StageHealthWarnings({
         <span>
           {warnings.length === 1
             ? "This step won't run yet"
-            : `This step won't run yet — ${warnings.length} things to fix`}
+            : `This step won't run yet: ${warnings.length} things to fix`}
         </span>
       </h2>
       <ul className="mt-1.5 space-y-1 pl-6">

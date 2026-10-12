@@ -115,6 +115,24 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Stacking scale (GRE-305). The only z-index values the UI uses: write
+   `z-dialog`, `z-popover`, … in classes and `var(--z-index-…)` in CSS or
+   inline styles; never a bare number. Each layer sits above every layer
+   listed before it. Within one layer, later DOM (a later portal) wins, so a
+   dialog opened from a dialog stacks correctly without a new number.
+   `static` keeps every variable on :root even when no class uses it. */
+@theme static {
+  --z-index-page: 0;     /* in-flow content; resets a lifted child */
+  --z-index-raised: 10;  /* lift inside one component: focused button in a group, overlapping card, badge */
+  --z-index-sticky: 20;  /* sticky headers and bars inside a scroll area; overlays above raised content in one component */
+  --z-index-chrome: 30;  /* app shell: sidebar, bottom nav, floating page buttons */
+  --z-index-drawer: 40;  /* shell drawers and panels that slide over the page, and their scrims */
+  --z-index-dialog: 50;  /* modal dialogs, sheets, full-screen modals, and their scrims */
+  --z-index-popover: 60; /* dropdowns, selects, popovers, tooltips, editor popups: always above a dialog they open from */
+  --z-index-toast: 70;   /* toasts: above everything people work in */
+  --z-index-top: 80;     /* skip link only */
+}
+
 @theme inline {
   --font-sans: "Montserrat Variable", "Montserrat", "InterVariable", "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -144,6 +162,34 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-brand-emerald: var(--brand-emerald);
+  --color-status-success: var(--status-success);
+  --color-status-success-foreground: var(--status-success-foreground);
+  --color-status-success-soft: var(--status-success-soft);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-foreground: var(--status-warning-foreground);
+  --color-status-warning-soft: var(--status-warning-soft);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-foreground: var(--status-danger-foreground);
+  --color-status-danger-soft: var(--status-danger-soft);
+  --color-status-info: var(--status-info);
+  --color-status-info-foreground: var(--status-info-foreground);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-running: var(--status-running);
+  --color-status-running-foreground: var(--status-running-foreground);
+  --color-status-running-soft: var(--status-running-soft);
+  --color-status-review: var(--status-review);
+  --color-status-review-foreground: var(--status-review-foreground);
+  --color-status-review-soft: var(--status-review-soft);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-foreground: var(--status-pending-foreground);
+  --color-status-pending-soft: var(--status-pending-soft);
+  --color-status-alert: var(--status-alert);
+  --color-status-alert-foreground: var(--status-alert-foreground);
+  --color-status-alert-soft: var(--status-alert-soft);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-foreground: var(--status-neutral-foreground);
+  --color-status-neutral-soft: var(--status-neutral-soft);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -206,6 +252,8 @@
   --chart-3: #7c5cd6;
   --chart-4: #c98a00;
   --chart-5: #6f8f00;
+  --brand-emerald: var(--chart-1); /* Greatstone emerald in BOTH modes (--primary turns lime on the void): run-chart success and skill tiles. */
+  --brand-emerald-soft: color-mix(in oklab, var(--brand-emerald) 60%, var(--background)); /* runs that succeeded on retry; 3.3:1 on paper */
   --sidebar: #eff1eb;
   --sidebar-foreground: #121512;
   --sidebar-primary: #1b5039;
@@ -316,6 +364,46 @@
   --status-task-icon-cancelled: #52585d;
   --status-task-icon-in_queue: var(--status-task-icon-in_progress); /* blocked shape, same mode-aware blue */
 
+  /* Semantic status tones (GRE-304). Use these for any colour that carries
+     status meaning instead of raw palette classes (`text-amber-600`, ...).
+     Three steps per tone, mapped in @theme as `status-<tone>[-foreground|-soft]`:
+       --status-<tone>             strong hue: icons, borders, dots, bare text
+       --status-<tone>-foreground  text on the soft fill (badges, pills)
+       --status-<tone>-soft        soft badge / pill fill
+     Values reproduce the recipes the shared status maps already used
+     (700 / 100 soft pairs on paper, 400 / 300 / 900@50% on the void). The
+     strong hue is 600 on paper where that clears AA as text (running, review,
+     danger) and 700 where 600 did not (success, warning, info, pending,
+     alert); neutral rides --subtle-foreground. Contrast (WCAG 2.1, GRE-304):
+     strong on paper/void and foreground on soft are all ≥ 4.5:1. */
+  --status-success: var(--color-green-700);
+  --status-success-foreground: var(--color-green-700);
+  --status-success-soft: var(--color-green-100);
+  --status-warning: var(--color-amber-700);
+  --status-warning-foreground: var(--color-amber-700);
+  --status-warning-soft: var(--color-amber-100);
+  --status-danger: var(--color-red-600);
+  --status-danger-foreground: var(--color-red-700);
+  --status-danger-soft: var(--color-red-100);
+  --status-info: var(--color-sky-700);
+  --status-info-foreground: var(--color-sky-700);
+  --status-info-soft: var(--color-sky-100);
+  --status-running: var(--color-blue-600); /* liveness: emerald on paper, lime on the void (greatstone-palette.css) */
+  --status-running-foreground: var(--color-blue-700);
+  --status-running-soft: var(--color-blue-100);
+  --status-review: var(--color-violet-600);
+  --status-review-foreground: var(--color-violet-700);
+  --status-review-soft: var(--color-violet-100);
+  --status-pending: var(--color-yellow-700); /* queued / waiting to start */
+  --status-pending-foreground: var(--color-yellow-700);
+  --status-pending-soft: var(--color-yellow-100);
+  --status-alert: var(--color-orange-700); /* timed out, rate limited, high priority */
+  --status-alert-foreground: var(--color-orange-700);
+  --status-alert-soft: var(--color-orange-100);
+  --status-neutral: var(--subtle-foreground); /* cancelled, closed, archived */
+  --status-neutral-foreground: var(--muted-foreground);
+  --status-neutral-soft: var(--muted);
+
   --folder-color-indigo: #6366f1;
   --folder-color-violet: #8b5cf6;
   --folder-color-emerald: #10b981;
@@ -327,6 +415,13 @@
   --sz-folder-rail: 13.25rem;
   --sz-folder-sheet-max: 80dvh;
   --sz-tweak-panel-max: 70vh; /* Task Chat Redesign dev tweak panel scroll cap. */
+  --gtc-memory-layout: minmax(0, 1fr) 22rem; /* Memory page: graph beside the list (GRE-865). */
+  --sz-memory-graph-height: min(36rem, 65vh); /* 3D graph: tall enough to turn and zoom comfortably. */
+  --sz-memory-graph-height-phone: min(22rem, 50svh); /* Graph and its legend fit above the phone bottom nav. */
+  --sz-memory-list-max: calc(100vh - 8rem);
+  --gtc-memory-explorer: 14rem minmax(0, 1fr); /* Memory page: contributors beside the graph or list. */
+  --gtc-memory-review: 22rem minmax(0, 1fr); /* Memory review: queue beside the card under review (GRE-1080). */
+  --sz-memory-contributors-phone: 11rem; /* Contributor list height on phones, above the graph. */
 
   /* New-task dialog geometry inputs and gap tokens. The derived top/height
      calculations live on the dialog element so runtime Visual Viewport
@@ -336,7 +431,7 @@
   --new-issue-dialog-top-gap: max(1rem, env(safe-area-inset-top));
   --new-issue-dialog-bottom-gap: max(1rem, env(safe-area-inset-bottom));
   --mobile-entity-picker-visual-viewport-height: 100dvh;
-  --mobile-entity-picker-visual-viewport-bottom: 100dvh;
+  --mobile-entity-picker-backdrop: color-mix(in oklab, var(--foreground) 50%, transparent);
 
   /* ────────────────────────────────────────────────────────────────────────
      Motion tokens — chat-style task thread (default; classic legacy view sits
@@ -403,6 +498,13 @@
   --side-panel-tab-radius: var(--radius-xl);
   --side-panel-control-radius: var(--radius-xl);
   --side-panel-launcher-width: var(--sz-320px);
+  /* My tasks Discuss panel (GRE-620): docked beside the list, the height of
+     the page area under the 60px bar less main's top and bottom padding. */
+  --my-tasks-discuss-width: var(--sz-420px);
+  /* Attachment preview panel (GRE-1036): wide enough to read a mock-up,
+     narrow enough to keep the thread in view beside it. */
+  --sz-attachment-preview-panel: min(60rem, 62vw);
+  --my-tasks-discuss-height: calc(100dvh - var(--sz-60px) - 3rem);
   --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
   --side-panel-fg: var(--foreground);
   --streamlined-task-detail-bg: transparent; /* let the atmosphere reach the task thread */
@@ -466,6 +568,10 @@
   --tc-composer-bottom: var(--sz-calc-8);
   /* Together with the dock's pb-2, match the page's p-4 side gutters. */
   --tc-composer-hidden-nav-offset: calc(var(--sz-safe-bottom) + var(--spacing) * 2);
+  /* Phone agent chat: the screen below the header (bar, safe area, main's
+     top padding and composer-dock bottom padding), so a short chat still
+     docks its composer at the bottom. */
+  --tc-chat-mobile-min-h: calc(100dvh - var(--sz-60px) - var(--sz-safe-top) - var(--spacing) * 4 - var(--tc-composer-hidden-nav-offset));
 }
 
 .dark {
@@ -504,6 +610,8 @@
   --chart-3: #b197fc;
   --chart-4: #ffc800;
   --chart-5: #5f8f76;
+  --brand-emerald: var(--chart-5); /* the void's emerald (5:1 on #121212); chart-1 is lime here */
+  --brand-emerald-soft: color-mix(in oklab, var(--brand-emerald) 60%, var(--foreground)); /* lighter on the void, so it still reads on a dark card */
   --sidebar: #0d0f0d;
   --sidebar-foreground: #f5f5f5;
   --sidebar-primary: #c8ff00;
@@ -533,6 +641,31 @@
   --status-task-icon-in_review: var(--color-violet-400);
   --status-task-icon-done: var(--color-green-400);
   --status-task-icon-cancelled: #9a958a;
+  /* Semantic status tones on the void (see the :root block). */
+  --status-success: var(--color-green-400);
+  --status-success-foreground: var(--color-green-300);
+  --status-success-soft: color-mix(in oklab, var(--color-green-900) 50%, transparent);
+  --status-warning: var(--color-amber-400);
+  --status-warning-foreground: var(--color-amber-300);
+  --status-warning-soft: color-mix(in oklab, var(--color-amber-900) 50%, transparent);
+  --status-danger: var(--color-red-400);
+  --status-danger-foreground: var(--color-red-300);
+  --status-danger-soft: color-mix(in oklab, var(--color-red-900) 50%, transparent);
+  --status-info: var(--color-sky-400);
+  --status-info-foreground: var(--color-sky-300);
+  --status-info-soft: color-mix(in oklab, var(--color-sky-900) 50%, transparent);
+  --status-running: var(--color-blue-400);
+  --status-running-foreground: var(--color-blue-300);
+  --status-running-soft: color-mix(in oklab, var(--color-blue-900) 50%, transparent);
+  --status-review: var(--color-violet-400);
+  --status-review-foreground: var(--color-violet-300);
+  --status-review-soft: color-mix(in oklab, var(--color-violet-900) 50%, transparent);
+  --status-pending: var(--color-yellow-400);
+  --status-pending-foreground: var(--color-yellow-300);
+  --status-pending-soft: color-mix(in oklab, var(--color-yellow-900) 50%, transparent);
+  --status-alert: var(--color-orange-400);
+  --status-alert-foreground: var(--color-orange-300);
+  --status-alert-soft: color-mix(in oklab, var(--color-orange-900) 50%, transparent);
 }
 
 .streamlined-task-detail-surface {
@@ -657,6 +790,15 @@
   textarea,
   [data-slot="select-trigger"] {
     min-height: 44px;
+  }
+
+  /* iOS zooms the page into any text field under 16px on focus, which leaves
+     the phone app zoomed in after typing. Keep editable text at 16px or more. */
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea,
+  [contenteditable="true"] {
+    font-size: max(var(--text-input-touch), 1em);
   }
 
   /* Small inline widgets keep their design size on touch devices —
@@ -923,6 +1065,22 @@
   .typing-dots span {
     animation: none;
     opacity: 0.6;
+  }
+}
+
+/* Looping Tailwind utilities stop under reduced motion (GRE-821). Pulse and
+   bounce rest at full opacity in place; every `animate-ping` is an overlay ring
+   on a solid dot, so the ring hides and the dot stays. `animate-spin` keeps
+   spinning: it is the loading signal. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse,
+  .animate-bounce {
+    animation: none;
+  }
+
+  .animate-ping {
+    animation: none;
+    visibility: hidden;
   }
 }
 
@@ -1968,7 +2126,7 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   position: absolute;
   top: 0.25rem;
   right: 0.25rem;
-  z-index: 2;
+  z-index: var(--z-index-raised);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -2059,8 +2217,24 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
 
 .paperclip-markdown-codeblock:hover .paperclip-markdown-codeblock-actions,
 .paperclip-markdown-codeblock-actions:focus-within,
-.paperclip-markdown-codeblock-actions[data-active] {
+.paperclip-markdown-codeblock-actions[data-active],
+.interaction-guide .paperclip-markdown-codeblock-actions {
   opacity: 1;
+}
+
+/* In the step-by-step guide the actions are always shown, so they sit in a
+   row under the code instead of covering the end of long commands.
+   !important: MarkdownBody sets the overlay position inline. */
+.interaction-guide .paperclip-markdown-codeblock-actions {
+  position: static !important;
+  display: flex !important;
+  justify-content: flex-end;
+  margin-top: 0.375rem;
+}
+
+.paperclip-markdown-codeblock-action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
 }
 
 .paperclip-markdown-codeblock-action:hover {
@@ -2325,6 +2499,17 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   -webkit-overflow-scrolling: touch;
 }
 
+/* The edge with more table beyond it fades, so a cut-off column reads as "scroll". */
+.paperclip-markdown-table-scroll[data-more-right] {
+  mask-image: linear-gradient(to right, black calc(100% - 2.5rem), transparent);
+}
+.paperclip-markdown-table-scroll[data-more-left] {
+  mask-image: linear-gradient(to left, black calc(100% - 2.5rem), transparent);
+}
+.paperclip-markdown-table-scroll[data-more-left][data-more-right] {
+  mask-image: linear-gradient(to right, transparent, black 2.5rem, black calc(100% - 2.5rem), transparent);
+}
+
 .paperclip-markdown-table-scroll:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
@@ -2340,6 +2525,13 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   min-width: 8rem;
   max-width: 18rem;
   vertical-align: top;
+}
+
+/* On a phone an 18rem first column fills the screen and hides the rest; keep two columns in view. */
+@media (max-width: 40rem) {
+  .paperclip-markdown-table-scroll :where(th, td) {
+    max-width: 10rem;
+  }
 }
 
 .paperclip-markdown th {
@@ -2438,13 +2630,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   font-size: inherit;
 }
 
-/* Keep MDXEditor popups above app dialogs, even when they portal to <body>. */
+/* Keep MDXEditor popups above app dialogs, even when they portal to <body>.
+   Overlay and content share the popover layer; DOM order puts content on top. */
 [class*="_popupContainer_"] {
-  z-index: 81 !important;
+  z-index: var(--z-index-popover) !important;
 }
 
 [class*="_dialogOverlay_"] {
-  z-index: 80;
+  z-index: var(--z-index-popover);
 }
 
 [class*="_dialogContent_"],
@@ -2454,7 +2647,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 [class*="_tableColumnEditorPopoverContent_"],
 [class*="_toolbarButtonDropdownContainer_"],
 [class*="_toolbarNodeKindSelectContainer_"] {
-  z-index: 81 !important;
+  z-index: var(--z-index-popover) !important;
 }
 
 /* Status chip/fill helpers.
@@ -2548,10 +2741,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --hex-a3a3a3: #a3a3a3; /* OrgChart.tsx agent status dot — 'terminated' + defaultDotColor fallback. */
   --hex-ef4444: #ef4444; /* ActivityCharts.tsx — priority 'critical'; also the <0.5 success-rate bar tint and the run-activity 'failed' segment. (Chart STATUS hues re-pointed at --status-task-* in DECISION-SHEET.md B5; priority/success series stay independent.) */
   --hex-f97316: #f97316; /* ActivityCharts.tsx — priority 'high'. */
-  --hex-eab308: #eab308; /* ActivityCharts.tsx — priority 'medium'; also the 0.5-0.8 success-rate bar tint. */
+  --hex-eab308: #eab308; /* ActivityCharts.tsx — priority 'medium'. */
   --hex-6b7280: #6b7280; /* ActivityCharts.tsx — priority 'low' + unknown-status statusColors fallback. */
   --hex-10b981: #10b981; /* ActivityCharts.tsx — >=0.8 success-rate bar tint; also the run-activity 'succeeded' segment. */
-  --hex-737373: #737373; /* ActivityCharts.tsx — run activity 'other' segment tint. */
   --project-none: #64748b; /* Semantic rename of --hex-64748b (DECISION-SHEET.md A3, value unchanged). 'No project assigned' muted-slate fallback (TOKEN-AUDIT.md 1.3) across Routines/MarkdownEditor/RoutineRunVariablesDialog/RoutineList/IssueColumns/editable-sections; also ActivityCharts.tsx status 'backlog'. */
   --project-seed: #6366f1; /* Semantic rename of --hex-6366f1 (DECISION-SHEET.md A3, value unchanged). Project-color-fallback indigo seed default (ProjectDetail/PipelineSettings/IssueProperties/NewIssueDialog) — new-project-color-picker-seed family per TOKEN-AUDIT.md 1.3. */
   --liveness-blue: var(--color-blue-600); /* DECISION-SHEET.md A6: IssueChatThread.tsx human-message 'liveness blue' bubble (PAP-95 rev 5). Same value as --status-task-in_progress by coincidence, decoupled on purpose so a future status-hue change doesn't drag the chat bubble along. */
@@ -2709,7 +2901,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-15px: 15px; /* Extracted from ui/src/components/IssueChatThread.test.tsx (p-[15px]). */
   --sz-calc-8: calc(env(safe-area-inset-bottom) + 20px); /* Extracted from ui/src/components/IssueChatThread.test.tsx (bottom-[calc(env(safe-area-inset-bottom)+20px)]). */
   --sz-300px: 300px; /* Extracted from ui/src/components/IssueColumns.tsx (w-[300px]). */
-  --sz-calc-9: min(80vh,42rem); /* Extracted from ui/src/components/IssueFiltersPopover.test.tsx (max-h-[min(80vh,42rem)]). */
   --sz-calc-10: min(780px,calc(100vw - 2rem)); /* Extracted from ui/src/components/IssueFiltersPopover.tsx (w-[min(780px,calc(100vw-2rem))]). */
   --sz-24ch: 24ch; /* Extracted from ui/src/components/IssuePlanDecompositionsSection.tsx (max-w-[24ch]). */
   --sz-calc-13: calc(0.75rem + 0.5rem); /* Extracted from ui/src/components/IssueRow.tsx (ml-[calc(theme(spacing.3)+theme(spacing.2))]). */
@@ -2719,6 +2910,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-260px: 260px; /* Extracted from ui/src/components/KanbanBoard.tsx (min-w-[260px]). */
   --sz-120px: 120px; /* Extracted from ui/src/components/KanbanBoard.tsx (min-h-[120px]). */
   --sz-safe-top: env(safe-area-inset-top); /* Extracted from ui/src/components/Layout.tsx (pt-[env(safe-area-inset-top)]). */
+  --vv-offset-top: 0px; /* how far iOS has panned the page under the keyboard; lib/ios-keyboard.ts keeps it current */
+  --vv-bottom-inset: 0px; /* how much of the page's bottom edge the iOS keyboard hides; same source */
   --sz-calc-14: calc(5rem + env(safe-area-inset-bottom)); /* Extracted from ui/src/components/Layout.tsx (pb-[calc(5rem+env(safe-area-inset-bottom))]). */
   --sz-38ch: 38ch; /* Extracted from ui/src/components/MarkdownBody.test.tsx (max-w-[38ch]). */
   --sz-208px: 208px; /* Extracted from ui/src/components/MarkdownEditor.test.tsx (max-h-[208px]). */
@@ -2726,6 +2919,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --sz-calc-15: calc(100vw - 16px); /* Extracted from ui/src/components/MarkdownEditor.tsx (max-w-[calc(100vw-16px)]). */
   --sz-66px: 66px; /* Extracted from ui/src/components/MembershipAction.tsx (w-[66px]). */
   --sz-safe-bottom: env(safe-area-inset-bottom); /* Extracted from ui/src/components/MobileBottomNav.tsx (pb-[env(safe-area-inset-bottom)]). */
+  --text-input-touch: 16px; /* iOS does not zoom into fields at 16px or more */
+  --mobile-page-fill: calc(100dvh - var(--sz-safe-top) - var(--sz-60px) - 4rem - var(--sz-safe-bottom)); /* phone: a full-height page between the sticky header and the tab bar (h-16) */
+  --mobile-ptr-top: calc(var(--sz-safe-top) + var(--sz-60px)); /* phone pull-to-refresh sits just under the sticky header */
   --sz-calc-16: min(calc(100dvh - 2rem),46rem); /* Extracted from ui/src/components/NewAgentDialog.tsx (max-h-[min(calc(100dvh-2rem),46rem)]). */
   --sz-24rem: 24rem; /* Extracted from ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
   --sz-50vh: 50vh; /* Extracted from ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
@@ -2932,6 +3128,11 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtc-63: 280px 1fr;
   --gtc-64: minmax(0,20rem) 1fr;
   --gtc-65: minmax(8rem,0.38fr) minmax(0,0.62fr) auto;
+  --gtc-66: 1.5fr 1fr; /* Goal check-in header. */
+  --gtc-67: 3.5rem 1fr; /* Goal check-in row: date, then note. */
+  --gtc-68: 1fr 1.3fr; /* Goal scoreboard hero. */
+  --gtc-69: repeat(auto-fill,minmax(13rem,1fr)); /* Goal scoreboard tiles. */
+  --gtc-70: repeat(auto-fill,minmax(20rem,1fr)); /* Goal scoreboard cards. */
   --gtc-runner-inspector-stage: 1.25rem minmax(0,1fr);
   --gtc-runner-inspector-filters: minmax(14rem,1fr) repeat(5,minmax(8rem,auto));
   --gtc-runner-inspector-pipeline: 21rem minmax(0,1fr);
@@ -2960,13 +3161,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --tp-box-shadow-border-color: box-shadow,border-color; /* Extracted from ui/src/pages/OrgChart.tsx (transition-[box-shadow,border-color]). */
   --tp-box-shadow: box-shadow; /* Extracted from ui/src/pages/ProjectDetail.tsx (transition-[box-shadow]). */
   --tp-transform-box-shadow: transform,box-shadow; /* Extracted from ui/src/pages/ProjectDetail.tsx (transition-[transform,box-shadow]). */
-  --z-2: 2; /* Extracted from ui/src/components/DocumentAnnotationLayer.tsx (z-[2]). */
-  --z-20: 20; /* Anchored document annotation popover. */
-  --z-60: 60; /* Extracted from ui/src/components/DocumentAnnotationPanel.tsx (z-[60]). */
-  --z-1: 1; /* Extracted from ui/src/components/IssueDocumentAnnotations.tsx (z-[1]). */
-  --z-200: 200; /* Extracted from ui/src/components/Layout.tsx (z-[200]). */
-  --z-9999: 9999; /* Extracted from ui/src/components/MarkdownEditor.tsx (z-[9999]). */
-  --z-120: 120; /* Extracted from ui/src/components/ToastViewport.tsx (z-[120]). */
   --s-0_98: 0.98; /* Extracted from ui/src/pages/Inbox.tsx (scale-[0.98]). */
   --s-1_02: 1.02; /* Extracted from ui/src/components/CaseAttachmentsGallery.tsx (scale-[1.02]). */
   --e-cubic-bezier-0_16-1-0_3-1: cubic-bezier(0.16,1,0.3,1); /* Extracted from ui/src/components/ui/alert-dialog.tsx (ease-[cubic-bezier(0.16,1,0.3,1)]). */
@@ -3158,29 +3352,66 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    software keyboard. The fixed sheet also avoids scale motion during mobile
    viewport resizing. */
 @media (max-width: 40rem) {
+  /* Radix sets an inline will-change: transform on the wrapper. Like a
+     transform, it makes the wrapper the containing block of the fixed sheet,
+     which then collapses to the wrapper's zero size, out of sight. */
   [data-radix-popper-content-wrapper]:has(> [data-mobile-entity-picker]) {
+    inset: 0 !important;
+    width: 100% !important;
+    height: var(--mobile-entity-picker-visual-viewport-height) !important;
+    min-width: 0 !important;
     transform: none !important;
+    will-change: auto !important;
+    pointer-events: none;
+  }
+
+  [data-radix-popper-content-wrapper]:has(> [data-mobile-entity-picker])::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--mobile-entity-picker-backdrop);
+    pointer-events: none;
   }
 
   [data-mobile-entity-picker] {
     position: fixed !important;
-    inset: calc(var(--mobile-entity-picker-visual-viewport-bottom) - var(--spacing) * 4)
-      calc(var(--spacing) * 4) auto !important;
+    inset:
+      max(calc(var(--spacing) * 4), env(safe-area-inset-top))
+      calc(var(--spacing) * 4)
+      auto !important;
     width: auto !important;
     max-width: none !important;
-    max-height: calc(var(--mobile-entity-picker-visual-viewport-height) - var(--spacing) * 8) !important;
+    height: calc(
+      var(--mobile-entity-picker-visual-viewport-height)
+      - max(calc(var(--spacing) * 4), env(safe-area-inset-top))
+      - max(calc(var(--spacing) * 4), env(safe-area-inset-bottom))
+    ) !important;
+    max-height: none !important;
     transform: none !important;
-    translate: 0 -100% !important;
+    translate: none !important;
     transform-origin: bottom center !important;
     animation: none !important;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+    padding: 0 !important;
+    overflow: hidden;
+  }
+
+  [data-mobile-entity-picker-header] {
+    display: flex;
+  }
+
+  [data-mobile-entity-picker] > [data-slot="command"] {
+    min-height: 0;
+    flex: 1;
   }
 
   [data-mobile-entity-picker] [data-slot="command-list"],
   [data-mobile-entity-picker-list] {
-    max-height: min(
-      var(--sz-300px),
-      calc(var(--mobile-entity-picker-visual-viewport-height) - var(--spacing) * 24)
-    ) !important;
+    max-height: none !important;
+    min-height: 0;
+    flex: 1;
   }
 }
 :root {
@@ -3273,6 +3504,15 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --agent-cap-v1-muted-dream-b: #44464a;
 }
 
+/* Issue filter popover: tall enough to show every filter, never taller than
+   the space Radix measured below (or above) its trigger. 80vh ran past the
+   bottom of a phone screen, so the last filters could not be reached. The
+   Radix variable only exists on the popover itself, so this cannot be a
+   :root size token. */
+.issue-filters-popover-scroll {
+  max-height: min(var(--radix-popover-content-available-height, 80vh), 42rem);
+}
+
 /* Persistent plugin surface. The host reserves mobile navigation/safe-area
    space; each extension owns its accessible panel and focus lifecycle. */
 :root {
@@ -3284,7 +3524,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   position: fixed;
   inset-inline-end: max(var(--plugin-shell-inset), env(safe-area-inset-right));
   bottom: max(var(--plugin-shell-inset), var(--sz-safe-bottom));
-  z-index: var(--z-20);
+  z-index: var(--z-index-chrome);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -3295,4 +3535,10 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 .plugin-app-shell-overlay { pointer-events: auto; }
 @media (max-width: 767px) {
   .plugin-app-shell-overlays { bottom: var(--plugin-shell-mobile-bottom); }
+}
+
+/* Feature tour spotlight (FeatureTour.tsx): ring the element the current step points at. */
+[data-tour-active] {
+  outline: 2px solid var(--ring);
+  outline-offset: 4px;
 }

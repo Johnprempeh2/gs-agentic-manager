@@ -62,8 +62,9 @@ import {
   writeLocalServiceRegistryRecord,
 } from "./local-service-supervisor.js";
 import { workspaceOperationService, type WorkspaceOperationRecorder } from "./workspace-operations.js";
+import { resolveGitIndexLockPath, waitForGitIndexLock } from "./git-index-lock.js";
 import { executionWorkspaceService, readExecutionWorkspaceConfig } from "./execution-workspaces.js";
-import { isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
+import { isRecordOnlyExecutionWorkspace, isRuntimeOwnedGitBranch } from "./execution-workspace-branch-ownership.js";
 import { logActivity } from "./activity-log.js";
 import { readProjectWorkspaceRuntimeConfig } from "./project-workspace-runtime-config.js";
 import { workspaceGitOperationScheduler } from "./workspace-git-operation-scheduler.js";
@@ -1279,11 +1280,48 @@ async function assertDirtyQuarantineRuntimeServicesStopped(input: {
   throw branchIncoherenceValidationFailure(input.evidence);
 }
 
-async function assertGitIndexIsUnlocked(worktreePath: string) {
-  const indexLockPath = await runGit(["rev-parse", "--git-path", "index.lock"], worktreePath)
-    .catch(() => null);
-  if (indexLockPath && existsSync(indexLockPath)) {
-    throw new Error(`git index lock exists at ${indexLockPath}`);
+type GitIndexLockWaitOverrides = Omit<Parameters<typeof waitForGitIndexLock>[0], "lockPath" | "worktreePath">;
+let gitIndexLockWaitOverrides: GitIndexLockWaitOverrides | null = null;
+
+/** Test-only seam for the git index lock wait (timeout, clock, holder probe). Pass null to restore defaults. */
+export function setGitIndexLockWaitOptionsForTests(overrides: GitIndexLockWaitOverrides | null) {
+  gitIndexLockWaitOverrides = overrides;
+}
+
+function waitForWorktreeGitIndexLock(lockPath: string, worktreePath: string) {
+  return waitForGitIndexLock({ ...gitIndexLockWaitOverrides, lockPath, worktreePath });
+}
+
+// GRE-387: the dirty-quarantine repair used to throw on any index.lock, so a
+// stale lock left by a dead git process moved the task to `blocked`. Remove a
+// stale lock and wait for a held one, as the base refresh does (GRE-383). The
+// repair cannot run without the index, so a lock still held after the wait
+// fails the repair.
+async function waitForGitIndexUnlockedForRepair(input: {
+  worktreePath: string;
+  phase: "worktree_prepare" | "workspace_finalize";
+  recorder?: WorkspaceOperationRecorder | null;
+}) {
+  const indexLockPath = await resolveGitIndexLockPath(input.worktreePath, runGit);
+  if (!indexLockPath) return;
+  const lock = await waitForWorktreeGitIndexLock(indexLockPath, input.worktreePath);
+  if (lock.status === "held") {
+    throw new Error(
+      `git index lock "${indexLockPath}" is still held after ${Math.round(lock.waitedMs / 1000)}s`,
+    );
+  }
+  if (lock.status === "removed_stale") {
+    await input.recorder?.recordOperation({
+      phase: input.phase,
+      command: null,
+      cwd: input.worktreePath,
+      metadata: { reason: "git_index_locked", indexLockPath, ...lock },
+      run: async () => ({
+        status: "succeeded",
+        exitCode: 0,
+        system: `Removed stale git index lock "${indexLockPath}" (${Math.round(lock.lockAgeMs / 1000)}s old, no git process holds it) before dirty workspace rescue.\n`,
+      }),
+    }).catch(() => {});
   }
 }
 
@@ -1766,7 +1804,11 @@ async function quarantineDirtyWorktreeBranchIncoherence(input: {
   let rescueBranchCreated = false;
   let expectedBranchRestored = false;
   try {
-    await assertGitIndexIsUnlocked(input.worktreePath);
+    await waitForGitIndexUnlockedForRepair({
+      worktreePath: input.worktreePath,
+      phase: input.phase ?? "worktree_prepare",
+      recorder: input.recorder,
+    });
     await recordGitOperation(input.recorder, {
       phase: input.phase ?? "worktree_prepare",
       args: ["checkout", "-b", rescueBranch],
@@ -2578,9 +2620,38 @@ async function refreshUnstartedWorktreeToBase(input: {
     return { refreshed: false, baseRefSha: null };
   }
 
+  // GRE-383: an `index.lock` would make the reset fail. Wait for a lock a git
+  // process holds; remove one that is stale. If a live process still holds it
+  // after the wait, skip the refresh and run on the current base: the refresh
+  // is optional, and failing here moved the task to `blocked` for a lock that
+  // was usually gone minutes later.
+  const indexLockPath = await resolveGitIndexLockPath(input.worktreePath, runGit);
+  if (indexLockPath) {
+    const lock = await waitForWorktreeGitIndexLock(indexLockPath, input.worktreePath);
+    const lockNote = lock.status === "held"
+      ? `Skipped refreshing git worktree at ${input.worktreePath}: git index lock "${indexLockPath}" is still held after ${Math.round(lock.waitedMs / 1000)}s. Running on the current base.\n`
+      : lock.status === "removed_stale"
+        ? `Removed stale git index lock "${indexLockPath}" (${Math.round(lock.lockAgeMs / 1000)}s old, no git process holds it).\n`
+        : null;
+    if (lockNote) {
+      await input.recorder?.recordOperation({
+        phase: "worktree_prepare",
+        command: null,
+        cwd: input.worktreePath,
+        metadata: { reason: "git_index_locked", indexLockPath, ...lock },
+        run: async () => ({ status: "succeeded", exitCode: 0, system: lockNote }),
+      }).catch(() => {});
+    }
+    if (lock.status === "held") {
+      return { refreshed: false, baseRefSha: null };
+    }
+  }
+
+  // `--keep`, not `--hard`: if a file appears between the clean-tree guard
+  // above and this reset, git refuses to overwrite it instead of discarding it.
   await recordGitOperation(input.recorder, {
     phase: "worktree_prepare",
-    args: ["reset", "--hard", input.currentBaseRefSha],
+    args: ["reset", "--keep", input.currentBaseRefSha],
     cwd: input.worktreePath,
     metadata: {
       repoRoot: input.repoRoot,
@@ -2592,7 +2663,7 @@ async function refreshUnstartedWorktreeToBase(input: {
       refreshedUnstartedWorktree: true,
     },
     successMessage: `Refreshed unstarted git worktree at ${input.worktreePath} to ${input.baseRef} (${formatShortSha(input.currentBaseRefSha)})\n`,
-    failureLabel: `git reset --hard ${input.currentBaseRefSha}`,
+    failureLabel: `git reset --keep ${input.currentBaseRefSha}`,
   });
 
   return { refreshed: true, baseRefSha: input.currentBaseRefSha };
@@ -4012,6 +4083,90 @@ async function deleteGitBranchAtVerifiedTip(input: {
   }
 }
 
+// Every process working directory on this host, or null when they cannot be
+// read (an unknown platform or a failed lsof). Null means the caller cannot
+// prove a directory is unused, so it must not remove anything.
+async function listProcessWorkingDirectories(): Promise<string[] | null> {
+  if (process.platform === "linux") {
+    const pids = await fs.readdir("/proc").catch(() => null);
+    if (!pids) return null;
+    const cwds = await Promise.all(
+      pids.filter((pid) => /^\d+$/.test(pid)).map((pid) => fs.readlink(`/proc/${pid}/cwd`).catch(() => null)),
+    );
+    return cwds.filter((cwd): cwd is string => Boolean(cwd));
+  }
+  if (process.platform !== "darwin") return null;
+  const proc = await executeProcess({
+    command: "lsof",
+    args: ["-nP", "-w", "-d", "cwd", "-Fn"],
+    cwd: os.tmpdir(),
+    maxStdoutBytes: 16 * 1024 * 1024,
+  }).catch(() => null);
+  if (!proc || proc.code !== 0 || proc.stdoutTruncated) return null;
+  return proc.stdout.split("\n").filter((line) => line.startsWith("n/")).map((line) => line.slice(1));
+}
+
+// Agents sometimes add a git worktree of their own under the managed root (a
+// pull request or release check, or a branch of their own when their task runs
+// on the shared checkout). No execution workspace records it, so the terminal
+// reaper never reaches it and it stays on disk for ever. This removes only one
+// whose removal loses nothing: not recorded, idle for `minIdleMs`, no process
+// working inside it, every commit on HEAD already on a remote branch (which
+// covers merged work and detached checkouts of pushed commits), and clean,
+// because `git worktree remove` without --force refuses uncommitted or
+// untracked files and locked worktrees. The branch ref itself is kept.
+export async function removeIdleUnrecordedWorktrees(input: {
+  checkoutPaths: Iterable<string>;
+  recordedPaths: Iterable<string>;
+  minIdleMs: number;
+  now?: Date;
+  listProcessCwds?: () => Promise<string[] | null>;
+}): Promise<{ removed: string[]; kept: number }> {
+  const result = { removed: [] as string[], kept: 0 };
+  const processCwds = await (input.listProcessCwds ?? listProcessWorkingDirectories)();
+  if (!processCwds) return result;
+  const nowMs = (input.now ?? new Date()).getTime();
+  const recorded = new Set(await Promise.all([...input.recordedPaths].map(resolvePathForWorktreeComparison)));
+  const repoRoots = new Set<string>();
+  for (const checkout of input.checkoutPaths) {
+    const repoRoot = await resolveGitOwnerRepoRoot(checkout).catch(() => null);
+    if (repoRoot) repoRoots.add(await resolvePathForWorktreeComparison(repoRoot));
+  }
+  for (const repoRoot of repoRoots) {
+    const managedRoot = path.join(repoRoot, ".gsam", "worktrees");
+    const raw = await runGit(["worktree", "list", "--porcelain"], repoRoot).catch(() => null);
+    if (!raw) continue;
+    for (const entry of parseGitWorktreeListPorcelain(raw)) {
+      const worktree = await resolvePathForWorktreeComparison(entry.worktree);
+      if (path.dirname(worktree) !== managedRoot || recorded.has(worktree)) continue;
+      if (processCwds.some((cwd) => cwd === worktree || cwd.startsWith(`${worktree}${path.sep}`))) {
+        result.kept += 1;
+        continue;
+      }
+      const gitDir = await runGit(["rev-parse", "--absolute-git-dir"], worktree).catch(() => null);
+      const lastTouchedMs = Math.max(
+        0,
+        ...await Promise.all(
+          [worktree, ...(gitDir ? ["index", "HEAD", "logs/HEAD"].map((file) => path.join(gitDir, file)) : [])]
+            .map((file) => fs.stat(file).then((stats) => stats.mtimeMs).catch(() => 0)),
+        ),
+      );
+      const unpushed = await runGit(["rev-list", "--count", "HEAD", "--not", "--remotes"], worktree).catch(() => null);
+      if (!gitDir || nowMs - lastTouchedMs < input.minIdleMs || unpushed !== "0") {
+        result.kept += 1;
+        continue;
+      }
+      try {
+        await runGit(["worktree", "remove", worktree], repoRoot);
+        result.removed.push(worktree);
+      } catch {
+        result.kept += 1;
+      }
+    }
+  }
+  return result;
+}
+
 export async function cleanupExecutionWorkspaceArtifacts(input: {
   workspace: {
     id: string;
@@ -4230,8 +4385,12 @@ export async function cleanupExecutionWorkspaceArtifacts(input: {
     }
   }
 
+  // The directory of a record-only session (the shared project checkout) stays
+  // on disk by design, so it is not a failed cleanup. Counting it as one marked
+  // the archived session on the project checkout `cleanup_failed` (GRE-316).
   const cleaned =
     !workspacePath ||
+    isRecordOnlyExecutionWorkspace(input.workspace) ||
     !(await directoryExists(workspacePath));
 
   return {
@@ -5143,6 +5302,15 @@ export async function waitForRuntimeServiceReadiness(input: {
       // transport cause so a refused port is distinguishable from a timeout.
       if (err instanceof Error && err.cause instanceof Error) {
         lastError += `: ${err.cause.message}`;
+        // Node fetch refuses ports on the WHATWG "bad port" list (4190, 6000, ...).
+        // Every probe would fail the same way, so stop now and say why.
+        if (err.cause.message === "bad port") {
+          const blockedPort = new URL(readinessUrl).port;
+          throw new Error(
+            `Readiness check failed for ${readinessUrl}: port ${blockedPort} is blocked by Node fetch (WHATWG "bad port" list). Configure a different port for this service.`,
+            { cause: err },
+          );
+        }
       }
     }
     if (now() >= deadline) break;
@@ -6406,6 +6574,8 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
   const shell = resolveShell();
   const serviceLog = await openLocalServiceLogFile(serviceKey);
   let child: ChildProcess;
+  let spawnErrorPromise: Promise<never>;
+  let earlyExitPromise: Promise<never>;
   try {
     child = spawn(shell, ["-lc", command], {
       cwd: serviceCwd,
@@ -6416,27 +6586,43 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
       // on an orphaned socketpair during startup reconciliation.
       stdio: ["ignore", serviceLog.handle.fd, serviceLog.handle.fd],
     });
+    // Attach both listeners before any await. A failed spawn (for example a
+    // deleted working folder) emits `error` on the next tick, and an `error`
+    // with no listener takes down the whole server (GRE-1011).
+    const spawned = child;
+    spawnErrorPromise = new Promise<never>((_, reject) => {
+      spawned.once("error", (err: NodeJS.ErrnoException) => {
+        if (err.code === "ENOENT" && !existsSync(serviceCwd)) {
+          reject(new Error(
+            `Runtime service "${serviceName}" could not start because its working folder does not exist: ${serviceCwd}`,
+            { cause: err },
+          ));
+          return;
+        }
+        reject(err);
+      });
+    });
+    earlyExitPromise = new Promise<never>((_, reject) => {
+      // `close` follows `exit` after the child's inherited stdout/stderr file
+      // descriptors are closed. Waiting for it makes the startup log excerpt
+      // deterministic instead of racing the final validation line.
+      spawned.once("close", (code, signal) => {
+        reject(new Error(
+          `service process exited before readiness (code ${code ?? "unknown"}, signal ${signal ?? "none"})`,
+        ));
+      });
+    });
+    // These can reject before the readiness race below subscribes to them.
+    // Mark them handled so that gap is not an unhandled rejection; the race
+    // still receives the rejection.
+    spawnErrorPromise.catch(() => {});
+    earlyExitPromise.catch(() => {});
   } finally {
     await serviceLog.handle.close();
   }
   record.child = child;
   record.providerRef = child.pid ? String(child.pid) : null;
   record.processGroupId = child.pid ?? null;
-  const spawnErrorPromise = new Promise<never>((_, reject) => {
-    child.once("error", (err) => {
-      reject(err);
-    });
-  });
-  const earlyExitPromise = new Promise<never>((_, reject) => {
-    // `close` follows `exit` after the child's inherited stdout/stderr file
-    // descriptors are closed. Waiting for it makes the startup log excerpt
-    // deterministic instead of racing the final validation line.
-    child.once("close", (code, signal) => {
-      reject(new Error(
-        `service process exited before readiness (code ${code ?? "unknown"}, signal ${signal ?? "none"})`,
-      ));
-    });
-  });
   const readServiceOutputExcerpt = async () => {
     try {
       const contents = await fs.readFile(serviceLog.logPath);
@@ -6524,7 +6710,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
         // in the operation log is what made PAP-17254 undiagnosable (PAP-17256).
         const code = provisioned.status.lastError ?? "unknown error";
         throw new Error(
-          `HTTPS exposure failed: ${code}${provisioned.errorDetail ? ` — ${provisioned.errorDetail}` : ""}`,
+          `HTTPS exposure failed: ${code}${provisioned.errorDetail ? ` (${provisioned.errorDetail})` : ""}`,
         );
       }
     }
@@ -6660,7 +6846,11 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
       });
     }
     await cleanupRecordExposure(record, { preserveFailure: true });
-    record.status = "stopped";
+    // A start that never became ready is a failure, not a stop. Only a retryable
+    // port collision is superseded by a fresh attempt, so that row stays "stopped"
+    // (GRE-1002: the Live preview card read "Stopped" for a broken service).
+    const retryableCollision = Boolean(port && (bindCollision || exposureHostCollision));
+    record.status = retryableCollision ? "stopped" : "failed";
     record.healthStatus = "unhealthy";
     record.lastUsedAt = new Date().toISOString();
     record.stoppedAt = new Date().toISOString();

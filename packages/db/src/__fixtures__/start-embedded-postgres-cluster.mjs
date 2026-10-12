@@ -1,5 +1,6 @@
 // Starts an embedded Postgres cluster, prints its postmaster pid and SysV
 // shared-memory id, then waits to be killed. Used to reproduce GRE-211.
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import EmbeddedPostgres from "embedded-postgres";
@@ -8,7 +9,7 @@ const [dataDir, port] = process.argv.slice(2);
 const instance = new EmbeddedPostgres({
   databaseDir: dataDir,
   user: "paperclip",
-  password: "paperclip",
+  password: randomBytes(24).toString("base64url"),
   port: Number(port),
   persistent: true,
   initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],

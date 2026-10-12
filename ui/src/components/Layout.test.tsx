@@ -156,7 +156,7 @@ vi.mock("./AnnouncementWell", () => ({
 }));
 
 vi.mock("./MobileBottomNav", () => ({
-  MobileBottomNav: () => null,
+  MobileBottomNav: ({ visible }: { visible: boolean }) => <div data-mobile-nav={visible ? "shown" : "hidden"} />,
 }));
 
 vi.mock("./WorktreeBanner", () => ({
@@ -257,7 +257,8 @@ vi.mock("../hooks/useCompanyPageMemory", () => ({
   useCompanyPageMemory: () => undefined,
 }));
 
-vi.mock("../api/health", () => ({
+vi.mock("../api/health", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../api/health")>()),
   healthApi: mockHealthApi,
 }));
 
@@ -602,6 +603,30 @@ describe("Layout", () => {
     expect(container.textContent).toContain("Company settings sidebar");
     expect(mockSetForceCollapsed).toHaveBeenCalledWith(true);
 
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it.each([
+    ["/PAP/issues/PAP-1", "hidden"],
+    ["/PAP/chats/everest", "hidden"],
+    ["/PAP/dashboard", "shown"],
+  ])("on a phone, %s keeps the tab bar %s", async (pathname, expected) => {
+    currentPathname = pathname;
+    mockSidebarState.isMobile = true;
+    mockSidebarState.sidebarOpen = false;
+    const root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Layout />
+        </QueryClientProvider>,
+      );
+    });
+    await flushReact();
+    expect(container.querySelector("[data-mobile-nav]")?.getAttribute("data-mobile-nav")).toBe(expected);
     await act(async () => {
       root.unmount();
     });
@@ -1351,7 +1376,11 @@ describe("Layout", () => {
     const { root, rootEl } = await renderLayoutRoot();
 
     expect(rootEl.tagName).toBe("DIV");
-    expect(rootEl.className).toContain("pt-(--sz-safe-top)");
+    // On a phone the sticky glass header pads the notch, not the page root, so
+    // content scrolling under the see-through status bar never shows there.
+    expect(rootEl.className).not.toContain("pt-(--sz-safe-top)");
+    const stickyHeader = rootEl.querySelector(".sticky.top-0");
+    expect(stickyHeader?.className).toContain("pt-(--sz-safe-top)");
     // Transparent on purpose: the Greatstone atmosphere on <body> shows through.
     expect(rootEl.className).not.toContain("bg-background");
     // The mobile root must clip horizontal overflow to prevent a stray wide

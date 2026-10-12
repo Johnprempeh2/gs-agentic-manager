@@ -175,7 +175,7 @@ export function deriveGatewayApps(
       toolCount: toolCountByApp.get(applicationId) ?? 0,
       needsAttention: Boolean(attentionConnection),
       attentionReason: attentionConnection
-        ? "Sign-in expired — reconnect to restore access."
+        ? "Sign-in expired. Reconnect to restore access."
         : null,
     });
   }

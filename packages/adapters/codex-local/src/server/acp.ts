@@ -40,7 +40,7 @@ import {
 } from "@greatstone/adapter-utils/server-utils";
 import { createWorkspaceRestoreTeardown } from "@greatstone/adapter-utils/workspace-restore-teardown";
 import { normalizeCodexModel } from "../index.js";
-import { classifyCodexAuthRefreshFailure, extractCodexRetryNotBefore } from "./parse.js";
+import { classifyCodexAuthRefreshFailure, extractCodexRetryNotBefore, isCodexApiKeyRejected } from "./parse.js";
 import { copyBackCodexAuth } from "./codex-auth-copyback.js";
 import { buildCodexAuthInboundProvision } from "./codex-auth-merge-scripts.js";
 import {
@@ -49,6 +49,7 @@ import {
   stageCodexHomeForSync,
 } from "./codex-home.js";
 import { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./auth-check.js";
+import { withCodexManagedLinkedAppsConfig } from "./linked-apps-policy.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRootDir = path.resolve(moduleDir, "../..");
@@ -150,7 +151,14 @@ export function buildCodexAcpConfig(config: Record<string, unknown>): Record<str
 
   return {
     ...config,
-    env: { ...env, GSAM_CODEX_ACP_NETWORK_ACCESS: String(networkAccess) },
+    env: {
+      ...env,
+      GSAM_CODEX_ACP_NETWORK_ACCESS: String(networkAccess),
+      // Linked ChatGPT apps keep read tools; send/write tools are off (GRE-798).
+      CODEX_CONFIG: withCodexManagedLinkedAppsConfig(
+        typeof env.CODEX_CONFIG === "string" ? env.CODEX_CONFIG : undefined,
+      ),
+    },
     agent: "codex",
     mode,
     permissionMode,
@@ -238,8 +246,8 @@ async function prepareCodexRemoteManagedHome(
     teardown: createWorkspaceRestoreTeardown({
       stagedRuntime,
       onLog,
-      startMessage: "[paperclip] Restoring workspace changes and Codex auth from the sandbox.\n",
-      failurePrefix: "[paperclip] Codex ACP teardown restore/copy-back failed",
+      startMessage: "[gsam] Restoring workspace changes and Codex auth from the sandbox.\n",
+      failurePrefix: "[gsam] Codex ACP teardown restore/copy-back failed",
     }),
     // One-time cleanup of the HOST staged home temp dir. Fired ONLY when the
     // staged runtime is dropped (failed/cancelled/timed-out turn, incompatible
@@ -250,7 +258,7 @@ async function prepareCodexRemoteManagedHome(
       await fs.rm(stagedCodexHomeDir, { recursive: true, force: true }).catch(async (error) => {
         await onLog(
           "stderr",
-          `[paperclip] Failed to remove staged Codex home "${stagedCodexHomeDir}": ${
+          `[gsam] Failed to remove staged Codex home "${stagedCodexHomeDir}": ${
             error instanceof Error ? error.message : String(error)
           }\n`,
         );
@@ -295,13 +303,14 @@ function withCodexAuthRefreshFailureClassification(result: AdapterExecutionResul
   if ((result.exitCode ?? 0) === 0) return result;
   const resultJson = parseObject(result.resultJson);
   const stopReason = asString(resultJson.stopReason, "");
-  const authFailure = classifyCodexAuthRefreshFailure({
-    errorMessage: [result.errorMessage ?? "", result.summary ?? "", stopReason]
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .join("\n"),
-  });
-  if (!authFailure) return result;
+  const errorMessage = [result.errorMessage ?? "", result.summary ?? "", stopReason]
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n");
+  const authFailure = classifyCodexAuthRefreshFailure({ errorMessage });
+  if (!authFailure) {
+    return isCodexApiKeyRejected({ errorMessage }) ? { ...result, errorCode: "codex_auth_required" } : result;
+  }
 
   return {
     ...result,

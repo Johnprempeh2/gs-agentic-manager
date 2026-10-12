@@ -2,7 +2,7 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon, blockedAttentionLabel } from "./StatusIcon";
 import { IssueStatusBadge } from "./StatusBadge";
 
 /**
@@ -21,6 +21,16 @@ describe("StatusIcon", () => {
   it("drives the glyph colour from the status icon var", () => {
     const html = renderToStaticMarkup(<StatusIcon status="todo" />);
     expect(html).toContain("var(--status-task-icon-todo)");
+  });
+
+  it("shows a still clock, not the spinner, for open work that is only waiting", () => {
+    const waiting = renderToStaticMarkup(<StatusIcon status="in_progress" waiting />);
+    expect(waiting).toContain("lucide-clock");
+    expect(waiting).not.toContain("animate-spin");
+    expect(waiting).toContain("waiting for a scheduled check");
+    // A done task that still has an old monitor keeps its own glyph.
+    expect(renderToStaticMarkup(<StatusIcon status="done" waiting />)).not.toContain("lucide-clock");
+    expect(renderToStaticMarkup(<StatusIcon status="in_progress" />)).toContain("animate-spin");
   });
 
   it("maps covered-blocked → In queue (blue in_queue var, no cyan markers)", () => {
@@ -44,6 +54,13 @@ describe("StatusIcon", () => {
     expect(html).not.toContain("border-cyan");
     // Full blocked reason still rides on the accessible label.
     expect(html).toContain("Blocked · waiting on active sub-task PAP-9");
+  });
+
+  it("names the one blocker that needs attention", () => {
+    expect(blockedAttentionLabel({
+      state: "needs_attention", reason: "attention_required", unresolvedBlockerCount: 1, coveredBlockerCount: 0,
+      stalledBlockerCount: 0, attentionBlockerCount: 1, sampleBlockerIdentifier: "GRE-73", sampleStalledBlockerIdentifier: null,
+    })).toBe("Blocked · GRE-73 needs attention");
   });
 
   it("surfaces attention-required blocked copy and keeps the blocked glyph", () => {
@@ -105,6 +122,16 @@ describe("StatusIcon — glyph size (PAP-243a)", () => {
 
   it("defaults to a 16px (md) glyph when size is omitted", () => {
     const html = renderToStaticMarkup(<StatusIcon status="todo" />);
+    expect(html).toContain('width="16"');
+    expect(html).toContain('height="16"');
+  });
+
+  it("can place the default glyph in a larger layout footprint without resizing it", () => {
+    const html = renderToStaticMarkup(
+      <StatusIcon status="todo" glyphContainerClassName="size-6" showLabel />,
+    );
+    expect(html).toContain('data-status-glyph-container="true"');
+    expect(html).toContain('class="size-6"');
     expect(html).toContain('width="16"');
     expect(html).toContain('height="16"');
   });

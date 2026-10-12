@@ -88,13 +88,24 @@ live_curl() {
   fi
 }
 
-# Runs scripts/greatstone-db.ts with this checkout's dependencies.
+# Runs scripts/greatstone-db.ts with this checkout's dependencies. A fresh
+# clone (for example a scratch checkout of a tag) has none yet (GRE-732).
+gs_tools_installed() {
+  [ -f "$GS_TOOLS_ROOT/cli/node_modules/tsx/dist/cli.mjs" ] && return 0
+  printf '%s: this checkout has no dependencies installed; run first: (cd %q && pnpm install --frozen-lockfile)\n' \
+    "$(basename "$0" .sh)" "$GS_TOOLS_ROOT" >&2
+  return 1
+}
+
 gs_db() {
+  gs_tools_installed || return 1
   (cd "$GS_TOOLS_ROOT" && node cli/node_modules/tsx/dist/cli.mjs scripts/greatstone-db.ts "$@")
 }
 
-# Prints the connection string of the running live database. The port comes
-# from the postmaster.pid file that PostgreSQL writes; nothing is written.
+# Prints the connection string of the running live database, without the
+# password (pass that as PGPASSWORD, see live_database_password, so it never
+# shows in a process list). The port comes from the postmaster.pid file that
+# PostgreSQL writes; nothing is written.
 live_database_url() {
   local pidfile="$LIVE_DATA_DIR/instances/$INSTANCE_ID/db/postmaster.pid"
   [ -f "$pidfile" ] || return 1
@@ -102,7 +113,19 @@ live_database_url() {
   pid="$(sed -n 1p "$pidfile")"
   port="$(sed -n 4p "$pidfile")"
   kill -0 "$pid" 2>/dev/null || return 1
-  printf 'postgres://paperclip:paperclip@127.0.0.1:%s/paperclip\n' "$port"
+  printf 'postgres://paperclip@127.0.0.1:%s/paperclip\n' "$port"
+}
+
+# Prints the live database password. The server keeps a random one in
+# secrets/embedded-postgres.password (GRE-930); a live server that has not
+# started on that version yet still uses the old fixed password.
+live_database_password() {
+  local file="$LIVE_DATA_DIR/instances/$INSTANCE_ID/secrets/embedded-postgres.password"
+  if [ -f "$file" ]; then
+    head -n 1 "$file"
+  else
+    printf 'paperclip\n'
+  fi
 }
 
 # Prints one field of <url>/api/health (a dotted path such as
@@ -176,6 +199,20 @@ tag_live_release() {
     | git -C "$repo" tag -a "$live" "$commit" --cleanup=whitespace -F -
 }
 
+# drop_unpushed_live_tag <release-repo> <live-dir> <live-tag>
+# After a failed release (GRE-239): deletes a live-* tag that origin does not
+# have, in the release repo and in the live checkout. A pushed tag is kept.
+# The release pushes only after live is healthy, so when origin cannot be
+# asked the tag is taken as unpushed.
+drop_unpushed_live_tag() {
+  local repo="$1" live="$2" tag="$3" remote
+  case "$tag" in live-*) ;; *) return 0 ;; esac
+  remote="$(git -C "$repo" ls-remote --tags origin "refs/tags/$tag" 2>/dev/null)" || remote=""
+  [ -z "$remote" ] || return 0
+  git -C "$repo" tag -d "$tag" >/dev/null 2>&1 && say "Deleted the unpushed tag $tag: that version did not run healthy." >&2
+  git -C "$live" tag -d "$tag" >/dev/null 2>&1 || true
+}
+
 # Fails with the reason when the release scripts in <repo> are not those on
 # origin/main (fetch first). A dev checkout that was not pulled runs an old
 # release script; before GRE-120 that one wrote a generic live tag message
@@ -193,8 +230,22 @@ release_scripts_current() {
 # Records <dir> as the release repo in $GS_ROOT/release.conf, where the live
 # server finds it to release from the app (GRE-121). Nothing removes this file,
 # so it survives `greatstone-preview.sh stop` (GRE-71).
+# A <dir> inside an agent run's scratch folder is not recorded: that folder is
+# removed when the run ends, and release.conf would then name a missing repo
+# (GRE-529). The release.conf already there is kept.
 RELEASE_CONF_FILE="$GS_ROOT/release.conf"
 record_release_repo() {
+  local dir scratch
+  dir="$(cd "$1" 2>/dev/null && pwd -P || printf '%s' "$1")"
+  for scratch in "${GSAM_RUN_SCRATCH_DIR:-}" "${GSAM_TASK_SCRATCH_DIR:-}" "${GSAM_SCRATCH_DIR:-}" "${GSAM_TMPDIR:-}"; do
+    [ -n "$scratch" ] || continue
+    scratch="$(cd "$scratch" 2>/dev/null && pwd -P || printf '%s' "${scratch%/}")"
+    case "$dir/" in
+      "$scratch/"*)
+        say "Not recording $1 as the release repo: it is in the run scratch folder $scratch, which is removed when the run ends. $RELEASE_CONF_FILE is unchanged." >&2
+        return 0 ;;
+    esac
+  done
   mkdir -p "$GS_ROOT"
   printf 'release_repo=%s\n' "$1" >"$RELEASE_CONF_FILE.tmp" && mv "$RELEASE_CONF_FILE.tmp" "$RELEASE_CONF_FILE"
 }
@@ -219,4 +270,98 @@ preview_running() {
   [ -n "$pid" ] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   ps -o command= -p "$pid" | grep -qF -- "$PREVIEW_DATA_DIR"
+}
+
+# Prints the PIDs whose command line matches <pattern> (extended regex) and
+# whose working folder is <dir> or inside it. The folder tells live (~/GSAM/live)
+# from the preview (~/GSAM/preview/code) and from sandboxes in worktrees.
+pids_in_dir() {
+  local dir="$1" pattern="$2" pid cwd
+  for pid in $(pgrep -f -- "$pattern" 2>/dev/null || true); do
+    cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    case "$cwd" in "$dir" | "$dir"/*) printf '%s\n' "$pid" ;; esac
+  done
+}
+
+# Waits up to <seconds> for every PID in the list to exit. Fails if one is left.
+wait_gone() {
+  local secs="$1"
+  shift
+  [ "$#" -gt 0 ] || return 0
+  for _ in $(seq 1 "$secs"); do
+    kill -0 "$@" 2>/dev/null || return 0
+    sleep 1
+  done
+  ! kill -0 "$@" 2>/dev/null
+}
+
+# Stops the whole live server (GRE-442): its dev runner, every server tree in
+# the live checkout the runner leaves behind, and the live database. Before
+# #274 a stopped runner on Linux orphaned tsx, the server and PostgreSQL (the
+# 2 Oct bug), so each step looks for what the step before it left. Fails, and
+# names what is still running on stderr; then nothing new may start.
+stop_live_server() {
+  local dir pids pgfile pgpid left
+  dir="$(cd -P "$LIVE_DIR" && pwd)"
+  pids="$(pids_in_dir "$dir" 'dev-runner\.ts')"
+  if [ -n "$pids" ]; then
+    say "Stopping the live dev runner (pid $(echo $pids))..."
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    # The runner from #274 on stops its server group in up to ~15s.
+    # shellcheck disable=SC2086
+    wait_gone 30 $pids || { printf '%s\n' "the live dev runner (pid $(echo $pids)) did not stop within 30s" >&2; return 1; }
+  fi
+  # tsx passes SIGTERM on to the server, which writes its hot-restart snapshot
+  # and stops PostgreSQL. Only tsx gets it: a second SIGTERM to the server
+  # itself could cut that short.
+  pids="$(pids_in_dir "$dir" 'tsx/dist/cli\.mjs .*src/index\.ts')"
+  if [ -n "$pids" ]; then
+    say "Stopping the live server left by the runner (tsx pid $(echo $pids))..."
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    # shellcheck disable=SC2086
+    wait_gone 30 $pids || true
+  fi
+  # A server with no tsx above it.
+  pids="$(pids_in_dir "$dir" 'src/index\.ts')"
+  if [ -n "$pids" ]; then
+    say "Stopping the live server process (pid $(echo $pids))..."
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    # shellcheck disable=SC2086
+    wait_gone 30 $pids || true
+  fi
+  # The live database, if it outlived the server. SIGINT is a fast shutdown.
+  pgfile="$LIVE_DATA_DIR/instances/$INSTANCE_ID/db/postmaster.pid"
+  pgpid="$(sed -n 1p "$pgfile" 2>/dev/null || true)"
+  if [ -n "$pgpid" ] && kill -0 "$pgpid" 2>/dev/null; then
+    say "Stopping the live database (pid $pgpid)..."
+    kill -INT "$pgpid" 2>/dev/null || true
+    wait_gone 30 "$pgpid" || true
+  fi
+  left="$(pids_in_dir "$dir" 'dev-runner\.ts|src/index\.ts')"
+  if [ -n "$pgpid" ] && kill -0 "$pgpid" 2>/dev/null; then left="$left $pgpid"; fi
+  if [ -n "$(echo $left)" ]; then
+    printf '%s\n' "these live processes did not stop: $(echo $left) (see: ps -o pid,pgid,args -p $(echo $left | tr ' ' ','))" >&2
+    return 1
+  fi
+  if curl -fsS -m 2 -o /dev/null "$LIVE_URL/api/health" 2>/dev/null; then
+    printf '%s\n' "a server still answers on $LIVE_URL after live was stopped" >&2
+    return 1
+  fi
+}
+
+# Starts live with $GS_ROOT/start-live.sh in a session of its own, so that the
+# end of the session this script runs in (a closed terminal, an SSH logout, the
+# end of a wsl.exe call) cannot hang up the live server. On 3 Oct 2026 the end
+# of the wsl.exe call that ran a --full-restart release stopped live moments
+# after it reported healthy. --wait keeps the exit status of start-live.sh.
+# macOS has no setsid; there start-live.sh runs directly, as before.
+start_live_server() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid --wait "$GS_ROOT/start-live.sh" </dev/null
+  else
+    "$GS_ROOT/start-live.sh" </dev/null
+  fi
 }

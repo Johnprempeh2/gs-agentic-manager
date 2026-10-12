@@ -28,6 +28,11 @@ export interface RestartReport {
   resumedRunIds: string[];
   /** Kept running through the restart. */
   adoptedRunIds: string[];
+  /**
+   * Kept running with no output capture: its result is lost when it ends.
+   * Absent on reports from before GRE-250, where every adopted run counts.
+   */
+  adoptedWithoutCaptureRunIds?: string[];
   /** Ended during the switch; checkpointed runs continue as a retry. */
   finishedWhileDownRunIds: string[];
   /** Running before, unaccounted for after. Needs recovery. */
@@ -45,6 +50,8 @@ export interface ReleaseHistoryEntry {
   /** The stable-* tag on this release's commit, once promoted to Stable (GRE-127). */
   stableTag?: string | null;
   restartReport: RestartReport | null;
+  /** The release to this tag failed and live never ran it (GRE-239): no rollback or promote. */
+  neverRan?: boolean;
 }
 
 /** What the next version would contain: main since the live release. */
@@ -96,6 +103,8 @@ export interface ReleaseProgress {
   state: ReleaseProgressState;
   /** Runs marked "finish before update" still running while new runs are held. */
   waitingForFlaggedRuns: number | null;
+  /** Running ACP runs the release waits for (at most 5 min); a hot restart cannot keep them. */
+  waitingForAcpRuns: number | null;
   /** The board chose "Release without waiting". */
   overridden: boolean;
   /** Plain-words reason for rolled_back / failed. */
@@ -117,7 +126,16 @@ export interface ReleasesOverview {
   disabledReason: string | null;
 }
 
+/** The version a client install runs and the client notes of its stable-* tag (GRE-128). */
+export interface ClientVersion {
+  label: string | null;
+  stableTag: string | null;
+  /** The stable tag message; null when there is none to show. */
+  notes: string | null;
+}
+
 export const releasesApi = {
+  clientVersion: (companyId: string) => api.get<ClientVersion>(`/companies/${companyId}/version`),
   overview: (companyId: string) => api.get<ReleasesOverview>(`/companies/${companyId}/releases`),
   /** Cuts the next rc-* from origin/main and releases it. */
   /** `options.headers` carries the one-use `X-GSAM-Reauth` token in login mode. */

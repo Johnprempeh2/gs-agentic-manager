@@ -14,6 +14,7 @@ export type InstanceSettingsWriteDb = Pick<
 import {
   DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
   GSAM_CLOUD_MANAGED_BY,
   instanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
@@ -30,12 +31,14 @@ import {
 import {
   INSTANCE_FEATURE_CATALOG,
   RETIRED_INSTANCE_FEATURE_KEYS,
+  applyFeatureDependencies,
   applyOperatorGeneralDefaults,
   isRetiredInstanceFeatureKey,
   stripOperatorGeneralEchoes,
 } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
 import { getManagedInstanceConfig, type ManagedInstanceConfig } from "./managed-config.js";
+import { applyEntitlementsToExperimental } from "./entitlement-runtime.js";
 import { getOperatorSettingDefaults } from "./setting-defaults.js";
 
 const DEFAULT_SINGLETON_KEY = "default";
@@ -213,6 +216,11 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       ...(parsed.data.executionMode ? { executionMode: parsed.data.executionMode } : {}),
       // Absent => server defaults; only carry through explicit limits.
       ...(parsed.data.runAdmission ? { runAdmission: parsed.data.runAdmission } : {}),
+      // Absent/null => each agent's own harness and AI connection (GRE-139).
+      ...(parsed.data.aiAccessRoute ? { aiAccessRoute: parsed.data.aiAccessRoute } : {}),
+      teamCatalogFilter: parsed.data.teamCatalogFilter ?? "greatstone",
+      teamCatalogAddMode: parsed.data.teamCatalogAddMode ?? "request",
+      strategyBoardEmail: parsed.data.strategyBoardEmail ?? DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
     };
   }
   return {
@@ -220,6 +228,9 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
     keyboardShortcuts: false,
     feedbackDataSharingPreference: DEFAULT_FEEDBACK_DATA_SHARING_PREFERENCE,
     backupRetention: DEFAULT_BACKUP_RETENTION,
+    teamCatalogFilter: "greatstone",
+    teamCatalogAddMode: "request",
+    strategyBoardEmail: DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
   };
 }
 
@@ -256,6 +267,11 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableMemoryConnectors: parsed.data.enableMemoryConnectors ?? false,
       enablePipelines: parsed.data.enablePipelines ?? false,
       enableCases: parsed.data.enableCases ?? false,
+      enableDeepDive: parsed.data.enableDeepDive ?? false,
+      enableStrategy: parsed.data.enableStrategy ?? true,
+      enableStrategyBoard: parsed.data.enableStrategyBoard ?? false,
+      strategyBoardSecretaryAgentId: parsed.data.strategyBoardSecretaryAgentId ?? null,
+      enableWebsiteView: parsed.data.enableWebsiteView ?? false,
       enableAgentChat: parsed.data.enableAgentChat ?? false,
       enableConferenceRoomChat: parsed.data.enableConferenceRoomChat ?? false,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
@@ -299,6 +315,11 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableMemoryConnectors: false,
     enablePipelines: false,
     enableCases: false,
+    enableDeepDive: false,
+    enableStrategy: true,
+    enableStrategyBoard: false,
+    strategyBoardSecretaryAgentId: null,
+    enableWebsiteView: false,
     enableAgentChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
@@ -454,10 +475,16 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
   }
 
   function toExperimentalView(raw: unknown): InstanceExperimentalSettingsWithManaged {
-    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+    const overlaid = applyManagedExperimentalOverlay(
       applyCloudCatalogDefaults(normalizeExperimentalSettings(raw), raw, managedConfig),
       managedConfig,
     );
+    const managedKeys = overlaid.managedKeys;
+    // GRE-1078: the signed entitlement document narrows managed product
+    // features last, so neither a stored nor a managed "on" passes it.
+    // GRE-1382: a dependent switch (Board on Strategy) reads off without what
+    // it needs, whichever layer turned that off.
+    const experimental = applyFeatureDependencies(applyEntitlementsToExperimental(overlaid.experimental));
     // Self-hosted responses stay byte-identical: no managedKeys field at all.
     return managedConfig ? { ...experimental, managedKeys } : experimental;
   }
@@ -544,8 +571,10 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
       return toGeneralView(row.general);
     },
 
-    getExperimental: async (): Promise<InstanceExperimentalSettingsWithManaged> => {
-      const row = await getOrCreateRow();
+    getExperimental: async (
+      readOptions?: { db?: InstanceSettingsWriteDb },
+    ): Promise<InstanceExperimentalSettingsWithManaged> => {
+      const row = await getOrCreateRow(readOptions?.db);
       return toExperimentalView(row.experimental);
     },
 

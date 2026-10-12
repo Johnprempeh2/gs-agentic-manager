@@ -1882,6 +1882,32 @@ describe.sequential("agent permission routes", () => {
     expect(touchedKeys).not.toContain("skills:create");
   });
 
+  it("refuses memory toggles with 422 instead of answering 200 for a change it cannot make (GRE-988)", async () => {
+    const app = await createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    for (const body of [
+      { canContributeMemory: true },
+      { canContributeMemory: false },
+      { canApproveMemory: true },
+      { canApproveMemory: false, canConfigureAgents: true },
+    ]) {
+      const res = await requestApp(app, (baseUrl) => request(baseUrl)
+        .patch(`/api/agents/${agentId}/permissions`)
+        .send({ canCreateAgents: false, canAssignTasks: true, ...body }));
+      expect(res.status).toBe(422);
+      expect(res.body.error).toContain("/memory/grants");
+    }
+    // Refused whole: nothing else in the request is written either.
+    expect(mockAgentService.updatePermissions).not.toHaveBeenCalled();
+    expect(mockAccessService.setPrincipalPermission).not.toHaveBeenCalled();
+  });
+
   it("rejects CEO permission updates outside the caller company scope", async () => {
     const app = await createApp({
       type: "agent",

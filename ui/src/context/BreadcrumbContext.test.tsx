@@ -115,6 +115,15 @@ describe("BreadcrumbContext", () => {
     ).toBe("PAP-3515 • Issues • Anachronist Wiki • GS Agentic Manager");
   });
 
+  it("names the company once when a breadcrumb already carries it", () => {
+    expect(
+      buildDocumentTitle(
+        [{ label: "Greatstone International", href: "/dashboard" }, { label: "Settings" }],
+        "Greatstone International",
+      ),
+    ).toBe("Settings • Greatstone International • GS Agentic Manager");
+  });
+
   it("omits blank company names from page titles", () => {
     expect(buildDocumentTitle([{ label: "Inbox" }], "  ")).toBe("Inbox • GS Agentic Manager");
     expect(buildDocumentTitle([], null)).toBe("GS Agentic Manager");

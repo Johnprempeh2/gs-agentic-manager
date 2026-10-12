@@ -1,6 +1,6 @@
 import { COGNEE_STDIO_TEMPLATE, cogneeCloudUrl } from "./cognee-connection.js";
 import { isMemoryConnectorId, isRemoteMcpConnectorMethod, connectionPurposeTransportSchema } from "@greatstone/shared";
-import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { githubBotRequest } from "./chat-github-client.js";
 import { syncConnectionCredentialBindings } from "./connection-credential-bindings.js";
 import {
@@ -216,7 +216,7 @@ import {
   splitRemoteUrlCredential,
 } from "./remote-url-credentials.js";
 import { secretService } from "./secrets.js";
-import { agentmailApi } from "./agentmail-api.js";
+import { agentmailApi, agentmailStep } from "./agentmail-api.js";
 import type { ConfigureRailwaySsh, RailwaySshSetup } from "@greatstone/shared";
 import { generateRailwaySshKey, RAILWAY_SSH_SECRET_PATH, validateRailwayKnownHosts } from "./railway-ssh.js";
 import { createRailwayClient, discoverRailwayWorkspace, isRailwayConnection, isRailwayEndpoint, isRailwayToolBlocked, normalizeRailwayToolName, RAILWAY_TOOLS, RAILWAY_TOOL_PREFIX, railwayRisk, RailwayError } from "./railway.js";
@@ -1619,6 +1619,7 @@ function toConnection(row: typeof toolConnections.$inferSelect): ToolConnection 
     lastHealthAt: row.lastHealthAt,
     lastCatalogRefreshAt: row.lastCatalogRefreshAt,
     lastError: row.lastError,
+    pauseSuspendedAt: row.pauseSuspendedAt ?? null,
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt,
@@ -3161,6 +3162,8 @@ export function toolAccessService(
             eq(connectionGrants.id, grant.id),
             eq(connectionGrants.companyId, connection.companyId),
             eq(connectionGrants.connectionId, connection.id),
+            // GRE-1364: a token fetch racing a company pause must not lift the suspension.
+            ne(connectionGrants.status, "suspended"),
           ),
         );
       return {
@@ -6767,17 +6770,23 @@ export function toolAccessService(
     connection: typeof toolConnections.$inferSelect,
     credentialHeaders?: Record<string, string>,
     actor?: ActorInfo,
+    // An agent check (GRE-341) probes with that agent's credential only: never
+    // retry with the actor's credential or record what the probe discovers.
+    agentProbe?: { endpoint: string; scope: string },
   ): Promise<McpToolDescriptor[]> {
     assertSupportedConnection(connection);
     let headers = credentialHeaders ?? {
       ...projectedConnectionHeaders(connection),
       ...(await resolveCredentialHeaders(connection, actor)),
     };
-    const endpoint = await resolvedRemoteEndpoint(connection, actor);
+    const endpoint = agentProbe?.endpoint ?? await resolvedRemoteEndpoint(connection, actor);
     // Pinned to the address the guard approved: `config.url` is operator-supplied,
     // so a second DNS resolution here would reopen the rebinding window that
     // PAP-17098 closed for the OAuth endpoints.
     let listRequestId = "paperclip-catalog-refresh";
+    const sessionScope = agentProbe
+      ? `${connection.id}:agent-check:${agentProbe.scope}:${endpoint}`
+      : `${connection.id}:catalog:${actor?.actorType}:${actor?.actorId}:${endpoint}`;
     let sessionHeaders = headers;
     const sendRemote = (init: RequestInit) => requestRemoteHttpEndpoint(new URL(endpoint), init);
     const sendToolsList = (requestHeaders: Record<string, string>, cursor?: string) => {
@@ -6790,7 +6799,7 @@ export function toolAccessService(
     if (usedInitializedSession) {
       try {
         sessionHeaders = await getMcpHttpSession({ send: sendRemote, headers,
-          scope: `${connection.id}:catalog:${actor?.actorType}:${actor?.actorId}:${endpoint}`,
+          scope: sessionScope,
           requestId: listRequestId });
         response = await sendToolsList(sessionHeaders);
       } catch (error) {
@@ -6823,7 +6832,7 @@ export function toolAccessService(
       forgetMcpHttpSessions(connection.id);
       await response.body?.cancel().catch(() => undefined);
       sessionHeaders = await getMcpHttpSession({ send: sendRemote, headers,
-        scope: `${connection.id}:catalog:${actor?.actorType}:${actor?.actorId}:${endpoint}`,
+        scope: sessionScope,
         requestId: listRequestId });
       response = await sendToolsList(sessionHeaders);
       if (response.status === 404) forgetMcpHttpSessions(connection.id);
@@ -6848,6 +6857,7 @@ export function toolAccessService(
         );
     }
     if (
+      !agentProbe &&
       response.status === 401 &&
       connection.credentialSource === "vercel_connect"
     ) {
@@ -6870,6 +6880,7 @@ export function toolAccessService(
       response = await sendToolsList(headers);
     }
     if (
+      !agentProbe &&
       response.status === 401 &&
       connection.authKind === "oauth" &&
       connection.credentialSource === "paperclip_vault"
@@ -6915,10 +6926,9 @@ export function toolAccessService(
         response.status === 401 &&
         /bearer|oauth|authorization/i.test(authenticate)
       ) {
-        const endpoints = await discoverOAuthEndpoints(
-          connection,
-          authenticate,
-        );
+        const endpoints = agentProbe
+          ? null
+          : await discoverOAuthEndpoints(connection, authenticate);
         if (endpoints) {
           const nextConfig = {
             ...connection.config,
@@ -7085,7 +7095,7 @@ export function toolAccessService(
         actorId: null,
       },
     );
-    await agentmailApi(key).whoami();
+    await agentmailStep("checkKey", () => agentmailApi(key).whoami());
   }
 
   function assertSupportedConnection(connection: typeof toolConnections.$inferSelect) {
@@ -7206,10 +7216,24 @@ export function toolAccessService(
   async function checkConnectionHealth(
     connectionId: string,
     actor?: ActorInfo,
-    options: { allowUnauthenticatedProbe?: boolean } = {},
+    options: {
+      allowUnauthenticatedProbe?: boolean;
+      /**
+       * Probe with one agent's resolved grant and credential instead of the
+       * actor's (GRE-341). The result describes that agent only, so it is not
+       * saved as the connection's health and wakes nobody.
+       */
+      asAgent?: {
+        agentId: string;
+        grantId: string;
+        credentialHeaders?: Record<string, string>;
+        endpoint?: string;
+      };
+    } = {},
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId);
     if (connection.connectionPurpose === "ai") return { connection: toConnection(connection), runtimeSlot: null };
+    const asAgent = options.asAgent;
     try {
       assertSupportedConnection(connection);
       const config = asRecord(connection.config);
@@ -7236,8 +7260,9 @@ export function toolAccessService(
                   grant.subjectUserId === actor.actorId,
               )
             : null;
-        const grantsToCheck =
-          connection.credentialPolicy === "per_user" &&
+        const grantsToCheck = asAgent
+          ? activeGrants.filter((grant) => grant.id === asAgent.grantId)
+          : connection.credentialPolicy === "per_user" &&
           actor?.actorType === "user"
             ? actorGrant
               ? [actorGrant]
@@ -7261,6 +7286,14 @@ export function toolAccessService(
           connection.credentialPolicy === "per_user" &&
           actor?.actorType === "user" &&
           actor.actorId === connection.createdByUserId;
+        if (asAgent) {
+          if (!asAgent.credentialHeaders || !asAgent.endpoint)
+            throw unprocessable("The agent's credential could not be resolved.", { code: "agent_credential_unresolved" });
+          await remoteTools(connection, asAgent.credentialHeaders, actor, {
+            endpoint: asAgent.endpoint,
+            scope: `${asAgent.agentId}:${asAgent.grantId}`,
+          });
+        } else {
         const credentialHeaders =
           connection.credentialSource === "vercel_connect"
             ? await resolveCredentialHeaders(connection, actor, {
@@ -7270,12 +7303,24 @@ export function toolAccessService(
               ? {}
               : undefined;
         await remoteTools(connection, credentialHeaders, actor);
+        }
       } else if (connection.transport === "local_stdio") {
         await resolveCredentialHeaders(connection);
         await stdioTemplateId(connection.companyId, connection.config);
         await validateCogneeConnection(connection, actor, false);
       } else {
         throw unsupportedToolConnectionTransport();
+      }
+      if (asAgent) {
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.agent_check",
+          outcome: "success",
+          actor,
+          details: { transport: connection.transport, agentId: asAgent.agentId },
+        });
+        return { connection: toConnection(connection), runtimeSlot: null };
       }
       const updated = await updateConnectionHealth(
         connection,
@@ -7306,6 +7351,21 @@ export function toolAccessService(
       )
         throw error;
       const failure = sanitizeHttpFailure(error);
+      if (asAgent) {
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.agent_check",
+          outcome: "failure",
+          reasonCode: failure.code,
+          actor,
+          details: { status: failure.status, transport: connection.transport, agentId: asAgent.agentId },
+        });
+        throw new HttpError(healthFailureHttpStatus(failure), failure.message, {
+          code: failure.code,
+          upstreamStatus: error instanceof HttpError ? asRecord(error.details).status ?? null : null,
+        });
+      }
       const updated = await updateConnectionHealth(
         connection,
         failure.status,
@@ -11693,6 +11753,12 @@ export function toolAccessService(
         .limit(1);
       if (!currentGrant || currentGrant.status === "revoked")
         throw notFound("GitHub authorization not found");
+      // GRE-1364: a company pause can suspend the grant while the provider
+      // requests are in flight. A refresh must never write it back to active.
+      if (currentGrant.status === "suspended")
+        throw conflict("This GitHub authorization is suspended while the company is paused.", {
+          code: "grant_suspended",
+        });
       const previousGitHub = currentGrant.providerTenant?.github;
       const initialGitHub = grant.providerTenant?.github;
       // No lock is held during provider requests. Reject a snapshot if another
@@ -11870,10 +11936,7 @@ export function toolAccessService(
   }
 
   async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
-    if (!existing && isMemoryConnectorId(provider)
-      && !(await instanceSettingsService(db).getExperimental()).enableMemoryConnectors) {
-      throw forbidden("Enable memory connectors in Settings → Experimental to set up this connection", { code: "memory_connectors_disabled" });
-    }
+    if (!existing && isMemoryConnectorId(provider)) await assertEntitled(db, "enableMemoryConnectors");
   }
 
   async function connectGalleryApp(
@@ -12910,6 +12973,75 @@ export function toolAccessService(
       } else if (dedicatedAgentId) {
         // Managed OAuth creates the credential-bearing grant in the callback.
         // Keep the connection free of organization secrets from the outset.
+        // A pasted API key has no callback, so it must land on the named
+        // agent's grant here; otherwise the `per_agent` connection has no
+        // grant at all and every agent is refused with `no_grant` (GRE-351).
+        if (credentialSecretRefs.length > 0) {
+          const [previousGrant] = await db
+            .select()
+            .from(connectionGrants)
+            .where(
+              and(
+                eq(connectionGrants.connectionId, connectionRow.id),
+                eq(connectionGrants.kind, "agent"),
+                eq(connectionGrants.subjectAgentId, dedicatedAgentId),
+              ),
+            )
+            .limit(1);
+          const [changedGrant] = await db
+            .insert(connectionGrants)
+            .values({
+              companyId,
+              connectionId: connectionRow.id,
+              kind: "agent",
+              subjectAgentId: dedicatedAgentId,
+              credentialSecretRefs,
+              status: "active",
+              isDefault: false,
+              createdByAgentId:
+                actor?.actorType === "agent" ? (actor.actorId ?? null) : null,
+              createdByUserId:
+                actor?.actorType === "user" ? (actor.actorId ?? null) : null,
+            })
+            .onConflictDoUpdate({
+              target: [connectionGrants.connectionId, connectionGrants.subjectAgentId],
+              set: {
+                credentialSecretRefs,
+                status: "active",
+                revokedAt: null,
+                revokedByAgentId: null,
+                revokedByUserId: null,
+                updatedAt: new Date(),
+              },
+            })
+            .returning();
+          if (!changedGrant)
+            throw new Error("Failed to create dedicated agent connection grant");
+          if (revivedConnectionPrevious) {
+            revivedGrantMutation = {
+              previous: previousGrant ?? null,
+              current: changedGrant,
+            };
+          }
+          await db.insert(toolAccessAuditEvents).values({
+            companyId,
+            connectionId: connectionRow.id,
+            actorType: actor?.actorType ?? "system",
+            actorId: actor?.actorId ?? null,
+            action: previousGrant
+              ? "connection_grant.updated"
+              : "connection_grant.created",
+            outcome: "success",
+            reasonCode: previousGrant
+              ? "agent_identity_reconnected"
+              : "agent_identity_created",
+            details: {
+              kind: "agent",
+              subjectAgentId: dedicatedAgentId,
+              credentialSecretRefCount: credentialSecretRefs.length,
+            },
+          });
+        }
       } else {
         const organizationGrant = await ensureDefaultOrganizationGrant(
           connectionRow,
@@ -16885,6 +17017,7 @@ export function toolAccessService(
 
     completeOAuthCallback,
     refreshOAuthGrantCredentials,
+    refreshManagedGitHubGrantAccess,
     finalizeOAuthAccess,
 
     listExamples: async (companyId: string): Promise<ToolExampleSummary[]> => {
@@ -18341,6 +18474,20 @@ export function toolAccessService(
       input: UpdateToolConnection,
     ): Promise<ToolConnection> => {
       const existing = await getConnectionRow(connectionId);
+      if (input.enabled === true && !existing.enabled) {
+        // GRE-1364: a paused company turns nothing on, and a connection the pause
+        // turned off comes back only through the health-checked re-enable.
+        if (existing.pauseSuspendedAt) {
+          throw conflict("Re-enable this connection from the company pause screen; it must pass a health check.", { code: "pause_suspended" });
+        }
+        const [company] = await db
+          .select({ status: companies.status })
+          .from(companies)
+          .where(eq(companies.id, existing.companyId));
+        if (company?.status !== "active") {
+          throw conflict("The company is not active, so its connections stay off.", { code: "company_not_active" });
+        }
+      }
       if (existing.connectionPurpose === "ai" && (input.config || input.transportConfig || input.credentialRefs || input.credentialSecretRefs || (input.credentialPolicy && input.credentialPolicy !== existing.credentialPolicy))) throw badRequest("Use AI account reconnect to change credentials. Provider, sign-in method, and ownership cannot be changed.");
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? existing.config,
@@ -18379,6 +18526,14 @@ export function toolAccessService(
         })
         .where(eq(toolConnections.id, connectionId))
         .returning();
+      if (row.enabled && !existing.enabled) {
+        // A connection that was already off when the company paused has its grants
+        // held too; turning it on after resume is the deliberate act that frees them.
+        await db
+          .update(connectionGrants)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(and(eq(connectionGrants.connectionId, row.id), eq(connectionGrants.status, "suspended")));
+      }
       await syncCredentialBindings(row);
       await ensureRuntimeSlot(row);
       emitConnectionUpdated(row, existing, "api");
@@ -18388,6 +18543,124 @@ export function toolAccessService(
     archiveConnection: removeConnection,
 
     checkHealth: checkConnectionHealth,
+
+    /**
+     * GRE-1364: a company pause turns off every enabled connection and suspends
+     * every active grant, with one audit row each. Running it twice changes nothing.
+     */
+    suspendCompanyForPause: async (companyId: string, actor?: ActorInfo) => {
+      const now = new Date();
+      const connections = await db
+        .update(toolConnections)
+        .set({ enabled: false, pauseSuspendedAt: now, updatedAt: now })
+        .where(and(
+          eq(toolConnections.companyId, companyId),
+          eq(toolConnections.enabled, true),
+          isNull(toolConnections.pauseSuspendedAt),
+        ))
+        .returning();
+      const grants = await db
+        .update(connectionGrants)
+        .set({ status: "suspended", updatedAt: now })
+        .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.status, "active")))
+        .returning({ id: connectionGrants.id, connectionId: connectionGrants.connectionId, kind: connectionGrants.kind });
+      for (const connection of connections) {
+        emitConnectionUpdated(connection, { status: connection.status, enabled: true }, "api");
+        await audit({
+          companyId,
+          connectionId: connection.id,
+          action: "tool_connection.pause_suspended",
+          outcome: "success",
+          reasonCode: "company_paused",
+          actor,
+          details: { connectionPurpose: connection.connectionPurpose, transport: connection.transport },
+        });
+      }
+      for (const grant of grants) {
+        await audit({
+          companyId,
+          connectionId: grant.connectionId,
+          action: "connection_grant.pause_suspended",
+          outcome: "success",
+          reasonCode: "company_paused",
+          actor,
+          details: { grantId: grant.id, kind: grant.kind },
+        });
+      }
+      return { connectionsSuspended: connections.length, grantsSuspended: grants.length };
+    },
+
+    /**
+     * GRE-1364: after a company resume, a connection the pause turned off comes
+     * back only through this call, and only if it passes a health check. Its
+     * suspended grants are restored for the check and put back if it fails.
+     */
+    reenableConnectionAfterPause: async (connectionId: string, actor?: ActorInfo): Promise<ToolConnection> => {
+      const connection = await getConnectionRow(connectionId);
+      if (!connection.pauseSuspendedAt) {
+        throw conflict("This connection was not turned off by a company pause.", { code: "not_pause_suspended" });
+      }
+      const [company] = await db
+        .select({ status: companies.status })
+        .from(companies)
+        .where(eq(companies.id, connection.companyId));
+      if (company?.status !== "active") {
+        throw conflict("Resume the company before you re-enable its connections.", { code: "company_not_active" });
+      }
+      assertLocalStdioCanBeEnabled(connection.transport, true, connection.config);
+      const restoredGrants = await db
+        .update(connectionGrants)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(and(eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.status, "suspended")))
+        .returning({ id: connectionGrants.id });
+      try {
+        if (connection.connectionPurpose === "ai") {
+          // AI connections have no live probe; their health is set when the credential is saved or rejected.
+          if (connection.healthStatus !== "ok") {
+            throw unprocessable("Reconnect this AI account before you re-enable it.", { code: "ai_connection_unhealthy" });
+          }
+        } else {
+          await checkConnectionHealth(connection.id, actor);
+        }
+      } catch (error) {
+        if (restoredGrants.length > 0) {
+          await db
+            .update(connectionGrants)
+            .set({ status: "suspended", updatedAt: new Date() })
+            .where(and(
+              inArray(connectionGrants.id, restoredGrants.map((grant) => grant.id)),
+              eq(connectionGrants.status, "active"),
+            ));
+        }
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.pause_reenabled",
+          outcome: "failure",
+          reasonCode: error instanceof HttpError ? String(asRecord(error.details).code ?? "health_check_failed") : "health_check_failed",
+          actor,
+        });
+        throw error;
+      }
+      const [row] = await db
+        .update(toolConnections)
+        .set({ enabled: true, pauseSuspendedAt: null, updatedAt: new Date() })
+        .where(and(eq(toolConnections.id, connection.id), isNotNull(toolConnections.pauseSuspendedAt)))
+        .returning();
+      if (!row) throw conflict("This connection was already re-enabled.", { code: "not_pause_suspended" });
+      await syncCredentialBindings(row);
+      await ensureRuntimeSlot(row);
+      emitConnectionUpdated(row, connection, "api");
+      await audit({
+        companyId: connection.companyId,
+        connectionId: connection.id,
+        action: "tool_connection.pause_reenabled",
+        outcome: "success",
+        actor,
+        details: { grantsRestored: restoredGrants.length },
+      });
+      return toConnection(row);
+    },
 
     refreshCatalog,
 

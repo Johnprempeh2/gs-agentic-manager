@@ -177,16 +177,85 @@ async function readBrokerRejectionReason(response: Response): Promise<string> {
   }
 }
 
+/** Why a broker request produced no HTTP response. A fixed set, never free text. */
+export type PaperclipCloudConnectorTransportReason =
+  | "timeout"
+  | "connect_timeout"
+  | "aborted"
+  | "dns"
+  | "connection_refused"
+  | "connection_reset"
+  | "tls"
+  | "network"
+  | "unknown";
+
 /** Stable public code/status with only allowlisted broker diagnostics. */
 export class PaperclipCloudConnectorError extends Error {
+  /** Set for CONNECTOR_UNAVAILABLE only, so logs can tell a timeout from DNS, TLS or a reset. */
+  declare readonly reason?: PaperclipCloudConnectorTransportReason;
+
   constructor(
     message: string,
     readonly code: string,
     readonly status?: number,
+    options: { reason?: PaperclipCloudConnectorTransportReason; cause?: Error } = {},
   ) {
-    super(message);
+    super(message, options.cause ? { cause: options.cause } : undefined);
     this.name = "PaperclipCloudConnectorError";
+    if (options.reason) this.reason = options.reason;
   }
+}
+
+// Transport errors are reduced to class names and errno/undici codes. Their
+// messages can carry hosts and addresses, and a custom request function could
+// echo request data, so no message text from the original error is retained.
+const TRANSPORT_ERROR_NAME = /^[A-Z][A-Za-z]{0,48}(?:Error|Exception)$/;
+const TRANSPORT_ERROR_CODE = /^[A-Z][A-Z0-9_]{1,47}$/;
+const TRANSPORT_CAUSE_DEPTH = 5;
+const TLS_ERROR_CODES = new Set([
+  "EPROTO", "CERT_HAS_EXPIRED", "CERT_NOT_YET_VALID", "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN", "UNABLE_TO_GET_ISSUER_CERT", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+]);
+
+function classifyTransportFailure(names: string[], codes: string[]): PaperclipCloudConnectorTransportReason {
+  const hasCode = (...wanted: string[]) => codes.some((code) => wanted.includes(code));
+  if (hasCode("UND_ERR_CONNECT_TIMEOUT")) return "connect_timeout";
+  if (names.includes("TimeoutError") || hasCode("ETIMEDOUT", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT")) {
+    return "timeout";
+  }
+  if (names.includes("AbortError") || hasCode("ABORT_ERR")) return "aborted";
+  if (hasCode("ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NONAME", "EAI_NODATA")) return "dns";
+  if (hasCode("ECONNREFUSED")) return "connection_refused";
+  if (hasCode("ECONNRESET", "ECONNABORTED", "EPIPE", "UND_ERR_SOCKET", "UND_ERR_CLOSED")) return "connection_reset";
+  if (codes.some((code) => TLS_ERROR_CODES.has(code) || code.startsWith("ERR_TLS_") || code.startsWith("ERR_SSL_"))) {
+    return "tls";
+  }
+  if (hasCode("ENETUNREACH", "EHOSTUNREACH", "ENETDOWN", "EHOSTDOWN")) return "network";
+  return "unknown";
+}
+
+/** Describe a request that produced no response, using only allowlisted names and codes. */
+function describeTransportFailure(error: unknown): { reason: PaperclipCloudConnectorTransportReason; cause: Error } {
+  const names: string[] = [];
+  const codes: string[] = [];
+  const chain: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; depth < TRANSPORT_CAUSE_DEPTH && current && typeof current === "object"; depth += 1) {
+    const candidate = current as { name?: unknown; code?: unknown; cause?: unknown };
+    const name = typeof candidate.name === "string" && TRANSPORT_ERROR_NAME.test(candidate.name)
+      ? candidate.name : "Error";
+    const code = typeof candidate.code === "string" && TRANSPORT_ERROR_CODE.test(candidate.code)
+      ? candidate.code : null;
+    names.push(name);
+    if (code) codes.push(code);
+    chain.push(code ? `${name} [${code}]` : name);
+    current = candidate.cause;
+  }
+  const reason = classifyTransportFailure(names, codes);
+  const cause = new Error(`${reason}: ${chain.length > 0 ? chain.join(" > ") : "non-error rejection"}`);
+  cause.name = "PaperclipCloudConnectorTransportError";
+  return { reason, cause };
 }
 
 export function paperclipCloudConnectorConfigFromEnv(
@@ -210,7 +279,7 @@ export function paperclipCloudConnectorConfigFromEnv(
   const hasActiveLocalIdentity = localIdentity?.status === "active" && localStatus?.configured === true;
   if (!hasManagedIdentityOverride && !hasActiveLocalIdentity && legacyConfigured) {
     throw new PaperclipCloudConnectorError(
-      "GS Agentic Manager ID connector settings use an incompatible legacy protocol; enroll this instance with Paperclip Cloud",
+      "GS Agentic Manager ID connector settings use an incompatible legacy protocol; enroll this instance with the cloud connector",
       "CONNECTOR_MIGRATION_REQUIRED",
     );
   }
@@ -225,23 +294,23 @@ export function paperclipCloudConnectorConfigFromEnv(
     || "https://my.paperclip.app";
   const values = [instanceId, signPrivateKey, sealPrivateKey, environment];
   if (values.some((value) => !value)) {
-    throw new PaperclipCloudConnectorError("Paperclip Cloud connector configuration is incomplete", "CONNECTOR_CONFIG_INCOMPLETE");
+    throw new PaperclipCloudConnectorError("Cloud connector configuration is incomplete", "CONNECTOR_CONFIG_INCOMPLETE");
   }
   if (environment !== "development" && environment !== "staging" && environment !== "production") {
-    throw new PaperclipCloudConnectorError("Paperclip Cloud connector environment is invalid", "CONNECTOR_CONFIG_INVALID");
+    throw new PaperclipCloudConnectorError("Cloud connector environment is invalid", "CONNECTOR_CONFIG_INVALID");
   }
   const parsedBaseUrl = new URL(baseUrl);
   if (parsedBaseUrl.protocol !== "https:" && !(parsedBaseUrl.protocol === "http:" && isLoopback(parsedBaseUrl.hostname))) {
-    throw new PaperclipCloudConnectorError("Paperclip Cloud connector URL must use HTTPS", "CONNECTOR_CONFIG_INVALID");
+    throw new PaperclipCloudConnectorError("Cloud connector URL must use HTTPS", "CONNECTOR_CONFIG_INVALID");
   }
   if (parsedBaseUrl.username || parsedBaseUrl.password || parsedBaseUrl.search || parsedBaseUrl.hash) {
-    throw new PaperclipCloudConnectorError("Paperclip Cloud connector URL is invalid", "CONNECTOR_CONFIG_INVALID");
+    throw new PaperclipCloudConnectorError("Cloud connector URL is invalid", "CONNECTOR_CONFIG_INVALID");
   }
   const brokerHost = parsedBaseUrl.hostname.toLowerCase();
   if ((brokerHost === "my.paperclip.app" && environment !== "production")
     || (brokerHost === "my-staging.paperclip.app" && environment !== "staging")) {
     throw new PaperclipCloudConnectorError(
-      "Paperclip Cloud connector broker and environment do not match",
+      "Cloud connector broker and environment do not match",
       "CONNECTOR_CONFIG_INVALID",
     );
   }
@@ -307,14 +376,21 @@ export function createPaperclipCloudConnector(input: {
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(15_000),
       });
-    } catch {
-      throw new PaperclipCloudConnectorError("Paperclip Cloud connector is unavailable", "CONNECTOR_UNAVAILABLE");
+    } catch (error) {
+      // Keep the public message and code stable; the reason and sanitized cause
+      // say whether the request timed out or failed in DNS, TLS or the socket.
+      throw new PaperclipCloudConnectorError(
+        "Cloud connector is unavailable",
+        "CONNECTOR_UNAVAILABLE",
+        undefined,
+        describeTransportFailure(error),
+      );
     }
     if (operation === "revoke" && response.status === 204) return {};
     if (!response.ok) {
       const reason = await readBrokerRejectionReason(response);
       throw new PaperclipCloudConnectorError(
-        `Paperclip Cloud connector rejected the request (operation=${operation}, status=${response.status}, reason=${reason})`,
+        `Cloud connector rejected the request (operation=${operation}, status=${response.status}, reason=${reason})`,
         response.status === 409 ? "REAUTHORIZATION_REQUIRED" : "CONNECTOR_REQUEST_FAILED",
         response.status,
       );
@@ -322,7 +398,7 @@ export function createPaperclipCloudConnector(input: {
     try {
       return await response.json() as ConnectorResponse;
     } catch {
-      throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid response", "CONNECTOR_BAD_RESPONSE");
+      throw new PaperclipCloudConnectorError("Cloud connector returned an invalid response", "CONNECTOR_BAD_RESPONSE");
     }
   }
 
@@ -351,13 +427,13 @@ export function createPaperclipCloudConnector(input: {
       || credentials.companyId !== companyId
       || credentials.provider !== definition.provider
     ) {
-      throw new PaperclipCloudConnectorError("Paperclip Cloud credential binding did not match", "CONNECTOR_BINDING_MISMATCH");
+      throw new PaperclipCloudConnectorError("Cloud credential binding did not match", "CONNECTOR_BINDING_MISMATCH");
     }
     if (credentials.profile !== profile) {
-      throw new PaperclipCloudConnectorError("Paperclip Cloud connector profile binding did not match", "CONNECTOR_BINDING_MISMATCH");
+      throw new PaperclipCloudConnectorError("Cloud connector profile binding did not match", "CONNECTOR_BINDING_MISMATCH");
     }
     if (!sameStringSet(credentials.scopes, definition.scopes)) {
-      throw new PaperclipCloudConnectorError("Paperclip Cloud scope grant did not match", "REAUTHORIZATION_REQUIRED");
+      throw new PaperclipCloudConnectorError("Cloud scope grant did not match", "REAUTHORIZATION_REQUIRED");
     }
     return credentials;
   }
@@ -377,7 +453,7 @@ export function createPaperclipCloudConnector(input: {
       if (response.status === "active" && response.active === true) return "active";
       if (response.status === "suspended" && response.active === false) return "suspended";
       if (response.status === "removed" && response.active === false) return "removed";
-      throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid instance status", "CONNECTOR_BAD_RESPONSE");
+      throw new PaperclipCloudConnectorError("Cloud connector returned an invalid instance status", "CONNECTOR_BAD_RESPONSE");
     },
     async getCapabilities(): Promise<PaperclipCloudConnectorProfileId[]> {
       let response: ConnectorResponse;
@@ -398,13 +474,13 @@ export function createPaperclipCloudConnector(input: {
       const profile = values.profile ?? "gmail.draft";
       const response = await call("session", { ...values, profile });
       if (typeof response.confirmationUrl !== "string" || typeof response.expiresAt !== "string") {
-        throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid session", "CONNECTOR_BAD_RESPONSE");
+        throw new PaperclipCloudConnectorError("Cloud connector returned an invalid session", "CONNECTOR_BAD_RESPONSE");
       }
       let confirmationUrl: URL;
       try {
         confirmationUrl = new URL(response.confirmationUrl);
       } catch {
-        throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid confirmation URL", "CONNECTOR_BAD_RESPONSE");
+        throw new PaperclipCloudConnectorError("Cloud connector returned an invalid confirmation URL", "CONNECTOR_BAD_RESPONSE");
       }
       const expectedBroker = new URL(config.baseUrl);
       if (
@@ -414,17 +490,17 @@ export function createPaperclipCloudConnector(input: {
         || confirmationUrl.password
         || confirmationUrl.hash
       ) {
-        throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid confirmation URL", "CONNECTOR_BAD_RESPONSE");
+        throw new PaperclipCloudConnectorError("Cloud connector returned an invalid confirmation URL", "CONNECTOR_BAD_RESPONSE");
       }
       let authorizationUrl: URL | undefined;
       if (response.authorizationUrl !== undefined) {
         if (typeof response.authorizationUrl !== "string") {
-          throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid provider URL", "CONNECTOR_BAD_RESPONSE");
+          throw new PaperclipCloudConnectorError("Cloud connector returned an invalid provider URL", "CONNECTOR_BAD_RESPONSE");
         }
         try {
           authorizationUrl = new URL(response.authorizationUrl);
         } catch {
-          throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid provider URL", "CONNECTOR_BAD_RESPONSE");
+          throw new PaperclipCloudConnectorError("Cloud connector returned an invalid provider URL", "CONNECTOR_BAD_RESPONSE");
         }
         if (
           authorizationUrl.protocol !== "https:"
@@ -433,7 +509,7 @@ export function createPaperclipCloudConnector(input: {
           || authorizationUrl.hash
           || !isExpectedProviderAuthorizationUrl(profile, authorizationUrl)
         ) {
-          throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid provider URL", "CONNECTOR_BAD_RESPONSE");
+          throw new PaperclipCloudConnectorError("Cloud connector returned an invalid provider URL", "CONNECTOR_BAD_RESPONSE");
         }
       }
       const handoff = parseCloudHandoff(response.handoff);
@@ -490,12 +566,12 @@ export function createPaperclipCloudConnector(input: {
       const response = await call("event-lease", values);
       if (Array.isArray(response.events) && response.events.length === 0) return null;
       if (typeof response.leaseId !== "string") {
-        throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid event lease", "CONNECTOR_BAD_RESPONSE");
+        throw new PaperclipCloudConnectorError("Cloud connector returned an invalid event lease", "CONNECTOR_BAD_RESPONSE");
       }
       const envelope = parseEnvelope(response.sealed, "events", "github", "github.code");
       const opened = unsealEvents(envelope, sealKey, config.instanceId, config.environment);
       if (opened.leaseId !== response.leaseId) {
-        throw new PaperclipCloudConnectorError("Paperclip Cloud connector event lease did not match", "CONNECTOR_BINDING_MISMATCH");
+        throw new PaperclipCloudConnectorError("Cloud connector event lease did not match", "CONNECTOR_BINDING_MISMATCH");
       }
       return { leaseId: opened.leaseId, events: opened.events };
     },
@@ -504,7 +580,7 @@ export function createPaperclipCloudConnector(input: {
       const response = await call("event-ack", values, { field: "acknowledgement", value: acknowledgement });
       const acknowledged = response.acknowledged;
       if (typeof acknowledged !== "number" || !Number.isSafeInteger(acknowledged) || acknowledged < 0) {
-        throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid acknowledgement", "CONNECTOR_BAD_RESPONSE");
+        throw new PaperclipCloudConnectorError("Cloud connector returned an invalid acknowledgement", "CONNECTOR_BAD_RESPONSE");
       }
       return acknowledged;
     },
@@ -514,7 +590,7 @@ export function createPaperclipCloudConnector(input: {
 function parseCloudHandoff(value: unknown): { kind: "paperclip_cloud"; session: string } | undefined {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid handoff", "CONNECTOR_BAD_RESPONSE");
+    throw new PaperclipCloudConnectorError("Cloud connector returned an invalid handoff", "CONNECTOR_BAD_RESPONSE");
   }
   const record = value as Record<string, unknown>;
   const session = record.session;
@@ -525,7 +601,7 @@ function parseCloudHandoff(value: unknown): { kind: "paperclip_cloud"; session: 
     || session.length > 512
     || !/^[A-Za-z0-9_-]+$/.test(session)
   ) {
-    throw new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid handoff", "CONNECTOR_BAD_RESPONSE");
+    throw new PaperclipCloudConnectorError("Cloud connector returned an invalid handoff", "CONNECTOR_BAD_RESPONSE");
   }
   return { kind: "paperclip_cloud", session };
 }
@@ -617,7 +693,7 @@ function privateKey(value: string, curve: "ed25519" | "x25519"): KeyObject {
     if (parsed.asymmetricKeyType !== curve) throw new Error("wrong key type");
     return parsed;
   } catch {
-    throw new PaperclipCloudConnectorError(`Paperclip Cloud ${curve} private key is invalid`, "CONNECTOR_CONFIG_INVALID");
+    throw new PaperclipCloudConnectorError(`Cloud ${curve} private key is invalid`, "CONNECTOR_CONFIG_INVALID");
   }
 }
 
@@ -740,7 +816,7 @@ function decryptEnvelope(
 }
 
 function badEnvelope() {
-  return new PaperclipCloudConnectorError("Paperclip Cloud connector returned an invalid sealed credential", "CONNECTOR_BAD_RESPONSE");
+  return new PaperclipCloudConnectorError("Cloud connector returned an invalid sealed credential", "CONNECTOR_BAD_RESPONSE");
 }
 
 function sealPurpose(

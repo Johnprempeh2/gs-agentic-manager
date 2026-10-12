@@ -382,6 +382,89 @@ describe("GET /health", () => {
     });
   });
 
+  describe("partner branding (GRE-1192)", () => {
+    const partnerEnv = {
+      GSAM_BRAND_NAME: "Partner Co",
+      GSAM_BRAND_LOGO_URL: "https://cdn.example.com/partner-logo.svg",
+      GSAM_BRAND_PRIMARY_COLOR: "#0f766e",
+    };
+    const partnerBranding = {
+      name: "Partner Co",
+      logoUrl: "https://cdn.example.com/partner-logo.svg",
+      colors: {
+        light: { primary: "#0f766e", primaryForeground: "#f5f7f2" },
+        dark: { primary: "#0f766e", primaryForeground: "#f5f7f2" },
+      },
+    };
+
+    it("omits branding entirely when no brand env var is set", async () => {
+      const app = createApp(createHealthyDb(), testServerInfo, undefined, {});
+
+      const res = await request(app).get("/health");
+
+      expect(res.status).toBe(200);
+      expect(Object.prototype.hasOwnProperty.call(res.body, "branding")).toBe(false);
+    });
+
+    it("returns the partner brand on the full response", async () => {
+      const app = createApp(createHealthyDb(), testServerInfo, undefined, partnerEnv);
+
+      const res = await request(app).get("/health");
+
+      expect(res.status).toBe(200);
+      expect(res.body.branding).toEqual(partnerBranding);
+    });
+
+    it("returns the partner brand to anonymous callers so the sign-in page can show it", async () => {
+      const db = {
+        execute: vi.fn().mockResolvedValue([{ "?column?": 1 }]),
+        select: vi.fn(() => ({
+          from: vi.fn(() => ({
+            where: vi.fn().mockResolvedValue([{ count: 1 }]),
+          })),
+        })),
+      } as unknown as Db;
+      const app = express();
+      app.use((req, _res, next) => {
+        (req as any).actor = { type: "none", source: "none" };
+        next();
+      });
+      app.use(
+        "/health",
+        healthRoutes(db, {
+          deploymentMode: "authenticated",
+          deploymentExposure: "public",
+          authReady: true,
+          companyDeletionEnabled: false,
+          serverInfo: testServerInfo,
+          runtimeEnv: partnerEnv,
+        }),
+      );
+
+      const res = await request(app).get("/health");
+
+      expect(res.status).toBe(200);
+      expect(res.body.serverInfo).toBeUndefined();
+      expect(res.body.branding).toEqual(partnerBranding);
+    });
+
+    it("drops a colour that fails contrast and keeps the rest of the brand", async () => {
+      const app = createApp(undefined, testServerInfo, undefined, {
+        GSAM_BRAND_NAME: "Partner Co",
+        GSAM_BRAND_PRIMARY_COLOR: "#ffff00",
+      });
+
+      const res = await request(app).get("/health");
+
+      expect(res.status).toBe(200);
+      expect(res.body.branding).toEqual({
+        name: "Partner Co",
+        logoUrl: null,
+        colors: { light: null, dark: { primary: "#ffff00", primaryForeground: "#0e1611" } },
+      });
+    });
+  });
+
   it("redacts detailed metadata for anonymous requests in authenticated mode", async () => {
     const devServerStatus = await import("../dev-server-status.js");
     vi.spyOn(devServerStatus, "readPersistedDevServerStatus").mockReturnValue(undefined);

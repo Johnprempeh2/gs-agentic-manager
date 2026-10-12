@@ -1,0 +1,32 @@
+# Organization memory database (PostgreSQL 16 + pgvector). GRE-674. Not enabled at boot: start by hand.
+[Unit]
+Description=GS organization memory - PostgreSQL 16 (127.0.0.1:15432)
+After=network.target
+
+[Service]
+Type=notify
+User=@USER@
+Group=@USER@
+ExecStart=@ROOT@/app/setup/gs-memory.sh serve-postgres
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=mixed
+KillSignal=SIGINT
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=10
+NotifyAccess=all
+
+MemoryMax=4G
+CPUQuota=400%
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=@ROOT@
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

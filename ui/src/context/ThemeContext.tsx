@@ -17,8 +17,8 @@ interface ThemeContextValue {
 }
 
 const THEME_STORAGE_KEY = "paperclip.theme";
-const DARK_THEME_COLOR = "#18181b";
-const LIGHT_THEME_COLOR = "#ffffff";
+const DARK_THEME_COLOR = "#121212";
+const LIGHT_THEME_COLOR = "#f7f8f4";
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 function resolveThemeFromDocument(): Theme {

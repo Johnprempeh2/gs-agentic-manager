@@ -20,6 +20,6 @@ export async function ghFetch(url: string, init?: RequestInit): Promise<Response
   try {
     return await fetch(url, init);
   } catch {
-    throw unprocessable(`Could not connect to ${new URL(url).hostname} — ensure the URL points to a GitHub or GitHub Enterprise instance`);
+    throw unprocessable(`Could not connect to ${new URL(url).hostname}. Ensure the URL points to a GitHub or GitHub Enterprise instance`);
   }
 }

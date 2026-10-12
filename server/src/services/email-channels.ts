@@ -43,8 +43,12 @@ import { emailConnectionService } from "./email-connections.js";
 import { secretService } from "./secrets.js";
 import { authorizationService } from "./authorization.js";
 import { issueService } from "./issues.js";
+import { supportQueueService } from "./support-queue.js";
+import { storeBoardEmailReply } from "./strategy-board-email.js";
+import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
 import type { heartbeatService } from "./heartbeat.js";
 import type { StorageService } from "../storage/types.js";
@@ -55,10 +59,12 @@ import {
 import {
   agentmailApi,
   AgentmailApiError,
+  agentmailStep,
   emailText,
   emailReplyRecipients,
   isAutomaticEmail,
   isFilteredEmail,
+  isSenderAuthenticated,
   normalizeAgentmailEvent,
   verifyAgentmailWebhook,
   AGENTMAIL_EVENTS,
@@ -70,6 +76,11 @@ export type EmailActor = {
   agentId?: string;
   runId?: string;
   localImplicit?: boolean;
+  /**
+   * A server job, not a person or a run: only the Strategy Board's own emails
+   * (GRE-1187), queued through `queueBoardSend`. Routes never set it.
+   */
+  system?: "strategy_board";
 };
 type Endpoint = typeof chatEndpoints.$inferSelect;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -116,6 +127,7 @@ const diagnostic = (e: unknown) =>
 
 export function emailChannelService(db: Db, options: EmailChannelOptions) {
   const secrets = secretService(db);
+  const support = supportQueueService(db, { wakeup: options.heartbeat.wakeup });
   const fetchImpl = options.fetch ?? fetch;
   const owner = randomUUID();
   const sockets = new Map<
@@ -134,8 +146,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       .enableChatConnectors;
   }
   async function requireEnabled() {
-    if (!(await enabled()))
-      throw forbidden("Enable experimental chat connections first");
+    await assertEntitled(db, "enableChatConnectors");
   }
   async function getEndpoint(id: string) {
     const [row] = await db
@@ -514,6 +525,28 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       if (!membership || (membership.membershipRole === "viewer" && !admin))
         throw forbidden("Board user no longer has company write access");
     }
+    if (actor.system) {
+      if (actor.system !== "strategy_board" || actor.userId || actor.agentId)
+        throw forbidden("Unknown system email sender");
+      if (task.status === "cancelled")
+        throw forbidden("Cancelled tasks cannot send email");
+      // The board sends as its secretary: the inbox's agent must still be able to work.
+      const [agent] = await db
+        .select({ status: agents.status })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.companyId, endpoint.companyId),
+            eq(agents.id, endpoint.assignedAgentId),
+          ),
+        );
+      if (
+        !agent ||
+        ["paused", "terminated", "pending_approval"].includes(agent.status)
+      )
+        throw forbidden("The board secretary agent is not available to send email");
+      return task;
+    }
     if (!actor.userId && !actor.agentId)
       throw forbidden("An authenticated actor is required");
     if (task.status === "cancelled")
@@ -592,12 +625,14 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     consume: boolean,
   ) {
     const service = toolAccessPolicyService(db);
+    // A board email is judged by the secretary agent's tool rules.
+    const agentId = actor.system ? endpoint.assignedAgentId : actor.agentId;
     const request = {
       companyId: endpoint.companyId,
       actor: {
-        actorType: actor.agentId ? ("agent" as const) : ("user" as const),
-        actorId: actor.agentId ?? actor.userId ?? "board",
-        agentId: actor.agentId,
+        actorType: agentId ? ("agent" as const) : ("user" as const),
+        actorId: agentId ?? actor.userId ?? "board",
+        agentId,
       },
       runContext: { issueId: input.parentIssueId, heartbeatRunId: actor.runId },
       request: {
@@ -702,7 +737,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             id: applicationId,
             companyId,
             applicationKey: `agentmail:${input.idempotencyKey}`,
-            name: `AgentMail — ${agent.name} ${input.idempotencyKey.slice(0, 8)}`,
+            name: `AgentMail: ${agent.name} ${input.idempotencyKey.slice(0, 8)}`,
             type: "chat",
             status: "active",
             metadata: { sourceTemplateKey: "agentmail", purpose: "channel" },
@@ -711,7 +746,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           id: connectionId,
           companyId,
           applicationId,
-          name: `Email — ${agent.name}`,
+          name: `Email: ${agent.name}`,
           uid: `agentmail-${input.idempotencyKey}`,
           connectionKind: "managed",
           connectionPurpose: "channel",
@@ -801,27 +836,38 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       } else if (controlKey) await vault(endpoint, "controlKey", controlKey);
       if (!controlKey) throw badRequest("AgentMail API key required");
       const api = agentmailApi(controlKey, fetchImpl);
-      const scope = await api.whoami();
+      const scope = await agentmailStep("checkKey", () => api.whoami());
       const inboxId = endpoint.botExternalId ?? input.inboxId ?? scope.inbox_id;
       if (!inboxId && input.domain && input.domain !== "agentmail.to") {
-        const domains = await api.listDomains();
+        const domains = await agentmailStep("readDomains", () =>
+          api.listDomains(),
+        );
         const domain = domains.domains.find((d) => d.domain === input.domain);
         if (
           !domain ||
-          (await api.getDomain(domain.domain_id)).status !== "VERIFIED"
+          (
+            await agentmailStep("readDomains", () =>
+              api.getDomain(domain.domain_id),
+            )
+          ).status !== "VERIFIED"
         )
           throw badRequest(
             "Verify this custom domain in AgentMail before creating an inbox",
           );
       }
       const inbox = inboxId
-        ? await api.getInbox(inboxId)
-        : await api.createInbox({
-            username: input.username,
-            domain: input.domain,
-            display_name: agent.name,
-            client_id: `paperclip-${endpoint.id}`,
-          });
+        ? await agentmailStep("readInbox", () => api.getInbox(inboxId))
+        : await agentmailStep("createInbox", () =>
+            api.createInbox({
+              username: input.username,
+              domain: input.domain,
+              display_name: agent.name,
+              // AgentMail deduplicates inbox creation by client_id. Keep the
+              // historical prefix so a retried or resumed setup for an existing
+              // endpoint finds its inbox instead of creating a second one.
+              client_id: `paperclip-${endpoint.id}`,
+            }),
+          );
       if (scope.scope_type === "inbox" && scope.inbox_id !== inbox.inbox_id)
         throw forbidden("API key belongs to a different inbox");
       await db
@@ -842,7 +888,9 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
         });
       const config = await getConfig(endpoint.id);
       if (!config.ownedApiKeyId && scope.scope_type !== "inbox") {
-        const key = await api.createInboxKey(inbox.inbox_id);
+        const key = await agentmailStep("createInboxKey", () =>
+          api.createInboxKey(inbox.inbox_id),
+        );
         try {
           await vault(endpoint, "apiKey", key.api_key);
           await db
@@ -857,10 +905,10 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
         }
       } else if (scope.scope_type === "inbox")
         await vault(endpoint, "apiKey", controlKey);
-      const runtimeScope = await agentmailApi(
-        await credential(endpoint),
-        fetchImpl,
-      ).whoami();
+      const runtimeKey = await credential(endpoint);
+      const runtimeScope = await agentmailStep("checkRuntimeKey", () =>
+        agentmailApi(runtimeKey, fetchImpl).whoami(),
+      );
       if (
         runtimeScope.scope_type !== "inbox" ||
         runtimeScope.inbox_id !== inbox.inbox_id
@@ -1184,6 +1232,10 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       commentId?: string;
       wakePending?: boolean;
       admissionToWakeMs?: number;
+      supportReceivedAt?: string;
+      boardReplyPending?: boolean;
+      boardReplySenderAuthenticated?: boolean;
+      conversationId?: string;
     };
     if (event.inbox_id !== endpoint.botExternalId)
       throw forbidden("Email delivery inbox mismatch");
@@ -1313,6 +1365,16 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             endpoint.companyId,
             endpoint.assignedAgentId,
           );
+          // A client support inbox (GRE-665) files the thread in its queue's
+          // project with the client code, priority and routed owner.
+          const supportQueue = await support.queueForEmailEndpoint(endpoint.companyId, endpoint.id);
+          const supportFields = supportQueue
+            ? (await support.issueFields(supportQueue, {
+                subject: message.subject,
+                body: emailText(message),
+                receivedAt: new Date(message.timestamp),
+              })).fields
+            : null;
           const task = await issueService(db).create(
             endpoint.companyId,
             {
@@ -1323,12 +1385,14 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
               priority: "medium",
               assigneeAgentId: endpoint.assignedAgentId,
               responsibleUserId: endpoint.sponsorUserId,
+              ...supportFields,
               originKind: "chat_channel",
               originId: `email:${endpoint.id}:${message.thread_id}`,
               idempotencyKey: `email:${endpoint.id}:${message.thread_id}`,
             },
             tx,
           );
+          if (supportQueue) event.supportReceivedAt = message.timestamp;
           [conversation] = await tx
             .insert(chatConversations)
             .values({
@@ -1386,6 +1450,14 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           task.status !== "cancelled" &&
           !isAutomaticEmail(message) &&
           !message.labels.includes("sent");
+        // A reply on a Strategy Board thread may be stored on the plan (GRE-1196).
+        event.conversationId = conversation.id;
+        event.boardReplyPending =
+          !alreadyRetained &&
+          !isAutomaticEmail(message) &&
+          !message.labels.includes("sent");
+        // Kept on the event so a retried delivery decides the same way (GRE-1215).
+        event.boardReplySenderAuthenticated = isSenderAuthenticated(message);
         await tx
           .update(chatDeliveries)
           .set({
@@ -1403,6 +1475,27 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
           .where(eq(chatConversations.id, conversation.id));
       });
     }
+    // Idempotent: a retried delivery finds the ticket already open. If this
+    // fails, the support clock sweep opens the missing ticket.
+    if (event.supportReceivedAt && event.issueId)
+      await support
+        .afterEmailIntake(endpoint.companyId, endpoint.id, event.issueId, new Date(event.supportReceivedAt))
+        .catch((err: unknown) =>
+          logger.warn({ err, issueId: event.issueId }, "support ticket intake failed; the clock sweep will repair it"),
+        );
+    // Idempotent, and never blocks the wake: the email stays in the thread either way.
+    if (event.boardReplyPending && event.conversationId)
+      await storeBoardEmailReply(db, {
+        companyId: endpoint.companyId,
+        conversationId: event.conversationId,
+        providerMessageId: event.message_id,
+        senderAuthenticated: event.boardReplySenderAuthenticated === true,
+      }).catch((err: unknown) =>
+        logger.warn(
+          { err, issueId: event.issueId },
+          "strategy board: an email reply could not be stored on the plan; it stays in the email thread. Enter it on the KPI page.",
+        ),
+      );
     if (event.wakePending && event.issueId) {
       await active(endpoint);
       await options.heartbeat.wakeup(endpoint.assignedAgentId, {
@@ -1443,7 +1536,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       .set({
         state: "processed",
         processedAt: new Date(),
-        normalizedEvent: { ...event, wakePending: false },
+        normalizedEvent: { ...event, wakePending: false, boardReplyPending: false },
       })
       .where(eq(chatDeliveries.id, delivery.id));
   }
@@ -1519,8 +1612,11 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
             parentId: input.parentIssueId,
             projectId: sourceTask.projectId,
             executionWorkspaceSettings: sourceTask.executionWorkspaceSettings,
-            description: `Email conversation from ${endpoint.botExternalId}`,
-            status: "todo",
+            description: actor.system
+              ? `Board email from ${endpoint.botExternalId}. A reply reopens this task.`
+              : `Email conversation from ${endpoint.botExternalId}`,
+            // A board email needs no work from the secretary until someone replies.
+            status: actor.system ? "done" : "todo",
             priority: "medium",
             assigneeAgentId: endpoint.assignedAgentId,
             responsibleUserId: endpoint.sponsorUserId,
@@ -1580,6 +1676,15 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     });
     if (timer) void tick().catch(() => {});
     return publication(input.idempotencyKey, companyId);
+  }
+  /** The Strategy Board's own emails (GRE-1187): a new email under `parentIssueId`. */
+  async function queueBoardSend(
+    companyId: string,
+    input: EmailSendInput,
+  ): Promise<EmailPublicationSummary> {
+    if (input.conversationId)
+      throw badRequest("Board emails are new emails, not replies");
+    return queueSend(companyId, input, { system: "strategy_board" });
   }
   async function publication(
     id: string,
@@ -2373,13 +2478,15 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     if (endpoint.status === "archived" || !endpoint.botExternalId)
       throw conflict("Create a new inbox connection");
     const api = agentmailApi(apiKey, fetchImpl);
-    const scope = await api.whoami();
+    const scope = await agentmailStep("checkKey", () => api.whoami());
     if (
       scope.scope_type === "inbox" &&
       scope.inbox_id !== endpoint.botExternalId
     )
       throw forbidden("API key belongs to a different inbox");
-    await api.getInbox(endpoint.botExternalId);
+    await agentmailStep("readInbox", () =>
+      api.getInbox(endpoint.botExternalId!),
+    );
     const result = await withLease(endpoint, async () => {
       const config = await getConfig(id);
       // Check registration permissions before interrupting a working socket.
@@ -2399,17 +2506,21 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       await stopEndpoint(endpoint);
       // Only registrations and scoped keys created by GS Agentic Manager are removed.
       if (config.webhookId)
-        await api
-          .deleteWebhook(endpoint.botExternalId!, config.webhookId)
-          .catch((e) => {
-            if (!(e instanceof AgentmailApiError && e.status === 404)) throw e;
-          });
+        await agentmailStep("removeWebhook", () =>
+          api
+            .deleteWebhook(endpoint.botExternalId!, config.webhookId!)
+            .catch((e) => {
+              if (!(e instanceof AgentmailApiError && e.status === 404)) throw e;
+            }),
+        );
       if (config.ownedApiKeyId)
-        await api
-          .deleteInboxKey(endpoint.botExternalId!, config.ownedApiKeyId)
-          .catch((e) => {
-            if (!(e instanceof AgentmailApiError && e.status === 404)) throw e;
-          });
+        await agentmailStep("removeInboxKey", () =>
+          api
+            .deleteInboxKey(endpoint.botExternalId!, config.ownedApiKeyId!)
+            .catch((e) => {
+              if (!(e instanceof AgentmailApiError && e.status === 404)) throw e;
+            }),
+        );
       await db
         .update(emailEndpoints)
         .set({ webhookId: preparedWebhook?.webhook_id ?? null, ownedApiKeyId: null, lastSyncAt: null })
@@ -2435,18 +2546,15 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     if (!base?.startsWith("https://")) {
       throw badRequest("Webhook receiving requires a public HTTPS URL; use WebSocket for local setup");
     }
-    try {
-      return await api.createWebhook(
+    return agentmailStep("createWebhook", () =>
+      api.createWebhook(
         endpoint.botExternalId!,
         `${base.replace(/\/$/, "")}/api/chat-webhooks/agentmail/${endpoint.publicId}`,
+        // Same historical client_id prefix as inbox creation: AgentMail
+        // deduplicates by it, so existing endpoints must keep it.
         `paperclip-${endpoint.id}`,
-      );
-    } catch (error) {
-      if (error instanceof AgentmailApiError && error.status === 403) {
-        throw badRequest("This AgentMail key cannot create webhooks. Enable webhook create/read/delete permissions for this inbox in AgentMail, or use Live connection.");
-      }
-      throw error;
-    }
+      ),
+    );
   }
   async function resolveUncertain(
     companyId: string,
@@ -2616,6 +2724,7 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
     getEndpoint,
     summary,
     queueSend,
+    queueBoardSend,
     publication,
     thread,
     webhook,
@@ -2641,18 +2750,20 @@ export function emailChannelService(db: Db, options: EmailChannelOptions) {
       ),
     inspect: async (apiKey: string) => {
       const api = agentmailApi(apiKey, fetchImpl);
-      const scope = await api.whoami();
+      const scope = await agentmailStep("checkKey", () => api.whoami());
       return {
         scope,
         inboxes: scope.inbox_id
-          ? [await api.getInbox(scope.inbox_id)]
-          : (await api.listInboxes()).inboxes,
+          ? [await agentmailStep("readInbox", () => api.getInbox(scope.inbox_id!))]
+          : (await agentmailStep("listInboxes", () => api.listInboxes())).inboxes,
         domains:
           scope.scope_type === "inbox"
             ? []
-            : await Promise.all(
-                (await api.listDomains()).domains.map((d) =>
-                  api.getDomain(d.domain_id),
+            : await agentmailStep("readDomains", async () =>
+                Promise.all(
+                  (await api.listDomains()).domains.map((d) =>
+                    api.getDomain(d.domain_id),
+                  ),
                 ),
               ),
       };

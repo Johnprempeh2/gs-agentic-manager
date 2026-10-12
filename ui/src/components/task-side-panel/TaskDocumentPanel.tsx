@@ -5,6 +5,7 @@ import { FileQuestion, Loader2 } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { issuesApi } from "@/api/issues";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "@/components/IssueDocumentAnnotations";
+import { IssueDocumentEvidence } from "@/components/IssueDocumentEvidence";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { queryKeys } from "@/lib/queryKeys";
 import { documentDisplayTitle } from "@/lib/issue-artifacts";
@@ -98,6 +99,7 @@ export function TaskDocumentPanel({
       ) : (
         <p className="text-sm text-muted-foreground">Document is empty.</p>
       )}
+      <IssueDocumentEvidence issueId={issueId} documentKey={document.key} revisionNumber={document.latestRevisionNumber ?? 1} />
     </article>
   );
 }

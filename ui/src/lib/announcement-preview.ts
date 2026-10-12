@@ -7,8 +7,8 @@ export const announcementPreview: Announcement = {
   eyebrow: "New in GS Agentic Manager",
   title: "Give your next idea a team",
   description: "Bring agents, projects, and work together. Set the direction, then follow your team’s progress in GS Agentic Manager.",
-  image: { path: `assets/${"0".repeat(64)}.png`, alt: "GS Agentic Manager — ideas become work" },
-  secondaryLink: { kind: "external", label: "Learn more", url: "https://paperclip.ing" },
+  image: { path: `assets/${"0".repeat(64)}.png`, alt: "GS Agentic Manager: ideas become work" },
+  secondaryLink: { kind: "external", label: "Learn more", url: "https://greatstone.co.uk" },
   primaryAction: { kind: "route", label: "Explore your projects", path: "/projects" },
 };
 

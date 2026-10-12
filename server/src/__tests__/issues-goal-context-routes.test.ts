@@ -66,6 +66,7 @@ const mockInstanceSettingsService = vi.hoisted(() => ({
     },
   })),
   listCompanyIds: vi.fn(async () => ["company-1"]),
+  getExperimental: async () => ({}),
 }));
 
 const mockIssueReferenceService = vi.hoisted(() => ({
@@ -105,6 +106,9 @@ vi.mock("../services/index.js", () => ({
   }),
   accessService: () => mockAccessService,
   agentService: () => mockAgentService,
+  agentTeamService: () => ({
+    applyTeamAssignment: vi.fn(async () => undefined),
+  }),
   companySkillService: () => ({
     completeTestRunForIssue: vi.fn(async () => null),
   }),
@@ -132,6 +136,10 @@ vi.mock("../services/index.js", () => ({
   projectService: () => mockProjectService,
   routineService: () => mockRoutineService,
   workProductService: () => mockWorkProductService,
+}));
+
+vi.mock("../services/instance-settings.js", () => ({
+  instanceSettingsService: () => mockInstanceSettingsService,
 }));
 
 vi.mock("../services/execution-workspaces.js", () => ({

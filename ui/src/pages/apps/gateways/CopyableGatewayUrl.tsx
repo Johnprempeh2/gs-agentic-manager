@@ -46,7 +46,7 @@ export function CopyableGatewayUrl({
         "flex min-w-0 max-w-full items-center gap-1 text-left font-mono text-xs text-muted-foreground hover:text-foreground",
         className,
       )}
-      title={`${url} — click to copy`}
+      title={`${url} (click to copy)`}
       aria-label="Copy gateway URL"
     >
       <span className="min-w-0 truncate">{url}</span>

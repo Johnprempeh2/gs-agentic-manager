@@ -8,6 +8,8 @@ import type { Issue, Project } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   IssuesList,
+  getInitialViewState,
+  type IssueViewState,
   issueAgeBucket,
   issueAgeBucketsCrossed,
   issueAgeSeparatorLabel,
@@ -579,6 +581,125 @@ describe("IssuesList", () => {
     });
 
     act(() => root.unmount());
+  });
+
+  it("starts a fresh viewer on the page's default statuses and switches with the status chips", async () => {
+    const onStatusFilterChange = vi.fn();
+    const doneIssue = createIssue({ id: "issue-done", identifier: "PAP-20", title: "Shipped task", status: "done" });
+    const blockedIssue = createIssue({ id: "issue-blocked", identifier: "PAP-21", title: "Stuck task", status: "blocked" });
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[doneIssue, blockedIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        toolbarPresentation="collection"
+        defaultStatuses={["todo", "in_progress", "in_review", "blocked"]}
+        showStatusChips
+        onStatusFilterChange={onStatusFilterChange}
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Stuck task");
+      expect(container.textContent).not.toContain("Shipped task");
+    });
+    expect(onStatusFilterChange).toHaveBeenLastCalledWith(["todo", "in_progress", "in_review", "blocked"]);
+
+    const chipGroup = container.querySelector("[role='group'][aria-label='Show tasks']");
+    const chips = Array.from(chipGroup?.querySelectorAll("button") ?? []);
+    expect(chips.map((chip) => chip.textContent)).toEqual(["All", "Recent", "Active", "Blocked", "Done"]);
+    expect(chips[2]?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(() => chips[4]?.click());
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Shipped task");
+      expect(container.textContent).not.toContain("Stuck task");
+    });
+    expect(onStatusFilterChange).toHaveBeenLastCalledWith(["done", "cancelled"]);
+
+    act(() => root.unmount());
+  });
+
+  it("shows finished and live tasks together on the Recent default", async () => {
+    const doneIssue = createIssue({ id: "issue-done", identifier: "PAP-20", title: "Shipped task", status: "done" });
+    const blockedIssue = createIssue({ id: "issue-blocked", identifier: "PAP-21", title: "Stuck task", status: "blocked" });
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[doneIssue, blockedIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        toolbarPresentation="collection"
+        defaultStatuses={["todo", "in_progress", "in_review", "blocked", "done"]}
+        showStatusChips
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Shipped task");
+      expect(container.textContent).toContain("Stuck task");
+    });
+    const recent = Array.from(container.querySelectorAll("[aria-label='Show tasks'] button"))
+      .find((chip) => chip.textContent === "Recent");
+    expect(recent?.getAttribute("aria-pressed")).toBe("true");
+
+    act(() => root.unmount());
+  });
+
+  it("keeps a chip picked before the company settles instead of resetting it to the default", async () => {
+    companyState.selectedCompanyId = "company-1";
+    const doneIssue = createIssue({ id: "issue-done", identifier: "PAP-20", title: "Shipped task", status: "done" });
+    const blockedIssue = createIssue({ id: "issue-blocked", identifier: "PAP-21", title: "Stuck task", status: "blocked" });
+    const list = () => (
+      <IssuesList
+        issues={[doneIssue, blockedIssue]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        toolbarPresentation="collection"
+        defaultStatuses={["todo", "in_progress", "in_review", "blocked"]}
+        showStatusChips
+        onUpdateIssue={() => undefined}
+      />
+    );
+    const { root, queryClient } = renderWithQueryClient(list(), container);
+    const chip = (label: string) => Array.from(container.querySelectorAll("[aria-label='Show tasks'] button"))
+      .find((button) => button.textContent === label);
+
+    await waitForAssertion(() => expect(chip("Done")).toBeTruthy());
+    await act(() => (chip("Done") as HTMLButtonElement).click());
+    expect(chip("Done")?.getAttribute("aria-pressed")).toBe("true");
+
+    try {
+      // The route settles on another company with no saved view yet.
+      companyState.selectedCompanyId = "company-2";
+      act(() => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <TooltipProvider>{list()}</TooltipProvider>
+          </QueryClientProvider>,
+        );
+      });
+      // Let the context reload effect and its re-render settle.
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+
+      await waitForAssertion(() => {
+        expect(chip("Done")?.getAttribute("aria-pressed")).toBe("true");
+        expect(container.textContent).toContain("Shipped task");
+        expect(container.textContent).not.toContain("Stuck task");
+      });
+    } finally {
+      companyState.selectedCompanyId = "company-1";
+      act(() => root.unmount());
+    }
   });
 
   it("does not load external-object summaries when the experimental flag is disabled", async () => {
@@ -2316,7 +2437,7 @@ describe("IssuesList", () => {
     });
   });
 
-  it("places separators around expanded nested rows in visible order", async () => {
+  it("groups by top-level rows: a nested child stays under its parent's heading", async () => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
     const threeDaysAgo = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 3, 12);
@@ -2345,10 +2466,43 @@ describe("IssuesList", () => {
       expect(visibleOrder).toEqual([
         "Today",
         "Recent parent",
-        "Earlier",
         "Older child",
+        "Earlier",
         "Old root",
       ]);
+    });
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("never repeats Today after an older nested child (30 Sep phone audit)", async () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+    const todayEarlier = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8);
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 12);
+
+    const { root } = renderWithQueryClient(
+      <IssuesList
+        issues={[
+          createIssue({ id: "p", identifier: "PAP-1", title: "Parent today", updatedAt: today }),
+          createIssue({ id: "c", identifier: "PAP-2", parentId: "p", title: "Child yesterday", updatedAt: yesterday }),
+          createIssue({ id: "r", identifier: "PAP-3", title: "Root today", updatedAt: todayEarlier }),
+        ]}
+        agents={[]}
+        projects={[]}
+        viewStateKey="paperclip:test-issues"
+        rowPresentation="task"
+        onUpdateIssue={() => undefined}
+      />,
+      container,
+    );
+
+    await waitForAssertion(() => {
+      const labels = Array.from(container.querySelectorAll("[data-issues-date-separator]"))
+        .map((el) => el.getAttribute("aria-label"));
+      expect(labels).toEqual(["Today"]);
     });
 
     act(() => {
@@ -2398,5 +2552,21 @@ describe("legacy issue age separators", () => {
     expect(issueAgeSeparatorLabel(1)).toBe("Older than a day");
     expect(issueAgeSeparatorLabel(2)).toBe("Older than a week");
     expect(issueAgeBucketsCrossed(0, 2)).toEqual([1, 2]);
+  });
+});
+
+describe("getInitialViewState", () => {
+  const saved = { statuses: [] } as unknown as IssueViewState;
+
+  it("applies a page's default statuses only for a viewer with no saved view", () => {
+    expect(getInitialViewState({ viewState: saved, source: "default" }, undefined, undefined, ["blocked"]).statuses)
+      .toEqual(["blocked"]);
+    expect(getInitialViewState({ viewState: saved, source: "current" }, undefined, undefined, ["blocked"]).statuses)
+      .toEqual([]);
+  });
+
+  it("still shows every status when the page opens on an assignee link", () => {
+    expect(getInitialViewState({ viewState: saved, source: "default" }, ["agent-1"], undefined, ["blocked"]).statuses)
+      .toEqual([]);
   });
 });

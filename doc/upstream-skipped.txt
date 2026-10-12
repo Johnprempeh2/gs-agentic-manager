@@ -1,0 +1,16 @@
+# Upstream commits (`paperclipai/paperclip`) we decided not to take (GRE-532).
+# Read by scripts/upstream-pending.sh. Add a line when the daily check or a
+# sync skips a commit; the reason must say why (see the Upstream log on GRE-82).
+# Format: <upstream sha> <reason>
+1d23cb696 #14394 their CI Rust cache paths; our CI is fork-owned
+3166e93a7 #14461 lockfile refresh; we regenerate our own lockfile at sync
+d1f3e7bb0 #14741 upstream README and roadmap; ours is rebranded
+7141ab68a #14744 upstream README quickstart; ours is rebranded
+f1a394bd3 #13882 Grok Build via native ACP; we do not use Grok (revisit if later fixes depend on it)
+18e8c121d #14024 Grok in public installs; we do not use Grok (revisit if later fixes depend on it)
+d91eceb57 #13471 bump in their Storybook deploy workflow; we do not run it
+261c24ccf #14890 upstream release notes; our releases differ
+5207c78f2 #14882 upstream release notes; our releases differ
+806af230b #14928 upstream release notes
+6eaf21892 #14984 their CODEOWNERS for Storybook publishing
+78e003449 #15007 their product eval fixtures; take only if runner-e2e is synced whole

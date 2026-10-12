@@ -210,7 +210,7 @@ describe("HTTP logger redaction", () => {
       for (const canary of Object.values(canaries))
         expect(output).not.toContain(canary);
       if (failureMode !== "warning") {
-        expect(log.msg).toMatch(/503 — request failed$/);
+        expect(log.msg).toMatch(/503: request failed$/);
         expect(log.err.message).toBe("Chat webhook request failed");
         expect(log.err.request).toBeUndefined();
         expect(log.errorContext).toEqual({ name: "Error" });
@@ -307,6 +307,60 @@ describe("HTTP logger redaction", () => {
     });
   });
 
+  it.each([
+    { path: "/api/companies/company-1/memory/records", withContext: false },
+    { path: "/api/companies/company-1/memory/records", withContext: true },
+    { path: "/api/companies/company-1/memory/recall", withContext: true },
+    { path: "/api/mcp/memory-tools", withContext: false },
+  ])(
+    "keeps refused memory text out of $path failure logs (context: $withContext)",
+    async ({ path, withContext }) => {
+      // GRE-879: a 422 memory_sensitive_content refusal must not log the secret.
+      // Joined at runtime so no token-shaped string is committed.
+      const fakeToken = ["ghp", "_", "SYNTHETICmemoryLOGcanary000000000"].join("");
+      const chunks: string[] = [];
+      const stream = new Writable({
+        write(chunk, _encoding, callback) {
+          chunks.push(chunk.toString());
+          callback();
+        },
+      });
+      const app = express();
+      app.use(express.json());
+      app.use(
+        createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream)),
+      );
+      const router = express.Router();
+      router.post(path.replace(/^\/api/, ""), (req, res) => {
+        if (withContext) {
+          (res as any).__errorContext = {
+            error: { name: "HttpError", message: "Not stored" },
+            reqBody: req.body,
+            reqParams: req.params,
+          };
+        }
+        res.status(422).json({ code: "memory_sensitive_content" });
+      });
+      app.use("/api", router);
+      await request(app)
+        .post(path)
+        .send({
+          title: `Deploy note ${fakeToken}`,
+          content: `Deploy uses token ${fakeToken} for CI.`,
+          evidence: [fakeToken],
+          entities: [fakeToken],
+          topics: [fakeToken],
+          sourceId: fakeToken,
+          query: fakeToken,
+        })
+        .expect(422);
+      const line = chunks.join("");
+      expect(line).toContain("422");
+      expect(line).not.toContain(fakeToken);
+      expect(JSON.parse(line.trim()).reqBody).toBe("[REDACTED]");
+    },
+  );
+
   it("defines the HTTP auth and cookie header paths that must be redacted", () => {
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.authorization");
     expect(HTTP_LOG_REDACT_PATHS).toContain("req.headers.cookie");
@@ -321,6 +375,7 @@ describe("HTTP logger redaction", () => {
     expect(HTTP_LOG_REDACT_PATHS).toContain(
       'req.headers["x-telegram-bot-api-secret-token"]',
     );
+    expect(HTTP_LOG_REDACT_PATHS).toContain('req.headers["x-gsam-invite-token"]');
     expect(HTTP_LOG_REDACT_PATHS).toContain("reqBody.credentials");
     expect(HTTP_LOG_REDACT_PATHS).toContain("errorContext.details.credentials");
   });
@@ -425,6 +480,38 @@ describe("HTTP logger redaction", () => {
     const log = JSON.parse(output.trim());
     expect(log.req.headers["x-paperclip-github-capability"]).toBe("[Redacted]");
     expect(log.req.url).toBe("/runtime-tools/github/credentials");
+    expect(log.res.statusCode).toBe(status);
+  });
+
+  it.each([200, 400])("redacts the invite sign-up token header from HTTP %i logs", async (status) => {
+    const inviteToken = "pcp_invite_sign-up-log-canary-5d2e7a";
+    const chunks: string[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, callback) {
+        chunks.push(chunk.toString());
+        callback();
+      },
+    });
+    const app = express();
+    app.use(createHttpLogger(pino({ redact: [...HTTP_LOG_REDACT_PATHS] }, stream)));
+    app.post("/api/auth/sign-up/email", (_req, res) => {
+      res.status(status).json(
+        status === 400
+          ? { code: "EMAIL_PASSWORD_SIGN_UP_DISABLED", message: "Email and password sign up is not enabled" }
+          : { token: null },
+      );
+    });
+
+    await request(app)
+      .post("/api/auth/sign-up/email")
+      .set("X-Gsam-Invite-Token", inviteToken)
+      .send({})
+      .expect(status);
+
+    const output = chunks.join("");
+    expect(output).not.toContain(inviteToken);
+    const log = JSON.parse(output.trim());
+    expect(log.req.headers["x-gsam-invite-token"]).toBe("[Redacted]");
     expect(log.res.statusCode).toBe(status);
   });
 
@@ -702,7 +789,7 @@ describe("HTTP logger redaction", () => {
     const crashLogs = logs.filter((log) => log.res.statusCode === 500);
     expect(crashLogs).toHaveLength(3);
     for (const log of crashLogs) {
-      expect(log.msg).toMatch(/ 500 — request failed$/);
+      expect(log.msg).toMatch(/ 500: request failed$/);
       expect(log.errorContext).toEqual({ name: "Error" });
     }
     expect(

@@ -1,4 +1,5 @@
 import type {
+  Approval,
   CatalogTeam,
   CatalogTeamFileDetail,
   CatalogTeamImportOptions,
@@ -53,5 +54,11 @@ export const teamCatalogApi = {
     api.post<CatalogTeamInstallResult>(
       `/companies/${encodeURIComponent(companyId)}/teams/catalog/${encodeURIComponent(catalogRef)}/install`,
       options,
+    ),
+  // "Ask Greatstone to add" (GRE-434): a board approval card, no install.
+  request: (companyId: string, catalogRef: string) =>
+    api.post<Approval>(
+      `/companies/${encodeURIComponent(companyId)}/teams/catalog/${encodeURIComponent(catalogRef)}/request`,
+      {},
     ),
 };

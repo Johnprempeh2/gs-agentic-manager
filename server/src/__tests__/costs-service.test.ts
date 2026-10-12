@@ -3,7 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, lt, sql } from "drizzle-orm";
 import {
   createDb,
   companies,
@@ -16,7 +16,9 @@ import {
   issues,
   projects,
 } from "@greatstone/db";
+import { computeApiEquivalentCents } from "@greatstone/shared";
 import { costService, proratedSubscriptionCents } from "../services/costs.ts";
+import { costLedgerService, costLedgerToCsv, parseLedgerMonth } from "../services/cost-ledger.ts";
 import { financeService } from "../services/finance.ts";
 import {
   getEmbeddedPostgresTestSupport,
@@ -93,6 +95,9 @@ const mockCostService = vi.hoisted(() => ({
   updateSubscription: vi.fn(),
   deleteSubscription: vi.fn(),
 }));
+const mockCostLedgerService = vi.hoisted(() => ({
+  monthly: vi.fn(),
+}));
 const mockFinanceService = vi.hoisted(() => ({
   createEvent: vi.fn(),
   summary: vi.fn().mockResolvedValue({ debitCents: 0, creditCents: 0, netCents: 0, estimatedDebitCents: 0, eventCount: 0 }),
@@ -121,6 +126,9 @@ function registerModuleMocks() {
     accessService: () => mockAccessService,
     budgetService: () => mockBudgetService,
     costService: () => mockCostService,
+    costLedgerService: () => mockCostLedgerService,
+    costLedgerToCsv,
+    parseLedgerMonth,
     financeService: () => mockFinanceService,
     companyService: () => mockCompanyService,
     agentService: () => mockAgentService,
@@ -371,6 +379,64 @@ describe("cost routes", () => {
       from: new Date("2026-04-01T00:00:00.000Z"),
       to: undefined,
     });
+  });
+
+  it("builds the ledger for the requested UTC month", async () => {
+    mockCostLedgerService.monthly.mockResolvedValue({ month: "2026-04" });
+    const res = await request(createApp())
+      .get("/api/companies/company-1/costs/ledger")
+      .query({ month: "2026-04" });
+    expect(res.status).toBe(200);
+    expect(mockCostLedgerService.monthly).toHaveBeenCalledWith("company-1", {
+      month: "2026-04",
+      start: new Date("2026-04-01T00:00:00.000Z"),
+      end: new Date("2026-05-01T00:00:00.000Z"),
+    });
+  });
+
+  it("rejects a malformed ledger month", async () => {
+    for (const month of ["2026-4", "2026-13", "April", "2026-04-01"]) {
+      const res = await request(createApp()).get("/api/companies/company-1/costs/ledger/export").query({ month });
+      expect(res.status).toBe(400);
+    }
+    expect(mockCostLedgerService.monthly).not.toHaveBeenCalled();
+  });
+
+  it("exports the ledger month as a CSV download", async () => {
+    mockCostLedgerService.monthly.mockResolvedValue({
+      companyId: "company-1",
+      month: "2026-04",
+      from: "2026-04-01T00:00:00.000Z",
+      to: "2026-05-01T00:00:00.000Z",
+      priceTableCheckedAt: "2026-09-28",
+      lines: [],
+      byAgent: [],
+      byProvider: [],
+      byTool: [],
+      totals: {
+        key: "total", label: null, runCount: 0, eventCount: 0, inputTokens: 0, cachedInputTokens: 0,
+        outputTokens: 0, billedCents: 0, apiEquivalentCents: 0, billedLedgerCents: 0,
+        apiEquivalentLedgerCents: 0, ledgerCents: 0, unpricedTokens: 0,
+      },
+    });
+    const res = await request(createApp())
+      .get("/api/companies/company-1/costs/ledger/export")
+      .query({ month: "2026-04" });
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/csv");
+    expect(res.headers["content-disposition"]).toBe('attachment; filename="cost-ledger-2026-04.csv"');
+    const [header, total] = res.text.trim().split("\n");
+    expect(header.startsWith("month,row_type,agent_id")).toBe(true);
+    expect(total.startsWith("2026-04,month_total,")).toBe(true);
+  });
+
+  it("keeps the ledger inside the cost read boundary", async () => {
+    mockAccessService.decide.mockResolvedValue({ allowed: false, action: "company_scope:read", reason: "deny_test" });
+    const json = await request(createApp()).get("/api/companies/company-1/costs/ledger");
+    const csv = await request(createApp()).get("/api/companies/company-1/costs/ledger/export");
+    expect(json.status).toBe(403);
+    expect(csv.status).toBe(403);
+    expect(mockCostLedgerService.monthly).not.toHaveBeenCalled();
   });
 
   it("rejects agent budget updates from the target agent without changing the budget policy", async () => {
@@ -758,7 +824,157 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
       outputTokens: 12,
       runCount: 0,
       runtimeMs: 0,
+      apiEquivalentCents: computeApiEquivalentCents({
+        provider: "openai", model: "gpt-5", inputTokens: 60, cachedInputTokens: 6, outputTokens: 12,
+      }),
+      unpricedTokens: 0,
+      byModel: [
+        {
+          provider: "openai",
+          model: "gpt-5",
+          inputTokens: 60,
+          cachedInputTokens: 6,
+          outputTokens: 12,
+          costCents: 600,
+          apiEquivalentCents: computeApiEquivalentCents({
+            provider: "openai", model: "gpt-5", inputTokens: 60, cachedInputTokens: 6, outputTokens: 12,
+          }),
+        },
+      ],
     });
+  });
+
+  it("prices the issue tree at API-equivalent rates per model, matching the company view", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const rootIssueId = randomUUID();
+    const childIssueId = randomUUID();
+    const grandchildIssueId = randomUUID();
+    const harnessIssueId = randomUUID();
+    const subscriptionRootId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "Cost Agent",
+      role: "engineer",
+      status: "active",
+      adapterType: "claude_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    const issue = (id: string, issueNumber: number, extra: Partial<typeof issues.$inferInsert> = {}) => ({
+      id,
+      companyId,
+      title: `Issue ${issueNumber}`,
+      status: "done" as const,
+      priority: "medium" as const,
+      issueNumber,
+      identifier: `TST-${issueNumber}`,
+      ...extra,
+    });
+    await db.insert(issues).values([
+      issue(rootIssueId, 1),
+      issue(childIssueId, 2, { parentId: rootIssueId }),
+      issue(grandchildIssueId, 3, { parentId: childIssueId }),
+      issue(harnessIssueId, 4, { parentId: rootIssueId, workMode: "skill_test", harnessKind: "skill_test" }),
+      issue(subscriptionRootId, 5),
+    ]);
+    const event = (
+      issueId: string,
+      billingType: "metered_api" | "subscription_included",
+      provider: string,
+      model: string,
+      tokens: [number, number, number],
+      costCents = 0,
+    ) => ({
+      companyId,
+      agentId,
+      issueId,
+      provider,
+      biller: provider,
+      billingType,
+      model,
+      inputTokens: tokens[0],
+      cachedInputTokens: tokens[1],
+      outputTokens: tokens[2],
+      costCents,
+      occurredAt: new Date("2026-10-01T00:00:00.000Z"),
+    });
+    await db.insert(costEvents).values([
+      // Mixed tree: two models, metered and subscription rows.
+      event(rootIssueId, "subscription_included", "anthropic", "claude-opus-5-5", [200_000, 1_000_000, 20_000]),
+      event(childIssueId, "subscription_included", "anthropic", "claude-sonnet-5", [30_000, 500_000, 10_000]),
+      event(grandchildIssueId, "metered_api", "anthropic", "claude-sonnet-5", [6_000, 90_000, 1_000], 42),
+      // Unpriced model: tokens counted, not priced.
+      event(grandchildIssueId, "subscription_included", "anthropic", "claude-unknown-model", [1_000, 0, 500]),
+      // Harness issue under root: left out of the tree.
+      event(harnessIssueId, "subscription_included", "anthropic", "claude-opus-5-5", [999_000, 0, 999_000]),
+      // Subscription-only tree.
+      event(subscriptionRootId, "subscription_included", "anthropic", "claude-opus-5-5", [10_000, 50_000, 2_000]),
+    ]);
+
+    const price = (model: string, tokens: [number, number, number]) =>
+      computeApiEquivalentCents({
+        provider: "anthropic",
+        model,
+        inputTokens: tokens[0],
+        cachedInputTokens: tokens[1],
+        outputTokens: tokens[2],
+      })!;
+    const opusCents = price("claude-opus-5-5", [200_000, 1_000_000, 20_000]);
+    const sonnetCents = price("claude-sonnet-5", [36_000, 590_000, 11_000]);
+
+    // Mixed metered + subscription tree with two priced models.
+    const mixed = await costs.issueTreeSummary(companyId, rootIssueId);
+    expect(mixed.costCents).toBe(42);
+    expect(mixed.apiEquivalentCents).toBeGreaterThan(0);
+    expect(mixed.apiEquivalentCents).toBeCloseTo(opusCents + sonnetCents, 6);
+    expect(mixed.unpricedTokens).toBe(1_500);
+    expect(mixed.byModel.map((row) => row.model)).toEqual([
+      "claude-opus-5-5",
+      "claude-sonnet-5",
+      "claude-unknown-model",
+    ]);
+    const mixedByModel = Object.fromEntries(mixed.byModel.map((row) => [row.model, row]));
+    expect(mixedByModel["claude-opus-5-5"]!.apiEquivalentCents).toBeCloseTo(opusCents, 6);
+    expect(mixedByModel["claude-sonnet-5"]).toMatchObject({
+      inputTokens: 36_000,
+      cachedInputTokens: 590_000,
+      outputTokens: 11_000,
+      costCents: 42,
+    });
+    expect(mixedByModel["claude-sonnet-5"]!.apiEquivalentCents).toBeCloseTo(sonnetCents, 6);
+    expect(mixedByModel["claude-unknown-model"]!.apiEquivalentCents).toBeNull();
+
+    // excludeRoot drops the root's opus row but keeps descendants.
+    const descendants = await costs.issueTreeSummary(companyId, rootIssueId, { excludeRoot: true });
+    expect(descendants.byModel.map((row) => row.model)).toEqual(["claude-sonnet-5", "claude-unknown-model"]);
+    expect(descendants.apiEquivalentCents).toBeCloseTo(sonnetCents, 6);
+
+    // Subscription-only tree: no real spend, API-equivalent still priced.
+    const subscriptionOnly = await costs.issueTreeSummary(companyId, subscriptionRootId);
+    expect(subscriptionOnly.costCents).toBe(0);
+    expect(subscriptionOnly.apiEquivalentCents).toBeCloseTo(
+      price("claude-opus-5-5", [10_000, 50_000, 2_000]),
+      6,
+    );
+
+    // The trees together cover every non-harness event, so their sum must
+    // match the company API-equivalent figure for the same runs.
+    await db.delete(costEvents).where(eq(costEvents.issueId, harnessIssueId));
+    const company = await costs.apiEquivalent(companyId);
+    expect(mixed.apiEquivalentCents + subscriptionOnly.apiEquivalentCents).toBeCloseTo(
+      company.apiEquivalentCents,
+      6,
+    );
   });
 
   it("aggregates run wall-clock duration across the recursive issue tree", async () => {
@@ -1105,6 +1321,20 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     await costs.updateSubscription(companyId, openAiPlan.id, { plan: "ChatGPT Pro", monthlyPriceCents: 20_000 });
     expect((await costs.listSubscriptions(companyId)).detected).toEqual([]);
 
+    // Runs count whether or not they reported usage: two failed runs in the
+    // period by a second agent, and one run outside it.
+    const failingAgentId = randomUUID();
+    await db.insert(agents).values({
+      id: failingAgentId, companyId, name: "Failing", role: "engineer", status: "idle",
+      adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+    });
+    await db.insert(heartbeatRuns).values([
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-09T00:00:00.000Z"), finishedAt: new Date("2026-04-09T00:30:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-04-10T00:00:00.000Z"), finishedAt: new Date("2026-04-10T01:30:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "failed", startedAt: new Date("2026-03-10T00:00:00.000Z"), finishedAt: new Date("2026-03-10T05:00:00.000Z") },
+      { companyId, agentId: failingAgentId, invocationSource: "on_demand", status: "queued" },
+    ]);
+
     const summary = await costs.apiEquivalent(
       companyId,
       { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
@@ -1133,6 +1363,27 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     expect(sum((row) => row.actualApiSpendCents)).toBe(summary.actualApiSpendCents);
     expect(sum((row) => row.subscriptionCostCents)).toBeCloseTo(summary.subscriptionCostCents, 6);
 
+    // One agent did all the priced work in the period, so its value is the priced total.
+    expect(summary.byAgent).toHaveLength(2);
+    expect(summary.byAgent[0]!.apiEquivalentCents).toBeCloseTo(summary.apiEquivalentCents, 6);
+    expect(summary.byAgent.find((row) => row.agentId === failingAgentId)).toEqual({
+      agentId: failingAgentId, apiEquivalentCents: 0, runCount: 2,
+    });
+
+    // Agent hours: the two runs in the period took 30 and 90 minutes. No rate set yet.
+    expect(summary.agentWorkMs).toBe(2 * 60 * 60 * 1000);
+    expect(summary.minimumWageHourlyCents).toBeNull();
+    expect(summary.minimumWageEquivalentCents).toBeNull();
+
+    await db.update(companies).set({ minimumWageHourlyCents: 1_250 }).where(eq(companies.id, companyId));
+    const withRate = await costs.apiEquivalent(
+      companyId,
+      { from: new Date("2026-04-01T00:00:00.000Z"), to: new Date("2026-05-01T00:00:00.000Z") },
+      new Date("2026-05-10T00:00:00.000Z"),
+    );
+    expect(withRate.minimumWageHourlyCents).toBe(1_250);
+    expect(withRate.minimumWageEquivalentCents).toBe(2_500);
+
     await costs.deleteSubscription(companyId, anthropicPlan.id);
     const afterDelete = await costs.apiEquivalent(
       companyId,
@@ -1141,6 +1392,239 @@ describeEmbeddedPostgres("cost and finance aggregate overflow handling", () => {
     );
     expect(afterDelete.subscriptionCostCents).toBeCloseTo(20_000, 6);
     await expect(costs.deleteSubscription(companyId, "not-a-uuid")).rejects.toThrow("Subscription not found");
+  });
+});
+
+describeEmbeddedPostgres("monthly cost ledger", () => {
+  let db!: ReturnType<typeof createDb>;
+  let ledger!: ReturnType<typeof costLedgerService>;
+  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+
+  beforeAll(async () => {
+    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-cost-ledger-");
+    db = createDb(tempDb.connectionString);
+    ledger = costLedgerService(db);
+  }, 20_000);
+
+  afterEach(async () => {
+    await db.delete(costEvents);
+    await db.delete(heartbeatRuns);
+    await db.delete(agents);
+    await db.delete(companies);
+  });
+
+  afterAll(async () => {
+    await tempDb?.cleanup();
+  });
+
+  async function seedCompany() {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "Ledger Test",
+      issuePrefix: `L${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    return companyId;
+  }
+
+  async function seedAgent(companyId: string, name: string, adapterType: string) {
+    const id = randomUUID();
+    await db.insert(agents).values({
+      id,
+      companyId,
+      name,
+      role: "engineer",
+      status: "active",
+      adapterType,
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    return id;
+  }
+
+  async function seedRun(companyId: string, agentId: string) {
+    const id = randomUUID();
+    await db.insert(heartbeatRuns).values({ id, companyId, agentId, invocationSource: "on_demand", status: "succeeded" });
+    return id;
+  }
+
+  it("reconciles monthly totals per agent, provider and tool with the recorded runs", async () => {
+    const companyId = await seedCompany();
+    const otherCompanyId = await seedCompany();
+    const seatAgent = await seedAgent(companyId, "Seat Agent", "claude_local");
+    const apiAgent = await seedAgent(companyId, "API Agent", "codex_local");
+    const otherAgent = await seedAgent(otherCompanyId, "Other Agent", "claude_local");
+    const seatRunA = await seedRun(companyId, seatAgent);
+    const seatRunB = await seedRun(companyId, seatAgent);
+    const apiRun = await seedRun(companyId, apiAgent);
+    const marchRun = await seedRun(companyId, apiAgent);
+    const otherRun = await seedRun(otherCompanyId, otherAgent);
+
+    const event = (over: Partial<typeof costEvents.$inferInsert>) => ({
+      companyId,
+      agentId: seatAgent,
+      provider: "anthropic",
+      biller: "anthropic",
+      billingType: "subscription_included",
+      model: "claude-opus-4-6",
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      costCents: 0,
+      occurredAt: new Date("2026-04-10T00:00:00.000Z"),
+      ...over,
+    });
+    await db.insert(costEvents).values([
+      // seat-plan run with two models: one run, two lines
+      event({ heartbeatRunId: seatRunA, inputTokens: 200_000, cachedInputTokens: 1_000_000, outputTokens: 40_000, occurredAt: new Date("2026-04-01T00:00:00.000Z") }),
+      event({ heartbeatRunId: seatRunA, model: "claude-sonnet-4-5-20250929", inputTokens: 300_000, outputTokens: 10_000 }),
+      event({ heartbeatRunId: seatRunB, inputTokens: 100_000, outputTokens: 5_000, occurredAt: new Date("2026-04-30T23:59:59.999Z") }),
+      // seat-plan run on a model with no published price
+      event({ heartbeatRunId: seatRunB, model: "claude-unreleased-9", inputTokens: 7_000, outputTokens: 1_000 }),
+      // metered API runs record what was billed
+      event({ agentId: apiAgent, heartbeatRunId: apiRun, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 500_000, outputTokens: 20_000, costCents: 263 }),
+      event({ agentId: apiAgent, heartbeatRunId: apiRun, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 100_000, outputTokens: 4_000, costCents: 57 }),
+      // cost reported without a run
+      event({ agentId: apiAgent, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 1_000, costCents: 11 }),
+      // outside the month or the company
+      event({ agentId: apiAgent, heartbeatRunId: marchRun, provider: "openai", biller: "openai", billingType: "metered_api", model: "gpt-5", inputTokens: 9_000_000, costCents: 9_999, occurredAt: new Date("2026-03-31T23:59:59.999Z") }),
+      event({ heartbeatRunId: seatRunB, inputTokens: 9_000_000, occurredAt: new Date("2026-05-01T00:00:00.000Z") }),
+      event({ companyId: otherCompanyId, agentId: otherAgent, heartbeatRunId: otherRun, inputTokens: 9_000_000, costCents: 9_999 }),
+    ]);
+
+    const month = parseLedgerMonth("2026-04");
+    const result = await ledger.monthly(companyId, month);
+
+    // Independent reference: raw sums straight from the run records.
+    const recorded = await db
+      .select({
+        eventCount: sql<number>`count(*)::int`,
+        runCount: sql<number>`count(distinct ${costEvents.heartbeatRunId})::int`,
+        inputTokens: sql<number>`sum(${costEvents.inputTokens})::double precision`,
+        cachedInputTokens: sql<number>`sum(${costEvents.cachedInputTokens})::double precision`,
+        outputTokens: sql<number>`sum(${costEvents.outputTokens})::double precision`,
+        billedCents: sql<number>`sum(${costEvents.costCents})::double precision`,
+      })
+      .from(costEvents)
+      .where(and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, month.start), lt(costEvents.occurredAt, month.end)))
+      .then((rows) => rows[0]!);
+    const recordedEvents = await db
+      .select()
+      .from(costEvents)
+      .where(and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, month.start), lt(costEvents.occurredAt, month.end)));
+    const expectedSeatPlanApiCents = recordedEvents
+      .filter((row) => row.billingType === "subscription_included")
+      .reduce((total, row) => total + (computeApiEquivalentCents(row) ?? 0), 0);
+
+    expect(result.month).toBe("2026-04");
+    expect(result.totals).toMatchObject({
+      eventCount: 7,
+      runCount: 3,
+      inputTokens: Number(recorded.inputTokens),
+      cachedInputTokens: Number(recorded.cachedInputTokens),
+      outputTokens: Number(recorded.outputTokens),
+      billedCents: 331,
+      billedLedgerCents: 331,
+      unpricedTokens: 8_000,
+    });
+    expect(result.totals.eventCount).toBe(Number(recorded.eventCount));
+    expect(result.totals.runCount).toBe(Number(recorded.runCount));
+    expect(result.totals.billedCents).toBe(Number(recorded.billedCents));
+    expect(result.totals.apiEquivalentLedgerCents).toBeGreaterThan(0);
+    expect(result.totals.apiEquivalentLedgerCents).toBeCloseTo(expectedSeatPlanApiCents, 6);
+    expect(result.totals.ledgerCents).toBeCloseTo(331 + expectedSeatPlanApiCents, 6);
+
+    // Every roll-up adds back up to the month total.
+    for (const group of [result.lines, result.byAgent, result.byProvider, result.byTool]) {
+      const sum = (pick: (row: (typeof group)[number]) => number) => group.reduce((total, row) => total + pick(row), 0);
+      expect(sum((row) => row.eventCount)).toBe(result.totals.eventCount);
+      expect(sum((row) => row.inputTokens)).toBe(result.totals.inputTokens);
+      expect(sum((row) => row.cachedInputTokens)).toBe(result.totals.cachedInputTokens);
+      expect(sum((row) => row.outputTokens)).toBe(result.totals.outputTokens);
+      expect(sum((row) => row.billedCents)).toBe(result.totals.billedCents);
+      expect(sum((row) => row.ledgerCents)).toBeCloseTo(result.totals.ledgerCents, 6);
+    }
+
+    expect(result.byAgent.map((row) => [row.label, row.runCount, row.eventCount])).toEqual(
+      expect.arrayContaining([["Seat Agent", 2, 4], ["API Agent", 1, 3]]),
+    );
+    expect(Object.fromEntries(result.byTool.map((row) => [row.key, row.runCount]))).toEqual({ claude_local: 2, codex_local: 1 });
+    expect(Object.fromEntries(result.byProvider.map((row) => [row.key, row.eventCount]))).toEqual({ anthropic: 4, openai: 3 });
+
+    // Seat-plan lines carry their API-price equivalent and are marked as such.
+    const seatLines = result.lines.filter((line) => line.seatPlan);
+    expect(seatLines.length).toBe(3);
+    for (const line of seatLines) {
+      expect(line.basis).toBe("api_equivalent");
+      expect(line.billedCents).toBe(0);
+      expect(line.ledgerCents).toBe(line.apiEquivalentCents ?? 0);
+    }
+    const unpriced = seatLines.find((line) => line.model === "claude-unreleased-9")!;
+    expect(unpriced.apiEquivalentCents).toBeNull();
+    expect(unpriced.unpricedTokens).toBe(8_000);
+    const meteredLines = result.lines.filter((line) => !line.seatPlan);
+    expect(meteredLines.map((line) => [line.basis, line.ledgerCents, line.eventCount, line.runCount])).toEqual([
+      ["billed", 331, 3, 1],
+    ]);
+
+    // CSV: one row per line and per subtotal, and the month total matches.
+    const csvRows = costLedgerToCsv(result).trim().split("\n").map((row) => row.split(","));
+    const header = csvRows[0]!;
+    const col = (name: string) => header.indexOf(name);
+    const body = csvRows.slice(1);
+    expect(body.filter((row) => row[col("row_type")] === "line")).toHaveLength(result.lines.length);
+    const csvSeat = body.filter((row) => row[col("row_type")] === "line" && row[col("seat_plan")] === "yes");
+    expect(csvSeat).toHaveLength(3);
+    expect(csvSeat.every((row) => row[col("cost_basis")] === "api_equivalent")).toBe(true);
+    const monthTotal = body.find((row) => row[col("row_type")] === "month_total")!;
+    expect(monthTotal[col("month")]).toBe("2026-04");
+    expect(monthTotal[col("cost_basis")]).toBe("mixed");
+    expect(Number(monthTotal[col("billed_cents")])).toBe(331);
+    expect(Number(monthTotal[col("ledger_cents")])).toBeCloseTo(result.totals.ledgerCents, 2);
+    const csvLineLedger = body
+      .filter((row) => row[col("row_type")] === "line")
+      .reduce((total, row) => total + Number(row[col("ledger_cents")]), 0);
+    expect(csvLineLedger).toBeCloseTo(result.totals.ledgerCents, 1);
+  });
+
+  it("returns an empty ledger for a month with no runs", async () => {
+    const companyId = await seedCompany();
+    const result = await ledger.monthly(companyId, parseLedgerMonth("2026-02"));
+    expect(result.lines).toEqual([]);
+    expect(result.totals.ledgerCents).toBe(0);
+    expect(result.from).toBe("2026-02-01T00:00:00.000Z");
+    expect(result.to).toBe("2026-03-01T00:00:00.000Z");
+    expect(costLedgerToCsv(result).trim().split("\n")).toHaveLength(2);
+  });
+});
+
+describe("cost ledger CSV", () => {
+  it("defaults to the current UTC month", () => {
+    expect(parseLedgerMonth(undefined, new Date("2026-12-31T23:30:00.000Z"))).toEqual({
+      month: "2026-12",
+      start: new Date("2026-12-01T00:00:00.000Z"),
+      end: new Date("2027-01-01T00:00:00.000Z"),
+    });
+  });
+
+  it("quotes names and blocks spreadsheet formulas", () => {
+    const line = {
+      agentId: "a1", agentName: "=HYPERLINK(\"x\")", provider: "anthropic", biller: "anthropic", tool: "claude_local",
+      model: "m", billingType: "metered_api", seatPlan: false, basis: "billed" as const, runCount: 1, eventCount: 1,
+      inputTokens: 1, cachedInputTokens: 0, outputTokens: 0, billedCents: 1, apiEquivalentCents: null, ledgerCents: 1,
+      unpricedTokens: 0,
+    };
+    const total = {
+      key: "total", label: null, runCount: 1, eventCount: 1, inputTokens: 1, cachedInputTokens: 0, outputTokens: 0,
+      billedCents: 1, apiEquivalentCents: 0, billedLedgerCents: 1, apiEquivalentLedgerCents: 0, ledgerCents: 1, unpricedTokens: 0,
+    };
+    const csv = costLedgerToCsv({
+      companyId: "c", month: "2026-04", from: "", to: "", priceTableCheckedAt: "2026-09-28",
+      lines: [line], byAgent: [], byProvider: [], byTool: [], totals: total,
+    });
+    expect(csv.split("\n")[1]).toContain(`"'=HYPERLINK(""x"")"`);
   });
 });
 

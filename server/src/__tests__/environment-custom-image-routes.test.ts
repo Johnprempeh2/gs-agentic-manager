@@ -20,6 +20,8 @@ const mockProjectService = vi.hoisted(() => ({
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
   listCompanyIds: vi.fn(),
+  // GRE-1090: environment writes need enableEnvironments.
+  getExperimental: vi.fn(async () => ({ enableEnvironments: true })),
 }));
 
 const mockEnvironmentService = vi.hoisted(() => ({

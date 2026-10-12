@@ -3,7 +3,22 @@ import {
   createTenantSessionRecoveryCoordinator,
   tenantSessionRecovery,
 } from "@/lib/tenant-session-recovery";
-import { healthApi } from "./health";
+import { healthApi, healthPollInterval, type HealthStatus } from "./health";
+
+describe("healthPollInterval", () => {
+  const withDevServer = (restartRequired: boolean) =>
+    ({ status: "ok", devServer: { enabled: true, restartRequired } }) as HealthStatus;
+
+  it("polls fast only while a dev-server restart is pending", () => {
+    expect(healthPollInterval(withDevServer(true))).toBe(2000);
+    expect(healthPollInterval(withDevServer(false))).toBe(30_000);
+  });
+
+  it("does not poll a server without the dev watcher", () => {
+    expect(healthPollInterval({ status: "ok" })).toBe(false);
+    expect(healthPollInterval(undefined)).toBe(false);
+  });
+});
 
 afterEach(() => {
   vi.restoreAllMocks();

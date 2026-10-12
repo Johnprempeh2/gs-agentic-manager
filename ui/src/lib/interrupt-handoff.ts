@@ -241,14 +241,14 @@ export function computeComposerHandoffPreview(
         tone: "neutral",
         text: "Hand off to",
         chip: { kind: "user", id: target.id },
-        suffix: "— no agent will be notified",
+        suffix: "(no agent will be notified)",
       };
     }
     // Cleared / no target chosen for the mutation.
     return {
       kind: "clear_assignee",
       tone: "neutral",
-      text: "Clear responsible — no agent will be notified",
+      text: "Clear responsible (no agent will be notified)",
     };
   }
 
@@ -305,12 +305,12 @@ export function classifyAssigneeHandoff(
   if (to.userId) {
     return {
       kind: "user_handoff",
-      wakeText: "not created — this is a handoff to a board user",
+      wakeText: "not created: this is a handoff to a board user",
     };
   }
   return {
     kind: "unassigned",
-    wakeText: "not created — no agent selected. Mention @agent or pick a responsible to dispatch.",
+    wakeText: "not created: no agent selected. Mention @agent or pick a responsible to dispatch.",
   };
 }
 
@@ -336,7 +336,7 @@ export interface ReassignInterruptCopy {
 export function describeReassignInterrupt(opts: { runningAgentName?: string | null } = {}): ReassignInterruptCopy {
   const who = opts.runningAgentName?.trim() || "An agent";
   return {
-    banner: `${who} is running — changing the responsible will interrupt this run.`,
+    banner: `${who} is running. Changing the responsible will interrupt this run.`,
     confirmTitle: "Interrupt the current run?",
     confirmAction: "Interrupt & assign",
     cancelAction: "Cancel",
@@ -385,7 +385,7 @@ const PAUSE_BUCKET_LABEL: Record<PauseAffectsBucketKey, string> = {
 
 const PAUSE_BUCKET_DETAIL: Record<PauseAffectsBucketKey, string> = {
   live_runs: "interrupted now, re-queued when you resume",
-  queued_wakes: "held — they won't start until you resume",
+  queued_wakes: "held: they won't start until you resume",
   agent_owned: "responsible agent; no run is live",
   human_owned: "owned by a board user; pausing won't notify them",
   static: "no responsible; nothing was going to run",

@@ -4,6 +4,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../api/client";
+import type { TranscriptEntry } from "@greatstone/adapter-utils";
 import { useLiveRunTranscripts } from "./useLiveRunTranscripts";
 import { TRANSCRIPT_REQUEST_TIMEOUT_MS } from "./read-transcript-request";
 
@@ -852,5 +853,117 @@ describe("useLiveRunTranscripts", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("useLiveRunTranscripts with run digests", () => {
+  const OriginalWebSocket = globalThis.WebSocket;
+  const digest: TranscriptEntry[] = [
+    { kind: "tool_call", ts: "2026-04-20T00:00:01.000Z", name: "", input: null, toolUseId: "tool-a" },
+    { kind: "result", ts: "2026-04-20T00:00:02.000Z", text: "", inputTokens: 10, outputTokens: 5, cachedTokens: 0, costUsd: 0, subtype: "success", isError: false, errors: [] },
+  ];
+  const finished = { id: "done-1", status: "succeeded", adapterType: "claude_local" };
+  const live = { id: "live-1", status: "running", adapterType: "claude_local" };
+  type Result = ReturnType<typeof useLiveRunTranscripts>;
+
+  beforeEach(() => {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    FakeWebSocket.instances = [];
+    logMock.mockReset();
+    logMock.mockImplementation(async () => ({ runId: "run-1", store: "memory", logRef: "log-1", content: "", nextOffset: 0 }));
+    buildTranscriptMock.mockClear();
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;
+  });
+
+  afterEach(() => {
+    globalThis.WebSocket = OriginalWebSocket;
+    vi.restoreAllMocks();
+  });
+
+  async function mount(options: Partial<Parameters<typeof useLiveRunTranscripts>[0]>) {
+    const latest: { current: Result | null } = { current: null };
+    function Harness(props: Partial<Parameters<typeof useLiveRunTranscripts>[0]>) {
+      latest.current = useLiveRunTranscripts({ companyId: "company-1", runs: [finished], ...props });
+      return null;
+    }
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<Harness {...options} />);
+      await Promise.resolve();
+    });
+    return {
+      latest,
+      rerender: async (next: Partial<Parameters<typeof useLiveRunTranscripts>[0]>) =>
+        act(async () => {
+          root.render(<Harness {...next} />);
+          await Promise.resolve();
+        }),
+      unmount: () => act(() => root.unmount()),
+    };
+  }
+
+  it("draws a finished run from its digest without reading its log", async () => {
+    const view = await mount({ runDigests: new Map([["done-1", digest]]) });
+    expect(logMock).not.toHaveBeenCalled();
+    expect(view.latest.current?.transcriptByRun.get("done-1")).toBe(digest);
+    expect(view.latest.current?.digestRunIds.has("done-1")).toBe(true);
+    expect(view.latest.current?.hydratedRunIds.has("done-1")).toBe(true);
+    expect(view.latest.current?.isInitialHydrating).toBe(false);
+    view.unmount();
+  });
+
+  it("holds a finished run's log read while its digest is on the way", async () => {
+    const view = await mount({ deferredRunIds: new Set(["done-1"]) });
+    expect(logMock).not.toHaveBeenCalled();
+    expect(view.latest.current?.isInitialHydrating).toBe(true);
+    view.unmount();
+  });
+
+  it("loads the full log once the row is opened and keeps the digest until it arrives", async () => {
+    const runDigests = new Map([["done-1", digest]]);
+    const view = await mount({ runDigests });
+    let resolveLog: ((value: { runId: string; store: string; logRef: string; content: string; nextOffset: number }) => void) | null = null;
+    logMock.mockImplementationOnce(() => new Promise((resolve) => { resolveLog = resolve; }));
+
+    await view.rerender({ runDigests, fullLogRunIds: new Set(["done-1"]) });
+    expect(logMock).toHaveBeenCalledTimes(1);
+    expect(logMock).toHaveBeenCalledWith("done-1", 0, 256_000, expect.anything());
+    expect(view.latest.current?.transcriptByRun.get("done-1")).toBe(digest);
+
+    const row = JSON.stringify({ ts: "2026-04-20T00:00:01.000Z", stream: "stdout", chunk: "full output\n", seq: 1 });
+    await act(async () => {
+      resolveLog?.({ runId: "done-1", store: "memory", logRef: "log-1", content: `${row}\n`, nextOffset: row.length + 1 });
+      await Promise.resolve();
+    });
+    expect(view.latest.current?.digestRunIds.has("done-1")).toBe(false);
+    expect(view.latest.current?.transcriptByRun.get("done-1")).toEqual([
+      { ts: "2026-04-20T00:00:01.000Z", stream: "stdout", chunk: "full output\n", seq: 1 },
+    ]);
+    view.unmount();
+  });
+
+  it("still reads and streams a live run beside digest runs", async () => {
+    const view = await mount({ runs: [finished, live], runDigests: new Map([["done-1", digest]]) });
+    expect(logMock.mock.calls.map((call) => (call as unknown[])[0])).toEqual(["live-1"]);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    await act(async () => {
+      FakeWebSocket.instances[0]!.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({
+            companyId: "company-1",
+            type: "heartbeat.run.log",
+            createdAt: "2026-04-20T00:00:03.000Z",
+            payload: { runId: "live-1", ts: "2026-04-20T00:00:03.000Z", stream: "stdout", chunk: "streaming\n", seq: 7 },
+          }),
+        }),
+      );
+      await Promise.resolve();
+    });
+    expect(view.latest.current?.transcriptByRun.get("live-1")).toEqual([
+      { ts: "2026-04-20T00:00:03.000Z", stream: "stdout", chunk: "streaming\n", seq: 7 },
+    ]);
+    expect(view.latest.current?.transcriptByRun.get("done-1")).toBe(digest);
+    view.unmount();
   });
 });

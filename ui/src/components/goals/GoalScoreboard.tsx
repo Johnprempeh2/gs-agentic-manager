@@ -5,19 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, relativeTime } from "@/lib/utils";
 import {
-  blockerText,
   formatTargetDate,
   remainingLabel,
   type GoalHealth,
   type ScoreboardEntry,
 } from "@/lib/goal-journey";
 import { AgentAvatar } from "../AgentAvatar";
+import { MainBlocker } from "./GoalBlockers";
+import { goalOwnerName, type UsersById } from "./GoalOwner";
 import {
   GoalHealthPill,
   GoalPercent,
   GoalProgressBar,
   GoalProgressRing,
-  healthStyle,
 } from "./GoalHealth";
 
 export type AgentsById = ReadonlyMap<string, Pick<Agent, "id" | "name" | "appearance">>;
@@ -33,43 +33,29 @@ function goalHref(goal: Pick<GoalWithProgress, "id">) {
   return `/goals/${goal.id}`;
 }
 
-function MainBlocker({ goal, health }: { goal: GoalWithProgress; health: GoalHealth }) {
-  const [first, ...rest] = goal.blockers;
-  if (!first) return null;
-  return (
-    <p
-      className="border-l-2 border-[var(--sc)] py-0.5 pl-2.5 text-sm text-muted-foreground"
-      style={healthStyle(health === "blocked" ? "blocked" : "at_risk")}
-      data-testid="goal-main-blocker"
-    >
-      <span className="font-semibold text-foreground">Main blocker:</span> {blockerText(first)}
-      {rest.length > 0 ? <span className="text-subtle-foreground"> · +{rest.length} more</span> : null}
-    </p>
-  );
-}
-
 function SubGoalTile({
   goal,
   health,
   agentsById,
+  usersById,
 }: {
   goal: GoalWithProgress;
   health: GoalHealth;
   agentsById: AgentsById;
+  usersById?: UsersById;
 }) {
-  const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
   const left = remainingLabel(goal);
   const target = formatTargetDate(goal.targetDate);
   const detail = [
     goal.progress.percent == null ? null : `${goal.progress.percent}%`,
-    owner?.name,
+    goalOwnerName(goal, agentsById, usersById),
     left,
     target ? `target ${target}` : null,
   ].filter(Boolean);
   return (
     <Link
       to={goalHref(goal)}
-      className="relative z-10 grid gap-2 rounded-md border border-border p-3 text-inherit no-underline transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="relative z-raised grid gap-2 rounded-md border border-border p-3 text-inherit no-underline transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="goal-sub-tile"
     >
       <span className="flex min-w-0 items-center gap-2">
@@ -85,12 +71,15 @@ function SubGoalTile({
 export function GoalScoreCard({
   entry,
   agentsById,
+  usersById,
 }: {
   entry: ScoreboardEntry;
   agentsById: AgentsById;
+  usersById?: UsersById;
 }) {
   const { goal, health, subGoals } = entry;
   const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
+  const ownerName = goalOwnerName(goal, agentsById, usersById);
   const left = remainingLabel(goal);
   const target = formatTargetDate(goal.targetDate);
   const wide = subGoals.length > 0;
@@ -98,7 +87,7 @@ export function GoalScoreCard({
   const summary = (
     <div className="grid min-w-0 gap-4">
       <div className="flex min-w-0 items-center gap-2.5">
-        <AgentAvatar agent={owner} name={owner?.name} size={32} />
+        <AgentAvatar agent={owner} name={ownerName ?? undefined} size={32} />
         <div className="min-w-0">
           <Link
             to={goalHref(goal)}
@@ -107,7 +96,7 @@ export function GoalScoreCard({
             {goal.title}
           </Link>
           <p className="truncate text-xs text-muted-foreground">
-            {owner?.name ?? "No owner"} · {LEVEL_LABEL[goal.level] ?? "goal"}
+            {ownerName ?? "No owner"} · {LEVEL_LABEL[goal.level] ?? "goal"}
           </p>
         </div>
         <GoalHealthPill health={health} className="ml-auto" />
@@ -134,13 +123,19 @@ export function GoalScoreCard({
       data-health={health}
     >
       {wide ? (
-        <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr] lg:items-start">
+        <div className="grid gap-6 lg:grid-cols-(--gtc-68) lg:items-start">
           {summary}
           <div className="grid gap-2.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sub-goals</p>
-            <div className="grid gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(13rem,1fr))]">
+            <div className="grid gap-2.5 sm:grid-cols-(--gtc-69)">
               {subGoals.map((sub) => (
-                <SubGoalTile key={sub.goal.id} goal={sub.goal} health={sub.health} agentsById={agentsById} />
+                <SubGoalTile
+                  key={sub.goal.id}
+                  goal={sub.goal}
+                  health={sub.health}
+                  agentsById={agentsById}
+                  usersById={usersById}
+                />
               ))}
             </div>
           </div>
@@ -186,14 +181,16 @@ export function GoalsEmptyState({ onNewGoal }: { onNewGoal: () => void }) {
 export function GoalScoreboardView({
   entries,
   agentsById,
+  usersById,
 }: {
   entries: ScoreboardEntry[];
   agentsById: AgentsById;
+  usersById?: UsersById;
 }) {
   return (
-    <div className="grid gap-4 md:grid-cols-[repeat(auto-fill,minmax(20rem,1fr))]" data-testid="goal-scoreboard">
+    <div className="grid gap-4 md:grid-cols-(--gtc-70)" data-testid="goal-scoreboard">
       {entries.map((entry) => (
-        <GoalScoreCard key={entry.goal.id} entry={entry} agentsById={agentsById} />
+        <GoalScoreCard key={entry.goal.id} entry={entry} agentsById={agentsById} usersById={usersById} />
       ))}
     </div>
   );

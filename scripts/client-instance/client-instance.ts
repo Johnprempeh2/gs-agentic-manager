@@ -4,8 +4,43 @@
 //   scripts/client-instance.sh create --root <dir> --edition managed|managed-plus
 //                                     [--passed-features a,b] [--port N] [--db-port N]
 //                                     [--company-name X] [--client-email X]
+//                                     [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//                                     [--ai-route R] [--board-approval on|off]
+//   scripts/client-instance.sh limits --root <dir> [--agent-budget-cents N] [--agent-daily-runs N] [--max-concurrent-runs N]
+//   scripts/client-instance.sh ai-route --root <dir> [--ai-route R]
 //   scripts/client-instance.sh start|stop|status|backup --root <dir>
+//   scripts/client-instance.sh users --root <dir> --file <list.csv> [--dry-run]
+//                                     (board, Exco and owner log-ins from a name,email,role list; GRE-1189)
 //   scripts/client-instance.sh verify --root <dir>     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+//   scripts/client-instance.sh upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
+//   scripts/client-instance.sh restore <dir> <backup file>
+//   scripts/client-instance.sh releases <instances dir> [--releases <dir>]
+//                                     (read-only: which release folders an instance runs from or restore needs)
+//   scripts/client-instance.sh restore-check --root <dir> [backup file]
+//                                     (restores a backup into a throwaway database; the instance is not touched)
+//   scripts/client-instance.sh offsite-init|offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
+//   scripts/client-instance.sh offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+//                                     (off-host backups with restic, GRE-666)
+//   scripts/client-instance.sh billing-export --root <dir> --billing-config <file>
+//   scripts/client-instance.sh billing-archive --billing-config <file>
+//                                     (billing records kept outside the instance, B11 / GRE-1372)
+//   scripts/client-instance.sh watch --root <dir> --watch-config <file> [--public-url https://<host>]
+//                                     (host watch: health, backups, disk, memory, AI access, public URL; GRE-666)
+//   scripts/client-instance.sh fleet-register --root <dir> --fleet-hub <url>   (code in CLIENT_INSTANCE_FLEET_CODE)
+//   scripts/client-instance.sh fleet-check-in --root <dir> --watch-config <file>
+//   scripts/client-instance.sh fleet-revoke --root <dir> [--local-only yes]
+//                                     (signed registration and check-in with a Greatstone hub, GRE-1082)
+//   scripts/client-instance.sh fleet-support-sync --root <dir> --watch-config <file>
+//                                     ("Get help" tickets to the hub, status and replies back, GRE-1084)
+//   scripts/client-instance.sh plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
+//                                     (copy the strategy plan; without --apply on it only reports; GRE-1190)
+//   scripts/client-instance.sh pause|resume --root <dir> --operator <name> --reason <text>
+//   scripts/client-instance.sh archive --root <dir> --operator <name> --retention-days N --offsite-config <file> --sandbox <empty dir>
+//   scripts/client-instance.sh delete --root <dir> --confirm-code <code> --approval <ref> --operator <name> [--billing-config <file>] [--offsite-config <file>]
+//                                     (lifecycle of an instance, GRE-1367; needs CLIENT_INSTANCE_OPERATOR_PASSWORD for pause and resume)
+//   scripts/client-instance.sh edition-env --edition managed|managed-plus [--passed-features a,b]
+//                                     (prints the two edition values as KEY=VALUE lines, for the
+//                                      Stable image: scripts/greatstone-stable-image.sh)
 //
 // Each instance lives in its own <root>: config, database, storage, secrets,
 // logs and backups, its own server port and its own database port. The
@@ -15,17 +50,101 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { homedir, userInfo } from "node:os";
+import { freemem, homedir, tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { FEEDBACK_DATA_SHARING_PREFERENCES } from "../../packages/shared/src/types/feedback.js";
 import { DAILY_RETENTION_PRESETS, DEFAULT_BACKUP_RETENTION } from "../../packages/shared/src/types/instance.js";
 import { INSTANCE_FEATURE_KEYS } from "../../packages/shared/src/feature-catalog.js";
+import { AI_ACCESS_ROUTES, type AiAccessRoute } from "../../packages/shared/src/ai-connections.js";
+import type { FleetLifecycle } from "../../packages/shared/src/fleet.js";
+import type { BillingUsage } from "../../packages/shared/src/billing-account.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
+import { DEFAULT_AI_ROUTE, aiRouteCheck, boardApprovalCheck, parseAiRoute, parseBoardApproval } from "./access.js";
 import { EDITIONS, buildEditionValues, type Edition, type EditionValues } from "./editions.js";
+import {
+  billingArchiveLines,
+  buildBillingExport,
+  checkArchiveOutside,
+  loadBillingConfig,
+  verifyBillingExport,
+  writeBillingExport,
+  type BillingConfig,
+} from "./billing.js";
+import { copyPlan, companyIds, planCopyLines } from "./plan-copy.js";
+import {
+  checkActor,
+  checkDeleteRequest,
+  deletionRecordPath,
+  describeUsage,
+  dormantHealthDetail,
+  lifecycleOf,
+  lifecycleStatusLines,
+  parseRetentionDays,
+  retentionEnd,
+  usageDelta,
+  usageIsZero,
+  type ArchiveRecord,
+  type DeletionRecord,
+  type PauseRecord,
+  type ResumeRecord,
+  type UsageCounts,
+} from "./lifecycle.js";
+import { choosePorts, siblingPortClaims } from "./ports.js";
+import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
+import {
+  OFFSITE_PATHS,
+  OFFSITE_RETENTION,
+  checkCode,
+  checkPrivateFile,
+  loadOffsiteConfig,
+  offsiteStatusLines,
+  resticEnv,
+  snapshotRoot,
+  type OffsiteBackup,
+  type OffsiteConfig,
+} from "./offsite.js";
+import {
+  buildCheckIn,
+  connectionTotals,
+  countRunsSince,
+  FAILED_RUN_STATUSES,
+  fleetHubUrl,
+  generateFleetKey,
+  hubAnswer,
+  nextSeq,
+  registrationSubject,
+  RUN_PAGE_LIMIT,
+  signFleetMessage,
+  usageTotals,
+  type FleetKey,
+  type FleetRegistration,
+  type ToolConnectionView,
+  type UsageCompany,
+} from "./fleet.js";
+import { runSupportSync, type SupportSyncOutcome } from "./fleet-support.js";
+import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines, type RestoreCheck, type VerifyRecord } from "./status.js";
+import {
+  aiSignals,
+  billingUsageSignal,
+  alertMessage,
+  decideAlert,
+  diskSignal,
+  linesSignal,
+  memAvailableFromMeminfo,
+  memorySignal,
+  parseWatchConfig,
+  publicHealthUrl,
+  publicUrlSignal,
+  type AiConnectionView,
+  type AlertState,
+  type RunView,
+  type WatchConfig,
+  type WatchSignal,
+} from "./watch.js";
 
 const CODE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const INSTANCE_ID = "default";
@@ -34,6 +153,109 @@ const PID_FILE = "server.pid";
 const LOG_FILE = "server.log";
 const FORBIDDEN_PORTS = new Set([3100, 3200, 54329]);
 const OPERATOR_EMAIL = "operator@instance.invalid";
+
+/**
+ * Install limits (GRE-141), passed to the server as GSAM_INSTALL_LIMITS at
+ * every start. They are settings of each instance, kept in its
+ * client-instance.json; change them with `limits`. These are spend and run
+ * caps, not prices.
+ */
+interface InstallLimits {
+  /** Monthly budget of each new agent that has none, in cents. The agent pauses when it is spent. */
+  agentBudgetMonthlyCents: number;
+  /** Runs a day for each new agent that names no cap. */
+  agentMaxDailyRuns: number;
+  /** Runs at the same time on the whole install. */
+  maxConcurrentRuns: number;
+}
+const DEFAULT_INSTALL_LIMITS: InstallLimits = {
+  agentBudgetMonthlyCents: 5000,
+  agentMaxDailyRuns: 48,
+  maxConcurrentRuns: 3,
+};
+const LIMIT_FLAGS: Record<string, keyof InstallLimits> = {
+  "agent-budget-cents": "agentBudgetMonthlyCents",
+  "agent-daily-runs": "agentMaxDailyRuns",
+  "max-concurrent-runs": "maxConcurrentRuns",
+};
+
+const USAGE = `usage:
+  create --root <dir> --edition managed|managed-plus [--passed-features a,b] [--port N] [--db-port N]
+         [--company-name X] [--client-email X] [limit flags]
+         [--ai-route R]                    AI access route, set at every start [${DEFAULT_AI_ROUTE}]
+                                           (${AI_ACCESS_ROUTES.join(", ")})
+         [--board-approval on|off]         board approval for new agents in the company [on]
+         [--fleet-hub <url>]               register with the hub at the end (code in CLIENT_INSTANCE_FLEET_CODE)
+  limits --root <dir> [limit flags]        show or change the install limits (used at the next start)
+  ai-route --root <dir> [--ai-route R]     show or change the AI access route (used at the next start)
+  start|stop|status|backup --root <dir>
+  users --root <dir> --file <list.csv> [--dry-run]
+                                           add board, Exco and owner log-ins from a list of
+                                           name,email,role (role: board, exco, admin or owner).
+                                           Safe to run again; prints new passwords once
+  verify --root <dir>                     (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+  upgrade <dir> <stable tag> [--repo <git url or dir>] [--releases <dir>]
+  restore <dir> <backup file>
+  releases <instances dir> [--releases <dir>]
+                                           list each release folder with its size and the instances that use it
+                                           (runs, restore needs it, or not used); writes and deletes nothing
+  restore-check --root <dir> [backup file] restore the newest (or named) backup into a throwaway
+                                           database and count its rows; the instance is not touched
+  offsite-init --root <dir> --offsite-config <file> [--restic <bin>]
+                                           make the instance's off-host restic repository (once)
+  offsite-backup --root <dir> --offsite-config <file> [--restic <bin>]
+                                           copy the backups folder off the host; keep 30 daily, 12 weekly
+  offsite-check --code <code> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+                                           pull the newest off-host copy into the sandbox, restore-check it,
+                                           then delete the copy
+  billing-export --root <dir> --billing-config <file>
+                                           copy the billing account and invoices to the billing archive,
+                                           outside the instance folder; safe to run again
+  billing-archive --billing-config <file>
+                                           list billing exports; past the retention years they are due
+                                           for review (nothing is removed on a timer)
+  watch --root <dir> --watch-config <file> [--public-url https://<host>]
+                                           host watch (every 5 min): health, backups, restore-check, disk,
+                                           memory, AI access, public URL; pings the dead-man check, mails on failure
+  fleet-register --root <dir> --fleet-hub <url>
+                                           register with the Greatstone hub: makes this instance's key pair and
+                                           sends the public key with the one-time code (CLIENT_INSTANCE_FLEET_CODE)
+  fleet-check-in --root <dir> --watch-config <file>
+                                           send one signed check-in now (watch sends one every pass)
+  fleet-revoke --root <dir> [--local-only yes]
+                                           revoke this instance's key at the hub, then delete it
+  fleet-support-sync --root <dir> --watch-config <file>
+                                           send "Get help" tickets and the files the client picked to the hub,
+                                           bring back status, SLA times and replies (watch runs one every pass)
+  plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
+                                           copy the strategy plan (vision to initiatives, with targets and
+                                           due dates) to the client instance; owners matched by email.
+                                           Without --apply on it only reports. Both instances must run.
+  pause --root <dir> --operator <name> --reason <text>
+                                           pause the companies in the app, back up, send a check-in, stop the
+                                           app; start is refused until resume (needs CLIENT_INSTANCE_OPERATOR_PASSWORD)
+  resume --root <dir> --operator <name> --reason <text>
+                                           start, prove no new use while paused, resume the companies the
+                                           pause paused; connections stay off until each is turned on again
+  archive --root <dir> --operator <name> --retention-days N --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+                                           from paused: final backup, off-host copy checked in the sandbox,
+                                           ports freed, retention end recorded (N is John's setting; no default)
+  delete --root <dir> --confirm-code <code> --approval <ref> --operator <name>
+         [--billing-config <file>] [--offsite-config <file>] [--watch-config <file>] [--fleet-local-only yes] [--restic <bin>]
+                                           from paused or archived: exports billing records first (needs
+                                           --billing-config when there are any), then removes data, local backups,
+                                           off-host copies, hub record and key, watch config; leaves one deletion record
+  edition-env --edition managed|managed-plus [--passed-features a,b]
+                                           print the edition values as KEY=VALUE lines (Stable image)
+
+limit flags (spend and run caps, not prices; defaults in brackets):
+  --agent-budget-cents N    monthly budget of each new agent, in cents [${DEFAULT_INSTALL_LIMITS.agentBudgetMonthlyCents}].
+                            An agent that spends it is paused and says so on its open tasks.
+  --agent-daily-runs N      runs a day for each new agent [${DEFAULT_INSTALL_LIMITS.agentMaxDailyRuns}]
+  --max-concurrent-runs N   runs at the same time on the whole install [${DEFAULT_INSTALL_LIMITS.maxConcurrentRuns}]
+
+The limits apply to agents made after the start that uses them; an agent's
+own budget, set by the board, stays. See doc/CLIENT-INSTANCES.md.`;
 
 /**
  * `internal` is for Greatstone's own installs only (for example the GRE-157
@@ -48,6 +270,34 @@ interface InstanceState {
   port: number;
   dbPort: number;
   createdAt: string;
+  /** The code folder of the last start, and its tag. */
+  release?: ReleaseRef;
+  /** Written before the upgrade stops the instance, so `restore` can move back. */
+  lastUpgrade?: { from: ReleaseRef; to: ReleaseRef; backupFile: string; at: string };
+  lastRestore?: { to: ReleaseRef; backupFile: string; safetyBackupFile: string | null; at: string };
+  /** Written by restore-check (GRE-616); `status` warns when it is missing, failed or older than 7 days. */
+  lastRestoreCheck?: RestoreCheck;
+  /** Written by verify (GRE-783); `status` warns when it is missing, failed or older than the last upgrade or restore. */
+  lastVerify?: VerifyRecord;
+  /** Written by offsite-backup (GRE-666); `status` and `watch` warn when it is missing, failed or older than 26 h. */
+  lastOffsiteBackup?: OffsiteBackup;
+  /** Absent on instances made before GRE-141: no limits until `limits` sets them. */
+  limits?: InstallLimits;
+  /** GRE-667: written to the instance settings at every start. Absent on older instances until `ai-route` sets it. */
+  aiAccessRoute?: AiAccessRoute;
+  /** GRE-667: set on the company at create; `verify` checks it. Absent means on. */
+  requireBoardApprovalForNewAgents?: boolean;
+  /** GRE-1366: set by `pause`, `resume` and `archive` (B9); the fleet check-in reports it. Absent means active. */
+  lifecycle?: FleetLifecycle;
+  /** GRE-1367: written by pause, resume and archive; `status` shows them. */
+  lastPause?: PauseRecord;
+  lastResume?: ResumeRecord;
+  lastArchive?: ArchiveRecord;
+}
+
+interface ReleaseRef {
+  tag: string | null;
+  dir: string;
 }
 
 function say(message: string) {
@@ -59,18 +309,29 @@ function die(message: string): never {
   process.exit(1);
 }
 
+/** Flags that take no value. */
+const SWITCH_FLAGS = new Set(["dry-run"]);
+
 function parseArgs(argv: string[]) {
   const [command, ...rest] = argv;
   const opts: Record<string, string> = {};
+  const positional: string[] = [];
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i]!;
-    if (!arg.startsWith("--")) die(`unexpected argument "${arg}"`);
+    if (!arg.startsWith("--")) {
+      positional.push(arg);
+      continue;
+    }
+    if (SWITCH_FLAGS.has(arg.slice(2))) {
+      opts[arg.slice(2)] = "true";
+      continue;
+    }
     const value = rest[i + 1];
     if (value === undefined || value.startsWith("--")) die(`${arg} needs a value`);
     opts[arg.slice(2)] = value;
     i += 1;
   }
-  return { command, opts };
+  return { command, opts, positional };
 }
 
 // ---------------------------------------------------------------- paths and guards
@@ -99,6 +360,10 @@ function readState(root: string): InstanceState {
   const file = path.join(root, STATE_FILE);
   if (!existsSync(file)) die(`no client instance at ${root} (missing ${STATE_FILE})`);
   return JSON.parse(readFileSync(file, "utf8")) as InstanceState;
+}
+
+function writeState(root: string, state: InstanceState) {
+  writeFileSync(path.join(root, STATE_FILE), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 function checkPort(port: number, label: string) {
@@ -162,7 +427,7 @@ function writeInstanceFiles(root: string, state: InstanceState) {
   writeFileSync(configPath(root), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
   // The auth secret is made here and stays in this instance only.
   writeFileSync(path.join(dir, ".env"), `BETTER_AUTH_SECRET=${randomBytes(32).toString("hex")}\n`, { mode: 0o600 });
-  writeFileSync(path.join(root, STATE_FILE), `${JSON.stringify(state, null, 2)}\n`);
+  writeState(root, state);
 }
 
 function catalogVersion(): string {
@@ -234,7 +499,11 @@ async function health(state: InstanceState): Promise<Record<string, unknown> | n
  * refuses company creation while GSAM_MANAGED_CONFIG is set, and invites
  * while `company.invites` is hidden. Every normal start sets both values.
  */
-async function startServer(root: string, state: InstanceState, mode: "normal" | "provision") {
+async function startServer(root: string, state: InstanceState, mode: "normal" | "provision", opts: { dormant?: boolean } = {}) {
+  if (lifecycleOf(state) !== "active" && !opts.dormant) {
+    process.stderr.write(`client-instance: the instance is ${lifecycleOf(state)}; start is refused. Use resume (doc/CLIENT-INSTANCES.md, "Pause, resume, archive, delete").\n`);
+    process.exit(EXIT_DORMANT);
+  }
   if (readPid(root)) die(`the instance at ${root} is already running (pid ${readPid(root)})`);
   if (!(await portFree(state.port))) die(`port ${state.port} is in use by another process`);
   if (!(await portFree(state.dbPort))) die(`database port ${state.dbPort} is in use by another process`);
@@ -245,6 +514,7 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     state,
     mode === "normal" && values ? { GSAM_HIDDEN_SETTINGS: values.hiddenSettings, GSAM_MANAGED_CONFIG: values.managedConfig } : {},
   );
+  if (state.limits) env.GSAM_INSTALL_LIMITS = installLimitsEnv(state.limits);
   env.GSAM_MIGRATION_AUTO_APPLY = "true";
   env.GSAM_MIGRATION_PROMPT = "never";
   // Serve the built UI when this checkout has one, else the UI dev middleware.
@@ -278,10 +548,38 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
         die(`the server started in "${String(body.deploymentMode)}" mode, not "authenticated"; stopped it`);
       }
       say(`up on ${baseUrl(state)}`);
+      if (mode === "normal") {
+        await applyAiRoute(root, state);
+        state.release = currentRelease();
+        writeState(root, state);
+      }
       return;
     }
   }
   die(`the server did not answer within 5 minutes; see ${path.join(root, LOG_FILE)}`);
+}
+
+/**
+ * Write the AI access route into the running instance's own database. There
+ * is no env value for it, and the operator password is never stored, so the
+ * script writes the setting row itself. The server reads the row on every
+ * run; nothing else needs to change.
+ */
+async function applyAiRoute(root: string, state: InstanceState) {
+  if (!state.aiAccessRoute) return;
+  const { createDb, closeRegisteredClients, resolveEmbeddedPostgresConnectionString } = await import("../../packages/db/src/index.js");
+  const url = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  try {
+    await createDb(url).$client.unsafe(
+      `INSERT INTO instance_settings (singleton_key, general) VALUES ('default', jsonb_build_object('aiAccessRoute', $1::text))
+       ON CONFLICT (singleton_key) DO UPDATE
+       SET general = instance_settings.general || jsonb_build_object('aiAccessRoute', $1::text), updated_at = now()`,
+      [state.aiAccessRoute],
+    );
+  } finally {
+    await closeRegisteredClients(url);
+  }
+  say(`AI access route: ${state.aiAccessRoute}`);
 }
 
 async function stopServer(root: string, state: InstanceState) {
@@ -477,16 +775,33 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   // Company and client log-in.
   const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
   check(Array.isArray(companies) && companies.length === 1, `exactly one company (found ${Array.isArray(companies) ? companies.length : "?"})`);
+  const generalNow = await operator.expect("GET", "/api/instance/settings/general", undefined, [200]);
+  results.push(aiRouteCheck(state.aiAccessRoute, generalNow));
+  if (Array.isArray(companies) && companies.length === 1) {
+    const company = await operator.expect("GET", `/api/companies/${(companies[0] as { id?: string }).id}`, undefined, [200]);
+    results.push(boardApprovalCheck(state.requireBoardApprovalForNewAgents, company));
+  }
+  if (state.limits && Array.isArray(companies) && companies.length === 1) {
+    const companyId = (companies[0] as { id?: string }).id;
+    const agentList = (await operator.expect("GET", `/api/companies/${companyId}/agents`, undefined, [200])) as unknown as Array<{
+      budgetMonthlyCents?: number;
+    }>;
+    const withoutBudget = agentList.filter((agent) => !(Number(agent.budgetMonthlyCents) > 0)).length;
+    check(withoutBudget === 0, `every agent has a monthly budget (${agentList.length} agents, ${withoutBudget} without)`);
+  }
   if (client) {
     const clientCompanies = (await client.expect("GET", "/api/companies", undefined, [200])) as unknown as unknown[];
     check(Array.isArray(clientCompanies) && clientCompanies.length === 1, "the client log-in sees its one company");
     // Releases are hidden on every client edition (GRE-129): 403 even for the client's board log-in.
-    const companyId = (clientCompanies[0] as { id?: string } | undefined)?.id;
-    const releases = await client.request("GET", `/api/companies/${companyId}/releases`);
-    check(
-      releases.status === 403 && releases.text.includes("settings_operator_managed"),
-      `instance.releases: the client log-in gets 403 on GET /api/companies/:id/releases (-> ${releases.status})`,
-    );
+    // `internal` has no edition values, so nothing is hidden there.
+    if (values) {
+      const companyId = (clientCompanies[0] as { id?: string } | undefined)?.id;
+      const releases = await client.request("GET", `/api/companies/${companyId}/releases`);
+      check(
+        releases.status === 403 && releases.text.includes("settings_operator_managed"),
+        `instance.releases: the client log-in gets 403 on GET /api/companies/:id/releases (-> ${releases.status})`,
+      );
+    }
     const res = await client.request("PATCH", "/api/instance/settings/experimental", { enablePipelines: true });
     check(res.status === 403, `the client log-in is not an instance admin (PATCH experimental -> ${res.status})`);
   }
@@ -502,13 +817,17 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   const failed = results.filter((r) => !r.ok);
   for (const r of results) say(`${r.ok ? "PASS" : "FAIL"} ${r.line}`);
   say(`${results.length - failed.length}/${results.length} checks passed`);
+  // GRE-783: `status` shows this, and warns when it is older than the last upgrade or restore.
+  const fresh = readState(root);
+  fresh.lastVerify = { ok: failed.length === 0, tag: fresh.release?.tag ?? null, failed: failed.map((r) => r.line), at: new Date().toISOString() };
+  writeState(root, fresh);
   return failed.length === 0;
 }
 
 // ---------------------------------------------------------------- backup
 
-function backupNow(root: string, state: InstanceState): string {
-  const out = runCli(root, state, ["db:backup", "--json", "--filename-prefix", "client-instance"]);
+function backupNow(root: string, state: InstanceState, prefix = "client-instance"): string {
+  const out = runCli(root, state, ["db:backup", "--json", "--filename-prefix", prefix]);
   const match = out.match(/\{[\s\S]*\}/);
   const parsed = match ? (JSON.parse(match[0]) as { backupFile?: string }) : {};
   const file = parsed.backupFile;
@@ -518,6 +837,1219 @@ function backupNow(root: string, state: InstanceState): string {
     die(`backup was written outside this instance: ${real}`);
   }
   return real;
+}
+
+/** A backup file of this instance, by path or by name in its backups folder. */
+function instanceBackup(root: string, rawBackup: string): string {
+  const candidate = path.isAbsolute(rawBackup) || existsSync(rawBackup) ? path.resolve(rawBackup) : path.join(backupDir(root), rawBackup);
+  if (!existsSync(candidate)) die(`backup ${rawBackup} not found`);
+  const backupFile = realpathSync(candidate);
+  if (!backupFile.startsWith(`${realpathSync(backupDir(root))}${path.sep}`)) die(`${backupFile} is not a backup of this instance`);
+  return backupFile;
+}
+
+// ---------------------------------------------------------------- releases (upgrade, restore)
+
+function git(args: string[], cwd?: string): { ok: boolean; out: string; err: string } {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return { ok: result.status === 0, out: (result.stdout ?? "").trim(), err: (result.stderr ?? "").trim() };
+}
+
+function tagsAt(dir: string): string[] {
+  const res = git(["tag", "--points-at", "HEAD"], dir);
+  return res.ok ? res.out.split("\n") : [];
+}
+
+/** The release this script runs from. */
+function currentRelease(): ReleaseRef {
+  return { tag: pickReleaseTag(tagsAt(CODE_DIR)), dir: CODE_DIR };
+}
+
+/** The folder the running server was started from (its process cwd). */
+function runningDir(pid: number): string | null {
+  const res = spawnSync("lsof", ["-a", "-d", "cwd", "-p", String(pid), "-Fn"], { encoding: "utf8" });
+  const line = (res.stdout ?? "").split("\n").find((l) => l.startsWith("n"));
+  return line ? realpathSync(line.slice(1)) : null;
+}
+
+function sameDir(a: string, b: string) {
+  return existsSync(a) && existsSync(b) && realpathSync(a) === realpathSync(b);
+}
+
+/** A release folder is ready when it is a clean checkout of exactly this tag with its packages installed. */
+function releaseReady(dir: string, tag: string): string | null {
+  if (!existsSync(path.join(dir, ".git"))) return `${dir} is not a git clone`;
+  if (!tagsAt(dir).includes(tag)) return `${dir} is not at tag ${tag}`;
+  if (git(["status", "--porcelain", "--untracked-files=no"], dir).out !== "") return `${dir} has local changes`;
+  if (!existsSync(path.join(dir, "node_modules"))) return `${dir} has no node_modules (pnpm install did not run)`;
+  if (!existsSync(path.join(dir, "scripts", "client-instance.sh"))) return `${dir} has no scripts/client-instance.sh`;
+  return null;
+}
+
+/** Clone and install the tag into <releases>/<tag>, or reuse a folder that is ready. */
+function prepareRelease(repo: string, releasesDir: string, tag: string): string {
+  const dir = releaseDirFor(releasesDir, tag);
+  if (existsSync(dir)) {
+    const problem = releaseReady(dir, tag);
+    if (problem) die(`release folder not usable: ${problem}. Remove it and run upgrade again.`);
+    say(`release folder ${dir} is ready`);
+    return dir;
+  }
+  // Install into a partial folder first, so a failed install never looks ready.
+  const partial = `${dir}.partial`;
+  if (existsSync(partial)) die(`${partial} is left from a failed install; remove it and run upgrade again`);
+  mkdirSync(releasesDir, { recursive: true });
+  say(`cloning ${tag} into ${dir}`);
+  const clone = git(["clone", "--quiet", "--branch", tag, repo, partial]);
+  if (!clone.ok) die(`git clone of ${tag} failed: ${clone.err}`);
+  git(["remote", "set-url", "--push", "origin", "DISABLED"], partial);
+  for (const args of [["install", "--frozen-lockfile"], ["--filter", "@greatstone/plugin-sdk", "build"]]) {
+    say(`pnpm ${args.join(" ")}`);
+    const res = spawnSync("pnpm", args, { cwd: partial, stdio: ["ignore", "inherit", "inherit"], env: { ...process.env, CI: "true" } });
+    if (res.status !== 0) die(`pnpm ${args.join(" ")} failed in ${partial}`);
+  }
+  renameSync(partial, dir);
+  const problem = releaseReady(dir, tag);
+  if (problem) die(`release folder not usable: ${problem}`);
+  return dir;
+}
+
+/** Start the instance with the script of another release folder, then prove it runs from there. */
+async function startFrom(root: string, state: InstanceState, dir: string, release: ReleaseRef) {
+  const res = spawnSync(path.join(dir, "scripts", "client-instance.sh"), ["start", "--root", root], { stdio: "inherit", env: process.env });
+  if (res.status !== 0) throw new Error(`start from ${dir} failed`);
+  const body = await health(state);
+  if (body?.status !== "ok") throw new Error(`health check failed on ${baseUrl(state)}`);
+  if (body.deploymentMode !== undefined && body.deploymentMode !== "authenticated") {
+    throw new Error(`the server runs in "${String(body.deploymentMode)}" mode, not "authenticated"`);
+  }
+  const pid = readPid(root);
+  const cwd = pid ? runningDir(pid) : null;
+  if (!cwd || !sameDir(cwd, dir)) throw new Error(`the server runs from ${cwd ?? "an unknown folder"}, not ${dir}`);
+  say(`PASS health ok on port ${state.port}, server runs from ${dir}`);
+  const fresh = readState(root);
+  fresh.release = release;
+  writeState(root, fresh);
+  return fresh;
+}
+
+/** Restore a backup into the instance's own database while the server is stopped. */
+async function restoreDatabase(root: string, state: InstanceState, backupFile: string) {
+  if (readPid(root)) throw new Error("stop the instance before a database restore");
+  const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+  const { embeddedPostgresConnectionString, resetPostgresDatabase, runDatabaseRestore } = await import("../../packages/db/src/index.js");
+  const pg = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), state.dbPort, { allowExisting: false });
+  try {
+    if (pg.port !== state.dbPort) throw new Error(`the database started on port ${pg.port}, not ${state.dbPort}`);
+    const url = (database: string) => embeddedPostgresConnectionString({ ...pg, database });
+    await resetPostgresDatabase(url("postgres"), "paperclip");
+    await runDatabaseRestore({ connectionString: url("paperclip"), backupFile });
+  } finally {
+    await pg.stop();
+  }
+}
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Restore a backup into a throwaway embedded Postgres under $TMPDIR, apply
+ * the migrations of this checkout and count the key rows. Reads only the
+ * backup file: the instance's database folder, ports and process are never used.
+ */
+async function restoreIntoThrowaway(state: InstanceState, backupFile: string): Promise<string> {
+  const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+  const db = await import("../../packages/db/src/index.js");
+  const scratch = mkdtempSync(path.join(tmpdir(), "client-instance-restore-check-"));
+  const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
+  let pg: { port: number; password: string; stop: () => Promise<void> } | null = null;
+  let url = "";
+  try {
+    pg = await ensureEmbeddedPostgres(path.join(scratch, "db"), preferred, { allowExisting: false });
+    if (pg.port === state.port || pg.port === state.dbPort || FORBIDDEN_PORTS.has(pg.port)) {
+      throw new Error(`the throwaway database started on port ${pg.port}, which it must not use`);
+    }
+    const at = (name: string) => db.embeddedPostgresConnectionString({ ...pg!, database: name });
+    url = at("paperclip");
+    await db.resetPostgresDatabase(at("postgres"), "paperclip");
+    await db.runDatabaseRestore({ connectionString: url, backupFile });
+    await db.applyPendingMigrations(url);
+    const conn = db.createDb(url);
+    const companies = await conn.$count(db.companies);
+    const users = await conn.$count(db.authUsers);
+    const issues = await conn.$count(db.issues);
+    if (companies < 1) throw new Error("the restored database has no company");
+    if (users < 1) throw new Error("the restored database has no user");
+    return `${plural(companies, "company", "companies")}, ${plural(users, "user", "users")}, ${plural(issues, "issue", "issues")}`;
+  } finally {
+    if (url) await db.closeRegisteredClients(url);
+    if (pg) await pg.stop();
+    rmSync(scratch, { recursive: true, force: true });
+    if (pg && !(await portFree(pg.port))) say(`WARNING: port ${pg.port} is still in use after the throwaway database stopped`);
+  }
+}
+
+/**
+ * restore-check --root <dir> [backup]: prove the newest (or named) backup
+ * restores. Writes only lastRestoreCheck in client-instance.json.
+ */
+async function cmdRestoreCheck(root: string, state: InstanceState, rawBackup: string | undefined) {
+  const check = await runRestoreCheck(root, state, rawBackup);
+  if (!check.ok) die(check.line);
+  say(check.line);
+}
+
+/** restore-check without exiting: offsite-check reports the result in its own line. */
+async function runRestoreCheck(root: string, state: InstanceState, rawBackup: string | undefined): Promise<RestoreCheck> {
+  const backupFile = rawBackup ? instanceBackup(root, rawBackup) : newestBackup(backupDir(root))?.file;
+  if (!backupFile) die(`no backup in ${backupDir(root)}`);
+  const name = path.basename(backupFile);
+  say(`restore-check: restoring ${name} into a throwaway database under ${tmpdir()}`);
+  let check: RestoreCheck;
+  try {
+    const counts = await restoreIntoThrowaway(state, backupFile);
+    check = { ok: true, line: `restore-check OK: ${name}, ${counts}`, backupFile, at: new Date().toISOString() };
+  } catch (err) {
+    const reason = (err instanceof Error ? err.message : String(err)).split("\n")[0]!.slice(0, 300);
+    check = { ok: false, line: `restore-check FAILED: ${name}: ${reason}`, backupFile, at: new Date().toISOString() };
+  }
+  // Read again: only this one field changes.
+  const fresh = readState(root);
+  fresh.lastRestoreCheck = check;
+  writeState(root, fresh);
+  return check;
+}
+
+// ---------------------------------------------------------------- off-host backups (GRE-666)
+
+/** The instance code is the folder name (c001), never a client name. */
+function instanceCode(root: string): string {
+  const code = path.basename(root);
+  const error = checkCode(code);
+  if (error) die(error);
+  return code;
+}
+
+function offsiteConfig(opts: Record<string, string>, code: string): OffsiteConfig {
+  if (!opts["offsite-config"]) die("--offsite-config <file> is required");
+  const config = loadOffsiteConfig(path.resolve(opts["offsite-config"]), code);
+  if ("error" in config) die(config.error);
+  return config;
+}
+
+/** Run restic with the instance's repository and key file only. */
+function restic(config: OffsiteConfig, opts: Record<string, string>, args: string[]) {
+  const result = spawnSync(opts.restic ?? "restic", args, {
+    env: resticEnv(config, process.env),
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (result.error) die(`restic could not start (${opts.restic ?? "restic"}): ${result.error.message}`);
+  const err = (result.stderr ?? "").trim().split("\n").filter(Boolean).pop() ?? `exit code ${result.status}`;
+  return { ok: result.status === 0, out: result.stdout ?? "", err };
+}
+
+function cmdOffsiteInit(root: string, opts: Record<string, string>) {
+  const config = offsiteConfig(opts, instanceCode(root));
+  if (restic(config, opts, ["cat", "config"]).ok) return say("offsite-init: the repository already exists; nothing changed");
+  const init = restic(config, opts, ["init"]);
+  if (!init.ok) die(`offsite-init FAILED: ${init.err}`);
+  say("offsite-init: repository made. Keep a copy of the key file off the host: without it the copies cannot be read.");
+}
+
+/**
+ * offsite-backup: copy client-instance.json and the backups folder to the
+ * instance's own restic repository, then keep 30 daily and 12 weekly
+ * snapshots. Writes only lastOffsiteBackup in client-instance.json.
+ */
+function cmdOffsiteBackup(root: string, opts: Record<string, string>) {
+  const code = instanceCode(root);
+  const config = offsiteConfig(opts, code);
+  const at = new Date().toISOString();
+  const failed = (reason: string): OffsiteBackup => ({ ok: false, line: `offsite-backup FAILED: ${reason.slice(0, 300)}`, snapshot: null, at });
+  let result: OffsiteBackup;
+  if (!restic(config, opts, ["cat", "config"]).ok) {
+    result = failed("the repository cannot be read (run offsite-init once, or check the target and key file)");
+  } else {
+    const backup = restic(config, opts, ["backup", "--json", "--host", code, "--tag", code, ...OFFSITE_PATHS.map((p) => path.join(root, p))]);
+    const summary = backup.out
+      .split("\n")
+      .map((line) => {
+        try {
+          return JSON.parse(line) as { message_type?: string; snapshot_id?: string; total_files_processed?: number };
+        } catch {
+          return null;
+        }
+      })
+      .find((message) => message?.message_type === "summary");
+    if (!backup.ok || !summary?.snapshot_id) {
+      result = failed(`restic backup: ${backup.err}`);
+    } else {
+      const snapshot = summary.snapshot_id.slice(0, 8);
+      const forget = restic(config, opts, ["forget", "--host", code, "--tag", code, ...OFFSITE_RETENTION, "--prune"]);
+      result = forget.ok
+        ? { ok: true, line: `offsite-backup OK: snapshot ${snapshot}, ${summary.total_files_processed ?? 0} files`, snapshot, at }
+        : failed(`snapshot ${snapshot} written, but keeping 30 daily and 12 weekly failed: ${forget.err}`);
+    }
+  }
+  // Read again: only this one field changes.
+  const fresh = readState(root);
+  fresh.lastOffsiteBackup = result;
+  writeState(root, fresh);
+  if (!result.ok) die(result.line);
+  say(result.line);
+}
+
+/**
+ * offsite-check: restore the newest off-host snapshot of one code into an
+ * empty sandbox folder, run restore-check on that copy, then delete the copy.
+ * This proves the off-host copy, not only the one on the host.
+ */
+async function cmdOffsiteCheck(opts: Record<string, string>) {
+  const code = opts.code ?? die("--code <instance code> is required");
+  const codeError = checkCode(code);
+  if (codeError) die(codeError);
+  const config = offsiteConfig(opts, code);
+  const sandbox = resolveRoot(opts.sandbox ?? die("--sandbox <empty dir> is required"));
+  if (existsSync(sandbox) && readdirSync(sandbox).length > 0) die(`${sandbox} must be empty`);
+  mkdirSync(sandbox, { recursive: true });
+  const target = path.join(sandbox, "restore");
+  let line: string;
+  let ok = false;
+  try {
+    ({ ok, line } = await pullAndCheck(config, opts, code, target));
+  } finally {
+    // The copy holds client data: never leave it behind.
+    rmSync(target, { recursive: true, force: true });
+  }
+  if (!ok) die(line);
+  say(line);
+}
+
+async function pullAndCheck(config: OffsiteConfig, opts: Record<string, string>, code: string, target: string) {
+  const fail = (reason: string) => ({ ok: false, line: `offsite-check FAILED: ${code}: ${reason.slice(0, 300)}` });
+  const list = restic(config, opts, ["snapshots", "--json", "--host", code, "--tag", code]);
+  if (!list.ok) return fail(`restic snapshots: ${list.err}`);
+  const snapshots = JSON.parse(list.out || "[]") as Array<{ id: string; short_id?: string; time: string; paths: string[] }>;
+  const newest = snapshots.sort((a, b) => Date.parse(b.time) - Date.parse(a.time))[0];
+  if (!newest) return fail("no off-host snapshot");
+  const label = `snapshot ${newest.short_id ?? newest.id.slice(0, 8)} of ${newest.time}`;
+  const original = snapshotRoot(newest.paths);
+  if (!original) return fail(`${label} has no client-instance.json`);
+  say(`offsite-check: restoring ${label} into ${target}`);
+  const restore = restic(config, opts, ["restore", newest.id, "--target", target]);
+  if (!restore.ok) return fail(`restic restore: ${restore.err}`);
+  const copy = path.join(target, original);
+  if (!existsSync(path.join(copy, STATE_FILE))) return fail(`${label} restored without client-instance.json`);
+  if (!newestBackup(backupDir(copy))) return fail(`${label} holds no backup file`);
+  const check = await runRestoreCheck(copy, readState(copy), undefined);
+  return { ok: check.ok, line: `offsite-check ${check.ok ? "OK" : "FAILED"}: ${code}, ${label}: ${check.line}` };
+}
+
+// ---------------------------------------------------------------- billing records (B11, GRE-1372)
+
+function billingConfig(opts: Record<string, string>): BillingConfig {
+  if (!opts["billing-config"]) die("--billing-config <file> is required (BILLING_ARCHIVE_DIR and BILLING_RETENTION_YEARS)");
+  const config = loadBillingConfig(path.resolve(opts["billing-config"]));
+  if ("error" in config) die(config.error);
+  return config;
+}
+
+/**
+ * The instance's billing_accounts and billing_invoices rows, read only. A
+ * running instance is read through its own database port; a stopped one has
+ * its database started on its own (no app) on a free port, then stopped.
+ * An instance made before B2 has no billing tables, so no rows.
+ */
+async function readBillingRows(root: string, state: InstanceState): Promise<{ accounts: Record<string, unknown>[]; invoices: Record<string, unknown>[] }> {
+  const db = await import("../../packages/db/src/index.js");
+  let pg: { stop: () => Promise<void> } | null = null;
+  let url: string;
+  if (readPid(root)) {
+    url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  } else {
+    const { ensureEmbeddedPostgres } = await import("../../cli/src/commands/worktree.js");
+    const preferred = await firstFreePort(55500, 55599, new Set([state.port, state.dbPort]));
+    const started = await ensureEmbeddedPostgres(path.join(instanceDir(root), "db"), preferred, { allowExisting: false });
+    pg = started;
+    url = db.embeddedPostgresConnectionString({ ...started, database: "paperclip" });
+  }
+  try {
+    const conn = db.createDb(url);
+    const [found] = await conn.$client.unsafe("select to_regclass('public.billing_accounts') is not null as accounts, to_regclass('public.billing_invoices') is not null as invoices");
+    return {
+      accounts: found?.accounts ? await conn.select().from(db.billingAccounts) : [],
+      invoices: found?.invoices ? await conn.select().from(db.billingInvoices) : [],
+    };
+  } finally {
+    await db.closeRegisteredClients(url);
+    if (pg) await pg.stop();
+  }
+}
+
+/**
+ * Copy the instance's billing records to the billing archive, outside the
+ * instance folder, and check the file reads back with the same row counts.
+ * Throws when it cannot, so `delete` stops and removes nothing (AT-4.10).
+ */
+async function exportBilling(
+  root: string,
+  state: InstanceState,
+  config: BillingConfig,
+  read?: Awaited<ReturnType<typeof readBillingRows>>,
+): Promise<{ file: string; changed: boolean; counts: { accounts: number; invoices: number } }> {
+  const outside = checkArchiveOutside(config.archiveDir, root);
+  if (outside) throw new Error(outside);
+  const rows = read ?? (await readBillingRows(root, state));
+  const exp = buildBillingExport({ code: instanceCode(root), ...rows, retentionYears: config.retentionYears, now: new Date() });
+  const written = writeBillingExport(config.archiveDir, exp);
+  const bad = verifyBillingExport(written.file, { accounts: rows.accounts.length, invoices: rows.invoices.length });
+  if (bad) throw new Error(`billing export did not verify: ${bad}`);
+  return { ...written, counts: exp.counts };
+}
+
+async function cmdBillingExport(root: string, state: InstanceState, opts: Record<string, string>) {
+  const result = await exportBilling(root, state, billingConfig(opts));
+  say(`billing-export: ${plural(result.counts.accounts, "billing account", "billing accounts")} and ${plural(result.counts.invoices, "invoice", "invoices")}`);
+  say(`billing-export: ${result.changed ? "written" : "already exported; nothing changed"}: ${result.file}`);
+}
+
+function cmdBillingArchive(opts: Record<string, string>) {
+  for (const line of billingArchiveLines(billingConfig(opts).archiveDir, new Date())) say(line);
+}
+
+// ---------------------------------------------------------------- host watch (GRE-666)
+
+function loadWatchConfig(file: string | undefined, publicUrl: string | undefined): WatchConfig {
+  if (!file) die("--watch-config <file> is required");
+  const fileError = checkPrivateFile(path.resolve(file), "watch config");
+  if (fileError) die(fileError);
+  const config = parseWatchConfig(readFileSync(path.resolve(file), "utf8"));
+  if ("error" in config) die(config.error);
+  if (publicUrl !== undefined) {
+    const health = publicHealthUrl(publicUrl);
+    if (typeof health !== "string") die(`--public-url: ${health.error}`);
+    config.publicUrl = publicUrl;
+  }
+  return config;
+}
+
+/** GET <public URL>/api/health, as a person outside would: DNS, Caddy, the certificate, the app. */
+async function publicUrlWatchSignal(publicUrl: string): Promise<WatchSignal> {
+  const url = publicHealthUrl(publicUrl) as string;
+  try {
+    const res = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+    const body = await res.json().catch(() => null);
+    return publicUrlSignal(url, { status: res.status, body });
+  } catch (err) {
+    // A TLS or DNS failure is in err.cause (undici); the message alone says only "fetch failed".
+    const cause = err instanceof Error && err.cause instanceof Error ? `: ${(err.cause as Error & { code?: string }).code ?? err.cause.message}` : "";
+    return publicUrlSignal(url, { error: `${err instanceof Error ? err.message : String(err)}${cause}` });
+  }
+}
+
+/** AI access per company, read as the operator log-in (GRE-15 records the state; this only reads it). */
+async function aiWatchSignals(state: InstanceState, config: WatchConfig): Promise<WatchSignal[]> {
+  const fail = (detail: string): WatchSignal[] => [{ key: "ai", ok: false, detail }];
+  try {
+    const operator = new Session(baseUrl(state));
+    const signIn = await operator.request("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: config.operatorPassword });
+    if (signIn.status !== 200) return fail(`operator log-in refused (${signIn.status}); AI access not checked`);
+    const companies = await operator.request("GET", "/api/companies");
+    if (companies.status !== 200 || !Array.isArray(companies.json)) return fail(`GET /api/companies returned ${companies.status}`);
+    const signals: WatchSignal[] = [];
+    for (const company of companies.json as Array<{ id: string }>) {
+      const connections = await operator.request("GET", `/api/companies/${company.id}/ai-connections`);
+      const runs = await operator.request("GET", `/api/companies/${company.id}/heartbeat-runs?limit=100&summary=true`);
+      if (connections.status !== 200 || runs.status !== 200 || !Array.isArray(runs.json)) {
+        signals.push({ key: `ai:${company.id.slice(0, 8)}`, ok: false, detail: `AI state not readable (${connections.status}, ${runs.status})` });
+        continue;
+      }
+      const list = ((connections.json as { connections?: AiConnectionView[] }).connections ?? []) as AiConnectionView[];
+      signals.push(...aiSignals(company.id, list, runs.json as RunView[]));
+    }
+    return signals.length ? signals : fail("no company on this instance");
+  } catch (err) {
+    return fail(`AI access not checked: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** The allowance warn level (GRE-1389), read as the operator log-in from the billing account. */
+async function billingWatchSignal(state: InstanceState, config: WatchConfig): Promise<WatchSignal> {
+  const fail = (detail: string): WatchSignal => ({ key: "budget-warn", ok: false, detail });
+  try {
+    const operator = new Session(baseUrl(state));
+    const signIn = await operator.request("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: config.operatorPassword });
+    if (signIn.status !== 200) return fail(`operator log-in refused (${signIn.status}); AI usage not checked`);
+    const view = await operator.request("GET", "/api/instance/billing-account");
+    if (view.status !== 200) return fail(`GET /api/instance/billing-account returned ${view.status}`);
+    return billingUsageSignal((view.json as { usage?: BillingUsage | null }).usage ?? null);
+  } catch (err) {
+    return fail(`AI usage not checked: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+async function watchSignals(root: string, state: InstanceState, config: WatchConfig): Promise<WatchSignal[]> {
+  const disk = statfsSync(root);
+  const meminfo = existsSync("/proc/meminfo") ? memAvailableFromMeminfo(readFileSync("/proc/meminfo", "utf8")) : null;
+  if (lifecycleOf(state) !== "active") {
+    // GRE-1367: stopped on purpose; a running app here is the failure.
+    const pid = readPid(root);
+    return [
+      { key: "health", ok: !pid, detail: pid ? `${lifecycleOf(state)}, but the app runs (pid ${pid})` : dormantHealthDetail(state) },
+      diskSignal(Number(disk.bavail) * Number(disk.bsize)),
+      memorySignal(meminfo ?? freemem()),
+    ];
+  }
+  const pid = readPid(root);
+  const body = pid ? await health(state) : null;
+  const up = Boolean(pid) && body?.status === "ok";
+  return [
+    { key: "health", ok: up, detail: pid ? `pid ${pid}, health ${String(body?.status ?? "no answer")}` : "not running" },
+    linesSignal("backup", backupStatusLines(backupDir(root))),
+    linesSignal("restore-check", restoreCheckStatusLines(state.lastRestoreCheck)),
+    linesSignal("offsite-backup", offsiteStatusLines(state.lastOffsiteBackup)),
+    diskSignal(Number(disk.bavail) * Number(disk.bsize)),
+    memorySignal(meminfo ?? freemem()),
+    ...(up ? await aiWatchSignals(state, config) : [{ key: "ai", ok: false, detail: "not checked: the app is not up" }]),
+    ...(up ? [await billingWatchSignal(state, config)] : []),
+    ...(config.publicUrl ? [await publicUrlWatchSignal(config.publicUrl)] : []),
+  ];
+}
+
+const WATCH_STATE_FILE = "watch-state.json";
+
+/**
+ * watch: one pass of the host watch. Prints PASS/FAIL per signal, writes them
+ * to watch-state.json (for the GRE-144 check-in), pings the dead-man check
+ * and mails the alert address when the failing set changes. Exit code 1 when
+ * any signal fails. A timer runs it every 5 minutes.
+ */
+async function cmdWatch(root: string, state: InstanceState, opts: Record<string, string>) {
+  const code = instanceCode(root);
+  const config = loadWatchConfig(opts["watch-config"], opts["public-url"]);
+  const at = new Date().toISOString();
+  const signals = await watchSignals(root, state, config);
+  for (const s of signals) say(`${s.ok ? "PASS" : "FAIL"} ${s.key}: ${s.detail}`);
+  const failing = signals.filter((s) => !s.ok).map((s) => s.key);
+
+  const stateFile = path.join(root, WATCH_STATE_FILE);
+  const previous: AlertState = existsSync(stateFile) ? (JSON.parse(readFileSync(stateFile, "utf8")) as AlertState) : { failing: [], alertedAt: null };
+  let alert: AlertState = { failing: previous.failing, alertedAt: previous.alertedAt };
+  let delivered = true;
+
+  if (config.pingUrl) {
+    const report = signals.map((s) => `${s.ok ? "PASS" : "FAIL"} ${s.key}: ${s.detail}`).join("\n");
+    try {
+      const res = await fetch(failing.length ? `${config.pingUrl.replace(/\/$/, "")}/fail` : config.pingUrl, {
+        method: "POST",
+        body: report,
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      say(`dead-man check pinged (${failing.length ? "fail" : "ok"})`);
+    } catch (err) {
+      // The dead-man check alerts by itself when pings stop.
+      say(`WARNING: dead-man ping failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  const decision = decideAlert(previous, failing);
+  if (decision.send) {
+    if (config.alertEmail && config.mailCommand) {
+      const { subject, body } = alertMessage(code, decision.kind, signals, at);
+      const [command, ...args] = config.mailCommand;
+      const mail = spawnSync(command!, args, {
+        input: `To: ${config.alertEmail}\nSubject: ${subject}\n\n${body}\n`,
+        encoding: "utf8",
+        timeout: 30_000,
+      });
+      delivered = mail.status === 0;
+      say(delivered ? `alert mailed (${decision.kind})` : `WARNING: alert mail failed (${mail.error?.message ?? `exit code ${mail.status}`}); the next pass tries again`);
+    }
+    // Not delivered: keep the old state so the next pass sends it again.
+    if (delivered) alert = { failing: [...failing].sort(), alertedAt: at };
+  }
+  writeFileSync(stateFile, `${JSON.stringify({ ...alert, lastRun: { at, signals } }, null, 2)}\n`);
+  // GRE-1082: the same pass reports to the hub, when this instance is registered.
+  const checkIn = await sendFleetCheckIn(root, state, config.operatorPassword, signals);
+  if (checkIn) say(checkIn.ok ? "fleet check-in sent" : `WARNING: fleet check-in FAILED: ${checkIn.detail}`);
+  // GRE-1084: and carries "Get help" tickets both ways. A failure waits for the next pass.
+  const supportSync = checkIn ? await sendSupportSync(root, state, config.operatorPassword) : null;
+  if (supportSync) say(supportSync.ok ? `fleet support sync: ${supportSync.detail}` : `WARNING: fleet support sync FAILED: ${supportSync.detail}`);
+  if (failing.length) process.exit(1);
+}
+
+// ---------------------------------------------------------------- fleet (GRE-1082)
+
+const FLEET_DIR = "fleet";
+const fleetKeyFile = (root: string) => path.join(root, FLEET_DIR, "key.json");
+const fleetHubFile = (root: string) => path.join(root, FLEET_DIR, "hub.json");
+
+function readFleet(root: string): { registration: FleetRegistration; key: FleetKey } | null {
+  if (!existsSync(fleetHubFile(root))) return null;
+  const keyError = checkPrivateFile(fleetKeyFile(root), "fleet key");
+  if (keyError) die(keyError);
+  return {
+    registration: JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration,
+    key: JSON.parse(readFileSync(fleetKeyFile(root), "utf8")) as FleetKey,
+  };
+}
+
+function writeFleetRegistration(root: string, registration: FleetRegistration) {
+  writeFileSync(fleetHubFile(root), `${JSON.stringify(registration, null, 2)}\n`);
+}
+
+async function postToHub(hubUrl: string, route: string, body: unknown): Promise<{ status: number; json: unknown }> {
+  const res = await fetch(`${hubUrl}${route}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+    redirect: "manual",
+    signal: AbortSignal.timeout(15_000),
+  });
+  return { status: res.status, json: await res.json().catch(() => null) };
+}
+
+/**
+ * fleet-register: make this instance's own key pair and trade the hub's
+ * one-time code for a registration. The private key stays in <root>/fleet
+ * (mode 600); the code is used once and not written down.
+ */
+async function cmdFleetRegister(root: string, opts: Record<string, string>) {
+  const hubUrl = fleetHubUrl(opts["fleet-hub"] ?? die("--fleet-hub <url> is required"));
+  if (typeof hubUrl !== "string") die(`--fleet-hub: ${hubUrl.error}`);
+  const registrationCode = process.env.CLIENT_INSTANCE_FLEET_CODE?.trim() || die("set CLIENT_INSTANCE_FLEET_CODE to the one-time code from the hub");
+  if (existsSync(fleetHubFile(root))) die("this instance is registered already; run fleet-revoke first");
+  const key = generateFleetKey();
+  const seq = nextSeq(0);
+  const proof = signFleetMessage(key.privateJwk, { act: "register", sub: registrationSubject(registrationCode), seq });
+  const res = await postToHub(hubUrl, "/api/fleet/spoke/register", { registrationCode, publicKey: key.publicKey, proof });
+  const answer = hubAnswer(res.status, res.json);
+  if (!answer.ok) die(`fleet-register FAILED: ${answer.detail}`);
+  const { instanceId, code } = res.json as { instanceId: string; code: string };
+  mkdirSync(path.join(root, FLEET_DIR), { recursive: true, mode: 0o700 });
+  writeFileSync(fleetKeyFile(root), `${JSON.stringify(key)}\n`, { mode: 0o600 });
+  writeFleetRegistration(root, { hubUrl, instanceId, code, registeredAt: new Date().toISOString(), lastSeq: seq });
+  say(`fleet-register OK: hub ${hubUrl}, code ${code}, instance ${instanceId}`);
+  if (code !== instanceCode(root)) say(`WARNING: the hub knows this instance as ${code}, but its folder is ${instanceCode(root)}`);
+}
+
+function folderBytes(dir: string): number {
+  if (!existsSync(dir)) return 0;
+  let total = 0;
+  for (const name of readdirSync(dir)) {
+    const file = path.join(dir, name);
+    const info = lstatSync(file);
+    total += info.isDirectory() ? folderBytes(file) : info.isFile() ? info.size : 0;
+  }
+  return total;
+}
+
+/** Usage totals and connection counts over every company, read as the operator log-in. Throws (never exits) when a read fails. */
+async function fleetUsage(root: string, state: InstanceState, operatorPassword: string) {
+  const operator = new Session(baseUrl(state));
+  const read = async <T,>(method: string, route: string, body?: unknown): Promise<T> => {
+    const res = await operator.request(method, route, body);
+    if (res.status !== 200) throw new Error(`${method} ${route.split("?")[0]} returned ${res.status}`);
+    return res.json as T;
+  };
+  await read("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: operatorPassword });
+  const companies = await read<Array<{ id: string }>>("GET", "/api/companies");
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const rows: UsageCompany[] = [];
+  const connections: Array<{ ai: AiConnectionView[]; tools: ToolConnectionView[] }> = [];
+  for (const company of companies) {
+    const runsPage = (status: string) => (since: Date, before: Date | null) =>
+      read<Array<{ id: string; createdAt: string }>>(
+        "GET",
+        `/api/companies/${company.id}/heartbeat-runs?limit=${RUN_PAGE_LIMIT}&summary=true${status ? `&status=${status}` : ""}&since=${encodeURIComponent(since.toISOString())}${before ? `&before=${encodeURIComponent(before.toISOString())}` : ""}`,
+      );
+    rows.push({
+      agents: await read("GET", `/api/companies/${company.id}/agents`),
+      runsLast24h: await countRunsSince(runsPage(""), dayAgo),
+      runsFailedLast24h: await countRunsSince(runsPage(FAILED_RUN_STATUSES.join(",")), dayAgo),
+      ...(await read<{ spendCents: number; budgetCents: number }>("GET", `/api/companies/${company.id}/costs/summary?from=${encodeURIComponent(monthStart.toISOString())}`)),
+    });
+    connections.push({
+      ai: (await read<{ connections?: AiConnectionView[] }>("GET", `/api/companies/${company.id}/ai-connections`)).connections ?? [],
+      tools: (await read<{ connections?: ToolConnectionView[] }>("GET", `/api/companies/${company.id}/tools/connections`)).connections ?? [],
+    });
+  }
+  return {
+    usage: usageTotals(rows, folderBytes(path.join(instanceDir(root), "data", "storage"))),
+    connections: connectionTotals(connections),
+  };
+}
+
+/**
+ * One signed check-in: host facts, the last watch signals (key and pass/fail
+ * only) and usage totals. Returns the outcome; never exits, so a hub that is
+ * down does not stop the watch.
+ */
+async function sendFleetCheckIn(root: string, state: InstanceState, operatorPassword: string, signals: WatchSignal[]): Promise<{ ok: boolean; detail: string } | null> {
+  const fleet = readFleet(root);
+  if (!fleet) return null;
+  const { registration, key } = fleet;
+  let outcome: { ok: boolean; detail: string };
+  try {
+    const body = readPid(root) ? await health(state) : null;
+    const appUp = body?.status === "ok";
+    const version = typeof body?.version === "string" && /^[0-9A-Za-z.+-]{1,40}$/.test(body.version) ? body.version : null;
+    const newest = newestBackup(backupDir(root));
+    const live = appUp ? await fleetUsage(root, state, operatorPassword) : null;
+    const checkIn = buildCheckIn({
+      edition: state.edition,
+      appUp,
+      newestBackupAt: newest ? new Date(newest.mtimeMs).toISOString() : null,
+      lastRestoreCheck: state.lastRestoreCheck ?? null,
+      lastOffsiteBackup: state.lastOffsiteBackup ?? null,
+      releaseTag: state.release?.tag ?? null,
+      appVersion: version,
+      lastUpgrade: state.lastUpgrade ?? null,
+      usage: live?.usage ?? usageTotals([], 0),
+      signals,
+      lifecycle: state.lifecycle,
+      connections: live?.connections ?? null,
+    });
+    const seq = nextSeq(registration.lastSeq);
+    registration.lastSeq = seq;
+    // Saved before sending: a seq is never used twice, even when the send fails.
+    writeFleetRegistration(root, registration);
+    const message = signFleetMessage(key.privateJwk, { act: "check-in", sub: registration.instanceId, seq, checkIn });
+    const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/check-in", { message });
+    outcome = hubAnswer(res.status, res.json);
+  } catch (err) {
+    outcome = { ok: false, detail: `check-in not sent: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  writeFleetRegistration(root, { ...registration, lastCheckIn: { at: new Date().toISOString(), ...outcome } });
+  return outcome;
+}
+
+async function cmdFleetCheckIn(root: string, state: InstanceState, opts: Record<string, string>) {
+  if (!existsSync(fleetHubFile(root))) die("this instance is not registered with a hub; run fleet-register");
+  const config = loadWatchConfig(opts["watch-config"], undefined);
+  const stateFile = path.join(root, WATCH_STATE_FILE);
+  const signals = existsSync(stateFile) ? ((JSON.parse(readFileSync(stateFile, "utf8")) as { lastRun?: { signals?: WatchSignal[] } }).lastRun?.signals ?? []) : [];
+  const outcome = (await sendFleetCheckIn(root, state, config.operatorPassword, signals))!;
+  say(`fleet-check-in ${outcome.ok ? "OK" : "FAILED"}: ${outcome.detail}`);
+  if (!outcome.ok) process.exit(1);
+}
+
+/**
+ * fleet-revoke: tell the hub to refuse this key from now on, then delete it.
+ * With --local-only yes (the hub revoked it already, or is gone), only delete.
+ */
+async function cmdFleetRevoke(root: string, opts: Record<string, string>) {
+  const fleet = readFleet(root);
+  if (!fleet) die("this instance is not registered with a hub");
+  const { registration, key } = fleet;
+  if (opts["local-only"] !== "yes") {
+    const seq = nextSeq(registration.lastSeq);
+    writeFleetRegistration(root, { ...registration, lastSeq: seq });
+    const message = signFleetMessage(key.privateJwk, { act: "revoke", sub: registration.instanceId, seq });
+    const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/revoke", { message });
+    const answer = hubAnswer(res.status, res.json);
+    const revokedAlready = (res.json as { error?: unknown } | null)?.error === "fleet_key_revoked";
+    if (!answer.ok && !revokedAlready) die(`fleet-revoke FAILED: ${answer.detail} (the key is kept; add --local-only yes to delete it anyway)`);
+  }
+  rmSync(path.join(root, FLEET_DIR), { recursive: true, force: true });
+  say(`fleet-revoke OK: instance ${registration.instanceId} at ${registration.hubUrl}; the key is deleted`);
+}
+
+/**
+ * delete step 3 (AT-4.8): a signed `delete` asks the hub to remove this
+ * instance's record and check-ins. True when removed; false when the hub had
+ * revoked the key (a revoked spoke cannot ask). Any other answer stops delete.
+ */
+async function deleteFromHub(root: string, fleet: NonNullable<ReturnType<typeof readFleet>>): Promise<boolean> {
+  const { registration, key } = fleet;
+  const seq = nextSeq(registration.lastSeq);
+  writeFleetRegistration(root, { ...registration, lastSeq: seq });
+  const message = signFleetMessage(key.privateJwk, { act: "delete", sub: registration.instanceId, seq });
+  const res = await postToHub(registration.hubUrl, "/api/fleet/spoke/delete", { message }).catch((err: unknown) =>
+    die(`hub delete FAILED: ${err instanceof Error ? err.message : String(err)}. Nothing is removed; run delete again`),
+  );
+  const answer = hubAnswer(res.status, res.json);
+  if (answer.ok) return true;
+  if ((res.json as { error?: unknown } | null)?.error === "fleet_key_revoked") return false;
+  return die(`hub delete FAILED: ${answer.detail}. Nothing is removed; run delete again, or add --fleet-local-only yes and remove the hub record by hand`);
+}
+
+/**
+ * One support sync (GRE-1084): the app's outbox to the hub, the hub's answer
+ * back into the app. Each signed message takes a new seq, saved before it is
+ * sent. Returns the outcome; never exits, so a hub that is down does not stop
+ * the watch. Null when this instance is not registered or the app is down.
+ */
+async function sendSupportSync(root: string, state: InstanceState, operatorPassword: string): Promise<SupportSyncOutcome | null> {
+  const fleet = readFleet(root);
+  if (!fleet || !readPid(root)) return null;
+  const { registration, key } = fleet;
+  let outcome: SupportSyncOutcome;
+  try {
+    const operator = new Session(baseUrl(state));
+    const login = await operator.request("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: operatorPassword });
+    if (login.status !== 200) throw new Error(`operator log-in returned ${login.status}`);
+    outcome = await runSupportSync(
+      {
+        spoke: (method, route, body) => operator.request(method, route, body),
+        hub: (route, body) => postToHub(registration.hubUrl, route, body),
+        sign: (claims) => {
+          const seq = nextSeq(registration.lastSeq);
+          registration.lastSeq = seq;
+          writeFleetRegistration(root, registration);
+          return signFleetMessage(key.privateJwk, { ...claims, sub: registration.instanceId, seq });
+        },
+      },
+      registration.supportSince ?? null,
+    );
+  } catch (err) {
+    outcome = { ok: false, detail: `support sync not done: ${err instanceof Error ? err.message : String(err)}`, since: null };
+  }
+  writeFleetRegistration(root, {
+    ...registration,
+    supportSince: outcome.since ?? registration.supportSince ?? null,
+    lastSupportSync: { at: new Date().toISOString(), ok: outcome.ok, detail: outcome.detail },
+  });
+  return outcome;
+}
+
+async function cmdFleetSupportSync(root: string, state: InstanceState, opts: Record<string, string>) {
+  if (!existsSync(fleetHubFile(root))) die("this instance is not registered with a hub; run fleet-register");
+  if (!readPid(root)) die("the app is not running; start it first");
+  const config = loadWatchConfig(opts["watch-config"], undefined);
+  const outcome = (await sendSupportSync(root, state, config.operatorPassword))!;
+  say(`fleet-support-sync ${outcome.ok ? "OK" : "FAILED"}: ${outcome.detail}`);
+  if (!outcome.ok) process.exit(1);
+}
+
+function fleetStatusLines(root: string): string[] {
+  if (!existsSync(fleetHubFile(root))) return ["fleet: not registered with a hub"];
+  const registration = JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration;
+  const last = registration.lastCheckIn;
+  return [
+    `fleet: ${registration.code} at ${registration.hubUrl}, registered ${registration.registeredAt}`,
+    !last ? "WARNING: no fleet check-in sent yet" : last.ok ? `last fleet check-in OK at ${last.at}` : `WARNING: last fleet check-in FAILED at ${last.at}: ${last.detail}`,
+    ...(registration.lastSupportSync
+      ? [registration.lastSupportSync.ok ? `last support sync OK at ${registration.lastSupportSync.at}` : `WARNING: last support sync FAILED at ${registration.lastSupportSync.at}: ${registration.lastSupportSync.detail}`]
+      : []),
+  ];
+}
+
+// ---------------------------------------------------------------- install limits
+
+function readLimitFlags(opts: Record<string, string>, base: InstallLimits): InstallLimits {
+  const limits = { ...base };
+  for (const [flag, key] of Object.entries(LIMIT_FLAGS)) {
+    const raw = opts[flag];
+    if (raw === undefined) continue;
+    const value = Number(raw);
+    if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) die(`--${flag} must be a whole number of 1 or more`);
+    limits[key] = value;
+  }
+  return limits;
+}
+
+function installLimitsEnv(limits: InstallLimits): string {
+  return JSON.stringify({ v: 1, ...limits });
+}
+
+function describeLimits(limits: InstallLimits): string {
+  return `agent budget ${limits.agentBudgetMonthlyCents} cents a month, ${limits.agentMaxDailyRuns} runs a day per agent, ${limits.maxConcurrentRuns} runs at once on the install`;
+}
+
+/** limits --root <dir> [flags]: show, or change and save; the next start uses them. */
+function cmdLimits(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && !(flag in LIMIT_FLAGS));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  const changed = Object.keys(opts).some((flag) => flag in LIMIT_FLAGS);
+  if (!changed) {
+    say(`limits: ${state.limits ? describeLimits(state.limits) : "none"}`);
+    return;
+  }
+  state.limits = readLimitFlags(opts, state.limits ?? DEFAULT_INSTALL_LIMITS);
+  writeState(root, state);
+  say(`limits saved: ${describeLimits(state.limits)}`);
+  if (readPid(root)) say("the instance is running; stop and start it to use the new limits");
+}
+
+function orDie<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (err) {
+    die(err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** ai-route --root <dir> [--ai-route R]: show, or change and save; the next start writes it. */
+function cmdAiRoute(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && flag !== "ai-route");
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (opts["ai-route"] === undefined) {
+    say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route --ai-route R)"}`);
+    return;
+  }
+  state.aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
+  writeState(root, state);
+  say(`AI access route saved: ${state.aiAccessRoute}`);
+  if (readPid(root)) say("the instance is running; stop and start it to use the new route");
+}
+
+// ---------------------------------------------------------------- pause, resume, archive, delete (GRE-1367)
+
+/** `start` exits with this code while the instance is paused or archived; gsam-client@.service does not restart on it. */
+const EXIT_DORMANT = 3;
+
+function operatorPassword(): string {
+  return process.env.CLIENT_INSTANCE_OPERATOR_PASSWORD || die("set CLIENT_INSTANCE_OPERATOR_PASSWORD to the operator password");
+}
+
+function checkFlags(opts: Record<string, string>, allowed: string[]) {
+  const unknown = Object.keys(opts).filter((flag) => flag !== "root" && !allowed.includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+}
+
+/** Rows of AI or job use and of fees, read from the running instance's own database (AT-4.6). */
+async function usageCounts(root: string, state: InstanceState): Promise<UsageCounts> {
+  const db = await import("../../packages/db/src/index.js");
+  const url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  try {
+    const conn = db.createDb(url);
+    return {
+      heartbeatRuns: await conn.$count(db.heartbeatRuns),
+      costEvents: await conn.$count(db.costEvents),
+      financeEvents: await conn.$count(db.financeEvents),
+      billingInvoices: await conn.$count(db.billingInvoices),
+    };
+  } finally {
+    await db.closeRegisteredClients(url);
+  }
+}
+
+/** Sign in as the operator; the app limits sign-ins a minute, so a 429 waits and tries again. */
+async function signInOperator(state: InstanceState): Promise<Session> {
+  const operator = new Session(baseUrl(state));
+  const body = { email: OPERATOR_EMAIL, password: operatorPassword() };
+  for (let attempt = 1; ; attempt += 1) {
+    const res = await operator.request("POST", "/api/auth/sign-in/email", body);
+    if (res.status === 200) return operator;
+    if (res.status !== 429 || attempt === 6) die(`operator sign-in returned ${res.status}: ${res.text.slice(0, 300)}`);
+    await new Promise((resolve) => setTimeout(resolve, 10_000));
+  }
+}
+
+/** One check-in with the new lifecycle, when the instance is registered with a hub (AT-3.8). */
+async function lifecycleCheckIn(root: string, password: string) {
+  const fresh = readState(root);
+  const stateFile = path.join(root, WATCH_STATE_FILE);
+  const signals = existsSync(stateFile) ? ((JSON.parse(readFileSync(stateFile, "utf8")) as { lastRun?: { signals?: WatchSignal[] } }).lastRun?.signals ?? []) : [];
+  const outcome = await sendFleetCheckIn(root, fresh, password, signals);
+  if (!outcome) say("fleet: not registered with a hub; no check-in sent");
+  else say(outcome.ok ? `fleet check-in sent (lifecycle ${fresh.lifecycle})` : `WARNING: fleet check-in FAILED: ${outcome.detail}`);
+}
+
+/**
+ * pause (AT-4.3): pause every active company in the app (runs cancelled,
+ * routines and connections stopped; B8), count the use rows, back up, record
+ * the pause, send a check-in that says paused, stop the app. Data, backups
+ * and the off-host repository stay. `start`, `offsite-backup` and
+ * `restore-check` do nothing until `resume`.
+ */
+async function cmdPause(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, ["operator", "reason"]);
+  const actorError = checkActor(opts, true);
+  if (actorError) die(actorError);
+  if (lifecycleOf(state) !== "active") die(`the instance is ${lifecycleOf(state)} already`);
+  if (!readPid(root)) die("the instance is not running; start it first (pause backs up the running database)");
+  const password = operatorPassword();
+  const operator = await signInOperator(state);
+
+  say("1/5 pause the companies in the app");
+  const companies = (await operator.expect("GET", "/api/companies", undefined, [200])) as unknown as Array<{ id: string; status: string }>;
+  const companyIds: string[] = [];
+  for (const company of companies) {
+    if (company.status !== "active") {
+      say(`company ${company.id.slice(0, 8)} is ${company.status}; left as it is`);
+      continue;
+    }
+    await operator.expect("POST", `/api/companies/${company.id}/pause`, { reason: `Instance paused by ${opts.operator!.trim()}: ${opts.reason!.trim()}` }, [200]);
+    companyIds.push(company.id);
+  }
+  say(`paused ${plural(companyIds.length, "company", "companies")}`);
+  const counts = await usageCounts(root, state);
+
+  say("2/5 backup");
+  const backupFile = backupNow(root, state, "pre-pause");
+  say(`backup written: ${backupFile}`);
+
+  const fresh = readState(root);
+  fresh.lifecycle = "paused";
+  fresh.lastPause = { at: new Date().toISOString(), operator: opts.operator!.trim(), reason: opts.reason!.trim(), backupFile, companyIds, counts };
+  writeState(root, fresh);
+
+  say("3/5 final check-in");
+  await lifecycleCheckIn(root, password);
+  say("4/5 stop the app");
+  await stopServer(root, fresh);
+  say("5/5 timers: start is refused (exit 3), offsite-backup and restore-check skip, watch reports paused");
+  say(`paused at ${fresh.lastPause.at}. Data, backups and the off-host repository stay. Resume with: resume --root ${root} --operator <name> --reason <text>`);
+}
+
+/** An archived instance freed its ports; take them back, or new ones when a sibling uses them now. */
+async function reclaimPorts(root: string, state: InstanceState) {
+  const claims = siblingPortClaims(root);
+  const claimed = (port: number) => claims.some((c) => c.port === port || c.dbPort === port);
+  if (!claimed(state.port) && !claimed(state.dbPort) && (await portFree(state.port)) && (await portFree(state.dbPort))) return;
+  const { port, dbPort } = await choosePorts({ claims, firstFree: firstFreePort }).catch((err: Error) => die(err.message));
+  const config = JSON.parse(readFileSync(configPath(root), "utf8"));
+  config.server.port = port;
+  config.database.embeddedPostgresPort = dbPort;
+  writeFileSync(configPath(root), `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
+  say(`the old ports are in use now; this instance moves to port ${port}, database port ${dbPort}`);
+  state.port = port;
+  state.dbPort = dbPort;
+  writeState(root, state);
+}
+
+/**
+ * resume (AT-4.4, AT-4.6): a named act with a reason. Starts the app, proves
+ * no run, cost, finance or invoice row was added while paused, then resumes
+ * only the companies the pause paused. Connections stay suspended until each
+ * is turned on again and passes its health check (B8). Nothing catches up.
+ */
+async function cmdResume(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, ["operator", "reason"]);
+  const actorError = checkActor(opts, true);
+  if (actorError) die(actorError);
+  const lifecycle = lifecycleOf(state);
+  if (lifecycle === "active") die("the instance is not paused or archived");
+  const pause = state.lastPause ?? die("no pause record in client-instance.json; cannot resume safely");
+  const password = operatorPassword();
+  if (lifecycle === "archived") await reclaimPorts(root, state);
+
+  say("1/3 start the app (the companies stay paused)");
+  await startServer(root, state, "normal", { dormant: true });
+  const added = usageDelta(pause.counts, await usageCounts(root, state));
+  const ok = usageIsZero(added);
+  say(ok ? `PASS no new use while paused (${describeUsage(added)} added)` : `FAIL rows were added while paused: ${describeUsage(added)}`);
+
+  say("2/3 resume the companies the pause paused");
+  const operator = await signInOperator(state);
+  for (const id of pause.companyIds) {
+    const res = await operator.request("POST", `/api/companies/${id}/resume`, { operator: opts.operator!.trim(), reason: opts.reason!.trim() });
+    if (res.status === 404) say(`company ${id.slice(0, 8)} was not paused any more; left as it is`);
+    else if (res.status !== 200) die(`POST /api/companies/${id}/resume returned ${res.status}: ${res.text.slice(0, 300)}`);
+  }
+
+  const fresh = readState(root);
+  fresh.lifecycle = "active";
+  fresh.lastResume = { at: new Date().toISOString(), operator: opts.operator!.trim(), reason: opts.reason!.trim(), pausedAt: pause.at, addedWhilePaused: added, ok };
+  writeState(root, fresh);
+  say("3/3 check-in");
+  await lifecycleCheckIn(root, password);
+  say("resumed. Connections stay off until each is turned on again and passes its health check. Run verify next.");
+  if (!ok) process.exit(1);
+}
+
+/**
+ * archive (AT-4.7): from paused only. Final backup (the app runs only for it;
+ * the companies stay paused), a fresh off-host copy, offsite-check of that
+ * copy in a throwaway sandbox, then the app stays stopped, both ports are
+ * freed, and the archive date and retention end are recorded. The retention
+ * is John's setting, given here; nothing is deleted when it ends (AT-4.9).
+ */
+async function cmdArchive(root: string, state: InstanceState, opts: Record<string, string>) {
+  checkFlags(opts, ["operator", "retention-days", "offsite-config", "restic", "sandbox"]);
+  const actorError = checkActor(opts, false);
+  if (actorError) die(actorError);
+  const retentionDays = parseRetentionDays(opts["retention-days"]);
+  if (typeof retentionDays !== "number") die(retentionDays.error);
+  if (lifecycleOf(state) !== "paused") die(`archive starts from paused; the instance is ${lifecycleOf(state)} (run pause first)`);
+  if (readPid(root)) die("the instance is running; it must be stopped while paused");
+  const code = instanceCode(root);
+  const config = offsiteConfig(opts, code);
+  const sandbox = resolveRoot(opts.sandbox ?? die("--sandbox <empty dir> is required (the off-host copy is checked there, then deleted)"));
+  if (existsSync(sandbox) && readdirSync(sandbox).length > 0) die(`${sandbox} must be empty`);
+
+  say("1/5 final backup (the app runs only for it; the companies stay paused)");
+  await startServer(root, state, "normal", { dormant: true });
+  let backupFile: string;
+  try {
+    backupFile = backupNow(root, state, "archive");
+  } finally {
+    await stopServer(root, state);
+  }
+  say(`backup written: ${backupFile}`);
+
+  say("2/5 off-host copy");
+  cmdOffsiteBackup(root, opts);
+  const snapshot = readState(root).lastOffsiteBackup?.snapshot ?? null;
+
+  say("3/5 check the off-host copy in a throwaway sandbox");
+  mkdirSync(sandbox, { recursive: true });
+  const target = path.join(sandbox, "restore");
+  let check: { ok: boolean; line: string };
+  try {
+    check = await pullAndCheck(config, opts, code, target);
+  } finally {
+    rmSync(target, { recursive: true, force: true });
+  }
+  if (!check.ok) die(`${check.line}\nnot archived: the instance stays paused`);
+  say(check.line);
+
+  say("4/5 ports");
+  for (const port of [state.port, state.dbPort]) if (!(await portFree(port))) die(`port ${port} is still in use; not archived`);
+  const fresh = readState(root);
+  const at = new Date().toISOString();
+  fresh.lifecycle = "archived";
+  fresh.lastArchive = {
+    at,
+    operator: opts.operator!.trim(),
+    backupFile,
+    offsiteSnapshot: snapshot,
+    offsiteCheck: check.line,
+    retentionDays,
+    retentionEnd: retentionEnd(at, retentionDays),
+  };
+  writeState(root, fresh);
+  say(`ports ${state.port} and ${state.dbPort} are free; other instances may use them now`);
+  say("5/5 final check-in");
+  await lifecycleCheckIn(root, "");
+  say(`archived at ${at}. Retention ends ${fresh.lastArchive.retentionEnd}; status then lists it as due for deletion. Nothing is deleted automatically.`);
+}
+
+/** Remove every off-host snapshot of this code; a local repository folder is removed too. */
+function removeOffsite(config: OffsiteConfig, opts: Record<string, string>, code: string, removed: string[], notRemoved: string[]) {
+  const list = restic(config, opts, ["snapshots", "--json", "--host", code, "--tag", code]);
+  if (!list.ok) die(`restic snapshots: ${list.err}; nothing more removed`);
+  const ids = (JSON.parse(list.out || "[]") as Array<{ id: string }>).map((s) => s.id);
+  if (ids.length > 0) {
+    const forget = restic(config, opts, ["forget", "--prune", ...ids]);
+    if (!forget.ok) die(`restic forget: ${forget.err}; nothing more removed`);
+  }
+  removed.push(`off-host snapshots (${ids.length}), pruned`);
+  if (path.isAbsolute(config.repository)) {
+    rmSync(config.repository, { recursive: true, force: true });
+    removed.push("off-host repository folder");
+  } else {
+    notRemoved.push("the empty off-host repository at the target: remove it there by hand (runbook, Delete)");
+  }
+  for (const [file, label] of [[config.passwordFile, "off-host key file"], [path.resolve(opts["offsite-config"]!), "off-host config file"]] as const) {
+    try {
+      rmSync(file, { force: true });
+      removed.push(label);
+    } catch (err) {
+      notRemoved.push(`${label}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+}
+
+/**
+ * delete (AT-4.8, AT-4.10): the instance code typed again, an approval
+ * reference and a named operator. Billing records are copied out first (B11);
+ * then the hub record and key, the off-host copies, the watch config and the instance
+ * folder (data, local backups, logs, keys) are removed. One deletion record
+ * stays beside the instance folders: codes, dates, names and labels only. A
+ * second run finds nothing.
+ */
+async function cmdDelete(root: string, opts: Record<string, string>) {
+  checkFlags(opts, ["confirm-code", "approval", "operator", "offsite-config", "restic", "watch-config", "fleet-local-only", "billing-config"]);
+  const recordFile = deletionRecordPath(root);
+  if (!existsSync(path.join(root, STATE_FILE))) {
+    if (existsSync(recordFile)) {
+      const record = JSON.parse(readFileSync(recordFile, "utf8")) as DeletionRecord;
+      say(`nothing to delete: ${record.code} was deleted on ${record.deletedAt} (record: ${recordFile})`);
+      return;
+    }
+    die(`no client instance at ${root} (missing ${STATE_FILE})`);
+  }
+  const state = readState(root);
+  const code = instanceCode(root);
+  const lifecycle = lifecycleOf(state);
+  const requestError = checkDeleteRequest({
+    code,
+    typedCode: opts["confirm-code"],
+    approval: opts.approval,
+    operator: opts.operator,
+    lifecycle,
+    running: Boolean(readPid(root)),
+  });
+  if (requestError) die(requestError);
+  const hadOffsite = Boolean(state.lastOffsiteBackup || state.lastArchive);
+  if (hadOffsite && !opts["offsite-config"]) die("this instance has off-host copies: --offsite-config <file> is required; nothing removed");
+  const config = opts["offsite-config"] ? offsiteConfig(opts, code) : null;
+
+  say("1/5 billing records (AT-4.10)");
+  const billing = await readBillingRows(root, state);
+  let billingLine: string;
+  if (billing.accounts.length === 0 && billing.invoices.length === 0) {
+    billingLine = "none: the instance holds no billing account and no invoice";
+  } else {
+    const held = `${plural(billing.accounts.length, "billing account", "billing accounts")} and ${plural(billing.invoices.length, "invoice", "invoices")}`;
+    if (!opts["billing-config"]) die(`the instance holds ${held}: --billing-config <file> is required to export them first; nothing removed`);
+    const archive = billingConfig(opts);
+    try {
+      billingLine = `${held} exported to ${(await exportBilling(root, state, archive, billing)).file}`;
+    } catch (err) {
+      die(`billing-export failed: ${err instanceof Error ? err.message : String(err)}; nothing removed`);
+    }
+  }
+  say(`billing records: ${billingLine}`);
+
+  const removed: string[] = [];
+  const notRemoved: string[] = [];
+  say("2/5 hub (first: if the hub refuses, nothing is removed)");
+  const fleet = readFleet(root);
+  if (fleet) {
+    const handRemoval = `the hub record: a hub admin removes it with DELETE /api/fleet/instances/${fleet.registration.instanceId}`;
+    if (opts["fleet-local-only"] === "yes") {
+      removed.push("hub key (local copy only)");
+      notRemoved.push(handRemoval);
+    } else {
+      const hubRemoved = await deleteFromHub(root, fleet);
+      removed.push(hubRemoved ? "hub record and check-ins, removed at the hub; hub key" : "hub key (the hub had revoked it)");
+      if (!hubRemoved) notRemoved.push(handRemoval);
+    }
+    rmSync(path.join(root, FLEET_DIR), { recursive: true, force: true });
+  } else {
+    say("not registered with a hub");
+  }
+
+  say("3/5 off-host copies");
+  if (config) removeOffsite(config, opts, code, removed, notRemoved);
+  else say("no off-host copies");
+
+  say("4/5 watch config");
+  if (opts["watch-config"]) {
+    rmSync(path.resolve(opts["watch-config"]), { force: true });
+    removed.push("watch config file");
+  }
+
+  say("5/5 instance folder (data, local backups, logs, keys)");
+  const backups = existsSync(backupDir(root)) ? readdirSync(backupDir(root)).length : 0;
+  rmSync(root, { recursive: true, force: true });
+  if (existsSync(root)) die(`${root} is still there after removal`);
+  removed.push("instance database and data folder", `local backups (${backups} files)`, "instance config, secrets and logs");
+
+  const record: DeletionRecord = {
+    code,
+    deletedAt: new Date().toISOString(),
+    operator: opts.operator!.trim(),
+    approval: opts.approval!,
+    lifecycleBefore: lifecycle,
+    archivedAt: state.lastArchive?.at ?? null,
+    billingExport: billingLine,
+    removed,
+    notRemoved,
+  };
+  mkdirSync(path.dirname(recordFile), { recursive: true });
+  writeFileSync(recordFile, `${JSON.stringify(record, null, 2)}\n`);
+  for (const line of removed) say(`removed: ${line}`);
+  for (const line of notRemoved) say(`NOT removed: ${line}`);
+  say(`deleted ${code}. Deletion record: ${recordFile}`);
 }
 
 // ---------------------------------------------------------------- commands
@@ -532,18 +2064,41 @@ async function cmdCreate(opts: Record<string, string>) {
     die("managed-plus needs --passed-features: the beta features whose Beacon verdict (GRE-81) has passed (\"\" for none)");
   }
   if (existsSync(root) && readdirSync(root).length > 0) die(`${root} is not empty; pick a new folder for a new instance`);
+  if (opts["fleet-hub"] !== undefined) {
+    const hub = fleetHubUrl(opts["fleet-hub"]);
+    if (typeof hub !== "string") die(`--fleet-hub: ${hub.error}`);
+    if (!process.env.CLIENT_INSTANCE_FLEET_CODE?.trim()) die("--fleet-hub needs CLIENT_INSTANCE_FLEET_CODE, the one-time code from the hub");
+  }
 
-  const port = opts.port ? Number(opts.port) : await firstFreePort(3300, 3399, new Set());
-  const dbPort = opts["db-port"] ? Number(opts["db-port"]) : await firstFreePort(55400, 55499, new Set([port]));
+  const { port, dbPort } = await choosePorts({
+    port: opts.port ? Number(opts.port) : undefined,
+    dbPort: opts["db-port"] ? Number(opts["db-port"]) : undefined,
+    claims: siblingPortClaims(root),
+    firstFree: firstFreePort,
+  }).catch((err: Error) => die(err.message));
   checkPort(port, "--port");
   checkPort(dbPort, "--db-port");
   if (port === dbPort) die("--port and --db-port must differ");
 
-  const state: InstanceState = { edition, passedBetaFeatures: [...passed].sort(), port, dbPort, createdAt: new Date().toISOString() };
+  const limits = readLimitFlags(opts, DEFAULT_INSTALL_LIMITS);
+  const aiAccessRoute = orDie(() => parseAiRoute(opts["ai-route"]));
+  const requireBoardApprovalForNewAgents = orDie(() => parseBoardApproval(opts["board-approval"]));
+  const state: InstanceState = {
+    edition,
+    passedBetaFeatures: [...passed].sort(),
+    port,
+    dbPort,
+    createdAt: new Date().toISOString(),
+    limits,
+    aiAccessRoute,
+    requireBoardApprovalForNewAgents,
+  };
   editionValues(state); // fail before anything is written
   mkdirSync(root, { recursive: true });
   writeInstanceFiles(root, state);
   say(`instance folder ${root}, edition ${edition}${passed.length ? ` + ${passed.join(", ")}` : ""}, port ${port}, database port ${dbPort}`);
+  say(`limits: ${describeLimits(limits)}`);
+  say(`AI access route ${aiAccessRoute}, board approval for new agents ${requireBoardApprovalForNewAgents ? "on" : "off"}`);
 
   // 1. Setup start: operator (instance admin), one company, one client log-in.
   await startServer(root, state, "provision");
@@ -558,6 +2113,7 @@ async function cmdCreate(opts: Record<string, string>) {
   await operator.expect("POST", `/api/invites/${token}/accept`, { requestType: "human" }, [200, 202]);
 
   const company = await operator.expect("POST", "/api/companies", { name: opts["company-name"] ?? "Client company" }, [200, 201]);
+  await operator.expect("PATCH", `/api/companies/${company.id}`, { requireBoardApprovalForNewAgents }, [200]);
   const invite = await operator.expect(
     "POST",
     `/api/companies/${company.id}/invites`,
@@ -597,6 +2153,7 @@ async function cmdCreate(opts: Record<string, string>) {
     ].join("\n"),
   );
   if (!ok) die("some checks failed; the instance is running so you can look, stop it with: stop --root");
+  if (opts["fleet-hub"]) await cmdFleetRegister(root, opts);
 }
 
 async function cmdVerify(root: string, state: InstanceState) {
@@ -607,9 +2164,280 @@ async function cmdVerify(root: string, state: InstanceState) {
   if (!(await verifyInstance(root, state, operator, null))) process.exit(1);
 }
 
+/**
+ * users --root <dir> --file <list> [--dry-run] (GRE-1189): board, Exco and
+ * owner log-ins for the instance's one company. The whole list is checked
+ * first; with any bad row nothing is written. A backup is made before the
+ * first change. Passwords of new log-ins are printed once and never stored.
+ */
+async function cmdUsers(root: string, state: InstanceState, opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => !["root", "file", "dry-run"].includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (!opts.file) die("--file <list.csv> is required (one name,email,role per line)");
+  const file = path.resolve(opts.file);
+  if (!existsSync(file)) die(`${file} not found`);
+  const dryRun = opts["dry-run"] === "true";
+  const { addClientUsers, parseClientUserList } = await import("../../server/src/services/client-users.js");
+  const { rows, problems } = parseClientUserList(readFileSync(file, "utf8"));
+  if (problems.length > 0) {
+    for (const p of problems) say(`BAD line ${p.line}: ${p.message}`);
+    die(`${plural(problems.length, "bad row", "bad rows")} in ${file}; nothing changed. Fix the list and run again.`);
+  }
+  if (rows.length === 0) die(`${file} lists nobody`);
+  if (!readPid(root)) die("the instance is not running; start it first");
+
+  const db = await import("../../packages/db/src/index.js");
+  const url = db.resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(root), "db"), port: state.dbPort });
+  let results: Awaited<ReturnType<typeof addClientUsers>>;
+  try {
+    const conn = db.createDb(url);
+    const companyRows = await conn.select({ id: db.companies.id }).from(db.companies);
+    if (companyRows.length !== 1) die(`the instance has ${companyRows.length} companies; users needs exactly one`);
+    const input = { companyId: companyRows[0]!.id, rows, makePassword: newPassword };
+    const plan = await addClientUsers(conn, { ...input, dryRun: true });
+    const changes = plan.some((r) => r.outcome === "created" || r.outcome === "added");
+    if (dryRun || !changes) {
+      results = plan;
+    } else {
+      say(`backup written: ${backupNow(root, state, "pre-users")}`);
+      results = await addClientUsers(conn, input);
+    }
+  } finally {
+    await db.closeRegisteredClients(url);
+  }
+
+  for (const r of results) say(`${r.outcome === "refused" ? "REFUSED" : r.outcome} line ${r.line} ${r.email} (${r.role}): ${r.detail}`);
+  const count = (outcome: string) => results.filter((r) => r.outcome === outcome).length;
+  say(
+    `${dryRun ? "dry run, nothing written: " : ""}${count("created")} created, ${count("added")} added to, ${count("unchanged")} unchanged, ${count("refused")} refused`,
+  );
+  const made = results.filter((r) => r.password);
+  if (made.length > 0) {
+    // Printed once. Not written to any file or log.
+    process.stdout.write(
+      [
+        "",
+        "New log-ins (shown once; give them to John, do not store them in the app, issues or logs):",
+        `  URL: ${baseUrl(state)}`,
+        ...made.map((r) => `  ${r.email} / ${r.password}   (${r.role})`),
+        "",
+      ].join("\n"),
+    );
+  }
+  if (count("refused") > 0) process.exit(1);
+}
+
+/**
+ * The two edition values as KEY=VALUE lines (a `docker run --env-file`). Each
+ * value is one line. Needs no instance: the Stable image check (GRE-138)
+ * starts the image with the same values a client instance gets.
+ */
+function cmdEditionEnv(opts: Record<string, string>) {
+  const edition = opts.edition as Edition;
+  if (!EDITIONS.includes(edition)) die(`--edition must be one of: ${EDITIONS.join(", ")}`);
+  const passed = (opts["passed-features"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  const values = editionValues({ edition, passedBetaFeatures: passed.sort(), port: 0, dbPort: 0, createdAt: "" });
+  if (!values) die(`no edition values for ${edition}`);
+  process.stdout.write(`GSAM_MANAGED_CONFIG=${values.managedConfig}\nGSAM_HIDDEN_SETTINGS=${values.hiddenSettings}\n`);
+}
+
+/**
+ * upgrade <root> <stable tag>: back up, stop, move to the tag, start, health
+ * check. Stops at the first failure and says how to move back.
+ */
+async function cmdUpgrade(root: string, state: InstanceState, tag: string, opts: Record<string, string>) {
+  if (!isStableTag(tag)) die(`"${tag}" is not a stable-* tag (stable-YYYY-MM-DD.N); clients run Stable releases only`);
+  const origin = git(["config", "--get", "remote.origin.url"], CODE_DIR);
+  const repo = opts.repo ?? (origin.ok && origin.out ? origin.out : CODE_DIR);
+  const releasesDir = resolveRoot(opts.releases ?? defaultReleasesDir(root));
+  const found = git(["ls-remote", "--tags", repo, `refs/tags/${tag}`]);
+  if (!found.ok) die(`cannot read tags from ${repo}: ${found.err}`);
+  if (!found.out) die(`tag ${tag} is not in ${repo}`);
+
+  const pid = readPid(root);
+  if (!pid) die("the instance is not running; start it first (the backup reads the running database)");
+  const fromDir = runningDir(pid);
+  if (!fromDir) die(`cannot find the folder the server runs from (pid ${pid})`);
+  const from: ReleaseRef = state.release && sameDir(state.release.dir, fromDir) ? state.release : { tag: pickReleaseTag(tagsAt(fromDir)), dir: fromDir };
+  if (from.tag === tag) die(`the instance already runs ${tag}`);
+
+  // Clone and install before the backup, so the instance is down only for stop and start.
+  const toDir = prepareRelease(repo, releasesDir, tag);
+  const to: ReleaseRef = { tag, dir: toDir };
+
+  say(`1/5 backup (instance runs ${from.tag ?? "an untagged folder"} from ${from.dir})`);
+  const backupFile = backupNow(root, state, "pre-upgrade");
+  say(`backup written: ${backupFile}`);
+  state.lastUpgrade = { from, to, backupFile, at: new Date().toISOString() };
+  writeState(root, state);
+
+  const rollback = `to move back: scripts/client-instance.sh restore ${root} ${backupFile}`;
+  say("2/5 stop");
+  await stopServer(root, state);
+  say(`3/5 move to ${tag} (${toDir})`);
+  say("4/5 start, then 5/5 health check");
+  try {
+    await startFrom(root, state, toDir, to);
+  } catch (err) {
+    die(`upgrade to ${tag} failed: ${err instanceof Error ? err.message : String(err)}\n${rollback}`);
+  }
+  say(`upgraded ${root} from ${from.tag ?? from.dir} to ${tag}. Run verify next; status warns until it passes. ${rollback}`);
+}
+
+/**
+ * restore <root> <backup>: move back to the tag before the last upgrade and
+ * restore the backup made just before it. Greatstone only.
+ */
+async function cmdRestore(root: string, state: InstanceState, rawBackup: string) {
+  const last = state.lastUpgrade;
+  if (!last) die("this instance has no upgrade to move back from (no lastUpgrade in client-instance.json)");
+  const backupFile = instanceBackup(root, rawBackup);
+  if (!existsSync(last.backupFile) || realpathSync(last.backupFile) !== backupFile) {
+    die(`restore takes the backup made just before the last upgrade: ${last.backupFile}`);
+  }
+  const problem = last.from.tag ? releaseReady(last.from.dir, last.from.tag) : existsSync(last.from.dir) ? null : `${last.from.dir} is gone`;
+  if (problem) die(`cannot move back: ${problem}`);
+
+  // Keep what changed after the upgrade, in case it is needed later.
+  let safetyBackupFile: string | null = null;
+  if (readPid(root)) {
+    say("1/5 safety backup of the current data");
+    safetyBackupFile = backupNow(root, state, "pre-restore");
+    say(`backup written: ${safetyBackupFile}`);
+    say("2/5 stop");
+    await stopServer(root, state);
+  } else {
+    say("1/5 the instance is not running; no safety backup");
+    say("2/5 stop: already stopped");
+  }
+  try {
+    say(`3/5 restore ${path.basename(backupFile)} into the instance database`);
+    await restoreDatabase(root, state, backupFile);
+    say(`4/5 start from ${last.from.dir} (${last.from.tag ?? "untagged"}), then 5/5 health check`);
+    const fresh = await startFrom(root, state, last.from.dir, last.from);
+    fresh.lastRestore = { to: last.from, backupFile, safetyBackupFile, at: new Date().toISOString() };
+    writeState(root, fresh);
+  } catch (err) {
+    die(`restore failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  say(`restored ${root} to ${last.from.tag ?? last.from.dir} with ${backupFile}. Run verify next; status warns until it passes.`);
+}
+
+/**
+ * releases <instances dir>: which release folders the instances in that
+ * folder still use (GRE-833). Read-only; remove by hand only folders marked
+ * `not used`.
+ */
+function cmdReleases(instancesDir: string, opts: Record<string, string>) {
+  if (!existsSync(instancesDir)) die(`${instancesDir} does not exist`);
+  // Same default as upgrade: `releases/` next to the instance folders.
+  const releasesDir = resolveRoot(opts.releases ?? path.join(instancesDir, "releases"));
+  const folders = releaseFolders(instancesDir, releasesDir);
+  say(`release folders in ${releasesDir}, and any other folder an instance in ${instancesDir} names:`);
+  if (folders.length === 0) say("none");
+  for (const line of releaseFolderLines(folders)) say(line);
+}
+
+/**
+ * plan-copy (GRE-1190): copy the drafted strategy plan from the practice
+ * instance to the client instance. Only the plan moves; see plan-copy.ts.
+ * The client instance is backed up first. Owner e-mails are printed to this
+ * terminal only.
+ */
+async function cmdPlanCopy(opts: Record<string, string>) {
+  const unknown = Object.keys(opts).filter((flag) => !["from", "to", "from-company", "apply"].includes(flag));
+  if (unknown.length > 0) die(`unknown flag --${unknown[0]}\n${USAGE}`);
+  if (opts.apply !== undefined && opts.apply !== "on") die("--apply takes only: on");
+  const apply = opts.apply === "on";
+  if (!opts.from || !opts.to) die("usage: plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]");
+  const fromRoot = resolveRoot(opts.from);
+  const toRoot = resolveRoot(opts.to);
+  if (realpathSync(fromRoot) === realpathSync(toRoot)) die("--from and --to are the same instance");
+  const fromState = readState(fromRoot);
+  const toState = readState(toRoot);
+  // The embedded database runs only with its server.
+  if (!readPid(fromRoot)) die(`the practice instance at ${fromRoot} is not running; start it first`);
+  if (!readPid(toRoot)) die(`the client instance at ${toRoot} is not running; start it first`);
+
+  const { createDb, closeRegisteredClients, resolveEmbeddedPostgresConnectionString } = await import("../../packages/db/src/index.js");
+  const fromUrl = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(fromRoot), "db"), port: fromState.dbPort });
+  const toUrl = resolveEmbeddedPostgresConnectionString({ dataDir: path.join(instanceDir(toRoot), "db"), port: toState.dbPort });
+  try {
+    const source = createDb(fromUrl).$client;
+    const target = createDb(toUrl).$client;
+    const fromCompanies = await companyIds(source);
+    const fromCompany = opts["from-company"] ?? (fromCompanies.length === 1 ? fromCompanies[0]!.id : undefined);
+    if (!fromCompany || !fromCompanies.some((c) => c.id === fromCompany)) {
+      die(`pick the practice company with --from-company <id>: ${fromCompanies.map((c) => c.id).join(", ") || "none"}`);
+    }
+    const toCompanies = await companyIds(target);
+    if (toCompanies.length !== 1) die(`the client instance must have exactly one company (found ${toCompanies.length})`);
+
+    if (apply) say(`backup of the client instance first: ${backupNow(toRoot, toState, "pre-plan-copy")}`);
+    const report = await copyPlan(source, target, { sourceCompanyId: fromCompany, targetCompanyId: toCompanies[0]!.id, apply });
+    say(`${apply ? "copied" : "dry run (nothing written; add --apply on to copy)"}: ${fromRoot} -> ${toRoot}`);
+    for (const line of planCopyLines(report)) say(line);
+  } finally {
+    await closeRegisteredClients(fromUrl);
+    await closeRegisteredClients(toUrl);
+  }
+}
+
+/** The timers keep firing on a host; while paused or archived these do nothing (AT-4.3). */
+function skipWhileDormant(state: InstanceState, command: string): boolean {
+  if (lifecycleOf(state) === "active") return false;
+  say(`${command} skipped: the instance is ${lifecycleOf(state)}`);
+  return true;
+}
+
 async function main() {
-  const { command, opts } = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+  if (argv.length === 0 || argv[0] === "help" || argv.includes("--help") || argv.includes("-h")) {
+    process.stdout.write(`${USAGE}\n`);
+    return;
+  }
+  const { command, opts, positional } = parseArgs(argv);
   if (command === "create") return cmdCreate(opts);
+  if (command === "edition-env") return cmdEditionEnv(opts);
+  if (command === "offsite-check") return cmdOffsiteCheck(opts);
+  if (command === "delete") {
+    if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
+    return cmdDelete(resolveRoot(opts.root), opts);
+  }
+  if (command === "plan-copy") {
+    if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
+    return cmdPlanCopy(opts);
+  }
+  if (command === "upgrade" || command === "restore") {
+    const [rootArg, second, ...extra] = positional;
+    if (extra.length > 0 || (opts.root && rootArg && second)) die(`too many arguments for ${command}`);
+    // Both `upgrade <root> <tag>` and `upgrade --root <root> <tag>` work.
+    const root = resolveRoot(opts.root ?? rootArg);
+    const value = opts.root ? rootArg : second;
+    const state = readState(root);
+    if (command === "upgrade") {
+      if (!value) die("usage: upgrade <root> <stable tag>");
+      return cmdUpgrade(root, state, value, opts);
+    }
+    if (!value) die("usage: restore <root> <backup file>");
+    return cmdRestore(root, state, value);
+  }
+  if (command === "billing-archive") {
+    if (positional.length > 0 || opts.root) die("usage: billing-archive --billing-config <file>");
+    return cmdBillingArchive(opts);
+  }
+  if (command === "releases") {
+    if (positional.length !== 1 || opts.root) die("usage: releases <instances dir> [--releases <dir>]");
+    return cmdReleases(resolveRoot(positional[0]), opts);
+  }
+  if (command === "restore-check") {
+    if (positional.length > 1) die("usage: restore-check --root <dir> [backup file]");
+    const root = resolveRoot(opts.root);
+    const state = readState(root);
+    if (skipWhileDormant(state, command)) return;
+    return cmdRestoreCheck(root, state, positional[0]);
+  }
+  if (positional.length > 0) die(`unexpected argument "${positional[0]}"`);
   const root = resolveRoot(opts.root);
   const state = readState(root);
   switch (command) {
@@ -622,6 +2450,20 @@ async function main() {
       const pid = readPid(root);
       say(`${root}: edition ${state.edition}${state.passedBetaFeatures.length ? ` + ${state.passedBetaFeatures.join(", ")}` : ""}, port ${state.port}, database port ${state.dbPort}`);
       say(pid ? `running (pid ${pid}), health ${String(body?.status ?? "no answer")}` : "not running");
+      say(`limits: ${state.limits ? describeLimits(state.limits) : "none (made before GRE-141; set them with limits)"}`);
+      say(`AI access route: ${state.aiAccessRoute ?? "none (made before GRE-667; set it with ai-route)"}`);
+      // Read-only; a WARNING does not change the exit code (GRE-533).
+      for (const line of [
+        ...lifecycleStatusLines(state),
+        ...backupStatusLines(backupDir(root)),
+        ...restoreCheckStatusLines(state.lastRestoreCheck),
+        ...offsiteStatusLines(state.lastOffsiteBackup),
+        ...releaseStatusLines(state),
+        ...verifyStatusLines(state),
+        ...fleetStatusLines(root),
+      ]) {
+        say(line);
+      }
       return;
     }
     case "backup":
@@ -630,8 +2472,37 @@ async function main() {
       return;
     case "verify":
       return cmdVerify(root, state);
+    case "users":
+      return cmdUsers(root, state, opts);
+    case "limits":
+      return cmdLimits(root, state, opts);
+    case "offsite-init":
+      return cmdOffsiteInit(root, opts);
+    case "offsite-backup":
+      if (skipWhileDormant(state, command)) return;
+      return cmdOffsiteBackup(root, opts);
+    case "billing-export":
+      return cmdBillingExport(root, state, opts);
+    case "watch":
+      return cmdWatch(root, state, opts);
+    case "ai-route":
+      return cmdAiRoute(root, state, opts);
+    case "fleet-register":
+      return cmdFleetRegister(root, opts);
+    case "fleet-check-in":
+      return cmdFleetCheckIn(root, state, opts);
+    case "fleet-support-sync":
+      return cmdFleetSupportSync(root, state, opts);
+    case "fleet-revoke":
+      return cmdFleetRevoke(root, opts);
+    case "pause":
+      return cmdPause(root, state, opts);
+    case "resume":
+      return cmdResume(root, state, opts);
+    case "archive":
+      return cmdArchive(root, state, opts);
     default:
-      die("usage: create|start|stop|status|backup|verify --root <dir> (see doc/CLIENT-INSTANCES.md)");
+      die(USAGE);
   }
 }
 

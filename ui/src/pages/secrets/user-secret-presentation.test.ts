@@ -59,8 +59,8 @@ describe("coverageSummaryLabel", () => {
     ).toBe("3 of 5 set");
   });
 
-  it("renders a dash when coverage is unknown", () => {
-    expect(coverageSummaryLabel(undefined)).toBe("—");
+  it("renders Unknown when coverage is unknown", () => {
+    expect(coverageSummaryLabel(undefined)).toBe("Unknown");
   });
 });
 

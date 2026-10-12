@@ -1,0 +1,11 @@
+# Runs gsam-watch@<code>.service every 5 minutes (GRE-666).
+[Unit]
+Description=GS Agentic Manager host watch %i, every 5 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+AccuracySec=30s
+
+[Install]
+WantedBy=timers.target

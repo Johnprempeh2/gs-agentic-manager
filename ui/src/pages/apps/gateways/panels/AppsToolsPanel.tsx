@@ -20,7 +20,7 @@ export function AppsToolsPanel({
       <p className="text-sm text-muted-foreground">
         These apps go through this gateway. The bound profile
         {profile ? ` (${profile.name})` : ""} decides which tools are allowed
-        {profile ? ` — ${allowedToolsLabel(profile)}.` : "."} Change the profile under Advanced.
+        {profile ? `: ${allowedToolsLabel(profile)}.` : "."} Change the profile under Advanced.
       </p>
 
       {apps.length === 0 ? (

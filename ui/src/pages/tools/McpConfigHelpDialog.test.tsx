@@ -147,7 +147,7 @@ describe("Paste a config — MCP config help", () => {
     await flushReact();
 
     await vi.waitFor(() => {
-      expect(document.body.textContent).toContain("select the text above and copy it");
+      expect(document.body.textContent).toContain("Select the text above and copy it");
     });
   });
 

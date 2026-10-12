@@ -59,6 +59,13 @@ const AGENT_OR_VIEWER = {
   companyIds: ["company-1"],
   memberships: [{ companyId: "company-1", status: "active", membershipRole: "viewer" }],
 };
+const signedIn = (membershipRole: string) => ({
+  source: "session",
+  isInstanceAdmin: false,
+  companyIds: ["company-1"],
+  memberships: [{ companyId: "company-1", status: "active", membershipRole }],
+});
+const GATE_TEXT = "Releases are for owners and admins";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -165,23 +172,40 @@ describe("Releases page", () => {
     await render(<Releases />);
 
     expect(mockReleasesApi.overview).toHaveBeenCalledWith("company-1");
-    expect(document.body.textContent).not.toContain("Releases are for the board");
+    expect(document.body.textContent).not.toContain(GATE_TEXT);
   });
 
   it("hides the page and its buttons from non-board viewers", async () => {
     mockAccessApi.getCurrentBoardAccess.mockResolvedValue(AGENT_OR_VIEWER);
     await render(<Releases />);
 
-    expect(document.body.textContent).toContain("Releases are for the board");
+    expect(document.body.textContent).toContain(GATE_TEXT);
     expect(buttonByText("Release now")).toBeUndefined();
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();
+  });
+
+  it("hides the page and its buttons from an operator", async () => {
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue(signedIn("operator"));
+    await render(<Releases />);
+
+    expect(document.body.textContent).toContain(GATE_TEXT);
+    expect(buttonByText("Release now")).toBeUndefined();
+    expect(mockReleasesApi.overview).not.toHaveBeenCalled();
+  });
+
+  it.each(["owner", "admin"])("shows the page to a signed-in %s", async (role) => {
+    mockAccessApi.getCurrentBoardAccess.mockResolvedValue(signedIn(role));
+    await render(<Releases />);
+
+    expect(document.body.textContent).not.toContain(GATE_TEXT);
+    expect(mockReleasesApi.overview).toHaveBeenCalledWith("company-1");
   });
 
   it("hides the page when board access cannot be read (agent keys)", async () => {
     mockAccessApi.getCurrentBoardAccess.mockRejectedValue(new Error("Unauthorized"));
     await render(<Releases />);
 
-    expect(document.body.textContent).toContain("Releases are for the board");
+    expect(document.body.textContent).toContain(GATE_TEXT);
     expect(mockReleasesApi.overview).not.toHaveBeenCalled();
   });
 
@@ -210,6 +234,38 @@ describe("Releases page", () => {
     expect(
       document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')?.textContent,
     ).toContain("Roll back to this version");
+  });
+
+  it("offers no rollback or promote for a version that never ran (GRE-239)", async () => {
+    const base = releasesOverviewFixture();
+    const failed = { ...base.history[1], tag: "live-2026-09-29.2", title: "Failed release", neverRan: true };
+    await render(
+      <ReleasesView companyId="company-1" overview={{ ...base, history: [failed, ...base.history] }} fetchError={null} />,
+    );
+    const row = document.querySelector('[data-testid="release-history-live-2026-09-29.2"]')!;
+    expect(row.textContent).toContain("Never ran");
+    expect(row.textContent).not.toContain("Roll back to this version");
+    expect(row.textContent).not.toContain("Promote to Stable");
+    expect(
+      document.querySelector('[data-testid="release-history-live-2026-09-14.1"]')?.textContent,
+    ).toContain("Roll back to this version");
+  });
+
+  it("hides a finished release card once a newer version is live, and says the off reason once", async () => {
+    const stale = releaseProgressFixture("healthy", { targetTag: "rc-2026-09-14.1", updatedAt: "2026-09-14T10:00:00.000Z" });
+    await render(
+      <ReleasesView
+        companyId="company-1"
+        overview={releasesOverviewFixture({
+          progress: stale,
+          disabledReason: "release is off on this server: it does not run from /srv/live",
+        })}
+        fetchError={null}
+      />,
+    );
+    expect(document.querySelector('[data-testid="release-progress"]')).toBeNull();
+    const banner = document.querySelector('[data-testid="release-disabled"]')!;
+    expect(banner.textContent).toContain("Release is off on this server.It does not run from /srv/live");
   });
 
   it("says in plain words when release is off on this server", async () => {
@@ -411,8 +467,23 @@ describe("Runs marked finish before update", () => {
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
     expect(buttonByText("Release without waiting")).toBeUndefined();
     expect(document.querySelector('[data-testid="release-progress"] [role="status"]')?.textContent).toContain(
-      "not waiting for flagged runs",
+      "not waiting for running runs",
     );
+  });
+
+  it("shows the ACP run wait and lets the board release without it (GRE-746)", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("holding", { waitingForFlaggedRuns: 0, waitingForAcpRuns: 2 }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    expect(document.querySelector('[data-testid="release-progress"] [role="status"]')?.textContent).toContain(
+      "waiting up to 5 min for 2 ACP runs to finish",
+    );
+    await click(buttonByText("Release without waiting"));
+    const dialog = confirmDialog();
+    expect(dialog?.textContent).toContain("2 ACP runs are still running.");
+    await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release without waiting"));
+    expect(mockReleasesApi.override).toHaveBeenCalledWith("company-1");
   });
 
   it("lets the board mark a running run and clear a flagged one", async () => {
@@ -458,12 +529,54 @@ describe("Restart report", () => {
     expect(older.querySelector('[data-testid="restart-report"]')).toBeNull();
   });
 
-  it("says nothing was lost when no runs were lost", async () => {
+  it("says nothing was lost only when no runs were lost or kept running", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", {
+        restartReport: restartReportFixture({
+          lostRunIds: [],
+          adoptedRunIds: [],
+          resumedRunIds: ["e5f6a7b8-run-checkpoint"],
+        }),
+      }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).toContain("Nothing was lost.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]'),
+    ).toBeNull();
+  });
+
+  // GRE-246: a kept-running run's result is not captured, so the page must not promise nothing was lost.
+  it("does not say nothing was lost when a run kept running", async () => {
     const overview = releasesOverviewFixture({
       progress: releaseProgressFixture("healthy", { restartReport: restartReportFixture({ lostRunIds: [] }) }),
     });
     await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
-    expect(document.querySelector('[data-testid="release-progress"]')?.textContent).toContain("Nothing was lost.");
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).not.toContain("Nothing was lost.");
+    expect(text).toContain("No run stopped.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]')
+        ?.textContent,
+    ).toContain(
+      "When it ends, it is marked lost and runs once more.",
+    );
+  });
+
+  // GRE-250: a kept-running run whose output goes to a file finishes with its real result.
+  it("says nothing was lost when every run that kept running has its output captured", async () => {
+    const overview = releasesOverviewFixture({
+      progress: releaseProgressFixture("healthy", {
+        restartReport: restartReportFixture({ lostRunIds: [], adoptedWithoutCaptureRunIds: [] }),
+      }),
+    });
+    await render(<ReleasesView companyId="company-1" overview={overview} fetchError={null} />);
+    const text = document.querySelector('[data-testid="release-progress"]')?.textContent;
+    expect(text).toContain("Nothing was lost.");
+    expect(
+      document.querySelector('[data-testid="release-progress"] [data-testid="restart-report-adopted-caveat"]'),
+    ).toBeNull();
   });
 });
 

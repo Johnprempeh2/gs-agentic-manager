@@ -350,7 +350,8 @@ describe("claude_local environment diagnostics", () => {
     });
 
     expect(result.checks.some((check) => check.code === "claude_hello_probe_passed")).toBe(true);
-    const probeCall = executeCalls.find((call) => call.command === "claude");
+    // The adapter checks `claude --version` first; the hello probe is the next call.
+    const probeCall = executeCalls.find((call) => call.command === "claude" && !call.args?.includes("--version"));
     expect(probeCall?.args).toContain("--dangerously-skip-permissions");
     expect(probeCall?.args).not.toContain("--permission-mode");
     expect(probeCall?.args).not.toContain("--allowedTools");

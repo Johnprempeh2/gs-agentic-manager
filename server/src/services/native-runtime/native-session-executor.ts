@@ -4932,7 +4932,7 @@ async function recoverQuiescentRunnerdState(input: {
   renameSync(temporary, statePath);
   await input.onLog?.(
     "stdout",
-    `[paperclip-runner] Automatically recovered settled session from run ${candidate.runId}; preserving the existing provider thread.\n`,
+    `[gsam-runner] Automatically recovered settled session from run ${candidate.runId}; preserving the existing provider thread.\n`,
   );
 }
 
@@ -6332,7 +6332,14 @@ function clearSteeringDeliveries(runId: string) {
     if (key.startsWith(`${runId}:`)) steeringDeliveries.delete(key);
 }
 
-/** Dispatches a true same-turn steering message and resolves only after ack. */
+/**
+ * Dispatches a true same-turn steering message and resolves only after ack.
+ *
+ * The caller may hold a database transaction and row locks while this runs,
+ * so one deadline bounds the whole call: the runtime probe (capabilities and
+ * snapshot) as well as the acknowledgement wait. A deadline that expires
+ * before dispatch is a definite failure, and the late probe never dispatches.
+ */
 export async function steerNativeSession(input: {
   runId: string;
   message: string;
@@ -6347,61 +6354,77 @@ export async function steerNativeSession(input: {
       "The active native session is not attached.",
     );
   }
-  const capabilities = await active.session.capabilities();
-  if (!capabilities.steering || !active.session.steer) {
-    throw new NativeSessionSteeringError(
-      "steering_unsupported",
-      "This provider does not support same-turn steering.",
-    );
-  }
-  const snapshot = await active.session.snapshot();
-  const turnId = snapshot.activeTurnId ?? null;
-  if (!turnId) {
-    throw new NativeSessionSteeringError(
-      "steering_stale_turn",
-      "The target turn is no longer active.",
-    );
-  }
+  const deadline = new AbortController();
+  let dispatched = false;
+  const attempt = (async () => {
+    const capabilities = await active.session.capabilities();
+    if (!capabilities.steering || !active.session.steer) {
+      throw new NativeSessionSteeringError(
+        "steering_unsupported",
+        "This provider does not support same-turn steering.",
+      );
+    }
+    const snapshot = await active.session.snapshot({ signal: deadline.signal });
+    // The deadline already answered the caller. Never deliver a message the
+    // caller has been told was not sent.
+    if (deadline.signal.aborted) throw deadline.signal.reason;
+    const turnId = snapshot.activeTurnId ?? null;
+    if (!turnId) {
+      throw new NativeSessionSteeringError(
+        "steering_stale_turn",
+        "The target turn is no longer active.",
+      );
+    }
 
-  const deliveryKey = `${input.runId}:${input.correlationId}`;
-  let delivery = steeringDeliveries.get(deliveryKey);
-  if (!delivery) {
-    delivery = active.session
-      .steer({
-        turnId,
-        message: { role: "user", text: input.message },
-        correlationId: input.correlationId,
-      })
-      .then(() => ({ turnId }));
-    steeringDeliveries.set(deliveryKey, delivery);
-    void delivery.catch(() => {
-      steeringDeliveries.delete(deliveryKey);
-    });
-  }
-  // Do not await the persistence callback here: the route holds the run lock
-  // until acknowledgement. After a timeout this callback can acquire that lock.
-  if (input.onAcknowledged)
-    void delivery.then(input.onAcknowledged).catch(() => undefined);
+    const deliveryKey = `${input.runId}:${input.correlationId}`;
+    let delivery = steeringDeliveries.get(deliveryKey);
+    if (!delivery) {
+      delivery = active.session
+        .steer({
+          turnId,
+          message: { role: "user", text: input.message },
+          correlationId: input.correlationId,
+        })
+        .then(() => ({ turnId }));
+      steeringDeliveries.set(deliveryKey, delivery);
+      void delivery.catch(() => {
+        steeringDeliveries.delete(deliveryKey);
+      });
+    }
+    dispatched = true;
+    // Do not await the persistence callback here: the route holds the run lock
+    // until acknowledgement. After a timeout this callback can acquire that lock.
+    if (input.onAcknowledged)
+      void delivery.then(input.onAcknowledged).catch(() => undefined);
+    return delivery;
+  })();
+  // The deadline can win the race; a later failure of the attempt is expected.
+  void attempt.catch(() => undefined);
   let timeout: ReturnType<typeof setTimeout> | null = null;
   try {
     const acknowledged = await Promise.race([
-      delivery,
+      attempt,
       new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(
-          () =>
-            reject(
-              new NativeSessionSteeringError(
+        timeout = setTimeout(() => {
+          const expired = dispatched
+            ? new NativeSessionSteeringError(
                 "steering_timeout",
                 "The provider did not acknowledge steering in time.",
-              ),
-            ),
-          input.timeoutMs ?? 10_000,
-        );
+              )
+            : new NativeSessionSteeringError(
+                "steering_temporarily_unavailable",
+                "The native session did not respond in time.",
+              );
+          deadline.abort(expired);
+          reject(expired);
+        }, input.timeoutMs ?? 10_000);
       }),
     ]);
     return acknowledged;
   } catch (error) {
     if (error instanceof NativeSessionSteeringError) throw error;
+    // Probe failures before dispatch keep their original behaviour.
+    if (!dispatched) throw error;
     const message = error instanceof Error ? error.message : String(error);
     if (/stale|terminal|active turn/i.test(message)) {
       throw new NativeSessionSteeringError(
@@ -8255,13 +8278,13 @@ async function executePaperclipNativeSessionWithinScope(
               ).slice(-4_096);
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] post-completion ${stage} enrichment failed: ${detail}\n`,
+                `[gsam-runner] post-completion ${stage} enrichment failed: ${detail}\n`,
               );
             },
             onSessionQuarantined: async (reason) => {
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] warm native session quarantined: ${redactSensitiveText(reason).slice(-1_000)}\n`,
+                `[gsam-runner] warm native session quarantined: ${redactSensitiveText(reason).slice(-1_000)}\n`,
               );
             },
             onContinuityBreak: async (continuity) => {
@@ -8285,7 +8308,7 @@ async function executePaperclipNativeSessionWithinScope(
               });
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] provider session continuity break: exact resume failed (${continuity.reason}); old driver session=${continuity.previousDriverSessionId}, old provider session=${continuity.previousProviderSessionId ?? "unavailable"}, replacement driver session=${continuity.replacementDriverSessionId}, replacement provider session=${continuity.replacementProviderSessionId ?? "unavailable"}\n`,
+                `[gsam-runner] provider session continuity break: exact resume failed (${continuity.reason}); old driver session=${continuity.previousDriverSessionId}, old provider session=${continuity.previousProviderSessionId ?? "unavailable"}, replacement driver session=${continuity.replacementDriverSessionId}, replacement provider session=${continuity.replacementProviderSessionId ?? "unavailable"}\n`,
               );
             },
             onSession: async (session) => {
@@ -8424,7 +8447,7 @@ async function executePaperclipNativeSessionWithinScope(
       if (warmSessionId !== null && lifecyclePolicy.mode === "warm") {
         await releaseWarmNativeSession(warmSessionId, warmSessionOwnerToken, lifecyclePolicy.idleTimeoutMs, true);
       }
-      await input.onLog?.("stderr", "[paperclip-runner] managed credential refresh failed; provider session retired.\n");
+      await input.onLog?.("stderr", "[gsam-runner] managed credential refresh failed; provider session retired.\n");
     }
     if (native.terminal.runTerminalState === "succeeded") {
       // A truncated, verified external-chat wake cannot settle from the
@@ -8862,7 +8885,7 @@ async function executePaperclipNativeSessionWithinScope(
         await attemptFailureStep(() =>
           input.onLog?.(
             "stderr",
-            `[paperclip-runner] native session execution failed: ${executionFailureMessage}\n`,
+            `[gsam-runner] native session execution failed: ${executionFailureMessage}\n`,
           ),
         );
         if (runnerSessionStartupScope) {
@@ -10745,7 +10768,7 @@ async function createRunnerdBackendWithinSessionClaim(
       reportedCodexVersions.add(version);
       await input.onLog?.(
         "stderr",
-        `[paperclip-runner] using compatible Codex ${version} (supported ${REMOTE_CODEX_SUPPORTED_RANGE}; install pin ${REMOTE_PROVIDER_PACK_PINS.codex})\n`,
+        `[gsam-runner] using compatible Codex ${version} (supported ${REMOTE_CODEX_SUPPORTED_RANGE}; install pin ${REMOTE_PROVIDER_PACK_PINS.codex})\n`,
       );
     }
   };
@@ -10966,7 +10989,7 @@ async function createRunnerdBackendWithinSessionClaim(
           runnerArtifactPrepared = true;
           await input.onLog?.(
             "stderr",
-            "[paperclip-runner] using preinstalled runnerd from the sandbox image\n",
+            "[gsam-runner] using preinstalled runnerd from the sandbox image\n",
           );
         } catch {
           runnerArtifactPrepared = false;
@@ -11065,7 +11088,7 @@ async function createRunnerdBackendWithinSessionClaim(
           usedPreinstalledCodex = true;
           await input.onLog?.(
             "stderr",
-            "[paperclip-runner] using preinstalled Codex from the sandbox image\n",
+            "[gsam-runner] using preinstalled Codex from the sandbox image\n",
           );
         } catch {
           usedPreinstalledCodex = false;
@@ -11127,7 +11150,7 @@ async function createRunnerdBackendWithinSessionClaim(
       );
       await input.onLog?.(
         "stderr",
-        "[paperclip-runner] using preinstalled Codex from the sandbox image\n",
+        "[gsam-runner] using preinstalled Codex from the sandbox image\n",
       );
     }
     if (
@@ -11179,7 +11202,7 @@ async function createRunnerdBackendWithinSessionClaim(
               activeRemoteProviderPackRoot = stagedRemoteProviderPackRoot;
               await input.onLog?.(
                 "stderr",
-                "[paperclip-runner] using manifest-matched provider pack from the sandbox image\n",
+                "[gsam-runner] using manifest-matched provider pack from the sandbox image\n",
               );
             } catch {
               preinstalledProviderPack = null;
@@ -11226,7 +11249,7 @@ async function createRunnerdBackendWithinSessionClaim(
       if (packSource === "staged") {
         await input.onLog?.(
           "stderr",
-          "[paperclip-runner] reusing manifest-matched provider pack from the workspace\n",
+          "[gsam-runner] reusing manifest-matched provider pack from the workspace\n",
         );
       }
     }
@@ -11842,7 +11865,7 @@ async function createRunnerdBackendWithinSessionClaim(
       );
       await input.onLog?.(
         "stderr",
-        `[paperclip-runner] remote checkpoint ${incompleteFailure ? "failed" : "skipped"}: exact suspended harness state unavailable (process=${settlement} reason=${checkpointable.incompleteReason})\n`,
+        `[gsam-runner] remote checkpoint ${incompleteFailure ? "failed" : "skipped"}: exact suspended harness state unavailable (process=${settlement} reason=${checkpointable.incompleteReason})\n`,
       );
       if (incompleteFailure) throw incompleteFailure;
       return;
@@ -11976,7 +11999,7 @@ async function createRunnerdBackendWithinSessionClaim(
         .slice(0, 512);
       await input.onLog?.(
         "stderr",
-        `[paperclip-runner] remote checkpoint failed: ${detail || "unknown failure"}\n`,
+        `[gsam-runner] remote checkpoint failed: ${detail || "unknown failure"}\n`,
       );
       throw error;
     }
@@ -12322,7 +12345,7 @@ async function createRunnerdBackendWithinSessionClaim(
         onDiagnostic: (message) => {
           void input.onLog?.(
             "stderr",
-            `[paperclip-runner] runnerd diagnostic: ${redactSensitiveText(message).slice(-4_096)}\n`,
+            `[gsam-runner] runnerd diagnostic: ${redactSensitiveText(message).slice(-4_096)}\n`,
           );
         },
         lifecyclePolicy: input.execution.session.lifecyclePolicy,
@@ -12428,7 +12451,7 @@ async function createRunnerdBackendWithinSessionClaim(
                 });
                 await input.onLog?.(
                   "stderr",
-                  "[paperclip-runner] transport mode=local_loopback state=connecting\n",
+                  "[gsam-runner] transport mode=local_loopback state=connecting\n",
                 );
                 const registration = await measureNativeRunnerSpan(
                   input.trace,
@@ -12529,7 +12552,7 @@ async function createRunnerdBackendWithinSessionClaim(
 
               await input.onLog?.(
                 "stderr",
-                `[paperclip-runner] transport mode=${transport.mode} state=connecting\n`,
+                `[gsam-runner] transport mode=${transport.mode} state=connecting\n`,
               );
 
               if (transport.mode === "direct_outbound") {
@@ -12601,7 +12624,7 @@ async function createRunnerdBackendWithinSessionClaim(
                         onStateChange: (state, failureCode) => {
                           void input.onLog?.(
                             "stderr",
-                            `[paperclip-runner] transport mode=provider_ingress state=${state}${failureCode ? ` failure=${failureCode}` : ""}\n`,
+                            `[gsam-runner] transport mode=provider_ingress state=${state}${failureCode ? ` failure=${failureCode}` : ""}\n`,
                           );
                         },
                       });

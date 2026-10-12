@@ -1,7 +1,8 @@
 import path from "node:path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
-import { formatDatabaseBackupResult, runDatabaseBackup } from "@greatstone/db";
+import { formatDatabaseBackupResult, resolveEmbeddedPostgresConnectionString, runDatabaseBackup } from "@greatstone/db";
+import { resolveDefaultEmbeddedPostgresDir } from "@greatstone/shared/home-paths";
 import {
   expandHomePrefix,
   resolveDefaultBackupDir,
@@ -29,7 +30,10 @@ function resolveConnectionString(configPath?: string): { value: string; source: 
 
   const port = config?.database.embeddedPostgresPort ?? 54329;
   return {
-    value: `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`,
+    value: resolveEmbeddedPostgresConnectionString({
+      dataDir: config?.database.embeddedPostgresDataDir || resolveDefaultEmbeddedPostgresDir(),
+      port,
+    }),
     source: `embedded-postgres@${port}`,
   };
 }
@@ -48,7 +52,7 @@ function resolveBackupDir(raw: string): string {
 
 export async function dbBackupCommand(opts: DbBackupOptions): Promise<void> {
   printPaperclipCliBanner();
-  p.intro(pc.bgCyan(pc.black(" paperclip db:backup ")));
+  p.intro(pc.bgCyan(pc.black(" gsam db:backup ")));
 
   const configPath = resolveConfigPath(opts.config);
   const config = readConfig(opts.config);

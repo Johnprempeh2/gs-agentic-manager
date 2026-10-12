@@ -1,4 +1,5 @@
 import type {
+  EffectiveEntitlements,
   InstanceExperimentalSettingsWithManaged,
   InstanceGeneralSettings,
   InstanceSettings,
@@ -35,6 +36,15 @@ export const instanceSettingsApi = {
     api.get<InstanceExperimentalSettingsWithManaged>("/instance/settings/experimental"),
   updateExperimental: (patch: PatchInstanceExperimentalSettings) =>
     api.patch<InstanceExperimentalSettingsWithManaged>("/instance/settings/experimental", patch),
+  /** GRE-1078: effective features from the signed entitlement document. */
+  getEntitlements: () =>
+    api.get<EffectiveEntitlements>("/instance/entitlements"),
+  /** GRE-1078: re-read the entitlement file now. Instance admins only. */
+  syncEntitlements: () =>
+    api.post<{ applied: boolean; error: string | null; entitlements: EffectiveEntitlements }>(
+      "/instance/entitlements/sync",
+      {},
+    ),
   getSystemMemory: () =>
     api.get<InstanceSystemMemory>("/instance/system-memory"),
   getRunAdmissionRecommendation: () =>

@@ -9,6 +9,7 @@
 import {
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  featureDependencyViolations,
   type InstanceFeatureKey,
 } from "../../packages/shared/src/feature-catalog.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
@@ -35,6 +36,9 @@ export const MANAGED_FEATURES_OFF = [
   "enableManagedSandboxOnly",
   "enablePipelines",
   "enableCases",
+  "enableDeepDive",
+  // GRE-1087: Website view; which edition gets it is Harbor and John's call.
+  "enableWebsiteView",
   "enableAgentChat",
   "enableConferenceRoomChat",
   "enableSummaries",
@@ -49,7 +53,38 @@ export const MANAGED_FEATURES_OFF = [
   "enableNativeRunner",
   "enableEnvironments",
   "enableOwnerInstanceAdmin",
+  // GRE-575: beta history view on task pages; off by default, now pinned off.
+  "enableIssuePlanDecompositions",
+  // GRE-1382: Strategy module (KPI cascade and readings). Off in Managed; it is
+  // sold apart from basic goals (D2 rule 2 on GRE-1354).
+  "enableStrategy",
+  // GRE-1135: board control panel. Off in Managed; the strategy edition passes
+  // it on Managed plus (Harbor's edition doc on GRE-1136, section 5). Needs
+  // enableStrategy (D2 rule 1 on GRE-1354).
+  "enableStrategyBoard",
 ] as const satisfies readonly InstanceFeatureKey[];
+
+/**
+ * Section 5, "Default is OK" (GRE-575): switches a client install leaves at the
+ * app default, with the reason. Every catalog switch must be in exactly one of
+ * MANAGED_FEATURES_ON, MANAGED_FEATURES_OFF or this list; editions.test.ts
+ * fails and names any switch that has no decision.
+ */
+export const CLIENT_DEFAULT_OK = {
+  enableApps: "Compatibility key; Apps is always on and the app ignores the value.",
+  enableMcpAggregators: "Compatibility key; MCP aggregators are always on and the app ignores the value.",
+  enableRunnerPreviewIngress: "Deprecated compatibility key; runner ingress follows the Runner setting.",
+  enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
+  enableClassicTaskInterface: "Off by default; clients use the chat task page.",
+  enableGoalsSidebarLink: "Compatibility key; Goals graduated (GRE-191), is always in the sidebar and the app ignores the value.",
+  enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
+  enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
+  enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",
+  enableBetaSkills: "Off by default; clients run released skills only.",
+  enablePaperclipDeveloperMode: "Off by default; maintainer tools only.",
+  enableServerInfoDebugView: "Off by default; maintainer debug view only.",
+  autoRestartDevServerWhenIdle: "Off by default; local development only.",
+} as const satisfies Partial<Record<InstanceFeatureKey, string>>;
 
 /** Section 5, Managed, "Hidden settings". Managed plus keeps the same list. */
 export const MANAGED_HIDDEN_SETTINGS = [
@@ -131,16 +166,22 @@ export function buildEditionValues(input: EditionInput): EditionValues {
     if (key === "enableOwnerInstanceAdmin") {
       throw new Error(`"${key}" gives instance admin powers and is never part of Managed plus`);
     }
+    if (key === "enableDeepDive") {
+      throw new Error(`"${key}" is where Greatstone designs a client's team and is never part of a client install`);
+    }
     if (key === "enableManagedSandboxOnly") {
       throw new Error(`"${key}" needs a sandbox provider and is off in both editions (GRE-160)`);
     }
   }
 
   const on = new Set<InstanceFeatureKey>([...MANAGED_FEATURES_ON, ...(passed as InstanceFeatureKey[])]);
+  // GRE-1382: the app would read the dependent switch as off, so refuse it here.
+  for (const { feature, requires } of featureDependencyViolations(Object.fromEntries([...on].map((key) => [key, true])))) {
+    throw new Error(`"${feature}" needs "${requires}"; pass both or neither`);
+  }
 
   // GSAM_MANAGED_CONFIG accepts only tier "managed" keys. Pin exactly the
-  // section 5 keys; managed keys that section 5 does not name keep the app
-  // default until the brief names them.
+  // section 5 keys; CLIENT_DEFAULT_OK keys keep the app default.
   const features: Record<string, boolean> = {};
   for (const key of INSTANCE_FEATURE_KEYS) {
     if (tierOf(key) !== "managed") continue;

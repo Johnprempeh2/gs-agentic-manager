@@ -72,6 +72,9 @@ vi.mock("@/lib/browserNavigation", () => ({
   navigateTopLevel: mockNavigateTopLevel,
 }));
 
+// The settings tab bar asks the sidebar whether it is on a phone.
+vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
+
 // Both panels below the danger zone own their own queries and are not part
 // of what this test covers.
 vi.mock("../components/InteractionGovernancePanel", () => ({

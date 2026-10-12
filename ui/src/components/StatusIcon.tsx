@@ -17,12 +17,16 @@ interface StatusIconProps {
   blockerAttention?: IssueBlockerAttention | null;
   onChange?: (status: string) => void;
   className?: string;
+  /** Optional layout wrapper around the glyph. Does not change glyph dimensions. */
+  glyphContainerClassName?: string;
   showLabel?: boolean;
   /** Glyph size (PAP-243a). Default `md` (16px); lists/detail/mentions use `lg` (20px). */
   size?: StatusGlyphSize;
+  /** Open work that is only waiting for a scheduled check: shows a clock, not a spinner. */
+  waiting?: boolean;
 }
 
-function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
+export function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | undefined) {
   if (!blockerAttention || blockerAttention.state === "none") return "Blocked";
 
   if (blockerAttention.reason === "active_child") {
@@ -53,7 +57,11 @@ function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | 
 
   if (blockerAttention.reason === "attention_required") {
     const count = blockerAttention.attentionBlockerCount || blockerAttention.unresolvedBlockerCount;
-    const attentionCopy = `${count} ${count === 1 ? "blocker needs" : "blockers need"} attention`;
+    // One blocker: name it, so the owner knows which task to open.
+    const leaf = blockerAttention.terminalBlocker?.identifier ?? blockerAttention.sampleBlockerIdentifier;
+    const attentionCopy = count === 1 && leaf
+      ? `${leaf} needs attention`
+      : `${count} ${count === 1 ? "blocker needs" : "blockers need"} attention`;
     const coveredCount = blockerAttention.coveredBlockerCount;
     if (coveredCount > 0) {
       return `Blocked · ${attentionCopy}; ${coveredCount} covered by active work`;
@@ -76,14 +84,17 @@ function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | null | 
  * glyph — the blocked shape recoloured blue — while the full blocked reason
  * still rides on the accessible label.
  */
-export function StatusIcon({ status, externalConversationState, blockerAttention, onChange, className, showLabel, size = "md" }: StatusIconProps) {
+export function StatusIcon({ status, externalConversationState, blockerAttention, onChange, className, glyphContainerClassName, showLabel, size = "md", waiting = false }: StatusIconProps) {
   const [open, setOpen] = useState(false);
   const displayStatus = status === "in_review" && externalConversationState === "waiting" ? "idle" : status;
   const isCoveredBlocked = status === "blocked" && blockerAttention?.state === "covered";
-  const ariaLabel = status === "blocked" ? blockedAttentionLabel(blockerAttention) : statusLabel(displayStatus);
-  const glyphStatus = isCoveredBlocked ? "in_queue" : displayStatus;
+  const isWaiting = waiting && (status === "in_progress" || status === "in_review");
+  const ariaLabel = status === "blocked"
+    ? blockedAttentionLabel(blockerAttention)
+    : isWaiting ? `${statusLabel(displayStatus)} · waiting for a scheduled check` : statusLabel(displayStatus);
+  const glyphStatus = isCoveredBlocked ? "in_queue" : isWaiting ? "waiting" : displayStatus;
 
-  const glyph = (
+  const glyphIcon = (
     <StatusGlyph
       status={glyphStatus}
       size={size}
@@ -91,6 +102,11 @@ export function StatusIcon({ status, externalConversationState, blockerAttention
       title={ariaLabel}
     />
   );
+  const glyph = glyphContainerClassName ? (
+    <span className={glyphContainerClassName} data-status-glyph-container="true">
+      {glyphIcon}
+    </span>
+  ) : glyphIcon;
 
   if (!onChange) {
     return showLabel ? (

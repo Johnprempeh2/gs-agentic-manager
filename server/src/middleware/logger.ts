@@ -3,6 +3,8 @@ import type { Logger } from "pino";
 import { pinoHttp } from "pino-http";
 import { HTTP_LOG_REDACT_PATHS } from "./http-log-redaction.js";
 import {
+  isMcpSseStreamRefusal,
+  isMemoryContentHttpRequest,
   isPrivateWebhookHttpRequest,
   isSecretSensitiveHttpRequest,
   shouldSilenceHttpSuccessLog,
@@ -129,6 +131,9 @@ export function createHttpLogger(baseLogger: Logger) {
         return "silent";
       }
       if (err || res.statusCode >= 500) return "error";
+      if (isMcpSseStreamRefusal(_req.method, requestClassificationUrl(_req), res.statusCode)) {
+        return "info";
+      }
       if (res.statusCode >= 400) return "warn";
       return "info";
     },
@@ -139,7 +144,7 @@ export function createHttpLogger(baseLogger: Logger) {
       if (
         isSecretSensitiveHttpRequest(req.method, requestClassificationUrl(req))
       ) {
-        return `${req.method} ${requestLogUrl(req)} ${res.statusCode} — request failed`;
+        return `${req.method} ${requestLogUrl(req)} ${res.statusCode}: request failed`;
       }
       const ctx = (res as any).__errorContext;
       const errMsg =
@@ -147,7 +152,7 @@ export function createHttpLogger(baseLogger: Logger) {
         err?.message ||
         (res as any).err?.message ||
         "unknown error";
-      return `${req.method} ${stripSecretBearingUrlParts(req.url ?? "")} ${res.statusCode} — ${errMsg}`;
+      return `${req.method} ${stripSecretBearingUrlParts(req.url ?? "")} ${res.statusCode}: ${errMsg}`;
     },
     customErrorObject(req, _res, _err, value) {
       // pino-http serializes res.err independently of customProps/errorContext.
@@ -172,6 +177,12 @@ export function createHttpLogger(baseLogger: Logger) {
               : {}),
           };
         }
+        // Memory text is omitted whole: a refused secret sits in a free-text
+        // field that key-name redaction cannot see (GRE-879).
+        const memoryContentRoute = isMemoryContentHttpRequest(
+          req.method,
+          requestClassificationUrl(req),
+        );
         if (ctx) {
           const secretSensitiveRoute = isSecretSensitiveHttpRequest(
             req.method,
@@ -184,14 +195,18 @@ export function createHttpLogger(baseLogger: Logger) {
             errorContext: secretSensitiveRoute
               ? { name: "Error" }
               : redactSensitive(ctx.error),
-            reqBody: redactSensitive(ctx.reqBody),
+            reqBody: memoryContentRoute
+              ? "[REDACTED]"
+              : redactSensitive(ctx.reqBody),
             reqParams: redactSensitive(ctx.reqParams),
           };
         }
         const props: Record<string, unknown> = {};
         const { body, params } = req as any;
         if (body && typeof body === "object" && Object.keys(body).length > 0) {
-          props.reqBody = redactSensitive(body);
+          props.reqBody = memoryContentRoute
+            ? "[REDACTED]"
+            : redactSensitive(body);
         }
         if (
           params &&

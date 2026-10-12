@@ -14,6 +14,10 @@ describe("shell navigation", () => {
   it("classifies task detail independently from list routes", () => {
     expect(classifyShellRoute("/PAP/issues", "PAP").isTaskDetail).toBe(false);
     expect(classifyShellRoute("/PAP/issues/task-1", "PAP").isTaskDetail).toBe(true);
+    expect(classifyShellRoute("/PAP/issues/task-1", "PAP").isMobileChat).toBe(true);
+    expect(classifyShellRoute("/PAP/strategy-board", "PAP").isMobileChat).toBe(false);
+    expect(classifyShellRoute("/PAP/strategy-board/ask/agent-1", "PAP").isMobileChat).toBe(true);
+    expect(classifyShellRoute("/PAP/strategy-board/ask/agent-1", "PAP").isTaskDetail).toBe(false);
   });
 
   it("classifies the built-in contextual surfaces", () => {

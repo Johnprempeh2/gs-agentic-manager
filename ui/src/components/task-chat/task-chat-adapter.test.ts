@@ -6,6 +6,33 @@ import {
 } from "./task-chat-adapter";
 
 describe("commentsToTaskChatItems", () => {
+  it("attributes each human speaker and groups consecutive messages (GRE-1012)", () => {
+    const human = (id: string, userId: string, body: string) => ({
+      id, body, authorType: "user", authorUserId: userId, createdAt: "2026-10-07T12:00:00Z",
+    }) as unknown as IssueChatComment;
+    const items = commentsToTaskChatItems(
+      [human("c1", "john", "Mine"), human("c2", "ben", "Ben one"), human("c3", "ben", "Ben two"), human("c4", "john", "Mine again")],
+      {
+        currentUserId: "john",
+        userLabelMap: new Map([["john", "John Prempeh"], ["ben", "Ben"]]),
+        userProfileMap: new Map([["ben", { label: "Ben Kafui Mensah", image: null }]]),
+      },
+    );
+    expect(items).toMatchObject([
+      { id: "c1", author: "human", fromOtherUser: undefined },
+      { id: "c2", author: "human", fromOtherUser: true, authorName: "Ben Kafui Mensah", showAuthorName: true },
+      { id: "c3", author: "human", fromOtherUser: true, authorName: "Ben Kafui Mensah", showAuthorName: false },
+      { id: "c4", author: "human", fromOtherUser: undefined },
+    ]);
+  });
+
+  it("keeps human messages on the viewer side when the viewer is unknown", () => {
+    const items = commentsToTaskChatItems([{
+      id: "c1", body: "Hi", authorType: "user", authorUserId: "ben", createdAt: "2026-10-07T12:00:00Z",
+    } as unknown as IssueChatComment]);
+    expect(items[0]).toMatchObject({ author: "human", fromOtherUser: undefined });
+  });
+
   it("carries inbound channel attribution into the human bubble", () => {
     expect(commentsToTaskChatItems([{
       id: "photon-comment",
@@ -138,7 +165,8 @@ describe("commentsToTaskChatItems", () => {
     expect(agent.presentation).toBeUndefined();
     expect(agent.metadata).toBeUndefined();
     expect(agent.runAgentId).toBeUndefined();
-    expect(agent.createdAtIso).toBeUndefined();
+    // Every message keeps its raw time: the thread draws day separators from it.
+    expect(agent.createdAtIso).toBe("2026-08-07T09:01:00.000Z");
   });
 
   it("keeps the regular comment time for a causally repositioned steered follow-up", () => {

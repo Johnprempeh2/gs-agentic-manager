@@ -682,6 +682,27 @@ describe("SetupTokenSessionService durable reaper", () => {
     expect(summary.failed).toBe(1);
     expect(store.rows.has("orphan-2")).toBe(true);
   });
+
+  it("removes a local-login record that never held a lease, instead of retrying it forever", async () => {
+    const store = new FakeStore();
+    await store.record({
+      sessionId: "local-login",
+      companyId: "company-1",
+      ownerUserId: "user-1",
+      adapterType: "claude_local",
+      environmentId: "env-local",
+      leaseId: "",
+      deadline: 1_000,
+      state: "timed_out",
+      boundAt: null,
+    });
+    const leases = new FakeLeaseManager();
+    const { service } = buildService({ store, leases, now: () => 5_000 });
+    const summary = await service.reap(5_000);
+    expect(summary).toMatchObject({ released: 1, failed: 0 });
+    expect(leases.releaseByIdCalls).toEqual([]);
+    expect(store.rows.has("local-login")).toBe(false);
+  });
 });
 
 describe("SetupTokenSessionService.cancelByScope", () => {

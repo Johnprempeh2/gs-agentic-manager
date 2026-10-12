@@ -7,6 +7,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { IssueGalleryContext } from "@/context/IssueGalleryContext";
+import { AttachmentPreviewContext } from "@/context/AttachmentPreviewContext";
 import { TaskChatBubble } from "./TaskChatBubble";
 import type { TaskChatMessageItem } from "./task-chat-model";
 
@@ -54,6 +55,25 @@ describe("TaskChatBubble attachment chips", () => {
     expect(container.textContent).not.toContain("Sent from iMessage");
   });
 
+  it("shows another member's name on a left neutral bubble and keeps own messages right (GRE-1012)", () => {
+    const renderItem = (item: TaskChatMessageItem) =>
+      flushSync(() => root!.render(<ThemeProvider><TaskChatBubble item={item} /></ThemeProvider>));
+
+    renderItem({ id: "ben", kind: "message", author: "human", text: "From Ben", authorName: "Ben Kafui Mensah", fromOtherUser: true, showAuthorName: true });
+    expect(container.querySelector('[data-testid="task-chat-human-identity"]')?.textContent).toContain("Ben Kafui Mensah");
+    expect(container.firstElementChild?.className).toContain("items-start");
+    expect(container.querySelector('[data-testid="task-chat-human-bubble"]')?.className).toContain("bg-muted");
+
+    renderItem({ id: "ben2", kind: "message", author: "human", text: "Ben again", authorName: "Ben Kafui Mensah", fromOtherUser: true, showAuthorName: false });
+    expect(container.querySelector('[data-testid="task-chat-human-identity"]')).toBeNull();
+
+    renderItem({ id: "john", kind: "message", author: "human", text: "Mine", authorName: "John Prempeh", sourceChannel: "imessage-photon" });
+    expect(container.querySelector('[data-testid="task-chat-human-identity"]')).toBeNull();
+    expect(container.firstElementChild?.className).toContain("items-end");
+    expect(container.querySelector('[data-testid="task-chat-human-bubble"]')?.className).toContain("gs-human-bubble");
+    expect(container.textContent).toContain("Sent from iMessage");
+  });
+
   it("opens attachment images in the shared task gallery", () => {
     const openGallery = vi.fn(() => true);
     const contentPath = "/api/attachments/shared-image/content";
@@ -64,7 +84,8 @@ describe("TaskChatBubble attachment chips", () => {
         </IssueGalleryContext.Provider>
       </ThemeProvider>,
     ));
-    const image = container.querySelector<HTMLImageElement>(`img[src="${contentPath}"]`);
+    // The tile loads a small copy; the gallery opens the full image.
+    const image = container.querySelector<HTMLImageElement>(`img[src="${contentPath}?w=640"]`);
     expect(image).not.toBeNull();
     flushSync(() => image!.click());
     expect(openGallery).toHaveBeenCalledWith(contentPath);
@@ -83,6 +104,31 @@ describe("TaskChatBubble attachment chips", () => {
     // The link-only line left the rendered body; the prose stayed.
     expect(container.textContent).toContain("Here you go.");
     expect(container.textContent).not.toContain("(/api/attachments/abc/content)");
+  });
+
+  it("opens a file chip in the issue's preview panel on a plain click only (GRE-1036)", () => {
+    const openPreview = vi.fn(() => true);
+    flushSync(() => root!.render(
+      <ThemeProvider>
+        <AttachmentPreviewContext.Provider value={openPreview}>
+          <TaskChatBubble item={{ id: "m1", kind: "message", author: "agent", text: "[mock-up.html](/api/attachments/abc/content)" }} />
+        </AttachmentPreviewContext.Provider>
+      </ThemeProvider>,
+    ));
+    const link = container.querySelector<HTMLAnchorElement>("a[href='/api/attachments/abc/content']")!;
+
+    const modified = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    flushSync(() => link.dispatchEvent(modified));
+    expect(modified.defaultPrevented).toBe(false);
+    expect(openPreview).not.toHaveBeenCalled();
+
+    const plain = new MouseEvent("click", { bubbles: true, cancelable: true });
+    flushSync(() => link.dispatchEvent(plain));
+    expect(plain.defaultPrevented).toBe(true);
+    expect(openPreview).toHaveBeenCalledWith(expect.objectContaining({
+      href: "/api/attachments/abc/content",
+      name: "mock-up.html",
+    }));
   });
 
   it("renders a chip-only row when the message body is just the file link", () => {

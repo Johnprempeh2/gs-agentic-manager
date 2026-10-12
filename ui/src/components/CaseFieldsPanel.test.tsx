@@ -78,8 +78,8 @@ describe("CaseFieldsPanel", () => {
     // boolean never renders raw "true"/"false"
     expect(container.textContent).not.toContain("true");
     expect(container.textContent).not.toContain("false");
-    // null → em-dash present
-    expect(container.textContent).toContain("—");
+    // null → "Not set" placeholder present
+    expect(container.textContent).toContain("Not set");
     // object fallback → pretty-printed mono JSON block
     expect(container.textContent).toContain('"nested": "x"');
     // key insertion order preserved (slug before word_count)

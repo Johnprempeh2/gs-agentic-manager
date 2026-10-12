@@ -7,6 +7,7 @@ import {
   startAdapterExecutionTargetPaperclipBridge,
 } from "@greatstone/adapter-utils/execution-target";
 import { githubBrokerEnvironment } from "@greatstone/adapter-utils/github-launcher";
+import { liveProcessGuard } from "../live-process-guard.js";
 
 type Binding = { companyId: string; agentId: string; issueId: string; runId: string };
 type LauncherInput = Parameters<typeof prepareGitHubOperationLaunchers>[0];
@@ -83,7 +84,7 @@ export async function createNativeGitHubAccess(input: {
       cleanupGitHubOperationLaunchers(location),
     ]);
     if (results.some(result => result.status === "rejected")) {
-      await input.onLog?.("stderr", "[paperclip] GitHub session cleanup incomplete.\n").catch(() => undefined);
+      await input.onLog?.("stderr", "[gsam] GitHub session cleanup incomplete.\n").catch(() => undefined);
     }
   })();
   try {
@@ -113,10 +114,12 @@ export async function createNativeGitHubAccess(input: {
       // the supervisor retries transport setup on the next run.
       ready = false;
       await new Promise<void>(resolve => server.close(() => resolve()));
-      await input.onLog?.("stderr", "[paperclip] GitHub runtime transport unavailable; continuing without managed GitHub access.\n").catch(() => undefined);
+      await input.onLog?.("stderr", "[gsam] GitHub runtime transport unavailable; continuing without managed GitHub access.\n").catch(() => undefined);
     }
     const env = await prepareGitHubOperationLaunchers({
       ...location, cwd: input.cwd,
+      // Local sessions share this server's user; keep their pkill/killall off live.
+      processGuard: liveProcessGuard(),
       env: {
         ...githubBrokerEnvironment({ PATH: input.env.PATH }, {
           url: ready ? bridge?.env.GSAM_API_URL ?? url : "",

@@ -13,6 +13,12 @@ const listApplicationsMock = vi.hoisted(() => vi.fn());
 const listConnectionsMock = vi.hoisted(() => vi.fn());
 const listUserDirectoryMock = vi.hoisted(() => vi.fn());
 const archiveConnectionMock = vi.hoisted(() => vi.fn());
+const updateConnectionMock = vi.hoisted(() => vi.fn());
+const checkConnectionHealthMock = vi.hoisted(() => vi.fn());
+const reenableConnectionAfterPauseMock = vi.hoisted(() => vi.fn());
+const companyState = vi.hoisted(() => ({ status: "active" }));
+const startOAuthMock = vi.hoisted(() => vi.fn());
+const navigateTopLevelMock = vi.hoisted(() => vi.fn());
 const pushToastMock = vi.hoisted(() => vi.fn());
 const navigateMock = vi.hoisted(() => vi.fn());
 const setBreadcrumbsMock = vi.hoisted(() => vi.fn());
@@ -30,9 +36,23 @@ vi.mock("@/api/tools", () => ({
     archiveConnection: (
       connectionId: string,
     ) => archiveConnectionMock(connectionId),
+    updateConnection: (connectionId: string, input: unknown) =>
+      updateConnectionMock(connectionId, input),
+    checkConnectionHealth: (connectionId: string) => checkConnectionHealthMock(connectionId),
+    reenableConnectionAfterPause: (connectionId: string) => reenableConnectionAfterPauseMock(connectionId),
+    startOAuth: (connectionId: string, input?: unknown) => startOAuthMock(connectionId, input),
   },
 }));
+vi.mock("@/api/mailboxes", () => ({ mailboxesApi: { list: vi.fn(async () => []) } }));
+vi.mock("@/lib/browserNavigation", () => ({ navigateTopLevel: navigateTopLevelMock }));
+vi.mock("@/lib/oauthHandoff", () => ({
+  prepareOAuthNavigation: async (start: { authorizationUrl: string }) => ({ kind: "direct", url: start.authorizationUrl }),
+  savePendingCloudHandoff: vi.fn(),
+}));
 
+vi.mock("@/api/ai-connections", () => ({
+  aiConnectionsApi: { list: vi.fn(async () => ({ currentUserId: "user-1", connections: [] })) },
+}));
 vi.mock("@/api/access", () => ({
   accessApi: {
     listUserDirectory: (companyId: string) => listUserDirectoryMock(companyId),
@@ -49,7 +69,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "GS Agentic Manager" },
+    selectedCompany: { id: "company-1", name: "Greatstone", status: companyState.status },
   }),
 }));
 
@@ -79,6 +99,18 @@ async function flushReact() {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     });
   }
+}
+
+function buttonByText(text: string) {
+  return Array.from(document.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === text,
+  );
+}
+
+function buttonByTextIn(scope: HTMLElement, text: string) {
+  return Array.from(scope.querySelectorAll("button")).find(
+    (button) => button.textContent?.trim() === text,
+  );
 }
 
 function galleryEntry(overrides: Record<string, unknown>) {
@@ -155,7 +187,7 @@ describe("Connectors landing page", () => {
           tagline: "Search and draft email.",
           availability: {
             available: false,
-            reason: "Gmail is not available on this GS Agentic Manager instance yet.",
+            reason: "Gmail is not available on this Greatstone instance yet.",
           },
         }),
       ],
@@ -169,6 +201,7 @@ describe("Connectors landing page", () => {
   });
 
   afterEach(() => {
+    companyState.status = "active";
     act(() => root?.unmount());
     container.remove();
     document.body.innerHTML = "";
@@ -252,6 +285,8 @@ describe("Connectors landing page", () => {
     chatListMock.mockResolvedValue([{ id: "endpoint-1", provider: "github", status: "active", assignedAgentName: "Chat agent", botLabel: "Chat bot", assignedAgentId: "agent-1" }]);
     const client = await renderBrowse();
     expect(chatListMock).toHaveBeenCalledWith("company-1");
+    expect(container.querySelector('[data-app-slug="telegram"]')).toBeNull();
+    await act(() => buttonByText("Add a connector")!.click());
     expect(container.querySelector('[data-app-slug="telegram"]')).not.toBeNull();
     await act(() => void container.querySelector<HTMLButtonElement>('button[aria-label="Add connection GitHub"]')!.click());
     expect(navigateMock).toHaveBeenLastCalledWith("/apps/chat/connect?provider=github&toolHref=%2Fapps%2Fconnect%3Fsource%3Dgithub");
@@ -264,7 +299,7 @@ describe("Connectors landing page", () => {
     expect(navigateMock).toHaveBeenLastCalledWith("/apps/connect?source=github");
   });
 
-  it("renders one connector list with the requested header and no gallery sections", async () => {
+  it("with nothing connected shows the whole catalogue under the search header, without a toggle", async () => {
     await renderBrowse();
 
     expect(setBreadcrumbsMock).toHaveBeenCalledWith([{ label: "Connectors" }]);
@@ -286,10 +321,13 @@ describe("Connectors landing page", () => {
     expect(container.querySelector('[aria-label="Popular apps"]')).toBeNull();
     expect(container.querySelector('[aria-label="Connected apps"]')).toBeNull();
     expect(container.querySelector('[aria-label="All apps"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Connected"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Not finished"]')).toBeNull();
+    expect(container.textContent).not.toContain("Add a connector");
     expect(
       Array.from(
         container.querySelectorAll<HTMLElement>(
-          '[aria-label="Connector list"] > [data-app-slug]',
+          '[aria-label="Available connectors"] > [data-app-slug]',
         ),
       ).map((row) => row.dataset.appSlug),
     ).toEqual([
@@ -342,7 +380,29 @@ describe("Connectors landing page", () => {
     expect(navigateMock).toHaveBeenCalledWith("/apps/advanced/paste-config");
   });
 
-  it("sorts connected providers first and shows account, owner, status actions, and edit menus inline", async () => {
+  it("shows an expired Claude token as needing attention and reconnects straight to the token step", async () => {
+    // The provider never refused it, so health stays "ok"; only the recorded expiry says it is dead.
+    listApplicationsMock.mockResolvedValue({ applications: [application({ id: "app-anthropic", name: "Anthropic", metadata: { sourceTemplateKey: "anthropic" } })] });
+    listConnectionsMock.mockResolvedValue({ connections: [connection({
+      id: "conn-claude",
+      applicationId: "app-anthropic",
+      name: "My Claude subscription",
+      connectionPurpose: "ai",
+      config: {
+        sourceTemplateKey: "anthropic",
+        ai: { provider: "anthropic", method: "subscription" },
+        aiCredential: { source: "imported_login", expiresAt: "2026-01-01T00:00:00.000Z", recordedAt: "2026-01-01T00:00:00.000Z" },
+      },
+    })] });
+    await renderBrowse();
+    expect(container.textContent).toContain("The token has expired. Reconnect to restore access.");
+    const reconnect = [...container.querySelectorAll("button")].find((button) => button.textContent === "Reconnect");
+    expect(reconnect).toBeTruthy();
+    await act(() => reconnect!.click());
+    expect(navigateMock).toHaveBeenCalledWith("/apps/connect?source=anthropic&reconnect=conn-claude&method=ai-subscription");
+  });
+
+  it("lists connected accounts first with owner, status actions, and edit menus, and folds the catalogue away", async () => {
     listApplicationsMock.mockResolvedValue({ applications: [application()] });
     listConnectionsMock.mockResolvedValue({
       connections: [
@@ -374,11 +434,26 @@ describe("Connectors landing page", () => {
 
     const rows = Array.from(
       container.querySelectorAll<HTMLElement>(
-        '[aria-label="Connector list"] > [data-app-slug]',
+        '[aria-label="Connected"] > [data-app-slug]',
       ),
     );
-    expect(rows[0]?.dataset.appSlug).toBe("notion");
+    expect(rows.map((row) => row.dataset.appSlug)).toEqual(["notion"]);
     const notion = rows[0]!;
+    // The catalogue sits behind "Add a connector" once something is connected.
+    expect(container.querySelector('[aria-label="Available connectors"]')).toBeNull();
+    const addConnector = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Add a connector",
+    )!;
+    expect(addConnector.getAttribute("aria-expanded")).toBe("false");
+    await act(() => addConnector.click());
+    expect(addConnector.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      Array.from(
+        container.querySelectorAll<HTMLElement>(
+          '[aria-label="Available connectors"] > [data-app-slug]',
+        ),
+      ).map((row) => row.dataset.appSlug),
+    ).toContain("jira");
     expect(notion.textContent).toContain("devinfoley@gmail.com");
     expect(notion.textContent).toContain("ops@example.com");
     expect(notion.textContent).toContain("Connected by");
@@ -418,13 +493,290 @@ describe("Connectors landing page", () => {
       "/apps/connect?source=notion&applicationId=app-notion&name=Notion&new=1",
     );
 
+    // An OAuth account reconnects by reopening the provider sign-in in place.
+    startOAuthMock.mockResolvedValue({ authorizationUrl: "https://notion.example/authorize" });
     const reconnect = Array.from(notion.querySelectorAll("button")).find(
       (button) => button.textContent === "Reconnect",
     );
     await act(async () => {
       reconnect?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(navigateMock).toHaveBeenCalledWith("/apps/conn-expired/permissions");
+    await flushReact();
+    expect(startOAuthMock).toHaveBeenCalledWith("conn-expired", undefined);
+    expect(navigateTopLevelMock).toHaveBeenCalledWith("https://notion.example/authorize");
+    expect(navigateMock).not.toHaveBeenCalledWith("/apps/conn-expired/permissions");
+  });
+
+  it("shows a health badge, last check and last error per account, and tests a connection in place", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-02T12:00:00Z"));
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({
+      connections: [
+        connection({ id: "conn-ok", name: "works@example.com", healthCheckedAt: "2026-10-02T11:55:00Z" }),
+        connection({
+          id: "conn-slow",
+          name: "slow@example.com",
+          healthStatus: "degraded",
+          healthMessage: "Notion answered slowly.",
+          healthCheckedAt: "2026-10-02T09:00:00Z",
+        }),
+        connection({
+          id: "conn-key",
+          name: "key@example.com",
+          authKind: "api_key",
+          healthStatus: "missing_secret",
+          healthMessage: "The saved key is missing.",
+          lastError: "401 Unauthorized",
+          healthCheckedAt: "2026-10-01T12:00:00Z",
+        }),
+        connection({ id: "conn-new", name: "new@example.com", healthStatus: "unknown", healthCheckedAt: null }),
+      ],
+    });
+    checkConnectionHealthMock.mockResolvedValue({
+      connection: connection({ id: "conn-key", healthStatus: "ok" }),
+      runtimeSlot: null,
+    });
+
+    await renderBrowse();
+    vi.useRealTimers();
+
+    const accountRow = (name: string) =>
+      container.querySelector<HTMLButtonElement>(`button[aria-label="Open ${name} permissions"]`)!
+        .closest<HTMLElement>(".px-4")!;
+    expect(accountRow("works@example.com").textContent).toContain("Works");
+    expect(accountRow("works@example.com").textContent).toContain("Checked 5m ago");
+    expect(accountRow("works@example.com").textContent).not.toContain("Reconnect");
+    expect(accountRow("slow@example.com").textContent).toContain("Warning");
+    expect(accountRow("slow@example.com").textContent).toContain("Checked 3h ago");
+    const keyRow = accountRow("key@example.com");
+    expect(keyRow.textContent).toContain("Needs reconnect");
+    expect(keyRow.textContent).toContain("The saved key is missing.");
+    expect(keyRow.textContent).toContain("Last error: 401 Unauthorized");
+    expect(accountRow("new@example.com").textContent).toContain("Not tested");
+    expect(accountRow("new@example.com").textContent).toContain("Not checked yet");
+
+    // A key-based account reconnects on its detail page, where the new key is pasted.
+    await act(() => buttonByTextIn(keyRow, "Reconnect")!.click());
+    expect(navigateMock).toHaveBeenCalledWith("/apps/conn-key/permissions");
+    expect(startOAuthMock).not.toHaveBeenCalled();
+
+    await act(() =>
+      keyRow.querySelector<HTMLButtonElement>('button[aria-label="Test key@example.com connection"]')!.click(),
+    );
+    await flushReact();
+    expect(checkConnectionHealthMock).toHaveBeenCalledWith("conn-key");
+    expect(pushToastMock).toHaveBeenCalledWith({ title: "Connection works", tone: "success" });
+  });
+
+  it("says why a test failed when the connection still needs reconnecting", async () => {
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({ connections: [connection()] });
+    checkConnectionHealthMock.mockResolvedValue({
+      connection: connection({ healthStatus: "failed", healthMessage: "Notion revoked access." }),
+      runtimeSlot: null,
+    });
+    await renderBrowse();
+    await act(() =>
+      container.querySelector<HTMLButtonElement>('button[aria-label="Test devinfoley@gmail.com connection"]')!.click(),
+    );
+    await flushReact();
+    expect(pushToastMock).toHaveBeenCalledWith({
+      title: "Connection still needs reconnecting",
+      body: "Notion revoked access.",
+      tone: "error",
+    });
+  });
+
+  it("says why a paused connection is unusable and resumes it with the existing update call", async () => {
+    updateConnectionMock.mockResolvedValue(connection());
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({
+      connections: [
+        connection({ id: "conn-paused", name: "ops@example.com", enabled: false }),
+        connection({ id: "conn-disabled", name: "team@example.com", status: "disabled", enabled: false }),
+      ],
+    });
+    chatListMock.mockResolvedValue([
+      { id: "chat-paused", provider: "slack", status: "paused", assignedAgentName: "CEO" },
+    ]);
+    const client = await renderBrowse();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+
+    const connected = container.querySelector('[aria-label="Connected"]')!;
+    expect(connected.textContent).toContain(
+      "This connection is paused. Agents can’t use it until you resume it.",
+    );
+    expect(connected.textContent).toContain(
+      "This connection is paused. Resume it to receive new messages.",
+    );
+    const resumes = Array.from(connected.querySelectorAll("button")).filter(
+      (button) => button.textContent === "Resume",
+    );
+    expect(resumes).toHaveLength(3);
+
+    await act(() => resumes[0]!.click());
+    await flushReact();
+    expect(updateConnectionMock).toHaveBeenCalledWith("conn-paused", { enabled: true });
+    await act(() => resumes[1]!.click());
+    await flushReact();
+    expect(updateConnectionMock).toHaveBeenCalledWith("conn-disabled", { enabled: true, status: "active" });
+    await act(() => resumes[2]!.click());
+    await flushReact();
+    expect(chatSetupMock).toHaveBeenCalledWith("chat-paused", { action: "resume" });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.tools.connections("company-1") });
+    expect(pushToastMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Connection resumed", tone: "success" }),
+    );
+  });
+
+  describe("connections turned off by a company pause (GRE-1380)", () => {
+    function pauseSuspended() {
+      listApplicationsMock.mockResolvedValue({ applications: [application()] });
+      listConnectionsMock.mockResolvedValue({
+        connections: [
+          connection({ id: "conn-suspended", enabled: false, pauseSuspendedAt: "2026-10-10T09:00:00Z" }),
+        ],
+      });
+    }
+
+    it("labels the connection and re-enables it through the health-checked action", async () => {
+      pauseSuspended();
+      reenableConnectionAfterPauseMock.mockResolvedValue(connection({ id: "conn-suspended" }));
+      await renderBrowse();
+
+      const connected = container.querySelector('[aria-label="Connected"]')!;
+      expect(connected.textContent).toContain("Turned off by company pause.");
+      expect(buttonByTextIn(connected as HTMLElement, "Resume")).toBeUndefined();
+      const reenable = buttonByTextIn(connected as HTMLElement, "Re-enable")!;
+      expect(reenable.disabled).toBe(false);
+
+      await act(() => reenable.click());
+      await flushReact();
+
+      expect(reenableConnectionAfterPauseMock).toHaveBeenCalledWith("conn-suspended");
+      expect(updateConnectionMock).not.toHaveBeenCalled();
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Connection re-enabled", tone: "success" }),
+      );
+    });
+
+    it("shows the health check error on the row and leaves the connection off", async () => {
+      pauseSuspended();
+      reenableConnectionAfterPauseMock.mockRejectedValue(new Error("The server did not answer the health check."));
+      await renderBrowse();
+
+      await act(() => buttonByText("Re-enable")!.click());
+      await flushReact();
+
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert?.textContent).toBe("Still off: The server did not answer the health check.");
+      expect(buttonByText("Re-enable")).toBeDefined();
+      expect(pushToastMock).not.toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
+    });
+
+    it("keeps Re-enable off until the organization is resumed", async () => {
+      companyState.status = "paused";
+      pauseSuspended();
+      await renderBrowse();
+
+      expect(container.textContent).toContain("Resume the organization before you re-enable it.");
+      expect(buttonByText("Re-enable")?.disabled).toBe(true);
+    });
+  });
+
+  it("puts unfinished setups in their own group, away from working connections", async () => {
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({
+      connections: [
+        connection(),
+        connection({ id: "conn-draft", name: "Notion", status: "draft", healthStatus: "unchecked" }),
+      ],
+    });
+    chatListMock.mockResolvedValue([
+      { id: "chat-draft", provider: "telegram", status: "draft", assignedAgentName: "Draft agent" },
+    ]);
+    await renderBrowse();
+
+    const connected = container.querySelector('[aria-label="Connected"]')!;
+    const unfinished = container.querySelector('[aria-label="Not finished"]')!;
+    expect(
+      Array.from(connected.querySelectorAll<HTMLElement>("[data-app-slug]")).map((row) => row.dataset.appSlug),
+    ).toEqual(["notion"]);
+    expect(connected.textContent).toContain("devinfoley@gmail.com");
+    expect(connected.textContent).not.toContain("Setup incomplete");
+    expect(
+      Array.from(unfinished.querySelectorAll<HTMLElement>("[data-app-slug]")).map((row) => row.dataset.appSlug),
+    ).toEqual(["notion", "telegram"]);
+    expect(unfinished.textContent).not.toContain("devinfoley@gmail.com");
+    // The group is compact: no catalogue description and no "Add account" button.
+    expect(unfinished.textContent).not.toContain("Read and update workspace content.");
+    expect(unfinished.querySelector('button[aria-label^="Add"]')).toBeNull();
+    const finishButtons = Array.from(unfinished.querySelectorAll("button")).filter(
+      (button) => button.textContent === "Finish setup",
+    );
+    expect(finishButtons).toHaveLength(2);
+    await act(() => finishButtons[1]!.click());
+    expect(navigateMock).toHaveBeenLastCalledWith(
+      "/apps/chat/connect?provider=telegram&purpose=chat&resume=chat-draft",
+    );
+    // Review 2: a provider with only a draft can still be added afresh.
+    const addConnector = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Add a connector"));
+    await act(() => addConnector!.click());
+    const catalogue = container.querySelector('[aria-label="Available connectors"]')!;
+    expect(
+      Array.from(catalogue.querySelectorAll<HTMLElement>("[data-app-slug]")).map((row) => row.dataset.appSlug),
+    ).toContain("telegram");
+  });
+
+  it("tells two Claude subscriptions apart by how each was connected", async () => {
+    listApplicationsMock.mockResolvedValue({
+      applications: [application({ id: "app-anthropic", name: "Anthropic", metadata: { sourceTemplateKey: "anthropic" } })],
+    });
+    const claude = (id: string, name: string, source: string) =>
+      connection({
+        id,
+        applicationId: "app-anthropic",
+        name,
+        connectionPurpose: "ai",
+        credentialPolicy: "per_user",
+        config: {
+          sourceTemplateKey: "anthropic",
+          ai: { provider: "anthropic", method: "subscription" },
+          aiCredential: { source, expiresAt: null, recordedAt: "2026-01-01T00:00:00.000Z" },
+        },
+      });
+    listConnectionsMock.mockResolvedValue({
+      connections: [
+        claude("conn-a", "My Claude account", "setup_token"),
+        claude("conn-b", "My Claude subscription", "imported_login"),
+      ],
+    });
+    await renderBrowse();
+    expect(container.textContent).toContain("Claude subscription (setup token) · Personal");
+    expect(container.textContent).toContain("Claude subscription (subscription sign-in) · Personal");
+  });
+
+  it("opens the catalogue when the owner searches, even with accounts connected", async () => {
+    listApplicationsMock.mockResolvedValue({ applications: [application()] });
+    listConnectionsMock.mockResolvedValue({ connections: [connection()] });
+    await renderBrowse();
+    expect(container.querySelector('[aria-label="Available connectors"]')).toBeNull();
+    const input = container.querySelector<HTMLInputElement>('input[aria-label="Search connectors"]')!;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
+    await act(async () => {
+      setter?.call(input, "jira");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await flushReact();
+    const available = container.querySelector('[aria-label="Available connectors"]')!;
+    expect(
+      Array.from(available.querySelectorAll<HTMLElement>("[data-app-slug]")).map((row) => row.dataset.appSlug),
+    ).toEqual(["jira"]);
+    // On a phone the action sits under the description instead of squeezing it.
+    const header = available.querySelector('button[aria-label="Connect Jira"]')!.parentElement!;
+    expect(header.className).toContain("flex-col");
+    expect(header.className).toContain("sm:flex-row");
   });
 
   it("removes a connection from the overflow menu only after destructive confirmation", async () => {
@@ -513,7 +865,7 @@ describe("Connectors landing page", () => {
     await act(() => remove!.click());
     await flushReact();
     expect(chatSetupMock).not.toHaveBeenCalled();
-    expect(document.body.textContent).toContain("Existing GS Agentic Manager tasks and conversation history remain available.");
+    expect(document.body.textContent).toContain("Existing Greatstone tasks and conversation history remain available.");
     chatListMock.mockResolvedValue([]);
     await act(() => Array.from(document.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Remove connection")!.click());
     await flushReact();
@@ -568,7 +920,7 @@ describe("Connectors landing page", () => {
     );
   });
 
-  it("filters the single list without restoring section chrome", async () => {
+  it("filters the catalogue without restoring the old gallery sections", async () => {
     await renderBrowse();
 
     const input = container.querySelector<HTMLInputElement>(
@@ -586,7 +938,7 @@ describe("Connectors landing page", () => {
 
     const rows = Array.from(
       container.querySelectorAll<HTMLElement>(
-        '[aria-label="Connector list"] > [data-app-slug]',
+        '[aria-label="Available connectors"] > [data-app-slug]',
       ),
     );
     expect(rows.map((row) => row.dataset.appSlug)).toEqual(["jira"]);

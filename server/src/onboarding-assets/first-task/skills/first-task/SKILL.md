@@ -23,9 +23,9 @@ Work in this order.
 
 1. Take the path the user picked.
 
-   - `interview` → ask the user 3–4 questions in one GS Agentic Manager question card (`request_human_input` with `interactionKind: "questions"` when available, otherwise the `ask_user_questions` API) that pin down what their organization does, what they want to achieve first, any constraints (time, budget, tools), and what "done" looks like. Don't guess; ask. Don't post anything else before the card. The answers lead to the plan-and-team path in step 2.
+   - `interview` → ask the user 3 to 4 questions in one GS Agentic Manager question card (`request_human_input` with `interactionKind: "questions"` when available, otherwise the `ask_user_questions` API) that pin down what their organization does, what they want to achieve first, any constraints (time, budget, tools), and what "done" looks like. Don't guess; ask. Don't post anything else before the card. The answers lead to the plan-and-team path in step 2.
 
-   - `task` → the text they typed is the task. If it is clear enough to propose on, go straight to step 2. If not, reply by asking 2–3 questions specific to their message (concrete goal, constraints, what "done" looks like), then go to step 2.
+   - `task` → the text they typed is the task. If it is clear enough to propose on, go straight to step 2. If not, reply by asking 2 to 3 questions specific to their message (concrete goal, constraints, what "done" looks like), then go to step 2.
 
    - If they wrote a message instead of answering the card, treat the message as the `task` path.
 

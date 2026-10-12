@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { githubBrokerEnvironment } from "@greatstone/adapter-utils/github-launcher";
 import { cleanupGitHubOperationLaunchers, prepareGitHubOperationLaunchers } from "@greatstone/adapter-utils/execution-target";
+import { liveProcessGuard } from "./live-process-guard.js";
 
 type LauncherInput = Parameters<typeof prepareGitHubOperationLaunchers>[0];
 
@@ -39,7 +40,11 @@ export async function prepareHeartbeatGitHubLaunchers(
   });
   try {
     return {
-      env: await prepareLaunchers({ ...location, cwd: input.cwd, env }),
+      env: await prepareLaunchers({
+        ...location, cwd: input.cwd, env,
+        // Local runs share this server's user; keep their pkill/killall off live.
+        processGuard: input.processGuard ?? liveProcessGuard(),
+      }),
       cleanupLocation: anonymous ? null : location,
     };
   } catch (error) {

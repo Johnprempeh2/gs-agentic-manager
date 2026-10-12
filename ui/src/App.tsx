@@ -9,6 +9,7 @@ import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { TaskChatLab } from "./pages/TaskChatLab";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
+import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
 import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
@@ -20,6 +21,7 @@ import {
 import { useHiddenSettings } from "./hooks/useHiddenSettings";
 import { Cases } from "./pages/Cases";
 import { CaseDetail } from "./pages/CaseDetail";
+import { DeepDive } from "./pages/DeepDive";
 import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
@@ -41,17 +43,30 @@ import { IssueChatLongThreadPerf } from "./pages/IssueChatLongThreadPerf";
 import { Routines } from "./pages/Routines";
 import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, ReviewQueue } from "./pages/Pipelines";
 import { PipelineSettings } from "./pages/PipelineSettings";
+import { PipelineAccessOverview } from "./pages/PipelineAccessOverview";
 import { StatusCards } from "./pages/StatusCards";
 import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
 import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
 import { Goals } from "./pages/Goals";
+import { WorkflowTemplates } from "./pages/WorkflowTemplates";
 import { Releases } from "./pages/Releases";
+import { Billing } from "./pages/Billing";
 import { Artifacts } from "./pages/Artifacts";
+import { Deliverables } from "./pages/Deliverables";
+import { Website } from "./pages/Website";
+import { Memory } from "./pages/Memory";
+import { MemoryActivity } from "./pages/MemoryActivity";
+import { MemoryReview } from "./pages/MemoryReview";
 import { GoalDetail } from "./pages/GoalDetail";
+import { StrategyBoard } from "./pages/StrategyBoard";
+import { Tutorials } from "./pages/Tutorials";
+import { BoardAgentChat } from "./pages/BoardAgentChat";
+import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
 import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { CompanyActivity } from "./pages/audit/CompanyActivity";
+import { SinceLastVisit } from "./pages/SinceLastVisit";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
@@ -69,6 +84,7 @@ import { AdvancedToolsRoute } from "./pages/tools/AdvancedToolsRoute";
 import { ProfileWizardRoute } from "./pages/tools/profiles/ProfileWizardRoute";
 import { ProfileDetailRoute } from "./pages/tools/profiles/ProfileDetailRoute";
 import { Browse } from "./pages/apps/Browse";
+import { Mailboxes } from "./pages/apps/Mailboxes";
 import { AppsConnect } from "./pages/apps/AppsConnect";
 import { ChatEndpointSetup } from "./pages/apps/chat/ChatEndpointSetup";
 import { ChatEndpointDetail } from "./pages/apps/chat/ChatEndpointDetail";
@@ -83,12 +99,15 @@ import { PaperclipCloudOAuthHandoffPage } from "./pages/apps/PaperclipCloudOAuth
 import { GatewaysList } from "./pages/apps/gateways/GatewaysList";
 import { GatewayDetail } from "./pages/apps/gateways/GatewayDetail";
 import { CompanySkills } from "./pages/CompanySkills";
+import { TeamCatalog } from "./pages/TeamCatalog";
 import { SkillStudio } from "./pages/SkillStudio";
 import { Secrets } from "./pages/Secrets";
 import { CompanyImport } from "./pages/CompanyImport";
 import { DesignGuide } from "./pages/DesignGuide";
 import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettings";
 import { InstanceAccess } from "./pages/InstanceAccess";
+import { Fleet } from "./pages/Fleet";
+import { GetHelp } from "./pages/GetHelp";
 import { ProfileSettings } from "./pages/ProfileSettings";
 import { PluginManager } from "./pages/PluginManager";
 import { PluginSettings } from "./pages/PluginSettings";
@@ -138,7 +157,7 @@ const ProductionCosts = lazy(() =>
   import("./pages/Costs.production").then((module) => ({ default: module.Costs })),
 );
 const ProductionOrgChart = lazy(() =>
-  import("./pages/OrgChart.production").then((module) => ({ default: module.OrgChart })),
+  import("./pages/OrgChart").then((module) => ({ default: module.OrgChart })),
 );
 
 function ProductionSurface({ children }: { children: ReactNode }) {
@@ -190,11 +209,16 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route element={<HiddenSettingsPageGate pageKey="company.secrets" />}>
         <Route path="company/settings/secrets" element={<Secrets />} />
       </Route>
+      <Route
+        path="company/settings/pipelines-access"
+        element={<PipelinesExperimentalGate><PipelineAccessOverview /></PipelinesExperimentalGate>}
+      />
       <Route path="company/settings/tools" element={<LegacyToolsSettingsRedirect />} />
       <Route path="company/settings/tools/:tab" element={<LegacyToolsSettingsRedirect />} />
       <Route path="tools" element={<LegacyToolsRedirect />} />
       <Route path="tools/:tab" element={<LegacyToolsRedirect />} />
       <Route path="apps" element={<Browse />} />
+      <Route path="apps/mailboxes" element={<Mailboxes />} />
       <Route path="apps/browse" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connections" element={<Navigate to="/apps" replace />} />
       <Route path="apps/byo" element={<AppsConnect byoOnly />} />
@@ -246,6 +270,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route element={<HiddenSettingsPageGate pageKey="instance.access" />}>
         <Route path="company/settings/instance/access" element={<InstanceAccess />} />
       </Route>
+      {/* Fleet (GRE-1083): hub only; the server answers 404 off the hub and 403 to non-admins. */}
+      <Route path="company/settings/instance/fleet" element={<Fleet />} />
+      {/* Get help (GRE-1425): board users open support tickets with Greatstone. */}
+      <Route path="company/settings/get-help" element={<GetHelp />} />
       <Route element={<HiddenSettingsPageGate pageKey="instance.experimental" />}>
         <Route path="company/settings/instance/experimental" element={<InstanceExperimentalSettings />} />
       </Route>
@@ -265,6 +293,8 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         path="skills/*"
         element={streamlinedUiEnabled ? <CompanySkills /> : <ProductionSurface><ProductionCompanySkills /></ProductionSurface>}
       />
+      {/* Team Catalogue (GRE-434): reachable by link, not in the sidebar yet. */}
+      <Route path="teams-catalog/*" element={<TeamCatalog />} />
       <Route path="settings" element={<LegacySettingsRedirect />} />
       <Route path="settings/*" element={<LegacySettingsRedirect />} />
       <Route path="plugins/:pluginId" element={<PluginPage />} />
@@ -319,6 +349,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route
         path="cases/:caseIdentifier"
         element={<CasesExperimentalGate><CaseDetail /></CasesExperimentalGate>}
+      />
+      <Route
+        path="deep-dive"
+        element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
       />
       <Route
         path="status"
@@ -376,15 +410,33 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
         </Route>
       </Route>
       <Route path="goals" element={<Goals />} />
+      <Route path="workflows" element={<WorkflowTemplates />} />
       <Route element={<HiddenSettingsPageGate pageKey="instance.releases" redirectTo="/dashboard" />}>
         <Route path="releases" element={<Releases />} />
       </Route>
+      {/* Client billing (GRE-1370): read-only, every board user of the instance. */}
+      <Route path="billing" element={<Billing />} />
       <Route path="goals/:goalId" element={<GoalDetail />} />
+      <Route
+        path="strategy-board"
+        element={<StrategyBoardExperimentalGate><StrategyBoard /></StrategyBoardExperimentalGate>}
+      />
+      <Route
+        path="strategy-board/ask/:agentId"
+        element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
+      />
+      <Route path="deliverables" element={<Deliverables />} />
+      <Route path="website" element={<Website />} />
+      <Route path="tutorials" element={<Tutorials />} />
+      <Route path="memory" element={<Memory />} />
+      <Route path="memory/activity" element={<MemoryActivity />} />
+      <Route path="memory/review" element={<MemoryReview />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
       <Route path="approvals/all" element={<Approvals />} />
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
+      <Route path="since-last-visit" element={<SinceLastVisit />} />
       <Route path="activity" element={streamlinedUiEnabled ? <CompanyActivity /> : <ProductionSurface><ProductionCompanyActivity /></ProductionSurface>} />
       {streamlinedUiEnabled ? (
         <>
@@ -595,7 +647,7 @@ export function OnboardingRoutePage() {
             <p className="text-sm text-muted-foreground">
               {t("app.cloudCreateUnavailable", {
                 defaultValue:
-                  "Organizations are created in Paperclip Cloud. This instance can't reach it right now — try again from your Cloud portfolio.",
+                  "Organisations are created in your Cloud portfolio. This instance can't reach it right now. Try again from your Cloud portfolio.",
               })}
             </p>
           ) : (
@@ -724,7 +776,7 @@ function NoCompaniesStartPage() {
             <p className="text-sm text-muted-foreground">
               {t("app.cloudCreateUnavailable", {
                 defaultValue:
-                  "Organizations are created in Paperclip Cloud. This instance can't reach it right now — try again from your Cloud portfolio.",
+                  "Organisations are created in your Cloud portfolio. This instance can't reach it right now. Try again from your Cloud portfolio.",
               })}
             </p>
           ) : (
@@ -777,10 +829,13 @@ export function App() {
           <Route path="issues/:issueId" element={<UnprefixedBoardRedirect />} />
           <Route path="routines" element={<UnprefixedBoardRedirect />} />
           <Route path="routines/:routineId" element={<UnprefixedBoardRedirect />} />
+          <Route path="workflows" element={<UnprefixedBoardRedirect />} />
+          <Route path="billing" element={<UnprefixedBoardRedirect />} />
           <Route path="review-queue" element={<UnprefixedBoardRedirect />} />
           <Route path="learnings" element={<UnprefixedBoardRedirect />} />
           <Route path="cases" element={<UnprefixedBoardRedirect />} />
           <Route path="cases/:caseIdentifier" element={<UnprefixedBoardRedirect />} />
+          <Route path="deep-dive" element={<UnprefixedBoardRedirect />} />
           <Route path="status" element={<UnprefixedBoardRedirect />} />
           <Route path="status/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
@@ -792,6 +847,12 @@ export function App() {
           <Route path="pipelines/:pipelineId/items/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
+          <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="website" element={<UnprefixedBoardRedirect />} />
+          <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           {streamlinedUiEnabled ? (
             <>
@@ -811,6 +872,7 @@ export function App() {
           <Route path="skills/studio/:skillId" element={<UnprefixedBoardRedirect />} />
           <Route path="skills/:skillId/studio" element={<LegacySkillStudioRedirect />} />
           <Route path="skills/*" element={<UnprefixedBoardRedirect />} />
+          <Route path="teams-catalog/*" element={<UnprefixedBoardRedirect />} />
           <Route path="settings" element={<LegacySettingsRedirect />} />
           <Route path="settings/*" element={<LegacySettingsRedirect />} />
           <Route path="agents" element={<UnprefixedBoardRedirect />} />

@@ -49,6 +49,7 @@ import {
   isWorkspaceValidationFailedRun,
   parseObject,
   readNonEmptyString,
+  SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY,
 } from "../domain/values.js";
 import { requireTransactionScopeTx, TransactionScope } from "../application/ports.js";
 import type {
@@ -166,20 +167,36 @@ function toDeferredWakeCandidate(row: typeof agentWakeupRequests.$inferSelect): 
     deferredContextSeed,
     deferredCommentIds,
     wakeReason,
+    supersededByBoardClose: payload[SUPERSEDED_BY_BOARD_CLOSE_PAYLOAD_KEY] != null,
   };
 }
 
+/**
+ * The host callbacks run inside the release transaction, so each receives
+ * that transaction as `executor` and must read through it. A read through
+ * the outer pool would hold one connection while waiting for a second, and
+ * a burst of releases would then deadlock the pool.
+ */
 export type WakeQueuePostgresAdapterDeps = {
-  resolveResponsibleUserId: WakeQueueHost["resolveResponsibleUserId"];
-  getRoutineEnv: WakeQueueHost["getRoutineEnv"];
-  resolveSessionBeforeForWakeup: WakeQueueHost["resolveSessionBeforeForWakeup"];
+  resolveResponsibleUserId: (
+    input: Parameters<WakeQueueHost["resolveResponsibleUserId"]>[0],
+    executor: Db,
+  ) => ReturnType<WakeQueueHost["resolveResponsibleUserId"]>;
+  getRoutineEnv: (
+    input: Parameters<WakeQueueHost["getRoutineEnv"]>[0],
+    executor: Db,
+  ) => ReturnType<WakeQueueHost["getRoutineEnv"]>;
+  resolveSessionBeforeForWakeup: (
+    input: Parameters<WakeQueueHost["resolveSessionBeforeForWakeup"]>[0],
+    executor: Db,
+  ) => ReturnType<WakeQueueHost["resolveSessionBeforeForWakeup"]>;
 };
 
-function buildHost(_tx: Db, deps: WakeQueuePostgresAdapterDeps): WakeQueueHost {
+function buildHost(tx: Db, deps: WakeQueuePostgresAdapterDeps): WakeQueueHost {
   return {
-    resolveResponsibleUserId: deps.resolveResponsibleUserId,
-    getRoutineEnv: deps.getRoutineEnv,
-    resolveSessionBeforeForWakeup: deps.resolveSessionBeforeForWakeup,
+    resolveResponsibleUserId: (input) => deps.resolveResponsibleUserId(input, tx),
+    getRoutineEnv: (input) => deps.getRoutineEnv(input, tx),
+    resolveSessionBeforeForWakeup: (input) => deps.resolveSessionBeforeForWakeup(input, tx),
   };
 }
 

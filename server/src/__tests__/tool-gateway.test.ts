@@ -994,6 +994,86 @@ describeEmbeddedPostgres("tool gateway acceptance", () => {
     }
   });
 
+  it("answers MCP protocol probes without refusals and advertises only what a run-scoped token may use", async () => {
+    const company = await createCompany(db);
+    const [profile] = await db.insert(toolProfiles).values({
+      companyId: company.id,
+      profileKey: `protocol-noise-${randomUUID()}`,
+      name: `Protocol noise ${randomUUID()}`,
+      defaultAction: "deny",
+    }).returning();
+    const gateway = createTestToolGatewayService(db);
+    const created = await gateway.createNamedGateway({
+      companyId: company.id,
+      body: { name: "Run gateway", profileId: profile.id },
+    });
+    // The same allowed actions heartbeat gives every run token.
+    const runToken = await gateway.createNamedGatewayToken({
+      companyId: company.id,
+      gatewayId: created.id,
+      body: { name: "Run token", allowedActions: ["tools/list", "tools/call"] },
+    });
+    const fullToken = await gateway.createNamedGatewayToken({
+      companyId: company.id,
+      gatewayId: created.id,
+      body: { name: "Full token" },
+    });
+    const app = createGatewayRouteApp(db, gateway);
+    const endpoint = `/mcp/gateways/${created.gatewayPublicId}`;
+    const post = (token: string, body: Record<string, unknown>) => request(app)
+      .post(endpoint)
+      .set("authorization", `Bearer ${token}`)
+      .send(body);
+
+    // No SSE stream: GET is 405, so clients stop reconnecting it.
+    const sse = await request(app).get(endpoint).expect(405);
+    expect(sse.headers.allow).toBe("POST");
+    await request(app).get(`/api/tool-gateway/gateways/${created.id}/mcp`).expect(405);
+
+    const discover = await post(runToken.token, {
+      jsonrpc: "2.0", id: "server-discover-probe-1", method: "server/discover", params: {},
+    }).expect(200);
+    expect(discover.body).toEqual({
+      jsonrpc: "2.0", id: "server-discover-probe-1", error: { code: -32601, message: "Method not found" },
+    });
+    for (const method of ["notifications/initialized", "notifications/cancelled", "notifications/roots/list_changed"]) {
+      const accepted = await post(runToken.token, { jsonrpc: "2.0", method }).expect(202);
+      expect(accepted.text).toBe("");
+    }
+
+    const runInit = await post(runToken.token, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} }).expect(200);
+    expect(runInit.body.result.capabilities).toEqual({ tools: {} });
+    const fullInit = await post(fullToken.token, { jsonrpc: "2.0", id: 1, method: "initialize", params: {} }).expect(200);
+    expect(fullInit.body.result.capabilities).toEqual({ tools: {}, resources: {}, prompts: {} });
+
+    const helperTools = ["paperclip_list_resources", "paperclip_read_resource", "paperclip_list_prompts", "paperclip_get_prompt"];
+    const runTools = await post(runToken.token, { jsonrpc: "2.0", id: 2, method: "tools/list" }).expect(200);
+    const runToolNames = runTools.body.result.tools.map((tool: { name: string }) => tool.name);
+    for (const helper of helperTools) expect(runToolNames).not.toContain(helper);
+    const fullTools = await post(fullToken.token, { jsonrpc: "2.0", id: 2, method: "tools/list" }).expect(200);
+    expect(fullTools.body.result.tools.map((tool: { name: string }) => tool.name)).toEqual(expect.arrayContaining(helperTools));
+
+    // Authorisation is unchanged for a client that asks anyway.
+    for (const method of ["resources/list", "prompts/list"]) {
+      const refused = await post(runToken.token, { jsonrpc: "2.0", id: 3, method }).expect(403);
+      expect(refused.body.error.data.reasonCode).toBe("gateway_token_action_denied");
+    }
+    const helperRefused = await post(runToken.token, {
+      jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "paperclip_list_resources", arguments: {} },
+    }).expect(403);
+    expect(helperRefused.body.error.data.reasonCode).toBe("gateway_token_action_denied");
+    const fullResources = await post(fullToken.token, { jsonrpc: "2.0", id: 5, method: "resources/list" }).expect(200);
+    expect(fullResources.body.result).toEqual({ resources: [] });
+
+    // An unknown gateway still fails authentication, and a notification still needs a bearer.
+    await request(app)
+      .post(`/mcp/gateways/gw_${"0".repeat(32)}`)
+      .set("authorization", `Bearer ${runToken.token}`)
+      .send({ jsonrpc: "2.0", id: 6, method: "initialize" })
+      .expect(401);
+    await request(app).post(endpoint).send({ jsonrpc: "2.0", method: "notifications/initialized" }).expect(401);
+  });
+
   it("omits archived gateways from listNamedGateways", async () => {
     const company = await createCompany(db);
     const [profile] = await db.insert(toolProfiles).values({

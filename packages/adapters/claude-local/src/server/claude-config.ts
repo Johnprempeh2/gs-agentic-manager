@@ -206,12 +206,12 @@ export async function prepareClaudeConfigSeed(
   if (copiedFiles.length > 0) {
     await onLog(
       "stdout",
-      `[paperclip] Prepared Claude config seed "${targetDir}" from "${sourceDir}" (${copiedFiles.map((file) => file.name).join(", ")}).\n`,
+      `[gsam] Prepared Claude config seed "${targetDir}" from "${sourceDir}" (${copiedFiles.map((file) => file.name).join(", ")}).\n`,
     );
   } else {
     await onLog(
       "stdout",
-      `[paperclip] No local Claude config seed files were found in "${sourceDir}". Remote Claude auth may still require login.\n`,
+      `[gsam] No local Claude config seed files were found in "${sourceDir}". Remote Claude auth may still require login.\n`,
     );
   }
 

@@ -1,4 +1,5 @@
 import type { DashboardRunActivityDay, HeartbeatRun } from "@greatstone/shared";
+import { cn, formatShortDate } from "../lib/utils";
 
 /* ---- Utilities ---- */
 
@@ -10,20 +11,50 @@ export function getLast14Days(): string[] {
   });
 }
 
-function formatDayLabel(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00");
-  return `${d.getMonth() + 1}/${d.getDate()}`;
+export function formatDayLabel(dateStr: string): string {
+  return formatShortDate(new Date(dateStr + "T12:00:00"));
+}
+
+const WINDOW_LABEL = "Last 14 days";
+
+/** When the company (or agent) began; days before it are not quiet days. */
+export type ChartStart = Date | string | null | undefined;
+
+function startDay(start: ChartStart): string | null {
+  if (!start) return null;
+  const date = new Date(start);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+// A young company should see its real history, not ten empty days. Only days
+// before it existed go: a quiet week for an older company stays on the chart.
+function sinceStart(days: string[], start: ChartStart): string[] {
+  const first = startDay(start);
+  const kept = first ? days.filter((day) => day >= first) : days;
+  return kept.length > 0 ? kept : days;
+}
+
+/** ChartCard subtitle: names the window the chart really shows. */
+export function chartWindowLabel(start: ChartStart): string {
+  const days = getLast14Days();
+  return sinceStart(days, start).length < days.length ? `Since ${formatShortDate(start as Date | string)}` : WINDOW_LABEL;
+}
+
+function sumCounts(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((a, b) => a + b, 0);
 }
 
 function emptyRunDay(date: string): DashboardRunActivityDay {
   return { date, succeeded: 0, failed: 0, recovered: 0, other: 0, total: 0, failedByErrorCode: {} };
 }
 
+// Greatstone run palette: emerald for success (paler when it took a retry),
+// the destructive red for failures, a quiet grey for everything else.
 const runSegmentColors = {
-  succeeded: "var(--status-task-icon-done)",
-  recovered: "var(--status-task-todo)",
-  failed: "var(--status-task-icon-blocked)",
-  other: "var(--hex-737373)",
+  succeeded: "var(--brand-emerald)",
+  recovered: "var(--brand-emerald-soft)",
+  failed: "var(--destructive)",
+  other: "var(--subtle-foreground)",
 } as const;
 
 // Compact per-day tooltip that also attributes failures to their error class.
@@ -42,13 +73,19 @@ function runDayTooltip(entry: DashboardRunActivityDay): string {
 
 /* ---- Sub-components ---- */
 
+// First, middle and last day (every day when there are only a few). Today
+// reads "Today" in the accent: lime on the void, emerald on paper.
 function DateLabels({ days }: { days: string[] }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const middle = Math.floor((days.length - 1) / 2);
   return (
     <div className="flex gap-(--sz-3px) mt-1.5">
       {days.map((day, i) => (
         <div key={day} className="flex-1 text-center">
-          {(i === 0 || i === 6 || i === 13) ? (
-            <span className="text-(length:--text-nano) text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
+          {(days.length <= 4 || i === 0 || i === middle || i === days.length - 1) ? (
+            <span className={cn("whitespace-nowrap text-xs tabular-nums", day === today ? "font-medium text-primary" : "text-muted-foreground")}>
+              {day === today ? "Today" : formatDayLabel(day)}
+            </span>
           ) : null}
         </div>
       ))}
@@ -60,7 +97,7 @@ function ChartLegend({ items }: { items: { color: string; label: string }[] }) {
   return (
     <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-2">
       {items.map(item => (
-        <span key={item.label} className="flex items-center gap-1 text-(length:--text-nano) text-muted-foreground">
+        <span key={item.label} className="flex items-center gap-1 text-xs text-muted-foreground">
           <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: item.color }} />
           {item.label}
         </span>
@@ -74,7 +111,7 @@ export function ChartCard({ title, subtitle, children }: { title: string; subtit
     <div className="gs-glass-card border rounded-xl p-4 space-y-3">
       <div>
         <h3 className="text-xs font-medium text-muted-foreground">{title}</h3>
-        {subtitle && <span className="text-(length:--text-nano) text-subtle-foreground">{subtitle}</span>}
+        {subtitle && <span className="text-xs text-subtle-foreground">{subtitle}</span>}
       </div>
       {children}
     </div>
@@ -83,9 +120,10 @@ export function ChartCard({ title, subtitle, children }: { title: string; subtit
 
 /* ---- Chart Components ---- */
 
-type RunChartProps =
+type RunChartProps = { start?: ChartStart } & (
   | { activity?: DashboardRunActivityDay[] | null; runs?: never }
-  | { runs?: HeartbeatRun[] | null; activity?: never };
+  | { runs?: HeartbeatRun[] | null; activity?: never }
+);
 
 function aggregateRuns(runs: readonly HeartbeatRun[] = []): DashboardRunActivityDay[] {
   const days = getLast14Days();
@@ -118,9 +156,15 @@ function resolveRunActivity(props: RunChartProps): DashboardRunActivityDay[] {
   return [];
 }
 
-export function RunActivityChart(props: RunChartProps) {
+function runActivitySince(props: RunChartProps): DashboardRunActivityDay[] {
   const activity = resolveRunActivity(props);
-  const days = activity.length > 0 ? activity.map((day) => day.date) : getLast14Days();
+  const kept = new Set(sinceStart(activity.map((day) => day.date), props.start));
+  return activity.filter((day) => kept.has(day.date));
+}
+
+export function RunActivityChart(props: RunChartProps) {
+  const activity = runActivitySince(props);
+  const days = activity.map((day) => day.date);
   const grouped = new Map(activity.map((day) => [day.date, day]));
 
   const maxValue = Math.max(...activity.map(v => v.total), 1);
@@ -174,7 +218,7 @@ const priorityColors: Record<string, string> = {
 
 const priorityOrder = ["critical", "high", "medium", "low"] as const;
 
-export function PriorityChart({ issues }: { issues: { priority: string; createdAt: Date }[] }) {
+export function PriorityChart({ issues, start }: { issues: { priority: string; createdAt: Date }[]; start?: ChartStart }) {
   const days = getLast14Days();
   const grouped = new Map<string, Record<string, number>>();
   for (const day of days) grouped.set(day, { critical: 0, high: 0, medium: 0, low: 0 });
@@ -185,17 +229,18 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
     if (issue.priority in entry) entry[issue.priority]++;
   }
 
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
-  const hasData = Array.from(grouped.values()).some(v => Object.values(v).reduce((a, b) => a + b, 0) > 0);
+  const maxValue = Math.max(...Array.from(grouped.values()).map(sumCounts), 1);
+  const hasData = Array.from(grouped.values()).some(v => sumCounts(v) > 0);
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
+  const shownDays = sinceStart(days, start);
 
   return (
     <div>
       <div className="gs-bars flex items-end gap-(--sz-3px) h-20">
-        {days.map(day => {
+        {shownDays.map(day => {
           const entry = grouped.get(day)!;
-          const total = Object.values(entry).reduce((a, b) => a + b, 0);
+          const total = sumCounts(entry);
           const heightPct = (total / maxValue) * 100;
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
@@ -212,7 +257,7 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
           );
         })}
       </div>
-      <DateLabels days={days} />
+      <DateLabels days={shownDays} />
       <ChartLegend items={priorityOrder.map(p => ({ color: priorityColors[p], label: p.charAt(0).toUpperCase() + p.slice(1) }))} />
     </div>
   );
@@ -223,7 +268,7 @@ export function PriorityChart({ issues }: { issues: { priority: string; createdA
 // status vocabulary; badge, row, chart, and log agree). Previously an
 // independent palette (todo blue, in_progress violet, etc.). `backlog`
 // deliberately keeps --project-none (pre-B5, per user ruling); the
-// non-red priority series and warning success-rate tints retain their own hues.
+// non-red priority series retain their own hues.
 // Progress, done, and blocked use the icon hues so bars and legends match
 // the task icons in each theme.
 const statusColors: Record<string, string> = {
@@ -246,7 +291,7 @@ const statusLabels: Record<string, string> = {
   backlog: "Backlog",
 };
 
-export function IssueStatusChart({ issues }: { issues: { status: string; createdAt: Date }[] }) {
+export function IssueStatusChart({ issues, start }: { issues: { status: string; createdAt: Date }[]; start?: ChartStart }) {
   const days = getLast14Days();
   const allStatuses = new Set<string>();
   const grouped = new Map<string, Record<string, number>>();
@@ -260,17 +305,18 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
   }
 
   const statusOrder = ["todo", "in_progress", "in_review", "done", "blocked", "cancelled", "backlog"].filter(s => allStatuses.has(s));
-  const maxValue = Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1);
+  const maxValue = Math.max(...Array.from(grouped.values()).map(sumCounts), 1);
   const hasData = allStatuses.size > 0;
 
   if (!hasData) return <p className="text-xs text-muted-foreground">No tasks</p>;
+  const shownDays = sinceStart(days, start);
 
   return (
     <div>
       <div className="gs-bars flex items-end gap-(--sz-3px) h-20">
-        {days.map(day => {
+        {shownDays.map(day => {
           const entry = grouped.get(day)!;
-          const total = Object.values(entry).reduce((a, b) => a + b, 0);
+          const total = sumCounts(entry);
           const heightPct = (total / maxValue) * 100;
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${total} issues`}>
@@ -287,15 +333,15 @@ export function IssueStatusChart({ issues }: { issues: { status: string; created
           );
         })}
       </div>
-      <DateLabels days={days} />
+      <DateLabels days={shownDays} />
       <ChartLegend items={statusOrder.map(s => ({ color: statusColors[s] ?? "var(--hex-6b7280)", label: statusLabels[s] ?? s }))} />
     </div>
   );
 }
 
 export function SuccessRateChart(props: RunChartProps) {
-  const activity = resolveRunActivity(props);
-  const days = activity.length > 0 ? activity.map((day) => day.date) : getLast14Days();
+  const activity = runActivitySince(props);
+  const days = activity.map((day) => day.date);
   const grouped = new Map(activity.map((day) => [day.date, day]));
 
   const hasData = activity.some(v => v.total > 0);
@@ -310,7 +356,8 @@ export function SuccessRateChart(props: RunChartProps) {
           // rather than dragging it down as failures.
           const effectiveSucceeded = entry.succeeded + entry.recovered;
           const rate = entry.total > 0 ? effectiveSucceeded / entry.total : 0;
-          const color = entry.total === 0 ? undefined : rate >= 0.8 ? "var(--status-task-icon-done)" : rate >= 0.5 ? "var(--hex-eab308)" : "var(--status-task-icon-blocked)";
+          // Emerald unless failures carried the day.
+          const color = rate >= 0.5 ? runSegmentColors.succeeded : runSegmentColors.failed;
           return (
             <div key={day} className="flex-1 h-full flex flex-col justify-end" title={`${day}: ${entry.total > 0 ? Math.round(rate * 100) : 0}% (${effectiveSucceeded}/${entry.total})`}>
               {entry.total > 0 ? (

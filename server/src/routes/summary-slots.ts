@@ -2,7 +2,8 @@ import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
 import { generateSummarySlotSchema, writeSummarySlotSchema } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
-import { forbidden, notFound } from "../errors.js";
+import { requireEntitlement } from "../services/entitlements.js";
+import { forbidden } from "../errors.js";
 import { accessService, heartbeatService, instanceSettingsService, logActivity } from "../services/index.js";
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
 import { summarySlotService } from "../services/summary-slots.js";
@@ -27,15 +28,12 @@ export function summarySlotRoutes(db: Db) {
   const router = Router();
   const access = accessService(db);
   const settings = instanceSettingsService(db);
+
+  // GRE-1077: refuse every route while enableSummaries is off, before validation.
+  router.use("/companies/:companyId/summary-slots", requireEntitlement(settings, "enableSummaries"));
   const svc = summarySlotService(db);
   const heartbeat = heartbeatService(db);
 
-  async function assertSummariesEnabled() {
-    const experimental = await settings.getExperimental();
-    if (experimental.enableSummaries !== true) {
-      throw notFound("Summaries are not enabled");
-    }
-  }
 
   /** Manual generate is a board/user action; agents cannot trigger it. */
   async function assertCanGenerateSummary(req: Request, companyId: string) {
@@ -76,7 +74,6 @@ export function summarySlotRoutes(db: Db) {
   router.get("/companies/:companyId/summary-slots/:scopeKind/:slotKey", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    await assertSummariesEnabled();
     const result = await svc.getSlot({
       companyId,
       scopeKind: req.params.scopeKind as string,
@@ -89,7 +86,6 @@ export function summarySlotRoutes(db: Db) {
   router.get("/companies/:companyId/summary-slots/:scopeKind/:slotKey/revisions", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    await assertSummariesEnabled();
     const result = await svc.listRevisions({
       companyId,
       scopeKind: req.params.scopeKind as string,
@@ -104,7 +100,6 @@ export function summarySlotRoutes(db: Db) {
     validate(generateSummarySlotSchema),
     async (req, res) => {
       const companyId = req.params.companyId as string;
-      await assertSummariesEnabled();
       await assertCanGenerateSummary(req, companyId);
       const actor = getActorInfo(req);
       const result = await svc.generate(
@@ -164,7 +159,6 @@ export function summarySlotRoutes(db: Db) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       assertCompanyAccess(req, companyId);
-      await assertSummariesEnabled();
       if (req.actor.type !== "agent") {
         throw forbidden("Only the Summarizer built-in agent may write summaries");
       }

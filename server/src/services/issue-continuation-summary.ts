@@ -158,7 +158,7 @@ export function buildContinuationSummaryMarkdown(input: {
   const body = [
     "# Continuation Summary",
     "",
-    `- Issue: ${issue.identifier ?? issue.id} — ${issue.title}`,
+    `- Issue: ${issue.identifier ?? issue.id}: ${issue.title}`,
     `- Status: ${issue.status}`,
     `- Priority: ${issue.priority}`,
     `- Current mode: ${mode}`,

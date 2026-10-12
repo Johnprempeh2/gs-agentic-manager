@@ -1,4 +1,12 @@
-import type { AgentAdapterType, JoinRequest, PermissionKey } from "@greatstone/shared";
+import type {
+  AgentAdapterType,
+  JoinRequest,
+  MemberHandoverControls,
+  MemberHandoverOverride,
+  MemberHandoverPlan,
+  MemberHandoverRestoreResult,
+  PermissionKey,
+} from "@greatstone/shared";
 import { api } from "./client";
 
 export type HumanCompanyRole = "owner" | "admin" | "operator" | "viewer";
@@ -129,6 +137,8 @@ export type CompanyMember = {
     canArchive: boolean;
     reason: string | null;
   };
+  /** Hand over and remove, and restore: what this viewer may do for this row. */
+  handover?: MemberHandoverControls | null;
 };
 
 export type ArchiveCompanyMemberResponse = {
@@ -143,12 +153,57 @@ export type CompanyMembersResponse = {
     canManageMembers: boolean;
     canInviteUsers: boolean;
     canApproveJoinRequests: boolean;
+    /** The signed-in viewer, when known. */
+    currentUserId?: string | null;
+    /** Present in authenticated mode when the company still has the legacy local-board member. */
+    legacyBoard?: LegacyBoardControls | null;
   };
+};
+
+export type LegacyBoardControls = {
+  status: CompanyMember["status"];
+  canRetire: boolean;
+  canRestore: boolean;
+};
+
+export type LegacyBoardIssueRole =
+  | "assignee"
+  | "responsible"
+  | "current_reviewer"
+  | "return_assignee"
+  | "review_participant";
+
+export type LegacyBoardRetirementReport = {
+  dryRun: boolean;
+  companyId: string;
+  legacyUserId: "local-board";
+  membershipId: string;
+  moveToUserId: string;
+  issueCount: number;
+  issues: Array<{ id: string; identifier: string | null; title: string; roles: LegacyBoardIssueRole[] }>;
+  pendingRequestCount: number;
+  routineCount: number;
+  routines: Array<{ id: string; title: string; status: string }>;
+  switchOff: {
+    membershipStatus: { from: string; to: "suspended" };
+    boardKeysRevoked: number;
+    sessionsEnded: number;
+    instanceAdmin: "not_held" | "kept" | "removed";
+  };
+};
+
+export type LegacyBoardRestoreReport = {
+  companyId: string;
+  legacyUserId: "local-board";
+  membershipId: string;
+  membershipStatus: { from: string; to: "active" };
+  instanceAdminRestored: boolean;
 };
 
 export type CompanyUserDirectoryEntry = {
   principalId: string;
-  status: "active";
+  /** Only a retired legacy local-board is listed as `suspended`, for names in history. */
+  status: "active" | "suspended";
   user: { id: string; email: string | null; name: string | null; image: string | null } | null;
 };
 
@@ -315,11 +370,33 @@ export const accessApi = {
       `/companies/${companyId}/join-requests?status=${status}${requestType ? `&requestType=${requestType}` : ""}`,
     ),
 
-  listMembers: (companyId: string) =>
-    api.get<CompanyMembersResponse>(`/companies/${companyId}/members`),
+  listMembers: (companyId: string, options: { includeArchived?: boolean } = {}) =>
+    api.get<CompanyMembersResponse>(
+      `/companies/${companyId}/members${options.includeArchived ? "?includeArchived=true" : ""}`,
+    ),
+
+  handOverMember: (
+    companyId: string,
+    memberId: string,
+    input: {
+      successorUserId: string;
+      overrides?: MemberHandoverOverride[];
+      dryRun: boolean;
+      removeInstanceAdmin?: boolean;
+    },
+  ) => api.post<MemberHandoverPlan>(`/companies/${companyId}/members/${memberId}/handover`, input),
+
+  restoreMember: (companyId: string, memberId: string) =>
+    api.post<MemberHandoverRestoreResult>(`/companies/${companyId}/members/${memberId}/restore`, {}),
 
   listUserDirectory: (companyId: string) =>
     api.get<CompanyUserDirectoryResponse>(`/companies/${companyId}/user-directory`),
+
+  retireLegacyBoard: (companyId: string, input: { dryRun: boolean }) =>
+    api.post<LegacyBoardRetirementReport>(`/companies/${companyId}/legacy-board/retire`, input),
+
+  restoreLegacyBoard: (companyId: string) =>
+    api.post<LegacyBoardRestoreReport>(`/companies/${companyId}/legacy-board/restore`, {}),
 
   updateMember: (
     companyId: string,

@@ -99,7 +99,7 @@ async function fetchAnthropicModels(apiKey: string, baseUrl: string): Promise<Ad
     }
     return dedupeModels(models);
   } catch (error) {
-    console.warn("[paperclip] Claude model discovery failed", {
+    console.warn("[gsam] Claude model discovery failed", {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];

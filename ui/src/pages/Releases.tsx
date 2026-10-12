@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ReleaseChangelog } from "@/components/ReleaseChangelog";
+import { BrandPageTitle } from "@/components/BrandPageTitle";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { ReauthCancelledError, useReauth } from "@/components/ReauthDialog";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -80,6 +81,9 @@ function actorLabel(by: string | null, agentNames: Map<string, string>): string 
 export function RestartReportSummary({ report }: { report: RestartReport }) {
   const resumed = report.resumedRunIds.length;
   const lost = report.lostRunIds;
+  // A kept-running run whose output goes to a capture file finishes with its
+  // real result, so only the others can still lose theirs.
+  const uncaptured = (report.adoptedWithoutCaptureRunIds ?? report.adoptedRunIds).length;
   const parts = [
     report.adoptedRunIds.length ? `${report.adoptedRunIds.length} kept running` : null,
     report.finishedWhileDownRunIds.length ? `${report.finishedWhileDownRunIds.length} continued from a checkpoint` : null,
@@ -90,8 +94,12 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
         {resumed === 0 ? "No runs needed to resume." : `${plural(resumed, "run")} resumed after the update`}
         {resumed > 0 && parts.length ? ` (${parts.join(", ")}).` : resumed > 0 ? "." : ""}
       </p>
-      {lost.length === 0 ? (
+      {/* A kept-running run with no capture file has no output pipe to the new
+          server, so its result is lost when it ends. Do not call that "nothing lost". */}
+      {lost.length === 0 && uncaptured === 0 ? (
         <p className="text-muted-foreground">Nothing was lost.</p>
+      ) : lost.length === 0 ? (
+        <p className="text-muted-foreground">No run stopped.</p>
       ) : (
         <p className="text-destructive">
           {plural(lost.length, "run")} lost (needs recovery):{" "}
@@ -103,8 +111,19 @@ export function RestartReportSummary({ report }: { report: RestartReport }) {
           ))}
         </p>
       )}
+      {uncaptured > 0 ? (
+        <p className="text-muted-foreground" data-testid="restart-report-adopted-caveat">
+          A run that kept running does not send its result to the new version. When it ends, it is marked lost and
+          runs once more.
+        </p>
+      ) : null}
     </div>
   );
+}
+
+/** "rc-2026-09-30.3" and "live-2026-09-30.3" name the same release. */
+export function releaseNumber(tag: string): string {
+  return tag.replace(/^(rc|live|stable)-/, "");
 }
 
 // ── Progress ────────────────────────────────────────────────────────────────
@@ -130,9 +149,11 @@ function progressHeadline(progress: ReleaseProgress): string {
       return `${verb} ${target}: checking`;
     case "holding": {
       const n = progress.waitingForFlaggedRuns ?? 0;
-      if (progress.overridden) return `${verb} ${target}: holding new runs, not waiting for flagged runs`;
-      if (n === 0) return `${verb} ${target}: holding new runs`;
-      return `${verb} ${target}: holding new runs, waiting for ${plural(n, "run")} marked finish before update`;
+      const acp = progress.waitingForAcpRuns ?? 0;
+      if (progress.overridden) return `${verb} ${target}: holding new runs, not waiting for running runs`;
+      if (n > 0) return `${verb} ${target}: holding new runs, waiting for ${plural(n, "run")} marked finish before update`;
+      if (acp > 0) return `${verb} ${target}: holding new runs, waiting up to 5 min for ${plural(acp, "ACP run")} to finish`;
+      return `${verb} ${target}: holding new runs`;
     }
     case "switching":
       return `${verb} ${target}: switching live`;
@@ -193,7 +214,8 @@ export function ReleaseProgressPanel({
   const bad = progress.state === "rolled_back" || progress.state === "failed";
   const currentIndex = STEPS.findIndex((step) => step.state === progress.state);
   const holding = progress.state === "holding";
-  const waiting = holding && !progress.overridden && (progress.waitingForFlaggedRuns ?? 0) > 0;
+  const waiting =
+    holding && !progress.overridden && (progress.waitingForFlaggedRuns ?? 0) + (progress.waitingForAcpRuns ?? 0) > 0;
 
   return (
     <Card className={cn("gap-4 py-5", bad && "border-destructive")} data-testid="release-progress" data-state={progress.state}>
@@ -567,20 +589,32 @@ export function ReleasesView({
 
   async function onOverride() {
     const n = progress?.waitingForFlaggedRuns ?? 0;
+    const acp = progress?.waitingForAcpRuns ?? 0;
     const ok = await confirm({
       title: "Release without waiting?",
-      description: `${plural(n, "run")} marked finish before update ${n === 1 ? "is" : "are"} still running. They are checkpointed like the others and resume after the update, but may repeat or lose their last step.`,
+      description: n > 0
+        ? `${plural(n, "run")} marked finish before update ${n === 1 ? "is" : "are"} still running. They are checkpointed like the others and resume after the update, but may repeat or lose their last step.`
+        : `${plural(acp, "ACP run")} ${acp === 1 ? "is" : "are"} still running. The restart stops ${acp === 1 ? "it" : "them"} and ${acp === 1 ? "it is" : "they are"} retried, which may repeat the last step.`,
       confirmLabel: "Release without waiting",
       tone: "destructive",
     });
     if (ok) overrideMutation.mutate();
   }
 
-  const showProgress = progress && progress.id !== dismissedJobId;
+  // A finished, healthy release card is history once a newer version is
+  // live: it sat above "Live now" and read as the current one. Failed and
+  // rolled-back cards stay until dismissed.
+  const supersededByLive = Boolean(
+    progress && progress.state === "healthy" && live?.tag && live.date &&
+      (!progress.targetTag || releaseNumber(progress.targetTag) !== releaseNumber(live.tag)) &&
+      Date.parse(live.date) > Date.parse(progress.updatedAt),
+  );
+  const showProgress = progress && progress.id !== dismissedJobId && !supersededByLive;
   const titleBy = next ? actorLabel(next.titleEditedBy, agentNames) : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-4" data-testid="releases-page">
+      <BrandPageTitle>Releases</BrandPageTitle>
       {reauthDialog}
       <PromoteDialog
         entry={promoteEntry}
@@ -598,7 +632,9 @@ export function ReleasesView({
       {disabledReason ? (
         <div className="rounded-lg border border-border bg-card p-4 text-sm" data-testid="release-disabled">
           <p className="font-medium text-foreground">Release is off on this server.</p>
-          <p className="text-muted-foreground">{disabledReason}</p>
+          <p className="text-muted-foreground">
+            {disabledReason.replace(/^release is off on this server:\s*/i, "").replace(/^./, (first) => first.toUpperCase())}
+          </p>
         </div>
       ) : null}
 
@@ -637,7 +673,7 @@ export function ReleasesView({
               <Meta label="Commit">
                 <span className="font-mono text-xs">{shortId(live.commit)}</span>
               </Meta>
-              <Meta label="Released by">{live.releasedBy ?? "Unknown"}</Meta>
+              {live.releasedBy ? <Meta label="Released by">{live.releasedBy}</Meta> : null}
             </dl>
           </CardContent>
         ) : null}
@@ -737,6 +773,7 @@ export function ReleasesView({
                       <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
                         {entry.title}
                         {isLive ? <ReleaseChip tone="done">Live</ReleaseChip> : null}
+                        {entry.neverRan ? <ReleaseChip tone="blocked">Never ran</ReleaseChip> : null}
                         {entry.stableTag ? <ReleaseChip tone="in_progress">Stable</ReleaseChip> : null}
                       </p>
                       <p className="text-xs text-muted-foreground">
@@ -752,7 +789,7 @@ export function ReleasesView({
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {!entry.stableTag ? (
+                      {!entry.stableTag && !entry.neverRan ? (
                         <Button
                           size="sm"
                           variant="outline"
@@ -766,7 +803,7 @@ export function ReleasesView({
                           Promote to Stable
                         </Button>
                       ) : null}
-                      {!isLive ? (
+                      {!isLive && !entry.neverRan ? (
                         <Button size="sm" variant="outline" disabled={busy || off} onClick={() => void onRollback(entry)}>
                           <RotateCcw aria-hidden />
                           Roll back to this version
@@ -804,9 +841,11 @@ export function Releases() {
         <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6">
           <div className="flex items-center gap-2 text-foreground">
             <ShieldAlert className="h-5 w-5 text-muted-foreground" aria-hidden />
-            <h1 className="text-lg font-semibold">Releases are for the board</h1>
+            <h1 className="text-lg font-semibold">Releases are for owners and admins</h1>
           </div>
-          <p className="text-sm text-muted-foreground">Only the board can see and release versions of the app.</p>
+          <p className="text-sm text-muted-foreground">
+            Only a company owner or admin can see and release versions of the app.
+          </p>
         </div>
       </div>
     );

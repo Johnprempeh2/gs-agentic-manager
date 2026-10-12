@@ -1,7 +1,27 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "@greatstone/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
-import { resolveIssueActiveRun, shouldTrackIssueActiveRun } from "./issueActiveRun";
+import { resolveIssueActiveRun, shouldTrackIssueActiveRun, taskPollInterval } from "./issueActiveRun";
+
+describe("taskPollInterval", () => {
+  const open = { issueStatus: "in_progress", live: false, visible: true };
+
+  it("polls an open, visible task only while a run is live", () => {
+    expect(taskPollInterval({ ...open, live: true }, 1000)).toBe(1000);
+    expect(taskPollInterval(open, 1000)).toBe(false);
+    expect(taskPollInterval(open, 3000, 30_000)).toBe(30_000);
+  });
+
+  it("never polls a done or cancelled task, even with a lingering live run", () => {
+    for (const issueStatus of ["done", "cancelled"]) {
+      expect(taskPollInterval({ issueStatus, live: true, visible: true }, 1000, 30_000)).toBe(false);
+    }
+  });
+
+  it("pauses every poll while the document is hidden", () => {
+    expect(taskPollInterval({ ...open, live: true, visible: false }, 1000, 30_000)).toBe(false);
+  });
+});
 
 describe("issueActiveRun", () => {
   const makeIssue = (

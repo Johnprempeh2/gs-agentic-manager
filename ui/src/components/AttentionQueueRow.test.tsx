@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { useState, type AnchorHTMLAttributes, type ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AttentionItem, AttentionSourceKind } from "@greatstone/shared";
+import type { Agent, AttentionItem, AttentionSourceKind } from "@greatstone/shared";
 import { approvalsApi } from "../api/approvals";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
@@ -179,6 +179,125 @@ describe("AttentionQueueRow", () => {
     expect(el.textContent).toContain("Approve");
     expect(el.textContent).toContain("Request changes");
     expect(el.textContent).toContain("Send back to work");
+  });
+
+  // GRE-1421: the card says what was done, what to decide, and what each choice does.
+  const stalledReviewItem = (detail: AttentionItem["detail"]) =>
+    buildItem({
+      sourceKind: "review" as AttentionSourceKind,
+      inlineResolvable: true,
+      subject: {
+        kind: "issue",
+        id: "issue-1",
+        companyId: "c1",
+        title: "Fix the billing page",
+        identifier: "PAP-1",
+        status: "in_review",
+        href: "/PAP/issues/PAP-1",
+        metadata: { reviewAttentionState: "stalled", assigneeAgentId: "agent-ridge" },
+      },
+      detail,
+    });
+  const ridgeMap = new Map([["agent-ridge", { id: "agent-ridge", name: "Ridge" } as Agent]]);
+
+  it("shows the last update, the pull request, the ask, and a hint per choice on a stalled review", () => {
+    const el = render(
+      <AttentionQueueRow
+        item={stalledReviewItem({
+          kind: "review",
+          lastUpdate: {
+            commentId: "comment-9",
+            authorAgentId: "agent-ridge",
+            excerpt: "The billing page now shows fees.",
+            createdAt: "2026-07-09T12:00:00Z",
+            kind: "handoff",
+          },
+          workProduct: { type: "pull_request", title: "Billing fees", url: "https://github.com/acme/app/pull/12" },
+          images: [],
+        })}
+        companyId="c1"
+        expanded
+        onToggleExpand={noop}
+        onDismiss={noop}
+        agentMap={ridgeMap}
+      />,
+    );
+    expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain("Summary from Ridge");
+    expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain(
+      "The billing page now shows fees.",
+    );
+    const pr = el.querySelector<HTMLAnchorElement>('[data-testid="review-work-product"]');
+    expect(pr?.getAttribute("href")).toBe("https://github.com/acme/app/pull/12");
+    expect(pr?.textContent).toContain("Pull request: Billing fees");
+    const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1#comment-comment-9");
+    expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
+      "Ridge says the work is finished.",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-approve"]')?.textContent).toContain(
+      "The task is marked done.",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-request_changes"]')?.textContent).toContain(
+      "goes back to Ridge with your note",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-send_back"]')?.textContent).toContain(
+      "No note is necessary.",
+    );
+    // Each button points at its hint for screen readers.
+    const approve = el.querySelector('[data-testid="stalled-review-approve"]');
+    const hintId = approve?.getAttribute("aria-describedby");
+    expect(hintId && el.querySelector(`[id="${hintId}"]`)?.textContent).toContain("marked done");
+    // No internal jargon on the card.
+    expect(el.textContent).not.toMatch(/stalled|execution policy/i);
+  });
+
+  it("labels a newest note as the latest update when no summary was found", () => {
+    const el = render(
+      <AttentionQueueRow
+        item={stalledReviewItem({
+          kind: "review",
+          lastUpdate: {
+            commentId: "comment-3",
+            authorAgentId: "agent-ridge",
+            excerpt: "Starting work.",
+            createdAt: "2026-07-09T12:00:00Z",
+            kind: "latest",
+          },
+          workProduct: null,
+          images: [],
+        })}
+        companyId="c1"
+        expanded
+        onToggleExpand={noop}
+        onDismiss={noop}
+        agentMap={ridgeMap}
+      />,
+    );
+    const caption = el.querySelector('[data-testid="review-last-update"] figcaption')?.textContent;
+    expect(caption).toContain("Latest agent update from Ridge");
+    expect(caption).not.toContain("Summary");
+  });
+
+  it("still explains the decision when there is no summary or work product", () => {
+    const el = render(
+      <AttentionQueueRow
+        item={stalledReviewItem({ kind: "review", lastUpdate: null, workProduct: null, images: [] })}
+        companyId="c1"
+        expanded
+        onToggleExpand={noop}
+        onDismiss={noop}
+      />,
+    );
+    expect(el.querySelector('[data-testid="review-no-update"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="review-work-product"]')).toBeNull();
+    expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
+      "The assignee says the work is finished.",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-send_back"]')?.textContent).toContain(
+      "goes back to the assignee",
+    );
+    const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1");
   });
 
   // PAP-16506 P4: an opt-in policy warns before the card offers Approve, because
@@ -537,6 +656,55 @@ describe("AttentionQueueRow", () => {
     expect(buttons.find((button) => button.textContent === "Reject")?.getAttribute("data-variant")).toBe(
       "destructive",
     );
+  });
+
+  // GRE-601: a missing-permission refusal reads as Grant / Deny, collapsed and expanded.
+  function permissionGrantItem() {
+    return buildItem({
+      subject: {
+        kind: "approval",
+        id: "approval-grant",
+        companyId: "c1",
+        title: "Cairn needs inbox:manage for GRE-448",
+        identifier: null,
+        status: "pending",
+        href: "/GRE/approvals/approval-grant",
+        metadata: { type: "permission_grant", requestedByAgentId: "agent-1", issueId: "issue-1" },
+      },
+      decisionVerbs: [
+        { id: "reject", label: "Deny", description: "Deny the grant and tell the blocked task." },
+        { id: "approve", label: "Grant", description: "Approve and write the grant, then wake the blocked task." },
+      ],
+    });
+  }
+
+  it("renders a permission request with Grant and Deny in the compact action bar", async () => {
+    vi.mocked(approvalsApi.approve).mockResolvedValue({} as never);
+    render(
+      <AttentionQueueRow item={permissionGrantItem()} companyId="c1" expanded={false} onToggleExpand={noop} onDismiss={noop} />,
+    );
+
+    expect(container?.textContent).toContain("Cairn needs inbox:manage for GRE-448");
+    const decisionActions = container?.querySelector('[aria-label="Decision actions"]');
+    const buttons = Array.from(decisionActions?.querySelectorAll("button") ?? []);
+    expect(buttons.map((button) => button.textContent)).toEqual(["Deny", "Grant"]);
+    expect(buttons[0]?.getAttribute("data-variant")).toBe("destructive");
+    expect(buttons[1]?.getAttribute("data-variant")).toBe("default");
+
+    act(() => buttons[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(approvalsApi.approve).toHaveBeenCalledWith("approval-grant");
+  });
+
+  it("renders a permission request expanded with Grant and Deny and no revision", () => {
+    const el = render(
+      <AttentionQueueRow item={permissionGrantItem()} companyId="c1" expanded onToggleExpand={noop} onDismiss={noop} />,
+    );
+    const labels = Array.from(el.querySelectorAll("button")).map((button) => button.textContent);
+    expect(labels).toContain("Grant");
+    expect(labels).toContain("Deny");
+    expect(labels).not.toContain("Approve");
+    expect(labels).not.toContain("Request revision");
   });
 
   it("submits a compact approval without expanding the card and confirms it", async () => {
@@ -908,7 +1076,7 @@ describe("AttentionQueueRow", () => {
     expect(audience?.textContent).toContain("Only CodexCoder or the board can respond");
     // A collapsed row spends its line on the responder, not on a badge that
     // repeats the clause beside it.
-    expect(audience?.textContent).not.toContain("Addressed —");
+    expect(audience?.textContent).not.toContain("Addressed:");
   });
 
   // PAP-17289: the row's shell is `overflow-hidden`, so a clause that cannot

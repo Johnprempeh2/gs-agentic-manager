@@ -443,7 +443,7 @@ function generateReadmeFromSelection(
 
   lines.push("## What's Inside");
   lines.push("");
-  lines.push("This is an [Agent Company](https://paperclip.ing) package.");
+  lines.push("This is an [Agent Company](https://agentcompanies.io) package from GS Agentic Manager.");
   lines.push("");
 
   const counts: Array<[string, number]> = [];
@@ -468,7 +468,7 @@ function generateReadmeFromSelection(
     lines.push("|-------|------|------------|");
     for (const agent of agents) {
       const roleLabel = ROLE_LABELS[agent.role] ?? agent.role;
-      const reportsTo = agent.reportsToSlug ?? "\u2014";
+      const reportsTo = agent.reportsToSlug ?? "None";
       lines.push(`| ${agent.name} | ${roleLabel} | ${reportsTo} |`);
     }
     lines.push("");
@@ -478,7 +478,7 @@ function generateReadmeFromSelection(
     lines.push("### Projects");
     lines.push("");
     for (const project of projects) {
-      const desc = project.description ? ` \u2014 ${project.description}` : "";
+      const desc = project.description ? `: ${project.description}` : "";
       lines.push(`- **${project.name}**${desc}`);
     }
     lines.push("");
@@ -490,10 +490,8 @@ function generateReadmeFromSelection(
   lines.push("npx gsam company import this-github-url-or-folder");
   lines.push("```");
   lines.push("");
-  lines.push("See [GS Agentic Manager](https://paperclip.ing) for more information.");
-  lines.push("");
   lines.push("---");
-  lines.push(`Exported from [GS Agentic Manager](https://paperclip.ing) on ${new Date().toISOString().split("T")[0]}`);
+  lines.push(`Exported from GS Agentic Manager on ${new Date().toISOString().split("T")[0]}`);
   lines.push("");
 
   return lines.join("\n");
@@ -1080,7 +1078,7 @@ export function CompanyExport() {
   return (
     <div className="max-w-6xl">
       {/* Sticky top action bar */}
-      <div className="sticky top-0 z-10 border-b border-border bg-background px-5 py-3">
+      <div className="sticky top-0 z-raised border-b border-border bg-background px-5 py-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <span className="font-medium">
@@ -1181,7 +1179,7 @@ export function CompanyExport() {
                     />
                     <span className="min-w-0 truncate">{EXPORT_CATEGORY_LABELS[key]}</span>
                     <span className="text-xs text-muted-foreground">
-                      {countLoaded ? count.toLocaleString() : "—"}
+                      {countLoaded ? count.toLocaleString() : "Not counted"}
                     </span>
                   </label>
                 );
@@ -1238,7 +1236,7 @@ export function CompanyExport() {
           />
           {exportPreviewMutation.isPending ? (
             <div
-              className="absolute inset-0 z-10 flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
+              className="absolute inset-0 z-raised flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
               role="status"
               aria-live="polite"
               aria-busy="true"
@@ -1260,7 +1258,7 @@ export function CompanyExport() {
             </div>
           ) : previewCancelled ? (
             <div
-              className="absolute inset-0 z-10 flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
+              className="absolute inset-0 z-raised flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
               data-export-preview-state="cancelled"
             >
               <div className="flex max-w-md flex-col items-center gap-3">
@@ -1278,7 +1276,7 @@ export function CompanyExport() {
             </div>
           ) : exportPreviewMutation.isError ? (
             <div
-              className="absolute inset-0 z-10 flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
+              className="absolute inset-0 z-raised flex min-h-(--sz-520px) items-center justify-center bg-background/90 px-6 text-center"
               role="alert"
               data-export-preview-state="error"
             >

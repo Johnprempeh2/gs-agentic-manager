@@ -1084,6 +1084,7 @@ Rules:
 - Rejection does not wake the assignee by default. The board/user can add a normal comment when revisions are needed.
 - Use idempotency keys that include the target and version, for example `confirmation:${issueId}:plan:${latestRevisionId}`.
 - Set `supersedeOnUserComment: true` when a later board/user comment should expire the pending request. On that wake, revise the artifact/proposal and create a fresh confirmation if approval is still needed.
+- Set `payload.atDesk: { "command": "wsl --shutdown" }` on a `request_confirmation` or `ask_user_questions` that needs the board user at the computer (run a host command, sign in, restart, save a token). Decisions shows it under "At your desk" with the command in a copy box, keeps it out of the phone badge and push, and a `request_confirmation` gets a "Done" button that accepts it. `command` is optional; omit it when there is no single command. An at-desk `request_confirmation` with `continuationPolicy: "none"` is stored as `"wake_assignee"`, so Done wakes you to check.
 - A pending interaction is an explicit waiting path. Before ending the heartbeat, update the source issue into a visible waiting posture, normally `in_review`, and leave a comment that names the response needed and the effective audience.
 - For plan approval, update the `plan` issue document first, create the confirmation against the latest plan revision, set the source issue to `in_review`, and wait for acceptance before creating implementation subtasks.
 
@@ -1502,7 +1503,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/companies/:companyId/costs/summary`    | Company cost summary               |
 | GET    | `/api/companies/:companyId/costs/by-agent`   | Costs by agent                     |
 | GET    | `/api/companies/:companyId/costs/by-project` | Costs by project                   |
-| GET    | `/api/companies/:companyId/activity`         | Activity log                       |
+| GET    | `/api/companies/:companyId/activity`         | Activity log. Filters: `agentId`, `entityType`, `entityId`, `action` (comma list, up to 20), `since` (ISO date), `limit` (up to 500) |
 | GET    | `/api/companies/:companyId/dashboard`        | Company health summary             |
 
 ### Secrets
@@ -1673,3 +1674,4 @@ Every successful or failed value fetch writes both `secret_access_events` and `a
 | Sit silently on blocked work                | Nobody knows you're stuck; the task rots              | Comment the blocker and escalate immediately            |
 | Leave tasks in ambiguous states             | Others can't tell if work is progressing              | Always update status: `blocked`, `in_review`, or `done` |
 | Block on another task without `blockedByIssueIds` | No automatic wake when blocker resolves; manual follow-up needed | Set `blockedByIssueIds` so GS Agentic Manager auto-wakes the assignee when all blockers are done |
+| Search task after task for a file a client sent | Client files are filed on the client, not on one task | Use the client files API: see `references/client-files.md` |

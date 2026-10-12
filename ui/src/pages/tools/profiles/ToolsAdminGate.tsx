@@ -5,6 +5,7 @@ import { Link } from "@/lib/router";
 import { accessApi } from "@/api/access";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCompany } from "@/context/CompanyContext";
+import { PageSkeleton } from "../../../components/PageSkeleton";
 
 /**
  * Best-effort admin gate for the access-profiles surface, mirroring
@@ -21,7 +22,7 @@ export function ToolsAdminGate({ children }: { children: ReactNode }) {
   });
 
   if (boardAccess.isLoading) {
-    return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading…</div>;
+    return <PageSkeleton variant="list" />;
   }
 
   const data = boardAccess.data;

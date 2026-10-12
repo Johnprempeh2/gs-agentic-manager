@@ -145,4 +145,23 @@ describe("company-members helpers", () => {
       { id: "user:user-1", name: "Taylor", kind: "user", userId: "user-1" },
     ]);
   });
+
+  it("keeps a retired local-board out of pickers but keeps its name for history", () => {
+    const users: CompanyUserDirectoryEntry[] = [
+      {
+        principalId: "user-1",
+        status: "active",
+        user: { id: "user-1", name: "Taylor", email: "taylor@example.com", image: null },
+      },
+      {
+        principalId: "local-board",
+        status: "suspended",
+        user: { id: "local-board", name: "John Prempeh (legacy)", email: "local@paperclip.local", image: null },
+      },
+    ];
+
+    expect(buildCompanyUserInlineOptions(users).map((option) => option.id)).toEqual(["user:user-1"]);
+    expect(buildMarkdownMentionOptions({ members: users }).map((option) => option.id)).toEqual(["user:user-1"]);
+    expect(buildCompanyUserLabelMap(users).get("local-board")).toBe("John Prempeh (legacy)");
+  });
 });

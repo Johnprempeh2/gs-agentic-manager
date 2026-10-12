@@ -12,6 +12,7 @@ import {
 } from "@greatstone/db";
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
+import { inviteSignUpGatePlugin } from "./invite-sign-up-gate.js";
 import {
   workspaceLoginHandoffPlugin,
   type WorkspaceHandoffExpectedIdentity,
@@ -257,6 +258,35 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     publicUrl,
   });
 
+  const workspaceHandoffEnabled = Boolean(resolveWorkspaceHandoffIdentity(config));
+  const plugins = [
+    // Closed sign-up is enforced here rather than by Better Auth's own
+    // `disableSignUp`, so a person holding a valid human invite can still
+    // create the account the invite landing page then accepts it with. Every
+    // other sign-up gets Better Auth's usual "sign up is not enabled" refusal.
+    ...(config.authDisableSignUp ? [inviteSignUpGatePlugin({ db })] : []),
+    // Registered only for a managed workspace instance: the plugin is what makes
+    // `Open workspace` password-independent, and a control-plane instance that
+    // was never handed a workspace key must not expose the exchange at all.
+    ...(workspaceHandoffEnabled
+      ? [
+          workspaceLoginHandoffPlugin({
+            db,
+            // Re-resolved per exchange so a hot restart cannot keep validating
+            // against an origin the control plane has since republished.
+            resolveExpectedIdentity: () =>
+              resolveWorkspaceHandoffIdentity(config) ?? {
+                key: null,
+                instanceId: null,
+                executionWorkspaceId: null,
+                companyId: null,
+                origin: null,
+              },
+          }),
+        ]
+      : []),
+  ];
+
   const authConfig = {
     baseURL: baseUrl,
     secret,
@@ -273,7 +303,10 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
-      disableSignUp: config.authDisableSignUp,
+      // Always false at the library level: when GSAM's `authDisableSignUp` is
+      // set, `inviteSignUpGatePlugin` (above) is the gate and refuses every
+      // sign-up that does not carry a valid human invite.
+      disableSignUp: false,
     },
     rateLimit: buildBetterAuthRateLimitOptions({
       deploymentMode: config.deploymentMode,
@@ -281,28 +314,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
       override: process.env.GSAM_AUTH_RATE_LIMIT_ENABLED,
     }),
     advanced: buildBetterAuthAdvancedOptions({ disableSecureCookies }),
-    // Registered only for a managed workspace instance: the plugin is what makes
-    // `Open workspace` password-independent, and a control-plane instance that
-    // was never handed a workspace key must not expose the exchange at all.
-    ...(resolveWorkspaceHandoffIdentity(config)
-      ? {
-          plugins: [
-            workspaceLoginHandoffPlugin({
-              db,
-              // Re-resolved per exchange so a hot restart cannot keep validating
-              // against an origin the control plane has since republished.
-              resolveExpectedIdentity: () =>
-                resolveWorkspaceHandoffIdentity(config) ?? {
-                  key: null,
-                  instanceId: null,
-                  executionWorkspaceId: null,
-                  companyId: null,
-                  origin: null,
-                },
-            }),
-          ],
-        }
-      : {}),
+    ...(plugins.length > 0 ? { plugins } : {}),
   };
 
   if (!baseUrl) {

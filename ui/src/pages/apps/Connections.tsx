@@ -51,6 +51,7 @@ import {
   connectionOwnerProfile,
   type ConnectionOwnerProfile,
 } from "./connection-owner";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const BROWSE_HREF = "/apps";
 
@@ -168,7 +169,7 @@ export function Connections() {
       if (status.verificationUrl) window.location.assign(status.verificationUrl);
     },
     onError: (error) => pushToast({
-      title: "Couldn’t reach Paperclip Cloud",
+      title: "Couldn’t reach the connection service",
       body: error instanceof Error ? error.message : "Try again in a moment.",
       tone: "error",
     }),
@@ -415,10 +416,10 @@ export function Connections() {
                     connection && isRetiredComposioConnection(connection) ? RETIRED_COMPOSIO_MESSAGE :
                     status.tone === "attention"
                       ? connection?.authKind === "oauth"
-                        ? "Reconnect required — sign in again to restore access."
-                        : "The key stopped working — reconnect to fix."
+                        ? "Reconnect required. Sign in again to restore access."
+                        : "The key stopped working. Reconnect to fix."
                       : status.tone === "paused"
-                        ? "Paused — agents can’t use it right now."
+                        ? "Paused: agents can’t use it right now."
                         : status.tone === "not_connected"
                           ? "Connect it so agents can use it."
                           : row.displayName !== application.name
@@ -464,7 +465,7 @@ export function Connections() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs font-medium text-foreground">
-                          {connection ? connectionTypeLabel(connection.credentialPolicy) : "—"}
+                          {connection ? connectionTypeLabel(connection.credentialPolicy) : "Not connected"}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -485,7 +486,7 @@ export function Connections() {
                       </td>
                       <td className="px-4 py-3">
                         <span className="text-xs text-muted-foreground">
-                          {row.lastUsedAt ? timeAgo(row.lastUsedAt) : "—"}
+                          {row.lastUsedAt ? timeAgo(row.lastUsedAt) : "Never"}
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -589,7 +590,7 @@ function CloudConnectorEnrollmentBanner({
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
         <ShieldCheck className="h-5 w-5 text-primary" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-foreground">GS Agentic Manager-managed sign-in is ready</div>
+          <div className="text-sm font-semibold text-foreground">{CLIENT_BRAND_NAME}-managed sign-in is ready</div>
           <div className="truncate text-xs text-muted-foreground">
             Provider authorization uses {status.brokerBaseUrl}; credentials stay in this instance.
           </div>
@@ -601,7 +602,7 @@ function CloudConnectorEnrollmentBanner({
     return (
       <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
         <Cloud className="h-5 w-5 text-muted-foreground" />
-        <div className="text-sm text-muted-foreground">Paperclip Cloud enrollment status is unavailable.</div>
+        <div className="text-sm text-muted-foreground">Sign-in service status is unavailable.</div>
       </div>
     );
   }
@@ -610,7 +611,7 @@ function CloudConnectorEnrollmentBanner({
       <Cloud className="h-5 w-5 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-semibold text-foreground">
-          {status?.status === "pending" ? "Finish Paperclip Cloud enrollment" : "Enable GS Agentic Manager-managed sign-in"}
+          {status?.status === "pending" ? "Finish sign-in service setup" : `Enable ${CLIENT_BRAND_NAME}-managed sign-in`}
         </div>
         <div className="text-xs text-muted-foreground">
           Confirm this server’s exact address before Cloud can return encrypted Google credentials to it.

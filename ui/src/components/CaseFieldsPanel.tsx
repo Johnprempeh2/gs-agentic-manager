@@ -25,7 +25,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 /** A muted em-dash for null / empty / missing values. */
 function EmptyValue() {
-  return <span className="text-muted-foreground">—</span>;
+  return <span className="text-muted-foreground">Not set</span>;
 }
 
 function isIssueIdentifierField(fieldKey: string | undefined): boolean {
@@ -239,7 +239,7 @@ export function CaseFieldsPanel({ fields }: { fields: Record<string, unknown> })
     <section className="space-y-2">
       <div className="flex items-baseline gap-2">
         <h2 className="text-sm font-semibold">Fields</h2>
-        <span className="text-xs text-muted-foreground">from the skill&apos;s schema — rendered generically</span>
+        <span className="text-xs text-muted-foreground">from the skill&apos;s schema, rendered generically</span>
       </div>
       <Card className="gap-0 py-0">
         {entries.length === 0 ? (

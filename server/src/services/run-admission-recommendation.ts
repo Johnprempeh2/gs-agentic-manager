@@ -250,7 +250,11 @@ export function recommendRunAdmission(input: RecommendationInput): RunAdmissionS
     return { suggested: { maxConcurrentRuns: base, minAvailableMemoryMb: floorMb }, reasons };
   }
 
-  let cap = base;
+  // With real usage, change the cap only on evidence: runs held for RAM lower
+  // it, runs waiting on the cap with RAM to spare raise it by one. Otherwise
+  // keep what the owner set: the RAM rule alone assumes about 500 MB per run
+  // and suggested 28 on a 16 GB Mac whose free RAM could hold none.
+  let cap = clampCap(Math.min(base, current.maxConcurrentRuns));
   if (usage.lowMemoryHeldRuns >= FREQUENT_HOLD_RUNS) {
     const ceiling = Math.min(
       base,
@@ -266,7 +270,7 @@ export function recommendRunAdmission(input: RecommendationInput): RunAdmissionS
       usage.lowMemoryHeldRuns === 0 &&
       (system.availableMemoryMb === null || system.availableMemoryMb > floorMb);
     if (usage.globalCapHeldRuns >= FREQUENT_HOLD_RUNS && freeAboveFloor) {
-      cap = clampCap(current.maxConcurrentRuns + 1);
+      cap = clampCap(Math.min(base, current.maxConcurrentRuns + 1));
       reasons.push(
         `${usage.globalCapHeldRuns} runs waited on the run cap while free RAM stayed above the floor; raise the cap by one to ${cap}.`,
       );
@@ -276,7 +280,7 @@ export function recommendRunAdmission(input: RecommendationInput): RunAdmissionS
       );
     } else {
       reasons.push(
-        `Few or no admission holds (${usage.globalCapHeldRuns} cap, ${usage.lowMemoryHeldRuns} low RAM); peak was ${usage.peakConcurrentRuns} concurrent runs.`,
+        `Few or no admission holds (${usage.globalCapHeldRuns} cap, ${usage.lowMemoryHeldRuns} low RAM); peak was ${usage.peakConcurrentRuns} concurrent runs, so keep the cap at ${cap}.`,
       );
     }
   }

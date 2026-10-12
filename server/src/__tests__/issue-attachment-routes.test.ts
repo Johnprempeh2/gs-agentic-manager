@@ -53,6 +53,9 @@ function registerRouteMocks() {
     agentService: () => ({
       getById: vi.fn(),
     }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
+    }),
     companySkillService: () => ({}),
     companyService: () => mockCompanyService,
     documentAnnotationService: () => ({ remapOpenThreadsForDocument: async () => [] }),
@@ -511,22 +514,32 @@ describe("issue attachment routes", () => {
     expect(mockCompanyService.getById).not.toHaveBeenCalled();
   });
 
-  it("serves html attachments as downloads with nosniff", async () => {
+  it("opens html attachments in an opaque-origin sandbox, and downloads them on request", async () => {
     const storage = createStorageService();
     mockIssueService.getAttachmentById.mockResolvedValue(makeAttachment("text/html", "report.html"));
 
     const app = await createApp(storage);
-    const res = await request(app)
-      .get("/api/attachments/attachment-1/content")
-      .buffer(true)
-      .parse(parseBinaryResponse);
+    for (const download of [false, true]) {
+      const res = await request(app)
+        .get(`/api/attachments/attachment-1/content${download ? "?download=1" : ""}`)
+        .buffer(true)
+        .parse(parseBinaryResponse);
 
-    expect(res.status).toBe(200);
-    expect([
-      undefined,
-      'attachment; filename="report.html"',
-    ]).toContain(res.headers["content-disposition"]);
-    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+      expect(res.status).toBe(200);
+      expect(res.headers["content-disposition"]).toBe(`${download ? "attachment" : "inline"}; filename="report.html"`);
+      expect(res.headers["x-content-type-options"]).toBe("nosniff");
+      // No allow-same-origin: the page never runs with the app's origin, cookies or storage.
+      const csp = res.headers["content-security-policy"] as string;
+      expect(csp).toMatch(/^sandbox allow-scripts allow-popups allow-popups-to-escape-sandbox;/);
+      expect(csp).not.toContain("allow-same-origin");
+      expect(csp).not.toContain("allow-forms");
+      expect(csp).toContain("connect-src 'none'");
+      expect(csp).toContain("form-action 'none'");
+      // No remote hosts at all: a remote image or script would leak who opened the page.
+      expect(csp).not.toMatch(/https?:/);
+      expect(csp).not.toContain("*");
+      expect(csp).toContain("img-src data: blob:");
+    }
   });
 
   it("serves arbitrary binary attachments as downloads with nosniff", async () => {
@@ -573,6 +586,34 @@ describe("issue attachment routes", () => {
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toBe("text/markdown; charset=utf-8");
     expect(res.headers["content-disposition"]).toBe('attachment; filename="notes.md"');
+  });
+
+  it("serves a small WebP for ?w= and falls back to the original when the image cannot be read", async () => {
+    const sharp = (await vi.importActual<typeof import("sharp")>("sharp")).default;
+    const png = await sharp({ create: { width: 1600, height: 1000, channels: 3, background: "#1b5039" } }).png().toBuffer();
+    const storage = createStorageService(png);
+    mockIssueService.getAttachmentById.mockResolvedValue({ ...makeAttachment("image/png", "shot.png"), byteSize: png.length });
+    const app = await createApp(storage);
+
+    const thumb = await request(app).get("/api/attachments/attachment-1/content?w=320")
+      .buffer(true).parse(parseBinaryResponse);
+    expect(thumb.status).toBe(200);
+    expect(thumb.headers["content-type"]).toBe("image/webp");
+    expect((await sharp(thumb.body as Buffer).metadata()).width).toBe(320);
+
+    // An unlisted width is ignored: the original comes back.
+    const original = await request(app).get("/api/attachments/attachment-1/content?w=123")
+      .buffer(true).parse(parseBinaryResponse);
+    expect(original.headers["content-type"]).toBe("image/png");
+
+    // Bytes that are not an image still load as the original.
+    const notAnImage = Buffer.from("not an image");
+    const broken = createStorageService(notAnImage);
+    mockIssueService.getAttachmentById.mockResolvedValue({ ...makeAttachment("image/png", "broken.png"), byteSize: notAnImage.length });
+    const brokenApp = await createApp(broken);
+    const fallback = await request(brokenApp).get("/api/attachments/attachment-1/content?w=320");
+    expect(fallback.status).toBe(200);
+    expect(fallback.headers["content-type"]).toBe("image/png");
   });
 
   it("keeps image attachments inline for previews", async () => {

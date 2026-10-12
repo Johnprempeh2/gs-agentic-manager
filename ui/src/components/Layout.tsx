@@ -21,9 +21,14 @@ import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
 import { ToastViewport } from "./ToastViewport";
+import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { PullToRefresh } from "./PullToRefresh";
+import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
+import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
+import { startVisualViewportSync } from "../lib/ios-keyboard";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
@@ -40,7 +45,7 @@ import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
-import { healthApi } from "../api/health";
+import { healthApi, healthPollInterval } from "../api/health";
 import { resolveArchivedCompanyBounce, shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import { useOptionalToastActions } from "../context/ToastContext";
 import {
@@ -115,6 +120,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     routineId?: string;
   }>();
   const navigate = useNavigate();
+  const breadcrumbs = useOptionalBreadcrumbs();
+  // Where a left-edge swipe goes back to on an inner page (null on a main tab).
+  const mobileBackHref = useRef<string | null>(null);
+  mobileBackHref.current = isMobile ? mobileBackFallback(breadcrumbs) : null;
   const location = useLocation();
   const navigationType = useNavigationType();
   const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
@@ -122,6 +131,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const isCompanySettingsRoute = shellRoute.builtInContextualSurface === "settings";
   const companyPathSegments = shellRoute.companySegments;
   const isTaskDetailRoute = shellRoute.isTaskDetail;
+  const isMobileChatRoute = shellRoute.isMobileChat;
   const useStreamlinedTaskDetailShell = streamlinedUiEnabled && isTaskDetailRoute;
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
@@ -137,10 +147,17 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const lastMainScrollTop = useRef(0);
   const previousPathname = useRef<string | null>(null);
   const mainContentRef = useRef<HTMLElement | null>(null);
-  useRouteEnterMotion(mainContentRef, routeSectionKey(location.pathname));
+  useRouteEnterMotion(
+    mainContentRef,
+    routeSectionKey(location.pathname),
+    isMobile ? { pathname: location.pathname, navigationType } : null,
+  );
   const scrollMemory = useRef(new NavigationScrollMemory());
   const activeScrollKey = useRef<string>(location.key);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
+  // Task and chat threads read like Messages on a phone: the back arrow is
+  // the way out, so the tab bar steps aside and the composer docks low.
+  const showMobileNav = mobileNavVisible && !isMobileChatRoute;
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const matchedCompany = useMemo(() => {
     if (!companyPrefix) return null;
@@ -237,10 +254,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
     retry: false,
-    refetchInterval: (query) => {
-      const data = query.state.data as { devServer?: { enabled?: boolean } } | undefined;
-      return data?.devServer?.enabled ? 2000 : false;
-    },
+    refetchInterval: (query) => healthPollInterval(query.state.data),
     refetchIntervalInBackground: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;
@@ -494,9 +508,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
 
       if (dy > MAX_VERTICAL) return; // vertical scroll, ignore
 
-      // Swipe right from left edge → open
+      // Swipe right from the left edge: back on an inner page, like a native
+      // app; open the menu on a main tab.
       if (!sidebarOpen && startX < EDGE_ZONE && dx > MIN_DISTANCE) {
-        setSidebarOpen(true);
+        if (mobileBackHref.current) goBackOr(navigate, mobileBackHref.current);
+        else setSidebarOpen(true);
         return;
       }
 
@@ -513,7 +529,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       document.removeEventListener("touchstart", onTouchStart);
       document.removeEventListener("touchend", onTouchEnd);
     };
-  }, [isMobile, sidebarOpen, setSidebarOpen]);
+  }, [isMobile, sidebarOpen, setSidebarOpen, navigate]);
 
   const updateMobileNavVisibility = useCallback((currentTop: number) => {
     const delta = currentTop - lastMainScrollTop.current;
@@ -569,6 +585,13 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     return pinDocumentScrollToZero();
   }, [isMobile]);
 
+  // Phone: keep the header on the visible top while the keyboard pans the
+  // page, and settle the layout once the keyboard closes (see ios-keyboard).
+  useEffect(() => {
+    if (!isMobile) return;
+    return startVisualViewportSync();
+  }, [isMobile]);
+
   useEffect(() => {
     if (typeof document === "undefined") return;
     const mainContent = mainContentRef.current;
@@ -620,7 +643,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     <GeneralSettingsProvider value={{ keyboardShortcutsEnabled }}>
       <div
       className={cn(
-        "text-foreground pt-(--sz-safe-top)",
+        // Phone: the sticky header pads the notch itself, so content scrolling
+        // under a see-through status bar never shows behind the clock.
+        "text-foreground",
+        !isMobile && "pt-(--sz-safe-top)",
         // overflow-x-clip on mobile keeps a stray wide descendant from making the
         // whole viewport scroll horizontally. clip (not hidden) leaves overflow-y
         // computed as visible, so native body scroll + the sticky breadcrumb keep
@@ -630,7 +656,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       >
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-(--z-200) focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-top focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         Skip to Main Content
       </a>
@@ -640,7 +666,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         {isMobile && sidebarOpen && (
           <button
             type="button"
-            className="fixed inset-0 z-40 gs-scrim"
+            className="fixed inset-0 z-drawer gs-scrim"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close sidebar"
           />
@@ -649,7 +675,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         {isMobile ? (
           <div
             className={cn(
-              "fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
+              "fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
               sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           >
@@ -702,10 +728,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           <div
             className={cn(
               !isMobile && useStreamlinedTaskDetailShell && "hidden",
-              isMobile && "sticky top-0 z-20 gs-glass-bar",
+              isMobile && "sticky top-0 z-sticky gs-glass-bar pt-(--sz-safe-top) translate-y-(--vv-offset-top)",
             )}
           >
-            <StandaloneBrowserControls mobile={isMobile} />
+            {/* The phone app brings its own back arrow and pull-to-refresh, so it
+                needs no browser-controls strip. */}
             <BreadcrumbBar />
             {isMobile && isCompanySettingsRoute ? (
               <div className="border-b border-border px-4 pb-3">
@@ -741,7 +768,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               style={
                 isMobile
                   ? ({
-                      "--tc-composer-bottom": mobileNavVisible
+                      "--tc-composer-bottom": showMobileNav
                         ? "var(--sz-calc-14)"
                         : "var(--tc-composer-hidden-nav-offset)",
                     } as CSSProperties)
@@ -757,7 +784,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 // changes (e.g. switching skill-detail tabs) don't widen/shift
                 // when the vertical scrollbar appears or disappears (PAP-10907).
                 isMobile
-                  ? isTaskDetailRoute && !mobileNavVisible
+                  ? isMobileChatRoute && !showMobileNav
                     ? "overflow-visible pb-(--tc-composer-hidden-nav-offset)"
                     : "overflow-visible pb-(--sz-calc-14)"
                   : "overflow-auto [scrollbar-gutter:stable]",
@@ -779,7 +806,8 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </div>
         </div>
       </div>
-      {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
+      {isMobile && <MobileBottomNav visible={showMobileNav} />}
+      <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
       <NewIssueDialog />
       <NewProjectDialog />
@@ -787,6 +815,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <NewAgentDialog />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <ToastViewport />
+      <BlockedDependentsDialogHost />
       <AnnouncementWell health={health} />
       <PluginAppShellOverlays localTrusted={health?.deploymentMode === "local_trusted"} />
       </div>

@@ -5,6 +5,7 @@ import {
   createWakeAdmissionReader,
   createWakeAdmissionWriter,
 } from "./adapters/postgres.js";
+import type { WakeQueuePostgresAdapterDeps } from "./adapters/postgres.js";
 import { createQueuedCommentIssueLockWriter } from "./adapters/queued-comment-postgres.js";
 import type { QueuedCommentQueuePostgresAdapterDeps } from "./adapters/queued-comment-postgres.js";
 import { createAdmitWakeBehindIssueExecution, createReleaseIssueExecution } from "./application/use-cases.js";
@@ -58,12 +59,16 @@ export type {
 export type { QueuedCommentQueuePostgresAdapterDeps } from "./adapters/queued-comment-postgres.js";
 
 export type WakeQueueDeps = {
-  /** Stays in `heartbeat.ts`; resolves the responsible user for a promoted or recovery run seed. */
-  resolveResponsibleUserId: WakeQueueHost["resolveResponsibleUserId"];
+  /**
+   * Stays in `heartbeat.ts`; resolves the responsible user for a promoted or
+   * recovery run seed. This and the next two run inside the release
+   * transaction and must read through the `executor` they are given.
+   */
+  resolveResponsibleUserId: WakeQueuePostgresAdapterDeps["resolveResponsibleUserId"];
   /** Stays in `heartbeat.ts`; reads the routine environment context for an execution issue. */
-  getRoutineEnv: WakeQueueHost["getRoutineEnv"];
+  getRoutineEnv: WakeQueuePostgresAdapterDeps["getRoutineEnv"];
   /** Stays in `heartbeat.ts`; resolves the session-before display id for a wakeup. */
-  resolveSessionBeforeForWakeup: WakeQueueHost["resolveSessionBeforeForWakeup"];
+  resolveSessionBeforeForWakeup: WakeQueuePostgresAdapterDeps["resolveSessionBeforeForWakeup"];
   /**
    * The four wake-admission decision helpers stay in `heartbeat.ts` today;
    * the module receives them here so it never imports the service it is

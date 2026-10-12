@@ -6,7 +6,7 @@ import { slackExplicitPublicationDuplicate } from "./connectors/slack-publicatio
 import { rememberVerifiedSlackSearchEvent, slackSearchActionToken } from "./connectors/slack-search-context.js";
 import { slackAuthorizationRevision } from "./connectors/slack-revision.js";
 import { slackPublicationAllowed } from "./connectors/slack-access.js";
-import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { registerSlackTaskAuthority, slackRunOrigin } from "./connectors/slack-authority.js";
 import { captureRunIdentity } from "./run-identity.js";
 import { buildChatCommunicationGuidance } from "./chat-communication-guidance.js";
@@ -217,6 +217,7 @@ import {
   unprocessable,
 } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { providerSetupJson } from "./provider-setup-errors.js";
 import { redactSensitiveText } from "../redaction.js";
 import type { StorageService } from "../storage/types.js";
 import {
@@ -5898,6 +5899,45 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     };
   }
 
+  /**
+   * Read-only: what Telegram says about each active bot's webhook (GRE-999).
+   * Used after an internet outage to see if Telegram can reach us again.
+   * Transport errors are reduced to a plain line; they can carry the token.
+   */
+  async function telegramWebhookReports() {
+    const plainObject = (value: unknown): Record<string, unknown> =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+    const endpoints = await db
+      .select()
+      .from(chatEndpoints)
+      .where(and(eq(chatEndpoints.provider, "telegram"), eq(chatEndpoints.status, "active")));
+    const reports: Array<{ endpointName: string; pendingUpdates: number; lastErrorAt: string | null; lastErrorMessage: string | null }> = [];
+    for (const endpoint of endpoints) {
+      const endpointName = endpoint.botUsername ? `@${endpoint.botUsername}` : "the Telegram bot";
+      try {
+        const credentials = await resolveCredentials(endpoint);
+        if (!credentials.botToken) continue;
+        const response = await fetchImpl(
+          `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getWebhookInfo`,
+          { redirect: "error", signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS) },
+        );
+        const info = plainObject(plainObject(await response.json()).result);
+        const lastErrorDate = typeof info.last_error_date === "number" ? info.last_error_date : null;
+        reports.push({
+          endpointName,
+          pendingUpdates: typeof info.pending_update_count === "number" ? info.pending_update_count : 0,
+          lastErrorAt: lastErrorDate ? new Date(lastErrorDate * 1000).toISOString() : null,
+          lastErrorMessage: typeof info.last_error_message === "string" ? info.last_error_message : null,
+        });
+      } catch {
+        reports.push({ endpointName, pendingUpdates: 1, lastErrorAt: new Date().toISOString(), lastErrorMessage: "Telegram did not answer the webhook check" });
+      }
+    }
+    return reports;
+  }
+
   async function list(companyId: string) {
     const rows = await db
       .select({
@@ -5969,7 +6009,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     const connectionId = randomUUID();
     const suffix = endpointId.slice(0, 8);
     const name = (
-      input.name?.trim() || `${PROVIDER_LABELS[input.provider]} — ${agent.name}`
+      input.name?.trim() || `${PROVIDER_LABELS[input.provider]}: ${agent.name}`
     ).slice(0, 145);
     await db.transaction(async (tx) => {
       if (input.applicationId) {
@@ -6185,23 +6225,24 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       return { providerAccountId: inspection.projectId, providerAccountLabel: inspection.projectName, botExternalId: line.phoneNumber, botUsername: line.phoneNumber, botLabel: line.phoneNumber };
     }
     if (provider === "slack") {
-      const response = await fetchImpl("https://slack.com/api/auth.test", {
-        method: "POST",
-        signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
-        headers: {
-          authorization: `Bearer ${credentials.botToken}`,
-          "content-type": "application/x-www-form-urlencoded",
-        },
-        body: "",
-      });
-      const result = (await response.json()) as {
+      const { response, body: result } = await providerSetupJson<{
         ok?: boolean;
         error?: string;
         team_id?: string;
         team?: string;
         user_id?: string;
         user?: string;
-      };
+      }>("Slack", "verify the bot token", () =>
+        fetchImpl("https://slack.com/api/auth.test", {
+          method: "POST",
+          signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
+          headers: {
+            authorization: `Bearer ${credentials.botToken}`,
+            "content-type": "application/x-www-form-urlencoded",
+          },
+          body: "",
+        }),
+      );
       if (!response.ok || !result.ok)
         throw unprocessable(
           `Slack rejected the bot token: ${result.error ?? response.status}`,
@@ -6248,15 +6289,16 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       return identity;
     }
     if (provider === "telegram") {
-      const response = await fetchImpl(
-        `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getMe`,
-        { signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS) },
-      );
-      const result = (await response.json()) as {
+      const { response, body: result } = await providerSetupJson<{
         ok?: boolean;
         description?: string;
         result?: { id?: number; username?: string; first_name?: string };
-      };
+      }>("Telegram", "verify the bot token", () =>
+        fetchImpl(
+          `https://api.telegram.org/bot${encodeURIComponent(credentials.botToken)}/getMe`,
+          { signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS) },
+        ),
+      );
       if (!response.ok || !result.ok)
         throw unprocessable(
           `Telegram rejected the bot token: ${result.description ?? response.status}`,
@@ -6270,15 +6312,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     }
     if (provider === "github") {
       const token = githubAppJwt(credentials.appId, credentials.privateKey);
-      const response = await fetchImpl("https://api.github.com/app", {
-        signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
-        headers: {
-          accept: "application/vnd.github+json",
-          authorization: `Bearer ${token}`,
-          "x-github-api-version": "2022-11-28",
-        },
-      });
-      const result = (await response.json()) as {
+      const { response, body: result } = await providerSetupJson<{
         id?: number;
         login?: string;
         slug?: string;
@@ -6287,7 +6321,16 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         owner?: { login?: string };
         permissions?: Record<string, string>;
         events?: string[];
-      };
+      }>("GitHub", "verify the app credentials", () =>
+        fetchImpl("https://api.github.com/app", {
+          signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
+          headers: {
+            accept: "application/vnd.github+json",
+            authorization: `Bearer ${token}`,
+            "x-github-api-version": "2022-11-28",
+          },
+        }),
+      );
       if (!response.ok)
         throw unprocessable(
           `GitHub rejected the app credentials: ${result.message ?? response.status}`,
@@ -6365,19 +6408,20 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
       grant_type: "client_credentials",
       scope: "https://api.botframework.com/.default",
     });
-    const response = await fetchImpl(
-      `https://login.microsoftonline.com/${encodeURIComponent(teamsCredentials.tenantId)}/oauth2/v2.0/token`,
-      {
-        method: "POST",
-        signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
-        headers: { "content-type": "application/x-www-form-urlencoded" },
-        body,
-      },
-    );
-    const result = (await response.json()) as {
+    const { response, body: result } = await providerSetupJson<{
       access_token?: string;
       error_description?: string;
-    };
+    }>("Microsoft", "verify the app credentials", () =>
+      fetchImpl(
+        `https://login.microsoftonline.com/${encodeURIComponent(teamsCredentials.tenantId)}/oauth2/v2.0/token`,
+        {
+          method: "POST",
+          signal: AbortSignal.timeout(PROVIDER_CREDENTIAL_CHECK_TIMEOUT_MS),
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body,
+        },
+      ),
+    );
     if (!response.ok || !result.access_token)
       throw unprocessable(
         `Microsoft rejected the app credentials: ${result.error_description ?? response.status}`,
@@ -15914,7 +15958,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         const responseText =
           controlCommand === "status"
             ? existingIssue
-              ? `${taskLabel} — ${existingIssue.status}`
+              ? `${taskLabel} (${existingIssue.status})`
               : taskLabel
             : controlCommand === "new"
               ? isTelegramForumTopic
@@ -23162,7 +23206,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           if (invocation.command === "status") {
             content =
               issue && (invocation.sourceKind !== "direct_message" || active)
-                ? `${issue.identifier}: ${issue.title} — ${issue.status}${conversation?.state === "completed" ? " (conversation closed)" : ""}`.slice(
+                ? `${issue.identifier}: ${issue.title} (${issue.status})${conversation?.state === "completed" ? " (conversation closed)" : ""}`.slice(
                     0,
                     2000,
                   )
@@ -23442,7 +23486,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           } }).where(eq(chatActions.id, inserted[0].id));
           const url = `${getPublicBaseUrl()}/chat-identity/confirm?token=${encodeURIComponent(token)}`;
           notice = getPublicBaseUrl()
-            ? `[Connect your GS Agentic Manager account](${url}) — sign in and confirm this Slack identity. This private link expires in 15 minutes and works once. You can also confirm in the setup wizard. No agent work has started.`
+            ? `[Connect your GS Agentic Manager account](${url}), then sign in and confirm this Slack identity. This private link expires in 15 minutes and works once. You can also confirm in the setup wizard. No agent work has started.`
             : "Return to the GS Agentic Manager setup wizard to confirm your Slack account. No agent work has started.";
         }
         await logActivity(tx as unknown as Db, {
@@ -32224,7 +32268,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   function discordMarkdownAttachment(text: string): FileUpload {
     return {
       data: Buffer.from(text, "utf8"),
-      filename: "paperclip-response.md",
+      filename: "gsam-response.md",
       mimeType: "text/markdown; charset=utf-8",
     };
   }
@@ -32234,7 +32278,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     return {
       data,
       mimeType: "text/markdown; charset=utf-8",
-      name: "paperclip-response.md",
+      name: "gsam-response.md",
       size: data.byteLength,
       type: "file",
     };
@@ -35191,7 +35235,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     return projectSafeChatPublication({
       classification: "external",
       source: "task_control",
-      text: `${issue.identifier}: ${issue.title} — ${issue.status}`,
+      text: `${issue.identifier}: ${issue.title} (${issue.status})`,
     });
   }
 
@@ -38265,8 +38309,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   }
 
   const unregisterSlackTaskAuthority = registerSlackTaskAuthority(db, async (binding) => {
-    if (!(await instanceSettingsService(db).getExperimental()).enableChatConnectors)
-      throw forbidden("Chat connectors are disabled");
+    await assertEntitled(db, "enableChatConnectors");
     const identity = await slackRunOrigin(db, binding);
     const run = identity.run;
     if ((run.contextSnapshot?.issueId ?? run.contextSnapshot?.taskId) !== binding.issueId || !run.responsibleUserId)
@@ -38379,6 +38422,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     refreshGitHubRepositories,
     runtime,
     list,
+    telegramWebhookReports,
     get,
     create,
     update,

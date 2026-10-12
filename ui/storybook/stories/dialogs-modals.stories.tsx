@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, userEvent, within } from "storybook/test";
 import type {
   DocumentRevision,
   ExecutionWorkspaceCloseReadiness,
@@ -45,11 +46,25 @@ const storybookGoals: Goal[] = [
     status: "active",
     parentId: null,
     ownerAgentId: "agent-cto",
+    kind: null,
+    ownerUserId: null,
     targetDate: null,
     doneWhen: null,
     targetValue: null,
     currentValue: null,
     unit: null,
+    baselineValue: null,
+    baselineDate: null,
+    kpiDirection: null,
+    amberThresholdPct: null,
+    redThresholdPct: null,
+    budgetPlannedCents: null,
+    budgetSpentCents: null,
+    budgetCurrency: null,
+    benchmarkNote: null,
+    sourceIssueId: null,
+    sourceDocumentKey: null,
+    sourceBulletId: null,
     createdAt: new Date("2026-04-01T09:00:00.000Z"),
     updatedAt: new Date("2026-04-20T11:00:00.000Z"),
   },
@@ -62,11 +77,25 @@ const storybookGoals: Goal[] = [
     status: "active",
     parentId: "goal-company",
     ownerAgentId: "agent-codex",
+    kind: null,
+    ownerUserId: null,
     targetDate: null,
     doneWhen: null,
     targetValue: null,
     currentValue: null,
     unit: null,
+    baselineValue: null,
+    baselineDate: null,
+    kpiDirection: null,
+    amberThresholdPct: null,
+    redThresholdPct: null,
+    budgetPlannedCents: null,
+    budgetSpentCents: null,
+    budgetCurrency: null,
+    benchmarkNote: null,
+    sourceIssueId: null,
+    sourceDocumentKey: null,
+    sourceBulletId: null,
     createdAt: new Date("2026-04-17T09:00:00.000Z"),
     updatedAt: new Date("2026-04-20T11:10:00.000Z"),
   },
@@ -79,11 +108,25 @@ const storybookGoals: Goal[] = [
     status: "planned",
     parentId: "goal-company",
     ownerAgentId: "agent-cto",
+    kind: null,
+    ownerUserId: null,
     targetDate: null,
     doneWhen: null,
     targetValue: null,
     currentValue: null,
     unit: null,
+    baselineValue: null,
+    baselineDate: null,
+    kpiDirection: null,
+    amberThresholdPct: null,
+    redThresholdPct: null,
+    budgetPlannedCents: null,
+    budgetSpentCents: null,
+    budgetCurrency: null,
+    benchmarkNote: null,
+    sourceIssueId: null,
+    sourceDocumentKey: null,
+    sourceBulletId: null,
     createdAt: new Date("2026-04-18T09:00:00.000Z"),
     updatedAt: new Date("2026-04-20T11:15:00.000Z"),
   },
@@ -703,6 +746,15 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
+function constrainVisualViewportForPickerStory() {
+  const viewport = window.visualViewport;
+  if (!viewport) return null;
+  Object.defineProperty(viewport, "height", { configurable: true, value: 420 });
+  Object.defineProperty(viewport, "offsetTop", { configurable: true, value: 24 });
+  viewport.dispatchEvent(new Event("resize"));
+  return viewport;
+}
+
 export const NewIssueEmpty: Story = {
   name: "New Issue - Empty",
   render: () => (
@@ -729,6 +781,68 @@ export const NewIssuePrefilled: Story = {
       <IssueDialogOpener variant="prefilled" />
     </DialogStory>
   ),
+};
+
+export const NewIssueMobileAssigneePicker: Story = {
+  name: "New Issue - Mobile Assignee Picker",
+  parameters: {
+    viewport: { defaultViewport: "mobile" },
+  },
+  render: () => (
+    <DialogStory
+      eyebrow="NewIssueDialog"
+      title="Mobile assignee picker"
+      description="The real new-task dialog with its assignee sheet open at an iOS viewport size."
+      badges={["iOS", "mobile", "assignee picker"]}
+    >
+      <IssueDialogOpener variant="empty" />
+    </DialogStory>
+  ),
+  play: async () => {
+    const page = within(document.body);
+    await userEvent.click(await page.findByRole("button", { name: "Assignee" }));
+    const search = await page.findByPlaceholderText("Search assignees...");
+    await userEvent.click(search);
+    const viewport = constrainVisualViewportForPickerStory();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const bounds = search.closest<HTMLElement>("[data-mobile-entity-picker]")?.getBoundingClientRect();
+    const offsetTop = viewport?.offsetTop ?? 0;
+    await expect((bounds?.top ?? -1) + offsetTop).toBeGreaterThanOrEqual(offsetTop);
+    await expect((bounds?.bottom ?? Number.POSITIVE_INFINITY) + offsetTop).toBeLessThanOrEqual(
+      offsetTop + (viewport?.height ?? window.innerHeight),
+    );
+  },
+};
+
+export const NewIssueMobileProjectPicker: Story = {
+  name: "New Issue - Mobile Project Picker",
+  parameters: {
+    viewport: { defaultViewport: "mobile" },
+  },
+  render: () => (
+    <DialogStory
+      eyebrow="NewIssueDialog"
+      title="Mobile project picker"
+      description="The real new-task dialog with its project sheet open at an iOS viewport size."
+      badges={["iOS", "mobile", "project picker"]}
+    >
+      <IssueDialogOpener variant="empty" />
+    </DialogStory>
+  ),
+  play: async () => {
+    const page = within(document.body);
+    await userEvent.click(await page.findByRole("button", { name: "Project" }));
+    const search = await page.findByPlaceholderText("Search projects...");
+    await userEvent.click(search);
+    const viewport = constrainVisualViewportForPickerStory();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const bounds = search.closest<HTMLElement>("[data-mobile-entity-picker]")?.getBoundingClientRect();
+    const offsetTop = viewport?.offsetTop ?? 0;
+    await expect((bounds?.top ?? -1) + offsetTop).toBeGreaterThanOrEqual(offsetTop);
+    await expect((bounds?.bottom ?? Number.POSITIVE_INFINITY) + offsetTop).toBeLessThanOrEqual(
+      offsetTop + (viewport?.height ?? window.innerHeight),
+    );
+  },
 };
 
 export const NewIssueValidationError: Story = {

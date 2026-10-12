@@ -14,9 +14,21 @@ import {
   resolveNativeRunnerRequirement,
 } from "./dev-runner-native-binary.mjs";
 import { applyDevRunnerOptions } from "./dev-runner-options.ts";
+import {
+  SERVER_TREE_STOP_TIMEOUT_MS,
+  devRunnerAttachedToTerminal,
+  handleDevRunnerHangups,
+  serverChildUsesProcessGroup,
+  signalServerProcessTreeOnExit,
+  stopServerProcessTree,
+  type ServerChildExit,
+  type ServerProcessTree,
+  type StopServerProcessTreeResult,
+} from "./dev-runner-process.ts";
 import { collectWatchedSnapshot as collectDevServerWatchedSnapshot, diffSnapshots } from "./dev-runner-snapshot.mjs";
 import { createDevServiceIdentity, repoRoot } from "./dev-service-profile.ts";
-import { bootstrapDevRunnerWorktreeEnv, isWorktreeSeedPending } from "../server/src/dev-runner-worktree.ts";
+import { describeAgentRunEnvScrub, scrubAgentRunEnvForServer } from "../packages/shared/src/agent-run-env.ts";
+import { bootstrapDevRunnerWorktreeEnv, shouldBlockDevRunnerForPendingSeed } from "../server/src/dev-runner-worktree.ts";
 import { applySharedRunnerBuildDir } from "../server/src/runner-build-dir.ts";
 import {
   readDevServerRestartRequest,
@@ -35,6 +47,16 @@ const BIND_MODES = ["loopback", "lan", "tailnet", "custom"] as const;
 type BindMode = (typeof BIND_MODES)[number];
 
 const mode = process.argv[2] === "watch" ? "watch" : "dev";
+
+// Started from an agent's shell (a sandbox): drop the run's identity,
+// credentials and context before anything reads them or a child inherits them,
+// so neither this server nor what it starts can act on the parent server as
+// that agent. First, so --data-dir and the worktree .env apply on top. The run
+// id stays, so the parent's leftover cleanup still stops this sandbox, and a
+// GSAM_SANDBOX_<NAME> override sets a removed name on purpose.
+const agentRunScrubLine = describeAgentRunEnvScrub(scrubAgentRunEnvForServer(process.env));
+if (agentRunScrubLine) console.log(`[gsam] ${agentRunScrubLine}`);
+
 let cliArgs: string[];
 let dataDir: string | null;
 try {
@@ -42,30 +64,30 @@ try {
   cliArgs = appliedOptions.forwardedArgs;
   dataDir = appliedOptions.dataDir;
 } catch (error) {
-  console.error(`[paperclip] ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`[gsam] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
 
 const worktreeEnvBootstrap = bootstrapDevRunnerWorktreeEnv(repoRoot, process.env);
 if (worktreeEnvBootstrap.missingEnv) {
   console.error(
-    `[paperclip] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`gsam worktree init\` in this worktree before \`pnpm dev\`.`,
+    `[gsam] linked git worktree at ${repoRoot} is missing ${path.relative(repoRoot, worktreeEnvBootstrap.envPath)}. Run \`gsam worktree init\` in this worktree before \`pnpm dev\`.`,
   );
   process.exit(1);
 }
 // Before any child starts: the runner build below, the server and, through the
 // server, every local agent run and worktree provision inherit it (GRE-210).
 applySharedRunnerBuildDir(process.env);
-if (isWorktreeSeedPending(repoRoot)) {
+if (shouldBlockDevRunnerForPendingSeed(repoRoot, dataDir)) {
   console.error(
-    "[paperclip] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`.",
+    "[gsam] this worktree database is seed-pending. Run `pnpm gsam worktree ensure-seeded` before `pnpm dev`, or start an isolated sandbox with `pnpm dev:once --data-dir ./tmp/sandbox`.",
   );
   process.exit(1);
 }
 
 const scanIntervalMs = 1500;
 const autoRestartPollIntervalMs = 2500;
-const gracefulShutdownTimeoutMs = 10_000;
+const gracefulShutdownTimeoutMs = SERVER_TREE_STOP_TIMEOUT_MS;
 const changedPathSampleLimit = 5;
 const devServerStatusFilePath = path.join(repoRoot, ".gsam", "dev-server-status.json");
 const devServerRestartRequestFilePath = path.join(repoRoot, ".gsam", "dev-server-restart-request.json");
@@ -128,7 +150,7 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   if (arg === "--bind") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--") || !BIND_MODES.includes(value as BindMode)) {
-      console.error(`[paperclip] invalid --bind value. Use one of: ${BIND_MODES.join(", ")}`);
+      console.error(`[gsam] invalid --bind value. Use one of: ${BIND_MODES.join(", ")}`);
       process.exit(1);
     }
     bindMode = value as BindMode;
@@ -138,7 +160,7 @@ for (let index = 0; index < cliArgs.length; index += 1) {
   if (arg === "--bind-host") {
     const value = cliArgs[index + 1];
     if (!value || value.startsWith("--")) {
-      console.error("[paperclip] --bind-host requires a value");
+      console.error("[gsam] --bind-host requires a value");
       process.exit(1);
     }
     bindHost = value;
@@ -165,7 +187,7 @@ if (managedRuntimeExposure) {
   bindHost = "127.0.0.1";
 }
 if (bindMode === "custom" && !bindHost) {
-  console.error("[paperclip] --bind custom requires --bind-host <host>");
+  console.error("[gsam] --bind custom requires --bind-host <host>");
   process.exit(1);
 }
 
@@ -194,7 +216,7 @@ if (mode === "watch") {
 if (tailscaleAuth || bindMode) {
   const effectiveBind = bindMode ?? "lan";
   if (tailscaleAuth) {
-    console.log("[paperclip] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
+    console.log("[gsam] note: --tailscale-auth/--authenticated-private are legacy aliases for --bind lan");
   }
   env.GSAM_BIND = effectiveBind;
   if (bindHost) {
@@ -206,13 +228,13 @@ if (tailscaleAuth || bindMode) {
     delete env.GSAM_DEPLOYMENT_MODE;
     delete env.GSAM_DEPLOYMENT_EXPOSURE;
     delete env.GSAM_AUTH_BASE_URL_MODE;
-    console.log("[paperclip] dev mode: local_trusted (bind=loopback)");
+    console.log("[gsam] dev mode: local_trusted (bind=loopback)");
   } else {
     env.GSAM_DEPLOYMENT_MODE = "authenticated";
     env.GSAM_DEPLOYMENT_EXPOSURE = "private";
     env.GSAM_AUTH_BASE_URL_MODE = managedRuntimeExposure ? "explicit" : "auto";
     console.log(
-      `[paperclip] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
+      `[gsam] dev mode: authenticated/private (bind=${effectiveBind}${bindHost ? `:${bindHost}` : ""})`,
     );
   }
 } else {
@@ -221,7 +243,7 @@ if (tailscaleAuth || bindMode) {
   delete env.GSAM_DEPLOYMENT_MODE;
   delete env.GSAM_DEPLOYMENT_EXPOSURE;
   delete env.GSAM_AUTH_BASE_URL_MODE;
-  console.log("[paperclip] dev mode: local_trusted (default)");
+  console.log("[gsam] dev mode: local_trusted (default)");
 }
 
 const serverPort = Number.parseInt(env.PORT ?? process.env.PORT ?? "3100", 10) || 3100;
@@ -240,7 +262,7 @@ const existingRunner = await findAdoptableLocalService({
 });
 if (existingRunner) {
   console.log(
-    `[paperclip] ${devService.serviceName} already running (pid ${existingRunner.pid}${typeof existingRunner.metadata?.childPid === "number" ? `, child ${existingRunner.metadata.childPid}` : ""})`,
+    `[gsam] ${devService.serviceName} already running (pid ${existingRunner.pid}${typeof existingRunner.metadata?.childPid === "number" ? `, child ${existingRunner.metadata.childPid}` : ""})`,
   );
   process.exit(0);
 }
@@ -256,7 +278,14 @@ let restartInFlight = false;
 let shuttingDown = false;
 let childExitWasExpected = false;
 let child: ReturnType<typeof spawn> | null = null;
-let childExitPromise: Promise<{ code: number; signal: NodeJS.Signals | null }> | null = null;
+let childExitPromise: Promise<ServerChildExit> | null = null;
+// The server child's whole process tree (see dev-runner-process.ts). It stays
+// set after the head exits until the runner knows the rest of the tree is gone.
+let serverTree: ServerProcessTree | null = null;
+let serverTreeStop: {
+  tree: ServerProcessTree;
+  promise: Promise<StopServerProcessTreeResult>;
+} | null = null;
 let scanTimer: ReturnType<typeof setInterval> | null = null;
 let autoRestartTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -300,7 +329,14 @@ function exitForSignal(signal: NodeJS.Signals) {
   if (signal === "SIGTERM") {
     process.exit(143);
   }
+  if (signal === "SIGHUP") {
+    process.exit(129);
+  }
   process.exit(1);
+}
+
+function logServerTree(message: string) {
+  process.stderr.write(`[gsam] ${message}\n`);
 }
 
 function collectWatchedSnapshot() {
@@ -480,7 +516,7 @@ async function maybePreflightMigrations(
   if (!shouldApply) {
     if (exitOnDecline) {
       process.stderr.write(
-        `[paperclip] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
+        `[gsam] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). Refusing to start watch mode against a stale schema.\n`,
       );
       process.exit(1);
     }
@@ -504,7 +540,7 @@ async function maybePreflightMigrations(
 }
 
 async function buildPluginSdk() {
-  console.log("[paperclip] building plugin sdk...");
+  console.log("[gsam] building plugin sdk...");
   const result = await runPnpm(
     ["--filter", "@greatstone/plugin-sdk", "build"],
     { stdio: "inherit" },
@@ -514,7 +550,7 @@ async function buildPluginSdk() {
     return;
   }
   if (result.code !== 0) {
-    console.error("[paperclip] plugin sdk build failed");
+    console.error("[gsam] plugin sdk build failed");
     process.exit(result.code);
   }
 }
@@ -542,14 +578,14 @@ async function getNativeRunnerRequired(): Promise<boolean> {
   if (!requirement.valid) {
     const detail = status.stderr || status.stdout;
     process.stderr.write(
-      `[paperclip] unable to determine the native runner requirement; conservatively preparing the native runner${detail ? `\n${detail}` : "\n"}`,
+      `[gsam] unable to determine the native runner requirement; conservatively preparing the native runner${detail ? `\n${detail}` : "\n"}`,
     );
   }
   return requirement.nativeRunnerRequired;
 }
 
 async function buildPaperclipRunner() {
-  console.log("[paperclip] building paperclip runner...");
+  console.log("[gsam] building paperclip runner...");
   const typescriptResult = await runPnpm(
     ["--filter", "@greatstone/paperclip-runner", "build:typescript"],
     { stdio: "inherit" },
@@ -559,7 +595,7 @@ async function buildPaperclipRunner() {
     return;
   }
   if (typescriptResult.code !== 0) {
-    console.error("[paperclip] paperclip runner build failed");
+    console.error("[gsam] paperclip runner build failed");
     process.exit(typescriptResult.code);
   }
 
@@ -573,7 +609,7 @@ async function buildPaperclipRunner() {
     return;
   }
 
-  console.log("[paperclip] building paperclip runner native binary...");
+  console.log("[gsam] building paperclip runner native binary...");
   const binaryResult = await runPnpm(
     ["--filter", "@greatstone/paperclip-runner", "build:binary"],
     { stdio: "inherit" },
@@ -583,7 +619,7 @@ async function buildPaperclipRunner() {
     return;
   }
   if (binaryResult.code !== 0) {
-    console.error("[paperclip] paperclip runner native binary build failed");
+    console.error("[gsam] paperclip runner native binary build failed");
     process.exit(binaryResult.code);
   }
 }
@@ -617,7 +653,7 @@ function uiBundleIsFresh(): boolean {
 }
 
 async function buildUiBundleForManagedRuntime(): Promise<boolean> {
-  console.log("[paperclip] managed runtime: building the UI bundle for static serving...");
+  console.log("[gsam] managed runtime: building the UI bundle for static serving...");
   const result = await runPnpm(
     ["--filter", "@greatstone/ui", "build"],
     { stdio: "inherit" },
@@ -628,7 +664,7 @@ async function buildUiBundleForManagedRuntime(): Promise<boolean> {
   }
   if (result.code !== 0) {
     console.error(
-      "[paperclip] UI bundle build failed; falling back to the Vite dev middleware (the page may load slowly or stay blank over HTTPS)",
+      "[gsam] UI bundle build failed; falling back to the Vite dev middleware (the page may load slowly or stay blank over HTTPS)",
     );
     return false;
   }
@@ -665,6 +701,10 @@ async function scanForBackendChanges() {
   }
 }
 
+type DevHealthPayload = {
+  devServer?: { enabled?: boolean; autoRestartEnabled?: boolean; activeRunCount?: number };
+};
+
 async function getDevHealthPayload() {
   const response = await fetch(`http://127.0.0.1:${serverPort}/api/health`, {
     headers: devServerStatusToken ? { [devServerStatusTokenHeader]: devServerStatusToken } : undefined,
@@ -672,7 +712,7 @@ async function getDevHealthPayload() {
   if (!response.ok) {
     throw new Error(`Health request failed (${response.status})`);
   }
-  return await parseJsonResponseWithLimit(response);
+  return await parseJsonResponseWithLimit<DevHealthPayload>(response);
 }
 
 async function waitForChildExit() {
@@ -682,20 +722,32 @@ async function waitForChildExit() {
   return await childExitPromise;
 }
 
-async function stopChildForRestart() {
-  if (!child) return { code: 0, signal: null };
+// One stop per tree: a shutdown signal that arrives while a restart is already
+// stopping the old server waits for that stop instead of signalling again.
+function stopServerTree(tree: ServerProcessTree) {
+  if (serverTreeStop?.tree === tree) return serverTreeStop.promise;
+  const promise = stopServerProcessTree(tree, {
+    signal: "SIGTERM",
+    timeoutMs: gracefulShutdownTimeoutMs,
+    log: logServerTree,
+  });
+  serverTreeStop = { tree, promise };
+  return promise;
+}
+
+// Resolves only when the whole old server tree has gone: the next server must
+// not start while the old one still holds its port, its embedded PostgreSQL or
+// an unwritten hot-restart shutdown snapshot.
+async function stopChildForRestart(): Promise<ServerChildExit> {
+  const tree = serverTree;
+  if (!child || !tree) return { code: 0, signal: null };
   childExitWasExpected = true;
-  child.kill("SIGTERM");
-  const killTimer = setTimeout(() => {
-    if (child) {
-      child.kill("SIGKILL");
-    }
-  }, gracefulShutdownTimeoutMs);
-  try {
-    return await waitForChildExit();
-  } finally {
-    clearTimeout(killTimer);
-  }
+  const result = await stopServerTree(tree);
+  if (serverTree === tree) serverTree = null;
+  console.log(
+    `[gsam] old server stopped for restart (${result.outcome}, ${(result.elapsedMs / 1000).toFixed(1)}s)`,
+  );
+  return result.exit ?? { code: 0, signal: null };
 }
 
 async function startServerChild() {
@@ -703,10 +755,13 @@ async function startServerChild() {
   await buildPluginSdk();
 
   const serverScript = mode === "watch" ? "dev:watch" : "dev";
+  // Its own process group on POSIX, so stopping it can reach every process of
+  // the server tree (see dev-runner-process.ts).
+  const detached = serverChildUsesProcessGroup();
   child = spawn(
     pnpmBin,
     ["--filter", "@greatstone/server", serverScript, ...forwardedArgs],
-    { stdio: "inherit", env, shell: process.platform === "win32" },
+    { stdio: "inherit", env, shell: process.platform === "win32", detached },
   );
 
   childExitPromise = new Promise((resolve, reject) => {
@@ -736,6 +791,9 @@ async function startServerChild() {
       process.exit(code ?? 0);
     });
   });
+  serverTree = child.pid
+    ? { pid: child.pid, processGroupId: detached ? child.pid : null, exited: childExitPromise }
+    : null;
 
   await markChildAsCurrent();
 }
@@ -746,7 +804,7 @@ async function maybeAutoRestartChild() {
   if (!manualRestartRequest && dirtyPaths.size === 0 && pendingMigrations.length === 0) return;
 
   restartInFlight = true;
-  let health: { devServer?: { enabled?: boolean; autoRestartEnabled?: boolean; activeRunCount?: number } } | null = null;
+  let health: DevHealthPayload | null = null;
   try {
     health = await getDevHealthPayload();
   } catch {
@@ -765,8 +823,12 @@ async function maybeAutoRestartChild() {
       ? (health as { serverInfo: { processStartedAt: string } }).serverInfo
           .processStartedAt
       : null;
+  // Drop a request only when the server that made it has clearly been
+  // replaced. An unreadable identity (a server that hides serverInfo from this
+  // supervisor, as login mode did) is not proof, so the request stands.
   if (
     manualRestartRequest?.previousServerIdentity &&
+    observedServerIdentity &&
     observedServerIdentity !== manualRestartRequest.previousServerIdentity
   ) {
     removeDevServerRestartRequest(
@@ -798,6 +860,8 @@ async function maybeAutoRestartChild() {
     // child and let the next poll retry the restart.
     if (!migrationsReady) return;
     await stopChildForRestart();
+    // A shutdown signal that arrived during the stop owns the exit now.
+    if (shuttingDown) return;
     const restartRequestConsumed = manualRestartRequest
       ? removeDevServerRestartRequest(
         manualRestartRequest.requestId
@@ -852,18 +916,29 @@ function clearDevIntervals() {
 async function shutdown(signal: NodeJS.Signals) {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Ask the server to stop before tidying up, so it is already stopping if
+  // something kills this supervisor in the meantime. The server tree no longer
+  // shares the terminal's process group, so this is the only way a Ctrl-C or a
+  // hangup reaches it. SIGTERM is what its coordinated shutdown is built around.
+  const tree = serverTree;
+  const stopInProgress = tree !== null && serverTreeStop?.tree === tree;
+  if (tree && child) childExitWasExpected = true;
+  const stopping = tree && (child || stopInProgress) ? stopServerTree(tree) : null;
   clearDevIntervals();
   clearDevServerStatus();
   await removeLocalServiceRegistryRecord(devService.serviceKey);
 
-  if (!child) {
+  if (!stopping) {
     exitForSignal(signal);
     return;
   }
 
-  childExitWasExpected = true;
-  child.kill(signal);
-  const exit = await waitForChildExit();
+  const { exit } = await stopping;
+  if (serverTree === tree) serverTree = null;
+  if (!exit) {
+    exitForSignal(signal);
+    return;
+  }
   if (exit.signal) {
     exitForSignal(exit.signal);
     return;
@@ -872,9 +947,20 @@ async function shutdown(signal: NodeJS.Signals) {
 }
 
 // Whatever ends the supervisor, do not leave a status file that tells the
-// server a supervisor is still listening (GRE-166).
+// server a supervisor is still listening (GRE-166), and do not leave the server
+// tree running in its own process group with nobody supervising it (an
+// uncaught error, a failed restart, or a server that exited and left its
+// embedded PostgreSQL behind).
 process.on("exit", () => {
   clearDevServerStatus();
+  const tree = serverTree;
+  if (!tree) return;
+  const signalled = signalServerProcessTreeOnExit(tree, { headRunning: child !== null });
+  if (signalled === "head") {
+    logServerTree(`dev runner exiting; sent SIGTERM to the server (pid ${tree.pid})`);
+  } else if (signalled === "group") {
+    logServerTree(`dev runner exiting; sent SIGTERM to what is left of process group ${tree.processGroupId}`);
+  }
 });
 
 process.on("SIGINT", () => {
@@ -883,13 +969,24 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
+// Closing the terminal used to hang up the server too, because it shared the
+// terminal's process group. It now has its own, so a runner in a terminal stops
+// it on purpose. A runner with no terminal (live, under nohup) ignores the
+// hangup, so the end of the session that started it cannot stop live.
+handleDevRunnerHangups({
+  attachedToTerminal: devRunnerAttachedToTerminal(),
+  stopServer: () => {
+    void shutdown("SIGHUP");
+  },
+  log: logServerTree,
+});
 
 // The managed runtime readiness window is tight, so reuse a fresh bundle
 // when possible and overlap a needed rebuild with the migration preflight.
 let uiBundleBuild: Promise<boolean> | null = null;
 if (serveBuiltUiForManagedRuntime) {
   if (uiBundleIsFresh()) {
-    console.log("[paperclip] managed runtime: reusing the up-to-date UI bundle in ui/dist");
+    console.log("[gsam] managed runtime: reusing the up-to-date UI bundle in ui/dist");
   } else {
     uiBundleBuild = buildUiBundleForManagedRuntime();
   }
@@ -903,9 +1000,13 @@ installDevIntervals();
 
 if (mode === "watch") {
   const exit = await waitForChildExit();
-  await removeLocalServiceRegistryRecord(devService.serviceKey);
-  if (exit.signal) {
-    exitForSignal(exit.signal);
+  // Once a signal started shutdown(), it owns the exit: it is still waiting for
+  // the rest of the server tree after the head process exits.
+  if (!shuttingDown) {
+    await removeLocalServiceRegistryRecord(devService.serviceKey);
+    if (exit.signal) {
+      exitForSignal(exit.signal);
+    }
+    process.exit(exit.code ?? 0);
   }
-  process.exit(exit.code ?? 0);
 }

@@ -30,6 +30,7 @@ import type {
 } from "@greatstone/shared";
 import { badRequest, conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 
 export const SMOKE_LAB_DEMO_EMAIL = "smoke@paperclip.test";
 export const SMOKE_LAB_DEMO_PASSWORD = "smoke-password";
@@ -481,8 +482,7 @@ export function smokeLabService(db: Db, options: {
   let httpSidecarError: string | null = null;
 
   async function assertEnabled() {
-    const experimental = await settings.getExperimental();
-    if (!experimental.enableSmokeLab) throw notFound("Smoke lab is disabled");
+    await assertEntitled(settings, "enableSmokeLab");
     // The smoke lab boots a fake OAuth provider + loopback fixture sidecars, so it
     // must never be reachable from a public, internet-facing instance. The real
     // security boundary is *exposure*, not the auth mode or the Node build target:

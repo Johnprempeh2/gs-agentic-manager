@@ -13,7 +13,11 @@ export function createPaperclipMcpServer(config: PaperclipMcpConfig = readConfig
   const client = new PaperclipApiClient(config);
   const tools = createToolDefinitions(client);
   for (const tool of tools) {
-    server.tool(tool.name, tool.description, tool.schema.shape, tool.execute);
+    server.registerTool(
+      tool.name,
+      { description: tool.description, inputSchema: tool.schema.shape, annotations: tool.annotations },
+      tool.execute,
+    );
   }
 
   return {

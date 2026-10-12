@@ -1125,7 +1125,7 @@ describe("GS Agentic Manager Discord adapter patch", () => {
       files: [
         {
           data: Buffer.from(source, "utf8"),
-          filename: "paperclip-response.md",
+          filename: "gsam-response.md",
           mimeType: "text/markdown; charset=utf-8",
         },
       ],
@@ -1139,7 +1139,7 @@ describe("GS Agentic Manager Discord adapter patch", () => {
     ).toEqual({ content: "Complete response attached." });
     const file = capturedBody!.get("files[0]");
     expect(file).toBeInstanceOf(File);
-    expect((file as File).name).toBe("paperclip-response.md");
+    expect((file as File).name).toBe("gsam-response.md");
     expect(await (file as File).text()).toBe(source);
   });
 

@@ -153,7 +153,7 @@ export async function prepareClaudePromptBundle(input: {
     } catch (err) {
       await onLog(
         "stderr",
-        `[paperclip] Failed to materialize Claude skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[gsam] Failed to materialize Claude skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }

@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode, type MouseEventHandler } from "react";
+import { getProductName } from "../lib/partner-branding";
 
 export interface Breadcrumb {
   label: string;
@@ -69,8 +70,10 @@ export function buildDocumentTitle(breadcrumbs: Breadcrumb[], companyName?: stri
   const pageParts = breadcrumbs.length === 0
     ? []
     : [...breadcrumbs].reverse().map((breadcrumb) => breadcrumb.label);
-  const companyPart = companyName?.trim() ? [companyName.trim()] : [];
-  const parts = [...pageParts, ...companyPart, "GS Agentic Manager"];
+  const company = companyName?.trim();
+  // A page whose breadcrumbs already name the company should not repeat it.
+  const companyPart = company && !pageParts.some((part) => part.trim() === company) ? [company] : [];
+  const parts = [...pageParts, ...companyPart, getProductName()];
   return parts.join(" • ");
 }
 
@@ -117,6 +120,12 @@ export function BreadcrumbProvider({ children, companyName }: BreadcrumbProvider
       {children}
     </BreadcrumbContext.Provider>
   );
+}
+
+/** The breadcrumbs when a provider is present, else an empty trail (the shell
+ *  reads them for the phone back swipe and must not require the provider). */
+export function useOptionalBreadcrumbs(): Breadcrumb[] {
+  return useContext(BreadcrumbContext)?.breadcrumbs ?? [];
 }
 
 export function useBreadcrumbs() {

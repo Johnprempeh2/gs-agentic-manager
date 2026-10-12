@@ -69,6 +69,25 @@ rm -rf data/pglite
 pnpm dev
 ```
 
+Stop a dev server or sandbox you started with `pnpm dev:stop` from the same
+checkout, passing the same `--data-dir` you started it with (it stops only the
+services registered for that checkout), or with `kill <pid>` using the PID you
+recorded. Never use `pkill -f`, `killall` or `kill` on a pattern or name you did
+not start yourself (`dev-runner`, `dev:once`, `tsx`, `node`, `postgres`,
+`pnpm`). Where GS Agentic Manager runs for real, the live server runs the same
+commands under the same user, so the pattern matches live too: on 4 Oct 2026
+`pkill -f "dev-runner.ts dev"` from an agent sandbox stopped live for 8.5
+hours. On the Greatstone machine, follow `doc/GREATSTONE-WAY-OF-WORKING.md`:
+start a sandbox with `pnpm dev:once --data-dir ./tmp/sandbox` and stop it with
+`pnpm dev:stop --data-dir ./tmp/sandbox`.
+
+What a local run leaves running is now stopped when the run ends (on Linux):
+every process that still carries the run's `GSAM_RUN_ID` gets SIGTERM, then
+SIGKILL after 5 seconds, and a sweep every five minutes catches what a restart
+missed (see "Leftover Run Processes" in `doc/DEVELOPING.md`). It is a safety
+net with no clean shutdown, so still stop your sandbox yourself, and do not
+leave a server running for a later run.
+
 ## 5. Core Engineering Rules
 
 1. Keep changes company-scoped.
@@ -226,4 +245,4 @@ A change is done when all are true:
 
 ## Design system
 
-`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist.
+`DESIGN.md` at the repo root is the source of truth for UI design decisions. The token-only rule applies to all `ui/` changes: every color, spacing, radius, type, shadow, and motion value in `ui/src/components/**` and `ui/src/pages/**` comes from the token layer in `ui/src/index.css` — no hex, raw px, arbitrary Tailwind bracket values, or raw `font-size`/`fontSize` declarations in components, outside the documented allowlist in `ui/src/index.css`. Run `pnpm check:token-gates` (`scripts/check-token-gates.mjs`) before committing UI changes — it fails on any violation not covered by that allowlist. It also fails if a file gains named Tailwind palette colour classes (`bg-amber-100`, `text-red-600`) beyond its saved count in `scripts/check-named-colors.baseline.json`; after removing some, run `node scripts/check-named-colors.mjs --update` and commit the lower baseline. Likewise it fails if a file gains ad-hoc `toLocaleString(` / `toLocaleDateString(` / `toLocaleTimeString(` calls beyond its saved count in `scripts/check-locale-format.baseline.json`; use the helpers in `ui/src/lib/utils.ts` (`formatDate`, `formatDateTime`, `formatShortDate`, `relativeTime`, `formatNumber`, `formatCents`) and lower the baseline with `node scripts/check-locale-format.mjs --update`.

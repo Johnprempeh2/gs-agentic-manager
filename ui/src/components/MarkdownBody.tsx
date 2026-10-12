@@ -1,5 +1,5 @@
-import { isValidElement, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { isValidElement, memo, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { useIsFetching, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, ExternalLink, WrapText } from "lucide-react";
 import Markdown, { defaultUrlTransform, type Components, type Options } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,7 @@ import { useOptionalCompany } from "../context/CompanyContext";
 import { mentionChipInlineStyle, parseMentionChipHref } from "../lib/mention-chips";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
+import { findIssueInCachedLists } from "../lib/issueDetailCache";
 import { parseIssueReferenceFromHref, remarkLinkIssueReferences } from "../lib/issue-reference";
 import { remarkLinkCaseReferences } from "../lib/case-reference";
 
@@ -30,6 +31,7 @@ import {
 } from "../lib/remark-workspace-file-refs";
 import { remarkSoftBreaks } from "../lib/remark-soft-breaks";
 import { StatusIcon } from "./StatusIcon";
+import { EMAIL_HTML_FENCE_LANGUAGE, EmailHtmlPreview } from "./EmailHtmlPreview";
 import { WorkspaceFileLink } from "./WorkspaceFileLink";
 import { ExternalObjectStatusIcon } from "./ExternalObjectStatusIcon";
 import {
@@ -38,10 +40,14 @@ import {
   externalObjectProviderLabel,
 } from "../lib/external-objects";
 import { normalizeExternalObjectHref } from "../lib/external-object-href";
+import { inAppDeliverablePath } from "../lib/deliverable-links";
 import { copyTextToClipboard } from "../lib/clipboard";
+import { isPlainPrimaryClick, parseAttachmentContentHref } from "../lib/attachment-preview";
+import { AttachmentPreviewContext } from "../context/AttachmentPreviewContext";
 import type {
   ExternalObjectLivenessState,
   ExternalObjectStatusCategory,
+  Issue,
 } from "@greatstone/shared";
 
 /**
@@ -99,23 +105,66 @@ interface MarkdownBodyProps {
    * openable, so the markdown re-parses with the new answers.
    */
   resolveWorkspaceFileRef?: WorkspaceFileRefResolver;
+  /**
+   * Draw `email-html` fenced blocks as the email the recipient will see, in a
+   * sandboxed frame (GRE-965). Only send approval previews turn this on; other
+   * markdown shows the block as plain code.
+   */
+  renderEmailHtml?: boolean;
 }
 
 let mermaidLoaderPromise: Promise<typeof import("mermaid").default> | null = null;
 
-function MarkdownIssueLink({
-  issuePathId,
-  children,
-}: {
+interface MarkdownIssueLinkProps {
   issuePathId: string;
   children: ReactNode;
-}) {
+}
+
+function MarkdownIssueLink({ issuePathId, children }: MarkdownIssueLinkProps) {
+  const queryClient = useQueryClient();
+  const companyId = useOptionalCompany()?.selectedCompanyId ?? null;
+  // Chips mount with a thread's comments, often before the page's issue lists
+  // (mention pool, child tasks) land. Hold each lookup until those first loads
+  // settle, once, so the chip can take its task from them.
+  const listsLoading = useIsFetching({
+    predicate: (query) =>
+      query.queryKey[0] === "issues" &&
+      query.queryKey[1] === companyId &&
+      query.state.data === undefined,
+  }) > 0;
+  const [listsSettled, setListsSettled] = useState(!listsLoading);
+  if (!listsSettled && !listsLoading) setListsSettled(true);
+  if (!listsSettled) {
+    const known = queryClient.getQueryData<Issue>(queryKeys.issues.detail(issuePathId));
+    return <MarkdownIssueLinkView issuePathId={issuePathId} issue={known}>{children}</MarkdownIssueLinkView>;
+  }
+  return <CachedMarkdownIssueLink issuePathId={issuePathId}>{children}</CachedMarkdownIssueLink>;
+}
+
+function CachedMarkdownIssueLink({ issuePathId, children }: MarkdownIssueLinkProps) {
+  const queryClient = useQueryClient();
+  // A thread can mention dozens of tasks. Seed each chip from an issue list the
+  // page already holds (with that list's real age) instead of one fetch per
+  // mention; only a task missing from every cached list, or a stale one, fetches.
+  const cached = useMemo(
+    () => findIssueInCachedLists(queryClient, issuePathId),
+    [queryClient, issuePathId],
+  );
   const { data } = useQuery({
     queryKey: queryKeys.issues.detail(issuePathId),
     queryFn: () => issuesApi.get(issuePathId),
     staleTime: 60_000,
+    initialData: cached?.issue,
+    initialDataUpdatedAt: cached?.updatedAt,
   });
+  return <MarkdownIssueLinkView issuePathId={issuePathId} issue={data}>{children}</MarkdownIssueLinkView>;
+}
 
+function MarkdownIssueLinkView({
+  issuePathId,
+  issue: data,
+  children,
+}: MarkdownIssueLinkProps & { issue: Issue | undefined }) {
   const identifier = data?.identifier ?? issuePathId;
   const title = data?.title ?? identifier;
   const status = data?.status;
@@ -179,7 +228,7 @@ function MarkdownExternalLink({
     : ` (${livenessLabel})`;
   const titleParts = [
     reference.displayTitle ?? `${displayKey} ${statusLabel}`,
-    `${displayKey} — ${statusLabel}${livenessSuffix}`,
+    `${displayKey}: ${statusLabel}${livenessSuffix}`,
   ];
   const title = titleParts.filter(Boolean).join(" · ");
   return (
@@ -311,6 +360,14 @@ function flattenText(value: ReactNode): string {
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (Array.isArray(value)) return value.map((item) => flattenText(item)).join("");
   return "";
+}
+
+function extractFencedSource(children: ReactNode, language: string): string | null {
+  if (!isValidElement(children)) return null;
+  const childProps = children.props as { className?: unknown; children?: ReactNode };
+  if (typeof childProps.className !== "string") return null;
+  if (!childProps.className.split(/\s+/).some((name) => name.toLowerCase() === `language-${language}`)) return null;
+  return flattenText(childProps.children).replace(/\n$/, "");
 }
 
 function extractMermaidSource(children: ReactNode): string | null {
@@ -720,8 +777,10 @@ function MarkdownBodyImpl({
   resolveImageSrc,
   onImageClick,
   resolveWorkspaceFileRef,
+  renderEmailHtml = false,
 }: MarkdownBodyProps) {
   const { theme } = useTheme();
+  const openAttachmentPreview = useContext(AttachmentPreviewContext);
   // Read company prefixes non-throwingly: MarkdownBody renders in surfaces that
   // may lack a CompanyProvider. A null context (or no companies yet) leaves
   // knownPrefixes undefined, which keeps issue auto-linking permissive.
@@ -785,11 +844,11 @@ function MarkdownBodyImpl({
       </blockquote>
     ),
     table: ({ node: _node, style: tableStyle, children: tableChildren, ...tableProps }) => (
-      <div className="paperclip-markdown-table-scroll" role="region" aria-label="Scrollable table" tabIndex={0}>
+      <ScrollableTable>
         <table {...tableProps} style={tableStyle as React.CSSProperties | undefined}>
           {tableChildren}
         </table>
-      </div>
+      </ScrollableTable>
     ),
     td: ({ node: _node, style: tableCellStyle, children: tableCellChildren, ...tableCellProps }) => (
       <td {...tableCellProps} style={mergeTableCellStyle(tableCellStyle as React.CSSProperties | undefined)}>
@@ -805,6 +864,10 @@ function MarkdownBodyImpl({
       const mermaidSource = extractMermaidSource(preChildren);
       if (mermaidSource) {
         return <MermaidDiagramBlock source={mermaidSource} darkMode={theme === "dark"} />;
+      }
+      const emailHtml = renderEmailHtml ? extractFencedSource(preChildren, EMAIL_HTML_FENCE_LANGUAGE) : null;
+      if (emailHtml !== null) {
+        return <EmailHtmlPreview html={emailHtml} />;
       }
       return <CodeBlock preProps={preProps}>{preChildren}</CodeBlock>;
     },
@@ -832,6 +895,19 @@ function MarkdownBodyImpl({
           <Link
             to={href}
             {...anchorProps}
+            rel="noreferrer"
+            style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
+          >
+            {linkChildren}
+          </Link>
+        );
+      }
+
+      const deliverablePath = inAppDeliverablePath(href);
+      if (deliverablePath) {
+        return (
+          <Link
+            to={deliverablePath}
             rel="noreferrer"
             style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
           >
@@ -895,6 +971,17 @@ function MarkdownBodyImpl({
 
       const isGitHubLink = isGitHubUrl(href);
       const isExternal = isExternalHttpUrl(href);
+      // Inside the issue view a plain click on an attachment opens the
+      // preview panel; modified and middle clicks keep the browser's
+      // behaviour (GRE-1036).
+      const previewHandler = openAttachmentPreview && href && parseAttachmentContentHref(href)
+        ? (event: React.MouseEvent<HTMLAnchorElement>) => {
+            if (!isPlainPrimaryClick(event)) return;
+            if (openAttachmentPreview({ href, name: flattenText(linkChildren) })) {
+              event.preventDefault();
+            }
+          }
+        : undefined;
       const leadingIcon = isGitHubLink ? (
         <GithubIcon aria-hidden="true" className="mr-1 inline h-3.5 w-3.5 align-(--va-0_125em)" />
       ) : null;
@@ -907,6 +994,7 @@ function MarkdownBodyImpl({
           {...(isExternal
             ? { target: "_blank", rel: "noopener noreferrer" }
             : { rel: "noreferrer" })}
+          onClick={previewHandler}
           style={mergeWrapStyle(linkStyle as React.CSSProperties | undefined)}
         >
           {renderLinkBody(linkChildren, leadingIcon, trailingIcon)}
@@ -930,7 +1018,7 @@ function MarkdownBodyImpl({
       };
     }
     return map;
-  }, [theme, linkIssueReferences, linkCaseReferences, externalReferenceLookup, resolveImageSrc, onImageClick]);
+  }, [theme, linkIssueReferences, linkCaseReferences, externalReferenceLookup, resolveImageSrc, onImageClick, renderEmailHtml, openAttachmentPreview]);
 
   return (
     <div
@@ -953,3 +1041,42 @@ function MarkdownBodyImpl({
 }
 
 export const MarkdownBody = memo(MarkdownBodyImpl);
+
+/**
+ * A wide table scrolls sideways inside its own box. On a phone the cut-off
+ * column gave no hint there was more, so the edge with more content fades.
+ */
+function ScrollableTable({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [edges, setEdges] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => {
+      const left = el.scrollLeft > 1;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setEdges((prev) => (prev.left === left && prev.right === right ? prev : { left, right }));
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(update);
+    observer?.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      observer?.disconnect();
+    };
+  }, []);
+  return (
+    <div
+      ref={ref}
+      className="paperclip-markdown-table-scroll"
+      data-more-left={edges.left || undefined}
+      data-more-right={edges.right || undefined}
+      role="region"
+      aria-label="Scrollable table"
+      tabIndex={0}
+    >
+      {children}
+    </div>
+  );
+}

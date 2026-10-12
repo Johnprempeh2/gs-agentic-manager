@@ -453,9 +453,9 @@ export async function writeCodexAuthCacheEntry(input: {
     destinationPath: input.cacheEntryPath,
     seedIfDestAbsent: true,
     log: input.log,
-    writtenLine: "[paperclip] Codex auth cache: wrote the per-identity cache slot at mode 0600.",
+    writtenLine: "[gsam] Codex auth cache: wrote the per-identity cache slot at mode 0600.",
     keptLine:
-      "[paperclip] Codex auth cache: kept the cache slot (source is not a strictly-newer same-identity subscription credential).",
+      "[gsam] Codex auth cache: kept the cache slot (source is not a strictly-newer same-identity subscription credential).",
     tempPrefix: "auth.json.cache-source",
     errorLabel: "codex auth cache",
     env: input.env,
@@ -519,7 +519,7 @@ export async function selectVendCredential(
       throw error;
     });
     if (!cacheBytes) {
-      await log("[paperclip] Codex auth cache: no cached credential for the host identity; host credential kept.");
+      await log("[gsam] Codex auth cache: no cached credential for the host identity; host credential kept.");
       return "kept-host";
     }
     const stagedTempPath = path.join(
@@ -539,12 +539,12 @@ export async function selectVendCredential(
       if (decision === USE_SOURCE_EXIT) {
         await rename(stagedTempPath, sharedHomeAuthPath);
         await log(
-          "[paperclip] Codex auth cache: refreshed the host credential with a strictly-newer cached copy of the same identity at mode 0600.",
+          "[gsam] Codex auth cache: refreshed the host credential with a strictly-newer cached copy of the same identity at mode 0600.",
         );
         return "vended";
       }
       await log(
-        "[paperclip] Codex auth cache: host credential kept (the cached copy is not strictly newer for the same identity).",
+        "[gsam] Codex auth cache: host credential kept (the cached copy is not strictly newer for the same identity).",
       );
       return "kept-host";
     } finally {

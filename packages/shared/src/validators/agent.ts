@@ -12,6 +12,7 @@ import { envConfigSchema } from "./secret.js";
 import { trustAuthorizationPolicySchema, trustPresetSchema } from "./trust-policy.js";
 import { agentDesiredSkillSelectionSchema } from "./adapter-skills.js";
 import { objectWithoutDefaults } from "./partial.js";
+import { PIPELINE_ACCESS_LEVELS } from "../pipeline-access.js";
 
 export const agentPermissionsSchema = z.object({
   // No schema default: the server derives the default (enabled unless the
@@ -188,15 +189,25 @@ export const skillTestAgentKeyScopeSchema = z.object({
   issueId: z.string().guid(),
 }).strict();
 
+/**
+ * A key that may only call the organization memory routes (GRE-958). Used for
+ * John's Claude and Codex; only a company owner or admin creates or revokes it.
+ */
+export const memoryOnlyAgentKeyScopeSchema = z.object({
+  kind: z.literal("memory_only"),
+}).strict();
+
 export const agentApiKeyScopeSchema = z.union([
   standardAgentKeyScopeSchema,
   taskBridgeAgentKeyScopeSchema,
   skillTestAgentKeyScopeSchema,
+  memoryOnlyAgentKeyScopeSchema,
 ]);
 
 export type AgentApiKeyScope = z.infer<typeof agentApiKeyScopeSchema>;
 export type TaskBridgeAgentKeyScope = z.infer<typeof taskBridgeAgentKeyScopeSchema>;
 export type SkillTestAgentKeyScope = z.infer<typeof skillTestAgentKeyScopeSchema>;
+export type MemoryOnlyAgentKeyScope = z.infer<typeof memoryOnlyAgentKeyScopeSchema>;
 
 export function normalizeAgentApiKeyScope(value: unknown): AgentApiKeyScope {
   const parsed = agentApiKeyScopeSchema.safeParse(value);
@@ -280,6 +291,19 @@ export const testAdapterEnvironmentSchema = z.object({
 
 export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
 
+// Pipeline access level and scope (GRE-1072). pipelineIds null = all pipelines.
+export const agentPipelineAccessSchema = z.object({
+  level: z.enum(PIPELINE_ACCESS_LEVELS),
+  pipelineIds: z.array(z.string().uuid()).min(1).max(200).nullable(),
+}).strict();
+
+// One agent's level on one pipeline, or on all pipelines when pipelineId is
+// omitted (GRE-1073). Board users with users:manage_permissions only.
+export const setAgentPipelineLevelSchema = z.object({
+  level: z.enum(PIPELINE_ACCESS_LEVELS),
+  pipelineId: z.string().uuid().optional(),
+}).strict();
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canCreateSkills: z.boolean().optional(),
@@ -288,6 +312,12 @@ export const updateAgentPermissionsSchema = z.object({
   // skills:create grants that agent_config:update / skill_config:update check.
   canConfigureAgents: z.boolean().optional(),
   canChangeSkills: z.boolean().optional(),
+  // Accepted only so the route can refuse them with 422 instead of silently
+  // dropping them: memory rights go through PATCH /memory/grants (GRE-988).
+  canContributeMemory: z.boolean().optional(),
+  canApproveMemory: z.boolean().optional(),
+  // Board users with users:manage_permissions only; agents are refused.
+  pipelineAccess: agentPipelineAccessSchema.optional(),
   trustPreset: trustPresetSchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
 });

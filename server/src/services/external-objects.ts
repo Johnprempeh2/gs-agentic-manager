@@ -359,7 +359,12 @@ export function externalObjectService(
     resolvers?: ExternalObjectResolver[];
     pluginWorkerManager?: PluginWorkerManager;
     github?: GitHubExternalObjectProviderOptions | false;
-    enabled?: boolean | (() => boolean | Promise<boolean>);
+    /**
+     * Receives the executor the caller is using. A sync inside a transaction
+     * passes that transaction, so the flag read must go through it rather than
+     * wait for a second pooled connection.
+     */
+    enabled?: boolean | ((dbOrTx: Db) => boolean | Promise<boolean>);
   } = {},
 ) {
   const githubProvider = opts.github === false ? null : createGitHubExternalObjectProvider(db, opts.github);
@@ -376,8 +381,8 @@ export function externalObjectService(
     ...(githubProvider?.resolvers ?? []),
   ]);
 
-  async function isEnabled() {
-    if (typeof opts.enabled === "function") return await opts.enabled();
+  async function isEnabled(dbOrTx: Db = db) {
+    if (typeof opts.enabled === "function") return await opts.enabled(dbOrTx);
     return opts.enabled ?? true;
   }
 
@@ -491,7 +496,7 @@ export function externalObjectService(
   }
 
   async function syncIssue(issueId: string, dbOrTx: any = db) {
-    if (!(await isEnabled())) return;
+    if (!(await isEnabled(dbOrTx))) return;
     const runSync = async (tx: any) => {
       const issue = await issueById(issueId, tx);
       if (!issue) throw notFound("Issue not found");
@@ -518,8 +523,10 @@ export function externalObjectService(
   }
 
   async function syncComment(commentId: string, dbOrTx: any = db) {
+    // Read the flag before this sync opens its own transaction: inside it, a
+    // read through the outer pool would wait for a second connection.
+    if (!(await isEnabled(dbOrTx))) return;
     const runSync = async (tx: any) => {
-      if (!(await isEnabled())) return;
       const comment = await tx
         .select({
           id: issueComments.id,
@@ -550,8 +557,8 @@ export function externalObjectService(
   }
 
   async function syncDocument(documentId: string, dbOrTx: any = db) {
+    if (!(await isEnabled(dbOrTx))) return;
     const runSync = async (tx: any) => {
-      if (!(await isEnabled())) return;
       const document = await tx
         .select({
           documentId: documents.id,

@@ -14,6 +14,7 @@ const mockIssueService = vi.hoisted(() => ({
   findMentionedAgents: vi.fn(),
   getRelationSummaries: vi.fn(),
   listWakeableBlockedDependents: vi.fn(),
+  listOpenBlockedDependents: vi.fn(async () => []),
   getWakeableParentAfterChildCompletion: vi.fn(),
 }));
 
@@ -93,6 +94,9 @@ function registerModuleMocks() {
     accessService: () => mockAccessService,
     agentService: () => ({
       getById: vi.fn(async () => null),
+    }),
+    agentTeamService: () => ({
+      applyTeamAssignment: vi.fn(async () => undefined),
     }),
     companySkillService: () => ({
       completeTestRunForIssue: vi.fn(async () => null),
@@ -179,6 +183,8 @@ function makeIssue() {
 function issueUpdateWithReceipt(issue: ReturnType<typeof makeIssue>, patch: Record<string, unknown>) {
   const {
     actorAgentId: _actorAgentId,
+    actorRunId: _actorRunId,
+    actorRunStopId: _actorRunStopId,
     actorUserId: _actorUserId,
     blockedByIssueIds: _blockedByIssueIds,
     ...issuePatch

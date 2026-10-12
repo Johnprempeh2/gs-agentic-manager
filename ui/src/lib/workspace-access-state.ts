@@ -260,7 +260,7 @@ export function resolveWorkspaceAccessState(input: {
     if (!handoffAvailable) {
       return {
         state: servingService ? "ready" : "degraded",
-        title: servingService ? "Ready — snapshot-local sign-in" : "Workspace is degraded",
+        title: servingService ? "Ready: snapshot-local sign-in" : "Workspace is degraded",
         description: cause ?? "Opening the board will ask for the credentials captured in this snapshot.",
         action: servingService
           ? { kind: "open", label: "Open workspace" }

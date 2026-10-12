@@ -1,5 +1,12 @@
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
+import {
+  defaultConnectivityStateFile,
+  OUTAGE_CARD_WINDOW_MS,
+  outageSummary,
+  outageTitle,
+  readConnectivityState,
+} from "./connectivity-watch.js";
 import {
   agents,
   approvals,
@@ -17,10 +24,12 @@ import {
   invites,
   issueApprovals,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueRecoveryActions,
   issueRelations,
   issueThreadInteractions,
+  issueWorkProducts,
   issues,
   joinRequests,
   documents,
@@ -39,12 +48,15 @@ import type {
   AttentionDecisionVerb,
   AttentionFeed,
   AttentionFeedQuery,
+  AttentionDetailDeliverable,
   AttentionDetailImage,
   AttentionItem,
   AttentionItemDetail,
   AttentionProjectRef,
   AttentionQueueRef,
   AttentionResolverAudience,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionSeverity,
   AttentionSortMode,
   AttentionSourceKind,
@@ -58,6 +70,7 @@ import type {
 import { badRequest } from "../errors.js";
 import { listAttentionExhaustedRuns } from "./attention-exhausted-runs.js";
 import { budgetService } from "./budgets.js";
+import { billingAccountService } from "./billing-account.js";
 import {
   BLOCKER_ATTENTION_MAX_DEPTH,
   BLOCKER_ATTENTION_MAX_NODES,
@@ -68,6 +81,7 @@ import { parseIssueExecutionState } from "./issue-execution-policy.js";
 import { isProspectiveBlockedTransition } from "./routable-blocked.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { canonicalizeStoredResolverPolicy } from "./issue-thread-interaction-resolution.js";
+import { tabledIssueIdSet } from "./issue-tabling.js";
 import { decisionQueueService } from "./decision-queues.js";
 import {
   decisionRetentionService,
@@ -87,6 +101,7 @@ const ATTENTION_SOURCE_KINDS: AttentionSourceKind[] = [
   "budget_alert",
   "agent_error_alert",
   "ai_connection_alert",
+  "connectivity_outage",
 ];
 
 const SEVERITY_RANK: Record<AttentionSeverity, number> = {
@@ -103,6 +118,7 @@ const SOURCE_RANK: Record<AttentionSourceKind, number> = {
   budget_alert: 3,
   agent_error_alert: 4,
   ai_connection_alert: 4,
+  connectivity_outage: 4,
   approval: 5,
   decision: 6,
   issue_thread_interaction: 7,
@@ -115,7 +131,7 @@ const PENDING_INTERACTION_STATUSES = ["pending"] as const;
 const OPEN_RECOVERY_STATUSES = ["active", "escalated"] as const;
 const HUMAN_RECOVERY_OWNER_TYPES = ["user", "board"] as const;
 const DETAIL_EXCERPT_LENGTH = 160;
-const DETAIL_IMAGE_LIMIT = 3;
+const DETAIL_IMAGE_LIMIT = 6;
 const OPEN_DECISION_DEFAULT_LIMIT = 500;
 const OPEN_DECISION_MAX_LIMIT = 1_000;
 const ATTENTION_PAGE_DEFAULT_LIMIT = 50;
@@ -166,13 +182,20 @@ type BlockingIssueSummary = {
 
 type AttentionListOptions = AttentionFeedQuery & {
   userId?: string | null;
+  /**
+   * Other user ids the viewer answers for, already checked by the caller (an
+   * owner standing in for `local-board`, see `board-identity.ts`).
+   */
+  userIdAliases?: readonly string[];
   /** Internal-only escape hatch for callers that need one stable, unpaginated feed snapshot. */
   allowUnscopedAll?: boolean;
 };
 
-type AttentionServiceOptions = {
+export type AttentionServiceOptions = {
   openDecisionLimit?: number;
   now?: () => number;
+  /** Where the connectivity watcher records outages (GRE-999). */
+  connectivityStateFile?: string;
 };
 
 function emptyCounts(): Record<AttentionSourceKind, number> {
@@ -281,6 +304,7 @@ function interactionDetail(input: {
   issue: IssueSummaryRow | null;
   planDocument: PlanDocumentSummary | null;
   images: AttentionDetailImage[];
+  deliverables: AttentionDetailDeliverable[];
 }): AttentionItemDetail {
   if (input.kind === "request_confirmation" && isPlanDocumentTarget(input.payload)) {
     return {
@@ -289,6 +313,7 @@ function interactionDetail(input: {
       planTitle: input.planDocument?.title ?? "Plan",
       summaryExcerpt: excerpt(input.planDocument?.body ?? input.payload.detailsMarkdown ?? input.payload.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -299,6 +324,7 @@ function interactionDetail(input: {
       questionCount: questions.length,
       firstQuestionText: readString(questions[0]?.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -309,6 +335,7 @@ function interactionDetail(input: {
       taskCount: tasks.length,
       firstTaskTitle: readString(tasks[0]?.title),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -318,6 +345,7 @@ function interactionDetail(input: {
       optionCount: readArray(input.payload.options).length,
       promptExcerpt: excerpt(input.payload.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -327,6 +355,7 @@ function interactionDetail(input: {
       itemCount: readArray(input.payload.items).length,
       promptExcerpt: excerpt(input.payload.prompt),
       images: input.images,
+      deliverables: input.deliverables,
     };
   }
 
@@ -335,6 +364,7 @@ function interactionDetail(input: {
     promptExcerpt: excerpt(input.payload.prompt ?? input.payload.detailsMarkdown),
     isPlanTarget: false,
     images: input.images,
+    deliverables: input.deliverables,
   };
 }
 
@@ -897,7 +927,8 @@ async function issueImageMap(db: Db, companyId: string, issueIds: Array<string |
       inArray(issueAttachments.issueId, ids),
       sql`${assets.contentType} like 'image/%'`,
     ))
-    .orderBy(asc(issueAttachments.issueId), asc(issueAttachments.createdAt), asc(issueAttachments.id));
+    // Newest first: the latest screenshots are the ones a decision is about.
+    .orderBy(asc(issueAttachments.issueId), desc(issueAttachments.createdAt), desc(issueAttachments.id));
 
   const map = new Map<string, AttentionDetailImage[]>();
   for (const row of rows) {
@@ -905,6 +936,177 @@ async function issueImageMap(db: Db, companyId: string, issueIds: Array<string |
     if (images.length >= DETAIL_IMAGE_LIMIT) continue;
     images.push({ assetId: row.assetId, alt: row.originalFilename ?? null });
     map.set(row.issueId, images);
+  }
+  return map;
+}
+
+const DETAIL_DELIVERABLE_LIMIT = 3;
+
+/**
+ * The latest version of each deliverable on the tasks, newest first (GRE-451):
+ * an approval card shows the real thing inline, not only its screenshots.
+ */
+async function issueDeliverableMap(db: Db, companyId: string, issueIds: Array<string | null | undefined>) {
+  const ids = [...new Set(issueIds.filter((value): value is string => Boolean(value)))];
+  if (ids.length === 0) return new Map<string, AttentionDetailDeliverable[]>();
+  const rows = await db
+    .select({
+      id: issueWorkProducts.id,
+      issueId: issueWorkProducts.issueId,
+      key: issueWorkProducts.externalId,
+      title: issueWorkProducts.title,
+      metadata: issueWorkProducts.metadata,
+    })
+    .from(issueWorkProducts)
+    .where(and(
+      eq(issueWorkProducts.companyId, companyId),
+      eq(issueWorkProducts.type, "deliverable"),
+      inArray(issueWorkProducts.issueId, ids),
+    ))
+    .orderBy(asc(issueWorkProducts.issueId), desc(issueWorkProducts.createdAt), desc(issueWorkProducts.id));
+
+  const map = new Map<string, AttentionDetailDeliverable[]>();
+  const seenKeys = new Set<string>();
+  for (const row of rows) {
+    // Newest first, so the first row of a key is its latest version.
+    const versionKey = `${row.issueId}:${row.key ?? row.id}`;
+    if (seenKeys.has(versionKey)) continue;
+    seenKeys.add(versionKey);
+    const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+    const attachmentId = typeof metadata.attachmentId === "string" ? metadata.attachmentId : null;
+    if (!attachmentId) continue;
+    const deliverables = map.get(row.issueId) ?? [];
+    if (deliverables.length >= DETAIL_DELIVERABLE_LIMIT) continue;
+    deliverables.push({
+      id: row.id,
+      title: row.title,
+      contentType: typeof metadata.contentType === "string" ? metadata.contentType : "application/octet-stream",
+      contentPath: `/api/attachments/${attachmentId}/content`,
+      originalFilename: typeof metadata.originalFilename === "string" ? metadata.originalFilename : null,
+    });
+    map.set(row.issueId, deliverables);
+  }
+  return map;
+}
+
+const REVIEW_UPDATE_EXCERPT_LENGTH = 280;
+/** How many recent agent comments per issue are searched for the hand-off. */
+const REVIEW_UPDATE_LOOKBACK = 20;
+/** A hand-off says what was done; a shorter comment is a status note. */
+const REVIEW_HANDOFF_MIN_LENGTH = 80;
+/** Comments that open with these words announce work; they do not hand it over. */
+const REVIEW_STATUS_NOTE_PATTERN =
+  /^(starting|started|picking up|picked up|on it|acknowledged|ack\b|working on|looking at|reviewing|i am (starting|reviewing|looking|picking|working|checking)|i will|i'll|checking|next:|status:|still )/i;
+
+type ReviewCommentRow = { id: string; authorAgentId: string | null; body: string; createdAt: Date };
+
+/**
+ * The comment a review card quotes (GRE-1421): the assignee's newest comment
+ * that says what was done. A newer "Starting…" note or a note from another
+ * agent does not replace it. When no such comment exists, the newest agent
+ * comment is shown as the latest update instead.
+ * `rows` is newest first.
+ */
+export function pickReviewLastUpdate(
+  rows: ReviewCommentRow[],
+  assigneeAgentId: string | null,
+): AttentionReviewLastUpdate | null {
+  const toUpdate = (row: ReviewCommentRow, kind: AttentionReviewLastUpdate["kind"], text: string) => ({
+    commentId: row.id,
+    authorAgentId: row.authorAgentId,
+    excerpt: text,
+    createdAt: toIso(row.createdAt),
+    kind,
+  });
+  if (assigneeAgentId) {
+    for (const row of rows) {
+      if (row.authorAgentId !== assigneeAgentId) continue;
+      const cleaned = stripMarkdown(row.body);
+      if (cleaned.length < REVIEW_HANDOFF_MIN_LENGTH || REVIEW_STATUS_NOTE_PATTERN.test(cleaned)) continue;
+      const text = excerpt(row.body, REVIEW_UPDATE_EXCERPT_LENGTH);
+      if (text) return toUpdate(row, "handoff", text);
+    }
+  }
+  for (const row of rows) {
+    const text = excerpt(row.body, REVIEW_UPDATE_EXCERPT_LENGTH);
+    if (text) return toUpdate(row, "latest", text);
+  }
+  return null;
+}
+
+/**
+ * What a stalled review card shows so the operator can decide in place
+ * (GRE-1421): the assignee's hand-off comment and the work product to check.
+ * Only called for stalled reviews, so the per-issue lookups stay small.
+ */
+async function reviewContextMap(db: Db, companyId: string, assigneeByIssueId: Map<string, string | null>) {
+  const map = new Map<string, { lastUpdate: AttentionReviewLastUpdate | null; workProduct: AttentionReviewWorkProduct | null }>();
+  const issueIds = [...assigneeByIssueId.keys()];
+  if (issueIds.length === 0) return map;
+  const authorAgentId = sql<string | null>`coalesce(${issueComments.authorAgentId}, ${issueComments.derivedAuthorAgentId})`;
+  const recentAgentComments = db
+    .select({
+      id: issueComments.id,
+      issueId: issueComments.issueId,
+      authorAgentId: authorAgentId.as("author_agent_id"),
+      // Long reports only need their start for the excerpt.
+      body: sql<string>`left(${issueComments.body}, 4000)`.as("body"),
+      createdAt: issueComments.createdAt,
+      rank: sql<number>`row_number() over (partition by ${issueComments.issueId} order by ${issueComments.createdAt} desc, ${issueComments.id} desc)`.as("rank"),
+    })
+    .from(issueComments)
+    .where(and(
+      eq(issueComments.companyId, companyId),
+      inArray(issueComments.issueId, issueIds),
+      isNull(issueComments.deletedAt),
+      sql`${authorAgentId} is not null`,
+    ))
+    .as("recent_agent_comments");
+  const [commentRows, productRows] = await Promise.all([
+    db
+      .select()
+      .from(recentAgentComments)
+      .where(sql`${recentAgentComments.rank} <= ${REVIEW_UPDATE_LOOKBACK}`)
+      .orderBy(recentAgentComments.issueId, asc(recentAgentComments.rank)),
+    db
+      .selectDistinctOn([issueWorkProducts.issueId], {
+        issueId: issueWorkProducts.issueId,
+        type: issueWorkProducts.type,
+        title: issueWorkProducts.title,
+        url: issueWorkProducts.url,
+      })
+      .from(issueWorkProducts)
+      .where(and(
+        eq(issueWorkProducts.companyId, companyId),
+        inArray(issueWorkProducts.issueId, issueIds),
+        isNotNull(issueWorkProducts.url),
+      ))
+      // A pull request is what a reviewer checks first; then the primary product.
+      .orderBy(
+        issueWorkProducts.issueId,
+        desc(sql`${issueWorkProducts.type} = 'pull_request'`),
+        desc(issueWorkProducts.isPrimary),
+        desc(issueWorkProducts.createdAt),
+      ),
+  ]);
+  const entry = (issueId: string) => {
+    const current = map.get(issueId) ?? { lastUpdate: null, workProduct: null };
+    map.set(issueId, current);
+    return current;
+  };
+  const commentsByIssueId = new Map<string, ReviewCommentRow[]>();
+  for (const row of commentRows) {
+    const list = commentsByIssueId.get(row.issueId) ?? [];
+    list.push({ id: row.id, authorAgentId: row.authorAgentId, body: row.body, createdAt: new Date(row.createdAt) });
+    commentsByIssueId.set(row.issueId, list);
+  }
+  for (const [issueId, rows] of commentsByIssueId) {
+    const lastUpdate = pickReviewLastUpdate(rows, assigneeByIssueId.get(issueId) ?? null);
+    if (lastUpdate) entry(issueId).lastUpdate = lastUpdate;
+  }
+  for (const row of productRows) {
+    if (!row.url) continue;
+    entry(row.issueId).workProduct = { type: row.type, title: row.title, url: row.url };
   }
   return map;
 }
@@ -1076,6 +1278,15 @@ function readRunIssueId(contextSnapshot: Record<string, unknown> | null) {
   return typeof issueId === "string" && issueId.length > 0 ? issueId : null;
 }
 
+function attentionItemIssueIds(item: AttentionItem): string[] {
+  const ids: string[] = [];
+  if (item.subject.kind === "issue") ids.push(item.subject.id);
+  const metadataIssueId = item.subject.metadata?.issueId;
+  if (typeof metadataIssueId === "string") ids.push(metadataIssueId);
+  if (item.relatedIssue?.id) ids.push(item.relatedIssue.id);
+  return ids;
+}
+
 export function attentionService(db: Db, serviceOptions: AttentionServiceOptions = {}) {
   const openDecisionLimit = Math.min(
     Math.max(Math.trunc(serviceOptions.openDecisionLimit ?? OPEN_DECISION_DEFAULT_LIMIT), 1),
@@ -1086,15 +1297,19 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       if (options.all && !options.queue && !options.allowUnscopedAll) {
         throw badRequest("all requires a queue filter");
       }
-      const [prefix, dismissals] = await Promise.all([
+      const [prefix, dismissals, tabledIssueIds] = await Promise.all([
         companyPrefix(db, companyId),
         dismissalByKey(db, companyId, options.userId),
+        tabledIssueIdSet(db, companyId),
       ]);
       const includeDismissed = options.includeDismissed === true;
       const now = serviceOptions.now?.() ?? Date.now();
       const collected: AttentionItem[] = [];
 
       const add = (item: AttentionItem) => {
+        // "Not now" (GRE-262): every card of a tabled task leaves the feed and
+        // its counts until the task comes back.
+        if (tabledIssueIds.size > 0 && attentionItemIssueIds(item).some((id) => tabledIssueIds.has(id))) return;
         const dismissal = activeDismissalState(dismissals, item.dismissalKey, item.activityAt, now);
         if (!includeDismissed && dismissal?.isActive) return;
         collected.push({ ...item, dismissal });
@@ -1152,12 +1367,20 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               issueId: approvalIssueMap.get(approval.id) ?? null,
             },
           },
-          whyNow: "Approval is pending a board decision.",
-          decisionVerbs: decisionVerbs(
-            { id: "approve", label: "Approve", description: "Approve the request." },
-            { id: "reject", label: "Reject", description: "Reject the request." },
-            { id: "request_revision", label: "Request revision", description: "Send the request back for changes." },
-          ),
+          whyNow: approval.type === "permission_grant"
+            ? "An agent was refused for a missing permission and its task is waiting."
+            : "Approval is pending a board decision.",
+          // GRE-601: a missing-permission request is only granted or denied.
+          decisionVerbs: approval.type === "permission_grant"
+            ? decisionVerbs(
+              { id: "reject", label: "Deny", description: "Deny the grant and tell the blocked task." },
+              { id: "approve", label: "Grant", description: "Approve and write the grant, then wake the blocked task." },
+            )
+            : decisionVerbs(
+              { id: "approve", label: "Approve", description: "Approve the request." },
+              { id: "reject", label: "Reject", description: "Reject the request." },
+              { id: "request_revision", label: "Request revision", description: "Send the request back for changes." },
+            ),
           inlineResolvable: approval.type !== "request_board_approval",
           entryRule: "approvals.status = 'pending'",
           exitRule: "Approval leaves pending status.",
@@ -1219,13 +1442,15 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       const boardInteractionRows = interactionRows.filter((row) =>
         (row.addresseeAgentId === null ||
           !evaluateAgentInvokability(companyAgentMap.get(row.addresseeAgentId), companyAgentRows).invokable)
-        && (row.addresseeUserId === null || row.addresseeUserId === options.userId)
+        && (row.addresseeUserId === null || row.addresseeUserId === options.userId
+          || Boolean(options.userIdAliases?.includes(row.addresseeUserId)))
       );
       const visibleInteractionRows = collapsePendingConfirmationsToNewest(boardInteractionRows);
-      const [interactionIssueMap, interactionImageMap, interactionPlanDocumentMap] = await Promise.all([
+      const [interactionIssueMap, interactionImageMap, interactionPlanDocumentMap, interactionDeliverableMap] = await Promise.all([
         issueSummaryMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
         issueImageMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
         planDocumentMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
+        issueDeliverableMap(db, companyId, visibleInteractionRows.map((row) => row.issueId)),
       ]);
 
       for (const interaction of visibleInteractionRows) {
@@ -1237,6 +1462,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           issue,
           planDocument: interactionPlanDocumentMap.get(interaction.issueId) ?? null,
           images: issueImages(interactionImageMap, interaction.issueId),
+          deliverables: interactionDeliverableMap.get(interaction.issueId) ?? [],
         });
         const isPlanTarget = detail.kind === "plan_approval";
         const dedupKey = `interaction:${interaction.id}`;
@@ -1300,8 +1526,9 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       // group header over sibling decisions (v1 still decides each independently).
       const bundleIds = [...new Set(openDecisions.map((decision) => decision.bundleId).filter((value): value is string => Boolean(value)))];
       const bundleTitleMap = new Map<string, string>();
-      const [decisionIssueMap, bundleRows] = await Promise.all([
+      const [decisionIssueMap, decisionImageMap, bundleRows] = await Promise.all([
         issueSummaryMap(db, companyId, openDecisions.map((decision) => decision.originIssueId)),
+        issueImageMap(db, companyId, openDecisions.map((decision) => decision.originIssueId)),
         bundleIds.length > 0
           ? db.select({ id: decisionBundles.id, title: decisionBundles.title })
             .from(decisionBundles).where(and(eq(decisionBundles.companyId, companyId), inArray(decisionBundles.id, bundleIds)))
@@ -1331,7 +1558,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           updatedAt: toIso(decision.updatedAt),
           relatedIssue: issue ? issueSubject(prefix, issue) : null,
           ...issueContext(issue),
-          detail: { kind: "generic", summaryExcerpt: decision.body.slice(0, DETAIL_EXCERPT_LENGTH), images: [] },
+          // A design choice is judged on the task's screenshots, so the decision carries them.
+          detail: { kind: "generic", summaryExcerpt: decision.body.slice(0, DETAIL_EXCERPT_LENGTH), images: issueImages(decisionImageMap, decision.originIssueId) },
         }));
       }
 
@@ -1496,7 +1724,8 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
       for (const issue of typedBlockedIssues) {
         const descriptor = issue.unblockDescriptor;
         const humanOwnerMatches = descriptor?.owner === "board"
-          || (descriptor?.owner && "userId" in descriptor.owner && descriptor.owner.userId === options.userId);
+          || (descriptor?.owner && "userId" in descriptor.owner && (descriptor.owner.userId === options.userId
+            || Boolean(options.userIdAliases?.includes(descriptor.owner.userId))));
         if (descriptor && humanOwnerMatches && isProspectiveBlockedTransition(issue)) {
           const issueSummary = blockedIssueSummaries.get(issue.id) ?? null;
           add(createItem({
@@ -1616,6 +1845,13 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         issueSummaryMap(db, companyId, reviewIssueIds),
         issueImageMap(db, companyId, reviewIssueIds),
       ]);
+      const reviewContextByIssueId = await reviewContextMap(
+        db,
+        companyId,
+        new Map(reviewRows
+          .filter((row) => reviewAttentionByIssueId.get(row.id)?.state === "stalled")
+          .map((row) => [row.id, row.assigneeAgentId])),
+      );
 
       for (const review of reviewRows) {
         const state = parseIssueExecutionState(review.executionState);
@@ -1640,7 +1876,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             ? { ...reviewSubject, metadata: { ...reviewSubject.metadata, reviewAttentionState: "stalled" } }
             : reviewSubject,
           whyNow: stalled
-            ? "Issue is in review without a maintained reviewer, interaction, approval, monitor, run, wake, or recovery path."
+            ? "The work is ready for review, but no reviewer is set. You must decide."
             : pendingApprovalId
             ? "Issue is in review with a linked pending approval."
             : hasHumanParticipant
@@ -1667,7 +1903,14 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           updatedAt: toIso(review.updatedAt),
           relatedIssue: null,
           ...issueContext(issue),
-          detail: genericDetail(review.title, issueImages(reviewImageMap, review.id)),
+          detail: stalled
+            ? {
+                kind: "review",
+                lastUpdate: reviewContextByIssueId.get(review.id)?.lastUpdate ?? null,
+                workProduct: reviewContextByIssueId.get(review.id)?.workProduct ?? null,
+                images: issueImages(reviewImageMap, review.id),
+              }
+            : genericDetail(review.title, issueImages(reviewImageMap, review.id)),
         }));
       }
 
@@ -1819,6 +2062,52 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         }));
       }
 
+      // AT-1.4 (GRE-1389): AI usage of the month crossed the warn level of the
+      // allowance. One card per window: its time is the crossing's, so a
+      // dismissal holds for the rest of the month however often usage crosses.
+      const usageWarning = await billingAccountService(db).usageWarningCard(companyId, new Date(now));
+      if (usageWarning) {
+        const { account, usage, warnedAt } = usageWarning;
+        add(createItem({
+          companyId,
+          sourceKind: "budget_alert",
+          subject: {
+            kind: "billing_account",
+            id: account.id,
+            companyId,
+            title: `AI usage at ${Math.floor(usage.usedPercent)}% of the monthly allowance`,
+            identifier: null,
+            status: "warning",
+            href: `/${prefix}/billing`,
+            // Percent only: the client reads this card, and sees no money for the included allowance (GRE-1395).
+            metadata: {
+              windowStart: usage.windowStart,
+              usedPercent: usage.usedPercent,
+              warnPercent: usage.warnPercent,
+            },
+          },
+          whyNow: `AI usage this month reached the ${usage.warnPercent}% warn level of the allowance.`,
+          decisionVerbs: decisionVerbs(
+            { id: "inspect", label: "Open billing", description: "See usage, forecast and allowance." },
+            { id: "dismiss", label: "Dismiss", description: "Dismiss this warning for the rest of the month." },
+          ),
+          inlineResolvable: true,
+          entryRule: "billing usage of the current UTC month >= warnPercent of the allowance (marked once per window).",
+          exitRule: "Usage falls under the warn level (allowance raised), the month ends, or the row is dismissed.",
+          dedupKey: `billing_usage:${usage.windowStart}`,
+          severity: "medium",
+          activityAt: toIso(warnedAt),
+          createdAt: toIso(warnedAt),
+          updatedAt: toIso(warnedAt),
+          relatedIssue: null,
+          detail: {
+            kind: "generic",
+            summaryExcerpt: `${Math.floor(usage.usedPercent)}% of the included AI usage used this month (warn at ${usage.warnPercent}%).`,
+            images: [],
+          },
+        }));
+      }
+
       const erroredAgents = await db
         .select({
           id: agents.id,
@@ -1957,6 +2246,61 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           relatedIssue: null,
           detail: { kind: "generic", summaryExcerpt: summary, images: [] },
         }));
+      }
+
+      // Internet outages of five minutes or more (GRE-999). The watcher writes
+      // one record per outage; each becomes one card for board users, and the
+      // decision push sends a new card to the phone once.
+      if (options.userId) {
+        const outages = readConnectivityState(serviceOptions.connectivityStateFile ?? defaultConnectivityStateFile())
+          .outages
+          .filter((outage) => now - Date.parse(outage.endedAt) < OUTAGE_CARD_WINDOW_MS);
+        for (const outage of outages) {
+          const from = outage.startedAt;
+          // Runs fail at the end of their own timeout, and retries start
+          // after the line is back: count a short tail past the end.
+          const until = new Date(Date.parse(outage.endedAt) + 15 * 60_000).toISOString();
+          const [counts] = await db
+            .select({
+              failed: sql<number>`count(*) filter (where ${heartbeatRuns.status} in ('failed', 'timed_out') and ${heartbeatRuns.finishedAt} >= ${from}::timestamptz and ${heartbeatRuns.finishedAt} <= ${until}::timestamptz)`,
+              retried: sql<number>`count(*) filter (where (${heartbeatRuns.retryOfRunId} is not null or ${heartbeatRuns.scheduledRetryAttempt} > 0) and ${heartbeatRuns.createdAt} >= ${from}::timestamptz and ${heartbeatRuns.createdAt} <= ${until}::timestamptz)`,
+            })
+            .from(heartbeatRuns)
+            .where(and(
+              eq(heartbeatRuns.companyId, companyId),
+              gte(heartbeatRuns.createdAt, new Date(Date.parse(from) - 24 * 60 * 60_000)),
+            ));
+          const runs = { failed: Number(counts?.failed ?? 0), retried: Number(counts?.retried ?? 0) };
+          const broken = outage.checks.some((check) => !check.ok);
+          add(createItem({
+            companyId,
+            sourceKind: "connectivity_outage",
+            subject: {
+              kind: "connectivity_outage",
+              id: outage.id,
+              companyId,
+              title: outageTitle(outage),
+              identifier: null,
+              status: broken ? "still_broken" : "recovered",
+              href: null,
+              metadata: { startedAt: outage.startedAt, endedAt: outage.endedAt, failedRuns: runs.failed, retriedRuns: runs.retried },
+            },
+            whyNow: "GSAM lost the internet for five minutes or more and is back.",
+            decisionVerbs: decisionVerbs(
+              { id: "dismiss", label: "Dismiss", description: "Dismiss this notice." },
+            ),
+            inlineResolvable: true,
+            entryRule: "Outside connectivity was lost for five minutes or more and came back.",
+            exitRule: "The row is dismissed, or seven days pass.",
+            dedupKey: `connectivity_outage:${outage.id}`,
+            severity: broken ? "high" : "medium",
+            activityAt: outage.endedAt,
+            createdAt: outage.endedAt,
+            updatedAt: outage.endedAt,
+            relatedIssue: null,
+            detail: { kind: "generic", summaryExcerpt: outageSummary(outage, runs), images: [] },
+          }));
+        }
       }
 
       const deduped = new Map<string, AttentionItem>();

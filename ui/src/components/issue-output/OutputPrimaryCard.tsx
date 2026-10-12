@@ -72,7 +72,7 @@ export function OutputPrimaryCard({ item, creatorName, onMediaClick }: OutputPri
           <p className="break-words text-sm font-semibold text-foreground">{filename}</p>
           {item.degraded ? (
             <p className="mt-0.5 text-(length:--text-micro) text-destructive">
-              Output metadata is unavailable — this file can’t be played or downloaded here.
+              Output metadata is unavailable. This file can’t be played or downloaded here.
             </p>
           ) : (
             <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-(length:--text-micro) text-muted-foreground">

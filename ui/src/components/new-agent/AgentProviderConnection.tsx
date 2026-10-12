@@ -85,6 +85,9 @@ export function AgentProviderConnection({
   const [loginPhase, setLoginPhase] = useState<"preparing" | "ready" | "waiting" | "connecting">("preparing");
   const phaseBeforeSubmit = useRef<"ready" | "waiting">("ready");
   const [apiKey, setApiKey] = useState("");
+  // A token from `claude setup-token`, pasted instead of signing in here.
+  const [pasteToken, setPasteToken] = useState(false);
+  const [setupToken, setSetupToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [storedConnection, setStoredConnection] =
@@ -119,11 +122,15 @@ export function AgentProviderConnection({
     (savedKeys.subscriptions.length > 0 || (adapterType === "claude_local" && !savedSubscription && storedLogin.data))
       ? "subscription" : savedKeys.options.length ? "api" : "subscription"
   );
-  const localLogin = useLocalAiLogin(companyId, managedAccount?.intent ?? {
+  const canPasteToken = adapterType === "claude_local" && method === "subscription" && !savedSubscription;
+  const usingSetupToken = canPasteToken && pasteToken;
+  const loginIntent: AiConnectionLoginIntent = managedAccount?.intent ?? {
     provider: aiProvider, method: "subscription", name: `My ${provider} subscription`,
     ownership: "personal", agentIds: [], allAgents: true,
-  }, canUseLocalLogin && method === "subscription" && !savedSubscription && !storedLogin.data,
-  { allowHostClaude: health.data?.deploymentMode === "local_trusted" });
+  };
+  const localLogin = useLocalAiLogin(companyId, loginIntent,
+    canUseLocalLogin && method === "subscription" && !savedSubscription && !storedLogin.data && !usingSetupToken,
+    { allowHostClaude: health.data?.deploymentMode === "local_trusted" });
   const auth = useQuery({
     queryKey: queryKeys.agents.authSignal(
       companyId,
@@ -146,12 +153,15 @@ export function AgentProviderConnection({
     setError(null);
     try {
       if (managedAccount) {
-        if (method === "subscription" && !canUseLocalLogin) return;
+        if (method === "subscription" && !canUseLocalLogin && !usingSetupToken) return;
         const result = savedManagedAccount.current ?? await (method === "api"
           ? aiConnectionsApi.create(companyId, { ...managedAccount.intent, method: "api_key", apiKey: apiKey.trim() })
-          : localLogin.connect(managedAccount.intent));
+          : usingSetupToken
+            ? aiConnectionsApi.create(companyId, { ...managedAccount.intent, setupToken })
+            : localLogin.connect(managedAccount.intent));
         savedManagedAccount.current = result;
         setApiKey("");
+        setSetupToken("");
         if (run === epoch.current) managedAccount.onComplete({ ...result, method: method === "api" ? "api_key" : "subscription" });
         return;
       }
@@ -175,7 +185,11 @@ export function AgentProviderConnection({
                   }
                 : {}),
             };
-      if (method === "subscription" && canUseLocalLogin && !savedSubscription && !storedLogin.data) {
+      if (usingSetupToken) {
+        savedManagedAccount.current ??= await aiConnectionsApi.create(companyId, { ...loginIntent, setupToken });
+        setSetupToken("");
+        connection = { env: {}, aiConnection: { provider: aiProvider, method: "subscription", mode: "responsible_user" } };
+      } else if (method === "subscription" && canUseLocalLogin && !savedSubscription && !storedLogin.data) {
         savedManagedAccount.current ??= await localLogin.connect();
         connection = { env: {}, aiConnection: { provider: aiProvider, method: "subscription", mode: "responsible_user" } };
       }
@@ -198,6 +212,7 @@ export function AgentProviderConnection({
     } catch (cause) {
       if (run !== epoch.current) return;
       if (managedAccount) setApiKey("");
+      setSetupToken("");
       setError(
         cause instanceof Error
           ? cause.message
@@ -309,6 +324,21 @@ export function AgentProviderConnection({
                   />
                 )}
               </OnboardingLoginCard>
+            ) : usingSetupToken ? (
+              <OnboardingLoginCard
+                instruction={<>Run <code className="font-mono">claude setup-token</code> in Terminal, sign in, then paste the token it prints. It lasts about a year.</>}
+              >
+                <OnboardingCardField
+                  label="Setup token"
+                  masked
+                  autoFocus
+                  value={setupToken}
+                  placeholder="Paste the token here (it starts with sk-ant-oat)"
+                  onChange={setSetupToken}
+                  onSubmit={() => void connect()}
+                  disabled={busy}
+                />
+              </OnboardingLoginCard>
             ) : needsLogin ? (
               <AdapterLoginPanel
                 companyId={companyId}
@@ -359,6 +389,21 @@ export function AgentProviderConnection({
                     : "This environment does not support browser sign-in. Choose a sign-in environment or connect with an API key."}
               </p>
             )}
+            {canPasteToken && (
+              <button
+                type="button"
+                className="mt-3 text-sm text-muted-foreground underline underline-offset-4 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                disabled={busy}
+                onClick={() => {
+                  savedManagedAccount.current = null;
+                  setSetupToken("");
+                  setError(null);
+                  setPasteToken((value) => !value);
+                }}
+              >
+                {pasteToken ? "Sign in another way" : "Have a token from claude setup-token? Paste it instead"}
+              </button>
+            )}
           </div>
         )}
       </motion.div>
@@ -381,7 +426,9 @@ export function AgentProviderConnection({
           else onBack();
         }}
         primaryLabel={
-          opened && needsLogin
+          usingSetupToken
+            ? busy ? "Connecting" : "Save token"
+            : opened && needsLogin
             ? loginPhase === "waiting" ? "Waiting for code"
               : loginPhase === "connecting" ? "Connecting"
               : `Sign in to ${provider}`
@@ -394,7 +441,7 @@ export function AgentProviderConnection({
                 ? "Use saved API key"
                 : "Connect"
         }
-        primaryDisabled={
+        primaryDisabled={usingSetupToken ? Boolean(managedAccount?.disabled) || !opened || !setupToken.trim() : (
           managedAccount?.disabled ||
           (Boolean(managedAccount) && method === "subscription" && !canLogin && !canUseLocalLogin) ||
           (localEnvironment && health.isPending) || localLogin.preparing || Boolean(localLogin.error) ||
@@ -406,12 +453,13 @@ export function AgentProviderConnection({
           (method === "api" &&
             !apiKey.trim() &&
             !storedConnection &&
-            !selectedKey)
+            !selectedKey))
         }
         loading={busy}
-        primaryIcon={opened && needsLogin ? loginPhase === "ready" ? "none" : "spinner" : undefined}
+        primaryIcon={opened && needsLogin && !usingSetupToken ? loginPhase === "ready" ? "none" : "spinner" : undefined}
         onPrimary={() => {
-          if (needsLogin) {
+          if (usingSetupToken) void connect();
+          else if (needsLogin) {
             if (!authorizationUrl || loginPhase !== "ready") return;
             window.open(authorizationUrl, "_blank", "noreferrer,noopener");
             setLoginPhase("waiting");

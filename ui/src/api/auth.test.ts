@@ -48,6 +48,52 @@ describe("authApi.getSession", () => {
   });
 });
 
+describe("authApi.signUpEmail", () => {
+  function okFetch() {
+    return vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: "session", user: { id: "user-1" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+  }
+
+  it("sends the invite token in its own header, never in the body", async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await authApi.signUpEmail(
+      { name: "Ben", email: "ben@example.com", password: "long-enough-password" },
+      { inviteToken: " pcp_invite_abc " },
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/sign-up/email", {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        "x-gsam-invite-token": "pcp_invite_abc",
+      },
+      body: JSON.stringify({ name: "Ben", email: "ben@example.com", password: "long-enough-password" }),
+    });
+  });
+
+  it("sends no invite header for an ordinary sign-up", async () => {
+    const fetchMock = okFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await authApi.signUpEmail({ name: "Ann", email: "ann@example.com", password: "long-enough-password" });
+    await authApi.signUpEmail(
+      { name: "Ann", email: "ann@example.com", password: "long-enough-password" },
+      { inviteToken: "   " },
+    );
+
+    for (const call of fetchMock.mock.calls) {
+      expect(call[1].headers).toEqual({ "Content-Type": "application/json" });
+    }
+  });
+});
+
 describe("authApi.signOut", () => {
   it("returns the managed deployment redirect from the response", async () => {
     const fetchMock = vi.fn().mockResolvedValue(

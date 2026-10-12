@@ -397,13 +397,13 @@ export function createProductionSetupTokenSandboxProvider(
     async acquire({ scope, deadline }) {
       const environment = await deps.environments.getById(scope.environmentId);
       if (!environment) {
-        log("[paperclip] Setup-token login: the selected environment is not found.");
+        log("[gsam] Setup-token login: the selected environment is not found.");
         return failClosed();
       }
       if (environment.driver === "local" || environment.driver === "ssh") {
         // The login pseudo-terminal needs a sandbox. A local or an SSH
         // environment has no sandbox process to run the login command in.
-        log("[paperclip] Setup-token login: the selected environment has no sandbox.");
+        log("[gsam] Setup-token login: the selected environment has no sandbox.");
         return failClosed();
       }
       if (!deps.openLivePtySession) {
@@ -411,7 +411,7 @@ export function createProductionSetupTokenSandboxProvider(
         // before the acquire, so the login holds no lease. The live opener lands
         // with the characterization test against a real sandbox.
         log(
-          "[paperclip] Setup-token login: the live sandbox pseudo-terminal transport is not bound.",
+          "[gsam] Setup-token login: the live sandbox pseudo-terminal transport is not bound.",
         );
         return failClosed();
       }
@@ -453,7 +453,7 @@ export function createProductionSetupTokenSandboxProvider(
       const expiresAtMs = expiresAt instanceof Date ? expiresAt.getTime() : Number.NaN;
       if (!Number.isFinite(expiresAtMs) || expiresAtMs > deadline) {
         await this.release(leaseId);
-        log("[paperclip] Setup-token login: the acquired lease expiry does not bound the session deadline.");
+        log("[gsam] Setup-token login: the acquired lease expiry does not bound the session deadline.");
         return failClosed();
       }
 
@@ -468,7 +468,7 @@ export function createProductionSetupTokenSandboxProvider(
         // The opener bind failed. Release the lease and fail closed, so the login
         // holds no lease.
         await this.release(leaseId);
-        log("[paperclip] Setup-token login: the live pseudo-terminal bind failed.");
+        log("[gsam] Setup-token login: the live pseudo-terminal bind failed.");
         void err;
         return failClosed();
       }
@@ -517,14 +517,14 @@ export function createProductionSetupTokenSandboxProvider(
     if (!environment) {
       // The lease resolves but its environment is gone, so no driver can tear down
       // the remote sandbox. Fail loud, so the reaper keeps the cleanup record.
-      log("[paperclip] Setup-token login: the lease environment is not found for a restart release.");
+      log("[gsam] Setup-token login: the lease environment is not found for a restart release.");
       return failClosed();
     }
     const driver = deps.environmentRuntime.getDriver(environment.driver);
     if (!driver) {
       // No driver resolves the remote sandbox. Fail loud, so the reaper keeps the
       // cleanup record and retries the release.
-      log("[paperclip] Setup-token login: no driver resolves the lease for a restart release.");
+      log("[gsam] Setup-token login: no driver resolves the lease for a restart release.");
       return failClosed();
     }
     await driver.releaseRunLease({ environment, lease, status: "released" });
@@ -612,7 +612,7 @@ export function createWorkerBoundLoginPtyOpener(
     const driverKey =
       readLeaseMetaString(metadata.provider) ?? readLeaseMetaString(metadata.driver);
     if (!providerLeaseId || !pluginId || !driverKey) {
-      log("[paperclip] Setup-token login: the lease carries no sandbox worker binding.");
+      log("[gsam] Setup-token login: the lease carries no sandbox worker binding.");
       throw new SetupTokenSessionError(503, SETUP_TOKEN_START_FAILED);
     }
     // Resolve the closed command key from the trusted adapter type. An unmapped
@@ -621,7 +621,7 @@ export function createWorkerBoundLoginPtyOpener(
     try {
       loginCommandKey = resolveLoginCommandKey(scope.adapterType);
     } catch {
-      log("[paperclip] Setup-token login: the adapter type has no login command key.");
+      log("[gsam] Setup-token login: the adapter type has no login command key.");
       throw new SetupTokenSessionError(503, SETUP_TOKEN_START_FAILED);
     }
     // The opener argument is the runner's fixed command string. It confers no

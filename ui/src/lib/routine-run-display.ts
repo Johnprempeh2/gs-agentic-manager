@@ -7,7 +7,7 @@ import type { RoutineRunSummary, RoutineVariable } from "@greatstone/shared";
 function formatVariableValue(value: unknown): string {
   if (typeof value === "string") return `"${value}"`;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
-  if (value == null) return "—";
+  if (value == null) return "not set";
   try {
     return JSON.stringify(value);
   } catch {
@@ -36,9 +36,9 @@ export function dedupedTriggerLabel(
  * turn it into a one-line "why" for the runs list.
  */
 const SKIP_REASON_LABELS: Record<string, string> = {
-  no_external_activity: "Skipped — no activity since last run",
-  paused: "Skipped — routine paused",
-  worktree_execution_cutoff: "Skipped — worktree execution cutoff",
+  no_external_activity: "Skipped: no activity since last run",
+  paused: "Skipped: routine paused",
+  worktree_execution_cutoff: "Skipped: worktree execution cutoff",
 };
 
 /**

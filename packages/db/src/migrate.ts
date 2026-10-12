@@ -13,7 +13,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    console.log(`Applying ${before.pendingMigrations.length} pending migration(s)...`);
+    // scripts/greatstone-preview.sh reads the names from this line (GRE-902).
+    console.log(
+      `Applying ${before.pendingMigrations.length} pending migration(s): ${before.pendingMigrations.join(", ")}`,
+    );
     await applyPendingMigrations(resolved.connectionString);
 
     const after = await inspectMigrations(resolved.connectionString);

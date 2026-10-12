@@ -186,9 +186,9 @@ function middleTruncate(value: string, max = 60) {
 }
 
 function formatRelativeShort(value: string | null | undefined): string {
-  if (!value) return "—";
+  if (!value) return "Unknown";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
+  if (Number.isNaN(date.getTime())) return "Unknown";
   const diff = Date.now() - date.getTime();
   if (diff < 0) return date.toLocaleDateString();
   const seconds = Math.floor(diff / 1000);
@@ -998,7 +998,7 @@ function SelectStep(props: SelectStepProps) {
           <EmptyCandidates query={debouncedQuery} />
         ) : (
           <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+            <thead className="sticky top-0 z-raised bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">
                   <Checkbox

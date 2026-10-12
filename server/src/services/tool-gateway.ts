@@ -10,7 +10,11 @@ import { githubChatReviewService } from "./chat-github-reviews.js";
 import { runIdentityContexts } from "@greatstone/db";
 import { captureRunIdentity } from "./run-identity.js";
 import { emitConnectionInvoked } from "./connector-telemetry.js";
-import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
+import {
+  githubIdentityScopeForRun,
+  recordGitHubDelegationUse,
+  resolveManagedGitHubIdentitySelection,
+} from "./git-credentials.js";
 import { extractRemoteMcpPending } from "./remote-mcp-pending.js";
 import { logger } from "../middleware/logger.js";
 import { spawn } from "node:child_process";
@@ -159,11 +163,16 @@ import {
   validateToolContent,
   verifyToolArgumentsSignature,
 } from "./tool-content-guards.js";
+import { sealToolResultProxyPaths } from "./tool-result-sealed-values.js";
 import { extendApprovedExecutionWaitDeadline } from "./approved-execution-wait.js";
+import { buildSendMessagePreviewLines, isSendMessageTool } from "./tool-send-preview.js";
 
 const DEFAULT_SESSION_TTL_MS = 15 * 60 * 1000;
 const MAX_SESSION_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_TOOL_TIMEOUT_MS = 10_000;
+// Remote apps wait on their own jobs inside one call (Higgsfield `sync: true`
+// polls for about 25 s). The 10 s default cut those calls short (GRE-1039).
+const REMOTE_MCP_DEFAULT_TIMEOUT_MS = 60_000;
 
 export function resolveCredentialGrantKind(
   policy: "shared" | "per_user" | "per_user_with_fallback" | "per_agent",
@@ -311,13 +320,27 @@ export interface ToolGatewaySession {
   responsibleUserId?: string | null;
   /** Captured by the controller for this request, never accepted from tool arguments. */
   identityContextId?: string | null;
+  /** Cause of the captured identity context; `company_default` means no person caused the work. */
+  identityCause?: string | null;
   /** Set only after verifying the signed approved action. */
   approvedSlackInvocationId?: string;
   createdAt: Date;
   expiresAt: Date;
 }
 
+/** Same rule as run start and gh/git export: see githubIdentityScopeForRun. */
+function githubScopeForSession(session: ToolGatewaySession) {
+  return githubIdentityScopeForRun({ cause: session.identityCause, responsibleUserId: session.responsibleUserId });
+}
+
 export type ToolGatewayRuntimeSlot = ToolRuntimeSlotView;
+
+/** Seconds from a Retry-After header (delta-seconds or HTTP date), capped at a day. */
+export function remoteRetryAfterSeconds(header: string | null, now = Date.now()): number | null {
+  if (!header) return null;
+  const seconds = /^\d+$/.test(header.trim()) ? Number(header.trim()) : Math.ceil((Date.parse(header) - now) / 1000);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 86_400) : null;
+}
 
 export class ToolGatewayHttpError extends Error {
   constructor(
@@ -844,15 +867,23 @@ function humanizeArgumentValue(value: unknown): string | null {
  * words tool/risk/transport/arguments and of raw JSON — those only belong on the
  * Advanced surfaces (M8a/M8b) and the board-only formal-approval interaction.
  */
-function buildHumanizedActionPreview(input: {
+export function buildHumanizedActionPreview(input: {
   tool: ToolGatewayDescriptor;
   argumentsSummary: ReturnType<typeof summarizeToolValue>;
+  /** The exact arguments that will run; a send shows them in full (GRE-800). */
+  parameters?: unknown;
 }): string {
   const actionName = input.tool.displayName?.trim() || input.tool.name;
   const trustLine =
     input.tool.risk === "destructive"
       ? `${actionName}. This can permanently change or remove data.`
       : actionName;
+
+  // Sends show recipients, subject and the full body; the summary below is cut.
+  if (isSendMessageTool(input.tool)) {
+    const sendLines = buildSendMessagePreviewLines(input.parameters);
+    if (sendLines) return [trustLine, "", ...sendLines].join("\n");
+  }
 
   let parsed: unknown;
   try {
@@ -1798,6 +1829,16 @@ export function createToolGatewayService(
     }
   }
 
+  /** GRE-1364: no gateway token or session works while its company is paused or archived. */
+  async function isCompanyActive(companyId: string) {
+    const [company] = await db
+      .select({ status: companies.status })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+    return company?.status === "active";
+  }
+
   async function getActiveSession(
     sessionToken: string,
     namedGatewayProtocol?: {
@@ -1869,6 +1910,15 @@ export function createToolGatewayService(
       );
     }
 
+    if (!(await isCompanyActive(row.companyId))) {
+      await writeSessionAuthFailure(row, "company_paused");
+      throw new ToolGatewayHttpError(
+        403,
+        "The company is paused, so its tools are off",
+        "company_paused",
+      );
+    }
+
     await assertSessionRunIsActive(row);
 
     const now = new Date();
@@ -1912,6 +1962,7 @@ export function createToolGatewayService(
     return {
       ...session,
       identityContextId: captured.context?.id,
+      identityCause: captured.context?.cause ?? null,
       responsibleUserId:
         captured.context?.cause === "company_default"
           ? null
@@ -2346,6 +2397,7 @@ export function createToolGatewayService(
       buildHumanizedActionPreview({
         tool: input.tool,
         argumentsSummary: input.argumentsSummary,
+        parameters: input.parameters,
       });
 
     let formalApprovalId: string | null = null;
@@ -2689,8 +2741,7 @@ export function createToolGatewayService(
           session.companyId,
           {
             agentId: session.agentId,
-            responsibleUserId: session.responsibleUserId,
-            allowStandingDelegation: false,
+            ...githubScopeForSession(session),
           },
         );
         if (!selected.grant)
@@ -2748,8 +2799,7 @@ export function createToolGatewayService(
               session.companyId,
               {
                 agentId: session.agentId,
-                responsibleUserId: session.responsibleUserId,
-                allowStandingDelegation: false,
+                ...githubScopeForSession(session),
                 excludeGrantId: original.id,
               },
             );
@@ -3881,6 +3931,12 @@ export function createToolGatewayService(
               resolveOptions,
             );
       if (tracked)
+        await recordGitHubDelegationUse(db, {
+          companyId: session.companyId, grant, agentId: session.agentId,
+          responsibleUserId: session.responsibleUserId, heartbeatRunId: session.runId,
+          issueId: session.issueId, consumer: "tool_gateway",
+        });
+      if (tracked)
         await db
           .update(runIdentityContexts)
           .set({
@@ -4389,8 +4445,7 @@ export function createToolGatewayService(
         ? { grant: captured.grant, error: undefined }
         : await resolveManagedGitHubIdentitySelection(db, session.companyId, {
             agentId: session.agentId,
-            responsibleUserId: session.responsibleUserId,
-            allowStandingDelegation: false,
+            ...githubScopeForSession(session),
           });
       if (!selected.grant || selected.grant.connectionId !== connection.id) {
         throw new ToolGatewayHttpError(
@@ -4897,6 +4952,7 @@ export function createToolGatewayService(
     connection: typeof toolConnections.$inferSelect,
     template: LocalStdioRuntimeTemplate,
     grant: typeof connectionGrants.$inferSelect,
+    options: { recordHealth?: boolean } = {},
   ): Promise<NodeJS.ProcessEnv> {
     const env: NodeJS.ProcessEnv = {};
     for (const key of [
@@ -4925,11 +4981,13 @@ export function createToolGatewayService(
           grantRef,
         );
       } catch {
-        await markRemoteConnectionHealth(
-          connection,
-          "missing_secret",
-          "A configured local stdio credential could not be resolved.",
-        );
+        if (options.recordHealth !== false) {
+          await markRemoteConnectionHealth(
+            connection,
+            "missing_secret",
+            "A configured local stdio credential could not be resolved.",
+          );
+        }
         throw new ToolGatewayHttpError(
           422,
           "A configured local stdio credential could not be resolved.",
@@ -5483,6 +5541,38 @@ export function createToolGatewayService(
     return result ?? {};
   }
 
+  async function discoverNamedGatewayTools(input: {
+    gatewayId?: string | null;
+    gatewayPublicId?: string | null;
+    bearerToken: string;
+    callerHeaders?: Record<string, string | string[] | undefined>;
+  }) {
+    const session = await namedGatewaySessionFromBearer({
+      gatewayId: input.gatewayId ?? null,
+      gatewayPublicId: input.gatewayPublicId ?? null,
+      bearerToken: input.bearerToken,
+      protocolMethod: "tools/list",
+      callerHeaders: input.callerHeaders,
+    });
+    await assertGatewayTokenAction(session, "tools/list");
+    const tools = await listToolsForContext(session);
+    await writeAudit({
+      session,
+      companyId: session.companyId,
+      agentId: session.agentId,
+      runId: session.runId,
+      issueId: session.issueId,
+      action: "tool_gateway.discovery",
+      details: {
+        decision: "allow",
+        reasonCode: "named_gateway_discovery_filtered",
+        visibleToolCount: tools.length,
+        visibleTools: tools.map((tool) => tool.name),
+      },
+    });
+    return { tools, allowedActions: session.gatewayTokenAllowedActions ?? null };
+  }
+
   async function connectedRemoteApprovalSnapshot(
     session: ToolGatewaySession,
     tool: ToolGatewayDescriptor,
@@ -5865,6 +5955,8 @@ export function createToolGatewayService(
     assertGoogleChatToolArgumentsSupported(connection, entry.toolName, parameters);
     if (useDefaultTimeout && isRailwayConnection(connection) && entry.toolName === `${RAILWAY_TOOL_PREFIX}run-command`) {
       ms = railwayCommandBudgetMs(parameters);
+    } else if (useDefaultTimeout) {
+      ms = REMOTE_MCP_DEFAULT_TIMEOUT_MS;
     }
     const grant = await resolveConnectionGrant(session, connection);
     const endpoint = await resolvedRemoteEndpoint(session, connection, grant);
@@ -5939,9 +6031,8 @@ export function createToolGatewayService(
           execution,
         };
       }
-      let requestHeaders = headers;
-      if (connection.config.mcpSessionRequired === true) {
-        requestHeaders = await getMcpHttpSession({
+      const openMcpSession = (baseHeaders: Record<string, string>) =>
+        getMcpHttpSession({
           scope: `${connection.id}:grant:${grant.id}:actor:${session.agentId}:${endpoint}`,
           send: (init) =>
             dispatchRemote(endpoint, {
@@ -5949,9 +6040,12 @@ export function createToolGatewayService(
               redirect: "manual",
               signal: controller.signal,
             }),
-          headers,
+          headers: baseHeaders,
           requestId,
         });
+      let requestHeaders = headers;
+      if (connection.config.mcpSessionRequired === true) {
+        requestHeaders = await openMcpSession(headers);
       }
       // The guard runs inside this call and the connection is pinned to the
       // address it approved, so an operator-supplied hostname cannot be rebound
@@ -6081,10 +6175,25 @@ export function createToolGatewayService(
           headers: mcpHttpRequestHeaders(headers),
         });
       }
+      if (
+        response.status === 404 &&
+        connection.config.mcpSessionRequired === true &&
+        new Headers(requestHeaders).has("mcp-session-id")
+      ) {
+        // An MCP server answers 404 to an unknown session id before it runs
+        // the request, so this call did not reach the tool. Open a new session
+        // and send it once more (GRE-1039).
+        forgetMcpHttpSessions(connection.id);
+        requestHeaders = await openMcpSession(headers);
+        response = await dispatchRemote(endpoint, {
+          ...requestInit,
+          headers: mcpHttpRequestHeaders(requestHeaders),
+        });
+      }
       const sessionExpired = response.status === 404 && new Headers(requestHeaders).has("mcp-session-id");
       if (sessionExpired) {
-        // The next explicit call initializes again. Never replay a tools/call
-        // automatically: the failed call may have changed app data.
+        // The new session was refused too. The next explicit call initializes
+        // again; do not loop here.
         forgetMcpHttpSessions(connection.id);
       }
       const body = response.ok
@@ -6117,18 +6226,30 @@ export function createToolGatewayService(
           response.headers.get("traceparent"),
       };
       if (!response.ok) {
-        // Session expiration is recoverable on an explicit retry. Marking the
-        // connection unhealthy here would hide every tool and prevent it.
-        if (!sessionExpired) {
-          await markRemoteConnectionHealth(connection, "error", "Remote MCP server returned an HTTP error.");
+        // Session expiration and rate limits are recoverable on a later retry.
+        // Marking the connection unhealthy here would hide every tool from
+        // every agent until the next health sweep (GRE-335).
+        const rateLimited = response.status === 429;
+        const retryAfterSeconds = rateLimited ? remoteRetryAfterSeconds(response.headers.get("retry-after")) : null;
+        // Only a rejected sign-in needs the user. Every other status is ours
+        // or the provider's to retry, and must not ask anyone to reconnect.
+        const authRejected = response.status === 401;
+        if (!sessionExpired && !rateLimited) {
+          await markRemoteConnectionHealth(connection, "error", authRejected
+            ? "The app rejected this connection's sign-in."
+            : "Remote MCP server returned an HTTP error.");
         }
         throw new ToolGatewayHttpError(
           502,
-          sessionExpired ? "Remote MCP session expired. Retry the action explicitly to start a new session." : "Remote MCP server returned an HTTP error",
-          "mcp_remote_status",
+          sessionExpired ? "Remote MCP session expired and a new session was refused. The sign-in is fine; retry the call."
+            : rateLimited ? `The app is rate limiting requests. The connection still works; retry ${retryAfterSeconds ? `in ${retryAfterSeconds} seconds` : "later"}.`
+            : authRejected ? "The app rejected this connection's sign-in (HTTP 401). Ask the user to reconnect this connection."
+            : `Remote MCP server returned HTTP ${response.status}. The sign-in is fine; retry later.`,
+          authRejected ? "provider_auth_required" : "mcp_remote_status",
           {
             status: response.status,
             ...(sessionExpired ? { sessionExpired: true } : {}),
+            ...(rateLimited ? { rateLimited: true, retryAfterSeconds } : {}),
             connectionId: connection.id,
             catalogEntryId: entry.id,
             execution,
@@ -6246,14 +6367,11 @@ export function createToolGatewayService(
         );
       }
       if (error instanceof Error && error.name === "AbortError") {
-        await markRemoteConnectionHealth(
-          connection,
-          "error",
-          "Remote MCP tool call timed out.",
-        );
+        // A slow call is not a broken connection. Marking it unhealthy hid all
+        // of its tools, so every later call in the run failed (GRE-1039).
         throw new ToolGatewayHttpError(
           504,
-          "Remote MCP tool call timed out",
+          `Remote MCP tool call timed out after ${Math.round(ms / 1000)} seconds. The app may still finish the job: check its status before you retry. The connection and its sign-in are fine.`,
           "tool_timeout",
           {
             connectionId: connection.id,
@@ -6935,7 +7053,54 @@ export function createToolGatewayService(
         clientMetadata,
       });
     }
-    let agentId = row.gateway.agentId;
+    if (!(await isCompanyActive(row.gateway.companyId))) {
+      await recordNamedGatewayAuthFailure({
+        gatewayId: input.gatewayId,
+        gatewayPublicId: input.gatewayPublicId,
+        bearerToken,
+        reasonCode: "company_paused",
+        clientMetadata,
+      });
+    }
+    const nativeMetadata = row.gateway.metadata;
+    const [profile] = await db.select({
+      profileKey: toolProfiles.profileKey,
+      status: toolProfiles.status,
+      source: sql<string | null>`${toolProfiles.metadata}->>'source'`,
+      agentId: sql<string | null>`${toolProfiles.metadata}->>'agentId'`,
+      assignmentDigest: sql<string | null>`${toolProfiles.metadata}->>'assignmentDigest'`,
+    }).from(toolProfiles).where(and(
+      eq(toolProfiles.id, row.gateway.profileId),
+      eq(toolProfiles.companyId, row.gateway.companyId),
+    )).limit(1);
+    // The immutable native profile also identifies legacy assignments when an
+    // update has cleared the gateway metadata. Missing metadata must fail closed.
+    const nativeAssignment = Object.hasOwn(nativeMetadata ?? {}, "nativeRuntimeAssignmentDigest") ||
+      profile?.profileKey.startsWith("native:") || profile?.source === "paperclip_runner";
+    const nativeOwner = nativeMetadata?.agentId;
+    if (nativeAssignment && (
+      typeof nativeOwner !== "string" || !uuidPattern.test(nativeOwner) ||
+      typeof nativeMetadata?.nativeRuntimeAssignmentDigest !== "string" ||
+      !/^[a-f0-9]{64}$/.test(nativeMetadata.nativeRuntimeAssignmentDigest) ||
+      (row.gateway.agentId && row.gateway.agentId !== nativeOwner) ||
+      row.token.subjectType !== "heartbeat_run"
+    )) {
+      return recordNamedGatewayAuthFailure({
+        gatewayId: input.gatewayId, gatewayPublicId: input.gatewayPublicId,
+        bearerToken, reasonCode: "gateway_token_run_context_invalid", clientMetadata,
+      });
+    }
+    if (nativeAssignment) {
+      if (profile?.status !== "active" || profile.source !== "paperclip_runner" ||
+          profile.agentId !== nativeOwner ||
+          profile.assignmentDigest !== nativeMetadata!.nativeRuntimeAssignmentDigest) {
+        return recordNamedGatewayAuthFailure({
+          gatewayId: input.gatewayId, gatewayPublicId: input.gatewayPublicId,
+          bearerToken, reasonCode: "gateway_token_run_context_invalid", clientMetadata,
+        });
+      }
+    }
+    let agentId = row.gateway.agentId ?? (nativeAssignment ? nativeOwner as string : null);
     let runId: string | null = null;
     let responsibleUserId: string | null = null;
     let issueId = row.gateway.issueId;
@@ -6979,7 +7144,7 @@ export function createToolGatewayService(
           clientMetadata,
         });
       }
-      if (row.gateway.agentId && row.gateway.agentId !== run.agentId) {
+      if (agentId && agentId !== run.agentId) {
         return recordNamedGatewayAuthFailure({
           gatewayId: input.gatewayId,
           gatewayPublicId: input.gatewayPublicId,
@@ -7706,6 +7871,7 @@ export function createToolGatewayService(
         "identity_context_unavailable",
       );
     session.identityContextId = origin.id;
+    session.identityCause = origin.cause;
     session.responsibleUserId =
       origin.cause === "company_default" ? null : origin.responsibleUserId;
   }
@@ -8753,30 +8919,24 @@ export function createToolGatewayService(
       bearerToken: string;
       callerHeaders?: Record<string, string | string[] | undefined>;
     }): Promise<ToolGatewayDescriptor[]> {
-      const session = await namedGatewaySessionFromBearer({
-        gatewayId: input.gatewayId ?? null,
-        gatewayPublicId: input.gatewayPublicId ?? null,
-        bearerToken: input.bearerToken,
-        protocolMethod: "tools/list",
-        callerHeaders: input.callerHeaders,
-      });
-      await assertGatewayTokenAction(session, "tools/list");
-      const tools = await listToolsForContext(session);
-      await writeAudit({
-        session,
-        companyId: session.companyId,
-        agentId: session.agentId,
-        runId: session.runId,
-        issueId: session.issueId,
-        action: "tool_gateway.discovery",
-        details: {
-          decision: "allow",
-          reasonCode: "named_gateway_discovery_filtered",
-          visibleToolCount: tools.length,
-          visibleTools: tools.map((tool) => tool.name),
-        },
-      });
-      return tools;
+      return (await discoverNamedGatewayTools(input)).tools;
+    },
+
+    /**
+     * tools/list for the MCP protocol route: the visible tools plus the MCP
+     * actions the bearer token may perform, so the route does not advertise
+     * resource or prompt helpers the token would be refused.
+     */
+    async discoverNamedGatewayTools(input: {
+      gatewayId?: string | null;
+      gatewayPublicId?: string | null;
+      bearerToken: string;
+      callerHeaders?: Record<string, string | string[] | undefined>;
+    }): Promise<{
+      tools: ToolGatewayDescriptor[];
+      allowedActions: ToolMcpGatewayTokenAction[] | null;
+    }> {
+      return discoverNamedGatewayTools(input);
     },
 
     async executeContextForNamedGateway(input: {
@@ -8976,6 +9136,74 @@ export function createToolGatewayService(
       };
     },
 
+    /**
+     * Resolve the grant and credential this agent's tool calls would use on a
+     * connection, without calling the app (GRE-341). The session mirrors
+     * {@link executeTestCall}: no run, the operator as the responsible user, so
+     * no authorization card is posted and nothing wakes.
+     */
+    async resolveAgentConnectionCredential(input: {
+      companyId: string;
+      connectionId: string;
+      agentId: string;
+      userId: string;
+    }): Promise<{
+      grantId: string;
+      grantKind: "organization" | "user" | "agent";
+      transport: string;
+      credentialHeaders?: Record<string, string>;
+      endpoint?: string;
+    }> {
+      await assertAgentInCompany(input.companyId, input.agentId);
+      const [connection] = await db
+        .select()
+        .from(toolConnections)
+        .where(
+          and(
+            eq(toolConnections.id, input.connectionId),
+            eq(toolConnections.companyId, input.companyId),
+          ),
+        )
+        .limit(1);
+      if (!connection) {
+        throw new ToolGatewayHttpError(404, "Tool connection not found", "connection_not_found");
+      }
+      const session: ToolGatewaySession = {
+        id: "agent-check",
+        token: "agent-check",
+        companyId: input.companyId,
+        agentId: input.agentId,
+        runId: null,
+        issueId: null,
+        projectId: null,
+        actorType: "user",
+        actorId: input.userId,
+        responsibleUserId: input.userId,
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + DEFAULT_SESSION_TTL_MS),
+      };
+      const grant = await resolveConnectionGrant(session, connection);
+      const grantKind = grant.kind as "organization" | "user" | "agent";
+      const transport = connection.transport;
+      if (transport === "local_stdio") {
+        // A run reads the grant's env.* secrets before it starts the process
+        // (GRE-350). Resolve them the same way, then drop the values: the
+        // check starts no process and does not mark the shared connection.
+        const template = await resolveLocalStdioRuntimeTemplate(connection);
+        await localStdioEnvironment(session, connection, template, grant, { recordHealth: false });
+        return { grantId: grant.id, grantKind, transport };
+      }
+      if (transport !== "mcp_remote") {
+        return { grantId: grant.id, grantKind, transport };
+      }
+      const endpoint = await resolvedRemoteEndpoint(session, connection, grant);
+      const credentialHeaders = {
+        ...projectedConnectionHeaders(connection),
+        ...(await resolveCredentialHeaders(session, connection, grant)),
+      };
+      return { grantId: grant.id, grantKind, transport, credentialHeaders, endpoint };
+    },
+
     async executeTestCall(input: ExecuteTestCallInput) {
       await assertAgentInCompany(input.companyId, input.agentId);
       const session: ToolGatewaySession = {
@@ -9115,6 +9343,7 @@ export function createToolGatewayService(
         const previewMarkdown = buildHumanizedActionPreview({
           tool,
           argumentsSummary: argumentValidation.summary,
+          parameters: requestedParameters,
         });
         await db
           .update(toolActionRequests)
@@ -9750,6 +9979,7 @@ export function createToolGatewayService(
               "identity_context_unavailable",
             );
           session.identityContextId = origin.id;
+          session.identityCause = origin.cause;
           session.responsibleUserId =
             origin.cause === "company_default"
               ? null
@@ -10461,7 +10691,9 @@ export function createToolGatewayService(
               );
 
         const resultValidation = validateToolContent({
-          value: result,
+          value: connectedMcpExecution
+            ? await sealToolResultProxyPaths(result, { runId: session.runId })
+            : result,
           direction: "result",
           sensitiveMode: "redact",
           promptInjectionMode: "block",

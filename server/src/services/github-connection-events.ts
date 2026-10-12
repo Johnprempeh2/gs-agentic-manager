@@ -40,6 +40,20 @@ export type GitHubConnectionEventPollResult = {
   failed: number;
 };
 
+const MAX_POLL_BACKOFF_MS = 5 * 60_000;
+// A healthy poll is a few bounded (15 second) broker calls plus database
+// writes. One still running after this long is treated as stuck.
+const POLL_STALLED_AFTER_MS = 5 * 60_000;
+
+/** Delay after the nth consecutive empty or failed poll: 10s, 20s, 40s, ... capped at 5 minutes. */
+function pollBackoffMs(attempt: number): number {
+  return Math.min(MAX_POLL_BACKOFF_MS, 5_000 * (2 ** Math.min(attempt, 6)));
+}
+
+function emptyPollResult(): GitHubConnectionEventPollResult {
+  return { leased: 0, processed: 0, duplicate: 0, ignored: 0, failed: 0 };
+}
+
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -219,6 +233,8 @@ export function githubConnectionEventService(
   const now = options.now ?? (() => new Date());
   let nextPollAt = 0;
   let emptyPolls = 0;
+  let failedPolls = 0;
+  let inFlight: { startedAt: number } | null = null;
 
   async function activeBindings() {
     const rows = await db.select({ grant: connectionGrants, connection: toolConnections })
@@ -456,78 +472,100 @@ export function githubConnectionEventService(
     return "processed" as const;
   }
 
+  async function pollEvents(): Promise<GitHubConnectionEventPollResult> {
+    const bindings = await activeBindings();
+    if (bindings.length === 0) {
+      nextPollAt = now().getTime() + MAX_POLL_BACKOFF_MS;
+      return emptyPollResult();
+    }
+    const config = options.connector ? null : paperclipCloudConnectorConfigFromEnv(options.env);
+    const connector = options.connector ?? (config ? createPaperclipCloudConnector({ config }) : null);
+    if (!connector) {
+      nextPollAt = now().getTime() + MAX_POLL_BACKOFF_MS;
+      return emptyPollResult();
+    }
+    const first = bindings[0]!;
+    const lease = await connector.leaseEvents({ subject: first.subject, companyId: first.companyId });
+    if (!lease) {
+      emptyPolls += 1;
+      nextPollAt = now().getTime() + pollBackoffMs(emptyPolls);
+      return emptyPollResult();
+    }
+    emptyPolls = 0;
+    nextPollAt = now().getTime() + 5_000;
+    const result: GitHubConnectionEventPollResult = {
+      leased: lease.events.length,
+      processed: 0,
+      duplicate: 0,
+      ignored: 0,
+      failed: 0,
+    };
+    const acknowledge: string[] = [];
+    for (const event of lease.events) {
+      const matched = bindings.filter((binding) => event.bindingIds.includes(binding.id));
+      if (matched.length === 0) {
+        result.ignored += 1;
+        acknowledge.push(event.id);
+        continue;
+      }
+      try {
+        const companies = new Map<string, GitHubBinding[]>();
+        for (const binding of matched) companies.set(binding.companyId, [...(companies.get(binding.companyId) ?? []), binding]);
+        for (const [companyId, companyBindings] of companies) {
+          const status = await processForCompany(companyId, companyBindings, event);
+          result[status] += 1;
+        }
+        acknowledge.push(event.id);
+        if (event.event === "installation" && (event.action === "deleted" || event.action === "suspend")) {
+          await Promise.all(matched.map((binding) => connector.setWebhookBinding({
+            subject: binding.subject,
+            companyId: binding.companyId,
+            id: binding.id,
+            installationId: binding.installationId,
+            connectionId: binding.connectionId,
+            grantId: binding.grantId,
+            active: false,
+          })));
+        }
+      } catch {
+        result.failed += 1;
+      }
+    }
+    if (acknowledge.length > 0) {
+      await connector.acknowledgeEvents({
+        subject: first.subject,
+        companyId: first.companyId,
+        leaseId: lease.leaseId,
+        deliveryIds: acknowledge,
+      });
+    }
+    return result;
+  }
+
   return {
     async pollOnce(): Promise<GitHubConnectionEventPollResult> {
-      if (now().getTime() < nextPollAt) {
-        return { leased: 0, processed: 0, duplicate: 0, ignored: 0, failed: 0 };
+      const startedAt = now().getTime();
+      // The scheduler calls this on every tick without waiting for the last
+      // call. A poll stuck behind a slow database or broker must not have more
+      // signed lease requests stacked on top of it; only a poll that has been
+      // stuck for longer than any healthy poll can take is superseded.
+      if (inFlight && startedAt - inFlight.startedAt < POLL_STALLED_AFTER_MS) return emptyPollResult();
+      if (startedAt < nextPollAt) return emptyPollResult();
+      const run = { startedAt };
+      inFlight = run;
+      try {
+        const result = await pollEvents();
+        failedPolls = 0;
+        return result;
+      } catch (error) {
+        // A broker outage would otherwise send a signed lease request, and log
+        // a failure, on every scheduler tick. Back off like empty polls do.
+        failedPolls += 1;
+        nextPollAt = now().getTime() + pollBackoffMs(failedPolls);
+        throw error;
+      } finally {
+        if (inFlight === run) inFlight = null;
       }
-      const bindings = await activeBindings();
-      if (bindings.length === 0) {
-        nextPollAt = now().getTime() + 5 * 60_000;
-        return { leased: 0, processed: 0, duplicate: 0, ignored: 0, failed: 0 };
-      }
-      const config = options.connector ? null : paperclipCloudConnectorConfigFromEnv(options.env);
-      const connector = options.connector ?? (config ? createPaperclipCloudConnector({ config }) : null);
-      if (!connector) {
-        nextPollAt = now().getTime() + 5 * 60_000;
-        return { leased: 0, processed: 0, duplicate: 0, ignored: 0, failed: 0 };
-      }
-      const first = bindings[0]!;
-      const lease = await connector.leaseEvents({ subject: first.subject, companyId: first.companyId });
-      if (!lease) {
-        emptyPolls += 1;
-        nextPollAt = now().getTime() + Math.min(5 * 60_000, 5_000 * (2 ** Math.min(emptyPolls, 6)));
-        return { leased: 0, processed: 0, duplicate: 0, ignored: 0, failed: 0 };
-      }
-      emptyPolls = 0;
-      nextPollAt = now().getTime() + 5_000;
-      const result: GitHubConnectionEventPollResult = {
-        leased: lease.events.length,
-        processed: 0,
-        duplicate: 0,
-        ignored: 0,
-        failed: 0,
-      };
-      const acknowledge: string[] = [];
-      for (const event of lease.events) {
-        const matched = bindings.filter((binding) => event.bindingIds.includes(binding.id));
-        if (matched.length === 0) {
-          result.ignored += 1;
-          acknowledge.push(event.id);
-          continue;
-        }
-        try {
-          const companies = new Map<string, GitHubBinding[]>();
-          for (const binding of matched) companies.set(binding.companyId, [...(companies.get(binding.companyId) ?? []), binding]);
-          for (const [companyId, companyBindings] of companies) {
-            const status = await processForCompany(companyId, companyBindings, event);
-            result[status] += 1;
-          }
-          acknowledge.push(event.id);
-          if (event.event === "installation" && (event.action === "deleted" || event.action === "suspend")) {
-            await Promise.all(matched.map((binding) => connector.setWebhookBinding({
-              subject: binding.subject,
-              companyId: binding.companyId,
-              id: binding.id,
-              installationId: binding.installationId,
-              connectionId: binding.connectionId,
-              grantId: binding.grantId,
-              active: false,
-            })));
-          }
-        } catch {
-          result.failed += 1;
-        }
-      }
-      if (acknowledge.length > 0) {
-        await connector.acknowledgeEvents({
-          subject: first.subject,
-          companyId: first.companyId,
-          leaseId: lease.leaseId,
-          deliveryIds: acknowledge,
-        });
-      }
-      return result;
     },
   };
 }

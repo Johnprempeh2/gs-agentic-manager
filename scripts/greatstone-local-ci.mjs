@@ -5,6 +5,12 @@
 //
 //   node scripts/greatstone-local-ci.mjs detect <pr>          could GitHub start Fork CI? exit 0 = no, fallback allowed
 //   node scripts/greatstone-local-ci.mjs run <pr> [--dry-run] run the lanes and post "local-ci" (dry run: post nothing)
+//   node scripts/greatstone-local-ci.mjs ready <pr>           Keystone's ready check (GRE-605): print a 5-line draft verdict
+//
+// `ready` reads Fork CI, reruns the PR body's "Tests run" commands, runs the
+// S2 page-load check when `pnpm metrics:s2-needed` says yes, and flags "big
+// change" triggers in the diff. It only reads from GitHub: it posts, merges
+// and changes nothing. Keystone reads the draft and decides.
 //
 // "Could not start" means the Fork CI run for the PR head has the GitHub
 // "job was not started" annotation (the billing stop of 28-29 Sep), or no job
@@ -170,14 +176,16 @@ function gh(args) {
 }
 
 function prHead(pr) {
-  const info = JSON.parse(gh(["pr", "view", String(pr), "-R", REPO, "--json", "headRefOid,state,commits,isCrossRepository,author"]));
+  const info = JSON.parse(gh(["pr", "view", String(pr), "-R", REPO, "--json", "headRefOid,baseRefOid,state,commits,isCrossRepository,author,body"]));
   const last = info.commits?.[info.commits.length - 1];
   return {
     sha: info.headRefOid,
+    baseSha: info.baseRefOid ?? null,
     state: info.state,
     headAt: last?.committedDate ?? null,
     isCrossRepository: info.isCrossRepository,
     author: info.author?.login ?? null,
+    body: info.body ?? "",
   };
 }
 
@@ -209,9 +217,9 @@ function laneEnv() {
   return env;
 }
 
-function runCommand(cmd, args, cwd, logFile) {
+function runCommand(cmd, args, cwd, logFile, { timeoutMs } = {}) {
   return new Promise((done) => {
-    const child = spawn(cmd, args, { cwd, env: laneEnv(), stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(cmd, args, { cwd, env: laneEnv(), stdio: ["ignore", "pipe", "pipe"], timeout: timeoutMs });
     let log = "";
     const add = (chunk) => {
       log += chunk;
@@ -223,7 +231,10 @@ function runCommand(cmd, args, cwd, logFile) {
       add(`${err.message}\n`);
       done({ code: 127, log });
     });
-    child.on("close", (code) => done({ code: code ?? 1, log }));
+    child.on("close", (code, signal) => {
+      if (signal) add(`stopped by ${signal}${timeoutMs ? ` (time limit ${Math.round(timeoutMs / 60_000)} min)` : ""}\n`);
+      done({ code: code ?? 1, log });
+    });
   });
 }
 
@@ -293,23 +304,7 @@ async function cmdRun(pr, { dryRun }) {
   }
   const reason = found.fallback ? found.reason : `dry run; ${found.reason}`;
 
-  const base = join(repoRoot(), ".gsam", "local-ci");
-  mkdirSync(base, { recursive: true });
-  const lockDir = join(base, "lock");
-  await waitFor("the other local check", () => {
-    const lock = tryLock(lockDir);
-    return { ok: lock.ok, message: `pid ${lock.holder} holds ${lockDir}` };
-  });
-  try {
-    await waitFor("free memory (RAM guard)", () => {
-      const g = readRamGuard();
-      return { ok: !g.busy, message: g.message };
-    });
-    const workDir = join(base, "work");
-    prepareWorktree(repoRoot(), workDir, pr, found.head.sha);
-    const logDir = join(base, "logs", `pr-${pr}-${found.head.sha.slice(0, 7)}`);
-    rmSync(logDir, { recursive: true, force: true });
-    mkdirSync(logDir, { recursive: true });
+  return inWorkTree(pr, found.head.sha, async ({ workDir, logDir }) => {
     say(`lanes run in ${workDir}; logs in ${logDir}`);
     const results = await runLanes(workDir, { logDir });
     const out = summarize(results, found.head.sha, reason);
@@ -323,18 +318,281 @@ async function cmdRun(pr, { dryRun }) {
       process.stdout.write(`${out.body}\n`);
     }
     return out.state === "success" ? 0 : 1;
+  });
+}
+
+// The lock, the RAM guard and the reused worktree at the PR head, shared by `run` and `ready`.
+async function inWorkTree(pr, sha, fn, { logName = "" } = {}) {
+  const base = join(repoRoot(), ".gsam", "local-ci");
+  mkdirSync(base, { recursive: true });
+  const lockDir = join(base, "lock");
+  await waitFor("the other local check", () => {
+    const lock = tryLock(lockDir);
+    return { ok: lock.ok, message: `pid ${lock.holder} holds ${lockDir}` };
+  });
+  try {
+    await waitFor("free memory (RAM guard)", () => {
+      const g = readRamGuard();
+      return { ok: !g.busy, message: g.message };
+    });
+    const workDir = join(base, "work");
+    prepareWorktree(repoRoot(), workDir, pr, sha);
+    const logDir = join(base, "logs", `pr-${pr}-${sha.slice(0, 7)}${logName}`);
+    rmSync(logDir, { recursive: true, force: true });
+    mkdirSync(logDir, { recursive: true });
+    return await fn({ workDir, logDir });
   } finally {
     unlock(lockDir);
   }
 }
 
+// ---- ready <pr>: Keystone's ready check (GRE-605) -------------------------
+
+// Programs a "Tests run" line may start with. vitest/tsc/playwright run through `pnpm exec`.
+const TEST_RUNNERS = new Set(["pnpm", "npx", "node", "npm"]);
+const VIA_PNPM_EXEC = new Set(["vitest", "tsc", "playwright"]);
+// Shell syntax is not run: the commands run without a shell. `*` and `?` pass as-is.
+const SHELL_SYNTAX = /[$`|;&<>()]/;
+const TEST_TIMEOUT_MS = Number(process.env.GS_LOCAL_CI_TEST_TIMEOUT_MINUTES || 20) * 60_000;
+
+function splitWords(text) {
+  const words = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  for (let m; (m = re.exec(text)); ) words.push(m[1] ?? m[2] ?? m[3]);
+  return words;
+}
+
+/** Why a "Tests run" command is not rerun, or null when it is. */
+function skipReason(argv) {
+  const [cmd, sub] = argv;
+  if (cmd === "pnpm" && /^(dev|start|install|i|add)(:|$)/.test(sub ?? "")) return "starts a server or installs";
+  if (cmd === "pnpm" && /^(metrics:s2-needed|test:metrics:s2)$/.test(sub ?? "")) return "the S2 step runs it";
+  if (argv.some((a) => /greatstone-local-ci\.mjs$/.test(a))) return "this script";
+  return null;
+}
+
+/**
+ * Reads the "Tests run" section of a PR body. Each list item's first code span
+ * that starts with a test runner is one command. `dir: cmd` and `cd dir && cmd`
+ * run in that directory. Returns { found, commands: [{ text, cwd, argv } | { text, skip }] }.
+ */
+export function parseTestsRun(body) {
+  const lines = String(body ?? "").split(/\r?\n/);
+  const start = lines.findIndex(
+    (l) => /^\s*(#{1,6}\s*|\*\*)\s*(tests?(\s+(run|ran))?|testing|verification)\b/i.test(l) || /^\s*tests?\s+(run|ran)\b/i.test(l),
+  );
+  if (start === -1) return { found: false, commands: [] };
+  const commands = [];
+  const seen = new Set();
+  for (const line of lines.slice(start + 1)) {
+    if (/^\s*#{1,6}\s/.test(line) || /^\s*\*\*[^*]+\*\*:?\s*$/.test(line)) break;
+    if (!/^\s*([-*+]|\d+\.)\s/.test(line)) continue;
+    for (const [, span] of line.matchAll(/`([^`]+)`/g)) {
+      let text = span.trim();
+      let cwd = ".";
+      const cd = /^cd\s+([\w@.\/-]+)\s*&&\s*(.+)$/.exec(text);
+      const prefix = /^([\w@.\/-]+):\s+(.+)$/.exec(text);
+      if (cd) [cwd, text] = [cd[1], cd[2].trim()];
+      else if (prefix) [cwd, text] = [prefix[1], prefix[2].trim()];
+      const first = text.split(/\s+/)[0];
+      if (!TEST_RUNNERS.has(first) && !VIA_PNPM_EXEC.has(first)) continue;
+      const key = `${cwd}\0${text}`;
+      if (seen.has(key)) break;
+      seen.add(key);
+      const shown = cwd === "." ? text : `${cwd}: ${text}`;
+      if (cwd.startsWith("/") || cwd.split("/").includes("..")) commands.push({ text: shown, skip: "directory is outside the checkout" });
+      else if (SHELL_SYNTAX.test(text)) commands.push({ text: shown, skip: "uses shell syntax" });
+      else {
+        const argv = splitWords(text);
+        if (VIA_PNPM_EXEC.has(argv[0])) argv.unshift("pnpm", "exec");
+        const skip = skipReason(argv);
+        commands.push(skip ? { text: shown, skip } : { text: shown, cwd, argv });
+      }
+      break; // one command per list item
+    }
+  }
+  return { found: true, commands };
+}
+
+const TEST_FILE = /(\.(test|spec)\.[cm]?[jt]sx?$)|(\/__tests__\/)|(^tests\/)|(\/fixtures?\/)|(\/__fixtures__\/)/;
+const LOCKFILE = /(^|\/)pnpm-lock\.yaml$/;
+export const BIG_CHANGE_LINES = 1000;
+
+// "Big change" triggers (doc/GREATSTONE-WAY-OF-WORKING.md, merge rule): Flint checks these before merge.
+export const BIG_CHANGE_RULES = [
+  { name: "migrations", test: (f) => /(^|\/)migrations\//.test(f) },
+  { name: "auth/permissions", test: (f) => !TEST_FILE.test(f) && /^(server|packages)\//.test(f) && /(^|[\/_.-])(\w*auth\w*|permissions?|access|grants?|jwt)([\/_.-]|$)/i.test(f) },
+  { name: "release scripts", test: (f) => !TEST_FILE.test(f) && /^scripts\/greatstone-/.test(f) },
+  { name: "CI files", test: (f) => /^\.github\/(workflows|actions)\//.test(f) },
+];
+
+/** Parses `git diff --numstat` output into { file, lines }. Binary files count 0 lines. */
+export function parseNumstat(text) {
+  return String(text)
+    .split("\n")
+    .filter(Boolean)
+    .map((l) => {
+      const [added, deleted, ...rest] = l.split("\t");
+      return { file: rest.join("\t"), lines: (Number(added) || 0) + (Number(deleted) || 0) };
+    });
+}
+
+/** Which big-change triggers a diff hits. Lines outside tests leave out the lockfile. */
+export function bigChange(files) {
+  const triggers = [];
+  for (const rule of BIG_CHANGE_RULES) {
+    const hit = files.filter((f) => rule.test(f.file)).map((f) => f.file);
+    if (hit.length) triggers.push({ name: rule.name, files: hit });
+  }
+  const outsideTests = files.filter((f) => !TEST_FILE.test(f.file) && !LOCKFILE.test(f.file)).reduce((n, f) => n + f.lines, 0);
+  if (outsideTests > BIG_CHANGE_LINES) triggers.push({ name: `${outsideTests} changed lines outside tests (> ${BIG_CHANGE_LINES})`, files: [] });
+  return { big: triggers.length > 0, triggers, outsideTests };
+}
+
+// Added lines that need a human look: the live app's paths and secret-shaped strings.
+const DIFF_FLAGS = [
+  { name: "~/GSAM path", re: /~\/GSAM\b|\/GSAM\/(live|data)\b/ },
+  { name: "secret-shaped string", re: /\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk-ant-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16})\b|-----BEGIN [A-Z ]*PRIVATE KEY-----/ },
+];
+
+/** Scans the added lines of a unified diff; returns [{ name, file }] once per flag and file. */
+export function scanDiff(diffText) {
+  const hits = [];
+  let file = null;
+  for (const line of String(diffText).split("\n")) {
+    if (line.startsWith("+++ ")) file = line.replace(/^\+\+\+ (b\/)?/, "");
+    else if (line.startsWith("+") && file && !TEST_FILE.test(file)) {
+      for (const flag of DIFF_FLAGS) {
+        if (flag.re.test(line) && !hits.some((h) => h.name === flag.name && h.file === file)) hits.push({ name: flag.name, file });
+      }
+    }
+  }
+  return hits;
+}
+
+/** Fork CI (or local-ci when GitHub could not start it) for the head commit. */
+export function ciState({ runs = [], localCi = null }) {
+  const newest = [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const fork = !newest ? "no run" : newest.status === "completed" ? newest.conclusion : newest.status;
+  const ok = fork === "success" || localCi === "success";
+  const text = `Fork CI ${fork}${newest ? ` (run ${newest.databaseId})` : ""}${localCi ? `; local-ci ${localCi}` : ""}`;
+  return { ok, text };
+}
+
+const list = (items, n = 3) => (items.length > n ? `${items.slice(0, n).join(", ")} +${items.length - n} more` : items.join(", "));
+
+/**
+ * The 5-line draft. tests = { found, results: [{ text, ok?, skip? }] };
+ * s2 = { needed, ok, text }; big = bigChange(); flags = scanDiff().
+ */
+export function draftVerdict({ pr, sha, ci, tests, s2, big, flags }) {
+  const ran = tests.results.filter((r) => !r.skip);
+  const failed = ran.filter((r) => !r.ok);
+  const skipped = tests.results.filter((r) => r.skip);
+  const why = [];
+  if (!ci.ok) why.push(`CI is not green (${ci.text})`);
+  if (!tests.found) why.push('the PR body has no "Tests run" section');
+  else if (!ran.length) why.push("the PR names no test command this check can rerun");
+  if (failed.length) why.push(`${failed.length} named test command(s) failed: ${list(failed.map((r) => `\`${r.text}\``), 2)}`);
+  if (s2.needed && !s2.ok) why.push(`the S2 page-load check did not pass (${s2.text})`);
+  const testsLine = !tests.found
+    ? 'no "Tests run" section in the PR body'
+    : `${ran.length - failed.length} of ${ran.length} rerun commands pass${failed.length ? `; FAIL: ${list(failed.map((r) => `\`${r.text}\``), 2)}` : ""}${skipped.length ? `; ${skipped.length} not rerun (${list([...new Set(skipped.map((r) => r.skip))])})` : ""}`;
+  const bigLine = big.big ? `yes: ${big.triggers.map((t) => (t.files.length ? `${t.name} (${list(t.files, 2)})` : t.name)).join("; ")}` : `no (${big.outsideTests} changed lines outside tests)`;
+  const flagLine = flags.length ? `; check by hand: ${list(flags.map((f) => `${f.name} in ${f.file}`), 3)}` : "";
+  const verdict = why.length ? `Not ready, because ${why.join("; ")}` : big.big ? "Ready to merge after Flint's checks (big change)" : "Ready to merge";
+  return [
+    `1. CI (PR #${pr} at ${sha.slice(0, 7)}): ${ci.ok ? "green" : "NOT green"}; ${ci.text}`,
+    `2. Tests run: ${testsLine}`,
+    `3. S2 page-load: ${s2.needed ? `${s2.ok ? "pass" : "FAIL"}; ${s2.text}` : `not needed; ${s2.text}`}`,
+    `4. Big change: ${bigLine}${flagLine}`,
+    `5. Draft verdict: ${verdict}. Keystone also checks the issue's "Done when" list.`,
+  ];
+}
+
+const tail = (log, n) => log.trim().split("\n").slice(-n).join("\n");
+
+async function cmdReady(pr) {
+  const head = prHead(pr);
+  say(`PR #${pr} head ${head.sha.slice(0, 7)} (${head.state})`);
+  const origin = sameRepoCheck(head);
+  if (!origin.ok) throw new Error(`refused: ${origin.reason}.`);
+  const runs = JSON.parse(gh(["run", "list", "-R", REPO, "--workflow", WORKFLOW_FILE, "--commit", head.sha, "--json", "databaseId,status,conclusion,createdAt,event"]));
+  const statuses = JSON.parse(gh(["api", `repos/${REPO}/commits/${head.sha}/statuses`]));
+  const localCi = statuses.find((s) => s.context === STATUS_CONTEXT)?.state ?? null; // newest first
+  const ci = ciState({ runs, localCi });
+  const parsed = parseTestsRun(head.body);
+
+  return inWorkTree(pr, head.sha, async ({ workDir, logDir }) => {
+    const git = (...args) => execFileSync("git", ["-C", workDir, ...args], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 });
+    if (!head.baseSha) throw new Error("GitHub did not give the PR base commit");
+    git("fetch", "--quiet", "origin", head.baseSha);
+    const mergeBase = git("merge-base", head.baseSha, head.sha).trim();
+    const files = parseNumstat(git("diff", "--numstat", "--no-renames", mergeBase, head.sha));
+    const big = bigChange(files);
+    const flags = scanDiff(git("diff", "--no-renames", "--unified=0", mergeBase, head.sha));
+    say(`diff ${mergeBase.slice(0, 7)}..${head.sha.slice(0, 7)}: ${files.length} files; logs in ${logDir}`);
+
+    const install = await runLanes(workDir, { lanes: [LANES.find((l) => l.name === "install")], logDir });
+    const results = [];
+    for (const c of parsed.commands) {
+      if (c.skip) {
+        say(`not rerun (${c.skip}): ${c.text}`);
+        results.push({ text: c.text, skip: c.skip });
+        continue;
+      }
+      if (!install[0].ok) {
+        results.push({ text: c.text, ok: false });
+        continue;
+      }
+      const cwd = resolve(workDir, c.cwd);
+      if (!existsSync(cwd)) {
+        say(`FAIL ${c.text}: no directory ${c.cwd}`);
+        results.push({ text: c.text, ok: false });
+        continue;
+      }
+      say(`rerun: ${c.text}`);
+      const [cmd, ...args] = c.argv;
+      const { code, log } = await runCommand(cmd, args, cwd, join(logDir, "tests.log"), { timeoutMs: TEST_TIMEOUT_MS });
+      if (code !== 0) say(`FAIL (exit ${code}) ${c.text}\n${tail(log, 20)}`);
+      results.push({ text: c.text, ok: code === 0 });
+    }
+
+    let s2 = { needed: false, ok: true, text: "pnpm metrics:s2-needed could not run" };
+    if (install[0].ok) {
+      const needed = await runCommand("pnpm", ["metrics:s2-needed", "--base", mergeBase], workDir, join(logDir, "s2.log"));
+      const answer = /S2 page-load check needed: (yes|no)/.exec(needed.log)?.[1];
+      if (!answer) s2 = { needed: true, ok: false, text: `pnpm metrics:s2-needed gave no answer (exit ${needed.code})` };
+      else if (answer === "no") s2 = { needed: false, ok: true, text: "pnpm metrics:s2-needed says no" };
+      else {
+        // The machine is shared, so one slow run can be noise: a FAIL is run once more.
+        for (let attempt = 1; attempt <= 2; attempt += 1) {
+          say(`S2 page-load check, attempt ${attempt}: pnpm test:metrics:s2`);
+          const run = await runCommand("pnpm", ["test:metrics:s2"], workDir, join(logDir, "s2.log"), { timeoutMs: TEST_TIMEOUT_MS });
+          process.stderr.write(`${tail(run.log, 8)}\n`);
+          const verdictLine = run.log.split("\n").findLast((l) => /S2 page-load check: (PASS|FAIL)/.test(l))?.trim();
+          s2 = { needed: true, ok: run.code === 0, text: `${verdictLine ?? `pnpm test:metrics:s2 exit ${run.code}`}${attempt > 1 ? " (second run)" : ""}` };
+          if (s2.ok) break;
+        }
+      }
+    } else {
+      s2 = { needed: true, ok: false, text: "pnpm install failed, so nothing ran" };
+    }
+
+    const lines = draftVerdict({ pr, sha: head.sha, ci, tests: { found: parsed.found, results }, s2, big, flags });
+    process.stdout.write(`${lines.join("\n")}\n`);
+    return lines[4].includes("Not ready") ? 1 : 0;
+  }, { logName: "-ready" });
+}
+
 async function main(argv) {
   const [command, prArg, ...rest] = argv;
   const pr = Number(prArg);
-  if (!["detect", "run"].includes(command) || !Number.isInteger(pr) || pr <= 0) {
-    process.stderr.write("usage: greatstone-local-ci.mjs detect <pr> | run <pr> [--dry-run]\n");
+  if (!["detect", "run", "ready"].includes(command) || !Number.isInteger(pr) || pr <= 0) {
+    process.stderr.write("usage: greatstone-local-ci.mjs detect <pr> | run <pr> [--dry-run] | ready <pr>\n");
     return 2;
   }
+  if (command === "ready") return cmdReady(pr);
   if (command === "detect") {
     const found = detect(pr);
     process.stdout.write(`${JSON.stringify({ pr, sha: found.head.sha, run: found.run?.databaseId ?? null, fallback: found.fallback, reason: found.reason })}\n`);

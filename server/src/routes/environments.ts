@@ -20,6 +20,7 @@ import { conflict, forbidden, unprocessable } from "../errors.js";
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getManagedInstanceConfig, SECRET_LIKE_CONFIG_KEY_PATTERN } from "../services/managed-config.js";
 import { hiddenSettingWriteFloor } from "../services/settings-visibility.js";
+import { requireEntitlementForWrites } from "../services/entitlements.js";
 import { parseExecutionPolicyBootstrapEnv } from "../services/execution-policy-bootstrap.js";
 import { isExecutionForcedToKubernetes } from "../services/execution-allowlist.js";
 import { validate } from "../middleware/validate.js";
@@ -55,7 +56,7 @@ import {
   type ReadyPluginWorkerRecovery,
 } from "../services/plugin-environment-driver.js";
 import { getConfiguredSecretProvider } from "../secrets/configured-provider.js";
-import { assertBoardOrgAccess, getActorInfo } from "./authz.js";
+import { assertBoardOrgAccess, assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -340,6 +341,12 @@ export function environmentRoutes(
   router.use("/companies/:companyId/environments", environmentsFloor);
   router.use("/environments", environmentsFloor);
   router.use("/environment-custom-image-setup-sessions", environmentsFloor);
+  // GRE-1090: with enableEnvironments off, every write is refused (403
+  // not_entitled). Reads stay open for agent setup, onboarding and the pickers.
+  router.use(
+    ["/companies/:companyId/environments", "/environments", "/environment-custom-image-setup-sessions"],
+    requireEntitlementForWrites(instanceSettingsService(db), "enableEnvironments"),
+  );
   const environmentRuntime = environmentRuntimeService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
   });
@@ -710,6 +717,7 @@ export function environmentRoutes(
 
   router.get("/companies/:companyId/environments", async (req, res) => {
     assertCanReadInstanceEnvironments(req);
+    assertCompanyAccess(req, req.params.companyId as string);
     const rows = await svc.list({
       status: req.query.status as string | undefined,
       driver: req.query.driver as string | undefined,
@@ -732,6 +740,7 @@ export function environmentRoutes(
 
   router.get("/companies/:companyId/environments/capabilities", async (req, res) => {
     assertCanReadInstanceEnvironments(req);
+    assertCompanyAccess(req, req.params.companyId as string);
     const pluginDrivers = await listReadyPluginEnvironmentDrivers({
       db,
       workerManager: options.pluginWorkerManager,
@@ -1115,8 +1124,23 @@ export function environmentRoutes(
       res.status(404).json({ error: "Environment not found" });
       return;
     }
+    // The environment is instance-wide but its leases are company-owned
+    // (GRE-772): list only the caller's companies. `?companyId=` narrows to
+    // one company the caller can access. Only the implicit local board (the
+    // single trusted operator of a local install) sees every company's leases.
+    const requestedCompanyId =
+      typeof req.query.companyId === "string" && req.query.companyId.trim().length > 0
+        ? req.query.companyId.trim()
+        : null;
+    if (requestedCompanyId) assertCompanyAccess(req, requestedCompanyId);
+    const companyIds = requestedCompanyId
+      ? [requestedCompanyId]
+      : req.actor.type === "board" && req.actor.source === "local_implicit"
+        ? undefined
+        : (req.actor.companyIds ?? []);
     const leases = await svc.listLeases(environment.id, {
       status: req.query.status as string | undefined,
+      companyIds,
     });
     res.json(leases);
   });
@@ -1124,10 +1148,12 @@ export function environmentRoutes(
   router.get("/environment-leases/:leaseId", async (req, res) => {
     assertCanReadInstanceEnvironments(req);
     const lease = await svc.getLeaseById(req.params.leaseId as string);
-    if (!lease) {
+    if (!lease || !hasCompanyAccess(req, lease.companyId)) {
       res.status(404).json({ error: "Environment lease not found" });
       return;
     }
+    // Leases are company-owned; environment read access alone is instance-wide.
+    assertCompanyAccess(req, lease.companyId);
     res.json(lease);
   });
 

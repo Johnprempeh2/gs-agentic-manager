@@ -20,6 +20,9 @@ export const HTTP_LOG_REDACT_PATHS = [
   // Telegram's optional webhook verification header is a reusable bearer
   // secret sent on every provider callback.
   'req.headers["x-telegram-bot-api-secret-token"]',
+  // An invite token admits whoever holds it to the inviting company. The
+  // invite landing page sends it on sign-up while public sign-up is closed.
+  'req.headers["x-gsam-invite-token"]',
   // The structured failure logger adds a sanitized request-body copy under
   // `reqBody`. Keep the standard connector credential envelope covered again
   // at the final serialization boundary in case a future custom serializer

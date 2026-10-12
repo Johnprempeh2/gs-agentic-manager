@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { config as loadDotenv } from "dotenv";
+import { adoptLegacyEnv } from "@greatstone/shared/legacy-env";
 import { resolvePaperclipEnvPath } from "./paths.js";
 import { maybeRepairLegacyWorktreeConfigAndEnvFiles } from "./worktree-config.js";
 import { shouldLoadWorkingDirectoryEnv } from "./env-file-policy.js";
@@ -51,6 +52,13 @@ if (shouldLoadWorkingDirectoryEnv({
 
 maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
+// The bootstrap adopted legacy (pre-rename) variable names from the process
+// environment before the .env files above were read. Adopt again so a legacy
+// key written in an existing .env (for example the public URL that OAuth
+// callbacks and AgentMail webhooks depend on) still reaches its GSAM_* name.
+// GSAM_* values that are already set always win.
+adoptLegacyEnv();
+
 const TAILSCALE_DETECT_TIMEOUT_MS = 3000;
 
 type DatabaseMode = "embedded-postgres" | "postgres";
@@ -77,6 +85,7 @@ export interface Config {
   databaseBackupRetentionDays: number;
   databaseBackupDir: string;
   workspaceReaperCooldownDays: number;
+  unrecordedWorktreeIdleDays: number;
   serveUi: boolean;
   uiDevMiddleware: boolean;
   secretsProvider: SecretProvider;
@@ -296,6 +305,17 @@ export function loadConfig(): Config {
       && workspaceReaperCooldownDaysRaw >= 0
       ? workspaceReaperCooldownDaysRaw
       : 0;
+  // Agents sometimes add git worktrees by hand, which no execution workspace
+  // records, so nothing ever removes them. When this is a positive number of
+  // days, a sweep removes such a worktree under a project's managed worktree
+  // root once it has been idle that long and removing it loses nothing. It is
+  // off by default: an instance cannot see the worktrees that another instance
+  // on the same checkout (an agent's sandbox) records.
+  const unrecordedWorktreeIdleDaysRaw = Number(process.env.GSAM_UNRECORDED_WORKTREE_IDLE_DAYS?.trim());
+  const unrecordedWorktreeIdleDays =
+    Number.isFinite(unrecordedWorktreeIdleDaysRaw) && unrecordedWorktreeIdleDaysRaw > 0
+      ? unrecordedWorktreeIdleDaysRaw
+      : 0;
   const bindValidationErrors = validateConfiguredBindMode({
     deploymentMode,
     deploymentExposure,
@@ -342,6 +362,7 @@ export function loadConfig(): Config {
     databaseBackupRetentionDays,
     databaseBackupDir,
     workspaceReaperCooldownDays,
+    unrecordedWorktreeIdleDays,
     serveUi:
       process.env.SERVE_UI !== undefined
         ? process.env.SERVE_UI === "true"
@@ -367,8 +388,11 @@ export function loadConfig(): Config {
     heartbeatSchedulerEnabled: process.env.HEARTBEAT_SCHEDULER_ENABLED !== "false",
     heartbeatSchedulerIntervalMs: Math.max(10000, Number(process.env.HEARTBEAT_SCHEDULER_INTERVAL_MS) || 30000),
     companyDeletionEnabled,
-    telemetryEnabled: fileConfig?.telemetry?.enabled ?? true,
-    announcementsEnabled: process.env.GSAM_ANNOUNCEMENTS_ENABLED !== "false",
-    announcementsFeedUrl: process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim() || "https://pages.paperclip.ing/announcements/v1/current.json",
+    // Off unless an install opts in: the default endpoint belongs to the
+    // upstream project, and client installs must not report to it.
+    telemetryEnabled: fileConfig?.telemetry?.enabled ?? false,
+    // Only a feed we configure: never the upstream project's announcements.
+    announcementsEnabled: Boolean(process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim()) && process.env.GSAM_ANNOUNCEMENTS_ENABLED !== "false",
+    announcementsFeedUrl: process.env.GSAM_ANNOUNCEMENTS_FEED_URL?.trim() ?? "",
   };
 }

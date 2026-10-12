@@ -1,7 +1,6 @@
 import { memo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  AlarmClock,
   CalendarClock,
   ChevronDown,
   ChevronUp,
@@ -42,41 +41,20 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { AttentionInteractionResolver } from "./AttentionInteractionResolver";
 import { DecisionResolver } from "./DecisionResolver";
 import { ReauthCancelledError, useReauth } from "./ReauthDialog";
+import { ReviewDecisionSummary, reviewAssigneeName } from "./ReviewDecisionSummary";
 import { StalledReviewActions } from "./StalledReviewActions";
 import { readIssueReviewPolicyMetadata } from "../lib/review-policy";
-
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
 
 // Decision-action buttons: a comfortable tap target when the row is narrow
 // (h-9 / text-sm), shrinking back to the dense pill (h-6 / text-xs) once the
 // row's own container is wide enough (`@xl` ≈ 576px). Container-query driven so
 // the row also reflows correctly inside narrow side panels, not just on phones.
 const ACTION_BTN = "h-9 gap-1.5 px-3 text-sm @xl:h-6 @xl:gap-1 @xl:px-2 @xl:text-xs";
-
-/** Tomorrow at 9am local time. */
-function tomorrowMorningIso(): string {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return d.toISOString();
-}
-
-/** Snooze presets, resolved to a future ISO timestamp at click time. */
-const SNOOZE_PRESETS: ReadonlyArray<{ label: string; resolve: () => string }> = [
-  { label: "1 hour", resolve: () => new Date(Date.now() + HOUR_MS).toISOString() },
-  { label: "4 hours", resolve: () => new Date(Date.now() + 4 * HOUR_MS).toISOString() },
-  { label: "Tomorrow morning", resolve: tomorrowMorningIso },
-  { label: "Next week", resolve: () => new Date(Date.now() + 7 * DAY_MS).toISOString() },
-];
 
 interface AttentionQueueRowProps {
   item: AttentionItem;
@@ -85,7 +63,6 @@ interface AttentionQueueRowProps {
   /** Receives the row's item so the parent can pass one stable callback for every row. */
   onToggleExpand: (item: AttentionItem) => void;
   onDismiss: (item: AttentionItem) => void;
-  onSnooze?: (item: AttentionItem, snoozedUntil: string) => void;
   /** Restore a snoozed/dismissed row (curtain variant only). */
   onRestore?: (item: AttentionItem) => void;
   /** "active" renders the live queue row; "hidden" renders a curtain row. */
@@ -113,7 +90,6 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
   expanded,
   onToggleExpand,
   onDismiss,
-  onSnooze,
   onRestore,
   variant = "active",
   agentMap,
@@ -314,7 +290,6 @@ export const AttentionQueueRow = memo(function AttentionQueueRow({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {onSnooze && <SnoozeSubmenu onSnooze={(iso) => onSnooze(item, iso)} />}
                 <DropdownMenuItem onClick={() => onDismiss(item)}>
                   <X className="h-4 w-4" />
                   Dismiss
@@ -680,53 +655,6 @@ function ExpandedImages({ images, issueHref }: { images: AttentionDetailImage[];
   );
 }
 
-/** Snooze submenu: presets + a custom date-time (plan §6). */
-function SnoozeSubmenu({ onSnooze }: { onSnooze: (snoozedUntil: string) => void }) {
-  const [customValue, setCustomValue] = useState("");
-  const applyCustom = () => {
-    if (!customValue) return;
-    const ts = new Date(customValue);
-    if (Number.isNaN(ts.getTime())) return;
-    onSnooze(ts.toISOString());
-  };
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger>
-        <AlarmClock className="h-4 w-4" />
-        Snooze
-      </DropdownMenuSubTrigger>
-      <DropdownMenuSubContent>
-        {SNOOZE_PRESETS.map((preset) => (
-          <DropdownMenuItem key={preset.label} onClick={() => onSnooze(preset.resolve())}>
-            {preset.label}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        {/* Custom picker: a non-menu-item region so interacting with the input
-            doesn't close the menu (guard keydown/select against Radix typeahead). */}
-        <div
-          className="flex flex-col gap-1.5 px-2 py-1.5"
-          onKeyDown={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span className="text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-            Custom
-          </span>
-          <input
-            type="datetime-local"
-            value={customValue}
-            onChange={(e) => setCustomValue(e.target.value)}
-            className="w-full rounded-sm border border-border bg-background px-2 py-1 text-xs"
-          />
-          <Button type="button" size="xs" disabled={!customValue} onClick={applyCustom}>
-            Snooze until…
-          </Button>
-        </div>
-      </DropdownMenuSubContent>
-    </DropdownMenuSub>
-  );
-}
-
 /**
  * Who set this row's decide-by deadline, for the card's provenance line
  * ("· set by Prioritizer"). Returns null when unattributed so the chip shows
@@ -815,12 +743,16 @@ function InlineResolver({
     // Inline only for stalled reviews (server sets inlineResolvable then); the
     // subject IS the issue, so its id is the decision target.
     return (
-      <StalledReviewActions
-        issueId={item.subject.id}
-        companyId={companyId}
-        footerSlot={toggle}
-        reviewPolicy={readIssueReviewPolicyMetadata(item.subject.metadata)}
-      />
+      <>
+        <ReviewDecisionSummary item={item} agentMap={agentMap} />
+        <StalledReviewActions
+          issueId={item.subject.id}
+          companyId={companyId}
+          footerSlot={toggle}
+          reviewPolicy={readIssueReviewPolicyMetadata(item.subject.metadata)}
+          assigneeName={reviewAssigneeName(item, agentMap)}
+        />
+      </>
     );
   }
 
@@ -857,6 +789,8 @@ function ApprovalResolver({ item, companyId, toggle }: { item: AttentionItem; co
     onSuccess: invalidate,
   });
   const pending = approve.isPending || reject.isPending || revise.isPending;
+  // GRE-601: a missing-permission request is only granted or denied.
+  const isPermissionGrant = item.subject.metadata?.type === "permission_grant";
 
   // Verb order matches the collapsed row exactly (revise → reject → approve),
   // so expanding never moves the button the operator was already aiming at.
@@ -869,17 +803,19 @@ function ApprovalResolver({ item, companyId, toggle }: { item: AttentionItem; co
         className="min-h-16 text-sm"
       />
       <ResolverFooter toggle={toggle}>
-        <Button size="sm" variant="outline" onClick={() => revise.mutate()} disabled={pending}>
-          {revise.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Request revision
-        </Button>
+        {!isPermissionGrant && (
+          <Button size="sm" variant="outline" onClick={() => revise.mutate()} disabled={pending}>
+            {revise.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Request revision
+          </Button>
+        )}
         <Button size="sm" variant="destructive" onClick={() => reject.mutate()} disabled={pending}>
           {reject.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Reject
+          {isPermissionGrant ? "Deny" : "Reject"}
         </Button>
         <Button size="sm" onClick={() => approve.mutate()} disabled={pending}>
           {approve.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Approve
+          {isPermissionGrant ? "Grant" : "Approve"}
         </Button>
       </ResolverFooter>
     </>

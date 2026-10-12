@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { resolveDevServerHost } from "./src/lib/dev-server-host.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BACKEND = "http://paperclip-dev:3100";
@@ -48,7 +49,8 @@ export default defineConfig({
     },
   },
   server: {
-    host: "0.0.0.0",
+    // Loopback unless GSAM_DEV_HOST says otherwise (see src/lib/dev-server-host.mjs).
+    host: resolveDevServerHost(process.env.GSAM_DEV_HOST),
     port: 5179,
     strictPort: true,
     proxy: {

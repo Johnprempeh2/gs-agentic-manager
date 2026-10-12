@@ -1,6 +1,6 @@
 import { syncConnectionCredentialBindings } from "./connection-credential-bindings.js";
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, ne, or, sql } from "drizzle-orm";
 import {
   type Db,
   authUsers,
@@ -13,6 +13,7 @@ import {
   userSecretDefinitions,
   connectionGrants,
   connectionGrantMembers,
+  heartbeatRuns,
   toolApplications,
   toolConnections,
   toolConnectionInstalls,
@@ -35,6 +36,7 @@ import {
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { logActivity } from "./activity-log.js";
 import { secretService } from "./secrets.js";
+import { checkAiCredential, type AiCredentialChecker } from "./ai-credential-check.js";
 
 /** Same human audience displayed by the existing Connections identity controls. */
 function canUseCredential(
@@ -60,10 +62,17 @@ function credentialExpiredMessage(provider: string, expiresAt: string) {
     : `This credential expired at ${expiresAt}. Reconnect it.`;
 }
 
+/** A second unconfirmed refusal inside this window marks the connection. */
+export const AI_CREDENTIAL_REPEAT_WINDOW_MS = 15 * 60_000;
+
 export const AI_CREDENTIAL_REJECTED_MESSAGE =
   "The provider rejected this account's login during a run. Reconnect it to resume work.";
 
-export function aiConnectionService(db: Db) {
+export function aiConnectionService(
+  db: Db,
+  options: { checkCredential?: AiCredentialChecker } = {},
+) {
+  const checkCredential = options.checkCredential ?? checkAiCredential;
   const secrets = secretService(db);
   async function membership(companyId: string, userId: string | null) {
     if (!userId) return false;
@@ -826,12 +835,67 @@ export function aiConnectionService(db: Db) {
       return { connectionId: id, grantId };
     });
   }
+  async function rejectable(
+    tx: Db,
+    input: { companyId: string; connectionId: string; grantId: string; identity: string },
+    lock: boolean,
+  ) {
+    const query = tx
+      .select({ connection: toolConnections, grant: connectionGrants })
+      .from(toolConnections)
+      .innerJoin(
+        connectionGrants,
+        and(
+          eq(connectionGrants.companyId, toolConnections.companyId),
+          eq(connectionGrants.connectionId, toolConnections.id),
+        ),
+      )
+      .where(
+        and(
+          eq(toolConnections.companyId, input.companyId),
+          eq(toolConnections.id, input.connectionId),
+          eq(toolConnections.connectionPurpose, "ai"),
+          eq(connectionGrants.id, input.grantId),
+        ),
+      );
+    const [row] = lock ? await query.for("update") : await query;
+    if (!row || row.grant.status !== "active" || row.connection.healthStatus !== "ok") return null;
+    const current = await aiConnectionService(tx)
+      .credential(row as Awaited<ReturnType<typeof select>>)
+      .catch(() => null);
+    if (!current || !input.identity.endsWith(`:${aiCredentialGeneration(current)}`)) return null;
+    return { ...row, current };
+  }
+  /** Another run on this connection failed the same way a short time ago. */
+  async function recentRejection(input: { companyId: string; connectionId: string; runId: string }) {
+    const since = new Date(Date.now() - AI_CREDENTIAL_REPEAT_WINDOW_MS);
+    const [other] = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, input.companyId),
+          ne(heartbeatRuns.id, input.runId),
+          eq(heartbeatRuns.status, "failed"),
+          sql`${heartbeatRuns.errorCode} ~ '^[a-z]+_auth_required$'`,
+          sql`coalesce(${heartbeatRuns.finishedAt}, ${heartbeatRuns.updatedAt}) >= ${since.toISOString()}::timestamptz`,
+          sql`${heartbeatRuns.contextSnapshot}->'aiConnection'->>'connectionId' = ${input.connectionId}`,
+        ),
+      )
+      .limit(1);
+    return Boolean(other);
+  }
   /**
-   * A run failed because the provider rejected this connection's credential.
-   * Mark the connection as needing attention, but only while that credential
-   * is still the stored one: a reconnect during the run must not be undone by
-   * the old run's failure. Returns true only for the call that changed it, so
-   * repeated failures notify once.
+   * A run failed because the provider refused this connection's credential.
+   * One refusal is not proof: the ACP "access" category also covers refusals
+   * that a working token can get. Before the shared connection stops every
+   * agent, ask the provider about the stored credential. Mark the connection
+   * as needing attention only when the provider rejects it, or, when the check
+   * cannot tell, when the refusal came before any output or repeats within a
+   * short window. Mark it only while that credential is still the stored one:
+   * a reconnect during the run must not be undone by the old run's failure.
+   * Returns true only for the call that changed it, so repeated failures
+   * notify once.
    */
   async function recordCredentialRejected(input: {
     companyId: string;
@@ -839,32 +903,33 @@ export function aiConnectionService(db: Db) {
     grantId: string;
     identity: string;
     runId: string;
+    /** The failed turn had already produced provider output. */
+    afterOutput?: boolean;
   }) {
+    // Check outside the transaction so the provider call holds no row lock.
+    const candidate = await rejectable(db, input, false);
+    if (!candidate) return false;
+    const metadata = candidate.connection.config.ai as AiConnectionMetadata;
+    const check = await checkCredential(metadata, candidate.current).catch(() => "unknown" as const);
+    const confirmed =
+      check === "rejected" ||
+      (check === "unknown" && (!input.afterOutput || (await recentRejection(input))));
+    if (!confirmed) {
+      await logActivity(db, {
+        companyId: input.companyId,
+        actorType: "system",
+        actorId: "ai-connection-runtime",
+        action: "ai_connection.credential_rejection_unconfirmed",
+        entityType: "tool_connection",
+        entityId: candidate.connection.id,
+        runId: input.runId,
+        details: { grantId: candidate.grant.id, check, afterOutput: Boolean(input.afterOutput) },
+      });
+      return false;
+    }
     return db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ connection: toolConnections, grant: connectionGrants })
-        .from(toolConnections)
-        .innerJoin(
-          connectionGrants,
-          and(
-            eq(connectionGrants.companyId, toolConnections.companyId),
-            eq(connectionGrants.connectionId, toolConnections.id),
-          ),
-        )
-        .where(
-          and(
-            eq(toolConnections.companyId, input.companyId),
-            eq(toolConnections.id, input.connectionId),
-            eq(toolConnections.connectionPurpose, "ai"),
-            eq(connectionGrants.id, input.grantId),
-          ),
-        )
-        .for("update");
-      if (!row || row.grant.status !== "active" || row.connection.healthStatus !== "ok") return false;
-      const current = await aiConnectionService(tx as unknown as Db)
-        .credential(row as Awaited<ReturnType<typeof select>>)
-        .catch(() => null);
-      if (!current || !input.identity.endsWith(`:${aiCredentialGeneration(current)}`)) return false;
+      const row = await rejectable(tx as unknown as Db, input, true);
+      if (!row) return false;
       await tx
         .update(toolConnections)
         .set({
@@ -882,7 +947,7 @@ export function aiConnectionService(db: Db) {
         entityType: "tool_connection",
         entityId: row.connection.id,
         runId: input.runId,
-        details: { grantId: row.grant.id },
+        details: { grantId: row.grant.id, check, afterOutput: Boolean(input.afterOutput) },
       });
       return true;
     });

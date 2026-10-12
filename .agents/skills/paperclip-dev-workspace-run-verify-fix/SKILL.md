@@ -248,7 +248,13 @@ lsof -nP -iTCP:"$SERVICE_PORT" -sTCP:LISTEN || true
 ```
 
 Use this only to identify and remove a stale matching GS Agentic Manager dev-runner
-process after managed stop fails. Do not kill unrelated processes.
+process after managed stop fails. Do not kill unrelated processes. Stop it by
+its PID, after `readlink /proc/<pid>/cwd` shows it belongs to the target
+worktree. Never use `pkill -f`, `killall` or `kill` on a name or pattern such
+as `dev-runner`, `dev:once`, `tsx`, `node`, `postgres` or `pnpm`: the live GS
+Agentic Manager runs the same commands under the same user, and on 4 Oct 2026
+`pkill -f "dev-runner.ts dev"` from an agent sandbox stopped live for 8.5
+hours.
 
 ## Verify main control-plane runtime state
 
@@ -396,7 +402,7 @@ died.
 
 Fix: managed stop first. If the process survives, identify the matching
 GS Agentic Manager dev-runner process group for the target port and terminate only that
-group. Then managed start.
+group, by its process group ID, never by name or pattern. Then managed start.
 
 Verify: `/api/health` is ok after a stability wait and the runtime record is
 healthy.

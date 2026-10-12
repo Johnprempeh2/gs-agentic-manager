@@ -27,6 +27,8 @@ import {
   routines,
   routineTriggers,
   workspaceRuntimeServices,
+  resolveEmbeddedPostgresClientPassword,
+  resolveEmbeddedPostgresConnectionString,
 } from "@greatstone/db";
 import {
   copyGitHooksToWorktreeGitDir,
@@ -1512,6 +1514,39 @@ describe("worktree helpers", () => {
     }
   });
 
+  it("leaves no seed-pending state behind when init runs with --no-seed (GRE-272)", async () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-no-seed-"));
+    const repoRoot = path.join(tempRoot, "repo");
+    const originalCwd = process.cwd();
+
+    try {
+      const repoConfigDir = path.join(repoRoot, ".gsam");
+      fs.mkdirSync(repoConfigDir, { recursive: true });
+      // A stale manifest and legacy markers from an earlier init must not
+      // survive a --force --no-seed re-init either.
+      fs.writeFileSync(path.join(repoConfigDir, "seed-manifest.json"), "{\"state\":\"pending\"}", "utf8");
+      fs.writeFileSync(path.join(repoConfigDir, "seed-pending"), "{}", "utf8");
+      fs.writeFileSync(path.join(repoConfigDir, "seed-complete"), "", "utf8");
+      process.chdir(repoRoot);
+
+      await worktreeInitCommand({
+        seed: false,
+        force: true,
+        fromConfig: path.join(tempRoot, "missing", "config.json"),
+        home: path.join(tempRoot, ".paperclip-worktrees"),
+      });
+
+      expect(fs.existsSync(path.join(repoConfigDir, "config.json"))).toBe(true);
+      expect(fs.existsSync(path.join(repoConfigDir, ".env"))).toBe(true);
+      expect(fs.existsSync(path.join(repoConfigDir, "seed-manifest.json"))).toBe(false);
+      expect(fs.existsSync(path.join(repoConfigDir, "seed-pending"))).toBe(false);
+      expect(fs.existsSync(path.join(repoConfigDir, "seed-complete"))).toBe(false);
+    } finally {
+      process.chdir(originalCwd);
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
+
   it("preserves repo-managed worktree checkouts when --force re-runs from the source repo", async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paperclip-worktree-force-preserve-"));
     const repoRoot = path.join(tempRoot, "repo");
@@ -1609,7 +1644,7 @@ describe("worktree helpers", () => {
       const targetPg = new EmbeddedPostgres({
         databaseDir: targetConfig.database.embeddedPostgresDataDir,
         user: "paperclip",
-        password: "paperclip",
+        password: resolveEmbeddedPostgresClientPassword(targetConfig.database.embeddedPostgresDataDir),
         port: targetConfig.database.embeddedPostgresPort,
         persistent: true,
         initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -1619,8 +1654,12 @@ describe("worktree helpers", () => {
 
       await targetPg.start();
       onTestFinished(() => targetPg.stop());
+      // The seeded target is a new cluster with its own random password (GRE-930).
       const targetDb = createDb(
-        `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+        resolveEmbeddedPostgresConnectionString({
+          dataDir: targetConfig.database.embeddedPostgresDataDir,
+          port: targetConfig.database.embeddedPostgresPort,
+        }),
       );
       const [seededLocalBoard] = await targetDb
         .select({ id: authUsers.id })
@@ -1771,7 +1810,7 @@ describe("worktree helpers", () => {
       const targetPg = new EmbeddedPostgres({
         databaseDir: targetConfig.database.embeddedPostgresDataDir,
         user: "paperclip",
-        password: "paperclip",
+        password: resolveEmbeddedPostgresClientPassword(targetConfig.database.embeddedPostgresDataDir),
         port: targetConfig.database.embeddedPostgresPort,
         persistent: true,
         initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -1781,8 +1820,12 @@ describe("worktree helpers", () => {
 
       await targetPg.start();
       onTestFinished(() => targetPg.stop());
+      // The seeded target is a new cluster with its own random password (GRE-930).
       const targetDb = createDb(
-        `postgres://paperclip:paperclip@127.0.0.1:${targetConfig.database.embeddedPostgresPort}/paperclip`,
+        resolveEmbeddedPostgresConnectionString({
+          dataDir: targetConfig.database.embeddedPostgresDataDir,
+          port: targetConfig.database.embeddedPostgresPort,
+        }),
       );
       const seededUsers = await targetDb.select().from(authUsers);
       expect(seededUsers.some((row) => row.email === "existing@paperclip.ing")).toBe(true);

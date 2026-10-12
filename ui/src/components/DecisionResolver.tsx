@@ -174,7 +174,7 @@ export function DecisionResolver({ companyId, decisionId, originIssue, agentMap,
   if (detail.error || !decision) {
     return (
       <p className="py-3 text-xs text-muted-foreground">
-        This decision is no longer available — it may have been resolved elsewhere.
+        This decision is no longer available. It may have been resolved elsewhere.
       </p>
     );
   }

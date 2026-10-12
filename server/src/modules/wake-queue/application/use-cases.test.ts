@@ -844,6 +844,73 @@ describe("releaseIssueExecution", () => {
     });
   });
 
+  // GRE-755, 2026-10-05 05:30: Keystone's review run ended without a
+  // decision while the issue had an open blocker. The release path queued
+  // execution_review_participant_recovery and dispatch cancelled it at once
+  // (issue_dependencies_blocked). 13 such cancels since 4 Oct.
+  describe("review stage behind an open blocker (GRE-755)", () => {
+    const REVIEW_ISSUE: IssueSnapshot = {
+      ...ISSUE,
+      status: "in_review",
+      executionState: {
+        status: "pending",
+        currentStageType: "review",
+        currentParticipant: { type: "agent", agentId: RUN.agentId },
+      },
+    };
+
+    async function releaseReviewRun(input: { openBlocker: boolean; retryReason?: string }) {
+      const run: RunSnapshot = {
+        ...RUN,
+        status: "succeeded",
+        contextSnapshot: {
+          issueId: REVIEW_ISSUE.id,
+          wakeReason: "execution_review_requested",
+          ...(input.retryReason ? { retryReason: input.retryReason } : {}),
+        },
+      };
+      const transaction = createFakeTransaction({
+        hasExplicitBlockerPath: vi.fn(async () => input.openBlocker),
+      });
+      const recovery = createFakeRecovery();
+      const release = createReleaseIssueExecution({
+        issueLock: createFakeIssueLock(createFakeHost(), transaction, REVIEW_ISSUE, run),
+        recovery,
+      });
+      const result = await release({ companyId: RUN.companyId, runId: run.id, now: new Date() });
+      return { result, transaction, recovery };
+    }
+
+    it("does not queue a reviewer run while the blocker is open", async () => {
+      const { result, transaction, recovery } = await releaseReviewRun({ openBlocker: true });
+
+      expect(transaction.hasExplicitBlockerPath).toHaveBeenCalledWith({
+        companyId: REVIEW_ISSUE.companyId,
+        issueId: REVIEW_ISSUE.id,
+      });
+      expect(result.outcome.kind).toBe("released");
+      expect(transaction.queueReviewParticipantRecoveryRun).not.toHaveBeenCalled();
+      expect(recovery.escalateStrandedAssignedIssue).not.toHaveBeenCalled();
+    });
+
+    it("does not block the issue when a review-recovery run ends behind an open blocker", async () => {
+      const { result, recovery } = await releaseReviewRun({
+        openBlocker: true,
+        retryReason: "execution_review_participant_recovery",
+      });
+
+      expect(result.outcome.kind).toBe("released");
+      expect(recovery.escalateStrandedAssignedIssue).not.toHaveBeenCalled();
+    });
+
+    it("still queues the review retry when there is no open blocker", async () => {
+      const { result, transaction } = await releaseReviewRun({ openBlocker: false });
+
+      expect(result.outcome.kind).toBe("queued_review_participant_recovery");
+      expect(transaction.queueReviewParticipantRecoveryRun).toHaveBeenCalledTimes(1);
+    });
+  });
+
   // GRE-4, 2026-09-27: the sweep queued a recovery wake behind a running
   // run. That run posted a card for John and ended; the recovery wake was
   // then promoted and the agent posted "Recovery wake. No new input".

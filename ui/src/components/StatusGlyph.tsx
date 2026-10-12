@@ -6,6 +6,7 @@ import {
   CircleDashed,
   CircleDot,
   CircleMinus,
+  Clock,
   createLucideIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -46,7 +47,8 @@ export type StatusGlyphStatus =
   | "done"
   | "blocked"
   | "cancelled"
-  | "in_queue";
+  | "in_queue"
+  | "waiting";
 
 // LoaderCircle uses a 9-unit radius. Keep its open arc, but use the same
 // 10-unit circle and unscaled stroke as the other task glyphs.
@@ -65,6 +67,8 @@ const STATUS_ICON: Record<string, LucideIcon> = {
   blocked: CircleMinus,
   cancelled: Ban,
   in_queue: CircleMinus,
+  // Open work that is only waiting (a scheduled check): a clock, not a spinner.
+  waiting: Clock,
 };
 
 /** Unknown statuses fall back to the backlog icon (matches the colour-var fallback). */

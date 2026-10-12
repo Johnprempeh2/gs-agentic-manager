@@ -40,6 +40,7 @@ export {
 export {
   instanceSettingsSchema,
   instanceGeneralSettingsSchema,
+  strategyBoardEmailSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
   type PatchInstanceGeneralSettings,
@@ -78,9 +79,13 @@ export {
   interactionResolverGovernanceSchema,
   updateCompanySchema,
   updateCompanyBrandingSchema,
+  pauseCompanySchema,
+  resumeCompanySchema,
   type CreateCompany,
   type UpdateCompany,
   type UpdateCompanyBranding,
+  type PauseCompany,
+  type ResumeCompany,
 } from "./company.js";
 export {
   environmentDriverSchema,
@@ -129,6 +134,7 @@ export {
 export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
   type UpsertSidebarOrderPreference,
 } from "./sidebar-preferences.js";
 export {
@@ -360,12 +366,15 @@ export {
   standardAgentKeyScopeSchema,
   taskBridgeAgentKeyScopeSchema,
   skillTestAgentKeyScopeSchema,
+  memoryOnlyAgentKeyScopeSchema,
   createAgentKeySchema,
   agentMineInboxQuerySchema,
   wakeAgentSchema,
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
+  agentPipelineAccessSchema,
+  setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
@@ -378,6 +387,7 @@ export {
   type AgentApiKeyScope,
   type TaskBridgeAgentKeyScope,
   type SkillTestAgentKeyScope,
+  type MemoryOnlyAgentKeyScope,
   type CreateAgentKey,
   type AgentMineInboxQuery,
   type WakeAgent,
@@ -428,6 +438,7 @@ export {
   issueBlockedInboxSeveritySchema,
   issueBlockedInboxStateSchema,
   updateIssueSchema,
+  blockedDependentsHandoffSchema,
   stalledReviewDecisionSchema,
   issueExecutionPolicySchema,
   issueExecutionStateSchema,
@@ -460,6 +471,7 @@ export {
   askUserQuestionsQuestionSchema,
   paperclipQuestionSetPayloadSchema,
   askUserQuestionsPayloadSchema,
+  interactionAtDeskSchema,
   askUserQuestionsAnswerSchema,
   askUserQuestionsResultSchema,
   requestConfirmationIssueDocumentTargetSchema,
@@ -498,6 +510,7 @@ export {
   type CreateAcceptedPlanDecomposition,
   type CreateIssueLabel,
   type UpdateIssue,
+  type BlockedDependentsHandoff,
   type StalledReviewDecision,
   type IssueExecutionWorkspaceSettings,
   type IssueRecoveryActionReadModel,
@@ -536,6 +549,8 @@ export {
   type CompanySearchExtractQuery,
   type CompanySearchQuery,
 } from "./search.js";
+
+export { tableIssueSchema, type TableIssue } from "./issue-tabling.js";
 
 export {
   createIssueTreeHoldSchema,
@@ -617,10 +632,30 @@ export {
   createGoalSchema,
   updateGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
+  type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
 } from "./goal.js";
+export {
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
+  type CreateGoalWhyRequest,
+  type AnswerGoalWhyRequest,
+  type CreateStrategyBoardPack,
+  type SetStrategyBoardMembers,
+  type SetStrategyBoardMemberAgents,
+  updateStrategyBoardSettingsSchema,
+  type UpdateStrategyBoardSettings,
+} from "./strategy-board.js";
 
 export {
   applyOnboardingSeedSchema,
@@ -990,3 +1025,6 @@ export * from "./chat-channels.js";
 export * from "./chat-github.js";
 
 export * from "./email.js";
+export * from "./mailbox.js";
+export * from "./crm-sync.js";
+export * from "./pipeline-fields.js";

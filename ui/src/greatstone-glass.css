@@ -57,6 +57,7 @@
   --motion-ease-spring: cubic-bezier(0.22, 1.25, 0.36, 1);
   --motion-route-enter: 380ms;
   --motion-route-travel: 8px;
+  --motion-route-travel-x: 24px; /* phone: page slides sideways on push/back */
   --motion-float-enter: 220ms;
   --motion-hover-lift: 180ms;
   --motion-press: 90ms;
@@ -926,6 +927,14 @@
   .gs-glass-chrome { background: var(--sidebar); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .gs-glass-bar { background: var(--background); backdrop-filter: none; -webkit-backdrop-filter: none; }
   .gs-glass-card { background: var(--card); }
+}
+
+/* iOS WebKit repaints the whole page, and the screen flickers, each time a
+   fixed backdrop-filter layer mounts, animates or unmounts over the blurred
+   top bar and bottom nav. Live run toasts do that over and over (GRE-329), so
+   on touch screens a toast is the solid popover surface, not glass. */
+@media (hover: none) and (pointer: coarse) {
+  .gs-toast { background: var(--popover); backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

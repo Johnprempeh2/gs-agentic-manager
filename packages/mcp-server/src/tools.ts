@@ -16,6 +16,8 @@ import {
   updateIssueSchema,
   upsertIssueDocumentSchema,
   linkIssueApprovalSchema,
+  mcpToolHints,
+  type McpToolHints,
 } from "@greatstone/shared";
 import { PaperclipApiClient } from "./client.js";
 import { formatErrorResponse, formatTextResponse } from "./format.js";
@@ -23,6 +25,7 @@ import { formatErrorResponse, formatTextResponse } from "./format.js";
 export interface ToolDefinition {
   name: string;
   description: string;
+  annotations: McpToolHints;
   schema: z.ZodObject;
   execute: (input: Record<string, unknown>) => Promise<{
     content: Array<{ type: "text"; text: string }>;
@@ -32,12 +35,14 @@ export interface ToolDefinition {
 function makeTool<TSchema extends z.ZodRawShape>(
   name: string,
   description: string,
+  annotations: McpToolHints,
   schema: z.ZodObject<TSchema>,
   execute: (input: z.infer<typeof schema>) => Promise<unknown>,
 ): ToolDefinition {
   return {
     name,
     description,
+    annotations,
     schema,
     execute: async (input) => {
       try {
@@ -272,6 +277,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "connections_search",
       CONNECTIONS_SEARCH_TOOL_DESCRIPTION,
+      mcpToolHints("read"),
       connectionsSearchInputSchema,
       async (input) => callRuntimeConnectionTool(
         "GSAM_RUNTIME_TOOLS_CONNECTIONS_SEARCH_URL",
@@ -281,6 +287,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "connection_request",
       CONNECTION_REQUEST_TOOL_DESCRIPTION,
+      mcpToolHints("write"),
       connectionRequestInputSchema,
       async (input) => callRuntimeConnectionTool(
         "GSAM_RUNTIME_TOOLS_CONNECTION_REQUEST_URL",
@@ -290,30 +297,35 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipMe",
       "Get the current authenticated GS Agentic Manager actor details",
+      mcpToolHints("read"),
       z.object({}),
       async () => client.requestJson("GET", "/agents/me"),
     ),
     makeTool(
       "paperclipInboxLite",
       "Get the current authenticated agent inbox-lite assignment list",
+      mcpToolHints("read"),
       z.object({}),
       async () => client.requestJson("GET", "/agents/me/inbox-lite"),
     ),
     makeTool(
       "paperclipListAgents",
       "List agents in a company",
+      mcpToolHints("read"),
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/agents`),
     ),
     makeTool(
       "paperclipListSkills",
       "List the company skill library (all installed skills, independent of which agents have them enabled)",
+      mcpToolHints("read"),
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/skills`),
     ),
     makeTool(
       "paperclipGetAgent",
       "Get a single agent by id",
+      mcpToolHints("read"),
       z.object({ agentId: z.string().min(1), companyId: companyIdOptional }),
       async ({ agentId, companyId }) => {
         const qs = companyId ? `?companyId=${encodeURIComponent(companyId)}` : "";
@@ -323,6 +335,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipListIssues",
       "List issues for a company with optional filters",
+      mcpToolHints("read"),
       listIssuesSchema,
       async (input) => {
         const companyId = client.resolveCompanyId(input.companyId);
@@ -338,12 +351,14 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipGetIssue",
       "Get a single issue by UUID or identifier",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}`),
     ),
     makeTool(
       "paperclipGetHeartbeatContext",
       "Get compact heartbeat context for an issue",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema, wakeCommentId: z.string().guid().optional() }),
       async ({ issueId, wakeCommentId }) => {
         const qs = wakeCommentId ? `?wakeCommentId=${encodeURIComponent(wakeCommentId)}` : "";
@@ -353,6 +368,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipListComments",
       "List issue comments with incremental options",
+      mcpToolHints("read"),
       listCommentsSchema,
       async ({ issueId, after, order, limit }) => {
         const params = new URLSearchParams();
@@ -366,6 +382,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipGetComment",
       "Get a specific issue comment by id",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema, commentId: z.string().guid() }),
       async ({ issueId, commentId }) =>
         client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/comments/${encodeURIComponent(commentId)}`),
@@ -373,18 +390,21 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipListIssueApprovals",
       "List approvals linked to an issue",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/approvals`),
     ),
     makeTool(
       "paperclipListDocuments",
       "List issue documents",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/documents`),
     ),
     makeTool(
       "paperclipGetDocument",
       "Get one issue document by key",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema, key: documentKeySchema }),
       async ({ issueId, key }) =>
         client.requestJson("GET", `/issues/${encodeURIComponent(issueId)}/documents/${encodeURIComponent(key)}`),
@@ -392,6 +412,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipListDocumentRevisions",
       "List revisions for an issue document",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema, key: documentKeySchema }),
       async ({ issueId, key }) =>
         client.requestJson(
@@ -402,12 +423,14 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipListProjects",
       "List projects in a company",
+      mcpToolHints("read"),
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/projects`),
     ),
     makeTool(
       "paperclipGetProject",
       "Get a project by id or company-scoped short reference",
+      mcpToolHints("read"),
       z.object({ projectId: projectIdSchema, companyId: companyIdOptional }),
       async ({ projectId, companyId }) => {
         const qs = companyId ? `?companyId=${encodeURIComponent(companyId)}` : "";
@@ -417,12 +440,14 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipGetIssueWorkspaceRuntime",
       "Get the current execution workspace and runtime services for an issue, including service URLs",
+      mcpToolHints("read"),
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => getIssueWorkspaceRuntime(client, issueId),
     ),
     makeTool(
       "paperclipControlIssueWorkspaceServices",
       "Start, stop, or restart the current issue execution workspace runtime services",
+      mcpToolHints("write"),
       issueWorkspaceRuntimeControlSchema,
       async ({ issueId, action, ...target }) => {
         const runtime = await getIssueWorkspaceRuntime(client, issueId);
@@ -440,6 +465,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipWaitForIssueWorkspaceService",
       "Wait until an issue execution workspace runtime service is running and has a URL when one is exposed",
+      mcpToolHints("read"),
       waitForIssueWorkspaceServiceSchema,
       async ({ issueId, runtimeServiceId, serviceName, timeoutSeconds }) => {
         const deadline = Date.now() + (timeoutSeconds ?? 60) * 1000;
@@ -466,18 +492,21 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipListGoals",
       "List goals in a company",
+      mcpToolHints("read"),
       z.object({ companyId: companyIdOptional }),
       async ({ companyId }) => client.requestJson("GET", `/companies/${client.resolveCompanyId(companyId)}/goals`),
     ),
     makeTool(
       "paperclipGetGoal",
       "Get a goal by id",
+      mcpToolHints("read"),
       z.object({ goalId: goalIdSchema }),
       async ({ goalId }) => client.requestJson("GET", `/goals/${encodeURIComponent(goalId)}`),
     ),
     makeTool(
       "paperclipListApprovals",
       "List approvals in a company",
+      mcpToolHints("read"),
       z.object({ companyId: companyIdOptional, status: z.string().optional() }),
       async ({ companyId, status }) => {
         const qs = status ? `?status=${encodeURIComponent(status)}` : "";
@@ -487,6 +516,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipCreateApproval",
       "Create a board approval request, optionally linked to one or more issues",
+      mcpToolHints("write"),
       createApprovalToolSchema,
       async ({ companyId, ...body }) =>
         client.requestJson("POST", `/companies/${client.resolveCompanyId(companyId)}/approvals`, {
@@ -496,24 +526,28 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipGetApproval",
       "Get an approval by id",
+      mcpToolHints("read"),
       z.object({ approvalId: approvalIdSchema }),
       async ({ approvalId }) => client.requestJson("GET", `/approvals/${encodeURIComponent(approvalId)}`),
     ),
     makeTool(
       "paperclipGetApprovalIssues",
       "List issues linked to an approval",
+      mcpToolHints("read"),
       z.object({ approvalId: approvalIdSchema }),
       async ({ approvalId }) => client.requestJson("GET", `/approvals/${encodeURIComponent(approvalId)}/issues`),
     ),
     makeTool(
       "paperclipListApprovalComments",
       "List comments for an approval",
+      mcpToolHints("read"),
       z.object({ approvalId: approvalIdSchema }),
       async ({ approvalId }) => client.requestJson("GET", `/approvals/${encodeURIComponent(approvalId)}/comments`),
     ),
     makeTool(
       "paperclipCreateIssue",
       "Create a new issue",
+      mcpToolHints("write"),
       createIssueToolSchema,
       async ({ companyId, ...body }) =>
         client.requestJson("POST", `/companies/${client.resolveCompanyId(companyId)}/issues`, { body }),
@@ -521,6 +555,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipUpdateIssue",
       "Patch an issue, optionally including a comment; include resume=true when intentionally requesting follow-up on resumable closed work",
+      mcpToolHints("write"),
       updateIssueToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("PATCH", `/issues/${encodeURIComponent(issueId)}`, { body }),
@@ -528,6 +563,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipCheckoutIssue",
       "Checkout an issue for an agent",
+      mcpToolHints("write"),
       checkoutIssueToolSchema,
       async ({ issueId, agentId, expectedStatuses }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/checkout`, {
@@ -540,12 +576,14 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipReleaseIssue",
       "Release an issue checkout",
+      mcpToolHints("write", { idempotent: true }),
       z.object({ issueId: issueIdSchema }),
       async ({ issueId }) => client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/release`, { body: {} }),
     ),
     makeTool(
       "paperclipAddComment",
       "Add a comment to an issue; include resume=true when intentionally requesting follow-up on resumable closed work",
+      mcpToolHints("write"),
       addCommentToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/comments`, { body }),
@@ -553,6 +591,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipSuggestTasks",
       "Create a suggest_tasks interaction on an issue",
+      mcpToolHints("write"),
       createSuggestTasksToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/interactions`, {
@@ -565,6 +604,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipAskUserQuestions",
       "Create an ask_user_questions interaction on an issue",
+      mcpToolHints("write"),
       createAskUserQuestionsToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/interactions`, {
@@ -577,6 +617,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipRequestConfirmation",
       "Create a request_confirmation interaction on an issue",
+      mcpToolHints("write"),
       createRequestConfirmationToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/interactions`, {
@@ -589,6 +630,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipRequestCheckboxConfirmation",
       "Create a request_checkbox_confirmation interaction on an issue",
+      mcpToolHints("write"),
       createRequestCheckboxConfirmationToolSchema,
       async ({ issueId, ...body }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/interactions`, {
@@ -601,6 +643,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipUpsertIssueDocument",
       "Create or update an issue document",
+      mcpToolHints("write"),
       upsertDocumentToolSchema,
       async ({ issueId, key, ...body }) =>
         client.requestJson(
@@ -612,6 +655,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipRestoreIssueDocumentRevision",
       "Restore a prior revision of an issue document",
+      mcpToolHints("write"),
       z.object({
         issueId: issueIdSchema,
         key: documentKeySchema,
@@ -627,6 +671,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipLinkIssueApproval",
       "Link an approval to an issue",
+      mcpToolHints("write"),
       z.object({ issueId: issueIdSchema }).merge(linkIssueApprovalSchema),
       async ({ issueId, approvalId }) =>
         client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/approvals`, {
@@ -636,6 +681,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipUnlinkIssueApproval",
       "Unlink an approval from an issue",
+      mcpToolHints("destructive", { idempotent: true }),
       z.object({ issueId: issueIdSchema, approvalId: approvalIdSchema }),
       async ({ issueId, approvalId }) =>
         client.requestJson(
@@ -646,6 +692,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipApprovalDecision",
       "Approve, reject, request revision, or resubmit an approval",
+      mcpToolHints("write"),
       approvalDecisionSchema,
       async ({ approvalId, action, decisionNote, payloadJson }) => {
         const path =
@@ -668,6 +715,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipAddApprovalComment",
       "Add a comment to an approval",
+      mcpToolHints("write"),
       z.object({ approvalId: approvalIdSchema, body: z.string().min(1) }),
       async ({ approvalId, body }) =>
         client.requestJson("POST", `/approvals/${encodeURIComponent(approvalId)}/comments`, {
@@ -677,6 +725,7 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
     makeTool(
       "paperclipApiRequest",
       "Make a JSON request to an existing GS Agentic Manager /api endpoint for unsupported operations",
+      mcpToolHints("destructive"),
       apiRequestSchema,
       async ({ method, path, jsonBody }) => {
         if (!path.startsWith("/") || path.includes("..")) {

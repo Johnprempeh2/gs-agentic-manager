@@ -25,6 +25,7 @@ import { agentsApi } from "@/api/agents";
 import { accessApi } from "@/api/access";
 import { ApiError } from "@/api/client";
 import { useToastActions } from "@/context/ToastContext";
+import { PageSkeleton } from "../../components/PageSkeleton";
 
 const PAGE_SIZE = 50;
 const ALL = "__all";
@@ -265,10 +266,10 @@ function AuditUpsell() {
       <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
         <ShieldAlert className="h-10 w-10 text-subtle-foreground" />
         <div>
-          <p className="text-sm font-medium text-foreground">Agent audit is a Paperclip Enterprise view</p>
+          <p className="text-sm font-medium text-foreground">Agent audit is an Enterprise view</p>
           <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             The agent audit log gives you a searchable, exportable record of everything your agents
-            did — every comment, task change, approval, and run — with the responsible person for
+            did (every comment, task change, approval, and run) with the responsible person for
             each action. Ask an administrator to grant you the{" "}
             <span className="font-mono text-(length:--text-micro)">audit:view_agent_actions</span>{" "}
             permission to view it.
@@ -504,8 +505,8 @@ export function AuditFeed({
             <h2 className="text-lg font-semibold text-foreground">Activity</h2>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               {resolvedMode === "agents"
-                ? "Every recorded agent action, newest first — with the responsible person and run behind each one."
-                : "Everything happening in your organization, newest first — people, agents, and the system. Each line is one recorded action."}
+                ? "Every recorded agent action, newest first, with the responsible person and run behind each one."
+                : "Everything happening in your organisation, newest first: people, agents, and the system. Each line is one recorded action."}
             </p>
           </div>
         </div>
@@ -654,9 +655,7 @@ export function AuditFeed({
           </CardContent>
         </Card>
       ) : feed.isLoading ? (
-        <Card>
-          <CardContent className="py-14 text-center text-sm text-muted-foreground">Loading…</CardContent>
-        </Card>
+        <PageSkeleton variant="list" />
       ) : feed.error ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
@@ -720,7 +719,7 @@ export function AuditFeed({
       ) : null}
 
       <p className="text-xs text-muted-foreground">
-        Recorded by GS Agentic Manager — entries can't be edited. Sensitive values are never stored.
+        Recorded by GS Agentic Manager. Entries can't be edited. Sensitive values are never stored.
       </p>
     </div>
   );

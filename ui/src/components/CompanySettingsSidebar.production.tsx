@@ -6,10 +6,13 @@ import {
   Download,
   FlaskConical,
   KeyRound,
+  LifeBuoy,
   MailPlus,
   MonitorCog,
   Puzzle,
+  Server,
   Shield,
+  ShieldCheck,
   SlidersHorizontal,
   Upload,
   UserRoundPen,
@@ -23,10 +26,13 @@ import { Link, NavLink } from "@/lib/router";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { SIDEBAR_SCROLL_RESET_STATE } from "@/lib/navigation-scroll";
 import { queryKeys } from "@/lib/queryKeys";
+import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useIsFleetHub } from "@/hooks/useFleetInstances";
+import { useShowGetHelp } from "@/hooks/useShowGetHelp";
 import { usePluginSlots } from "@/plugins/slots";
 import { SidebarNavItem } from "./SidebarNavItem.production";
 
@@ -48,6 +54,10 @@ export function CompanySettingsSidebar() {
   const { hidden: hiddenSettings } = useHiddenSettings();
   const showPage = (pageKey: string) => !hiddenSettings.has(pageKey);
   const showPlugins = showPage("instance.plugins");
+  // Fleet (GRE-1083): only on the Greatstone hub, to its instance admins.
+  const showFleet = useIsFleetHub();
+  // Get help (GRE-1425): board users of a client instance.
+  const showGetHelp = useShowGetHelp();
   // Import is floored server-side on cloud-managed instances (403 cloud_managed), so the
   // nav entry is hidden rather than dead-ending. Export stays available.
   const isCloud = Boolean(useCloudInstance());
@@ -82,6 +92,11 @@ export function CompanySettingsSidebar() {
     enabled: showPlugins,
   });
   const sidebarPlugins = (plugins ?? []).filter((plugin) => !isSandboxProviderOnly(plugin));
+  const { data: experimentalSettings } = useQuery({
+    queryKey: queryKeys.instance.experimentalSettings,
+    queryFn: () => instanceSettingsApi.getExperimental(),
+  });
+  const showPipelinesAccess = experimentalSettings?.enablePipelines === true;
 
   return (
     <aside className="w-full h-full min-h-0 border-r border-border bg-background flex flex-col">
@@ -135,6 +150,9 @@ export function CompanySettingsSidebar() {
           {showPage("company.secrets") && (
             <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
           )}
+          {showPipelinesAccess && (
+            <SidebarNavItem to="/company/settings/pipelines-access" label="Pipelines access" icon={ShieldCheck} end />
+          )}
           {showPage("instance.environments") && (
             <SidebarNavItem
               to={`${INSTANCE_SETTINGS_PATH_PREFIX}/environments`}
@@ -151,6 +169,14 @@ export function CompanySettingsSidebar() {
               end
             />
           )}
+          {showFleet && (
+            <SidebarNavItem
+              to={`${INSTANCE_SETTINGS_PATH_PREFIX}/fleet`}
+              label="Fleet"
+              icon={Server}
+              end
+            />
+          )}
           {showPage("instance.heartbeats") && (
             <SidebarNavItem
               to={`${INSTANCE_SETTINGS_PATH_PREFIX}/heartbeats`}
@@ -158,6 +184,9 @@ export function CompanySettingsSidebar() {
               icon={Clock3}
               end
             />
+          )}
+          {showGetHelp && (
+            <SidebarNavItem to="/company/settings/get-help" label="Get help" icon={LifeBuoy} end />
           )}
           {showPage("company.export") && (
             <SidebarNavItem to="/company/export" label="Export" icon={Download} />

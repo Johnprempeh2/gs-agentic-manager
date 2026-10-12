@@ -79,14 +79,14 @@ describe("describeInteractionAudience", () => {
     expect(audience.narrowedBy).toBeNull();
     expect(audience.narrowedNote).toBeNull();
     expect(audience.summary).toBe(
-      "Anyone in the organization can respond — the board or any agent, including the one that asked.",
+      "Anyone in the organisation can respond: the board or any agent, including the one that asked.",
     );
   });
 
   it("does not present an open card as board-required", () => {
     const audience = describeInteractionAudience({ interaction: confirmation() });
     expect(audience.summary).not.toMatch(/only .*board/i);
-    expect(audience.summary).toMatch(/anyone in the organization/i);
+    expect(audience.summary).toMatch(/anyone in the organisation/i);
   });
 
   it("names the excluded creator for an explicit not_creator restriction", () => {
@@ -156,7 +156,7 @@ describe("describeInteractionAudience", () => {
     expect(audience.label).toBe("Human only");
     expect(audience.isOpen).toBe(false);
     expect(audience.summary).toBe(
-      "Only a person on the board can respond — agents cannot resolve this card.",
+      "Only a person on the board can respond. Agents cannot resolve this card.",
     );
   });
 
@@ -182,7 +182,7 @@ describe("describeInteractionAudience", () => {
       addresseeLabel: "ReleaseBot",
     });
     expect(audience.summary).toBe(
-      "Assigned to ReleaseBot. Only a person on the board can respond — agents cannot resolve this card.",
+      "Assigned to ReleaseBot. Only a person on the board can respond. Agents cannot resolve this card.",
     );
     expect(audience.shortSummary).toBe("Assigned to ReleaseBot · board only");
     expect(audience.label).toBe("Human only");

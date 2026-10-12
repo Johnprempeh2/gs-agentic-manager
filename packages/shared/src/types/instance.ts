@@ -1,4 +1,5 @@
 import type { FeedbackDataSharingPreference } from "./feedback.js";
+import type { AiAccessRoute } from "../ai-connections.js";
 
 export const DAILY_RETENTION_PRESETS = [3, 7, 14] as const;
 export const WEEKLY_RETENTION_PRESETS = [1, 2, 4] as const;
@@ -28,6 +29,15 @@ export const DEFAULT_BACKUP_RETENTION: BackupRetentionPolicy = {
  */
 export type InstanceExecutionMode = "kubernetes" | "any";
 
+/** Which teams the Team Catalogue offers. `"greatstone"` = only teams tagged `greatstone`. */
+export const TEAM_CATALOG_FILTERS = ["all", "greatstone"] as const;
+export type TeamCatalogFilter = (typeof TEAM_CATALOG_FILTERS)[number];
+/** What adding a team does. `"request"` = an approval card for the board, no install. */
+export const TEAM_CATALOG_ADD_MODES = ["install", "request"] as const;
+export type TeamCatalogAddMode = (typeof TEAM_CATALOG_ADD_MODES)[number];
+/** The tag that marks a Greatstone team in the catalogue. */
+export const GREATSTONE_TEAM_TAG = "greatstone";
+
 export interface InstanceGeneralSettings {
   censorUsernameInLogs: boolean;
   /** @deprecated Legacy instance value. Use /auth/preferences for personal shortcuts. */
@@ -44,7 +54,34 @@ export interface InstanceGeneralSettings {
    * (6 concurrent runs, 2048 MB available-memory floor, 20 GB free-disk floor).
    */
   runAdmission?: RunAdmissionSettingsInput;
+  /**
+   * Install-wide AI access route (GRE-139). Absent/null = each agent's own
+   * harness and AI connection. Set = every Claude/Codex agent uses this route.
+   */
+  aiAccessRoute?: AiAccessRoute | null;
+  /** Team Catalogue filter (GRE-427). Default `"greatstone"`. */
+  teamCatalogFilter: TeamCatalogFilter;
+  /** Team Catalogue add button (GRE-434). Default `"request"`. */
+  teamCatalogAddMode: TeamCatalogAddMode;
+  /** Which board emails go out (GRE-1187). Default: all of them. */
+  strategyBoardEmail: StrategyBoardEmailSettings;
 }
+
+/** Board emails by kind (GRE-1187). Off = that kind stays in-app only. */
+export interface StrategyBoardEmailSettings {
+  /** Reminders to KPI owners before each board meeting. */
+  meetingReminders: boolean;
+  /** Slippage alerts to the chair when a KPI turns red. */
+  slippageAlerts: boolean;
+  /** "Why?" requests to the KPI owner. */
+  whyRequests: boolean;
+}
+
+export const DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS: StrategyBoardEmailSettings = {
+  meetingReminders: true,
+  slippageAlerts: true,
+  whyRequests: true,
+};
 
 export interface RunAdmissionSettingsInput {
   maxConcurrentRuns?: number;
@@ -103,6 +140,19 @@ export interface InstanceExperimentalSettings {
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
   enableCases: boolean;
+  /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
+  enableDeepDive: boolean;
+  /** Greatstone: the Strategy module, the KPI cascade and KPI readings (GRE-1382). */
+  enableStrategy: boolean;
+  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). Requires `enableStrategy`. */
+  enableStrategyBoard: boolean;
+  /**
+   * Greatstone: the board secretary agent (GRE-1200), one per instance. It may
+   * make draft board packs; a board member accepts them. Null = none.
+   */
+  strategyBoardSecretaryAgentId: string | null;
+  /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
+  enableWebsiteView: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;

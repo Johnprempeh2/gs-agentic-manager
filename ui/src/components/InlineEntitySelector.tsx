@@ -1,8 +1,9 @@
 import { forwardRef, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Check, Plus } from "lucide-react";
+import { Check, Plus, X } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { orderItemsBySelectedAndRecent } from "../lib/recent-selections";
 import { cn } from "../lib/utils";
+import { useMobileEntityPickerViewportStyle } from "../hooks/useMobileEntityPickerViewportStyle";
 
 export interface InlineEntityOption {
   id: string;
@@ -44,12 +45,33 @@ interface InlineEntitySelectorProps {
   createLabel?: (name: string) => string;
   /** Placeholder shown after the plain create entry is chosen, prompting for a name. */
   createNamePlaceholder?: string;
+  /** Heading for the large mobile selector modal. Defaults to the placeholder. */
+  mobileTitle?: string;
 }
 
 const CREATE_OPTION_ID = "__inline-entity-create__";
 const defaultCreateLabel = (name: string) => (name ? `Create "${name}"` : "New");
 
 const EMPTY_RECENT_OPTION_IDS: string[] = [];
+
+function useMobileSelectorModal() {
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== "undefined"
+      && typeof window.matchMedia === "function"
+      && window.matchMedia("(max-width: 40rem)").matches,
+  );
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(max-width: 40rem)");
+    const update = () => setMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  return mobile;
+}
 
 export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySelectorProps>(
   function InlineEntitySelector(
@@ -75,12 +97,15 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
       onCreate,
       createLabel = defaultCreateLabel,
       createNamePlaceholder,
+      mobileTitle,
     },
     ref,
   ) {
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState("");
     const [highlightedIndex, setHighlightedIndex] = useState(0);
+    const mobileSelectorModal = useMobileSelectorModal();
+    const mobileViewportStyle = useMobileEntityPickerViewportStyle();
     const highlightedIndexRef = useRef(0);
     const [namingNew, setNamingNew] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -88,6 +113,8 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
     const inputRef = useRef<HTMLInputElement>(null);
     const shouldPreventCloseAutoFocusRef = useRef(false);
     const isPointerDownRef = useRef(false);
+    // Set while closing hands focus back to the trigger, so openOnFocus does not reopen it.
+    const isReturningFocusRef = useRef(false);
 
     const allOptions = useMemo<InlineEntityOption[]>(() => {
       const baseOptions = [{ id: "", label: noneLabel, searchText: noneLabel }, ...options];
@@ -207,6 +234,11 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
             onPointerDown={() => { isPointerDownRef.current = true; }}
             onFocus={() => {
               if (disabled) return;
+              if (isReturningFocusRef.current) {
+                isReturningFocusRef.current = false;
+                isPointerDownRef.current = false;
+                return;
+              }
               if (openOnFocus && !isPointerDownRef.current) setOpen(true);
               isPointerDownRef.current = false;
             }}
@@ -218,22 +250,44 @@ export const InlineEntitySelector = forwardRef<HTMLButtonElement, InlineEntitySe
         </PopoverTrigger>
         <PopoverContent
           data-mobile-entity-picker=""
+          aria-label={mobileTitle ?? placeholder}
           align="start"
           side="bottom"
           collisionPadding={16}
           className="w-(--sz-calc-6) p-1"
-          disablePortal={disablePortal}
-          style={contentStyle}
+          disablePortal={disablePortal && !mobileSelectorModal}
+          style={{ ...mobileViewportStyle, ...contentStyle }}
           onOpenAutoFocus={(event) => {
             event.preventDefault();
             inputRef.current?.focus();
           }}
           onCloseAutoFocus={(event) => {
-            if (!shouldPreventCloseAutoFocusRef.current) return;
+            if (!shouldPreventCloseAutoFocusRef.current) {
+              // Radix focuses the trigger right after this handler; clear the flag if it never lands.
+              isReturningFocusRef.current = true;
+              requestAnimationFrame(() => {
+                isReturningFocusRef.current = false;
+              });
+              return;
+            }
             event.preventDefault();
             shouldPreventCloseAutoFocusRef.current = false;
           }}
         >
+          <div data-mobile-entity-picker-header="" className="hidden items-center justify-between border-b border-border px-4 py-3">
+            <span className="text-base font-semibold text-foreground">{mobileTitle ?? placeholder}</span>
+            <button
+              type="button"
+              className="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label="Close selector"
+              onClick={() => {
+                shouldPreventCloseAutoFocusRef.current = true;
+                setOpen(false);
+              }}
+            >
+              <X className="size-5" />
+            </button>
+          </div>
           <input
             ref={inputRef}
             className="w-full border-b border-border bg-transparent px-2 py-1.5 text-base outline-none placeholder:text-subtle-foreground md:text-sm"

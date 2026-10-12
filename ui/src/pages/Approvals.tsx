@@ -13,6 +13,8 @@ import { ShieldCheck } from "lucide-react";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
+import { ErrorState } from "../components/ErrorState";
+import { EmptyState } from "../components/EmptyState";
 
 type StatusFilter = "pending" | "all";
 
@@ -30,7 +32,7 @@ export function Approvals() {
     setBreadcrumbs([{ label: "Approvals" }]);
   }, [setBreadcrumbs]);
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.approvals.list(selectedCompanyId!),
     queryFn: () => approvalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -83,6 +85,10 @@ export function Approvals() {
     return <PageSkeleton variant="approvals" />;
   }
 
+  if (error && !data) {
+    return <ErrorState error={error} onRetry={() => void refetch()} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -101,16 +107,18 @@ export function Approvals() {
         </Tabs>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error.message}</p>}
+      {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {filtered.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldCheck className="h-8 w-8 text-subtle-foreground mb-3" />
-          <p className="text-sm text-muted-foreground">
-            {statusFilter === "pending" ? "No pending approvals." : "No approvals yet."}
-          </p>
-        </div>
+        <EmptyState
+          icon={ShieldCheck}
+          message={statusFilter === "pending" ? "No pending approvals." : "No approvals yet."}
+          description="Agents ask here when a step needs your sign-off."
+          action={statusFilter === "pending" ? "Show all approvals" : "Back to Decisions"}
+          onAction={() => navigate(statusFilter === "pending" ? "/approvals/all" : "/decisions")}
+          hideActionIcon
+        />
       )}
 
       {filtered.length > 0 && (

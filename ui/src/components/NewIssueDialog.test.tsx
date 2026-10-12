@@ -231,6 +231,9 @@ vi.mock("@/components/ui/dialog", () => ({
     dialogContentState.onPointerDownOutside = onPointerDownOutside as typeof dialogContentState.onPointerDownOutside;
     return <div {...props}>{children}</div>;
   },
+  DialogTitle: ({ children, ...props }: ComponentProps<"h2">) => (
+    <h2 data-slot="dialog-title" {...props}>{children}</h2>
+  ),
 }));
 
 vi.mock("@/components/ui/button", () => ({
@@ -425,6 +428,37 @@ describe("NewIssueDialog", () => {
     expect(container.textContent).not.toContain("Sub-task of");
 
     act(() => rerendered.root.unmount());
+  });
+
+  it("names the dialog through its visible title", async () => {
+    const { root } = renderDialog(container);
+    await flush();
+
+    // Radix wires DialogTitle to the dialog's aria-labelledby, so the
+    // breadcrumb text must render inside DialogTitle (GRE-900).
+    const title = container.querySelector('[data-slot="dialog-title"]');
+    expect(title?.textContent?.trim()).toBe("New task");
+
+    act(() => root.unmount());
+  });
+
+  it("names the icon-only header buttons for screen readers", async () => {
+    const { root } = renderDialog(container);
+    await flush();
+
+    const buttonByName = (name: string) =>
+      Array.from(container.querySelectorAll<HTMLButtonElement>("button")).find(
+        (button) => button.getAttribute("aria-label") === name,
+      );
+
+    const close = buttonByName("Close");
+    expect(close?.getAttribute("title")).toBe("Close");
+    expect(buttonByName("Expand")?.getAttribute("title")).toBe("Expand");
+
+    act(() => close!.click());
+    expect(dialogState.closeNewIssue).toHaveBeenCalledTimes(1);
+
+    act(() => root.unmount());
   });
 
   it("uses the compact composer control proportions for mobile task fields", async () => {
@@ -651,7 +685,7 @@ describe("NewIssueDialog", () => {
     await waitForAssertion(() => {
       expect(container.querySelector('[data-testid="new-issue-paused-assignee-note"]')).not.toBeNull();
     });
-    expect(container.textContent).toContain("arrived paused from an organization import");
+    expect(container.textContent).toContain("arrived paused from an organisation import");
 
     act(() => root.unmount());
   });
@@ -1376,9 +1410,8 @@ describe("NewIssueDialog", () => {
     });
 
     expect(dialogContent?.style.getPropertyValue("--new-issue-visual-viewport-height")).toBe("420px");
-    expect(dialogContent?.style.getPropertyValue("--new-issue-visual-viewport-offset-top")).toBe("24px");
     expect(dialogContent?.style.getPropertyValue("--new-issue-dialog-top")).toBe(
-      "calc(var(--new-issue-visual-viewport-offset-top) + var(--new-issue-dialog-top-gap))",
+      "var(--new-issue-dialog-top-gap)",
     );
     expect(dialogContent?.style.getPropertyValue("--new-issue-dialog-height")).toBe(
       "calc(var(--new-issue-visual-viewport-height) - var(--new-issue-dialog-top-gap) - var(--new-issue-dialog-bottom-gap))",
@@ -1435,7 +1468,6 @@ describe("NewIssueDialog", () => {
     });
 
     expect(dialogContent?.style.getPropertyValue("--new-issue-visual-viewport-height")).toBe("420px");
-    expect(dialogContent?.style.getPropertyValue("--new-issue-visual-viewport-offset-top")).toBe("24px");
     expect(dialogContent?.style.top).toBe("var(--new-issue-dialog-top)");
     expect(dialogContent?.style.height).toBe("var(--new-issue-dialog-height)");
 
@@ -1685,8 +1717,8 @@ describe("NewIssueDialog", () => {
       expect(workModeOption("ask")?.textContent).toContain("Ask mode");
       expect(workModeOption("planning")?.textContent).toContain("Plan mode");
 
-      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-amber-600");
-      expect(statusOptionIconClass("In Progress")).toContain("text-blue-600");
+      expect(statusOptionIconClass("Todo", "Executable - assignee will be woken")).toContain("text-status-warning");
+      expect(statusOptionIconClass("In Progress")).toContain("text-status-running");
 
       act(() => root.unmount());
     });

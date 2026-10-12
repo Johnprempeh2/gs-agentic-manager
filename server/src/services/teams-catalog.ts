@@ -2,6 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@greatstone/db";
+import { approvals } from "@greatstone/db";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type {
   CatalogManifest,
   CatalogTeam,
@@ -19,8 +21,9 @@ import type {
   CompanyPortabilityPreview,
   CompanyPortabilityPreviewResult,
   CompanyPortabilitySource,
+  TeamCatalogFilter,
 } from "@greatstone/shared";
-import { normalizeAgentUrlKey } from "@greatstone/shared";
+import { GREATSTONE_TEAM_TAG, normalizeAgentUrlKey } from "@greatstone/shared";
 import { parseFrontmatterMarkdown } from "@greatstone/shared/frontmatter";
 import { conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
@@ -35,6 +38,17 @@ export interface CatalogTeamListQuery {
   kind?: CatalogTeamKind;
   category?: string;
   q?: string;
+  /** Instance `teamCatalogFilter` (GRE-427). Absent = every team. */
+  filter?: TeamCatalogFilter;
+}
+
+/** Whether a team is offered under the instance's catalogue filter (GRE-427). */
+export function catalogTeamMatchesFilter(
+  team: Pick<CatalogTeam, "tags">,
+  filter: TeamCatalogFilter | undefined,
+): boolean {
+  if (!filter || filter === "all") return true;
+  return team.tags.includes(GREATSTONE_TEAM_TAG);
 }
 
 export interface CatalogTeamSourcePolicy {
@@ -215,6 +229,7 @@ function searchText(team: CatalogTeam) {
 export async function listCatalogTeams(query: CatalogTeamListQuery = {}): Promise<CatalogTeam[]> {
   const normalizedQuery = query.q?.trim().toLowerCase() ?? "";
   return (await getCatalogTeams())
+    .filter((team) => catalogTeamMatchesFilter(team, query.filter))
     .filter((team) => !query.kind || team.kind === query.kind)
     .filter((team) => !query.category || team.category === query.category)
     .filter((team) => !normalizedQuery || searchText(team).includes(normalizedQuery))
@@ -1024,6 +1039,51 @@ export function teamsCatalogService(db: Db) {
       .sort((left, right) => left.catalogId.localeCompare(right.catalogId));
   }
 
+  // "Ask Greatstone to add" (GRE-434): an approval card that names the team.
+  // Nothing is installed. A second ask while one is open returns the open card.
+  async function requestCatalogTeam(
+    companyId: string,
+    team: CatalogTeam,
+    actor: CatalogTeamActorContext,
+  ): Promise<{ approval: typeof approvals.$inferSelect; created: boolean }> {
+    const open = await db
+      .select()
+      .from(approvals)
+      .where(
+        and(
+          eq(approvals.companyId, companyId),
+          eq(approvals.type, "request_board_approval"),
+          inArray(approvals.status, ["pending", "revision_requested"]),
+          sql`${approvals.payload} ->> 'catalogTeamKey' = ${team.key}`,
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
+    if (open) return { approval: open, created: false };
+
+    const [approval] = await db
+      .insert(approvals)
+      .values({
+        companyId,
+        type: "request_board_approval",
+        requestedByAgentId: actor.agentId ?? null,
+        requestedByUserId: actor.actorType === "user" ? actor.actorId : null,
+        payload: {
+          title: `Ask Greatstone to add the ${team.name}`,
+          summary: team.description,
+          recommendedAction: `Approve to ask Greatstone to add the ${team.name} to this company.`,
+          nextActionOnApproval:
+            "Greatstone sets up the team and tells you when it is ready. Nothing is installed until then.",
+          source: "team_catalog",
+          catalogTeamId: team.id,
+          catalogTeamKey: team.key,
+          catalogTeamName: team.name,
+        },
+      })
+      .returning();
+    await logCatalogEvent("company.team_catalog_add_requested", companyId, team, actor, { approvalId: approval.id });
+    return { approval, created: true };
+  }
+
   return {
     listCatalogTeams,
     getCatalogTeamOrThrow,
@@ -1032,5 +1092,6 @@ export function teamsCatalogService(db: Db) {
     previewCatalogTeamImport,
     installCatalogTeam,
     listInstalledCatalogTeams,
+    requestCatalogTeam,
   };
 }

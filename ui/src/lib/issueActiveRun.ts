@@ -1,5 +1,6 @@
 import type { Issue } from "@greatstone/shared";
 import type { ActiveRunForIssue, LiveRunForIssue } from "../api/heartbeats";
+import { isTerminalIssueStatus } from "./liveIssueIds";
 
 export function shouldTrackIssueActiveRun(
   issue: Pick<Issue, "status" | "executionRunId"> | null | undefined,
@@ -19,4 +20,20 @@ export function resolveIssueActiveRun(
   if (!runId) return null;
   return liveRuns?.find((run) => run.id === runId)
     ?? (activeRun?.id === runId ? activeRun : null);
+}
+
+/**
+ * Refetch interval for a task page poller (runs, live runs, active run, email
+ * thread). It polls at `liveMs` only while a run is live on an open task that
+ * is on screen. An idle task falls back to `idleMs` (off by default). A done or
+ * cancelled task, or a hidden tab, never polls: the live-updates socket and the
+ * invalidation after each action keep those pages current.
+ */
+export function taskPollInterval(
+  state: { issueStatus: string | null | undefined; live: boolean; visible: boolean },
+  liveMs: number,
+  idleMs: number | false = false,
+): number | false {
+  if (!state.visible || isTerminalIssueStatus(state.issueStatus)) return false;
+  return state.live ? liveMs : idleMs;
 }

@@ -50,18 +50,28 @@ async function makeTreeWritable(dir: string): Promise<void> {
 }
 
 /**
+ * The provider can still be writing into its home for a moment after the run
+ * ends. A recursive `rm` that meets a folder gaining entries fails with
+ * ENOTEMPTY unless it retries: the likely cause of the live "AI connection
+ * refresh or cleanup failed" warnings (Anthropic runs, where removal is the
+ * only step). Node retries ENOTEMPTY, EBUSY and EPERM with a linear backoff:
+ * 100 ms, then 200 ms, and so on, about 1.5 s in all.
+ */
+const REMOVE_TREE_OPTIONS = { recursive: true, force: true, maxRetries: 5, retryDelay: 100 } as const;
+
+/**
  * Remove a folder tree even when it holds read-only folders. Runtime-context
  * bundles are chmod 0o555 (GRE-217), and `rm --force` cannot unlink entries
  * inside a folder without write access.
  */
 export async function removeTree(dir: string) {
   try {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, REMOVE_TREE_OPTIONS);
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "EACCES" && code !== "EPERM") throw error;
     await makeTreeWritable(dir);
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, REMOVE_TREE_OPTIONS);
   }
 }
 

@@ -338,6 +338,7 @@ describe("PATCH /api/companies/:companyId", () => {
         spentMonthlyCents: 500,
         requireBoardApprovalForNewAgents: true,
         feedbackDataSharingEnabled: true,
+        minimumWageHourlyCents: 1250,
         issuePrefix: "BAD",
       });
 
@@ -352,8 +353,27 @@ describe("PATCH /api/companies/:companyId", () => {
     mockCompanyService.getById.mockResolvedValue(company);
     mockCompanyService.update.mockResolvedValue({
       ...company,
-      status: "paused",
+      requireBoardApprovalForNewAgents: true,
     });
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "local_implicit",
+    });
+
+    const res = await request(app)
+      .patch("/api/companies/company-1")
+      .send({ requireBoardApprovalForNewAgents: true });
+
+    expect(res.status).toBe(200);
+    expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", { requireBoardApprovalForNewAgents: true }, expect.objectContaining({
+      actorType: "user",
+      actorId: "user-1",
+    }));
+  });
+
+  it("sends a settings patch to paused to the pause action instead (GRE-1364)", async () => {
+    mockCompanyService.getById.mockResolvedValue(createCompany());
     const app = await createApp({
       type: "board",
       userId: "user-1",
@@ -364,10 +384,30 @@ describe("PATCH /api/companies/:companyId", () => {
       .patch("/api/companies/company-1")
       .send({ status: "paused" });
 
-    expect(res.status).toBe(200);
-    expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", { status: "paused" }, expect.objectContaining({
-      actorType: "user",
-      actorId: "user-1",
-    }));
+    expect(res.status).toBe(409);
+    expect(res.body.details).toMatchObject({ code: "use_pause_action" });
+    expect(mockCompanyService.update).not.toHaveBeenCalled();
+  });
+
+  it("lets the board set and clear the hourly wage, and rejects a negative one", async () => {
+    const company = createCompany();
+    mockCompanyService.getById.mockResolvedValue(company);
+    mockCompanyService.update.mockResolvedValue({ ...company, minimumWageHourlyCents: 1250 });
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "local_implicit",
+    });
+
+    const set = await request(app).patch("/api/companies/company-1").send({ minimumWageHourlyCents: 1250 });
+    expect(set.status).toBe(200);
+    expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", { minimumWageHourlyCents: 1250 }, expect.anything());
+
+    const cleared = await request(app).patch("/api/companies/company-1").send({ minimumWageHourlyCents: null });
+    expect(cleared.status).toBe(200);
+    expect(mockCompanyService.update).toHaveBeenLastCalledWith("company-1", { minimumWageHourlyCents: null }, expect.anything());
+
+    const negative = await request(app).patch("/api/companies/company-1").send({ minimumWageHourlyCents: -1 });
+    expect(negative.status).toBe(400);
   });
 });

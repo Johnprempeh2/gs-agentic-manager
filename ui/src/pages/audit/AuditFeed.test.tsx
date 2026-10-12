@@ -241,7 +241,7 @@ describe("AuditFeed", () => {
     );
     await render();
 
-    expect(container.textContent).toContain("Paperclip Enterprise view");
+    expect(container.textContent).toContain("Agent audit is an Enterprise view");
     expect(container.textContent).toContain("audit:view_agent_actions");
     // The feed chrome (filters, footer) is not rendered in the denied state.
     expect(container.textContent).not.toContain("Recorded by GS Agentic Manager");
@@ -300,7 +300,7 @@ describe("AuditFeed", () => {
         expect.objectContaining({ actorScope: "all", agentId: undefined }),
       );
       expect(container.textContent).toContain("commented on");
-      expect(container.textContent).not.toContain("Paperclip Enterprise view");
+      expect(container.textContent).not.toContain("Agent audit is an Enterprise view");
       expect(container.textContent).not.toContain("All agents");
       expect(container.textContent).not.toContain("Export CSV");
     });
@@ -527,7 +527,7 @@ describe("AuditFeed", () => {
     await render({ mode: "agents", onModeChange });
 
     expect(onModeChange).toHaveBeenCalledWith("all");
-    expect(container.textContent).not.toContain("Paperclip Enterprise view");
+    expect(container.textContent).not.toContain("Agent audit is an Enterprise view");
     expect(container.textContent).toContain("Refreshing audit access…");
   });
 
@@ -537,7 +537,7 @@ describe("AuditFeed", () => {
     );
     await render({ mode: "agents" });
 
-    expect(container.textContent).toContain("Paperclip Enterprise view");
+    expect(container.textContent).toContain("Agent audit is an Enterprise view");
   });
 
   it("renders a flat activity list with clearly labeled filters", async () => {

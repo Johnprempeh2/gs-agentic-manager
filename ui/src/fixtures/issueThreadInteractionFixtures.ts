@@ -483,6 +483,62 @@ export const genericPendingRequestConfirmationInteraction = createRequestConfirm
   },
 });
 
+/**
+ * Step-by-step help text (GRE-916): long, numbered, with a command to copy.
+ * The card shows a short summary and an "Open step-by-step guide" link.
+ */
+export const stepGuideMarkdown = [
+  "Run the setup script on your computer, then tell me when it is done.",
+  "",
+  "**Step 1 of 3** — Open a terminal in the project folder.",
+  "",
+  "**Step 2 of 3** — Run this command:",
+  "",
+  "```sh",
+  "pnpm gsam setup --company demo",
+  "```",
+  "",
+  "**Step 3 of 3** — Wait for the line `Setup complete`, then answer below.",
+].join("\n");
+
+export const pendingStepGuideAskUserQuestionsInteraction = createAskUserQuestionsInteraction({
+  id: "interaction-questions-step-guide",
+  title: "Run the setup script",
+  summary: null,
+  payload: {
+    version: 1,
+    title: "Run the setup script",
+    submitLabel: "Send answer",
+    questions: [
+      {
+        id: "setup-done",
+        prompt: "Did the setup script finish?",
+        helpText: stepGuideMarkdown,
+        selectionMode: "single",
+        required: true,
+        options: [
+          { id: "done", label: "Yes, it finished" },
+          { id: "failed", label: "No, it failed", description: "Paste the **last line** of the output." },
+        ],
+      },
+    ],
+  },
+});
+
+export const pendingStepGuideRequestConfirmationInteraction = createRequestConfirmationInteraction({
+  id: "interaction-confirmation-step-guide",
+  title: "Run the setup script",
+  summary: null,
+  continuationPolicy: "wake_assignee",
+  payload: {
+    version: 1,
+    prompt: "Did the **setup script** finish?",
+    acceptLabel: "Yes, it finished",
+    rejectLabel: "No",
+    detailsMarkdown: stepGuideMarkdown,
+  },
+});
+
 export const optionalDeclineRequestConfirmationInteraction = createRequestConfirmationInteraction({
   id: "interaction-confirmation-optional-decline",
   continuationPolicy: "none",

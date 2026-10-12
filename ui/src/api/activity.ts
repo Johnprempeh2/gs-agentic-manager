@@ -65,10 +65,12 @@ export interface IssueForRun {
 export const activityApi = {
   list: (
     companyId: string,
-    filters?: { entityType?: string; entityId?: string; agentId?: string; limit?: number },
+    filters?: { entityType?: string; entityId?: string; agentId?: string; action?: string[]; since?: string; limit?: number },
     options?: RequestOptions,
   ) => {
     const params = new URLSearchParams();
+    if (filters?.action?.length) params.set("action", filters.action.join(","));
+    if (filters?.since) params.set("since", filters.since);
     if (filters?.entityType) params.set("entityType", filters.entityType);
     if (filters?.entityId) params.set("entityId", filters.entityId);
     if (filters?.agentId) params.set("agentId", filters.agentId);

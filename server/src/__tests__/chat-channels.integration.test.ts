@@ -16118,6 +16118,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       publicBaseUrl: "https://paperclip.example",
       runtime: new FakeChatSdkRuntime() as unknown as ChatSdkRuntime,
     });
+    // A failed assertion below skips the shutdowns at the end; let afterEach
+    // stop both services so their drains cannot run into later cases (GRE-280).
+    fixtureServices.add(service);
+    fixtureServices.add(competingService);
     deferred.shift()?.();
     // Simulate another server process reconciling the same durable rows at
     // the same time as the webhook process's deferred drain.
@@ -16160,6 +16164,8 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     // Comment admission commits before the durable wake. Wait for this
     // company's last wake too, not merely its already-visible last comment.
     // The competing sweep may legitimately reconcile another fixture company.
+    // The last wake can land over 1s after the last comment on a busy machine
+    // (GRE-280), so this wait gets the same headroom as the one above.
     await vi.waitFor(() => {
       const calls = wakeup.mock.calls.filter(
         (call) => call[0] === fixture.assignedAgentId,
@@ -16168,7 +16174,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(calls.map((call) => call[1]?.payload?.wakeCommentId)).toEqual(
         comments.map((comment) => comment.id),
       );
-    });
+    }, { timeout: 10_000 });
     // The last comment and wakeup commit inside the lease. Under full-suite
     // load the assertions above can observe those effects one microtask before
     // the deferred owner's `finally` deletes its lease. Require prompt eventual
@@ -16180,7 +16186,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           .from(chatEndpointLeases)
           .where(eq(chatEndpointLeases.endpointId, endpoint.id)),
       ).toHaveLength(0);
-    });
+    }, { timeout: 10_000 });
     await competingService.shutdown();
     await service.shutdown();
   });
@@ -27009,7 +27015,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(statusPublication).toMatchObject({
       conversationId: conversation.id,
       state: "pending",
-      payload: { text: expect.stringMatching(/— in_progress$/) },
+      payload: { text: expect.stringMatching(/\(in_progress\)$/) },
     });
 
     // Sample again at send time so a status waiting behind an older provider
@@ -27026,7 +27032,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: thread.thread.id,
         messageId: "outbound-1",
-        text: expect.stringMatching(/— done$/),
+        text: expect.stringMatching(/\(done\)$/),
       },
     ]);
 
@@ -27048,7 +27054,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: thread.thread.id,
         messageId: "outbound-1",
-        text: expect.stringMatching(/— done$/),
+        text: expect.stringMatching(/\(done\)$/),
       },
       {
         threadId: thread.thread.id,
@@ -27074,7 +27080,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .then((rows) => rows[0]);
     expect(publishedStatus).toMatchObject({
       state: "published",
-      payload: { text: expect.stringMatching(/— done$/) },
+      payload: { text: expect.stringMatching(/\(done\)$/) },
       providerMessageId: "outbound-1",
     });
     await service.shutdown();
@@ -29163,7 +29169,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: thread.thread.id,
         messageId: "outbound-1",
-        text: expect.stringMatching(/ — /),
+        text: expect.stringMatching(/ \(\w+\)$/),
       },
       {
         threadId: thread.thread.id,
@@ -29219,7 +29225,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await service.processPendingPublications();
     expect(providerRuntime?.posts).toEqual([
       { threadId: thread.thread.id, text: "Maya is queued." },
-      { threadId: thread.thread.id, text: expect.stringMatching(/ — /) },
+      { threadId: thread.thread.id, text: expect.stringMatching(/ \(\w+\)$/) },
     ]);
   });
 
@@ -29740,7 +29746,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toMatchObject({
       progressState: "failed",
       text: expect.stringContaining(
-        "Ask a GS Agentic Manager admin to create a private identity link for this account or enable isolated guest execution, then start a new task.",
+        "To fix it, link your account in GS Agentic Manager: Apps → Slack → Access → Identity links (an admin can create the link). Then start a new task.",
       ),
     });
   });
@@ -34683,7 +34689,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       filename: string;
       mimeType: string;
     };
-    expect(uploaded.filename).toBe("paperclip-response.md");
+    expect(uploaded.filename).toBe("gsam-response.md");
     expect(uploaded.mimeType).toBe("text/markdown; charset=utf-8");
     expect(Buffer.isBuffer(uploaded.data)).toBe(true);
     // The attachment is lossless after GS Agentic Manager's mandatory provider-safety
@@ -35427,7 +35433,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     };
     expect(attachment).toMatchObject({
       mimeType: "text/markdown; charset=utf-8",
-      name: "paperclip-response.md",
+      name: "gsam-response.md",
       size: Buffer.byteLength(providerSafeSource),
       type: "file",
     });
@@ -44733,7 +44739,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
                   { status: 400 },
                 );
               }
-            } else expect(method).toBe("sendRichMessage");
+            } else expect(method).toBe("sendMessage");
             return Response.json({
               ok: true,
               result: {
@@ -44792,7 +44798,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           "owner-user",
           [attachment.id],
         );
-        expect(methods).toEqual(["sendRichMessage", expectedMethod]);
+        expect(methods).toEqual(["sendMessage", expectedMethod]);
         expect(uploadedBytes).toHaveLength(1);
         // Buffer.equals still compares every byte, without Vitest expanding
         // a ten-megabyte boundary fixture into a recursive object comparison.
@@ -44823,7 +44829,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           },
         ]);
         await service.processPendingPublications();
-        expect(methods).toEqual(["sendRichMessage", expectedMethod]);
+        expect(methods).toEqual(["sendMessage", expectedMethod]);
       } finally {
         threadSpy?.mockRestore();
         await pinned?.shutdown();
@@ -50193,7 +50199,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await service.processPendingPublications();
     expect(runtime.endpoints.get(endpoint.id)?.posts.at(-1)).toMatchObject({
       threadId: starterThreadId,
-      text: expect.stringMatching(/— todo$/),
+      text: expect.stringMatching(/\(todo\)$/),
     });
     await invoke("close");
     await expect(service.listConversations(endpoint.id)).resolves.toEqual([
@@ -50546,7 +50552,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toHaveLength(issuesBeforeStatus.length);
     await service.processPendingPublications();
     expect(runtime.endpoints.get(endpoint.id)?.posts.at(-1)?.text).toMatch(
-      /— todo$/,
+      /\(todo\)$/,
     );
 
     await invokeControl("new");
@@ -50643,7 +50649,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toEqual([
       {
         threadId: dm.thread.id,
-        text: `${firstIssue.identifier}: Start the first DM task — todo`,
+        text: `${firstIssue.identifier}: Start the first DM task (todo)`,
       },
       {
         threadId: dm.thread.id,
@@ -52054,7 +52060,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(
       runtime.endpoints.get(endpoint.id)?.posts.map((post) => post.text),
     ).toEqual([
-      expect.stringMatching(/— todo$/),
+      expect.stringMatching(/\(todo\)$/),
       expect.stringContaining(
         "Open a new Telegram forum topic to start a new GS Agentic Manager task.",
       ),
@@ -61860,6 +61866,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     // request is queued. The duplicate delivery callback becomes a no-op.
     expect(deferred).toHaveLength(4);
     await drainDeferred();
+    // The default 1s wait is too tight on a busy machine (GRE-280).
     await vi.waitFor(async () => {
       const deliveries = await db
         .select({
@@ -61872,7 +61879,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       expect(
         deliveries.every((delivery) => delivery.state === "processed"),
       ).toBe(true);
-    });
+    }, { timeout: 10_000 });
 
     const [conversation] = await db
       .select()
@@ -61900,7 +61907,9 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).resolves.toMatchObject({ ok: true });
     expect(deferred).toHaveLength(1);
     await drainDeferred();
-    await vi.waitFor(() => expect(deferred).toHaveLength(1));
+    await vi.waitFor(() => expect(deferred).toHaveLength(1), {
+      timeout: 10_000,
+    });
     await drainDeferred();
     await vi.waitFor(async () => {
       await expect(
@@ -61926,7 +61935,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           state: "filtered",
         },
       ]);
-    });
+    }, { timeout: 10_000 });
     await expect(
       db
         .select({ body: issueComments.body })
@@ -68272,7 +68281,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         await hook?.(method, body);
         if (method.endsWith("Draft"))
           return Response.json({ ok: true, result: true });
-        if (!["sendMessage", "sendRichMessage"].includes(method))
+        if (method !== "sendMessage")
           throw new Error("Unexpected draft fixture provider I/O");
         return Response.json({
           ok: true,
@@ -68503,7 +68512,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             "Telegram draft presentation was stopped. The saved answer and task are unchanged.",
         });
         expect(lane.requests.map((request) => request.method)).toEqual([
-          "sendRichMessageDraft",
+          "sendMessageDraft",
         ]);
         expect((await lane.actions())[0]).toMatchObject({
           status: "cancelled",
@@ -68650,7 +68659,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           expect(publication?.state).toBe("published");
           expect(lane.requests).toHaveLength(1);
           expect(lane.requests[0]!.method.endsWith("Draft")).toBe(false);
-          expect(JSON.stringify(lane.requests[0]!.body)).toContain(
+          expect(String(lane.requests[0]!.body.text).replaceAll("\\", "")).toContain(
             `END-subscription-${changed}`,
           );
           expect(lane.requests[0]!.body.can_stop).toBeUndefined();
@@ -68682,7 +68691,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
           expect(publication?.state).toBe("published");
           expect(lane.requests).toHaveLength(1);
           expect(lane.requests[0]!.method.endsWith("Draft")).toBe(false);
-          expect(JSON.stringify(lane.requests[0]!.body)).toContain(
+          expect(String(lane.requests[0]!.body.text).replaceAll("\\", "")).toContain(
             "END-malformed-subscription",
           );
           expect(lane.requests[0]!.body.can_stop).toBeUndefined();
@@ -68910,7 +68919,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             "cancelled",
           );
           expect(lane.requests.map(({ method }) => method)).toEqual([
-            "sendRichMessageDraft",
+            "sendMessageDraft",
           ]);
           await lane.context.service.processPendingDeliveries();
           expect(
@@ -69052,7 +69061,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
             );
             expect(lane.requests).toHaveLength(1);
             expect(lane.requests[0]!.method.endsWith("Draft")).toBe(false);
-            expect(JSON.stringify(lane.requests[0]!.body)).toContain(
+            expect(String(lane.requests[0]!.body.text).replaceAll("\\", "")).toContain(
               `END-unconfirmed-${mode}`,
             );
           }
@@ -69205,7 +69214,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
         expect((await lane.send("commit-retry"))?.state).toBe("cancelled");
         expect(checked).toBe(true);
         expect(lane.requests.map((request) => request.method)).toEqual([
-          "sendRichMessageDraft",
+          "sendMessageDraft",
         ]);
         expect((await lane.actions())[0]).toMatchObject({
           result: { phase: "stopped", updateId: 1777 },

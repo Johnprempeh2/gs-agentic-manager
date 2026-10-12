@@ -121,7 +121,7 @@ if docker run --rm \
   echo "Expected piped install without Node.js to fail before privileged bootstrap" >&2
   exit 1
 fi
-assert_line "$RESULTS_DIR/piped-no-node.out" "[paperclip] error: Node.js bootstrap is disabled for piped installs; download install.sh, review it, and run 'bash install.sh --no-prompt'"
+assert_line "$RESULTS_DIR/piped-no-node.out" "[gsam] error: Node.js bootstrap is disabled for piped installs; download install.sh, review it, and run 'bash install.sh --no-prompt'"
 
 echo "==> dry run"
 run_with_node dry-run bash /paperclip-scripts/install.sh --no-prompt --dry-run --no-onboard

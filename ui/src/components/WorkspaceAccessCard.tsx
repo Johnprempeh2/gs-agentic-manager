@@ -121,7 +121,7 @@ export function WorkspaceAccessCard({
           ) : null}
           {access.state === "ready" && access.handoffAvailable ? (
             <span className="text-xs text-muted-foreground">
-              Uses a single-use login handoff — no password needed.
+              Uses a single-use login handoff: no password needed.
             </span>
           ) : null}
         </div>

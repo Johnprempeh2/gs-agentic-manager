@@ -14,6 +14,7 @@ const mockIssueService = vi.hoisted(() => ({
   getCurrentScheduledRetry: vi.fn(),
   findMentionedAgents: vi.fn(),
   listWakeableBlockedDependents: vi.fn(),
+  listOpenBlockedDependents: vi.fn(async () => []),
   getWakeableParentAfterChildCompletion: vi.fn(),
   getRelationSummaries: vi.fn(),
 }));
@@ -170,6 +171,9 @@ vi.mock("../services/index.js", () => ({
   }),
   accessService: () => mockAccessService,
   agentService: () => mockAgentService,
+  agentTeamService: () => ({
+    applyTeamAssignment: vi.fn(async () => undefined),
+  }),
   companySkillService: () => ({
     completeTestRunForIssue: vi.fn(async () => null),
   }),

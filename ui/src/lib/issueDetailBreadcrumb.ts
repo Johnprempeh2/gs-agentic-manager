@@ -2,7 +2,7 @@ import type { Issue } from "@greatstone/shared";
 
 type IssueDetailSource = "issues" | "inbox";
 
-type IssueDetailBreadcrumb = {
+export type IssueDetailBreadcrumb = {
   label: string;
   href: string;
 };
@@ -31,7 +31,7 @@ type IssueDetailHeaderSeedSource = Pick<Issue, "id" | "title"> & {
   originId?: string | null;
 };
 
-type IssueDetailLocationState = {
+export type IssueDetailLocationState = {
   issueDetailBreadcrumb?: IssueDetailBreadcrumb;
   issueDetailSource?: IssueDetailSource;
   issueDetailInboxQuickArchiveArmed?: boolean;

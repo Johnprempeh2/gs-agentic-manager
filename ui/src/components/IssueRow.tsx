@@ -1,8 +1,8 @@
-import { requiresExecutionReconciliation } from "@greatstone/shared";
+import { isStrategicWorkGoalKind, requiresExecutionReconciliation } from "@greatstone/shared";
 import type { ReactNode } from "react";
 import type { ExternalObjectSummary, Issue, IssueRecoveryAction } from "@greatstone/shared";
 import { Link } from "@/lib/router";
-import { Archive, Flag } from "lucide-react";
+import { Archive, Flag, Target } from "lucide-react";
 import {
   createIssueDetailPath,
   rememberIssueDetailLocationState,
@@ -19,10 +19,18 @@ import {
   readRecoveryRetryLineage,
   type RecoveryLivenessContext,
 } from "../lib/recovery-lineage";
-import { StatusIcon } from "./StatusIcon";
+import { StatusIcon, blockedAttentionLabel } from "./StatusIcon";
+import { isWaitingOnMonitor } from "./IssueMonitorBanner";
 import { hasAssignedBacklogBlocker } from "../lib/issue-blockers";
 import { ExternalObjectStatusSummary } from "./ExternalObjectStatusSummary";
+import { externalObjectToneSeverity } from "../lib/external-objects";
 import { Badge } from "@/components/ui/badge";
+import {
+  describeIssueRowStopReason,
+  formatTaskStopReason,
+  taskStopReasonWhoLabel,
+  type TaskStopReasonRowContext,
+} from "../lib/task-stop-reason";
 
 export type IssueRowUnreadState = "hidden" | "visible" | "fading";
 export type IssueRowPresentation = "legacy" | "task";
@@ -39,7 +47,10 @@ export interface IssueRowProps {
   statusSlot?: ReactNode;
   /** Stable metadata slot before the task's optional collection columns. */
   metadata?: ReactNode;
-  /** Stable interactive action slot before the identifier and timestamp columns. */
+  /**
+   * Stable interactive action slot before the identifier and timestamp
+   * columns. On a phone the actions sit on their own line under the title.
+   */
   actions?: ReactNode;
   /** Controls the canonical trailing identifier without affecting legacy layouts. */
   showIdentifier?: boolean;
@@ -57,6 +68,13 @@ export interface IssueRowProps {
   externalObjectSummary?: ExternalObjectSummary | null;
   trailingMeta?: ReactNode;
   titleSuffix?: ReactNode;
+  /** Who the task is for (see TaskOwnerLabel); sits right after the title. */
+  ownerLabel?: ReactNode;
+  /**
+   * Names for the plain stop reason ("Claude is signed out · You to act") on
+   * failed or blocked rows. Without it the row keeps the short blocked note.
+   */
+  stopReasonContext?: TaskStopReasonRowContext;
   titleClassName?: string;
   checklistStepNumber?: number | string | null;
   checklistCurrentStep?: boolean;
@@ -133,9 +151,11 @@ export function IssueRow({
   mobileMeta,
   mobileTitleMeta,
   desktopTrailing,
-  externalObjectSummary,
+  externalObjectSummary: allExternalObjects,
   trailingMeta,
   titleSuffix,
+  ownerLabel,
+  stopReasonContext,
   titleClassName,
   checklistStepNumber = null,
   checklistCurrentStep = false,
@@ -151,6 +171,32 @@ export function IssueRow({
   chevronInGuide = false,
   showDivider = false,
 }: IssueRowProps) {
+  // Rows flag linked work only when it needs a look (a failed deploy, a
+  // stale check). A healthy count read like a comment count; the task's
+  // properties still list everything.
+  const externalObjectSummary =
+    externalObjectToneSeverity(allExternalObjects?.highestSeverity) >= externalObjectToneSeverity("warning")
+      ? allExternalObjects
+      : null;
+  // Why a blocked task is stuck, in words: the icon's label was screen-reader only.
+  const blockedLabel = issue.status === "blocked" ? blockedAttentionLabel(issue.blockerAttention) : null;
+  const blockedReason = blockedLabel?.startsWith("Blocked · ") ? blockedLabel.slice("Blocked · ".length) : null;
+  const stopReason = stopReasonContext ? describeIssueRowStopReason(issue, stopReasonContext) : null;
+  const blockedNote = stopReason ? (
+    <span
+      data-slot="task-row-stop-reason"
+      className="min-w-0 shrink truncate text-xs text-muted-foreground max-sm:basis-full sm:max-w-80"
+      title={formatTaskStopReason(stopReason)}
+    >
+      <span className="font-medium text-foreground">{stopReason.stopped}</span>
+      {" · "}
+      {taskStopReasonWhoLabel(stopReason)}
+    </span>
+  ) : blockedReason ? (
+    <span data-slot="task-row-blocked" className="min-w-0 max-w-64 shrink truncate text-xs text-destructive max-sm:basis-full" title={blockedLabel ?? undefined}>
+      {blockedReason}
+    </span>
+  ) : null;
   const issuePathId = issue.identifier ?? issue.id;
   const identifier = issue.identifier ?? issue.id.slice(0, 8);
   // A row participates in the unread system whenever `unreadState` is supplied.
@@ -207,10 +253,24 @@ export function IssueRow({
     <Badge variant="outline"
       data-testid="issue-row-parked-blocker"
       className="[&>svg]:size-2.5 ml-1.5 gap-0.5 border-amber-500/60 bg-amber-500/15 text-(length:--text-nano) text-amber-700 dark:text-amber-300"
-      title="Blocked by parked work — at least one assigned blocker is in backlog and will not wake its assignee."
+      title="Blocked by parked work: at least one assigned blocker is in backlog and will not wake its assignee."
     >
       <Flag className="h-2.5 w-2.5" aria-hidden />
       Blocked by parked work
+    </Badge>
+  ) : null;
+
+  const strategicBadge = isStrategicWorkGoalKind(issue.goalKind) ? (
+    <Badge variant="outline"
+      data-testid="issue-row-strategic"
+      className={cn(
+        "shrink-0 gap-0.5 border-primary/40 bg-primary/10 text-(length:--text-nano) text-primary",
+        selected ? "!border-muted-foreground !text-muted-foreground" : null,
+      )}
+      title="Strategic work: linked to an objective or initiative"
+    >
+      <Target className="h-2.5 w-2.5" aria-hidden />
+      Strategic
     </Badge>
   ) : null;
 
@@ -225,7 +285,7 @@ export function IssueRow({
         className={cn(
           "gs-row group relative flex min-w-0 items-start gap-2 rounded-lg py-2.5 pr-2 text-sm no-underline text-inherit sm:items-center sm:py-2",
           showUnreadSlot ? "pl-4" : "pl-2 sm:pl-4",
-          "[&_button]:relative [&_button]:z-10",
+          "[&_button]:relative [&_button]:z-raised",
           selected ? "bg-accent/50 hover:bg-accent/50" : "hover:bg-accent/50",
           checklistCurrentStep && "bg-primary/5",
           className,
@@ -240,7 +300,7 @@ export function IssueRow({
           id={checklistRowId}
           aria-current={checklistCurrentStep ? "step" : undefined}
           onClickCapture={() => rememberIssueDetailLocationState(issuePathId, detailState)}
-          className="absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-10 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+          className="absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-raised focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
         >
           <span className="sr-only">Open {identifier}: {issue.title}</span>
         </Link>
@@ -288,6 +348,7 @@ export function IssueRow({
             <StatusIcon
               status={issue.status} externalConversationState={issue.externalConversationState}
               blockerAttention={issue.blockerAttention}
+              waiting={isWaitingOnMonitor(issue)}
               size="md"
               className={selectedStatusClass}
             />
@@ -296,17 +357,23 @@ export function IssueRow({
         </span>
 
         <span className="flex min-w-0 flex-1 flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-          <span data-slot="task-row-title-cluster" className="flex min-w-0 flex-1 items-baseline gap-1.5 sm:items-center">
+          {/* Phone: the title takes the whole first line (up to two lines) and
+              the owner label and time wrap onto the line under it, instead of
+              squeezing the title to a few words. */}
+          <span data-slot="task-row-title-cluster" className="flex min-w-0 flex-1 items-baseline gap-1.5 max-sm:flex-wrap max-sm:gap-y-1 sm:items-center">
             <span
               data-slot="task-row-title"
               className={cn(
-                "min-w-0 line-clamp-2 text-sm sm:truncate sm:line-clamp-none",
+                "min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:truncate sm:line-clamp-none",
                 isUnread && "font-semibold",
                 titleClassName,
               )}
             >
               {issue.title}{titleSuffix}
             </span>
+            {ownerLabel}
+            {strategicBadge}
+            {blockedNote}
             {recoveryIndicator}
             {mobileTitleMeta ? (
               <span className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground sm:hidden">
@@ -319,6 +386,9 @@ export function IssueRow({
           ) : null}
           {mobileMeta ? (
             <span className="text-xs text-muted-foreground sm:hidden">{mobileMeta}</span>
+          ) : null}
+          {actions ? (
+            <span data-slot="task-row-actions-phone" className="flex flex-wrap items-center gap-1 sm:hidden">{actions}</span>
           ) : null}
         </span>
 
@@ -358,7 +428,7 @@ export function IssueRow({
         // when scrubbing the mouse fast across the list.
         "gs-row group relative flex items-start gap-2 rounded-lg py-2.5 pr-3 text-sm no-underline text-inherit sm:items-center sm:py-2 sm:pl-1",
         showUnreadSlot ? "pl-4" : "pl-2",
-        "[&_button]:relative [&_button]:z-10",
+        "[&_button]:relative [&_button]:z-raised",
         // Divider + hover/selected/checklist wash live on the ROOT row band so
         // the tint paints BEHIND the content and `last:border-b-0` matches the
         // real last row. Keeping these on the overlay Link (PR #10526) made the
@@ -381,29 +451,35 @@ export function IssueRow({
         className={cn(
           // Overlay Link keeps ONLY positioning + focus ring so header controls
           // stay clickable above it; visual washes belong on the root above.
-          "absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-10 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
+          "absolute inset-0 rounded-lg no-underline text-inherit focus-visible:z-raised focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",
         )}
       >
         <span className="sr-only">Open {identifier}: {issue.title}</span>
       </Link>
       <span className="flex shrink-0 items-center gap-1 pt-px sm:hidden">
-        {mobileLeading ?? <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} size="md" className={selectedStatusClass} />}
+        {mobileLeading ?? <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} size="md" className={selectedStatusClass} />}
         {parkedBlockerIndicator}
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-        <span data-slot="task-row-title-cluster" className="flex min-w-0 items-start gap-1.5 sm:order-2 sm:flex-1 sm:items-center">
+        <span data-slot="task-row-title-cluster" className="flex min-w-0 items-start gap-1.5 max-sm:flex-wrap max-sm:gap-y-1 sm:order-2 sm:flex-1 sm:items-center">
           <span
             data-slot="task-row-title"
-            className={cn("min-w-0 line-clamp-2 text-sm sm:truncate sm:line-clamp-none", titleClassName)}
+            className={cn("min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:truncate sm:line-clamp-none", titleClassName)}
           >
             {issue.title}{titleSuffix}
           </span>
+          {ownerLabel}
+          {strategicBadge}
+          {blockedNote}
           {recoveryIndicator}
         </span>
         {checklistDependencyChips ? (
           <span className="flex flex-wrap gap-1 sm:order-3 sm:ml-(--sz-calc-13)">
             {checklistDependencyChips}
           </span>
+        ) : null}
+        {actions ? (
+          <span data-slot="task-row-actions-phone" className="flex flex-wrap items-center gap-1 sm:hidden">{actions}</span>
         ) : null}
         <span className="flex items-center gap-2 self-stretch sm:order-1 sm:shrink-0">
           {showUnreadSlot ? (
@@ -460,7 +536,7 @@ export function IssueRow({
           {desktopMetaLeading ?? (
             <>
               <span className="hidden shrink-0 items-center gap-1 sm:inline-flex">
-                <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} size="md" className={selectedStatusClass} />
+                <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={issue.blockerAttention} waiting={isWaitingOnMonitor(issue)} size="md" className={selectedStatusClass} />
               </span>
               {checklistStep}
               <span className="shrink-0 font-mono text-xs text-muted-foreground">
@@ -479,8 +555,9 @@ export function IssueRow({
           ) : null}
         </span>
       </span>
-      {(onArchive || desktopTrailing || trailingMeta || externalObjectSummary) ? (
+      {(onArchive || desktopTrailing || trailingMeta || externalObjectSummary || actions) ? (
         <span className="ml-auto hidden shrink-0 items-center gap-2 sm:order-3 sm:flex sm:gap-3">
+          {actions ? <span data-slot="task-row-actions" className="flex shrink-0 items-center gap-1">{actions}</span> : null}
           {onArchive ? (
             <InboxArchiveButton onArchive={onArchive} disabled={archiveDisabled} />
           ) : null}
@@ -524,15 +601,15 @@ function renderRecoveryChip(
       data-recovery-kind={action.kind}
       data-recovery-lane={lineage?.lane}
       role="status"
-      aria-label={detail ? `${label} — ${detail}` : label}
+      aria-label={detail ? `${label}: ${detail}` : label}
       className={cn(
         "shrink-0 gap-0.5 text-(length:--text-nano)",
         tone.className,
         selected ? "!border-muted-foreground !text-muted-foreground" : null,
       )}
       title={detail
-        ? `${label} — ${detail}. Open the source task to act.`
-        : `${label} — open the source task to act.`}
+        ? `${label}: ${detail}. Open the source task to act.`
+        : `${label}. Open the source task to act.`}
     >
       <Icon className="h-2.5 w-2.5" aria-hidden />
       {label}

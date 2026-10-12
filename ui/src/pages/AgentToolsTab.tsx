@@ -263,7 +263,7 @@ function InstalledAppsSection({
                         </Link>
                       )}
                     >
-                      Permitted but not installed — tools will not appear in runs.
+                      Permitted but not installed. Tools will not appear in runs.
                     </InlineBanner>
                   ) : null}
                 </div>
@@ -569,7 +569,7 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
             This is exactly the tool set GS Agentic Manager will accept for{" "}
             <span className="font-medium">{agent.name}</span>. Profile and policy edits are
             reflected within ~5 seconds. The agent's prompt can narrow this list but{" "}
-            <span className="font-medium">cannot expand it</span> — everything else is blocked by
+            <span className="font-medium">cannot expand it</span>. Everything else is blocked by
             default.
           </>
         }
@@ -649,7 +649,7 @@ export function AgentToolsTab({ agent, companyId }: { agent: AgentDetailRecord; 
                         <RiskBadge risk={tool.riskLevel} />
                       </td>
                       <td className="px-3 py-2 text-xs text-muted-foreground">
-                        {connectionNameById.get(tool.connectionId) ?? "—"}
+                        {connectionNameById.get(tool.connectionId) ?? "Unknown"}
                       </td>
                     </tr>
                   ))}

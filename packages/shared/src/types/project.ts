@@ -63,6 +63,37 @@ export interface ProjectCodebase {
   origin: ProjectCodebaseOrigin;
 }
 
+/** What a project workspace checkout is on right now, for the Live preview card. */
+export interface ProjectWorkspaceCheckoutHead {
+  workspaceId: string;
+  /** Null when the workspace has no local path or managed checkout yet. */
+  branch: string | null;
+  /** Short commit hash. */
+  commit: string | null;
+  commitSubject: string | null;
+  committedAt: string | null;
+}
+
+export type ProjectWorkspacePreviewUpdateStatus = "updating" | "updated" | "up_to_date" | "skipped" | "failed";
+export type ProjectWorkspacePreviewUpdateTrigger = "manual" | "auto";
+
+/** Live preview "Update now" and auto-update state, kept in project workspace metadata. */
+export interface ProjectWorkspacePreviewUpdateState {
+  /** Pull new commits on the default branch and restart the preview by itself. Default on. */
+  autoUpdate: boolean;
+  /** Result of the last update attempt; null when none has run. */
+  status: ProjectWorkspacePreviewUpdateStatus | null;
+  trigger: ProjectWorkspacePreviewUpdateTrigger | null;
+  /** Why an update was skipped or failed, in words a person can act on. */
+  message: string | null;
+  /** Short commit the checkout moved to on the last successful update. */
+  commit: string | null;
+  /** When the last successful update finished. */
+  updatedAt: string | null;
+  /** When an update was last tried or checked. */
+  checkedAt: string | null;
+}
+
 export interface ProjectManagedByPlugin {
   id: string;
   pluginId: string;

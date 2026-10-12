@@ -514,9 +514,9 @@ describe("RunnerInspector", () => {
     );
     await flush();
 
-    expect(container.textContent).toContain("frames 1–2 · 0 PRP events");
-    expect(container.textContent).toContain("frames 3–4 · 1 PRP event");
-    expect(container.textContent).not.toContain("frames 1–4");
+    expect(container.textContent).toContain("frames 1 to 2 · 0 PRP events");
+    expect(container.textContent).toContain("frames 3 to 4 · 1 PRP event");
+    expect(container.textContent).not.toContain("frames 1 to 4");
   });
 
   it("correlates a Codex web search through every stage to canonical PRP and presentation", async () => {

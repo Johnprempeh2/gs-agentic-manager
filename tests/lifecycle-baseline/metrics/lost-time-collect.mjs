@@ -16,6 +16,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { DEFAULT_SILENCE_MINUTES, computeLostTime } from "./lost-time.mjs";
+import { defaultDatabaseUrl } from "./default-database-url.mjs";
 
 const root = resolve(import.meta.dirname, "../../..");
 const argv = process.argv.slice(2);
@@ -23,7 +24,7 @@ const flag = (name, fallback = null) => {
   const index = argv.indexOf(`--${name}`);
   return index >= 0 ? argv[index + 1] : fallback;
 };
-const databaseUrl = flag("database-url", process.env.GSAM_METRICS_DATABASE_URL ?? "postgres://paperclip:paperclip@127.0.0.1:54329/paperclip");
+const databaseUrl = flag("database-url", process.env.GSAM_METRICS_DATABASE_URL ?? defaultDatabaseUrl());
 const companyId = flag("company");
 const windowDays = Number(flag("window-days", "7"));
 const now = new Date(flag("now", new Date().toISOString()));

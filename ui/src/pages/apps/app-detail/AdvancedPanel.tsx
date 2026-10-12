@@ -19,8 +19,7 @@ import { Input } from "@/components/ui/input";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useToast } from "@/context/ToastContext";
 import { redactUrlSecrets } from "@/lib/redact-url-secrets";
-import { navigateTopLevel } from "@/lib/browserNavigation";
-import { prepareOAuthNavigation, savePendingCloudHandoff } from "@/lib/oauthHandoff";
+import { startOAuthReconnect } from "../connection-health";
 import { cn } from "@/lib/utils";
 import { Link } from "@/lib/router";
 import type { AppDetailSectionProps } from "./types";
@@ -164,24 +163,7 @@ export function ReconnectCard({
     // Reconnect is not a new identity choice. Personal-only connections must
     // put the replacement token back on the signed-in user's existing grant;
     // shared and legacy fallback connections keep using the organization slot.
-    mutationFn: () => connection.credentialPolicy === "per_user"
-      ? toolsApi.startOAuth(connection.id, { asCurrentUser: true })
-      : toolsApi.startOAuth(connection.id),
-    onSuccess: async (start) => {
-      try {
-        const target = await prepareOAuthNavigation(start);
-        if (target.kind === "reauthentication" && start.handoff) {
-          savePendingCloudHandoff(start.handoff.session);
-        }
-        navigateTopLevel(target.url);
-      } catch (error) {
-        pushToast({
-          title: "Couldn’t start sign-in",
-          body: error instanceof Error ? error.message : "Please try again.",
-          tone: "error",
-        });
-      }
-    },
+    mutationFn: () => startOAuthReconnect(connection),
     onError: (error) =>
       pushToast({
         title: "Couldn’t start sign-in",

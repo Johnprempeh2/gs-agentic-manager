@@ -201,7 +201,7 @@ async function buildInstructionsPrefix(
     const reason = err instanceof Error ? err.message : String(err);
     await onLog(
       "stderr",
-      `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+      `[gsam] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
     );
     return {
       prefix: "",

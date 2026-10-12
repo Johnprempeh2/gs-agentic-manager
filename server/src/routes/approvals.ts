@@ -22,6 +22,12 @@ import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo, 
 import { redactEventPayload } from "../redaction.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { issueService } from "../services/issues.js";
+import {
+  PERMISSION_GRANT_APPROVAL_TYPE,
+  permissionGrantRequestService,
+} from "../services/permission-grant-requests.js";
+import { authorizationDeniedDetails } from "../services/authorization.js";
+import { forbidden, unprocessable } from "../errors.js";
 import { REVIEW_PATH_RECOVERY_INSTRUCTION } from "../services/recovery/review-path-recovery.js";
 
 function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
@@ -52,6 +58,7 @@ export function approvalRoutes(
   });
   const issueApprovalsSvc = issueApprovalService(db);
   const issuesSvc = issueService(db);
+  const permissionGrants = permissionGrantRequestService(db);
   const secretsSvc = secretService(db);
   const strictSecretsMode = process.env.GSAM_SECRETS_STRICT_MODE === "true";
 
@@ -150,6 +157,18 @@ export function approvalRoutes(
         });
       }
     }
+  }
+
+  // A Grant writes an agent grant, so it needs the same right as the board
+  // agent-permission route (GRE-601).
+  async function assertCanDecidePermissionGrant(req: Request, approval: { type: string; companyId: string }) {
+    if (approval.type !== PERMISSION_GRANT_APPROVAL_TYPE) return;
+    const decision = await access.decide({
+      actor: req.actor,
+      action: "agents:create",
+      resource: { type: "company", companyId: approval.companyId },
+    });
+    if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
   }
 
   async function requireApprovalAccess(req: Request, id: string) {
@@ -286,10 +305,12 @@ export function approvalRoutes(
   router.post("/approvals/:id/approve", validate(resolveApprovalSchema), async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
-    if (!(await requireApprovalAccess(req, id))) {
+    const existing = await requireApprovalAccess(req, id);
+    if (!existing) {
       res.status(404).json({ error: "Approval not found" });
       return;
     }
+    await assertCanDecidePermissionGrant(req, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.approve(id, decidedByUserId, req.body.decisionNote);
 
@@ -402,10 +423,12 @@ export function approvalRoutes(
   router.post("/approvals/:id/reject", validate(resolveApprovalSchema), async (req, res) => {
     assertBoard(req);
     const id = req.params.id as string;
-    if (!(await requireApprovalAccess(req, id))) {
+    const existing = await requireApprovalAccess(req, id);
+    if (!existing) {
       res.status(404).json({ error: "Approval not found" });
       return;
     }
+    await assertCanDecidePermissionGrant(req, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.reject(id, decidedByUserId, req.body.decisionNote);
 
@@ -421,6 +444,9 @@ export function approvalRoutes(
         entityId: approval.id,
         details: { type: approval.type },
       });
+      if (approval.type === PERMISSION_GRANT_APPROVAL_TYPE) {
+        await permissionGrants.commentOnDenial(approval, decidedByUserId, req.body.decisionNote);
+      }
       await queueAdditionalApprovalReviewPathWakes({
         approvalId: approval.id,
         approvalStatus: approval.status,
@@ -440,9 +466,13 @@ export function approvalRoutes(
     async (req, res) => {
       assertBoard(req);
       const id = req.params.id as string;
-      if (!(await requireApprovalAccess(req, id))) {
+      const existing = await requireApprovalAccess(req, id);
+      if (!existing) {
         res.status(404).json({ error: "Approval not found" });
         return;
+      }
+      if (existing.type === PERMISSION_GRANT_APPROVAL_TYPE) {
+        throw unprocessable("A permission request can only be granted or denied");
       }
       const decidedByUserId = req.actor.userId ?? "board";
       const approval = await svc.requestRevision(id, decidedByUserId, req.body.decisionNote);

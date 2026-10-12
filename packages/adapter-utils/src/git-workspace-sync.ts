@@ -82,7 +82,7 @@ export const GIT_SYNC_COMMIT_IDENTITY_ARGS = [
   "-c",
   "user.name=GS Agentic Manager",
   "-c",
-  "user.email=noreply@paperclip.ing",
+  "user.email=noreply@greatstone.co.uk",
 ] as const;
 
 function shellQuote(value: string) {
@@ -201,9 +201,12 @@ export async function readGitWorkspaceSnapshot(localDir: string, includeReposito
       timeout: 10_000,
       maxBuffer: 1024 * 1024,
     }),
+    // A generated output tree can exceed 1 MiB of filenames with only a few
+    // thousand files. Keep the explicit file snapshot (and a finite bound):
+    // collapsing directories would let later files enter the staging copy.
     runExpensiveWorkspaceGit(localDir, ["ls-files", "--others", "--exclude-standard", "-z"], "adapter_sync.untracked_files", {
       timeout: 10_000,
-      maxBuffer: 1024 * 1024,
+      maxBuffer: 32 * 1024 * 1024,
     }),
     runExpensiveWorkspaceGit(localDir, ["diff", "--name-only", "-z", "--diff-filter=D", "HEAD", "--"], "adapter_sync.deleted_files", {
       timeout: 10_000,
@@ -962,7 +965,7 @@ export async function resetLocalGitIndexToHead(input: {
   });
   if (workingTreeDiff.stdout.trim().length > 0) {
     console.warn(
-      "[paperclip] Workspace restore preserved local working tree changes after clean sandbox restore.",
+      "[gsam] Workspace restore preserved local working tree changes after clean sandbox restore.",
     );
   }
 }

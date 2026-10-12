@@ -2,8 +2,6 @@ import { gzipSync } from "node:zlib";
 import type { FeedbackTraceBundle } from "@greatstone/shared";
 import type { Config } from "../config.js";
 
-const DEFAULT_FEEDBACK_EXPORT_BACKEND_URL = "https://telemetry.paperclip.ing";
-
 function buildFeedbackShareObjectKey(bundle: FeedbackTraceBundle, exportedAt: Date) {
   const year = String(exportedAt.getUTCFullYear());
   const month = String(exportedAt.getUTCMonth() + 1).padStart(2, "0");
@@ -15,10 +13,16 @@ export interface FeedbackTraceShareClient {
   uploadTraceBundle(bundle: FeedbackTraceBundle): Promise<{ objectKey: string }>;
 }
 
+/**
+ * The feedback trace upload target, or null when none is configured. There is
+ * no default: shared traces hold task content and never go to the upstream
+ * project's servers.
+ */
 export function createFeedbackTraceShareClientFromConfig(
   config: Pick<Config, "feedbackExportBackendUrl" | "feedbackExportBackendToken">,
-): FeedbackTraceShareClient {
-  const baseUrl = config.feedbackExportBackendUrl?.trim() || DEFAULT_FEEDBACK_EXPORT_BACKEND_URL;
+): FeedbackTraceShareClient | null {
+  const baseUrl = config.feedbackExportBackendUrl?.trim();
+  if (!baseUrl) return null;
   const token = config.feedbackExportBackendToken?.trim();
   const endpoint = new URL("/feedback-traces", baseUrl).toString();
 

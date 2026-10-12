@@ -3,9 +3,15 @@
 import type { ReactNode } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
-import type { HeartbeatRun } from "@greatstone/shared";
+import type { DashboardRunActivityDay, HeartbeatRun } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { RunActivityChart, SuccessRateChart } from "./ActivityCharts";
+import {
+  formatDayLabel,
+  IssueStatusChart,
+  RunActivityChart,
+  SuccessRateChart,
+  chartWindowLabel,
+} from "./ActivityCharts";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -86,6 +92,64 @@ function createRun(overrides: Partial<HeartbeatRun> = {}): HeartbeatRun {
 }
 
 describe("ActivityCharts", () => {
+  it("labels days British style, day then short month", () => {
+    expect(formatDayLabel("2026-10-01")).toBe("1 Oct");
+    expect(formatDayLabel("2026-04-07")).toBe("7 Apr");
+  });
+
+  // Fake clock: today is 2026-04-20, so the window is 7 Apr to 20 Apr.
+  function youngActivity(): DashboardRunActivityDay[] {
+    return Array.from({ length: 14 }, (_, i) => {
+      const date = `2026-04-${String(7 + i).padStart(2, "0")}`;
+      const ran = i >= 10;
+      return {
+        date,
+        succeeded: ran ? 3 : 0,
+        failed: ran && i === 11 ? 5 : 0,
+        recovered: 0,
+        other: 0,
+        total: ran ? (i === 11 ? 8 : 3) : 0,
+        failedByErrorCode: {},
+      };
+    });
+  }
+
+  it("starts at the company's first day when it is younger than the window, and says so", () => {
+    const activity = youngActivity();
+    const start = new Date("2026-04-17T08:00:00.000Z");
+    expect(chartWindowLabel(start)).toBe("Since 17 Apr");
+    expect(chartWindowLabel(null)).toBe("Last 14 days");
+
+    render(<RunActivityChart activity={activity} start={start} />);
+    expect(container.querySelectorAll(".gs-bars > div")).toHaveLength(4);
+    expect(container.textContent).toContain("17 Apr");
+    expect(container.textContent).toContain("Today");
+    expect(container.textContent).not.toContain("13 Apr");
+  });
+
+  // Review 2: an older company after a quiet week keeps its empty days.
+  it("keeps quiet days for a company older than the window", () => {
+    const start = new Date("2026-03-01T08:00:00.000Z");
+    expect(chartWindowLabel(start)).toBe("Last 14 days");
+    render(<RunActivityChart activity={youngActivity()} start={start} />);
+    expect(container.querySelectorAll(".gs-bars > div")).toHaveLength(14);
+  });
+
+  it("draws success in brand emerald and failure-led days in the destructive red", () => {
+    render(<SuccessRateChart activity={youngActivity()} start={new Date("2026-04-17T08:00:00.000Z")} />);
+    const bars = Array.from(container.querySelectorAll<HTMLElement>(".gs-bar")).map((bar) => bar.style.backgroundColor);
+    expect(bars).toEqual(["var(--brand-emerald)", "var(--destructive)", "var(--brand-emerald)", "var(--brand-emerald)"]);
+  });
+
+  it("trims task charts to the company's first day too", () => {
+    const issues = [
+      { status: "todo", createdAt: new Date("2026-04-18T09:00:00.000Z") },
+      { status: "done", createdAt: new Date("2026-04-20T09:00:00.000Z") },
+    ];
+    render(<IssueStatusChart issues={issues} start={new Date("2026-04-18T08:00:00.000Z")} />);
+    expect(container.querySelectorAll(".gs-bars > div")).toHaveLength(3);
+  });
+
   it("renders empty run charts when dashboard aggregate data is temporarily missing", () => {
     render(<RunActivityChart activity={undefined} />);
     expect(container.textContent).toContain("No runs yet");

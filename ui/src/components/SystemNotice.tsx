@@ -133,7 +133,7 @@ function MetadataRow({ row, tone }: { row: SystemNoticeMetadataRow; tone: ToneTo
                 <>
                   <span>{row.identifier}</span>
                   {row.title ? (
-                    <span className="text-muted-foreground">— {row.title}</span>
+                    <span className="text-muted-foreground">({row.title})</span>
                   ) : null}
                 </>
               );

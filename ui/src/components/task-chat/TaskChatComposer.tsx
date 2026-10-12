@@ -111,6 +111,8 @@ interface TaskChatComposerProps {
   stopScope?: "leaf" | "subtree";
   workMode: IssueWorkMode;
   onWorkModeChange?: (mode: IssueWorkMode) => Promise<void> | void;
+  /** A board question chat (GRE-1186): a plain "Questions only" cue replaces the mode picker. */
+  questionsOnly?: boolean;
   disabled?: boolean;
   disabledReason?: string | null;
   placeholder?: string;
@@ -310,11 +312,11 @@ function modePlaceholder(mode: IssueWorkMode, agentName: string, mobile: boolean
   }
   switch (mode) {
     case "planning":
-      return `Plan with ${agentName} — shapes the plan doc, no code changes…`;
+      return `Plan with ${agentName}: shapes the plan doc, no code changes…`;
     case "ask":
-      return `Ask ${agentName} a question — read-only, nothing runs…`;
+      return `Ask ${agentName} a question: read-only, nothing runs…`;
     default:
-      return `Message ${agentName} — describe what you want done…`;
+      return `Message ${agentName}: describe what you want done…`;
   }
 }
 
@@ -385,6 +387,7 @@ export function TaskChatComposer({
   stopPending = false,
   workMode,
   onWorkModeChange,
+  questionsOnly = false,
   disabled = false,
   disabledReason,
   placeholder,
@@ -1197,7 +1200,7 @@ export function TaskChatComposer({
             className={cn(
               "flex min-w-0 items-center gap-2",
               takeover.hideLabel && takeover.pendingCount === 1
-                ? "absolute right-0 top-0 z-10"
+                ? "absolute right-0 top-0 z-raised"
                 : "mb-3",
             )}
             data-testid="task-chat-composer-takeover-header"
@@ -1439,6 +1442,13 @@ export function TaskChatComposer({
                   ? "Queued message changed"
                   : "Editing queued message"}
               </span>
+            ) : questionsOnly ? (
+              <span
+                className="px-1 text-xs font-medium text-muted-foreground"
+                data-testid="task-chat-composer-questions-only"
+              >
+                Questions only
+              </span>
             ) : (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1509,6 +1519,7 @@ export function TaskChatComposer({
                 value={assigneeValue}
                 options={reassignOptions ?? []}
                 placeholder="Assignee"
+                mobileTitle="Select assignee"
                 noneLabel="No assignee"
                 searchPlaceholder="Search assignees…"
                 emptyMessage="No matches."
@@ -1526,7 +1537,8 @@ export function TaskChatComposer({
                         userProfileMap={userProfileMap}
                         placement="trigger"
                       />
-                      <span className="max-w-40 truncate">{assigneeLabel}</span>
+                      {/* Phone: the avatar says who; "Keysto…" said less. */}
+                      <span className="max-w-40 truncate max-sm:sr-only">{assigneeLabel}</span>
                       <ChevronDown
                         className="h-3 w-3 shrink-0 text-muted-foreground"
                         aria-hidden

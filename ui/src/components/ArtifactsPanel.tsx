@@ -318,7 +318,7 @@ function DocumentViewer({
           <div className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <p className="text-(length:--text-compact) font-medium text-green-700 dark:text-green-400">
-              Approved — hire tasks created
+              Approved: hire tasks created
             </p>
           </div>
         </div>
@@ -328,7 +328,7 @@ function DocumentViewer({
           <div className="flex items-center gap-2">
             <XCircle className="h-4 w-4 text-orange-500" />
             <p className="text-(length:--text-compact) font-medium text-orange-700 dark:text-orange-400">
-              Changes requested — CEO is revising
+              Changes requested: CEO is revising
             </p>
           </div>
         </div>

@@ -1171,7 +1171,7 @@ function emit(
 
 function diagnostic(code: string, message: string): void {
   const safe = safeText(message);
-  process.stderr.write(`[paperclip-acpx-sidecar] ${code}: ${safe}\n`);
+  process.stderr.write(`[gsam-acpx-sidecar] ${code}: ${safe}\n`);
   emit("runtime.diagnostic", { code: code.slice(0, 160), message: safe });
 }
 
@@ -1193,7 +1193,7 @@ function response(
 function writeFrame(value: AcpxSidecarEvent | AcpxSidecarResponse): void {
   const line = stringifyAcpxSidecarFrame(value);
   if (Buffer.byteLength(line) > ACPX_SIDECAR_MAX_FRAME_BYTES) {
-    process.stderr.write("[paperclip-acpx-sidecar] output_frame_too_large\n");
+    process.stderr.write("[gsam-acpx-sidecar] output_frame_too_large\n");
     return;
   }
   process.stdout.write(`${line}\n`);

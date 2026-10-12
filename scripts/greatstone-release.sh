@@ -3,6 +3,8 @@
 #
 #   scripts/greatstone-release.sh rc-YYYY-MM-DD.N     release the candidate that was checked in the preview
 #   scripts/greatstone-release.sh live-YYYY-MM-DD.N   move live back to an earlier release (rollback)
+#   scripts/greatstone-release.sh --full-restart <tag>  the same, but stop live completely and start it
+#                                                     again instead of a hot restart (GRE-442)
 #
 # Run from the dev checkout. The live app is a separate clone that only ever
 # sits on a live-* tag; this script is the one thing that moves it. Before it
@@ -13,11 +15,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/greatstone-common.sh"
 
 die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 
+# --full-restart: a hot restart is done by the dev runner that is already
+# running, with the code it started with. When that runner is the one at fault
+# (#274: on Linux it left the old server running next to the new one), stop
+# all of live and start it with ~/GSAM/start-live.sh instead.
+FULL_RESTART=0
+if [ "${1:-}" = --full-restart ]; then
+  FULL_RESTART=1
+  shift
+fi
 TAG="${1:-}"
 case "$TAG" in
   rc-*) MODE=release ;;
   live-*) MODE=rollback ;;
-  *) die "usage: greatstone-release.sh <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
+  *) die "usage: greatstone-release.sh [--full-restart] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
 # GSAM_RELEASE_FROM_APP=1: started by the live server (the Releases page, GRE-121).
@@ -26,6 +37,7 @@ esac
 # (adopted, or checkpointed and resumed). The candidate is cut from origin/main
 # with Fork CI green, so it need not be the one in the preview.
 FROM_APP="${GSAM_RELEASE_FROM_APP:-}"
+[ "$FULL_RESTART" = 0 ] || [ "$FROM_APP" != 1 ] || die "--full-restart stops the live server, so it cannot run from the app; run it from the dev checkout."
 record_release_repo "$RELEASE_REPO"
 KEY_PROBLEM="$(live_board_key_check)" || die "$KEY_PROBLEM"
 
@@ -44,11 +56,19 @@ git -C "$RELEASE_REPO" fetch --quiet --tags origin
 git -C "$RELEASE_REPO" fetch --quiet origin main
 STALE="$(release_scripts_current "$RELEASE_REPO")" || die "$STALE"
 TARGET="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}")" || die "unknown tag $TAG"
-[ "$(git -C "$LIVE_DIR" rev-parse HEAD)" != "$TARGET" ] || die "live is already on $TAG ($TARGET); nothing to do."
+LIVE_HEAD="$(git -C "$LIVE_DIR" rev-parse HEAD)"
+[ "$LIVE_HEAD" != "$TARGET" ] || die "live is already on $TAG ($TARGET); nothing to do."
+PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
 
 if [ "$MODE" = release ]; then
   git -C "$RELEASE_REPO" merge-base --is-ancestor "$TARGET" origin/main \
     || die "$TAG ($TARGET) is not on origin/main; only merged code is released."
+  # GRE-839: a candidate cut before the live commit would silently take live
+  # back. Going back is a rollback, with a live-* tag.
+  git -C "$RELEASE_REPO" cat-file -e "$LIVE_HEAD^{commit}" 2>/dev/null \
+    || die "live runs $PREVIOUS ($LIVE_HEAD), which $RELEASE_REPO does not have, so it cannot tell whether $TAG is newer. Fetch it, then release again. Nothing was changed."
+  git -C "$RELEASE_REPO" merge-base --is-ancestor "$LIVE_HEAD" "$TARGET" \
+    || die "$TAG is older than live ($PREVIOUS); to go back, use the rollback form with a live-* tag. Nothing was changed."
   if [ "$FROM_APP" != 1 ] && preview_running && [ "$(preview_state commit)" != "$TARGET" ]; then
     die "the preview runs $(preview_state tag) ($(preview_state commit)), not $TAG. Release the tag you checked, or check $TAG in the preview first."
   fi
@@ -67,12 +87,13 @@ if curl -fsS -m 5 -o /dev/null "$LIVE_URL/api/health" 2>/dev/null && [ -z "$(hea
   die "the live server at $LIVE_URL runs but does not show serverInfo: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key (see the runbook). Nothing was changed."
 fi
 
-PREVIOUS="$(git -C "$LIVE_DIR" describe --tags --exact-match --match 'live-*' HEAD 2>/dev/null || git -C "$LIVE_DIR" rev-parse --short HEAD)"
+ROLLBACK="scripts/greatstone-release.sh $PREVIOUS"
+[ "$FULL_RESTART" = 0 ] || ROLLBACK="scripts/greatstone-release.sh --full-restart $PREVIOUS"
 
 # Back up the live database before anything moves. The backup only reads.
 if LIVE_DB_URL="$(live_database_url)"; then
   BACKUP_DIR="$BACKUP_ROOT/release-$(date +%Y-%m-%dT%H%M%S)-$TAG"
-  BACKUP_FILE="$(gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
+  BACKUP_FILE="$(PGPASSWORD="$(live_database_password)" gs_db backup --source-url "$LIVE_DB_URL" --dir "$BACKUP_DIR" --prefix "before-$TAG" | tail -n 1)"
   [ -s "$BACKUP_FILE" ] || die "the database backup failed; nothing was changed."
   say "Backed up the live database (on $PREVIOUS) to $BACKUP_FILE"
 elif [ "$MODE" = rollback ] && [ -s "${GSAM_RELEASE_EXISTING_BACKUP:-}" ]; then
@@ -84,13 +105,24 @@ else
   die "the live database is not running; cannot back it up. Nothing was changed."
 fi
 
+# GRE-930: a release from before the random database password logs in with the
+# old fixed one. Put the role back on it before live moves to such a release.
+if [ "$MODE" = rollback ] \
+  && [ -f "$LIVE_DATA_DIR/instances/$INSTANCE_ID/secrets/embedded-postgres.password" ] \
+  && ! git -C "$RELEASE_REPO" cat-file -e "$TARGET:packages/db/src/embedded-postgres-password.ts" 2>/dev/null; then
+  gs_db restore-legacy-password --data-dir "$LIVE_DATA_DIR/instances/$INSTANCE_ID/db" \
+    || die "could not put the database back on the password $TAG uses; nothing else was changed. Database backup: $BACKUP_FILE"
+fi
+
 if [ "$MODE" = release ]; then
   base="live-$(date +%Y-%m-%d)"
   n=1
   while git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$base.$n" >/dev/null; do n=$((n + 1)); done
   LIVE_TAG="$base.$n"
   tag_live_release "$RELEASE_REPO" "$TAG" "$LIVE_TAG" "$TARGET"
-  GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG"
+  # The live-* tag stays local until live is healthy on it (GRE-239): a failed
+  # release deletes it, so History never offers a version that never ran.
+  trap 'drop_unpushed_live_tag "$RELEASE_REPO" "$LIVE_DIR" "$LIVE_TAG"' EXIT
   say "Tagged $TAG as $LIVE_TAG: $TITLE"
 else
   LIVE_TAG="$TAG"
@@ -99,12 +131,23 @@ fi
 release_phase switching
 STARTED_BEFORE="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
 git -C "$LIVE_DIR" fetch --quiet --tags origin
+# A new live-* tag is not on origin yet; live takes it from the release repo.
+[ "$MODE" = rollback ] || git -C "$LIVE_DIR" fetch --quiet "$RELEASE_REPO" "refs/tags/$LIVE_TAG:refs/tags/$LIVE_TAG"
 git -C "$LIVE_DIR" checkout --quiet --detach "$LIVE_TAG"
 say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD))"
 # Non-interactive so a pnpm store change cannot hang on a hidden prompt. Such a
 # change purges node_modules under the running server; see the runbook.
 (cd "$LIVE_DIR" && pnpm install --frozen-lockfile --prefer-offline \
   --config.confirm-modules-purge=false --reporter=silent </dev/null)
+# Live serves the built UI (ui/dist, set up by ~/GSAM/start-live.sh) instead of
+# the Vite dev middleware, which a phone over Tailscale could not load. The
+# server reads ui/dist from disk on each request, so the rebuilt UI is live at
+# once, even when the release needs no server restart.
+if [ -f "$LIVE_DIR/ui/dist/index.html" ]; then
+  (cd "$LIVE_DIR" && pnpm --filter @greatstone/ui build >/dev/null </dev/null) \
+    || die "the UI build failed on $LIVE_TAG; live code is on $LIVE_TAG but its UI is not rebuilt. Roll back with: $ROLLBACK"
+  say "Rebuilt the UI for $LIVE_TAG"
+fi
 
 # The live server runs under dev-runner's "restart required" supervisor. It
 # notices the changed files within a few seconds, then restarts on request.
@@ -112,37 +155,60 @@ say "Live checkout is on $LIVE_TAG ($(git -C "$LIVE_DIR" rev-parse --short HEAD)
 # hot-restart intent): detached runs are adopted, ACP runs are checkpointed into
 # conversation retries, and the new server writes hot-restart-report.json.
 release_phase restarting
-if [ -z "$STARTED_BEFORE" ]; then
+POLL_SECONDS="${GSAM_RELEASE_POLL_SECONDS:-2}"
+NEEDS_NEW_PROCESS=1
+if [ "$FULL_RESTART" = 1 ]; then
+  stop_live_server \
+    || die "live did not stop completely (see above). Live code is on $LIVE_TAG and nothing new was started; stop what is left by hand, then run $GS_ROOT/start-live.sh, or roll back with: $ROLLBACK"
+  say "Live is stopped: no runner, server or database of $LIVE_DIR is left, and nothing answers on $LIVE_URL"
+  [ -x "$GS_ROOT/start-live.sh" ] || die "there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG and live is stopped; start the live server by hand."
+  start_live_server || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
+  say "Started the live server"
+elif [ -z "$STARTED_BEFORE" ]; then
   # No live server answered before the switch (for example a rollback after a
   # failed version): start it instead of asking it to restart.
   [ -x "$GS_ROOT/start-live.sh" ] || die "the live server is not running and there is no $GS_ROOT/start-live.sh. Live code is on $LIVE_TAG; start the live server by hand."
-  "$GS_ROOT/start-live.sh" </dev/null || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: scripts/greatstone-release.sh $PREVIOUS"
+  start_live_server || die "the live server did not start on $LIVE_TAG; see ~/GSAM/logs/live.log. Roll back with: $ROLLBACK"
   say "Started the live server"
 else
   RESTART=""
   for _ in $(seq 1 15); do
-    sleep 2
+    sleep "$POLL_SECONDS"
     RESTART="$(live_curl -sS -m 10 -X POST "$LIVE_URL/api/health/dev-server/restart" 2>&1 || true)"
     case "$RESTART" in *restart_requested*|*board_access_required*|*dev_server_supervisor_unavailable*) break ;; esac
   done
   case "$RESTART" in
     *restart_requested*) say "Asked the live server to restart" ;;
-    *dev_server_supervisor_unavailable*) die "the live server has no dev-runner supervisor, so it cannot restart itself. Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
-    *board_access_required*) die "the live server refused the restart: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key. Live code is on $LIVE_TAG but the old server still runs; fix the key and restart live, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
-    *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: scripts/greatstone-release.sh $PREVIOUS" ;;
+    # GRE-243: for the whole wait, dev-runner saw no change to a file it
+    # watches (cli, scripts, server, the server packages, a few root files) and
+    # no pending migration: a release or rollback of only ui/, doc/ or other
+    # files. The running server already serves that code (the UI through the
+    # Vite middleware), so it ends healthy on the old process.
+    *restart_not_required*)
+      NEEDS_NEW_PROCESS=0
+      say "The live server needs no restart: $LIVE_TAG changes no file the server runs from (for example only ui/ or doc/)." ;;
+    *dev_server_supervisor_unavailable*) die "the live server has no dev-runner supervisor, so it cannot restart itself. Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: $ROLLBACK" ;;
+    *board_access_required*) die "the live server refused the restart: it runs in login mode and $LIVE_BOARD_KEY_FILE holds no valid board API key. Live code is on $LIVE_TAG but the old server still runs; fix the key and restart live, or roll back with: $ROLLBACK" ;;
+    *) die "the live server did not accept a restart ($RESTART). Live code is on $LIVE_TAG but the old server still runs; stop the live server and run ~/GSAM/start-live.sh, or roll back with: $ROLLBACK" ;;
   esac
 fi
 
-# "commit" follows the checkout at once, so success also needs a new process.
+# "commit" follows the checkout at once, so success also needs a new process
+# (unless no restart was needed).
 for _ in $(seq 1 90); do
-  sleep 2
+  sleep "$POLL_SECONDS"
   STARTED_NOW="$(health_field "$LIVE_URL" serverInfo.processStartedAt)"
-  if [ -n "$STARTED_NOW" ] && [ "$STARTED_NOW" != "$STARTED_BEFORE" ] && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
+  if [ -n "$STARTED_NOW" ] && { [ "$NEEDS_NEW_PROCESS" = 0 ] || [ "$STARTED_NOW" != "$STARTED_BEFORE" ]; } && [ "$(health_commit "$LIVE_URL")" = "$TARGET" ]; then
     say "Live app at $LIVE_URL is running $LIVE_TAG ($TARGET), server started $STARTED_NOW."
+    if [ "$MODE" = release ]; then
+      trap - EXIT
+      GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG" \
+        || say "Could not push $TAG and $LIVE_TAG to origin; live runs $LIVE_TAG. Push them with: GSAM_RELEASE=1 git push origin $TAG $LIVE_TAG"
+    fi
     "$GS_SCRIPT_DIR/greatstone-preview.sh" stop
-    say "Roll back with: scripts/greatstone-release.sh $PREVIOUS"
+    say "Roll back with: $ROLLBACK"
     say "Database backup from before this release: $BACKUP_FILE"
     exit 0
   fi
 done
-die "the live app did not report $LIVE_TAG within 3 minutes; check the server log. Roll back with: scripts/greatstone-release.sh $PREVIOUS (database backup: $BACKUP_FILE)"
+die "the live app did not report $LIVE_TAG within 3 minutes; check the server log. Roll back with: $ROLLBACK (database backup: $BACKUP_FILE)"

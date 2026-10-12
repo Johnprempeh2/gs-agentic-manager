@@ -18,7 +18,9 @@ afterEach(async () => {
 });
 
 async function makeTempDir(prefix: string) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  // Canonical path: on macOS the temp dir is a symlink into /private, and the
+  // service compares real paths.
+  const dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), prefix)));
   cleanupDirs.add(dir);
   return dir;
 }

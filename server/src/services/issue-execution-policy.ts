@@ -58,6 +58,17 @@ type TransitionInput = {
   commentBody?: string | null;
   reviewRequest?: IssueExecutionState["reviewRequest"] | null;
   monitorExplicitlyUpdated?: boolean;
+  /**
+   * The escalation human, already bound to a real user by the caller (see
+   * `resolveReviewEscalationUserId`). Omitted: read from the issue.
+   */
+  reviewEscalationUserId?: string | null;
+  /**
+   * Other user ids a user actor answers for, already checked by the caller
+   * (an owner standing in for `local-board`, see `board-identity.ts`).
+   * Omitted: the actor matches only its own id.
+   */
+  actorUserIdAliases?: readonly string[];
 };
 
 type TransitionResult = {
@@ -460,6 +471,21 @@ function principalsEqual(a: IssueExecutionStagePrincipal | null, b: IssueExecuti
   return a.type === "agent" ? a.agentId === b.agentId : a.userId === b.userId;
 }
 
+/** The actor is the stage's current participant, by id or by a checked alias. */
+function actorIsParticipant(
+  participant: IssueExecutionStagePrincipal | null,
+  actor: IssueExecutionStagePrincipal | null,
+  actorUserIdAliases: readonly string[] | undefined,
+): boolean {
+  if (principalsEqual(participant, actor)) return true;
+  return Boolean(
+    participant?.type === "user" &&
+      actor?.type === "user" &&
+      participant.userId &&
+      actorUserIdAliases?.includes(participant.userId),
+  );
+}
+
 function resolveMaxReviewRounds(policy: IssueExecutionPolicy | null): number {
   const configured = policy?.maxReviewRounds;
   return typeof configured === "number" && configured > 0 ? configured : DEFAULT_MAX_REVIEW_ROUNDS;
@@ -470,7 +496,7 @@ function resolveMaxReviewRounds(policy: IssueExecutionPolicy | null): number {
  * changes-requested rounds. Without one the loop keeps handing back to the
  * return assignee (pre-existing behavior) rather than stalling the stage.
  */
-function reviewEscalationUserId(issue: IssueLike): string | null {
+export function reviewEscalationUserId(issue: Pick<IssueLike, "responsibleUserId" | "createdByUserId">): string | null {
   const responsible = issue.responsibleUserId?.trim();
   if (responsible) return responsible;
   const creator = issue.createdByUserId?.trim();
@@ -518,6 +544,15 @@ function selectStageParticipant(
 function stageHasParticipant(stage: IssueExecutionStage, participant: IssueExecutionStagePrincipal | null): boolean {
   if (!participant) return false;
   return stage.participants.some((candidate) => principalsEqual(candidate, participant));
+}
+
+/**
+ * Issue statuses a pending stage may sit in. `blocked` lets the participant
+ * wait on a dependency without giving up the stage (GRE-1179); the drift
+ * repair must not pull it back to `in_review`.
+ */
+function statusHoldsPendingStage(status: string): boolean {
+  return status === "in_review" || status === "blocked";
 }
 
 function patchForPrincipal(principal: IssueExecutionStagePrincipal | null) {
@@ -741,7 +776,8 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       currentParticipant.type === "user" &&
       !stageHasParticipant(activeStage, currentParticipant) &&
       (existingState?.changesRequestedCount ?? 0) >= resolveMaxReviewRounds(input.policy);
-    if (escalatedHold && !principalsEqual(currentParticipant, actor)) {
+    const actorIsCurrentParticipant = actorIsParticipant(currentParticipant, actor, input.actorUserIdAliases);
+    if (escalatedHold && !actorIsCurrentParticipant) {
       // An empty patch would not override the caller's own requested fields,
       // so a status or assignee change from a non-escalated actor must be
       // rejected outright — mirroring the "only the active participant can
@@ -754,7 +790,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         throw unprocessable("Only the escalated reviewer can advance the current execution stage");
       }
       const holdDrifted =
-        input.issue.status !== "in_review" ||
+        !statusHoldsPendingStage(input.issue.status) ||
         !principalsEqual(currentAssignee, currentParticipant);
       if (holdDrifted) {
         patch.status = "in_review";
@@ -800,7 +836,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       };
     }
 
-    if (principalsEqual(currentParticipant, actor)) {
+    if (actorIsCurrentParticipant) {
       if (requestedStatus === "done") {
         if (!input.commentBody?.trim()) {
           throw unprocessable(`Approving a review or approval stage requires a comment. ${STAGE_DECISION_COMMENT_HINT}`);
@@ -865,6 +901,17 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         return { patch };
       }
 
+      // Blocking on a dependency is not a verdict: no decision, no round, and
+      // the participant keeps the stage so the blockers-resolved wake reaches
+      // them. Counting it as changes-requested escalated GRE-1087 to the
+      // human at the round cap (GRE-1179).
+      if (requestedStatus === "blocked") {
+        if (!principalsEqual(currentAssignee, currentParticipant) || requestedAssigneePatchProvided) {
+          Object.assign(patch, patchForPrincipal(currentParticipant));
+        }
+        return { patch };
+      }
+
       if (requestedStatus && requestedStatus !== "in_review") {
         if (!input.commentBody?.trim()) {
           throw unprocessable(`Requesting changes requires a comment. ${STAGE_DECISION_COMMENT_HINT}`);
@@ -883,7 +930,9 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
         const actorIsHuman = actor?.type === "user";
         const nextRounds = actorIsHuman ? 0 : (existingState.changesRequestedCount ?? 0) + 1;
         if (!actorIsHuman && nextRounds >= resolveMaxReviewRounds(input.policy)) {
-          const escalationUserId = reviewEscalationUserId(input.issue);
+          const escalationUserId = input.reviewEscalationUserId !== undefined
+            ? input.reviewEscalationUserId
+            : reviewEscalationUserId(input.issue);
           if (escalationUserId) {
             // Rounds exhausted: keep the stage pending but hand it to the
             // responsible human instead of bouncing back to the implementer.
@@ -922,7 +971,7 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
       (requestedStatus !== undefined && requestedStatus !== "in_review") ||
       (requestedAssigneePatchProvided && !principalsEqual(explicitAssignee, currentParticipant));
     const stageStateDrifted =
-      input.issue.status !== "in_review" ||
+      !statusHoldsPendingStage(input.issue.status) ||
       !principalsEqual(currentAssignee, currentParticipant) ||
       !principalsEqual(existingState?.currentParticipant ?? null, currentParticipant);
 
@@ -1273,6 +1322,41 @@ export function buildIssueMonitorRestoredPatch(input: {
     monitorAttemptCount: input.attemptCount,
     monitorNotes: monitor.notes ?? null,
     monitorScheduledBy: monitor.scheduledBy,
+  };
+}
+
+/**
+ * GRE-589: moves a scheduled monitor's next check to `nextCheckAt` without
+ * dispatching it. The attempt count is unchanged, because no run was started.
+ * Reads the stored policy, not the normalized one, so externalRef is kept.
+ * Returns null when the stored policy has no monitor.
+ */
+export function buildIssueMonitorDeferredPatch(input: {
+  issue: IssueLike;
+  executionPolicy: unknown;
+  nextCheckAt: Date;
+}) {
+  const storedPolicy =
+    input.executionPolicy && typeof input.executionPolicy === "object" && !Array.isArray(input.executionPolicy)
+      ? (input.executionPolicy as Record<string, unknown>)
+      : null;
+  const storedMonitor =
+    storedPolicy?.monitor && typeof storedPolicy.monitor === "object" && !Array.isArray(storedPolicy.monitor)
+      ? (storedPolicy.monitor as Record<string, unknown>)
+      : null;
+  if (!storedPolicy || !storedMonitor) return null;
+
+  const nextCheckAt = input.nextCheckAt.toISOString();
+  const existingState = parseIssueExecutionState(input.issue.executionState);
+  const previous = existingState?.monitor ?? null;
+  return {
+    executionPolicy: { ...storedPolicy, monitor: { ...storedMonitor, nextCheckAt } },
+    executionState: executionStateWithMonitor(
+      existingState,
+      previous ? { ...previous, status: "scheduled", nextCheckAt } : null,
+    ) as Record<string, unknown> | null,
+    monitorNextCheckAt: input.nextCheckAt,
+    monitorWakeRequestedAt: null,
   };
 }
 

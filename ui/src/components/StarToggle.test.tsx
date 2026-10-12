@@ -97,7 +97,7 @@ describe("StarToggle", () => {
     const btn = button();
     expect(btn?.textContent).toBe("");
     expect(btn?.getAttribute("data-variant")).toBe("ghost");
-    expect(btn?.getAttribute("title")).toBe("Couldn't save — retry");
+    expect(btn?.getAttribute("title")).toBe("Couldn't save. Retry");
   });
 
   it("renders the unstarred detail variant as an unfilled icon without an outline", async () => {

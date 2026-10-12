@@ -1,4 +1,5 @@
 import { verifyAppWebhook } from "./app-webhook.js";
+import { LEGACY_BOARD_USER_ID, bindLegacyBoardUserId, boardIdentityDeploymentMode } from "./board-identity.js";
 import crypto from "node:crypto";
 import { verifyFirefliesWebhook } from "./fireflies-webhook.js";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, ne, not, or, sql } from "drizzle-orm";
@@ -168,7 +169,37 @@ async function resolveCompanyDefaultResponsibleUserId(db: Db, companyId: string)
   return owner?.userId ?? null;
 }
 
+// An inherited or default legacy `local-board` id becomes the company's
+// primary owner in authenticated mode (`board-identity.ts`).
 async function resolveRoutineResponsibleUserId(db: Db, companyId: string, actorUserId: string | null | undefined, parentIssueId?: string | null) {
+  return bindLegacyBoardUserId(
+    db,
+    companyId,
+    await resolveInheritedRoutineResponsibleUserId(db, companyId, actorUserId, parentIssueId),
+  );
+}
+
+/** A routine's responsible user must be an active human member of the company. */
+async function assertRoutineResponsibleMember(db: Db, companyId: string, userId: string) {
+  if (userId === LEGACY_BOARD_USER_ID && boardIdentityDeploymentMode() === "authenticated") {
+    throw unprocessable("The legacy local-board account cannot be a routine's responsible user. Choose a signed-in member.");
+  }
+  const [membership] = await db
+    .select({ id: companyMemberships.id })
+    .from(companyMemberships)
+    .where(and(
+      eq(companyMemberships.companyId, companyId),
+      eq(companyMemberships.principalType, "user"),
+      eq(companyMemberships.principalId, userId),
+      eq(companyMemberships.status, "active"),
+    ))
+    .limit(1);
+  if (!membership) {
+    throw unprocessable("The responsible user must be an active member of this company");
+  }
+}
+
+async function resolveInheritedRoutineResponsibleUserId(db: Db, companyId: string, actorUserId: string | null | undefined, parentIssueId?: string | null) {
   if (actorUserId) return actorUserId;
   if (parentIssueId) {
     const parent = await db
@@ -1236,6 +1267,15 @@ export function routineService(
     return map;
   }
 
+  async function getCompanyStatus(companyId: string) {
+    const row = await db
+      .select({ status: companies.status })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    return row?.status ?? "missing";
+  }
+
   async function updateRoutineTouchedState(input: {
     routineId: string;
     triggerId?: string | null;
@@ -1471,7 +1511,9 @@ export function routineService(
           ? "skipped_paused"
           : input.reason === "no_external_activity"
             ? "skipped_no_activity"
-            : "skipped_worktree_execution_cutoff",
+            : input.reason.startsWith("company_")
+              ? `Skipped because the company is ${input.reason.slice("company_".length)}`
+              : "skipped_worktree_execution_cutoff",
         nextRunAt: input.nextRunAt,
       }, txDb);
       return createdRun;
@@ -1845,8 +1887,14 @@ export function routineService(
               return row?.responsibleUserId ?? snapshot?.routine.responsibleUserId ?? null;
             })
         : null;
-      const responsibleUserId =
-        manualRunnerUserId ?? latestRevisionResponsibleUserId ?? input.routine.responsibleUserId ?? null;
+      // A routine still on the legacy `local-board` user fires as the
+      // company's primary owner once sign-in is on, so the run and the issue
+      // it creates never carry an account nobody can sign in as.
+      const responsibleUserId = await bindLegacyBoardUserId(
+        txDb,
+        input.routine.companyId,
+        manualRunnerUserId ?? latestRevisionResponsibleUserId ?? input.routine.responsibleUserId ?? null,
+      );
       const [createdRun] = await txDb
         .insert(routineRuns)
         .values({
@@ -2322,6 +2370,13 @@ export function routineService(
       if (!responsibleUserId) {
         throw unprocessable("Routine requires a responsible user");
       }
+      // An explicit change of responsible user. The route allows it only for
+      // a company owner or admin; here the new user must be an active human
+      // member, and never the legacy `local-board` account once sign-in is on.
+      const requestedResponsibleUserId = patch.responsibleUserId ?? null;
+      if (requestedResponsibleUserId) {
+        await assertRoutineResponsibleMember(db, existing.companyId, requestedResponsibleUserId);
+      }
       const updatedRoutine = await db.transaction(async (tx) => {
         const txDb = tx as unknown as Db;
         await tx.execute(sql`select id from ${routines} where ${routines.id} = ${id} for update`);
@@ -2355,7 +2410,7 @@ export function routineService(
           activityGateScope: patch.activityGateScope ?? locked.activityGateScope,
           variables: nextVariables,
           env: nextEnv,
-          responsibleUserId: locked.responsibleUserId ?? responsibleUserId,
+          responsibleUserId: requestedResponsibleUserId ?? locked.responsibleUserId ?? responsibleUserId,
           updatedByAgentId: actor.agentId ?? null,
           updatedByUserId: actor.userId ?? null,
         };
@@ -2854,6 +2909,8 @@ export function routineService(
       const routine = await getRoutineById(id);
       if (!routine) throw notFound("Routine not found");
       if (routine.status === "archived") throw conflict("Routine is archived");
+      const companyStatus = await getCompanyStatus(routine.companyId);
+      if (companyStatus !== "active") throw conflict(`Company is ${companyStatus}`, { status: companyStatus });
       await assertProject(routine.companyId, input.projectId ?? null);
       const assigneeAgentId = input.assigneeAgentId ?? routine.assigneeAgentId ?? null;
       await assertAssignableAgent(db, routine.companyId, assigneeAgentId, { kind: "routine" });
@@ -3052,6 +3109,18 @@ export function routineService(
       if (accepted.testReceived) return { status: "test_received" as const, test: true, routineStarted: false, linkedIssueId: null };
       const { routine, trigger, hmacReplayKey, deliveryKey, payload } = accepted;
 
+      const companyStatus = await getCompanyStatus(routine.companyId);
+      if (companyStatus !== "active") {
+        return recordSuppressedAutomaticRun({
+          routine,
+          trigger,
+          source: "webhook",
+          reason: `company_${companyStatus}`,
+          idempotencyKey: deliveryKey,
+          rejectIdempotencyReplay: hmacReplayKey !== null,
+        });
+      }
+
       const eligibility = await getAutomaticRoutineDispatchEligibility(routine);
       if (!eligibility.eligible) {
         return recordSuppressedAutomaticRun({
@@ -3184,9 +3253,11 @@ export function routineService(
           trigger: routineTriggers,
           routine: routines,
           projectPausedAt: projects.pausedAt,
+          companyStatus: companies.status,
         })
         .from(routineTriggers)
         .innerJoin(routines, eq(routineTriggers.routineId, routines.id))
+        .innerJoin(companies, eq(routines.companyId, companies.id))
         .leftJoin(projects, eq(routines.projectId, projects.id))
         .where(
           and(
@@ -3203,6 +3274,26 @@ export function routineService(
       let triggered = 0;
       for (const row of due) {
         if (!row.trigger.nextRunAt || !row.trigger.cronExpression || !row.trigger.timezone) continue;
+
+        // A paused or archived company fires nothing (GRE-1364, AT-4.1). Advance the
+        // trigger by one cron tick so nothing piles up for a catch-up burst on resume,
+        // and record no run: only the trigger's last result says why.
+        if (row.companyStatus !== "active") {
+          await db
+            .update(routineTriggers)
+            .set({
+              nextRunAt: nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now),
+              lastResult: `Skipped because the company is ${row.companyStatus}`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(routineTriggers.id, row.trigger.id),
+                eq(routineTriggers.nextRunAt, row.trigger.nextRunAt),
+              ),
+            );
+          continue;
+        }
 
         // Suppress scheduled firings while the routine's project is paused. The tick is still
         // claimed and advanced to the next single cron tick (no backfill), so resume continues

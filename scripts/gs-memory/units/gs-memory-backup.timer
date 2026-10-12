@@ -1,0 +1,11 @@
+# Runs the dump at 02:30 each night, and after boot if a run was missed.
+[Unit]
+Description=GS organization memory - nightly dump timer
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

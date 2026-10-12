@@ -22,6 +22,7 @@ import {
   failedRequestConfirmationInteraction,
   failedToolActionInteraction,
   pendingRequestConfirmationInteraction,
+  genericPendingRequestConfirmationInteraction,
   pendingToolActionDestructiveInteraction,
   pendingToolActionWriteInteraction,
   issueThreadInteractionFixtureMeta,
@@ -51,6 +52,8 @@ import {
   pendingConnectionIntentInteraction,
   retryConnectionIntentInteraction,
   connectedConnectionIntentInteraction,
+  pendingStepGuideAskUserQuestionsInteraction,
+  pendingStepGuideRequestConfirmationInteraction,
 } from "../fixtures/issueThreadInteractionFixtures";
 
 let root: Root | null = null;
@@ -740,6 +743,36 @@ describe("IssueThreadInteractionCard", () => {
     expect(host.textContent).not.toContain("Request changes");
   });
 
+  // GRE-360: the Decisions card already names the kind, why and who asked.
+  it("drops the repeated header when embedded in a host card", () => {
+    const host = renderCard({
+      interaction: { ...genericPendingRequestConfirmationInteraction, title: null, summary: null },
+      embedded: true,
+    });
+
+    expect(host.querySelector("[data-testid='interaction-status-badge']")).toBeNull();
+    expect(host.textContent).not.toContain("Confirmation requested");
+    expect(host.textContent).not.toContain("proposed by");
+    expect(host.textContent).not.toContain("Anyone in the organisation");
+    expect(host.textContent).toContain("Continue with the current approach?");
+    expect(Array.from(host.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Approve")).toBe(true);
+  });
+
+  it("keeps an agent-written title and summary when embedded", () => {
+    const host = renderCard({ interaction: genericPendingRequestConfirmationInteraction, embedded: true });
+
+    const header = host.querySelector("[data-testid='interaction-embedded-header']");
+    expect(header?.textContent).toContain("Confirm next step");
+    expect(header?.textContent).toContain("The responsible needs a lightweight yes or no");
+    expect(host.querySelector("[data-testid='interaction-status-badge']")).toBeNull();
+  });
+
+  it("keeps the state header on an embedded secret proposal", () => {
+    const host = renderCard({ interaction: pendingSecretProposalInteraction, embedded: true });
+
+    expect(host.querySelector("[data-testid='interaction-status-badge']")).not.toBeNull();
+  });
+
   it("does not expose continuation wake policy labels in the card header", () => {
     const host = renderCard({
       interaction: {
@@ -847,7 +880,7 @@ describe("IssueThreadInteractionCard", () => {
       interaction: planApprovalResumeFailedRequestConfirmationInteraction,
     });
     expect((resumeFailed.firstElementChild as HTMLElement).className).toContain("border-amber-500/70");
-    expect(resumeFailed.textContent).toContain("Approved — agent resume failed");
+    expect(resumeFailed.textContent).toContain("Approved: agent resume failed");
     expect(resumeFailed.textContent).toContain("Agent resume failed");
     expect(resumeFailed.textContent).toContain("GS Agentic Manager needs attention before the agent can resume this approved work.");
     expect(resumeFailed.textContent).toContain("adapter_failed");
@@ -1182,7 +1215,7 @@ describe("IssueThreadInteractionCard tool-action card", () => {
     // already carries the "Expired · issue closed" label, so the footer must
     // not restate it.
     const footer = host.querySelector('[data-testid="interaction-issue-closed-footer"]');
-    expect(footer?.textContent).toContain("Apr 20");
+    expect(footer?.textContent).toContain("20 Apr");
     expect(footer?.textContent).not.toContain("Expired when the issue closed");
     // The "Expired · issue closed" label survives exactly once (the header
     // status badge); the duplicate body eyebrow was dropped.
@@ -1541,5 +1574,131 @@ describe("IssueThreadInteractionCard resolver audience", () => {
     expect(
       footer?.querySelector('[data-testid="interaction-resolved-by-agent-chip"]'),
     ).not.toBeNull();
+  });
+});
+
+describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
+  function clickButton(scope: ParentNode, text: string) {
+    const button = Array.from(scope.querySelectorAll("button")).find((candidate) =>
+      candidate.textContent?.includes(text),
+    );
+    expect(button, `button "${text}"`).toBeTruthy();
+    button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  }
+
+  function guide() {
+    return document.body.querySelector('[data-testid="interaction-guide"]');
+  }
+
+  it("renders short help text and option descriptions as markdown", () => {
+    const interaction = {
+      ...pendingStepGuideAskUserQuestionsInteraction,
+      payload: {
+        ...pendingStepGuideAskUserQuestionsInteraction.payload,
+        questions: [
+          {
+            ...pendingStepGuideAskUserQuestionsInteraction.payload.questions[0],
+            helpText: "Check the **terminal** output.",
+            options: [{ id: "done", label: "Done", description: "It printed `ok`." }],
+          },
+        ],
+      },
+    };
+    const host = renderCard({ interaction });
+
+    expect(host.textContent).toContain("Check the terminal output.");
+    expect(host.textContent).not.toContain("**");
+    expect(host.querySelector("strong")?.textContent).toBe("terminal");
+    expect(host.querySelector('[role="radio"] code')?.textContent).toBe("ok");
+    expect(host.textContent).not.toContain("Open step-by-step guide");
+  });
+
+  it("shows a short summary and a guide link for step-by-step help text", () => {
+    const host = renderCard({ interaction: pendingStepGuideAskUserQuestionsInteraction });
+
+    const summary = host.querySelector('[data-testid="interaction-guide-summary"]');
+    expect(summary?.textContent).toContain(
+      "Run the setup script on your computer, then tell me when it is done.",
+    );
+    expect(host.textContent).toContain("Open step-by-step guide");
+    // The steps and the command stay off the card.
+    expect(host.textContent).not.toContain("pnpm gsam setup");
+    expect(host.textContent).not.toContain("Step 2 of 3");
+    // The answer options stay on the card.
+    expect(host.querySelectorAll('[role="radio"]')).toHaveLength(2);
+  });
+
+  it("opens the guide with numbered steps, copyable code and the answer options", async () => {
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+    // jsdom has no `innerText`, which is what the code block copies.
+    Object.defineProperty(HTMLElement.prototype, "innerText", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.textContent ?? "";
+      },
+    });
+    const onSubmitInteractionAnswers = vi.fn(async () => undefined);
+    const host = renderCard({
+      interaction: pendingStepGuideAskUserQuestionsInteraction,
+      onSubmitInteractionAnswers,
+    });
+
+    await act(async () => clickButton(host, "Open step-by-step guide"));
+
+    const sheet = guide();
+    expect(sheet).toBeTruthy();
+    const steps = sheet!.querySelectorAll('[data-testid="interaction-guide-step"]');
+    expect(steps).toHaveLength(3);
+    expect(steps[0].textContent).toContain("Open a terminal in the project folder.");
+    expect(steps[1].querySelector("pre")?.textContent).toContain("pnpm gsam setup --company demo");
+    expect(sheet!.textContent).not.toContain("**");
+
+    const copy = steps[1].querySelector('button[aria-label="Copy code"]') as HTMLButtonElement;
+    expect(copy).toBeTruthy();
+    expect(copy.tabIndex).not.toBe(-1);
+    await act(async () => {
+      copy.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("pnpm gsam setup --company demo"));
+    delete (HTMLElement.prototype as { innerText?: string }).innerText;
+
+    // While the guide is open the options live only in the guide.
+    expect(host.querySelectorAll('[role="radio"]')).toHaveLength(0);
+    const options = sheet!.querySelectorAll('[role="radio"]');
+    expect(options).toHaveLength(2);
+    await act(async () => {
+      options[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await act(async () => clickButton(sheet!, "Send answer"));
+
+    expect(onSubmitInteractionAnswers).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "interaction-questions-step-guide" }),
+      [{ questionId: "setup-done", optionIds: ["done"] }],
+    );
+  });
+
+  it("renders the confirmation prompt as markdown and resolves it from the guide", async () => {
+    const onAcceptInteraction = vi.fn(async () => undefined);
+    const host = renderCard({
+      interaction: pendingStepGuideRequestConfirmationInteraction,
+      onAcceptInteraction,
+    });
+
+    expect(host.querySelector("strong")?.textContent).toBe("setup script");
+    expect(host.textContent).not.toContain("pnpm gsam setup");
+    await act(async () => clickButton(host, "Open step-by-step guide"));
+
+    const sheet = guide();
+    expect(sheet?.querySelectorAll('[data-testid="interaction-guide-step"]')).toHaveLength(3);
+    // The prompt under the guide title is markdown too, not raw `**`.
+    const lead = sheet!.querySelector('[data-slot="sheet-description"]');
+    expect(lead?.querySelector("strong")?.textContent).toBe("setup script");
+    expect(lead?.textContent).not.toContain("**");
+    await act(async () => clickButton(sheet!, "Yes, it finished"));
+    expect(onAcceptInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "interaction-confirmation-step-guide" }),
+    );
   });
 });

@@ -65,3 +65,10 @@ export function withLegacyEnvAliases<T extends EnvRecord>(env: T): T & Record<st
   }
   return out as T & Record<string, T[keyof T]>;
 }
+
+/**
+ * The pre-rebrand CLI package name. Older global npm installs live under
+ * node_modules/paperclipai, and older Linux service units are named
+ * paperclipai-*.service, so the CLI still has to recognise it.
+ */
+export const LEGACY_CLI_PACKAGE_NAME = "paperclipai";

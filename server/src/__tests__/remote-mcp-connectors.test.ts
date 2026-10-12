@@ -114,7 +114,7 @@ describe("remote connector lifecycle", () => {
     expect(removed.enabled).toBe(false);
     expect(removed.status).toBe("archived");
   });
-  it("renews expired discovery sessions and requires an explicit retry after an expired execution session", async () => {
+  it("renews expired discovery sessions and retries once on a new session after an expired execution session", async () => {
     const org = await company();
     const [agent] = await db.insert(agents).values({ companyId: org.id, name: "Session tester", role: "engineer", adapterType: "process", adapterConfig: {}, runtimeConfig: {} }).returning();
     let initialized = 0;
@@ -141,10 +141,12 @@ describe("remote connector lifecycle", () => {
     expect(await call()).toMatchObject({ decision: "allowed", result: { data: { isError: false } } });
     const executionSession = calls[0];
     expired.add(executionSession);
-    const failed = await call();
-    expect(failed).toMatchObject({ error: { reasonCode: "mcp_remote_status" } });
-    expect(calls).toEqual([executionSession, executionSession]);
+    // The expired session refuses the call before running it, so the gateway
+    // opens a new session and sends the call once more (GRE-1039).
     expect(await call()).toMatchObject({ decision: "allowed", result: { data: { isError: false } } });
+    expect(calls).toHaveLength(3);
+    expect(calls.slice(0, 2)).toEqual([executionSession, executionSession]);
+    expect(calls[2]).not.toBe(executionSession);
     expect(calls).toHaveLength(3);
     expect(calls[2]).not.toBe(executionSession);
   });

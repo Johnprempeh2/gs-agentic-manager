@@ -12,3 +12,15 @@ export function isRuntimeOwnedGitBranch(
 ) {
   return hasCurrentGitBranchOwnershipMetadata(metadata) && metadata?.createdByRuntime === true;
 }
+
+// A session on a local directory the runtime did not create: the shared project
+// checkout, or a plain project folder. No cleanup step deletes or rewrites that
+// directory, so archiving the session removes only its record and cannot lose
+// work. Worktrees, runtime-created folders, and sandbox or adapter-managed
+// workspaces can hold the only copy of work, so they never count.
+export function isRecordOnlyExecutionWorkspace(workspace: {
+  providerType: string;
+  metadata?: Record<string, unknown> | null;
+}) {
+  return workspace.providerType === "local_fs" && workspace.metadata?.createdByRuntime !== true;
+}

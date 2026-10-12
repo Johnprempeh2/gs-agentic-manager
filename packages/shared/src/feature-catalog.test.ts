@@ -4,9 +4,11 @@ import {
   FEATURE_TIERS,
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  GRADUATED_INSTANCE_FEATURE_KEYS,
   RETIRED_INSTANCE_FEATURE_KEYS,
   buildFeatureCatalogArtifact,
   featureCatalogArtifactSchema,
+  isGraduatedInstanceFeatureKey,
   isRetiredInstanceFeatureKey,
   renderFeatureCatalogArtifact,
 } from "./feature-catalog.js";
@@ -66,6 +68,18 @@ describe("RETIRED_INSTANCE_FEATURE_KEYS (GRE-196)", () => {
       expect(isRetiredInstanceFeatureKey(key), key).toBe(true);
     }
     expect(isRetiredInstanceFeatureKey("enableGoalsSidebarLink")).toBe(false);
+  });
+});
+
+describe("GRADUATED_INSTANCE_FEATURE_KEYS (GRE-848)", () => {
+  it("lists real catalog flags, each with an issue, none of them retired", () => {
+    for (const { key, issue } of GRADUATED_INSTANCE_FEATURE_KEYS) {
+      expect(INSTANCE_FEATURE_KEYS, key).toContain(key);
+      expect(issue.trim().length, key).toBeGreaterThan(0);
+      expect(isGraduatedInstanceFeatureKey(key), key).toBe(true);
+      expect(isRetiredInstanceFeatureKey(key), key).toBe(false);
+    }
+    expect(isGraduatedInstanceFeatureKey("enableSmokeLab")).toBe(false);
   });
 });
 

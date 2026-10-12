@@ -247,6 +247,26 @@ describe("AgentProviderConnection reuse", () => {
     } finally { open.mockRestore(); }
   });
 
+  it("saves a pasted setup token on a local install instead of importing this machine's login", async () => {
+    managedApi.create.mockResolvedValueOnce({ connectionId: "token-account", grantId: "token-grant" });
+    const onComplete = vi.fn();
+    const intent = { provider: "anthropic" as const, method: "subscription" as const, name: "My Claude subscription", ownership: "personal" as const, agentIds: [], allAgents: true, connectionId: "11111111-1111-4111-8111-111111111111" };
+    await mount("claude_local", false, false, false, false, false, { intent, fixedMethod: true, onComplete }, true);
+    openProvider();
+    click("Paste it instead");
+    expect(host.textContent).toContain("claude setup-token");
+    const field = host.querySelector("input") as HTMLInputElement;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    flushSync(() => {
+      setValue.call(field, "sk-ant-oat01-fixture");
+      field.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click("Save token");
+    await vi.waitFor(() => expect(onComplete).toHaveBeenCalledWith({ connectionId: "token-account", grantId: "token-grant", method: "subscription" }));
+    expect(managedApi.create).toHaveBeenCalledWith("c1", { ...intent, setupToken: "sk-ant-oat01-fixture" });
+    expect(managedApi.connectLocal).not.toHaveBeenCalled();
+  });
+
   it("does not advance after Back while the saved login result is loading", async () => {
     let finish!: (result: { connectionId: string; grantId: string }) => void;
     managedApi.loginResult.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

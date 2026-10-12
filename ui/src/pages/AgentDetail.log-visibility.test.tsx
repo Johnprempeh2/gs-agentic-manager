@@ -12,10 +12,11 @@ vi.mock("@tanstack/react-query", async (original) => ({
   ...await original<typeof import("@tanstack/react-query")>(),
   useQuery: () => ({ data: empty }),
 }));
-vi.mock("../adapters", () => ({
+vi.mock("../adapters", async () => ({
   getUIAdapter: () => null,
   onAdapterChange: () => () => {},
   buildTranscript: (lines: unknown[]) => lines,
+  rebrandRunLogText: (await import("@greatstone/adapter-utils/run-log-transcript")).rebrandRunLogText,
 }));
 vi.mock("../components/transcript/RunTranscriptView", () => ({
   RunTranscriptView: ({ entries }: { entries: Array<{ chunk: string }> }) => <div>{entries.map(line => line.chunk).join(" ")}</div>,
@@ -91,4 +92,23 @@ it.each([LogViewer, ProductionLogViewer])("polls logs when WebSocket constructio
     await act(async () => root.unmount());
   }
   expect(sockets[0].close).toHaveBeenCalled();
+});
+
+it.each([LogViewer, ProductionLogViewer])("shows the product tag in a stderr excerpt stored before the rename (%#)", async (Viewer) => {
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const row = JSON.stringify({ seq: 1, ts: "2026-09-10T12:00:01Z", stream: "stdout", chunk: "output" }) + "\n";
+  log.mockResolvedValue({ content: row, nextOffset: row.length });
+  const run = {
+    id: "run-1", companyId: "company-1", agentId: "agent-1", status: "failed", logRef: "log",
+    stderrExcerpt: "[paperclip] Adapter execution timeout: none (no adapter wall-clock timeout for this target)\n",
+  } as HeartbeatRun;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  try {
+    await act(async () => root.render(<Viewer run={run} adapterType="codex_local" />));
+    expect(container.textContent).toContain("[gsam] Adapter execution timeout: none");
+    expect(container.textContent).not.toContain("[paperclip]");
+  } finally {
+    await act(async () => root.unmount());
+  }
 });

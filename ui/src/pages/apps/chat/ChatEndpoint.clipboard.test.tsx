@@ -562,13 +562,12 @@ describe("chat setup and identity-link clipboard actions", () => {
     expect(mocks.createLinkIntent).not.toHaveBeenCalled();
   });
 
-  it("links the missing HTTPS warning to the setup guide", async () => {
+  it("explains how to set up HTTPS in the missing HTTPS warning", async () => {
     await render("slack", false, false);
     const warning = container.querySelector('[role="alert"]')!;
     expect(warning.textContent).toContain("Public HTTPS URL required");
-    const link = warning.querySelector("a")!;
-    expect(link.textContent).toBe("Learn how to set up HTTPS");
-    expect(link.href).toBe("https://docs.paperclip.ing/reference/deploy/https/");
+    expect(warning.textContent).toContain("reverse proxy with a trusted certificate");
+    expect(warning.querySelector("a")).toBeNull();
   });
 
   it("cancels the delayed Slack advance when returning to the agent step", async () => {
@@ -650,7 +649,7 @@ describe("chat setup and identity-link clipboard actions", () => {
     // Same failure again, well inside the dedupe window: the second toast is
     // suppressed, so the button itself is the only thing left to say so.
     const toastsAfterFirst = mocks.pushToast.mock.calls.length;
-    await click("Couldn’t copy — select it manually");
+    await click("Couldn’t copy. Select it manually");
     expect(container.textContent).toContain("Couldn’t copy");
     expect(container.textContent).not.toContain("Webhook secret copied");
     expect(mocks.pushToast.mock.calls.length).toBeGreaterThanOrEqual(

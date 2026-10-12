@@ -1,4 +1,5 @@
-import { useState, type ReactNode } from "react";
+import { useContext, useState, type ReactNode } from "react";
+import { TaskChatRunHistoryRequest } from "./expansion-state";
 import { cn } from "@/lib/utils";
 import { useStreamlinedTaskChatPresentation } from "./presentation-mode";
 import { Check, ChevronRight, X } from "lucide-react";
@@ -76,6 +77,7 @@ export function TaskChatTurn({
   leading,
 }: TaskChatTurnProps) {
   const streamlined = useStreamlinedTaskChatPresentation();
+  const requestRunHistory = useContext(TaskChatRunHistoryRequest);
   const parentRow = !item.settled && item.liveStatus != null;
   // The new GS Agentic Manager Runner task surface owns one durable chronological
   // timeline. The Worked/Stopped row is its stable header, so it stays directly
@@ -182,7 +184,10 @@ export function TaskChatTurn({
   const header = item.settled ? (
     <button
       type="button"
-      onClick={() => setOpen((o) => !o)}
+      onClick={() => {
+        if (!open && item.historyPending) requestRunHistory?.(item.runIds ?? []);
+        setOpen((o) => !o);
+      }}
       aria-expanded={open}
       className={cn(
         "group flex w-full items-center gap-2 px-1 text-muted-foreground transition-colors hover:text-foreground",
@@ -273,9 +278,21 @@ export function TaskChatTurn({
       >
         <div>
           <div className="flex flex-col gap-2 pt-1">
-            {historyMounted && foldedItems.map((child) => (
-              <div key={child.id}>{renderChild(child)}</div>
-            ))}
+            {historyMounted && item.historyPending ? (
+              // A digest row knows its counts but not its content yet.
+              <div
+                className="px-1 text-xs text-muted-foreground"
+                role="status"
+                data-testid="task-chat-turn-history-loading"
+              >
+                Loading activity…
+              </div>
+            ) : (
+              historyMounted &&
+              foldedItems.map((child) => (
+                <div key={child.id}>{renderChild(child)}</div>
+              ))
+            )}
           </div>
         </div>
       </div>

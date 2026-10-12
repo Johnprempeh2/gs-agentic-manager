@@ -1,0 +1,12 @@
+# Runs gsam-offsite@<code>.service every night (GRE-666). A missed night shows
+# in `status` and the host watch after 26 hours.
+[Unit]
+Description=GS Agentic Manager off-host backup %i, nightly
+
+[Timer]
+OnCalendar=*-*-* 02:30
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

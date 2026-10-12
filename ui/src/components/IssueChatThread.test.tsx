@@ -505,6 +505,9 @@ describe("IssueChatThread", () => {
         className: expect.stringContaining("paperclip-markdown-on-accent"),
       }),
     );
+    // The bubble sets --gs-human-bubble-fg in both themes; the markdown above
+    // inherits it, so the human's text stays readable in dark mode (GRE-620).
+    expect(container.querySelector(".gs-human-bubble")).not.toBeNull();
 
     act(() => {
       root.unmount();
@@ -3374,7 +3377,7 @@ describe("IssueChatThread", () => {
     expect(dock).not.toBeNull();
     expect(dock?.className).toContain("sticky");
     expect(dock?.className).toContain("bottom-(--sz-calc-8)");
-    expect(dock?.className).toContain("z-20");
+    expect(dock?.className).toContain("z-sticky");
 
     const composer = container.querySelector(
       '[data-testid="issue-chat-composer"]',
@@ -4674,7 +4677,7 @@ describe("IssueAssigneePausedNotice", () => {
     });
 
     expect(container.textContent).toContain(
-      "arrived paused from an organization import",
+      "arrived paused from an organisation import",
     );
     const resumeButton = container.querySelector(
       '[data-testid="issue-assignee-paused-resume"]',

@@ -1,4 +1,5 @@
 import { instanceSettingsService } from "../../../services/instance-settings.js";
+import { issueService } from "../../../services/issues.js";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -241,6 +242,71 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
     expect(checked).toBe(true);
   });
 
+  it("runs the host callbacks on the release transaction, not a second pooled connection", async () => {
+    const companyId = await seedCompany();
+    const agentId = await seedAgent({ companyId });
+    const issueId = await seedIssue({ companyId, assigneeAgentId: agentId, status: "done" });
+    const runId = await seedRun({ companyId, agentId, status: "succeeded", contextSnapshot: { issueId } });
+    await db.update(issues).set({ executionRunId: runId }).where(eq(issues.id, issueId));
+
+    // One connection: a callback reading through the outer pool would wait
+    // for the connection the release transaction already holds.
+    const singleDb = createDb(tempDb!.connectionString, { maxConnections: 1 });
+    const readIssueThrough = (executor: Db) =>
+      executor
+        .select({ id: issues.id })
+        .from(issues)
+        .where(eq(issues.id, issueId))
+        .then((rows) => rows[0]?.id ?? null);
+    const seen: Array<string | null> = [];
+    const adapter = createPostgresWakeQueueAdapter(singleDb, {
+      resolveResponsibleUserId: async (_input, executor) => {
+        seen.push(await readIssueThrough(executor));
+        return "responsible-user";
+      },
+      getRoutineEnv: async (_input, executor) => {
+        seen.push(await readIssueThrough(executor));
+        return { routineId: null, env: null, responsibleUserId: null };
+      },
+      resolveSessionBeforeForWakeup: async (_input, executor) => {
+        seen.push(await readIssueThrough(executor));
+        return null;
+      },
+    });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        adapter.withIssueExecutionLock({ companyId, runId, now: new Date() }, async (locked, ports) => {
+          const routineEnvContext = await ports.host.getRoutineEnv({ companyId, issue: locked.primaryIssue });
+          await ports.host.resolveResponsibleUserId({
+            companyId,
+            contextSnapshot: {},
+            issue: locked.primaryIssue,
+            routineEnvContext,
+            requestedByActorType: "system",
+            requestedByActorId: null,
+            source: "automation",
+            triggerDetail: "system",
+            existingRunResponsibleUserId: null,
+          });
+          await ports.host.resolveSessionBeforeForWakeup({ companyId, agentId, taskKey: null });
+          return { outcome: { kind: "released" as const }, postCommitEffects: [] };
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error("a host callback waited for a second pooled connection")),
+            10_000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+      await singleDb.$client.end({ timeout: 1 });
+    }
+    expect(seen).toEqual([issueId, issueId, issueId]);
+  }, 30_000);
+
   it.each([false, true])("rechecks disabled chat mode before interrupted queue promotion (conversation=%s)", async (conversation) => {
     const settings = instanceSettingsService(db);
     const original = (await settings.getExperimental()).enableAgentChat;
@@ -283,6 +349,54 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
       }
     } finally {
       await settings.updateExperimental({ enableAgentChat: original });
+    }
+  });
+
+  // GRE-792: a board comment queued during a run must not reopen the task
+  // when the board closes it afterwards. A comment after the close still does.
+  it.each(["comment_then_board_done", "board_done_then_comment"])("respects a board close against a queued comment wake (%s)", async (scenario) => {
+    const companyId = await seedCompany();
+    const agentId = await seedAgent({ companyId });
+    const issueId = await seedIssue({ companyId, assigneeAgentId: agentId });
+    const runId = await seedRun({ companyId, agentId, status: "running", contextSnapshot: { issueId } });
+    await db.update(issues).set({ executionRunId: runId, checkoutRunId: runId }).where(eq(issues.id, issueId));
+    const queueBoardComment = async () => {
+      const [comment] = await db.insert(issueComments).values({
+        companyId, issueId, authorUserId: "responsible-user", body: "One more thing",
+      }).returning();
+      return seedDeferredWake({ companyId, agentId, issueId, requestedByActorId: "responsible-user",
+        payload: { commentId: comment.id, _paperclipWakeContext: { issueId, wakeReason: "issue_commented", wakeCommentIds: [comment.id] } },
+      });
+    };
+    const boardDone = () => issueService(db).update(issueId, { status: "done", actorUserId: "responsible-user" });
+
+    let wakeId: string;
+    if (scenario === "comment_then_board_done") {
+      wakeId = await queueBoardComment();
+      await boardDone();
+    } else {
+      await boardDone();
+      wakeId = await queueBoardComment();
+    }
+    await db.update(heartbeatRuns).set({ status: "succeeded" }).where(eq(heartbeatRuns.id, runId));
+
+    const release = createReleaseIssueExecution({
+      issueLock: createPostgresWakeQueueAdapter(db, stubDeps),
+      recovery: { escalateStrandedAssignedIssue: async () => {}, escalateStrandedRecoveryIssueInPlace: async () => {}, scheduleReviewWaitMonitor: async () => {} },
+    });
+    const result = await release({ companyId, runId, now: new Date() });
+
+    const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
+    const [wake] = await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.id, wakeId));
+    if (scenario === "comment_then_board_done") {
+      expect(result.outcome.kind).toBe("released");
+      expect(result.postCommitEffects.some((effect) => effect.kind === "issue_reopened")).toBe(false);
+      expect(issue.status).toBe("done");
+      expect(wake.status).toBe("cancelled");
+    } else {
+      expect(result.outcome.kind).toBe("promoted");
+      expect(result.postCommitEffects).toContainEqual(expect.objectContaining({ kind: "issue_reopened", reopenedFrom: "done" }));
+      expect(issue.status).toBe("todo");
     }
   });
 

@@ -36,7 +36,7 @@ function buildBreakdownTitle(summary: ExternalObjectSummary): string {
   }
   if (summary.staleCount > 0) parts.push(`${summary.staleCount} stale`);
   parts.push(`${summary.total} total`);
-  return `External objects: ${parts.join(", ")}`;
+  return `Linked work: ${parts.join(", ")}`;
 }
 
 /**

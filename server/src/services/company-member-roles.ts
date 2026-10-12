@@ -18,6 +18,16 @@ export function normalizeHumanRole(
     : fallback;
 }
 
+/**
+ * Company-wide actions (releasing live, rolling back, changing company
+ * settings, archiving or deleting the company) are for owners and admins
+ * only. Operators and viewers, and any legacy or Cloud role such as
+ * "member" or "support", are refused.
+ */
+export function isCompanyOwnerOrAdminRole(role: unknown): boolean {
+  return role === "owner" || role === "admin";
+}
+
 export function grantsForHumanRole(
   role: HumanCompanyMembershipRole
 ): Array<{

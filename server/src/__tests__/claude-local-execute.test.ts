@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -381,6 +382,43 @@ describe("claude execute", () => {
       expect(result.exitCode).toBe(0);
       const { argv } = JSON.parse(await fs.readFile(capturePath, "utf8"));
       expect(argv[argv.indexOf("--model") + 1]).toBe(expected);
+    } finally {
+      restore();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes a PreToolUse hook that refuses pattern kills (GRE-746)", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-claude-kill-hook-"));
+    const { workspace, commandPath, capturePath, restore } = await setupExecuteEnv(root);
+    try {
+      const result = await execute({
+        runId: "run-kill-hook",
+        agent: { id: "agent-1", companyId: "co-1", name: "Test", adapterType: "claude_local", adapterConfig: {} },
+        runtime: { sessionId: null, sessionParams: null, sessionDisplayId: null, taskKey: null },
+        config: { engine: "cli", command: commandPath, cwd: workspace, env: { GSAM_TEST_CAPTURE_PATH: capturePath } },
+        context: {}, onLog: async () => {},
+      });
+      expect(result.exitCode).toBe(0);
+      const { argv } = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
+      const settingsIndex = argv.indexOf("--settings");
+      expect(settingsIndex).toBeGreaterThan(-1);
+      const settings = JSON.parse(argv[settingsIndex + 1]!);
+      const [entry] = settings.hooks.PreToolUse;
+      expect(entry.matcher).toBe("Bash");
+      const hookCommand: string = entry.hooks[0].command;
+      expect(hookCommand).toContain("gsam-kill-command-hook.cjs");
+
+      const refused = spawnSync("sh", ["-c", hookCommand], {
+        input: JSON.stringify({ tool_name: "Bash", tool_input: { command: 'pkill -f "dev-runner.ts dev"' } }),
+        encoding: "utf8",
+      });
+      expect(refused.status).toBe(2);
+      const allowed = spawnSync("sh", ["-c", hookCommand], {
+        input: JSON.stringify({ tool_name: "Bash", tool_input: { command: "kill 12345" } }),
+        encoding: "utf8",
+      });
+      expect(allowed.status).toBe(0);
     } finally {
       restore();
       await fs.rm(root, { recursive: true, force: true });

@@ -17,6 +17,8 @@ const mockHeartbeatService = vi.hoisted(() => ({
   readLog: vi.fn(),
   wakeup: vi.fn(),
   getRun: vi.fn(),
+  list: vi.fn(),
+  countFinishedByStatus: vi.fn(),
 }));
 
 const mockIssueService = vi.hoisted(() => ({
@@ -63,6 +65,9 @@ const mockAccessService = vi.hoisted(() => ({
   decide: vi.fn(),
   hasPermission: vi.fn(),
 }));
+const mockRunTranscriptDigests = vi.hoisted(() => ({
+  forRuns: vi.fn(),
+}));
 const mockWorkspaceOperationService = vi.hoisted(() => ({
   getById: vi.fn(),
   listForRun: vi.fn(),
@@ -102,6 +107,10 @@ function registerModuleMocks() {
 
   vi.doMock("../services/run-secret-redaction.js", () => ({
     createRunSecretRedactionRegistry: () => mockRunSecretRedactionRegistry,
+  }));
+
+  vi.doMock("../services/run-transcript-digests.js", () => ({
+    runTranscriptDigestService: () => mockRunTranscriptDigests,
   }));
 
   vi.doMock("../services/provider-trace-store.js", () => ({
@@ -609,6 +618,35 @@ describe("agent live run routes", () => {
     });
   });
 
+  it("serves transcript digests for the listed runs inside the task's company", async () => {
+    const digest = [{ kind: "tool_call", ts: "2026-04-10T09:30:01.000Z", name: "", input: null, toolUseId: "t-1" }];
+    mockRunTranscriptDigests.forRuns.mockResolvedValue({ "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": digest });
+    const res = await requestApp(await createApp(), (baseUrl) =>
+      request(baseUrl).get(
+        "/api/issues/PAP-1/run-transcript-digests?runIds=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa,bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      ),
+    );
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(mockRunTranscriptDigests.forRuns).toHaveBeenCalledWith("company-1", [
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ]);
+    expect(res.body).toEqual({ digests: { "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa": digest } });
+  });
+
+  it("rejects malformed transcript digest run lists before reading anything", async () => {
+    const app = await createApp();
+    const tooMany = Array.from({ length: 201 }, () => "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").join(",");
+    for (const runIds of ["not-a-run", " aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", tooMany]) {
+      const res = await requestApp(app, (baseUrl) =>
+        request(baseUrl).get(`/api/issues/PAP-1/run-transcript-digests?runIds=${encodeURIComponent(runIds)}`),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+    }
+    expect(mockRunTranscriptDigests.forRuns).not.toHaveBeenCalled();
+  });
+
   it.each(["skill_test", "task_bridge"])(
     "denies %s keys from company-wide run and workspace logs",
     async (kind) => {
@@ -638,6 +676,7 @@ describe("agent live run routes", () => {
         "/api/heartbeat-runs/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/log",
         "/api/heartbeat-runs/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/workspace-operations",
         "/api/workspace-operations/operation-1/log",
+        "/api/issues/PAP-1/run-transcript-digests?runIds=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       ];
 
       for (const path of paths) {
@@ -648,12 +687,113 @@ describe("agent live run routes", () => {
 
       expect(mockHeartbeatService.readLog).not.toHaveBeenCalled();
       expect(mockWorkspaceOperationService.readLog).not.toHaveBeenCalled();
+      expect(mockRunTranscriptDigests.forRuns).not.toHaveBeenCalled();
       expect(mockAccessService.decide).toHaveBeenCalledWith(expect.objectContaining({
         action: "company_scope:read",
         resource: { type: "company", companyId: "company-1" },
       }));
     },
   );
+
+  describe("company run list filters (GRE-794)", () => {
+    const listPath = "/api/companies/company-1/heartbeat-runs";
+
+    beforeEach(() => {
+      mockHeartbeatService.list.mockResolvedValue([{ id: "run-1", status: "failed" }]);
+    });
+
+    it("passes no new filter when none is given, so the call is the same as before", async () => {
+      const res = await requestApp(await createApp(), (baseUrl) =>
+        request(baseUrl).get(`${listPath}?limit=5&summary=true`),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.list).toHaveBeenCalledWith("company-1", undefined, 5, { summary: true });
+      expect(res.body).toEqual([{ id: "run-1", status: "failed" }]);
+    });
+
+    it("passes the status list and the createdAt bounds to the service", async () => {
+      const res = await requestApp(await createApp(), (baseUrl) =>
+        request(baseUrl).get(
+          `${listPath}?status=failed,%20interrupted,failed&since=2026-09-27&before=2026-10-02T08:41:00.000Z`,
+        ),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.list).toHaveBeenCalledWith("company-1", undefined, undefined, {
+        summary: false,
+        statuses: ["failed", "interrupted"],
+        since: new Date("2026-09-27T00:00:00.000Z"),
+        before: new Date("2026-10-02T08:41:00.000Z"),
+      });
+    });
+
+    it.each([
+      ["status=done", /Unknown run status: done/],
+      ["status=", /Unknown run status/],
+      ["status=failed&status=cancelled", /one comma-separated list/],
+      ["since=yesterday", /since must be one ISO 8601 time/],
+      ["since=1696000000000", /since must be one ISO 8601 time/],
+      ["before=2026-13-45", /before must be one ISO 8601 time/],
+    ])("rejects %s with 400 and reads nothing", async (query, message) => {
+      const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl).get(`${listPath}?${query}`));
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(res.body.error).toMatch(message);
+      expect(mockHeartbeatService.list).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("company run failure rate (GRE-1325)", () => {
+    const ratePath = "/api/companies/company-1/heartbeat-runs/failure-rate";
+
+    beforeEach(() => {
+      mockHeartbeatService.countFinishedByStatus.mockResolvedValue([
+        { status: "succeeded", count: 1880 },
+        { status: "failed", count: 70 },
+        { status: "timed_out", count: 20 },
+        { status: "interrupted", count: 30 },
+        { status: "cancelled", count: 400 },
+      ]);
+    });
+
+    it("reads a week of runs in one call, defaulting to the last 7 days", async () => {
+      const startedAt = Date.now();
+      const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl).get(ratePath));
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.countFinishedByStatus).toHaveBeenCalledTimes(1);
+      const [, options] = mockHeartbeatService.countFinishedByStatus.mock.calls[0];
+      expect(options.before.getTime() - options.since.getTime()).toBe(7 * 86_400_000);
+      expect(options.before.getTime()).toBeGreaterThanOrEqual(startedAt);
+      expect(res.body).toMatchObject({
+        agentId: null,
+        byStatus: { succeeded: 1880, failed: 70, timed_out: 20, interrupted: 30, cancelled: 400 },
+        failed: 120,
+        judged: 2000,
+        failedPer100: 6,
+      });
+    });
+
+    it("passes the window and agent through", async () => {
+      const res = await requestApp(await createApp(), (baseUrl) =>
+        request(baseUrl).get(`${ratePath}?since=2026-10-01&before=2026-10-08T00:00:00Z&agentId=agent-1`),
+      );
+      expect(res.status, JSON.stringify(res.body)).toBe(200);
+      expect(mockHeartbeatService.countFinishedByStatus).toHaveBeenCalledWith("company-1", {
+        agentId: "agent-1",
+        since: new Date("2026-10-01T00:00:00.000Z"),
+        before: new Date("2026-10-08T00:00:00.000Z"),
+      });
+      expect(res.body).toMatchObject({ since: "2026-10-01T00:00:00.000Z", before: "2026-10-08T00:00:00.000Z", agentId: "agent-1" });
+    });
+
+    it.each([
+      ["since=last-week", /since must be one ISO 8601 time/],
+      ["since=2026-10-08&before=2026-10-01", /since must be earlier than before/],
+    ])("rejects %s with 400 and reads nothing", async (query, message) => {
+      const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl).get(`${ratePath}?${query}`));
+      expect(res.status, JSON.stringify(res.body)).toBe(400);
+      expect(res.body.error).toMatch(message);
+      expect(mockHeartbeatService.countFinishedByStatus).not.toHaveBeenCalled();
+    });
+  });
 
   it("caps company live run polling by default", async () => {
     const rows = Array.from({ length: 75 }, (_, index) => ({

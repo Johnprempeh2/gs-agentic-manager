@@ -130,7 +130,7 @@ export function estimateStatusCardCost(policy: StatusCardRefreshPolicy): StatusC
     cost,
     primary: `Up to ~${effective} updates/day (${cadence}${withinHours}) ≈ ${cost}`,
     note: cappedByTokenCap
-      ? `Capped by your ${formatTokens(cap!)} daily token cap — the card pauses when it's hit.`
+      ? `Capped by your ${formatTokens(cap!)} daily token cap. The card pauses when it's hit.`
       : "Only runs when something changed; a cheap no-op check otherwise.",
   };
 }

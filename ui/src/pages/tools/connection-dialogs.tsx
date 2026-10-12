@@ -38,6 +38,7 @@ import {
   CapabilityBadges,
   QuarantineBadge,
 } from "./shared";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export const TRANSPORT_LABEL: Record<string, string> = {
   mcp_remote: "remote http",
@@ -77,7 +78,7 @@ export function CatalogDialog({ connection, onClose }: { connection: ToolConnect
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Tool catalog — {connection.name}</DialogTitle>
+          <DialogTitle>Tool catalog: {connection.name}</DialogTitle>
         </DialogHeader>
         {catalog.isLoading ? (
           <LoadingState />
@@ -474,7 +475,7 @@ export function AddConnectionDialog({
                       </p>
                     ) : null}
                     <p className="text-xs text-muted-foreground">
-                      Free-text secrets are not accepted — pick a vault entry; GS Agentic Manager stores only the
+                      Free-text secrets are not accepted. Pick a vault entry; {CLIENT_BRAND_NAME} stores only the
                       <span className="font-mono"> vault://</span> reference and resolves it at gateway use time.
                     </p>
                   </>
@@ -500,13 +501,13 @@ export function AddConnectionDialog({
                 <div className="mt-2 grid grid-cols-3 gap-2">
                   <div>
                     <p className="text-lg font-semibold tabular-nums text-foreground">
-                      {probeResult.toolCount ?? "—"}
+                      {probeResult.toolCount ?? "n/a"}
                     </p>
                     <p className="text-xs text-muted-foreground">tools discovered</p>
                   </div>
                   <div>
                     <p className="text-lg font-semibold tabular-nums text-foreground">
-                      {probeResult.latencyMs != null ? `${probeResult.latencyMs}ms` : "—"}
+                      {probeResult.latencyMs != null ? `${probeResult.latencyMs}ms` : "n/a"}
                     </p>
                     <p className="text-xs text-muted-foreground">probe latency</p>
                   </div>

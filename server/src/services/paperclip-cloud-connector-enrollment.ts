@@ -154,7 +154,7 @@ async function startPaperclipCloudConnectorEnrollmentUnlocked(input: {
   const env = input.env ?? process.env;
   const request = input.request ?? fetch;
   if (hasManagedConnectorIdentityOverride(env)) {
-    throw new Error("Paperclip Cloud self-host enrollment is unavailable with managed identity configuration");
+    throw new Error("Cloud self-host enrollment is unavailable with managed identity configuration");
   }
   const origin = normalizeInstanceOrigin(input.origin);
   const existingIdentity = loadPaperclipCloudConnectorIdentity();
@@ -164,7 +164,7 @@ async function startPaperclipCloudConnectorEnrollmentUnlocked(input: {
     identity = createIdentity(env);
   } else if (!identityMatchesTarget(existingIdentity, target)) {
     if (existingIdentity.status === "active") {
-      throw new Error("Paperclip Cloud connector is enrolled with another target");
+      throw new Error("Cloud connector is enrolled with another target");
     }
     identity = createIdentity(env);
   } else {
@@ -172,13 +172,13 @@ async function startPaperclipCloudConnectorEnrollmentUnlocked(input: {
   }
   if (identity.status === "pending" && identity.pending && Date.parse(identity.pending.expiresAt) > Date.now()) {
     if (identity.pending.origin !== origin) {
-      throw new Error("Paperclip Cloud enrollment is already pending for another origin");
+      throw new Error("Cloud enrollment is already pending for another origin");
     }
     if (identity.pending.companyId !== input.companyId) {
-      throw new Error("Paperclip Cloud enrollment is already pending for another company");
+      throw new Error("Cloud enrollment is already pending for another company");
     }
     if (input.initiatedBy && identity.pending.initiatedBy && identity.pending.initiatedBy !== input.initiatedBy) {
-      throw new Error("Paperclip Cloud enrollment is already pending for another administrator");
+      throw new Error("Cloud enrollment is already pending for another administrator");
     }
     return paperclipCloudConnectorEnrollmentStatus(env);
   }
@@ -199,10 +199,10 @@ async function startPaperclipCloudConnectorEnrollmentUnlocked(input: {
     }),
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);
-  if (!response?.ok) throw new Error("Paperclip Cloud enrollment is unavailable");
+  if (!response?.ok) throw new Error("Cloud enrollment is unavailable");
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || typeof body.enrollmentId !== "string" || typeof body.verificationUrl !== "string" || typeof body.expiresAt !== "string") {
-    throw new Error("Paperclip Cloud returned an invalid enrollment response");
+    throw new Error("Cloud returned an invalid enrollment response");
   }
   const verificationUrl = new URL(body.verificationUrl);
   if (verificationUrl.origin !== identity.brokerBaseUrl
@@ -210,7 +210,7 @@ async function startPaperclipCloudConnectorEnrollmentUnlocked(input: {
     || verificationUrl.pathname !== "/connections/enroll"
     || verificationUrl.searchParams.size !== 1
     || verificationUrl.searchParams.get("id") !== body.enrollmentId) {
-    throw new Error("Paperclip Cloud returned an invalid enrollment destination");
+    throw new Error("Cloud returned an invalid enrollment destination");
   }
   identity = {
     ...identity,
@@ -257,7 +257,7 @@ async function completePaperclipCloudConnectorEnrollmentUnlocked(input: {
     || pending.enrollmentId !== input.enrollmentId || pending.returnState !== input.state
     || Date.parse(pending.expiresAt) <= Date.now()
     || !identityMatchesTarget(identity, connectorTarget(input.env ?? process.env, identity))) {
-    throw new Error("Invalid or expired Paperclip Cloud enrollment state");
+    throw new Error("Invalid or expired cloud enrollment state");
   }
   const audience = `${identity.brokerBaseUrl}/v1/connector/enrollment-claims`;
   const now = Math.floor(Date.now() / 1_000);
@@ -279,11 +279,11 @@ async function completePaperclipCloudConnectorEnrollmentUnlocked(input: {
     body: JSON.stringify({ request: requestToken, enrollmentId: input.enrollmentId, approvalCode: input.approvalCode }),
     signal: AbortSignal.timeout(15_000),
   }).catch(() => null);
-  if (!response?.ok) throw new Error("Paperclip Cloud enrollment could not be completed");
+  if (!response?.ok) throw new Error("Cloud enrollment could not be completed");
   const body = await response.json().catch(() => null) as Record<string, unknown> | null;
   if (!body || body.id !== identity.instanceId || body.environment !== identity.environment
     || !Array.isArray(body.origins) || !body.origins.includes(pending.origin)) {
-    throw new Error("Paperclip Cloud returned an invalid enrollment binding");
+    throw new Error("Cloud returned an invalid enrollment binding");
   }
   saveIdentity({
     ...identity,
@@ -335,7 +335,7 @@ function parseIdentity(value: unknown): PaperclipCloudConnectorIdentity {
     || typeof value.sealPrivateKey !== "string" || typeof value.sealPublicKey !== "string"
     || (value.status !== "unenrolled" && value.status !== "pending" && value.status !== "active")
     || !Array.isArray(value.origins) || !value.origins.every((origin) => typeof origin === "string")) {
-    throw new Error("Invalid Paperclip Cloud connector identity");
+    throw new Error("Invalid cloud connector identity");
   }
   return value as PaperclipCloudConnectorIdentity;
 }
@@ -352,10 +352,10 @@ function connectorEnvironment(
       ? "staging"
       : "development";
   const value = env.GSAM_CLOUD_CONNECTOR_ENVIRONMENT?.trim() || fallback || inferred;
-  if (!isEnvironment(value)) throw new Error("Paperclip Cloud connector environment is invalid");
+  if (!isEnvironment(value)) throw new Error("Cloud connector environment is invalid");
   if ((host === "my.paperclip.app" && value !== "production")
     || (host === "my-staging.paperclip.app" && value !== "staging")) {
-    throw new Error("Paperclip Cloud connector broker and environment do not match");
+    throw new Error("Cloud connector broker and environment do not match");
   }
   return value;
 }
@@ -396,10 +396,10 @@ function isEnvironment(value: unknown): value is LocalConnectorEnvironment {
 function normalizeBrokerOrigin(value: string): string {
   const url = new URL(value.trim());
   if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback(url.hostname))) {
-    throw new Error("Paperclip Cloud connector URL must use HTTPS");
+    throw new Error("Cloud connector URL must use HTTPS");
   }
   if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) {
-    throw new Error("Paperclip Cloud connector URL must be an origin");
+    throw new Error("Cloud connector URL must be an origin");
   }
   return url.origin;
 }
@@ -407,10 +407,10 @@ function normalizeBrokerOrigin(value: string): string {
 function normalizeInstanceOrigin(value: string): string {
   const url = new URL(value.trim());
   if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback(url.hostname))) {
-    throw new Error("Paperclip Cloud enrollment requires HTTPS except on loopback");
+    throw new Error("Cloud enrollment requires HTTPS except on loopback");
   }
   if (url.username || url.password || url.search || url.hash || (url.pathname !== "/" && url.pathname !== "")) {
-    throw new Error("Paperclip Cloud enrollment requires an exact origin");
+    throw new Error("Cloud enrollment requires an exact origin");
   }
   return url.origin;
 }

@@ -36,6 +36,7 @@ import { EmptyState } from "../components/EmptyState";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { MarkdownEditor } from "../components/MarkdownEditor";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { CopyText } from "../components/CopyText";
 import { Identity } from "../components/Identity";
 import { AgentMultiSelect } from "../components/AgentMultiSelect";
@@ -468,7 +469,7 @@ function TrustChip({ level }: { level: CompanySkillTrustLevel }) {
     markdown_only: {
       icon: ShieldCheck,
       label: "Markdown only",
-      tooltip: "Text only — no scripts, no binaries, no assets.",
+      tooltip: "Text only: no scripts, no binaries, no assets.",
       className: "border-border bg-muted/40 text-muted-foreground",
     },
     assets: {
@@ -511,7 +512,7 @@ function CompatChip({ compatibility }: { compatibility: CompanySkillCompatibilit
     invalid: {
       icon: XOctagon,
       label: "Invalid",
-      tooltip: "This skill cannot be installed — content is not valid Agent Skills markdown.",
+      tooltip: "This skill cannot be installed: content is not valid Agent Skills markdown.",
       className: "border-destructive/40 bg-destructive/10 text-destructive",
     },
   } as const;
@@ -1034,6 +1035,7 @@ export function DiscoveryGrid({
   onOpenCard,
   loading,
   error,
+  onRetry,
   totalCount,
   onCreate,
   onImport,
@@ -1081,6 +1083,7 @@ export function DiscoveryGrid({
   onOpenCard: (card: DiscoveryCard) => void;
   loading: boolean;
   error: string | null;
+  onRetry?: () => void;
   totalCount: number;
   onCreate: () => void;
   onImport: () => void;
@@ -1407,7 +1410,7 @@ export function DiscoveryGrid({
           {loading ? (
             <PageSkeleton variant="list" />
           ) : error ? (
-            <div className="py-6 text-sm text-destructive">{error}</div>
+            <ErrorState error={error} onRetry={onRetry} />
           ) : sourceFilteredCards.length === 0 ? (
             <div className="py-12">
               <EmptyState
@@ -1873,7 +1876,7 @@ function CatalogDetailPane({
   packageVersion: string | null;
   installedSkill: CompanySkillListItem | null;
   installedSkillId: string | null;
-  fileQuery: { data: CatalogSkillFileDetail | undefined; isLoading: boolean; error: unknown };
+  fileQuery: { data: CatalogSkillFileDetail | undefined; isLoading: boolean; error: unknown; refetch: () => unknown };
   selectedPath: string;
   onInstall: () => void;
   onUpdate: () => void;
@@ -1900,7 +1903,7 @@ function CatalogDetailPane({
             </Button>
           </span>
         </TooltipTrigger>
-        <TooltipContent>This skill cannot be installed — its content is not valid Agent Skills markdown.</TooltipContent>
+        <TooltipContent>This skill cannot be installed: its content is not valid Agent Skills markdown.</TooltipContent>
       </Tooltip>
     );
   } else if (!isInstalled) {
@@ -2006,7 +2009,7 @@ function CatalogDetailPane({
         {fileQuery.isLoading ? (
           <PageSkeleton variant="detail" />
         ) : fileQuery.error ? (
-          <div className="text-sm text-destructive">{fileQuery.error instanceof Error ? fileQuery.error.message : "Failed to load file"}</div>
+          <ErrorState title="Could not load this file" error={fileQuery.error} onRetry={() => void fileQuery.refetch()} />
         ) : !fileQuery.data ? (
           <div className="text-sm text-muted-foreground">Select a file to inspect.</div>
         ) : fileQuery.data.markdown ? (
@@ -2146,7 +2149,7 @@ export function InstallPreviewDialog({
               <div className="text-foreground">{skill.recommendedForRoles.length === 0 ? "any" : skill.recommendedForRoles.join(" · ")}</div>
               <div className="text-muted-foreground">Provenance</div>
               <div className="min-w-0">
-                <div className="truncate">{packageName ?? "—"}{packageVersion ? ` v${packageVersion}` : ""}</div>
+                <div className="truncate">{packageName ?? "Unknown"}{packageVersion ? ` v${packageVersion}` : ""}</div>
                 <div className="truncate font-mono text-(length:--text-micro) text-muted-foreground">{skill.contentHash}</div>
               </div>
             </div>
@@ -3576,7 +3579,7 @@ export function SkillDetailPage({
       {/* Floating save bar: stays visible while a file edit is dirty so the
           unsaved state is obvious (PAP-10907 J). */}
       {isDirty ? (
-        <div className="fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
+        <div className="fixed bottom-6 left-1/2 z-drawer flex -translate-x-1/2 items-center gap-3 rounded-full border border-border bg-background/95 px-4 py-2 shadow-lg backdrop-blur">
           <span className="text-sm text-muted-foreground">Unsaved changes</span>
           <Button
             variant="ghost"
@@ -3621,8 +3624,8 @@ export function SkillDetailPage({
                 disabled={updateSettingsPending}
                 className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm text-foreground"
               >
-                <option value="company">Company — visible inside this company</option>
-                <option value="private">Private — only visible in your library</option>
+                <option value="company">Company: visible inside this company</option>
+                <option value="private">Private: only visible in your library</option>
               </select>
               <p className="text-xs text-muted-foreground">Public link sharing is coming later.</p>
             </div>
@@ -4677,7 +4680,7 @@ export function CompanySkills() {
         title: result.action === "created" ? "Skill installed" : result.action === "updated" ? "Skill updated" : "Skill is up to date",
         body: result.action === "created"
           ? enabledCount > 0
-            ? `${result.skill.name} — enabled for ${enabledCount} agent${enabledCount === 1 ? "" : "s"}.`
+            ? `${result.skill.name}: enabled for ${enabledCount} agent${enabledCount === 1 ? "" : "s"}.`
             : `${result.skill.name} is in the library but not enabled for any agent yet. Use "Add to agent" to enable it.`
           : result.skill.name,
       });
@@ -5423,6 +5426,10 @@ export function CompanySkills() {
           onOpenCard={openDiscoveryCard}
           loading={skillsQuery.isLoading || catalogListQuery.isLoading}
           error={skillsQuery.error?.message ?? catalogListQuery.error?.message ?? null}
+          onRetry={() => {
+            if (skillsQuery.error) void skillsQuery.refetch();
+            if (catalogListQuery.error) void catalogListQuery.refetch();
+          }}
           totalCount={discoveryCards.length}
           onCreate={() => void openNewSkill()}
           onImport={() => setImportDialogOpen(true)}

@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Link } from "@/lib/router";
+import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 export const githubSelectClass =
   "w-full rounded-md border border-input bg-background px-3 py-2 text-sm";
@@ -221,7 +222,7 @@ export function GitHubPolicyEditor({
           }
         />
         <p className="text-xs text-muted-foreground">
-          GS Agentic Manager supplies repository, PR, base and head commits, sender, and
+          {CLIENT_BRAND_NAME} supplies repository, PR, base and head commits, sender, and
           prior head as typed context. Saved revisions remain attached to review
           activity.
         </p>
@@ -317,7 +318,7 @@ export function GitHubPolicyEditor({
           <option value="report">Report only</option>
         </select>
         <p className="text-xs text-muted-foreground">
-          GS Agentic Manager computes the result for the exact reviewed commit.
+          {CLIENT_BRAND_NAME} computes the result for the exact reviewed commit.
           Incomplete reviews cannot pass. To require it before merging, select
           “GS Agentic Manager Review” in your GitHub branch protection or ruleset
           settings and choose this bot’s GitHub App as the expected source. Run

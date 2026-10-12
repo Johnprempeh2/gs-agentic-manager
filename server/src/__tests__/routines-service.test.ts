@@ -5,6 +5,7 @@ import {
   activityLog,
   agents,
   companies,
+  companyMemberships,
   companySecretBindings,
   companySecrets,
   companySecretVersions,
@@ -35,6 +36,7 @@ import { instanceSettingsService } from "../services/instance-settings.ts";
 import * as providerRegistry from "../secrets/provider-registry.ts";
 import { routineService } from "../services/routines.ts";
 import { secretService } from "../services/secrets.ts";
+import { LEGACY_BOARD_USER_ID, setBoardIdentityDeploymentMode } from "../services/board-identity.ts";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -82,8 +84,10 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
     await db.delete(projectWorkspaces);
     await db.delete(projects);
     await db.delete(agents);
+    await db.delete(companyMemberships);
     await db.delete(companies);
     await db.delete(instanceSettings);
+    setBoardIdentityDeploymentMode("local_trusted");
   });
 
   afterAll(async () => {
@@ -1309,6 +1313,102 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
       .from(issues)
       .where(eq(issues.id, run.linkedIssueId!));
     expect(createdIssue?.responsibleUserId).toBe(responsibleUserId);
+  });
+
+  async function createLegacyBoardRoutine(companyId: string, agentId: string, projectId: string, svc: Awaited<ReturnType<typeof seedFixture>>["svc"]) {
+    // Created in local_trusted mode, as the live routines were.
+    return svc.create(
+      companyId,
+      {
+        projectId,
+        goalId: null,
+        parentIssueId: null,
+        title: "legacy board routine",
+        description: null,
+        assigneeAgentId: agentId,
+        priority: "medium",
+        status: "active",
+        concurrencyPolicy: "coalesce_if_active",
+        catchUpPolicy: "skip_missed",
+      },
+      { userId: LEGACY_BOARD_USER_ID },
+    );
+  }
+
+  it("fires a routine still on local-board as the primary owner once sign-in is on", async () => {
+    const { companyId, agentId, projectId, svc } = await seedFixture();
+    const ownerUserId = `owner-${randomUUID()}`;
+    await db.insert(companyMemberships).values([
+      { companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, status: "active", membershipRole: "owner", createdAt: new Date(Date.UTC(2026, 0, 1)) },
+      { companyId, principalType: "user", principalId: ownerUserId, status: "active", membershipRole: "owner", createdAt: new Date(Date.UTC(2026, 0, 2)) },
+    ]);
+    const routine = await createLegacyBoardRoutine(companyId, agentId, projectId, svc);
+    expect(routine.responsibleUserId).toBe(LEGACY_BOARD_USER_ID);
+
+    setBoardIdentityDeploymentMode("authenticated");
+    const run = await svc.runRoutine(routine.id, { source: "schedule" });
+
+    expect(run.status).toBe("issue_created");
+    expect(run.responsibleUserId).toBe(ownerUserId);
+    const [createdIssue] = await db
+      .select({ responsibleUserId: issues.responsibleUserId })
+      .from(issues)
+      .where(eq(issues.id, run.linkedIssueId!));
+    expect(createdIssue?.responsibleUserId).toBe(ownerUserId);
+  });
+
+  it("keeps local-board on routine runs in local_trusted mode", async () => {
+    const { companyId, agentId, projectId, svc } = await seedFixture();
+    await db.insert(companyMemberships).values([
+      { companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, status: "active", membershipRole: "owner" },
+      { companyId, principalType: "user", principalId: `owner-${randomUUID()}`, status: "active", membershipRole: "owner" },
+    ]);
+    const routine = await createLegacyBoardRoutine(companyId, agentId, projectId, svc);
+    const run = await svc.runRoutine(routine.id, { source: "schedule" });
+    expect(run.responsibleUserId).toBe(LEGACY_BOARD_USER_ID);
+  });
+
+  it("changes the responsible user explicitly on update, routine and latest revision", async () => {
+    const { companyId, agentId, projectId, svc } = await seedFixture();
+    const benUserId = `ben-${randomUUID()}`;
+    await db.insert(companyMemberships).values([
+      { companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, status: "active", membershipRole: "owner" },
+      { companyId, principalType: "user", principalId: benUserId, status: "active", membershipRole: "member" },
+    ]);
+    const routine = await createLegacyBoardRoutine(companyId, agentId, projectId, svc);
+
+    // Without the field the existing responsible user is kept, as before.
+    const renamed = await svc.update(routine.id, { title: "renamed routine" }, { userId: benUserId });
+    expect(renamed?.responsibleUserId).toBe(LEGACY_BOARD_USER_ID);
+
+    const updated = await svc.update(routine.id, { responsibleUserId: benUserId }, { userId: "owner-user" });
+    expect(updated?.responsibleUserId).toBe(benUserId);
+    expect(updated?.latestRevisionId).not.toBe(renamed?.latestRevisionId);
+    const [latest] = await db.select().from(routineRevisions).where(eq(routineRevisions.id, updated!.latestRevisionId!));
+    expect(latest?.responsibleUserId).toBe(benUserId);
+    expect((latest?.snapshot as { routine: { responsibleUserId: string } }).routine.responsibleUserId).toBe(benUserId);
+
+    const run = await svc.runRoutine(routine.id, { source: "schedule" });
+    expect(run.responsibleUserId).toBe(benUserId);
+  });
+
+  it("refuses a responsible user who is not an active member, or local-board once sign-in is on", async () => {
+    const { companyId, agentId, projectId, svc } = await seedFixture();
+    const suspendedUserId = `gone-${randomUUID()}`;
+    await db.insert(companyMemberships).values([
+      { companyId, principalType: "user", principalId: LEGACY_BOARD_USER_ID, status: "active", membershipRole: "owner" },
+      { companyId, principalType: "user", principalId: suspendedUserId, status: "suspended", membershipRole: "member" },
+    ]);
+    const routine = await createLegacyBoardRoutine(companyId, agentId, projectId, svc);
+
+    await expect(svc.update(routine.id, { responsibleUserId: suspendedUserId }, { userId: "owner-user" }))
+      .rejects.toMatchObject({ status: 422 });
+    await expect(svc.update(routine.id, { responsibleUserId: `stranger-${randomUUID()}` }, { userId: "owner-user" }))
+      .rejects.toMatchObject({ status: 422 });
+
+    setBoardIdentityDeploymentMode("authenticated");
+    await expect(svc.update(routine.id, { responsibleUserId: LEGACY_BOARD_USER_ID }, { userId: "owner-user" }))
+      .rejects.toMatchObject({ status: 422 });
   });
 
   it("waits for the assignee wakeup to be queued before returning the routine run", async () => {
