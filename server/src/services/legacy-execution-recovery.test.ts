@@ -86,3 +86,17 @@ it("retains conversation retry eligibility for a transient restore lock timeout"
     workspaceRestoreFailure: "restore_lock_timeout", conversationContinuation: "continue_conversation_v1",
   } })).toBe(false);
 });
+
+it("treats a dependency-gate cancel as a wait, not an unknown provider outcome (GRE-1444)", () => {
+  const gated = {
+    runtimeMode: "legacy", status: "cancelled", errorCode: "issue_dependencies_blocked", scheduledRetryAttempt: 3,
+    scheduledRetryReason: "transient_failure",
+    resultJson: { executionRecovery: { kind: "bootstrap", providerWorkStarted: false } },
+  };
+  expect(legacyExecutionNeedsReconciliation(gated)).toBe(false);
+  expect(legacyExecutionNeedsReconciliation({ ...gated, resultJson: null })).toBe(true);
+  expect(legacyExecutionNeedsReconciliation({ ...gated, status: "failed" })).toBe(true);
+  expect(legacyExecutionNeedsReconciliation({ ...gated, resultJson: {
+    executionRecovery: { kind: "bootstrap", providerWorkStarted: true },
+  } })).toBe(true);
+});

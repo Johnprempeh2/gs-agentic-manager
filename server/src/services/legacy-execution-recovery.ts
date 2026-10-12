@@ -40,6 +40,10 @@ export function legacyExecutionNeedsReconciliation(
       evidence?.kind === "ai_connection_wait" && evidence.providerWorkStarted === false) return false;
   if (run.status === "cancelled" && run.errorCode === "workspace_busy" &&
       evidence?.kind === "workspace_wait" && evidence.providerWorkStarted === false) return false;
+  // The dependency gate cancels before dispatch; the blockers-resolved wake
+  // owns the next step, so retries it cancelled never reach the count (GRE-1444).
+  if (run.status === "cancelled" && run.errorCode === "issue_dependencies_blocked" &&
+      evidence?.kind === "bootstrap" && evidence.providerWorkStarted === false) return false;
   // Setup owns the bounded retry budget for temporary workspace scans. Its
   // exhaustion needs workspace repair, not reconciliation of provider actions
   // that the bootstrap evidence proves never started. Keep unknown outcomes held.

@@ -4956,6 +4956,18 @@ export function recoveryService(
         issue.status === "in_review"
           ? participantLatestRunForRecovery
           : latestRun;
+      // GRE-1444: a dependency-gate cancel is a wait, not a failure. While a
+      // blocker is open the blockers-resolved wake owns the next step; a
+      // failure retry here is cancelled at the gate again and only burns budget.
+      if (
+        executionRecoverySource?.status === "cancelled" &&
+        executionRecoverySource.errorCode === "issue_dependencies_blocked" &&
+        (await issuesSvc.listDependencyReadiness(issue.companyId, [issue.id]))
+          .get(issue.id)?.isDependencyReady === false
+      ) {
+        result.skipped += 1;
+        continue;
+      }
       if (
         executionRecoverySource?.agentId === agentId &&
         (
