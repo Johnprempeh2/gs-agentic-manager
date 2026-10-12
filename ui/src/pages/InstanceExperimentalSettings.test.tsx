@@ -48,8 +48,6 @@ async function flushReact() {
 
 const CONFERENCE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle conference room chat experimental setting"]';
-const STREAMLINED_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle Streamlined UI experimental setting"]';
 const TASK_WATCHDOGS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle task watchdogs experimental setting"]';
 const CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR =
@@ -336,30 +334,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("renders and patches the Streamlined UI experimental toggle on and off", async () => {
+  it("no longer shows a Streamlined UI toggle (graduated, GRE-1441)", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Streamlined UI");
-    expect(container.textContent).toContain(
-      "Use the simplified main sidebar, shared Tasks and Inbox presentation, focused task detail layout, and contextual navigation across Agents, Routines, Skills, and Settings.",
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(STREAMLINED_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-
-    await act(() => toggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-      enableStreamlinedUi: false,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(() => toggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-      enableStreamlinedUi: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).not.toContain("Streamlined UI");
+    expect(
+      container.querySelector('button[aria-label="Toggle Streamlined UI experimental setting"]'),
+    ).toBeNull();
   });
 
   it("does not render a Task Watchdogs toggle because watchdogs are always enabled", async () => {

@@ -417,45 +417,6 @@ describe("Sidebar", () => {
     });
   });
 
-  it("restores legacy agent and organization navigation when Streamlined UI is off", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableStreamlinedUi: false,
-      enableApps: true,
-    });
-    const root = await renderSidebar();
-
-    const labels = [...container.querySelectorAll("nav a")].map((anchor) => anchor.textContent?.trim());
-    expect(container.querySelector('[data-testid="sidebar-recent-tasks"]')).toBeNull();
-    expect(container.querySelector('[data-testid="sidebar-projects"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="sidebar-agents"]')?.getAttribute("data-streamlined")).toBe("undefined");
-    expect(container.textContent).toContain("Organization");
-    expect(labels).toEqual(expect.arrayContaining(["Org", "Connectors", "Timeline", "Costs", "Activity", "Settings"]));
-    expect(labels).not.toContain("Audit");
-    expect(labels).not.toContain("Projects");
-    expect(container.querySelector('a[href="/agents"]')).toBeNull();
-    expect(container.querySelector("aside")?.classList).toContain("border-r");
-    // GRE-585: Deliverables sits under Search in the top group, once.
-    expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(/^New TaskSearchDeliverables/);
-    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
-  it("locks the legacy collapse control while a secondary sidebar forces the rail", async () => {
-    mockSidebar.collapseLocked = true;
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStreamlinedUi: false });
-    const root = await renderSidebar();
-
-    expect(container.querySelector('button[aria-label="Collapse sidebar"]')).toBeNull();
-    expect(container.querySelector('button[aria-label="Expand sidebar"]')).toBeNull();
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
   it("renders plugin sidebar slots in Build below Workspaces", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
     const root = await renderSidebar();
@@ -600,21 +561,6 @@ describe("Sidebar", () => {
       expect(link.querySelector("svg")?.classList).toContain("lucide-brain");
       expect(container.querySelector("nav > div:first-child")?.textContent).toBe(
         "New TaskSearchDeliverablesMemoryEverest",
-      );
-
-      flushSync(() => {
-        root.unmount();
-      });
-    });
-
-    it("shows Memory below Deliverables in the legacy layout too", async () => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStreamlinedUi: false });
-      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(true));
-      const root = await renderSidebar();
-
-      expect(memoryLinks()).toHaveLength(1);
-      expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(
-        /^New TaskSearchDeliverablesMemoryDashboard/,
       );
 
       flushSync(() => {

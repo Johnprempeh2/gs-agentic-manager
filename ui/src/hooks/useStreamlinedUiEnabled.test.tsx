@@ -4,10 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  resolveStreamlinedUiEnabled,
-  useStreamlinedUiEnabled,
-} from "./useStreamlinedUiEnabled";
+import { useStreamlinedUiEnabled } from "./useStreamlinedUiEnabled";
 
 const mockInstanceSettingsApi = vi.hoisted(() => ({
   getExperimental: vi.fn(),
@@ -30,7 +27,7 @@ async function flushReact() {
   flushSync(() => {});
 }
 
-describe("useStreamlinedUiEnabled", () => {
+describe("useStreamlinedUiEnabled (graduated, GRE-1441)", () => {
   let host: HTMLDivElement;
   let root: Root;
 
@@ -46,24 +43,13 @@ describe("useStreamlinedUiEnabled", () => {
     vi.clearAllMocks();
   });
 
-  it("fails open for missing settings and loading state", () => {
-    expect(resolveStreamlinedUiEnabled(undefined)).toBe(true);
-    expect(resolveStreamlinedUiEnabled(null)).toBe(true);
+  it("is on and loaded at once, without a query client", () => {
+    flushSync(() => root.render(<Probe />));
 
-    mockInstanceSettingsApi.getExperimental.mockImplementation(() => new Promise(() => {}));
-    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    flushSync(() => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <Probe />
-        </QueryClientProvider>,
-      );
-    });
-
-    expect(host.textContent).toBe("true:false");
+    expect(host.textContent).toBe("true:true");
   });
 
-  it("uses the legacy shell only for an explicit false value", async () => {
+  it("ignores a stored false value and does not read settings", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStreamlinedUi: false });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     flushSync(() => {
@@ -75,8 +61,7 @@ describe("useStreamlinedUiEnabled", () => {
     });
     await flushReact();
 
-    expect(host.textContent).toBe("false:true");
-    expect(resolveStreamlinedUiEnabled({ enableStreamlinedUi: true })).toBe(true);
-    expect(resolveStreamlinedUiEnabled({ enableStreamlinedUi: false })).toBe(false);
+    expect(host.textContent).toBe("true:true");
+    expect(mockInstanceSettingsApi.getExperimental).not.toHaveBeenCalled();
   });
 });

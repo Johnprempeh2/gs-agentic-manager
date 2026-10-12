@@ -130,6 +130,7 @@ export interface InstanceExperimentalSettings {
    * Missing legacy values default on; the retired left-navigation preference
    * remains separate so an old opt-out cannot disable the broader UI.
    */
+  /** Compatibility key (GRE-1441): the streamlined UI is always on; the app ignores the value. */
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;

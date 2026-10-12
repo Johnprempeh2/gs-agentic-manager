@@ -267,41 +267,4 @@ describe("App Activity routing (PAP-16302)", () => {
     flushSync(() => root.unmount());
   });
 
-  it("uses the production Activity and Costs routes when Streamlined UI is disabled", async () => {
-    streamlinedUiState.enabled = false;
-    const activityRoot = renderAppAt(container, "/PAP/activity");
-    await waitForRoute(container, "PRODUCTION_ACTIVITY@/PAP/activity");
-    flushSync(() => activityRoot.unmount());
-
-    const costsRoot = renderAppAt(container, "/PAP/costs?range=30d");
-    await waitForRoute(container, "PRODUCTION_COSTS@/PAP/costs?range=30d");
-    flushSync(() => costsRoot.unmount());
-  });
-
-  it("omits streamlined-only Audit routes when Streamlined UI is disabled", async () => {
-    streamlinedUiState.enabled = false;
-    const root = renderAppAt(container, "/PAP/activity/runs");
-    await waitForRoute(container, "PRODUCTION_PLUGIN_FALLBACK");
-    expect(container.textContent).not.toContain("AUDIT_RUNS");
-    flushSync(() => root.unmount());
-  });
-
-  it("does not mount streamlined routes before the experiment setting loads", async () => {
-    streamlinedUiState.loaded = false;
-    const root = renderAppAt(container, "/PAP/activity");
-    expect(container.textContent).not.toContain("ACTIVITY_PAGE");
-    expect(container.textContent).not.toContain("PRODUCTION_ACTIVITY");
-
-    streamlinedUiState.enabled = false;
-    streamlinedUiState.loaded = true;
-    flushSync(() => {
-      root.render(
-        <MemoryRouter initialEntries={["/PAP/activity"]}>
-          <App />
-        </MemoryRouter>,
-      );
-    });
-    await waitForRoute(container, "PRODUCTION_ACTIVITY@/PAP/activity");
-    flushSync(() => root.unmount());
-  });
 });

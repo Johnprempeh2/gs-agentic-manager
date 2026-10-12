@@ -92,9 +92,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: true,
   },
   enableStreamlinedUi: {
-    title: "Streamlined UI",
+    title: "Streamlined UI (compatibility)",
     description:
-      "Use the streamlined application shell, shared task collections, focused task detail layout, contextual navigation, and simplified main sidebar.",
+      "Deprecated compatibility key. The streamlined UI is always on (GRE-1441); stored and managed values are ignored.",
     tier: "preference",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -434,6 +434,7 @@ export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableMcpAggregators", issue: "upstream #12728" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
+  { key: "enableStreamlinedUi", issue: "GRE-1441" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
 
 export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];

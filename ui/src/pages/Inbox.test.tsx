@@ -389,52 +389,6 @@ describe("Inbox toolbar", () => {
     container.remove();
   });
 
-  it("restores the legacy toolbar and issue-row presentation when Streamlined UI is off", async () => {
-    routerMock.location.pathname = "/inbox/mine";
-    apiMocks.experimentalSettings.mockResolvedValue({
-      enableIsolatedWorkspaces: false,
-      enableStreamlinedUi: false,
-    });
-    apiMocks.issuesList.mockResolvedValue([
-      createIssue({ id: "legacy-row", identifier: "PAP-1904", title: "Legacy inbox task" }),
-    ]);
-    localStorage.setItem(
-      taskCollectionPreferencesStorageKey({ companyId: "company-1", collectionKey: "inbox" }),
-      JSON.stringify({
-        version: 1,
-        companyId: "company-1",
-        collectionKey: "inbox",
-        viewState: {},
-        columns: [],
-      }),
-    );
-
-    const queryClient = new QueryClient({
-      defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
-    });
-    const root = createRoot(container);
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <Inbox />
-        </QueryClientProvider>,
-      );
-    });
-    await vi.waitFor(() => expect(container.textContent).toContain("Legacy inbox task"));
-
-    expect(container.querySelector('[data-slot="collection-toolbar"]')).toBeNull();
-    expect(container.querySelector('[role="toolbar"][aria-label="Inbox controls"]')).toBeNull();
-    expect(container.textContent).toContain("Mine");
-    expect(container.querySelector('[data-slot="task-row"]')).toBeNull();
-    const issueLink = container.querySelector('[data-inbox-issue-link]');
-    // Production reads the legacy Inbox column key and must ignore the
-    // Streamlined collection envelope above when the experiment is disabled.
-    expect(issueLink?.parentElement?.textContent).toContain("PAP-1904");
-
-    act(() => root.unmount());
-  });
-
   it("does not render external-object summaries in inbox rows", async () => {
     routerMock.location.pathname = "/inbox/mine";
     const issue = createIssue({ title: "Inbox row without external object column" });

@@ -82,6 +82,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableIsolatedWorkspaces: z.boolean().default(true),
   enableIsolatedWorkspacesByDefault: z.boolean().default(false),
   enableStreamlinedLeftNavigation: z.boolean().default(true),
+  // Greatstone (GRE-1441): compatibility only. The streamlined UI is always
+  // on; old stored and managed values must still parse.
   enableStreamlinedUi: z.boolean().default(true),
   // Deprecated compatibility key. Apps is a standard product surface and is
   // always enabled; this remains accepted so older stored rows and managed
