@@ -46,6 +46,7 @@ import {
 import { AttentionInteractionResolver } from "./AttentionInteractionResolver";
 import { DecisionResolver } from "./DecisionResolver";
 import { ReauthCancelledError, useReauth } from "./ReauthDialog";
+import { ReviewDecisionSummary, reviewAssigneeName } from "./ReviewDecisionSummary";
 import { StalledReviewActions } from "./StalledReviewActions";
 import { readIssueReviewPolicyMetadata } from "../lib/review-policy";
 
@@ -742,12 +743,16 @@ function InlineResolver({
     // Inline only for stalled reviews (server sets inlineResolvable then); the
     // subject IS the issue, so its id is the decision target.
     return (
-      <StalledReviewActions
-        issueId={item.subject.id}
-        companyId={companyId}
-        footerSlot={toggle}
-        reviewPolicy={readIssueReviewPolicyMetadata(item.subject.metadata)}
-      />
+      <>
+        <ReviewDecisionSummary item={item} agentMap={agentMap} />
+        <StalledReviewActions
+          issueId={item.subject.id}
+          companyId={companyId}
+          footerSlot={toggle}
+          reviewPolicy={readIssueReviewPolicyMetadata(item.subject.metadata)}
+          assigneeName={reviewAssigneeName(item, agentMap)}
+        />
+      </>
     );
   }
 

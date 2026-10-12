@@ -34,6 +34,7 @@ export type DecisionCardActionId =
   | "approve"
   | "reject"
   | "request_changes"
+  | "send_back"
   | "reconnect"
   | "dismiss"
   | "done"

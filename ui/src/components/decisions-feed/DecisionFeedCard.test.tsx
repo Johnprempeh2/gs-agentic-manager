@@ -18,6 +18,7 @@ import {
   questionCard,
   reviewCard,
   setupCard,
+  stalledReviewCard,
 } from "../../fixtures/decisionsFeedFixtures";
 
 const api = vi.hoisted(() => ({
@@ -168,7 +169,8 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(text).toContain(card.title);
     expect(text).toContain("Why");
     expect(text).toContain(card.reason);
-    expect(text).toContain("Waiting");
+    // On a review the agent did the work; the board is the one waited on (GRE-1421).
+    expect(text).toContain(card.kind === "review" ? "Work by" : "Waiting");
     expect(text).toContain(card.waiting!.name);
     expect(text).toContain("Next");
     expect(text).toContain(card.nextStep);
@@ -482,6 +484,20 @@ describe("DecisionFeedCard on a phone", () => {
     expect(api.patch).toHaveBeenCalledWith("/issues/issue-201", { status: "cancelled" });
   });
 
+  it("keeps all three review choices and their results on the card, not in More (GRE-1421)", () => {
+    render(stalledReviewCard());
+    const choices = Array.from(container.querySelectorAll("[data-review-choice]"));
+    expect(choices.map((li) => li.querySelector("button")?.textContent?.trim())).toEqual([
+      "Approve",
+      "Request changes",
+      "Send back to work",
+    ]);
+    expect(choices.every((li) => (li.querySelector("p")?.textContent ?? "").length > 0)).toBe(true);
+    const actionRow = button("More actions").parentElement!;
+    const labels = [...actionRow.querySelectorAll("button")].map((entry) => entry.textContent?.trim());
+    expect(labels).toEqual(["Not now", "More"]);
+  });
+
   it("puts no task action in front of a confirmation's own Approve", () => {
     render(confirmationCard());
     const actionRow = button("More actions").parentElement!;
@@ -529,5 +545,74 @@ describe("review card (GRE-870)", () => {
     expect(container.textContent).not.toContain("You (John Prempeh)");
     expect(hasButton("Approve")).toBe(false);
     expect(hasButton("Request changes")).toBe(false);
+  });
+});
+
+describe("review card with no reviewer (GRE-1421)", () => {
+  it("shows what was done, the ask, the pull request and what each choice does", () => {
+    render(stalledReviewCard());
+    const text = container.textContent ?? "";
+    expect(text).toContain("Ridge says the work is finished. No reviewer is set, so the task waits for you.");
+    expect(text).toContain("Check the result. Then approve it, ask for changes, or send it back to work.");
+    expect(container.querySelector("[data-testid='review-last-update']")?.textContent).toContain("PR #525 is open.");
+    expect(container.querySelector("[data-testid='review-last-update']")?.textContent).toContain("Summary from Ridge");
+    // The board is the one waited on; Ridge did the work.
+    expect(text).toContain("Work by");
+    expect(text).not.toContain("Waiting");
+    const pr = container.querySelector("[data-testid='review-work-product']");
+    expect(pr?.getAttribute("href")).toBe("https://github.com/Johnprempeh2/gs-agentic-manager/pull/525");
+    const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    expect(thread?.getAttribute("href")).toBe("/issues/GRE-844#comment-comment-9");
+    // Each choice is its button and the line that says what it does.
+    const choices = Array.from(container.querySelectorAll("[data-review-choice]")).map((li) => {
+      const choice = li.querySelector("button")!;
+      const hint = container.querySelector(`[id="${choice.getAttribute("aria-describedby")}"]`);
+      return [choice.textContent?.trim(), hint?.textContent];
+    });
+    expect(choices).toEqual([
+      ["Approve", "The task is marked done."],
+      ["Request changes", "The task goes back to Ridge with your note. Write a note first."],
+      ["Send back to work", "The task goes back to Ridge to continue. No note is necessary."],
+    ]);
+    // The verdicts are not repeated in the action row.
+    expect(buttons().filter((entry) => entry.textContent?.trim() === "Approve")).toHaveLength(1);
+    expect(hasButton("Approve")).toBe(true);
+    expect(hasButton("Send back to work")).toBe(true);
+    expect(text).not.toMatch(/stalled|execution policy/i);
+  });
+
+  it("still explains the choices when the agent left no summary or pull request", () => {
+    render(stalledReviewCard({ context: false }));
+    expect(container.querySelector("[data-testid='review-no-update']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='review-work-product']")).toBeNull();
+    const thread = Array.from(container.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    expect(thread?.getAttribute("href")).toBe("/issues/GRE-844");
+    expect(container.querySelectorAll("[data-review-choice]")).toHaveLength(3);
+  });
+
+  it("approves and sends back through the review decision endpoint", async () => {
+    render(stalledReviewCard());
+    await click(button("Approve"));
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-844/stalled-review-decision", { action: "approve" });
+    await click(button("Send back to work"));
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-844/stalled-review-decision", { action: "send_back" });
+  });
+
+  it("asks for a note before it requests changes", async () => {
+    render(stalledReviewCard());
+    await click(button("Request changes"));
+    expect(api.post).not.toHaveBeenCalled();
+    const field = container.querySelector("textarea") as HTMLTextAreaElement;
+    typeInto(field, "Show the allowance in the header too.");
+    await click(buttons().filter((entry) => entry.textContent?.trim() === "Request changes").at(-1)!);
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-844/stalled-review-decision", {
+      action: "request_changes",
+      note: "Show the allowance in the header too.",
+    });
+  });
+
+  it("shows no choices list on a review card without verdict buttons", () => {
+    render(reviewCard());
+    expect(container.querySelector("[data-review-choices]")).toBeNull();
   });
 });

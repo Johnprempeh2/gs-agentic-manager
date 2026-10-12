@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, ExternalLink, Loader2, MessageCircleQuestion, MoreHorizontal } from "lucide-react";
 import type {
@@ -31,6 +31,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
 import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
+import { ReviewWorkEvidence, reviewDetailOf } from "../ReviewDecisionSummary";
 
 export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   question: "Question",
@@ -82,6 +83,19 @@ export function decisionCardDeliverables(card: DecisionCard): AttentionDetailDel
 /** The first row Focus can answer natively (question, confirmation, suggested tasks). */
 export function decisionCardQuestionItem(card: DecisionCard): AttentionItem | null {
   return card.items.find(isFocusItem) ?? null;
+}
+
+/** The review row that carries what the agent handed over (GRE-1421). */
+export function decisionCardReviewItem(card: DecisionCard): AttentionItem | null {
+  return card.items.find((item) => item.sourceKind === "review" && reviewDetailOf(item) !== null) ?? null;
+}
+
+const VERDICT_ACTION_IDS = new Set<DecisionCardAction["id"]>(["approve", "request_changes", "send_back"]);
+
+/** A review's verdict buttons, each with what it does, for the "Your choices" list. */
+export function reviewChoiceActions(card: DecisionCard): DecisionCardAction[] {
+  if (!card.kinds.includes("review")) return [];
+  return card.actions.filter((action) => VERDICT_ACTION_IDS.has(action.id));
 }
 
 /** Card buttons, minus the ones the card renders in its own way. */
@@ -170,10 +184,18 @@ export function DecisionFeedCard({
   // question itself; the card's own actions are then the rare ones and fold
   // into a menu, so the answer sits higher (GRE-360).
   const answersInPlace = questionItem !== null;
-  // Phone: one main action up front, the rest in the More sheet.
-  const phonePrimary = actions.find(isPrimaryCardAction) ?? (answersInPlace ? null : actions[0]) ?? null;
-  const phoneMore = actions.filter((action) => action !== phonePrimary);
   const decisionItems = hideInlineResolver ? [] : card.items.filter((item) => item.sourceKind === "decision");
+  const reviewItem = decisionCardReviewItem(card);
+  // A review's verdicts sit in "Your choices", each with what it does
+  // (GRE-1421); the action row keeps only the other buttons.
+  const choices = answersInPlace ? [] : reviewChoiceActions(card);
+  const rowActions = actions.filter((action) => !choices.includes(action));
+  // Phone: one main action up front, the rest in the More sheet. A review's
+  // verdicts are already on the card, so nothing else is promoted.
+  const phonePrimary = choices.length > 0
+    ? null
+    : rowActions.find(isPrimaryCardAction) ?? (answersInPlace ? null : rowActions[0]) ?? null;
+  const phoneMore = rowActions.filter((action) => action !== phonePrimary);
 
   const runAction = (action: DecisionCardAction) => {
     if (action.type === "link") return;
@@ -240,7 +262,8 @@ export function DecisionFeedCard({
           <CardFact label="Reviewer">{card.reviewer.isYou ? `You (${card.reviewer.name})` : card.reviewer.name}</CardFact>
         ) : null}
         {card.waiting || !card.reviewer ? (
-          <CardFact label="Waiting">
+          // On a review the board is the one waited on; the agent did the work.
+          <CardFact label={card.kind === "review" ? "Work by" : "Waiting"}>
             {card.waiting ? card.waiting.name : <span className="text-muted-foreground">No agent owns this yet.</span>}
           </CardFact>
         ) : null}
@@ -256,6 +279,8 @@ export function DecisionFeedCard({
           onDone={() => doneAction && runAction(doneAction)}
         />
       ) : null}
+
+      {reviewItem ? <ReviewWorkEvidence item={reviewItem} agentMap={agentMap} knownAgent={card.waiting} /> : null}
 
       <DecisionCardDeliverables card={card} />
 
@@ -285,6 +310,16 @@ export function DecisionFeedCard({
       ))}
 
       {card.clarity ? <ClarityThread clarity={card.clarity} /> : null}
+
+      {choices.length > 0 ? (
+        <ReviewChoices
+          actions={choices}
+          isPhone={isPhone}
+          pendingId={actionMutation.isPending ? actionMutation.variables?.action.id ?? null : null}
+          openId={openActionId}
+          onRun={runAction}
+        />
+      ) : null}
 
       {isPhone ? (
         // Phone: the main action, Not now, and More (a sheet with the rest as
@@ -358,7 +393,7 @@ export function DecisionFeedCard({
         </div>
       ) : (
       <div className="flex flex-wrap items-center gap-1.5">
-        {!answersInPlace && actions.map((action) => (
+        {!answersInPlace && rowActions.map((action) => (
           <CardActionButton
             key={action.id}
             action={action}
@@ -447,6 +482,54 @@ export function DecisionFeedCard({
   );
 }
 
+/**
+ * A review's verdicts (GRE-1421): each button with one line on what it does,
+ * so the result is read at the point of choice. Always on the card, also on
+ * a phone, so all three choices stay in view.
+ */
+function ReviewChoices({
+  actions,
+  isPhone,
+  pendingId,
+  openId,
+  onRun,
+}: {
+  actions: DecisionCardAction[];
+  isPhone: boolean;
+  pendingId: string | null;
+  openId: string | null;
+  onRun: (action: DecisionCardAction) => void;
+}) {
+  const hintIdPrefix = `review-choice-${useId()}`;
+  return (
+    <section className="flex flex-col gap-1.5" aria-label="Your choices" data-review-choices>
+      <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
+      <ul className="flex flex-col gap-2">
+        {actions.map((action) => (
+          <li
+            key={action.id}
+            className="flex flex-col gap-1 sm:grid sm:grid-cols-(--gtc-41) sm:items-center sm:gap-3"
+            data-review-choice={action.id}
+          >
+            <CardActionButton
+              action={action}
+              size={isPhone ? "lg" : "sm"}
+              block
+              describedBy={`${hintIdPrefix}-${action.id}`}
+              pending={pendingId === action.id}
+              open={openId === action.id}
+              onRun={() => onRun(action)}
+            />
+            <p id={`${hintIdPrefix}-${action.id}`} className="text-sm text-muted-foreground">
+              {action.description}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function CardFact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
@@ -493,6 +576,7 @@ function CardActionButton({
   onRun,
   size = "xs",
   block = false,
+  describedBy,
 }: {
   action: DecisionCardAction;
   pending: boolean;
@@ -501,6 +585,8 @@ function CardActionButton({
   size?: "xs" | "sm" | "lg";
   /** Full-width, left-aligned row (the phone More sheet). */
   block?: boolean;
+  /** Id of the line that says what the action does; it replaces the hover title. */
+  describedBy?: string;
 }) {
   const primary = isPrimaryCardAction(action);
   const variant = primary ? "default" : action.id === "cancel_task" || action.id === "reject" ? (block ? "outline" : "ghost") : "outline";
@@ -519,7 +605,8 @@ function CardActionButton({
       type="button"
       size={size}
       variant={variant}
-      title={action.description}
+      title={describedBy ? undefined : action.description}
+      aria-describedby={describedBy}
       aria-expanded={action.input || action.id === "cancel_task" ? open : undefined}
       disabled={pending}
       className={cn(block && "w-full justify-start", action.id === "cancel_task" && "text-destructive hover:text-destructive")}
