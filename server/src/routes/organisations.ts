@@ -24,6 +24,7 @@ import {
   type PipedriveFetch,
 } from "../services/crm-sync-pipedrive.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { organisationHistoryService } from "../services/organisation-history.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
 import { organisationService } from "../services/organisations.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyBoardRole } from "./authz.js";
@@ -62,6 +63,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const svc = organisationService(db);
   const access = accessService(db);
   const importer = pipedriveOrganisationImportService(db);
+  const history = organisationHistoryService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
@@ -228,6 +230,16 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
     const detail = await svc.getDetail(companyId, organisationId);
     if (!detail) throw notFound("Organisation not found");
     res.json(detail);
+  });
+
+  /** Engagement history for the company page (GRE-1480). Reads need company access only. */
+  router.get(`${ORGANISATION_ROUTE_PREFIX}/:organisationId/history`, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const organisationId = parseId(req.params.organisationId, "Organisation");
+    const result = await history.get(companyId, organisationId);
+    if (!result) throw notFound("Organisation not found");
+    res.json(result);
   });
 
   router.patch(

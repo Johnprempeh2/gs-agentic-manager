@@ -148,6 +148,7 @@ import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
+import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
 import { OrganisationPicker } from "@/components/OrganisationPicker";
 
 type PipelineConversationActionableInteraction =
@@ -3017,6 +3018,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               Stage: <span className="font-medium text-foreground">{detail.stage.name}</span>
             </div>
           </div>
+          {detail.case.organisationId && (detail.case.companyId ?? selectedCompanyId) ? (
+            <CaseOrganisationLink
+              companyId={(detail.case.companyId ?? selectedCompanyId)!}
+              organisationId={detail.case.organisationId}
+            />
+          ) : null}
           {detail.parentCase ? (
             <p className="mt-2 text-sm text-muted-foreground">
               Built for{" "}

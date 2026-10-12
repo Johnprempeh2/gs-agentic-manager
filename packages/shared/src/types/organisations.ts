@@ -63,3 +63,44 @@ export interface OrganisationImportResult {
   startedAt: string;
   finishedAt: string;
 }
+
+/** One stage change on a case: a transition, or a forced move. */
+export interface OrganisationHistoryStageChange {
+  id: string;
+  at: string;
+  fromStageName: string | null;
+  toStageName: string | null;
+  forced: boolean;
+  actorType: "user" | "agent" | "system";
+  /** Agent name when an agent made the change; null for people and the system. */
+  actorAgentName: string | null;
+}
+
+/** One pipeline case about the organisation, with what is linked to it. */
+export interface OrganisationHistoryCase {
+  id: string;
+  caseKey: string;
+  title: string;
+  pipelineId: string;
+  pipelineName: string;
+  stageName: string;
+  stageKind: string;
+  terminalKind: "done" | "cancelled" | null;
+  createdAt: string;
+  updatedAt: string;
+  /** Oldest first. */
+  stageChanges: OrganisationHistoryStageChange[];
+  projects: Array<{ id: string; name: string; status: string }>;
+  tasks: Array<{ id: string; identifier: string | null; title: string; status: string; updatedAt: string }>;
+}
+
+/**
+ * Answer of GET .../organisations/:organisationId/history (GRE-1480): every
+ * live pipeline case for the organisation, newest activity first.
+ */
+export interface OrganisationHistory {
+  organisationId: string;
+  /** Latest activity on any of its cases or linked tasks; null when there is none. */
+  lastContactAt: string | null;
+  cases: OrganisationHistoryCase[];
+}
