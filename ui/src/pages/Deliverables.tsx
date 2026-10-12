@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import type { Project } from "@greatstone/shared";
-import { ArrowUpDown, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
+import { ArrowUpDown, Briefcase, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
 import {
   deliverablesApi,
   type Deliverable,
@@ -46,6 +46,8 @@ export const DELIVERABLE_SORT_OPTIONS: { value: DeliverableSort; label: string }
 ];
 
 type GroupBy = "none" | "project" | "month";
+/** Grouped by project unless the person picks otherwise (GRE-1471). */
+const DEFAULT_GROUP: GroupBy = "project";
 
 /** Projects whose primary workspace serves a preview, for the cards above the list. */
 export function projectsWithPreview(projects: Project[] | undefined, projectId: string | null) {
@@ -97,21 +99,64 @@ export function dateRangeStart(range: DateRange, now = new Date()): string | und
   return start.toISOString();
 }
 
-export function groupDeliverables(items: Deliverable[], groupBy: GroupBy) {
-  if (groupBy === "none") return [{ key: "all", label: null as string | null, items }];
-  const groups = new Map<string, { key: string; label: string | null; items: Deliverable[] }>();
+export const NO_PROJECT_LABEL = "No project";
+export const NO_CLIENT_CASE_LABEL = "No client case";
+
+interface DeliverableSection {
+  key: string;
+  label: string | null;
+  items: Deliverable[];
+}
+
+interface DeliverableGroup extends DeliverableSection {
+  /** Client-case sections inside a project group; one unlabelled section when no deliverable has a case. */
+  cases: DeliverableSection[];
+}
+
+/** Splits items by key in list order, with the "none" section moved last. */
+function splitBy(
+  items: Deliverable[],
+  keyOf: (item: Deliverable) => string,
+  labelOf: (item: Deliverable) => string | null,
+): DeliverableSection[] {
+  const sections = new Map<string, DeliverableSection>();
   for (const item of items) {
-    const key = groupBy === "project"
-      ? item.project?.id ?? "none"
-      : item.createdAt.slice(0, 7);
-    const label = groupBy === "project"
-      ? item.project?.name ?? "No project"
-      : new Date(item.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-    const group = groups.get(key) ?? { key, label, items: [] };
-    group.items.push(item);
-    groups.set(key, group);
+    const key = keyOf(item);
+    const section = sections.get(key) ?? { key, label: labelOf(item), items: [] };
+    section.items.push(item);
+    sections.set(key, section);
   }
-  return [...groups.values()];
+  const result = [...sections.values()];
+  return [...result.filter((section) => section.key !== "none"), ...result.filter((section) => section.key === "none")];
+}
+
+/**
+ * Splits the list into sections in list order. By project (the default,
+ * GRE-1471), deliverables with no project share one "No project" group,
+ * always shown last. Inside a project, deliverables linked to a client case
+ * are split by case, with "No client case" last.
+ */
+export function groupDeliverables(items: Deliverable[], groupBy: GroupBy): DeliverableGroup[] {
+  if (groupBy === "none") return [{ key: "all", label: null, items, cases: [{ key: "all", label: null, items }] }];
+  if (groupBy === "month") {
+    const months = new Map<string, DeliverableGroup>();
+    for (const item of items) {
+      const key = item.createdAt.slice(0, 7);
+      const label = new Date(item.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      const group = months.get(key) ?? { key, label, items: [], cases: [] };
+      group.items.push(item);
+      months.set(key, group);
+    }
+    return [...months.values()].map((group) => ({ ...group, cases: [{ key: "all", label: null, items: group.items }] }));
+  }
+  return splitBy(items, (item) => item.project?.id ?? "none", (item) => item.project?.name ?? NO_PROJECT_LABEL)
+    .map((project) => {
+      const cases = project.items.some((item) => item.clientCase)
+        ? splitBy(project.items, (item) => item.clientCase?.id ?? "none", (item) => item.clientCase?.name ?? NO_CLIENT_CASE_LABEL)
+        : [{ key: "all", label: null, items: project.items }];
+      // Cards (and Quick Look) follow the case order shown on screen.
+      return { ...project, items: cases.flatMap((section) => section.items), cases };
+    });
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -186,7 +231,7 @@ export function Deliverables() {
   const brand = searchParams.get("brand");
   const dateRange = parseOption(searchParams.get("date"), DATE_OPTIONS, "all");
   const sort = parseOption(searchParams.get("sort"), DELIVERABLE_SORT_OPTIONS, "newest");
-  const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, "none");
+  const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, DEFAULT_GROUP);
   const openId = searchParams.get("open");
 
   const [draftQuery, setDraftQuery] = useState(query);
@@ -457,7 +502,7 @@ export function Deliverables() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" data-testid="deliverable-group">
                   <Layers />
-                  {groupBy === "none" ? "Group" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
+                  {groupBy === "none" ? "No grouping" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
@@ -465,7 +510,7 @@ export function Deliverables() {
                 {GROUP_OPTIONS.map((option) => (
                   <DropdownMenuItem
                     key={option.value}
-                    onSelect={() => setParam("group", option.value === "none" ? null : option.value)}
+                    onSelect={() => setParam("group", option.value === DEFAULT_GROUP ? null : option.value)}
                     className="justify-between"
                   >
                     {option.label}
@@ -522,16 +567,34 @@ export function Deliverables() {
                   {group.label} <span className="font-normal">· {group.items.length}</span>
                 </h2>
               ) : null}
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-                {group.items.map((deliverable) => (
-                  <DeliverableCard
-                    key={deliverable.id}
-                    deliverable={deliverable}
-                    onPreview={() => setParam("open", deliverable.id)}
-                    onCopyLink={() => void copyLink(deliverable.id)}
-                  />
-                ))}
-              </div>
+              {group.cases.map((section) => (
+                <div
+                  key={section.key}
+                  className="space-y-3"
+                  {...(section.label ? { role: "group", "aria-label": `Client case: ${section.label}` } : {})}
+                >
+                  {section.label ? (
+                    <h3
+                      data-testid="deliverable-case-heading"
+                      className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                    >
+                      <Briefcase className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{section.label}</span>
+                      <span className="shrink-0 font-normal">· {section.items.length}</span>
+                    </h3>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                    {section.items.map((deliverable) => (
+                      <DeliverableCard
+                        key={deliverable.id}
+                        deliverable={deliverable}
+                        onPreview={() => setParam("open", deliverable.id)}
+                        onCopyLink={() => void copyLink(deliverable.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </section>
           ))}
           <div ref={loadMoreRef} className="flex min-h-10 items-center justify-center text-xs text-muted-foreground">

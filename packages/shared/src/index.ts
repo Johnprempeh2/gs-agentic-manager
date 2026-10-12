@@ -445,6 +445,9 @@ export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
 export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
+export * from "./types/client-journey.js";
+export * from "./validators/client-journey.js";
+export * from "./client-journey.js";
 export * from "./types/workflow-template.js";
 export * from "./validators/workflow-template.js";
 export * from "./types/document-evidence.js";
@@ -2490,6 +2493,7 @@ export {
   pipelineStageKindSchema,
   pipelineStageOnEnterSchema,
   pipelineStageVariableSchema,
+  pipelineStageTemplateSchema,
   rotateRoutineTriggerSecretSchema,
   routineRevisionSnapshotRoutineV1Schema,
   routineRevisionSnapshotTriggerV1Schema,

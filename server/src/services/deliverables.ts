@@ -9,6 +9,8 @@ import {
   issueAttachments,
   issues,
   issueWorkProducts,
+  pipelineCaseIssueLinks,
+  pipelineCases,
   projects,
 } from "@greatstone/db";
 import {
@@ -17,6 +19,7 @@ import {
   deliverablesQuerySchema,
   type CreateDeliverable,
   type Deliverable,
+  type DeliverableClientCaseSummary,
   type DeliverableDetail,
   type DeliverableFacets,
   type DeliverableKind,
@@ -168,7 +171,46 @@ type ListRow = {
   versionCount: number;
 };
 
-function toDeliverable(input: ListRow, issuePrefix: string): Deliverable {
+/**
+ * The client (pipeline) case each task is linked to, in one query for the
+ * whole list (GRE-1488). Retired links and retired cases do not count. When a
+ * task links more than one case, the earliest link wins (then the lowest case
+ * id), so the answer does not change as later links are added.
+ */
+async function clientCasesByIssue(
+  db: Db,
+  companyId: string,
+  issueIds: string[],
+): Promise<Map<string, DeliverableClientCaseSummary>> {
+  const result = new Map<string, DeliverableClientCaseSummary>();
+  if (issueIds.length === 0) return result;
+  const rows = await db
+    .selectDistinctOn([pipelineCaseIssueLinks.issueId], {
+      issueId: pipelineCaseIssueLinks.issueId,
+      caseId: pipelineCases.id,
+      caseTitle: pipelineCases.title,
+    })
+    .from(pipelineCaseIssueLinks)
+    .innerJoin(pipelineCases, and(
+      eq(pipelineCaseIssueLinks.caseId, pipelineCases.id),
+      eq(pipelineCases.companyId, pipelineCaseIssueLinks.companyId),
+    ))
+    .where(and(
+      eq(pipelineCaseIssueLinks.companyId, companyId),
+      inArray(pipelineCaseIssueLinks.issueId, [...new Set(issueIds)]),
+      isNull(pipelineCaseIssueLinks.retiredAt),
+      isNull(pipelineCases.retiredAt),
+    ))
+    .orderBy(pipelineCaseIssueLinks.issueId, asc(pipelineCaseIssueLinks.createdAt), asc(pipelineCases.id));
+  for (const row of rows) result.set(row.issueId, { id: row.caseId, name: row.caseTitle });
+  return result;
+}
+
+function toDeliverable(
+  input: ListRow,
+  issuePrefix: string,
+  clientCase: DeliverableClientCaseSummary | null,
+): Deliverable {
   const { row } = input;
   const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
   const attachmentId = metadataString(metadata, "attachmentId") ?? "";
@@ -194,6 +236,7 @@ function toDeliverable(input: ListRow, issuePrefix: string): Deliverable {
     downloadPath: `${contentPath}?download=1`,
     issue: { id: row.issueId, identifier, title: input.issueTitle },
     project: input.projectId && input.projectName ? { id: input.projectId, name: input.projectName } : null,
+    clientCase,
     createdByAgent: input.agentId && input.agentName ? { id: input.agentId, name: input.agentName } : null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -319,6 +362,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
     const listRow = await getListRow(companyId, id);
     if (!listRow) return null;
     const prefix = await companyPrefix(companyId);
+    const clientCases = await clientCasesByIssue(db, companyId, [listRow.row.issueId]);
     const versionRows = await db
       .select()
       .from(issueWorkProducts)
@@ -330,7 +374,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
       ))
       .orderBy(desc(versionExpression));
     return {
-      ...toDeliverable(listRow, prefix),
+      ...toDeliverable(listRow, prefix, clientCases.get(listRow.row.issueId) ?? null),
       versions: versionRows.map((row) => {
         const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
         const contentPath = attachmentContentPath(metadataString(metadata, "attachmentId") ?? "");
@@ -571,9 +615,10 @@ export function deliverableService(db: Db, storage?: StorageService) {
         projects: [...facetProjects].map(([id, name]) => ({ id, name })).sort(byName),
       };
 
+      const clientCases = await clientCasesByIssue(db, companyId, rows.map((row) => row.row.issueId));
       const nextOffset = query.offset + rows.length < total ? query.offset + rows.length : null;
       return {
-        deliverables: rows.map((row) => toDeliverable(row, prefix)),
+        deliverables: rows.map((row) => toDeliverable(row, prefix, clientCases.get(row.row.issueId) ?? null)),
         total,
         nextOffset,
         facets,
