@@ -294,7 +294,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableSimplifiedEnglishInteractions: parsed.data.enableSimplifiedEnglishInteractions ?? false,
       enableFirstTaskPlanProposal: parsed.data.enableFirstTaskPlanProposal ?? false,
       autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
-      enableWorkspaceBranchReconcileForward: parsed.data.enableWorkspaceBranchReconcileForward ?? true,
+      // Greatstone (GRE-1438): graduated; a stored off value is ignored.
+      enableWorkspaceBranchReconcileForward: true,
       enableWorkspaceDirtyQuarantineRepair: parsed.data.enableWorkspaceDirtyQuarantineRepair ?? true,
       enableOwnerInstanceAdmin: parsed.data.enableOwnerInstanceAdmin ?? false,
       enableSandboxDuplexBridge: parsed.data.enableSandboxDuplexBridge ?? false,
@@ -380,6 +381,8 @@ export function applyManagedExperimentalOverlay(
     // Existing Cloud stack configs may still carry retired flags. Accept the
     // document during rollout, but never let retired flags disable Apps or MCP aggregators.
     if (key === "enableApps" || key === "enableMcpAggregators") continue;
+    // Greatstone (GRE-1438): graduated; a managed config cannot turn it off.
+    if (key === "enableWorkspaceBranchReconcileForward") continue;
     // Greatstone (GRE-1436): Runner is always on; a managed "off" is ignored.
     if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.

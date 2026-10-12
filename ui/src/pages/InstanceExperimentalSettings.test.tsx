@@ -496,6 +496,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("no longer shows a Workspace Branch Reconcile Forward toggle (graduated, GRE-1438)", async () => {
+    await renderPage();
+
+    expect(container.textContent).not.toContain("Workspace Branch Reconcile Forward");
+    expect(container.textContent).not.toContain("reconcile a diverged recorded branch forward");
+  });
+
   it("hides the worktree run-execution toggle when not running in a worktree", async () => {
     setWorktreeRuntimeMeta(false);
     await renderPage();

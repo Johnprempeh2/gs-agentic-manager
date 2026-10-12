@@ -2128,6 +2128,11 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   executionWorkspaceId?: string | null;
   actualBranchName?: string | null;
   heartbeatRunId?: string | null;
+  /**
+   * Greatstone (GRE-1438): forward reconciliation graduated from Experimental
+   * and is always on. Only a caller that must not adopt a branch (quarantine
+   * restore) passes `false`.
+   */
   enableWorkspaceBranchReconcileForward?: boolean;
   enableWorkspaceDirtyQuarantineRepair?: boolean;
   persistForwardReconcile?: boolean;
@@ -2215,7 +2220,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
     evidence.provenance.actualBranchExists === true &&
     evidence.provenance.registeredBranchMatchesHead;
   if (
-    input.enableWorkspaceBranchReconcileForward === true &&
+    input.enableWorkspaceBranchReconcileForward !== false &&
     evidence.cleanliness === "clean" &&
     currentBranch &&
     ((evidence.provenance.ancestryVerdict === "ancestor" && !evidence.provenance.sameHead) ||
@@ -3278,7 +3283,6 @@ export async function realizeExecutionWorkspace(input: {
     createdByRuntime: boolean;
   } | null;
   heartbeatRunId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
   enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
   resolveGitAuth?: GitRemoteAuthProvider | null;
@@ -3481,7 +3485,6 @@ export async function realizeExecutionWorkspace(input: {
         sourceIssue: input.issue,
         executionWorkspaceId: null,
         heartbeatRunId: input.heartbeatRunId ?? null,
-        enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
         enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         reconcileOperationPhase: "worktree_prepare",
         recorder: input.recorder ?? null,
@@ -3729,7 +3732,6 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
   issue: ExecutionWorkspaceIssueRef | null;
   agent: ExecutionWorkspaceAgentRef;
   heartbeatRunId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
   enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
   resolveGitAuth?: GitRemoteAuthProvider | null;
@@ -3804,7 +3806,6 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
         sourceIssue: input.issue,
         executionWorkspaceId: input.workspace.id ?? null,
         heartbeatRunId: input.heartbeatRunId ?? null,
-        enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
         enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         persistForwardReconcile: false,
         reconcileOperationPhase: "worktree_prepare",

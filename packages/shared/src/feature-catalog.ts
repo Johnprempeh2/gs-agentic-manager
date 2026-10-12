@@ -311,9 +311,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableWorkspaceBranchReconcileForward: {
-    title: "Workspace Branch Reconcile Forward",
+    title: "Workspace Branch Reconcile Forward (compatibility)",
     description:
-      "Let execution workspaces reconcile a diverged recorded branch forward instead of failing branch containment.",
+      "Deprecated compatibility key. Execution workspaces always reconcile a diverged recorded branch forward when it is safe; stored and managed values are ignored.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -435,6 +435,7 @@ export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
   { key: "enableStreamlinedUi", issue: "GRE-1441" },
+  { key: "enableWorkspaceBranchReconcileForward", issue: "GRE-1438" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
 
 export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];

@@ -233,6 +233,11 @@ describe("instance settings service", () => {
       normalizeExperimentalSettings({ enableExperimentalFileViewer: true })
         .enableWorkspaceBranchReconcileForward,
     ).toBe(true);
+    // GRE-1438: graduated, so a stored off value reads as on.
+    expect(
+      normalizeExperimentalSettings({ enableWorkspaceBranchReconcileForward: false })
+        .enableWorkspaceBranchReconcileForward,
+    ).toBe(true);
     expect(normalizeExperimentalSettings(undefined).enableWorkspaceDirtyQuarantineRepair).toBe(true);
     expect(normalizeExperimentalSettings({}).enableWorkspaceDirtyQuarantineRepair).toBe(true);
     expect(

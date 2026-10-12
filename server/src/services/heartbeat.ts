@@ -24712,9 +24712,6 @@ export function heartbeatService(
                     companyId: agent.companyId,
                   },
                   heartbeatRunId: run.id,
-                  enableWorkspaceBranchReconcileForward:
-                    resolvedInstanceSettings.experimental
-                      .enableWorkspaceBranchReconcileForward,
                   enableWorkspaceDirtyQuarantineRepair:
                     resolvedInstanceSettings.experimental
                       .enableWorkspaceDirtyQuarantineRepair,
@@ -24744,9 +24741,6 @@ export function heartbeatService(
                     }
                   : null,
               heartbeatRunId: run.id,
-              enableWorkspaceBranchReconcileForward:
-                resolvedInstanceSettings.experimental
-                  .enableWorkspaceBranchReconcileForward,
               enableWorkspaceDirtyQuarantineRepair:
                 resolvedInstanceSettings.experimental
                   .enableWorkspaceDirtyQuarantineRepair,
@@ -26888,9 +26882,6 @@ export function heartbeatService(
                       : null,
                     executionWorkspaceId: branchInspection.workspaceRecord.id,
                     heartbeatRunId: run.id,
-                    enableWorkspaceBranchReconcileForward:
-                      resolvedInstanceSettings.experimental
-                        .enableWorkspaceBranchReconcileForward,
                     enableWorkspaceDirtyQuarantineRepair:
                       resolvedInstanceSettings.experimental
                         .enableWorkspaceDirtyQuarantineRepair,

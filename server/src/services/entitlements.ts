@@ -195,7 +195,10 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
   enableIsolatedWorkspacesByDefault: { kind: "runtime", reason: "Workspace policy resolution reads it per run." },
   enableApps: { kind: "runtime", reason: "Graduated: always on; stored and managed values are ignored." },
   enableMcpAggregators: { kind: "runtime", reason: "Graduated: always on; stored and managed values are ignored." },
-  enableWorkspaceBranchReconcileForward: { kind: "runtime", reason: "Workspace realization reads it." },
+  enableWorkspaceBranchReconcileForward: {
+    kind: "runtime",
+    reason: "Graduated (GRE-1438): always on; stored and managed values are ignored.",
+  },
   enableWorkspaceDirtyQuarantineRepair: { kind: "runtime", reason: "Workspace recovery reads it." },
   enableOwnerInstanceAdmin: { kind: "runtime", reason: "Read at the trusted-header auth boundary." },
   enableSandboxDuplexBridge: { kind: "runtime", reason: "Read per run before the sandbox transport is chosen." },
