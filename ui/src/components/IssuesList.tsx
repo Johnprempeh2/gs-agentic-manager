@@ -70,8 +70,6 @@ import { TeamBadge } from "./TeamBadge";
 import { agentTeamsApi } from "../api/agentTeams";
 import { TaskOwnerLabel } from "./TaskOwnerLabel";
 import { CollectionToolbar, type CollectionToolbarProps } from "./CollectionToolbar";
-import { IssuesList as LegacyIssuesList } from "./LegacyIssuesList";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { PageSkeleton } from "./PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -763,12 +761,7 @@ function SubIssueProgressSummaryStrip({
 // Mobile-only indent for nested task rows (desktop uses IssueRow treeGuides).
 const MOBILE_TREE_INDENT = ["", "pl-4 sm:pl-0", "pl-8 sm:pl-0", "pl-12 sm:pl-0", "pl-16 sm:pl-0"];
 
-export function IssuesList(props: IssuesListProps) {
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  return streamlinedUiEnabled ? <StreamlinedIssuesList {...props} /> : <LegacyIssuesList {...props} />;
-}
-
-function StreamlinedIssuesList({
+export function IssuesList({
   issues,
   isLoading,
   error,

@@ -31,8 +31,7 @@ import { IssueGroupHeader } from "../components/IssueGroupHeader";
 import { EntityRow } from "../components/EntityRow";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { resolveIssuesPresentation } from "./Issues";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
+import { ISSUES_ROW_PRESENTATION, ISSUES_TOOLBAR_PRESENTATION } from "./Issues";
 import { ErrorState } from "../components/ErrorState";
 import { useDialogActions } from "../context/DialogContext";
 import { useToastActions } from "../context/ToastContext";
@@ -82,8 +81,6 @@ function nextTickTarget(issueId: string): string | null {
 
 export function MyTasks() {
   const { openNewIssue } = useDialogActions();
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  const issuesPresentation = resolveIssuesPresentation(streamlinedUiEnabled);
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const location = useLocation();
@@ -557,8 +554,8 @@ export function MyTasks() {
               agents={agents}
               projects={projects}
               viewStateKey="paperclip:my-tasks-view"
-              rowPresentation={issuesPresentation.rowPresentation}
-              toolbarPresentation={issuesPresentation.toolbarPresentation}
+              rowPresentation={ISSUES_ROW_PRESENTATION}
+              toolbarPresentation={ISSUES_TOOLBAR_PRESENTATION}
               issueLinkState={issueLinkState}
               searchWithinLoadedIssues
               customGrouping={groupGrouping}

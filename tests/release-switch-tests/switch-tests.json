@@ -45,8 +45,7 @@
       "ui/src/components/IssuesList.test.tsx",
       "ui/src/components/IssueProperties.test.tsx",
       "ui/src/components/PropertiesPanel.test.tsx",
-      "ui/src/components/Sidebar.test.tsx",
-      "ui/src/hooks/useStreamlinedUiEnabled.test.tsx"
+      "ui/src/components/Sidebar.test.tsx"
     ],
     "enableApps": [
       "server/src/__tests__/managed-config.test.ts",
@@ -116,8 +115,7 @@
     ],
     "enableBuiltInAgents": [
       "server/src/__tests__/built-in-agent-routes.test.ts",
-      "ui/src/components/BuiltInAgentGate.test.tsx",
-      "ui/src/components/SidebarAgents.test.tsx"
+      "ui/src/components/BuiltInAgentGate.test.tsx"
     ],
     "enableBetaSkills": [
       "server/src/__tests__/heartbeat-runtime-skills.test.ts",

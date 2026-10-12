@@ -13,12 +13,6 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
-const streamlinedUiState = vi.hoisted(() => ({ enabled: true, loaded: true }));
-
-vi.mock("./hooks/useStreamlinedUiEnabled", () => ({
-  useStreamlinedUiEnabled: () => streamlinedUiState,
-}));
-
 // jsdom's CSS parser rejects the custom-property marker rule stitches inserts
 // (`--sxs{--sxs:N}`), pulled into <App>'s eager import graph transitively via
 // @codesandbox/sandpack-react. Substitute a benign, valid rule on parse failure
@@ -49,11 +43,6 @@ vi.hoisted(() => {
 // owns the "No company matches prefix" NotFound. For routing we only need it to
 // resolve the :companyPrefix segment and render its nested routes.
 vi.mock("./components/Layout", async () => {
-  const { Outlet } = await import("react-router-dom");
-  return { Layout: () => <Outlet /> };
-});
-
-vi.mock("./components/Layout.production", async () => {
   const { Outlet } = await import("react-router-dom");
   return { Layout: () => <Outlet /> };
 });
@@ -90,20 +79,6 @@ vi.mock("./pages/Issues", () => ({
   Issues: () => {
     const location = useLocation();
     return <div>{`TASKS_PAGE@${location.pathname}`}</div>;
-  },
-}));
-
-vi.mock("./pages/audit/CompanyActivity.production", () => ({
-  CompanyActivity: () => {
-    const location = useLocation();
-    return <div>{`PRODUCTION_ACTIVITY@${location.pathname}${location.search}`}</div>;
-  },
-}));
-
-vi.mock("./pages/Costs.production", () => ({
-  Costs: () => {
-    const location = useLocation();
-    return <div>{`PRODUCTION_COSTS@${location.pathname}${location.search}`}</div>;
   },
 }));
 
@@ -176,8 +151,6 @@ describe("App Activity routing (PAP-16302)", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     companyState = { companies: [PAP_COMPANY], selected: PAP_COMPANY };
-    streamlinedUiState.enabled = true;
-    streamlinedUiState.loaded = true;
   });
 
   afterEach(() => {

@@ -102,7 +102,6 @@ import {
 import { TaskChatQueuedMessages } from "@/components/task-chat/TaskChatQueuedMessages";
 import { TaskChatWindowScroll } from "@/components/task-chat/useWindowAutoFollow";
 import { useSidebar } from "@/context/SidebarContext";
-import { useStreamlinedUiEnabled } from "@/hooks/useStreamlinedUiEnabled";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -484,7 +483,6 @@ function durableInputLabel(
  * folded row. flag-OFF remains byte-for-byte IssueChatThread.
  */
 export function TaskChatThread(props: TaskChatThreadProps) {
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const {
     initialHistoryPending = false,
     initialCommentsPending = initialHistoryPending,
@@ -2294,8 +2292,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     ? `${tailPlanItem.id}:${tailPlanItem.document.body.length}`
     : "";
   const threadContentKey = `${taskChatContentKey(items)}:${tailContentKey}:${tailPlanContentKey}:${blockerContentKey}`;
-  const repeatBlockersAtBottom =
-    !streamlinedUiEnabled || shouldRepeatTaskChatBlockers(items);
+  const repeatBlockersAtBottom = shouldRepeatTaskChatBlockers(items);
   const bottomBlockerLinks = repeatBlockersAtBottom ? (
     liveWorkLinks ? (
       <TaskChatLiveWorkLinks liveWork={liveWorkLinks} placement="bottom" />
@@ -2900,9 +2897,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           contentKey={isMobile ? autoFollowContentKey : 0}
           enabled={isMobile && historyRevealed}
         />
-        <TaskChatPresentationProvider
-          mode={streamlinedUiEnabled ? "streamlined" : "production"}
-        >
+        <TaskChatPresentationProvider mode="streamlined">
           <div
             className={cn(
               "flex flex-col",
@@ -2964,9 +2959,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                     {threadHeaderWithBlockers ? (
                       <div
                         className={cn(
-                          "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-6 px-4",
+                          "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-6 px-4 md:px-0",
                           isMobile ? "pt-4" : "pt-3",
-                          streamlinedUiEnabled && "md:px-0",
                         )}
                         data-testid="task-chat-thread-header"
                       >
@@ -2977,12 +2971,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       {emptyMessage}
                     </div>
                     {bottomBlockerLinks ? (
-                      <div
-                        className={cn(
-                          "mx-auto w-full max-w-(--tc-shell-max-w) px-4 pb-4",
-                          streamlinedUiEnabled && "md:px-0",
-                        )}
-                      >
+                      <div className="mx-auto w-full max-w-(--tc-shell-max-w) px-4 pb-4 md:px-0">
                         {bottomBlockerLinks}
                       </div>
                     ) : null}
@@ -3135,9 +3124,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                   isMobile
                     ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] z-sticky transition-[bottom] duration-200 ease-out"
                     : "bottom-0 z-raised",
-                  "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-4 md:pb-2",
-                  streamlinedUiEnabled && "md:px-0 md:pb-0",
-                  (!streamlinedUiEnabled || isMobile) &&
+                  "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-0 md:pb-0",
+                  isMobile &&
                     "bg-background/80 pt-1 backdrop-blur supports-[backdrop-filter]:bg-background/60 dark:bg-transparent dark:backdrop-blur-none dark:supports-[backdrop-filter]:bg-transparent",
                 )}
               >
