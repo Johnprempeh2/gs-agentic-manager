@@ -9,7 +9,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ToastProvider } from "../context/ToastContext";
 import type { BuiltInAgentState } from "../api/builtInAgents";
 import { Agents, agentWeekLine } from "./Agents";
-import { Agents as ProductionAgents } from "./Agents.production";
 import type { AgentOrgChainHealth } from "@greatstone/shared";
 
 const mockRouterState = vi.hoisted(() => ({
@@ -371,10 +370,7 @@ describe("Agents", () => {
     vi.clearAllMocks();
   });
 
-  it.each([
-    ["streamlined", Agents],
-    ["production", ProductionAgents],
-  ] as const)("omits the action bar from %s agent list rows", async (_mode, AgentList) => {
+  it("omits the action bar from agent list rows", async () => {
     mockAgentsApi.list.mockResolvedValue([
       makeAgent({ name: "Alpha", status: "active" }),
       makeAgent({ id: "agent-paused", name: "Paused agent", status: "paused" }),
@@ -384,7 +380,7 @@ describe("Agents", () => {
       root!.render(
         <QueryClientProvider client={queryClient}>
           <ToastProvider>
-            <AgentList />
+            <Agents />
           </ToastProvider>
         </QueryClientProvider>,
       );

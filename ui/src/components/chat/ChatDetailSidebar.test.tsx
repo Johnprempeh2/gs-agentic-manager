@@ -5,8 +5,7 @@ import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import { ChatDetailSidebar } from "./ChatDetailSidebar";
-import { SidebarNavItem, SidebarNavExpandedProvider } from "../SidebarNavItem";
-import { SidebarNavItem as ProductionNavItem, SidebarNavExpandedProvider as ProductionProvider } from "../SidebarNavItem.production";
+import { SidebarNavExpandedProvider } from "../SidebarNavItem";
 import { TooltipProvider } from "../ui/tooltip";
 
 vi.mock("@/context/SidebarContext", () => ({
@@ -18,15 +17,12 @@ vi.mock("@/lib/router", () => ({
 }));
 
 describe("chat detail sidebar with collapsed global navigation", () => {
-  it.each([
-    ["default", SidebarNavExpandedProvider, SidebarNavItem],
-    ["production", ProductionProvider, ProductionNavItem],
-  ] as const)("keeps labels visible in the %s layout", (_name, Provider, NavItem) => {
+  it("keeps labels visible", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, enabled: false } } });
     const container = document.createElement("div");
     const root = createRoot(container);
     try {
-      flushSync(() => root.render(<QueryClientProvider client={queryClient}><TooltipProvider><Provider><ChatDetailSidebar endpointId="endpoint-a" NavItem={NavItem} /></Provider></TooltipProvider></QueryClientProvider>));
+      flushSync(() => root.render(<QueryClientProvider client={queryClient}><TooltipProvider><SidebarNavExpandedProvider><ChatDetailSidebar endpointId="endpoint-a" /></SidebarNavExpandedProvider></TooltipProvider></QueryClientProvider>));
       for (const label of ["Settings", "Access", "Conversations", "Activity"]) {
         const span = Array.from(container.querySelectorAll("span")).find((node) => node.textContent === label);
         expect(span?.classList.contains("truncate")).toBe(true);

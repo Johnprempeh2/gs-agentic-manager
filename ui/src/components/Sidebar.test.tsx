@@ -7,7 +7,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { instanceExperimentalSettingsSchema } from "@greatstone/shared";
 import { Sidebar } from "./Sidebar";
-import { Sidebar as ProductionSidebar } from "./Sidebar.production";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 const mockHeartbeatsApi = vi.hoisted(() => ({
@@ -108,32 +107,8 @@ vi.mock("./SidebarCompanyMenu", () => ({
   SidebarCompanyMenu: () => <div>Company menu</div>,
 }));
 
-vi.mock("./SidebarCompanyMenu.production", () => ({
-  SidebarCompanyMenu: () => <div>Company menu</div>,
-}));
-
-vi.mock("./SidebarAgents", () => ({
-  SidebarAgents: ({ streamlined }: { streamlined?: boolean }) => (
-    <div data-testid="sidebar-agents" data-streamlined={String(streamlined)}>
-      Active agents
-    </div>
-  ),
-}));
-
-vi.mock("./SidebarAgents.production", () => ({
-  SidebarAgents: () => <div data-testid="sidebar-agents">Active agents</div>,
-}));
-
-vi.mock("./SidebarStarredProjects.production", () => ({
-  SidebarStarredProjects: () => <div data-testid="sidebar-starred-projects" />,
-}));
-
 vi.mock("./SidebarStarredPipelines", () => ({
   SidebarStarredPipelines: () => null,
-}));
-
-vi.mock("./SidebarProjects", () => ({
-  SidebarProjects: () => <div data-testid="sidebar-projects">Classic projects</div>,
 }));
 
 vi.mock("./SidebarStarredProjects", () => ({
@@ -173,7 +148,7 @@ async function flushReact() {
 describe("Sidebar", () => {
   let container: HTMLDivElement;
 
-  async function renderSidebar(SidebarComponent: typeof Sidebar = Sidebar) {
+  async function renderSidebar() {
     const root = createRoot(container);
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
@@ -183,7 +158,7 @@ describe("Sidebar", () => {
       root.render(
         <QueryClientProvider client={queryClient}>
           <TooltipProvider>
-            <SidebarComponent />
+            <Sidebar />
           </TooltipProvider>
         </QueryClientProvider>,
       );
@@ -603,28 +578,6 @@ describe("Sidebar", () => {
 
       expect(memoryLinks()).toHaveLength(0);
 
-      flushSync(() => {
-        root.unmount();
-      });
-    });
-
-    it("shows Memory below Deliverables in the production sidebar only while memory is on", async () => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
-      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(true));
-      let root = await renderSidebar(ProductionSidebar);
-
-      expect(memoryLinks()).toHaveLength(1);
-      expect(memoryLinks()[0].getAttribute("href")).toBe("/memory");
-      expect(container.querySelector("nav > div:first-child")?.textContent).toMatch(
-        /^New TaskSearchDeliverablesMemoryDashboard/,
-      );
-      flushSync(() => {
-        root.unmount();
-      });
-
-      mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(false));
-      root = await renderSidebar(ProductionSidebar);
-      expect(memoryLinks()).toHaveLength(0);
       flushSync(() => {
         root.unmount();
       });
