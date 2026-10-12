@@ -2,6 +2,7 @@ import { PageTabBar } from "@/components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useShowGetHelp } from "@/hooks/useShowGetHelp";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
 import { useLocation, useNavigate } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
@@ -18,6 +19,7 @@ const items = [
   { value: "instance-profile", label: "Profile", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/profile` },
   { value: "instance-environments", label: "Environments", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/environments` },
   { value: "instance-access", label: "Access", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/access` },
+  { value: "get-help", label: "Get help", href: "/company/settings/get-help" },
   { value: "instance-experimental", label: "Experimental", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/experimental` },
   { value: "instance-plugins", label: "Plugins", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/plugins` },
   { value: "instance-adapters", label: "Adapters", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/adapters` },
@@ -97,6 +99,10 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
     return "pipelines-access";
   }
 
+  if (pathname.includes("/company/settings/get-help")) {
+    return "get-help";
+  }
+
   return "general";
 }
 
@@ -111,8 +117,10 @@ export function CompanySettingsNav() {
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
+  const showGetHelp = useShowGetHelp();
   const activeTab = getCompanySettingsTab(location.pathname);
   const visibleItems = items.filter((item) => {
+    if (item.value === "get-help" && !showGetHelp) return false;
     if (item.value === "import" && isCloud) return false;
     if (item.value === "pipelines-access" && experimentalSettings?.enablePipelines !== true) return false;
     const hiddenKey = hiddenSettingKeyByTab[item.value];

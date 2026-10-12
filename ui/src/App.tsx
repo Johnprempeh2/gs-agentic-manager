@@ -107,6 +107,7 @@ import { DesignGuide } from "./pages/DesignGuide";
 import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettings";
 import { InstanceAccess } from "./pages/InstanceAccess";
 import { Fleet } from "./pages/Fleet";
+import { GetHelp } from "./pages/GetHelp";
 import { ProfileSettings } from "./pages/ProfileSettings";
 import { PluginManager } from "./pages/PluginManager";
 import { PluginSettings } from "./pages/PluginSettings";
@@ -271,6 +272,8 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       </Route>
       {/* Fleet (GRE-1083): hub only; the server answers 404 off the hub and 403 to non-admins. */}
       <Route path="company/settings/instance/fleet" element={<Fleet />} />
+      {/* Get help (GRE-1425): board users open support tickets with Greatstone. */}
+      <Route path="company/settings/get-help" element={<GetHelp />} />
       <Route element={<HiddenSettingsPageGate pageKey="instance.experimental" />}>
         <Route path="company/settings/instance/experimental" element={<InstanceExperimentalSettings />} />
       </Route>
