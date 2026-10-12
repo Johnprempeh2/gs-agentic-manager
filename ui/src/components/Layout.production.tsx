@@ -66,6 +66,7 @@ import { pinDocumentScrollToZero } from "../lib/pin-document-scroll";
 import { cn } from "../lib/utils";
 import { routeSectionKey, useRouteEnterMotion } from "../hooks/useRouteEnterMotion";
 import { NotFoundPage } from "../pages/NotFound";
+import { getAppDetailConnectionId } from "../lib/app-detail-route";
 import {
   PluginSlotMount,
   resolveRouteSidebarSlot,
@@ -91,18 +92,6 @@ function getCompanyPathSegments(
   if (segments[0]?.toUpperCase() !== companyPrefix.toUpperCase()) return [];
   return segments.slice(1);
 }
-
-const RESERVED_APP_SUBPATHS = new Set([
-  "browse",
-  "connections",
-  "connect",
-  "chat",
-  "review",
-  "attention",
-  "gateways",
-  "advanced",
-  "app",
-]);
 
 function isSkillsStoreRoute(
   pathname: string,
@@ -158,12 +147,7 @@ export function Layout() {
   );
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
-  const appDetailConnectionId =
-    isAppsRoute &&
-    companyPathSegments[1] &&
-    !RESERVED_APP_SUBPATHS.has(companyPathSegments[1].toLowerCase())
-      ? companyPathSegments[1]
-      : null;
+  const appDetailConnectionId = getAppDetailConnectionId(companyPathSegments);
   const appDetailApplicationId =
     isAppsRoute &&
     companyPathSegments[1]?.toLowerCase() === "app" &&
