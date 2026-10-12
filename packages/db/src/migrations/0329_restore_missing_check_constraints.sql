@@ -5,7 +5,8 @@
 -- with 42704 (as 0325 did, GRE-1420), and live does not enforce the missing rules.
 -- Each check is added only when the table does not already have a constraint with that name,
 -- so fresh installs keep their validated checks and a replay is a no-op. Expressions are the
--- Drizzle schema's, as in the 0327 snapshot.
+-- Drizzle schema's, as in the 0328 snapshot (113 checks: the 111 above plus the two that 0328
+-- creates with client_support_tickets, which are always present here).
 -- NOT VALID: new and updated rows are checked; existing rows are not. VALIDATE CONSTRAINT
 -- goes in a later migration after rows that break a rule are cleaned up.
 -- Rollback: ALTER TABLE ... DROP CONSTRAINT IF EXISTS for each check this migration added (not
@@ -308,6 +309,24 @@ BEGIN
     WHERE conrelid = '"public"."chat_teams_file_transfers"'::regclass AND conname = 'chat_teams_file_transfers_phase_check'
   ) THEN
     ALTER TABLE "public"."chat_teams_file_transfers" ADD CONSTRAINT "chat_teams_file_transfers_phase_check" CHECK ("chat_teams_file_transfers"."phase" in ('consent_pending','consent_sending','consent_unknown','awaiting_consent','upload_pending','uploading','upload_unknown','file_info_pending','file_info_sending','file_info_unknown','delivered','declined','expired','cancelled','conflict')) NOT VALID;
+  END IF;
+END $$;--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = '"public"."client_support_tickets"'::regclass AND conname = 'client_support_tickets_kind_check'
+  ) THEN
+    ALTER TABLE "public"."client_support_tickets" ADD CONSTRAINT "client_support_tickets_kind_check" CHECK ("client_support_tickets"."kind" in ('support', 'quality-review', 'upgrade')) NOT VALID;
+  END IF;
+END $$;--> statement-breakpoint
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = '"public"."client_support_tickets"'::regclass AND conname = 'client_support_tickets_priority_check'
+  ) THEN
+    ALTER TABLE "public"."client_support_tickets" ADD CONSTRAINT "client_support_tickets_priority_check" CHECK ("client_support_tickets"."priority" in ('P1', 'P2', 'P3')) NOT VALID;
   END IF;
 END $$;--> statement-breakpoint
 DO $$

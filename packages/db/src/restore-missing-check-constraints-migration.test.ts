@@ -9,7 +9,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./test-embedded-postgres.js";
 
-const MIGRATION_FILE = "0328_restore_missing_check_constraints.sql";
+const MIGRATION_FILE = "0329_restore_missing_check_constraints.sql";
 const migrationsDir = path.join(import.meta.dirname, "migrations");
 const migrationSql = fs.readFileSync(path.join(migrationsDir, MIGRATION_FILE), "utf8");
 const cleanups: Array<() => Promise<void>> = [];
@@ -20,11 +20,11 @@ type Snapshot = {
   tables: Record<string, { name: string; checkConstraints?: Record<string, { name: string }> }>;
 };
 
-// Every named check in the schema as of 0328. Pinned to this migration's snapshot, not the
-// newest one, so a later migration that adds a check does not change what 0328 must restore.
+// Every named check in the schema as of 0329. Pinned to this migration's snapshot, not the
+// newest one, so a later migration that adds a check does not change what 0329 must restore.
 function schemaCheckNames(): string[] {
   const snapshot = JSON.parse(
-    fs.readFileSync(path.join(migrationsDir, "meta", "0328_snapshot.json"), "utf8"),
+    fs.readFileSync(path.join(migrationsDir, "meta", "0329_snapshot.json"), "utf8"),
   ) as Snapshot;
   return Object.values(snapshot.tables)
     .flatMap((table) => Object.values(table.checkConstraints ?? {}).map((check) => check.name))

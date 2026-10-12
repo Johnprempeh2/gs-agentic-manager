@@ -1,4 +1,7 @@
-import { bigint, index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { assets } from "./assets.js";
+import { issues } from "./issues.js";
+import { supportQueues, supportTickets } from "./support.js";
 
 /**
  * Client instances a Greatstone hub oversees (GRE-1082). One row per
@@ -28,6 +31,8 @@ export const fleetInstances = pgTable(
     lifecycleChangedAt: timestamp("lifecycle_changed_at", { withTimezone: true }),
     /** `health.app` of the last check-in: ok or down. */
     lastAppHealth: text("last_app_health"),
+    /** The support queue this instance's "Get help" tickets land in (GRE-1084). Null: the hub refuses its tickets. */
+    supportQueueId: uuid("support_queue_id").references(() => supportQueues.id, { onDelete: "set null" }),
     registeredAt: timestamp("registered_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     revokedBy: text("revoked_by"),
@@ -55,5 +60,74 @@ export const fleetCheckIns = pgTable(
   },
   (table) => ({
     instanceReceivedIdx: index("fleet_check_ins_instance_received_idx").on(table.fleetInstanceId, table.receivedAt),
+  }),
+);
+
+/**
+ * A support ticket that came from a client instance (GRE-1084). Links the
+ * spoke's ticket id to the hub's support ticket. The ticket itself (title,
+ * summary, status, owner, priority, category, SLA times) lives in the issue
+ * and support_tickets; nothing else from the spoke is kept.
+ */
+export const fleetSupportTickets = pgTable(
+  "fleet_support_tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fleetInstanceId: uuid("fleet_instance_id")
+      .notNull()
+      .references(() => fleetInstances.id, { onDelete: "cascade" }),
+    /** The spoke's ticket id. */
+    spokeRef: uuid("spoke_ref").notNull(),
+    kind: text("kind").$type<"support" | "quality-review" | "upgrade">().notNull(),
+    revision: integer("revision").notNull(),
+    supportTicketId: uuid("support_ticket_id")
+      .notNull()
+      .references(() => supportTickets.id, { onDelete: "cascade" }),
+    issueId: uuid("issue_id")
+      .notNull()
+      .references(() => issues.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    instanceRefUq: uniqueIndex("fleet_support_tickets_instance_ref_uq").on(table.fleetInstanceId, table.spokeRef),
+    issueUq: uniqueIndex("fleet_support_tickets_issue_uq").on(table.issueId),
+  }),
+);
+
+/** A reply we chose to send to the client. Internal issue comments never go. */
+export const fleetSupportReplies = pgTable(
+  "fleet_support_replies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fleetSupportTicketId: uuid("fleet_support_ticket_id")
+      .notNull()
+      .references(() => fleetSupportTickets.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    authorAgentId: uuid("author_agent_id"),
+    authorUserId: text("author_user_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    ticketCreatedIdx: index("fleet_support_replies_ticket_created_idx").on(table.fleetSupportTicketId, table.createdAt),
+  }),
+);
+
+/** A file the client picked, stored as an attachment of the hub issue. Keyed by the spoke's id, so a resend is kept once. */
+export const fleetSupportAttachments = pgTable(
+  "fleet_support_attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fleetSupportTicketId: uuid("fleet_support_ticket_id")
+      .notNull()
+      .references(() => fleetSupportTickets.id, { onDelete: "cascade" }),
+    spokeRef: uuid("spoke_ref").notNull(),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    ticketRefUq: uniqueIndex("fleet_support_attachments_ticket_ref_uq").on(table.fleetSupportTicketId, table.spokeRef),
   }),
 );

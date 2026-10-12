@@ -701,6 +701,7 @@ export const queryKeys = {
     systemMemory: ["instance", "system-memory"] as const,
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
     billingAccount: ["instance", "billing-account"] as const,
+    fleetInstances: ["instance", "fleet-instances"] as const,
   },
   health: ["health"] as const,
   cloud: {
