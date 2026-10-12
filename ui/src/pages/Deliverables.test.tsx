@@ -210,6 +210,42 @@ describe("Deliverables page", () => {
     expect(frame?.getAttribute("sandbox")).toBe(DELIVERABLE_IFRAME_SANDBOX);
   });
 
+  it("groups by project by default, shows the project on each card, and puts no-project last (GRE-1471)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "a", title: "Loose note", project: null }),
+      sample({ id: "b", title: "Board pack", project: { id: "p1", name: "Board" } }),
+      sample({ id: "c", title: "Site brief", project: { id: "p2", name: "Website" } }),
+      sample({ id: "d", title: "Board minutes", project: { id: "p1", name: "Board" } }),
+    ]));
+    render();
+    await flush();
+
+    const sections = [...container.querySelectorAll<HTMLElement>("section[aria-label]")]
+      .filter((section) => section.querySelector("[data-testid='deliverable-card']"));
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["Board", "Website", "No project"]);
+    const titlesIn = (section: HTMLElement) =>
+      [...section.querySelectorAll("[data-testid='deliverable-card'] h3")].map((title) => title.textContent);
+    expect(titlesIn(sections[0]!)).toEqual(["Board pack", "Board minutes"]);
+    expect(titlesIn(sections[2]!)).toEqual(["Loose note"]);
+
+    const projectLabels = [...container.querySelectorAll("[data-testid='deliverable-card-project']")]
+      .map((label) => label.textContent);
+    expect(projectLabels).toEqual(["Project: Board", "Project: Board", "Project: Website", "Project: No project"]);
+  });
+
+  it("can turn grouping off and keeps the choice in the link", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "a", project: null }),
+      sample({ id: "b", project: { id: "p1", name: "Board" } }),
+    ]));
+    render("/deliverables?group=none");
+    await flush();
+
+    expect(container.querySelector("section[aria-label='Deliverables']")).not.toBeNull();
+    expect(container.querySelectorAll("[data-testid='deliverable-card']")).toHaveLength(2);
+    expect(container.querySelector("[data-testid='deliverable-group']")?.textContent).toContain("No grouping");
+  });
+
   it("uses the same sandbox as HTML attachments and never grants app access", () => {
     expect(DELIVERABLE_IFRAME_SANDBOX.split(" ")).toEqual([...HTML_ATTACHMENT_SANDBOX_TOKENS]);
     expect(DELIVERABLE_IFRAME_SANDBOX).not.toContain("allow-same-origin");
@@ -413,16 +449,17 @@ describe("projectsWithPreview", () => {
 });
 
 describe("deliverable helpers", () => {
-  it("groups by project and by month, keeping list order", () => {
+  it("groups by project and by month, keeping list order, with no project last", () => {
     const items = [
       sample({ id: "a", project: { id: "p1", name: "Board" }, createdAt: "2026-09-02T00:00:00.000Z" }),
       sample({ id: "b", project: null, createdAt: "2026-08-15T00:00:00.000Z" }),
       sample({ id: "c", project: { id: "p1", name: "Board" }, createdAt: "2026-08-01T00:00:00.000Z" }),
+      sample({ id: "e", project: { id: "p2", name: "Website" }, createdAt: "2026-07-01T00:00:00.000Z" }),
     ];
     expect(groupDeliverables(items, "project").map((group) => [group.label, group.items.map((item) => item.id)]))
-      .toEqual([["Board", ["a", "c"]], ["No project", ["b"]]]);
+      .toEqual([["Board", ["a", "c"]], ["Website", ["e"]], ["No project", ["b"]]]);
     expect(groupDeliverables(items, "month").map((group) => group.items.map((item) => item.id)))
-      .toEqual([["a"], ["b", "c"]]);
+      .toEqual([["a"], ["b", "c"], ["e"]]);
     expect(groupDeliverables(items, "none")).toEqual([{ key: "all", label: null, items }]);
   });
 

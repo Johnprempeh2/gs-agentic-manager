@@ -46,6 +46,8 @@ export const DELIVERABLE_SORT_OPTIONS: { value: DeliverableSort; label: string }
 ];
 
 type GroupBy = "none" | "project" | "month";
+/** Grouped by project unless the person picks otherwise (GRE-1471). */
+const DEFAULT_GROUP: GroupBy = "project";
 
 /** Projects whose primary workspace serves a preview, for the cards above the list. */
 export function projectsWithPreview(projects: Project[] | undefined, projectId: string | null) {
@@ -97,6 +99,13 @@ export function dateRangeStart(range: DateRange, now = new Date()): string | und
   return start.toISOString();
 }
 
+export const NO_PROJECT_LABEL = "No project";
+
+/**
+ * Splits the list into sections in list order. By project (the default,
+ * GRE-1471), deliverables with no project share one "No project" group,
+ * always shown last.
+ */
 export function groupDeliverables(items: Deliverable[], groupBy: GroupBy) {
   if (groupBy === "none") return [{ key: "all", label: null as string | null, items }];
   const groups = new Map<string, { key: string; label: string | null; items: Deliverable[] }>();
@@ -105,13 +114,15 @@ export function groupDeliverables(items: Deliverable[], groupBy: GroupBy) {
       ? item.project?.id ?? "none"
       : item.createdAt.slice(0, 7);
     const label = groupBy === "project"
-      ? item.project?.name ?? "No project"
+      ? item.project?.name ?? NO_PROJECT_LABEL
       : new Date(item.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
     const group = groups.get(key) ?? { key, label, items: [] };
     group.items.push(item);
     groups.set(key, group);
   }
-  return [...groups.values()];
+  const result = [...groups.values()];
+  if (groupBy !== "project") return result;
+  return [...result.filter((group) => group.key !== "none"), ...result.filter((group) => group.key === "none")];
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -186,7 +197,7 @@ export function Deliverables() {
   const brand = searchParams.get("brand");
   const dateRange = parseOption(searchParams.get("date"), DATE_OPTIONS, "all");
   const sort = parseOption(searchParams.get("sort"), DELIVERABLE_SORT_OPTIONS, "newest");
-  const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, "none");
+  const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, DEFAULT_GROUP);
   const openId = searchParams.get("open");
 
   const [draftQuery, setDraftQuery] = useState(query);
@@ -457,7 +468,7 @@ export function Deliverables() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" data-testid="deliverable-group">
                   <Layers />
-                  {groupBy === "none" ? "Group" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
+                  {groupBy === "none" ? "No grouping" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
@@ -465,7 +476,7 @@ export function Deliverables() {
                 {GROUP_OPTIONS.map((option) => (
                   <DropdownMenuItem
                     key={option.value}
-                    onSelect={() => setParam("group", option.value === "none" ? null : option.value)}
+                    onSelect={() => setParam("group", option.value === DEFAULT_GROUP ? null : option.value)}
                     className="justify-between"
                   >
                     {option.label}
