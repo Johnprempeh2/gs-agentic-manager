@@ -219,6 +219,21 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
     expect(instances.body[0]).not.toHaveProperty("registrationCodeHash");
   });
 
+  it("GRE-1083: the list carries each instance's newest check-in, and null when none is kept", async () => {
+    const { id, key, seq } = await register("c001");
+    await newCode("c002");
+    const older = { ...checkIn, usage: { ...checkIn.usage, runsLast24h: 5 } };
+    const firstSeq = nextSeq(seq);
+    expect((await sendCheckIn(key, id, firstSeq, older)).status).toBe(200);
+    // Both writes can land in the same millisecond; move the first one back.
+    await db.update(fleetCheckIns).set({ receivedAt: new Date(Date.now() - 60_000) });
+    expect((await sendCheckIn(key, id, nextSeq(firstSeq))).status).toBe(200);
+    const [first, second] = (await request(app()).get("/api/fleet/instances")).body;
+    expect(first.code).toBe("c001");
+    expect(first.latestCheckIn.checkIn).toEqual(checkIn);
+    expect(second).toMatchObject({ code: "c002", state: "pending", latestCheckIn: null });
+  });
+
   it("refuses a bad signature", async () => {
     const { id, seq } = await register("c001");
     const res = await sendCheckIn(generateFleetKey(), id, nextSeq(seq));

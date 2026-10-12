@@ -179,4 +179,21 @@ export function fleetInstanceState(
   return ageMinutes >= limits.staleAfterMinutes ? "stale" : "ok";
 }
 
+/** One row of `GET /api/fleet/instances` (F2 fleet page, GRE-1083). Read-only; dates are ISO strings on the wire. */
+export interface FleetInstanceView {
+  id: string;
+  code: string;
+  status: FleetInstanceStatus;
+  state: FleetInstanceState;
+  lifecycle: FleetLifecycle | null;
+  lifecycleChangedAt: string | null;
+  registeredAt: string | null;
+  lastCheckInAt: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  registrationCodeExpiresAt: string | null;
+  createdAt: string;
+  latestCheckIn: { receivedAt: string; checkIn: FleetReceivedCheckIn } | null;
+}
+
 export const fleetSignedRequestSchema = z.object({ message: z.string().min(1).max(16_384) }).strict();
