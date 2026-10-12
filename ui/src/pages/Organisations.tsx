@@ -174,9 +174,9 @@ export function Organisations() {
                       {organisation.name}
                     </button>
                   </td>
-                  <td className="px-3 py-2">{organisation.industry ?? "—"}</td>
-                  <td className="px-3 py-2">{organisation.country ?? "—"}</td>
-                  <td className="px-3 py-2">{organisation.countryOwner ?? "—"}</td>
+                  <td className="px-3 py-2">{organisation.industry ?? "Not set"}</td>
+                  <td className="px-3 py-2">{organisation.country ?? "Not set"}</td>
+                  <td className="px-3 py-2">{organisation.countryOwner ?? "Not set"}</td>
                   <td className="px-3 py-2">
                     <Badge variant={STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
                   </td>

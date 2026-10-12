@@ -112,7 +112,7 @@ describe("Organisations page", () => {
     );
     expect(rows).toEqual([
       ["Acme Mining", "Mining", "Ghana", "Ama", "Prospect", "Kofi Mensah (CEO)"],
-      ["Blue Bank", "—", "Ghana", "Ama", "Client", "No key contact"],
+      ["Blue Bank", "Not set", "Ghana", "Ama", "Client", "No key contact"],
     ]);
   });
 
