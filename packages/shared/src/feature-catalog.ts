@@ -432,6 +432,7 @@ export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
+  { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
 
 export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];

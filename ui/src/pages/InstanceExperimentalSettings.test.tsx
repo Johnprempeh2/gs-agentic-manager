@@ -439,6 +439,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Goals Sidebar Link");
   });
 
+  it("no longer shows a Streamlined Left Navigation toggle (graduated, GRE-1440)", async () => {
+    await renderPage();
+
+    expect(container.textContent).not.toContain("Streamlined Left Navigation");
+    expect(container.textContent).not.toContain("Use the streamlined main sidebar navigation layout.");
+  });
+
   it("shows no card for any graduated switch in the shared list (GRE-848)", async () => {
     await renderPage();
 
