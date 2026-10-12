@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LifeBuoy, Paperclip, Pencil, Plus } from "lucide-react";
+import { LifeBuoy, PaperclipIcon, Pencil, Plus } from "lucide-react";
 import {
   FLEET_SUPPORT_ATTACHMENT_MAX_BYTES,
   FLEET_SUPPORT_ATTACHMENTS_PER_TICKET,
@@ -373,7 +373,7 @@ function AddFileButton({ companyId, ticket }: { companyId: string; ticket: Clien
         disabled={full || upload.isPending}
         onClick={() => input.current?.click()}
       >
-        <Paperclip />
+        <PaperclipIcon />
         {upload.isPending ? "Adding…" : "Add file"}
       </Button>
       {problem ? (
