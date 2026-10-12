@@ -30,6 +30,8 @@
 //   scripts/client-instance.sh fleet-check-in --root <dir> --watch-config <file>
 //   scripts/client-instance.sh fleet-revoke --root <dir> [--local-only yes]
 //                                     (signed registration and check-in with a Greatstone hub, GRE-1082)
+//   scripts/client-instance.sh fleet-support-sync --root <dir> --watch-config <file>
+//                                     ("Get help" tickets to the hub, status and replies back, GRE-1084)
 //   scripts/client-instance.sh plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
 //                                     (copy the strategy plan; without --apply on it only reports; GRE-1190)
 //   scripts/client-instance.sh pause|resume --root <dir> --operator <name> --reason <text>
@@ -123,6 +125,7 @@ import {
   type ToolConnectionView,
   type UsageCompany,
 } from "./fleet.js";
+import { runSupportSync, type SupportSyncOutcome } from "./fleet-support.js";
 import { backupStatusLines, newestBackup, releaseStatusLines, restoreCheckStatusLines, verifyStatusLines, type RestoreCheck, type VerifyRecord } from "./status.js";
 import {
   aiSignals,
@@ -221,6 +224,9 @@ const USAGE = `usage:
                                            send one signed check-in now (watch sends one every pass)
   fleet-revoke --root <dir> [--local-only yes]
                                            revoke this instance's key at the hub, then delete it
+  fleet-support-sync --root <dir> --watch-config <file>
+                                           send "Get help" tickets and the files the client picked to the hub,
+                                           bring back status, SLA times and replies (watch runs one every pass)
   plan-copy --from <practice dir> --to <client dir> [--from-company <id>] [--apply on]
                                            copy the strategy plan (vision to initiatives, with targets and
                                            due dates) to the client instance; owners matched by email.
@@ -1367,6 +1373,9 @@ async function cmdWatch(root: string, state: InstanceState, opts: Record<string,
   // GRE-1082: the same pass reports to the hub, when this instance is registered.
   const checkIn = await sendFleetCheckIn(root, state, config.operatorPassword, signals);
   if (checkIn) say(checkIn.ok ? "fleet check-in sent" : `WARNING: fleet check-in FAILED: ${checkIn.detail}`);
+  // GRE-1084: and carries "Get help" tickets both ways. A failure waits for the next pass.
+  const supportSync = checkIn ? await sendSupportSync(root, state, config.operatorPassword) : null;
+  if (supportSync) say(supportSync.ok ? `fleet support sync: ${supportSync.detail}` : `WARNING: fleet support sync FAILED: ${supportSync.detail}`);
   if (failing.length) process.exit(1);
 }
 
@@ -1569,6 +1578,54 @@ async function deleteFromHub(root: string, fleet: NonNullable<ReturnType<typeof 
   return die(`hub delete FAILED: ${answer.detail}. Nothing is removed; run delete again, or add --fleet-local-only yes and remove the hub record by hand`);
 }
 
+/**
+ * One support sync (GRE-1084): the app's outbox to the hub, the hub's answer
+ * back into the app. Each signed message takes a new seq, saved before it is
+ * sent. Returns the outcome; never exits, so a hub that is down does not stop
+ * the watch. Null when this instance is not registered or the app is down.
+ */
+async function sendSupportSync(root: string, state: InstanceState, operatorPassword: string): Promise<SupportSyncOutcome | null> {
+  const fleet = readFleet(root);
+  if (!fleet || !readPid(root)) return null;
+  const { registration, key } = fleet;
+  let outcome: SupportSyncOutcome;
+  try {
+    const operator = new Session(baseUrl(state));
+    const login = await operator.request("POST", "/api/auth/sign-in/email", { email: OPERATOR_EMAIL, password: operatorPassword });
+    if (login.status !== 200) throw new Error(`operator log-in returned ${login.status}`);
+    outcome = await runSupportSync(
+      {
+        spoke: (method, route, body) => operator.request(method, route, body),
+        hub: (route, body) => postToHub(registration.hubUrl, route, body),
+        sign: (claims) => {
+          const seq = nextSeq(registration.lastSeq);
+          registration.lastSeq = seq;
+          writeFleetRegistration(root, registration);
+          return signFleetMessage(key.privateJwk, { ...claims, sub: registration.instanceId, seq });
+        },
+      },
+      registration.supportSince ?? null,
+    );
+  } catch (err) {
+    outcome = { ok: false, detail: `support sync not done: ${err instanceof Error ? err.message : String(err)}`, since: null };
+  }
+  writeFleetRegistration(root, {
+    ...registration,
+    supportSince: outcome.since ?? registration.supportSince ?? null,
+    lastSupportSync: { at: new Date().toISOString(), ok: outcome.ok, detail: outcome.detail },
+  });
+  return outcome;
+}
+
+async function cmdFleetSupportSync(root: string, state: InstanceState, opts: Record<string, string>) {
+  if (!existsSync(fleetHubFile(root))) die("this instance is not registered with a hub; run fleet-register");
+  if (!readPid(root)) die("the app is not running; start it first");
+  const config = loadWatchConfig(opts["watch-config"], undefined);
+  const outcome = (await sendSupportSync(root, state, config.operatorPassword))!;
+  say(`fleet-support-sync ${outcome.ok ? "OK" : "FAILED"}: ${outcome.detail}`);
+  if (!outcome.ok) process.exit(1);
+}
+
 function fleetStatusLines(root: string): string[] {
   if (!existsSync(fleetHubFile(root))) return ["fleet: not registered with a hub"];
   const registration = JSON.parse(readFileSync(fleetHubFile(root), "utf8")) as FleetRegistration;
@@ -1576,6 +1633,9 @@ function fleetStatusLines(root: string): string[] {
   return [
     `fleet: ${registration.code} at ${registration.hubUrl}, registered ${registration.registeredAt}`,
     !last ? "WARNING: no fleet check-in sent yet" : last.ok ? `last fleet check-in OK at ${last.at}` : `WARNING: last fleet check-in FAILED at ${last.at}: ${last.detail}`,
+    ...(registration.lastSupportSync
+      ? [registration.lastSupportSync.ok ? `last support sync OK at ${registration.lastSupportSync.at}` : `WARNING: last support sync FAILED at ${registration.lastSupportSync.at}: ${registration.lastSupportSync.detail}`]
+      : []),
   ];
 }
 
@@ -2431,6 +2491,8 @@ async function main() {
       return cmdFleetRegister(root, opts);
     case "fleet-check-in":
       return cmdFleetCheckIn(root, state, opts);
+    case "fleet-support-sync":
+      return cmdFleetSupportSync(root, state, opts);
     case "fleet-revoke":
       return cmdFleetRevoke(root, opts);
     case "pause":

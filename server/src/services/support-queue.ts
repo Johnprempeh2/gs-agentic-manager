@@ -305,6 +305,42 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
     return created;
   }
 
+  /**
+   * A ticket from a client instance's "Get help" (GRE-1084). Same issue,
+   * clock, owner and alerts as any support ticket. `inTx` runs in the same
+   * transaction, so the caller's link row lands with the ticket or not at
+   * all. A kind that is not a platform fault is P3 and says what it is not.
+   */
+  async function intakeFromInstance(
+    queue: SupportQueueRow,
+    input: { kind: "support" | "quality-review" | "upgrade"; title: string; summary: string; priority: SupportPriority; receivedAt: Date },
+    inTx: (tx: Tx, created: { issue: { id: string }; ticket: SupportTicketRow }) => Promise<void>,
+    tx: Tx,
+  ) {
+    const { route, fields } = await issueFields(queue, {
+      subject: input.kind === "upgrade" ? `Upgrade request: ${input.title}` : input.kind === "quality-review" ? `Quality review: ${input.title}` : input.title,
+      body: input.summary,
+      receivedAt: input.receivedAt,
+      priority: input.priority,
+    });
+    const note =
+      input.kind === "upgrade"
+        ? "**Upgrade request.** This is a request only. It does not approve a purchase or any spend. A person at Greatstone must agree the change and its price with the client."
+        : input.kind === "quality-review"
+          ? "**Optional quality review.** Separate from platform support. It is not part of running the client's business."
+          : "**Platform support** from the client's instance (Get help).";
+    const issue = await issuesSvc.create(
+      queue.companyId,
+      { ...fields, description: `${note}\n\n${fields.description}`, originKind: "manual" },
+      tx,
+    );
+    if (input.summary)
+      await issuesSvc.addComment(issue.id, `**Client summary**\n\n${input.summary}`, {}, { authorType: "system" }, tx);
+    const ticket = (await openTicket(queue, issue.id, input.priority, input.receivedAt, tx))!;
+    await inTx(tx, { issue, ticket });
+    return { issue, ticket, route };
+  }
+
   async function queueForEmailEndpoint(companyId: string, endpointId: string) {
     const [queue] = await db
       .select()
@@ -591,6 +627,9 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
     issueFields,
     afterEmailIntake,
     intake,
+    intakeFromInstance,
+    /** After an intakeFromInstance transaction commits: post the clock, wake the owner, alert on P1. */
+    announce,
     triage,
     sweep,
     listTickets,

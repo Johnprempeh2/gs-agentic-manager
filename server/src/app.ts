@@ -116,6 +116,7 @@ import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
 import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
 import { supportRoutes } from "./routes/support.js";
+import { clientSupportRoutes } from "./routes/client-support.js";
 import { pushRoutes } from "./routes/push.js";
 import { decisionTrainingRoutes } from "./routes/decision-training.js";
 import { decisionRoutes } from "./routes/decisions.js";
@@ -649,7 +650,7 @@ export async function createApp(
   const emailChannels = emailChannelService(db, { heartbeat: connectionIntentHeartbeat, storage: opts.storageService, publicBaseUrl: opts.chatWebhookPublicBaseUrl ?? opts.authPublicBaseUrl });
   app.use(emailWebhookRoutes(emailChannels));
   // Fleet spokes sign each message with their own key (GRE-1082); no session.
-  app.use(fleetSpokeRoutes(db));
+  app.use(fleetSpokeRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   app.use(chatWebhookRoutes(chatChannels));
   // The instance validates single-use registration state and its trusted
   // current origin. This exact GET is the only public setup return.
@@ -868,6 +869,7 @@ export async function createApp(
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(agentWorkDigestRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
+  api.use(clientSupportRoutes(db, { storage: opts.storageService }));
   api.use(pushRoutes(db));
   api.use(decisionTrainingRoutes(db));
   api.use(decisionRoutes(db, opts.decisionServiceOptions));

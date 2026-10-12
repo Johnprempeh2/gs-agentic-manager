@@ -2283,6 +2283,13 @@
       "when": 1791744956553,
       "tag": "0327_billing_usage_fx_rate",
       "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1791785203168,
+      "tag": "0328_fleet_support_bridge",
+      "breakpoints": true
     }
   ]
 }
