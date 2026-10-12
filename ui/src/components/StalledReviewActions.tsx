@@ -30,8 +30,8 @@ interface StalledReviewActionsProps {
 }
 
 /**
- * What each choice does, in plain words (GRE-1421). Shown above the buttons so
- * the operator knows the result before clicking.
+ * What each choice does, in plain words (GRE-1421). Shown beside each button
+ * so the operator knows the result before clicking.
  */
 export function stalledReviewChoiceHints(assigneeName?: string | null) {
   const who = assigneeName?.trim() || "the assignee";
@@ -49,6 +49,18 @@ export function stalledReviewChoiceHints(assigneeName?: string | null) {
     },
   ];
 }
+
+const CHOICE_ICON: Record<StalledReviewDecisionAction, typeof CheckCircle2> = {
+  approve: CheckCircle2,
+  request_changes: RotateCcw,
+  send_back: Undo2,
+};
+
+const CHOICE_TEST_ID: Record<StalledReviewDecisionAction, string> = {
+  approve: "stalled-review-approve",
+  request_changes: "stalled-review-request-changes",
+  send_back: "stalled-review-send-back",
+};
 
 const ACTION_PAST_TENSE: Record<StalledReviewDecisionAction, string> = {
   approve: "Review approved. Issue marked done.",
@@ -126,17 +138,6 @@ export function StalledReviewActions({
           <span className="min-w-0 truncate">{policyBadge.label}</span>
         </Badge>
       ) : null}
-      <section className="flex flex-col gap-1" data-testid="stalled-review-choices">
-        <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
-        <ul className="flex flex-col gap-1 text-sm">
-          {stalledReviewChoiceHints(assigneeName).map((choice) => (
-            <li key={choice.action} id={`${hintIdPrefix}-${choice.action}`} data-testid={`stalled-review-hint-${choice.action}`}>
-              <span className="font-medium text-foreground">{choice.label}:</span>{" "}
-              <span className="text-muted-foreground">{choice.hint}</span>
-            </li>
-          ))}
-        </ul>
-      </section>
       <Textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
@@ -146,62 +147,55 @@ export function StalledReviewActions({
         data-testid="stalled-review-note"
         disabled={pending}
       />
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        {footerSlot ?? <span className="hidden sm:block" />}
-        <div className="flex flex-col gap-2 sm:flex-1 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end @xl:flex-none">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
-            disabled={pending}
-            onClick={() => decide.mutate("send_back")}
-            aria-describedby={`${hintIdPrefix}-send_back`}
-            data-testid="stalled-review-send-back"
-          >
-            {runningFor("send_back") ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <Undo2 className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Send back to work
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-full border-amber-400/70 text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:text-amber-100 dark:hover:bg-amber-500/15 sm:w-auto sm:flex-1 @xl:flex-none"
-            disabled={pending || noteEmpty}
-            title={noteEmpty ? "Add a note to request changes" : undefined}
-            onClick={() => decide.mutate("request_changes")}
-            aria-describedby={`${hintIdPrefix}-request_changes`}
-            data-testid="stalled-review-request-changes"
-          >
-            {runningFor("request_changes") ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Request changes
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
-            disabled={pending}
-            onClick={() => decide.mutate("approve")}
-            aria-describedby={`${hintIdPrefix}-approve`}
-            data-testid="stalled-review-approve"
-          >
-            {runningFor("approve") ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-            ) : (
-              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-            )}
-            Approve
-          </Button>
-        </div>
-      </div>
+      {/* Each choice sits with what it does, so the result is read at the
+          point of choice (GRE-1421). */}
+      <section className="flex flex-col gap-1.5" aria-label="Your choices" data-testid="stalled-review-choices">
+        <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
+        <ul className="flex flex-col gap-2">
+          {stalledReviewChoiceHints(assigneeName).map((choice) => {
+            const Icon = CHOICE_ICON[choice.action];
+            const hintId = `${hintIdPrefix}-${choice.action}`;
+            const needsNote = choice.action === "request_changes" && noteEmpty;
+            return (
+              <li
+                key={choice.action}
+                className="flex flex-col gap-1 sm:grid sm:grid-cols-(--gtc-41) sm:items-center sm:gap-3"
+              >
+                <Button
+                  type="button"
+                  variant={choice.action === "approve" ? "default" : "outline"}
+                  size="sm"
+                  className={cn(
+                    "w-full justify-start",
+                    choice.action === "request_changes"
+                      && "border-amber-400/70 text-amber-900 hover:bg-amber-100 dark:border-amber-500/50 dark:text-amber-100 dark:hover:bg-amber-500/15",
+                  )}
+                  disabled={pending || needsNote}
+                  title={needsNote ? "Add a note to request changes" : undefined}
+                  onClick={() => decide.mutate(choice.action)}
+                  aria-describedby={hintId}
+                  data-testid={CHOICE_TEST_ID[choice.action]}
+                >
+                  {runningFor(choice.action) ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <Icon className="h-3.5 w-3.5" aria-hidden />
+                  )}
+                  {choice.label}
+                </Button>
+                <p
+                  id={hintId}
+                  className="text-sm text-muted-foreground"
+                  data-testid={`stalled-review-hint-${choice.action}`}
+                >
+                  {choice.hint}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+      {footerSlot ? <div className="flex flex-wrap items-center">{footerSlot}</div> : null}
     </div>
   );
 }

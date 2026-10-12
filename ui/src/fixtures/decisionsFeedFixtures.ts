@@ -371,6 +371,7 @@ export function stalledReviewCard(opts: { context?: boolean } = {}): DecisionCar
             authorAgentId: "agent-ridge",
             excerpt: "Done. The billing page now shows fees, the allowance, and actual against estimate. Tests pass. PR #525 is open.",
             createdAt: NOW,
+            kind: "handoff",
           }
         : null,
       workProduct: withContext

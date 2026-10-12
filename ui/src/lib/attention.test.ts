@@ -387,7 +387,7 @@ describe("attentionDetailLine (§7)", () => {
         sourceKind: "review",
         detail: {
           kind: "review",
-          lastUpdate: { commentId: "c1", authorAgentId: null, excerpt: "Fees now show.", createdAt: "2026-07-09T12:00:00Z" },
+          lastUpdate: { commentId: "c1", authorAgentId: null, excerpt: "Fees now show.", createdAt: "2026-07-09T12:00:00Z", kind: "handoff" },
           workProduct: null,
           images: [],
         },

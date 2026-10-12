@@ -210,6 +210,7 @@ describe("AttentionQueueRow", () => {
             authorAgentId: "agent-ridge",
             excerpt: "The billing page now shows fees.",
             createdAt: "2026-07-09T12:00:00Z",
+            kind: "handoff",
           },
           workProduct: { type: "pull_request", title: "Billing fees", url: "https://github.com/acme/app/pull/12" },
           images: [],
@@ -221,7 +222,7 @@ describe("AttentionQueueRow", () => {
         agentMap={ridgeMap}
       />,
     );
-    expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain("from Ridge");
+    expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain("Summary from Ridge");
     expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain(
       "The billing page now shows fees.",
     );
@@ -248,6 +249,33 @@ describe("AttentionQueueRow", () => {
     expect(hintId && el.querySelector(`[id="${hintId}"]`)?.textContent).toContain("marked done");
     // No internal jargon on the card.
     expect(el.textContent).not.toMatch(/stalled|execution policy/i);
+  });
+
+  it("labels a newest note as the latest update when no summary was found", () => {
+    const el = render(
+      <AttentionQueueRow
+        item={stalledReviewItem({
+          kind: "review",
+          lastUpdate: {
+            commentId: "comment-3",
+            authorAgentId: "agent-ridge",
+            excerpt: "Starting work.",
+            createdAt: "2026-07-09T12:00:00Z",
+            kind: "latest",
+          },
+          workProduct: null,
+          images: [],
+        })}
+        companyId="c1"
+        expanded
+        onToggleExpand={noop}
+        onDismiss={noop}
+        agentMap={ridgeMap}
+      />,
+    );
+    const caption = el.querySelector('[data-testid="review-last-update"] figcaption')?.textContent;
+    expect(caption).toContain("Latest agent update from Ridge");
+    expect(caption).not.toContain("Summary");
   });
 
   it("still explains the decision when there is no summary or work product", () => {

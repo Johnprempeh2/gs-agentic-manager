@@ -53,8 +53,10 @@ export function ReviewWorkEvidence({
       <h4 className={SECTION_LABEL}>What was done</h4>
       {lastUpdate ? (
         <figure className="flex flex-col gap-1 border-l-2 border-border pl-3" data-testid="review-last-update">
-          <figcaption className="text-xs text-muted-foreground">
-            Last update{author ? ` from ${author}` : ""} · {relativeTime(lastUpdate.createdAt)}
+          <figcaption className="text-xs text-muted-foreground" data-update-kind={lastUpdate.kind}>
+            {/* A hand-off says what was done; otherwise it is only the newest note. */}
+            {lastUpdate.kind === "handoff" ? "Summary" : "Latest agent update"}
+            {author ? ` from ${author}` : ""} · {relativeTime(lastUpdate.createdAt)}
           </figcaption>
           <blockquote className="line-clamp-4 text-sm text-foreground">{lastUpdate.excerpt}</blockquote>
         </figure>
