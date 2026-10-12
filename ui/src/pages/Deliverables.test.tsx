@@ -234,6 +234,31 @@ describe("Deliverables page", () => {
     expect(projectLabels).toEqual(["Project: Board", "Project: Board", "Project: Website", "Project: No project"]);
   });
 
+  it("splits a project by client case, with no-case last, and shows the case on the card (GRE-1471)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "a", title: "Internal note", project: { id: "p1", name: "Board" } }),
+      sample({ id: "b", title: "Acme brief", project: { id: "p1", name: "Board" }, clientCase: { id: "c1", name: "Acme" } }),
+      sample({ id: "c", title: "Site brief", project: { id: "p2", name: "Website" } }),
+      sample({ id: "d", title: "Loose Acme note", project: null, clientCase: { id: "c1", name: "Acme" } }),
+    ]));
+    render();
+    await flush();
+
+    const caseHeadings = [...container.querySelectorAll("[data-testid='deliverable-case-heading']")]
+      .map((heading) => heading.textContent);
+    // Board has a case so it splits; Website has none so it stays flat.
+    expect(caseHeadings).toEqual(["Acme· 1", "No client case· 1", "Acme· 1"]);
+    const board = container.querySelector<HTMLElement>("section[aria-label='Board']")!;
+    expect([...board.querySelectorAll("[data-testid='deliverable-card'] h3")].map((title) => title.textContent))
+      .toEqual(["Acme brief", "Internal note"]);
+    expect(container.querySelector("section[aria-label='Website'] [data-testid='deliverable-case-heading']")).toBeNull();
+    expect(container.querySelector("section[aria-label='No project'] [role='group'][aria-label='Client case: Acme']")).not.toBeNull();
+
+    const caseLabels = [...container.querySelectorAll("[data-testid='deliverable-card-case']")]
+      .map((label) => label.textContent);
+    expect(caseLabels).toEqual(["Client case: Acme", "Client case: Acme"]);
+  });
+
   it("can turn grouping off and keeps the choice in the link", async () => {
     deliverablesApiMock.list.mockResolvedValue(response([
       sample({ id: "a", project: null }),
@@ -461,7 +486,25 @@ describe("deliverable helpers", () => {
       .toEqual([["Board", ["a", "c"]], ["Website", ["e"]], ["No project", ["b"]]]);
     expect(groupDeliverables(items, "month").map((group) => group.items.map((item) => item.id)))
       .toEqual([["a"], ["b", "c"], ["e"]]);
-    expect(groupDeliverables(items, "none")).toEqual([{ key: "all", label: null, items }]);
+    expect(groupDeliverables(items, "none").map((group) => [group.label, group.items])).toEqual([[null, items]]);
+  });
+
+  it("splits a project by client case in list order, with no case last and items in shown order", () => {
+    const items = [
+      sample({ id: "a", project: { id: "p1", name: "Board" } }),
+      sample({ id: "b", project: { id: "p1", name: "Board" }, clientCase: { id: "c2", name: "Beta" } }),
+      sample({ id: "c", project: { id: "p1", name: "Board" }, clientCase: { id: "c1", name: "Acme" } }),
+      sample({ id: "d", project: { id: "p1", name: "Board" }, clientCase: { id: "c2", name: "Beta" } }),
+      sample({ id: "e", project: null }),
+    ];
+    const [board, none] = groupDeliverables(items, "project");
+    expect(board!.cases.map((section) => [section.label, section.items.map((item) => item.id)]))
+      .toEqual([["Beta", ["b", "d"]], ["Acme", ["c"]], ["No client case", ["a"]]]);
+    expect(board!.items.map((item) => item.id)).toEqual(["b", "d", "c", "a"]);
+    // No case anywhere in the group: one unlabelled section.
+    expect(none!.cases).toEqual([{ key: "all", label: null, items: [items[4]] }]);
+    // Month grouping never splits by case.
+    expect(groupDeliverables(items, "month").every((group) => group.cases.length === 1 && group.cases[0]!.label === null)).toBe(true);
   });
 
   it("starts weeks on Monday and months on the 1st", () => {

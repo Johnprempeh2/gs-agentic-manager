@@ -1,4 +1,4 @@
-import { Download, ExternalLink, Eye, FolderOpen, Link2 } from "lucide-react";
+import { Briefcase, Download, ExternalLink, Eye, FolderOpen, Link2 } from "lucide-react";
 import type { Deliverable, DeliverableKind } from "@/api/deliverables";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
@@ -116,6 +116,17 @@ export function DeliverableCard({
           <span className="sr-only">Project: </span>
           <span className="truncate">{deliverable.project?.name ?? "No project"}</span>
         </p>
+        {deliverable.clientCase ? (
+          <p
+            data-testid="deliverable-card-case"
+            className="-mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+            title={deliverable.clientCase.name}
+          >
+            <Briefcase className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="sr-only">Client case: </span>
+            <span className="truncate">{deliverable.clientCase.name}</span>
+          </p>
+        ) : null}
         <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-foreground" title={deliverable.title}>
           {deliverable.title}
         </h3>
