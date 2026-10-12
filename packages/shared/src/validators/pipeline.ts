@@ -94,8 +94,26 @@ export const pipelineStageVariableSchema = z.object({
   }
 });
 
+/**
+ * A standard template for a stage (GRE-1473), for example the GITA template
+ * on the GITA stage. The client page lists it in that stage's section.
+ */
+export const pipelineStageTemplateSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  url: z
+    .string()
+    .trim()
+    .max(2000)
+    .url()
+    .refine((value) => /^https?:\/\//i.test(value), "url must start with http:// or https://")
+    .optional()
+    .nullable(),
+  note: z.string().trim().max(1000).optional().nullable(),
+});
+
 export const pipelineStageConfigSchema = z.object({
   variables: z.array(pipelineStageVariableSchema).default([]),
+  templates: z.array(pipelineStageTemplateSchema).max(50).optional(),
   disabled: z.boolean().optional(),
   disabledReason: z.string().trim().max(1_000).nullable().optional(),
   requireApproval: z.boolean().optional(),
@@ -153,6 +171,7 @@ export type PipelineStageAutomationConfig = z.infer<typeof pipelineStageAutomati
 export type PipelineStageCarryOverPolicy = z.infer<typeof pipelineStageCarryOverPolicySchema>;
 export type PipelineStageBreakdown = z.infer<typeof pipelineStageBreakdownSchema>;
 export type PipelineStageVariable = z.infer<typeof pipelineStageVariableSchema>;
+export type PipelineStageTemplate = z.infer<typeof pipelineStageTemplateSchema>;
 export type PipelineStageConfig = z.infer<typeof pipelineStageConfigSchema>;
 export type PipelineAutomationRetryScope = z.infer<typeof pipelineAutomationRetryScopeSchema>;
 export type PipelineAutomationRetryCleanupOptions = z.infer<typeof pipelineAutomationRetryCleanupOptionsSchema>;

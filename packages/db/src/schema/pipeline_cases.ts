@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   integer,
@@ -194,6 +195,35 @@ export const pipelineCaseEvidence = pgTable(
         or (${table.kind} = 'document' and ${table.documentId} is not null)
         or (${table.kind} = 'link' and ${table.url} is not null)`,
     ),
+  }),
+);
+
+// A deliverable filed under one stage of a client's journey (GRE-1473). A
+// deliverable is named by its task and key, so the link follows new versions.
+// `client_facing` lets the client portal show it once the stage is complete.
+export const pipelineCaseStageDeliverables = pgTable(
+  "pipeline_case_stage_deliverables",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").notNull().references(() => pipelineStages.id, { onDelete: "cascade" }),
+    deliverableIssueId: uuid("deliverable_issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
+    deliverableKey: text("deliverable_key").notNull(),
+    clientFacing: boolean("client_facing").notNull().default(false),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    caseDeliverableUq: uniqueIndex("pipeline_case_stage_deliverables_case_deliverable_uq").on(
+      table.caseId,
+      table.deliverableIssueId,
+      table.deliverableKey,
+    ),
+    companyCaseIdx: index("pipeline_case_stage_deliverables_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_stage_deliverables_stage_idx").on(table.stageId),
   }),
 );
 
