@@ -51,14 +51,13 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableNativeRunner: {
-    title: "GS Agentic Manager Runner",
+    title: "GS Agentic Manager Runner (compatibility)",
     description:
-      "Allow explicitly configured local Codex, OpenCode, and qualified ACPX agents to use the experimental Rust GS Agentic Manager Runner, including authenticated sandbox ingress when required. Onboarding remains on legacy adapters.",
+      "Deprecated compatibility key. The GS Agentic Manager Runner is always enabled; stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    // On by default for self-hosted instances. Requires a Rust toolchain (or
-    // GSAM_RUNNER_BINARY) for `pnpm dev`, which builds runnerd whenever
-    // this is on.
+    cloudDefault: true,
+    // Always on (GRE-1436). `pnpm dev` builds runnerd, so it needs a Rust
+    // toolchain or GSAM_RUNNER_BINARY.
     selfHostedDefault: true,
   },
   enableManagedSandboxOnly: {
@@ -432,6 +431,7 @@ export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
+  { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
 

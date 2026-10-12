@@ -133,7 +133,6 @@ import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { billingAccountRoutes } from "./routes/billing-account.js";
 import { runAdmissionRecommendationRoutes } from "./routes/run-admission-recommendation.js";
-import { instanceSettingsService } from "./services/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
 import {
   instanceDatabaseBackupRoutes,
@@ -1022,13 +1021,7 @@ export async function createApp(
       { toolGateway },
     ),
   );
-  api.use(
-    adapterRoutes({
-      getNativeRunnerEnabled: async () =>
-        (await instanceSettingsService(db).getExperimental())
-          .enableNativeRunner === true,
-    }),
-  );
+  api.use(adapterRoutes());
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,

@@ -254,7 +254,6 @@ export function InstanceExperimentalSettings() {
     getWorktreeInstanceId(),
   );
   const enableEnvironments = experimentalQuery.data?.enableEnvironments === true;
-  const enableNativeRunner = experimentalQuery.data?.enableNativeRunner === true;
   const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
   const enableIsolatedWorkspaces = experimentalQuery.data?.enableIsolatedWorkspaces === true;
@@ -531,19 +530,6 @@ export function InstanceExperimentalSettings() {
           settingKey="enableFirstTaskPlanProposal"
           managed={managedKeys.enableFirstTaskPlanProposal}
           ariaLabel="Toggle first task plan proposal experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="GS Agentic Manager Runner"
-          description="Allow new Codex agents to select the experimental Rust GS Agentic Manager Runner, including authenticated runner ingress when a sandbox requires it. Onboarding continues to use legacy adapters. Turning this off hides the choice without affecting existing native runs."
-          checked={enableNativeRunner}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate({ enableNativeRunner: checked })
-          }
-          disabled={toggleMutation.isPending}
-          settingKey="enableNativeRunner"
-          managed={managedKeys.enableNativeRunner}
-          ariaLabel="Toggle GS Agentic Manager Runner experimental setting"
         />
 
         <ExperimentalToggleCard

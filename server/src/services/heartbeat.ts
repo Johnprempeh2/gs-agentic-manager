@@ -26040,12 +26040,11 @@ export function heartbeatService(
           }
           throw new Error("direct_adapter_goal_controller_unavailable");
         }
-        // Runtime selection is immutable once persisted. In particular, turning the instance flag
-        // off prevents new native runs without changing the recovery path for an already-native run.
+        // Runtime selection is immutable once persisted. Greatstone (GRE-1436): the Runner
+        // graduated from Experimental, so fresh selections are always enabled.
         const nativeRuntimeResolution = resolveHeartbeatNativeRuntimeMode({
           persisted: run,
-          enabled:
-            resolvedInstanceSettings.experimental.enableNativeRunner === true,
+          enabled: true,
           runtimeConfig: agent.runtimeConfig,
           adapterConfig: agent.adapterConfig,
           agent: {

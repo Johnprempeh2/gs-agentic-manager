@@ -106,8 +106,9 @@ export interface InstanceSystemMemory {
 export interface InstanceExperimentalSettings {
   enableEnvironments: boolean;
   /**
-   * Exposes the experimental GS Agentic Manager Runner adapter for new selections.
-   * Existing native runs ignore later flag changes so they remain recoverable.
+   * @deprecated Compatibility-only (GRE-1436). The GS Agentic Manager Runner
+   * is always enabled; this always reads as true and stored or managed values
+   * are ignored.
    */
   enableNativeRunner: boolean;
   /**

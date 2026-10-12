@@ -253,7 +253,9 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
   if (parsed.success) {
     return {
       enableEnvironments: parsed.data.enableEnvironments ?? false,
-      enableNativeRunner: parsed.data.enableNativeRunner ?? true,
+      // Greatstone (GRE-1436): Runner graduated from Experimental. Ignore
+      // stored off values but keep accepting the compatibility key.
+      enableNativeRunner: true,
       enableManagedSandboxOnly: parsed.data.enableManagedSandboxOnly ?? false,
       enableIsolatedWorkspaces: parsed.data.enableIsolatedWorkspaces ?? false,
       enableIsolatedWorkspacesByDefault: parsed.data.enableIsolatedWorkspacesByDefault ?? false,
@@ -376,6 +378,8 @@ export function applyManagedExperimentalOverlay(
     // Existing Cloud stack configs may still carry retired flags. Accept the
     // document during rollout, but never let retired flags disable Apps or MCP aggregators.
     if (key === "enableApps" || key === "enableMcpAggregators") continue;
+    // Greatstone (GRE-1436): Runner is always on; a managed "off" is ignored.
+    if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;
@@ -421,7 +425,7 @@ export function applyCloudCatalogDefaults(
  * `updateExperimental` persists the whole normalized object, and the schema
  * normalizes an omitted flag to its self-hosted default. Without this step an
  * unrelated experimental write (say, turning on pipelines) would store
- * `enableNativeRunner: true` on a managed instance whose tenant row had never
+ * `enableStrategy: true` on a managed instance whose tenant row had never
  * mentioned the flag; every later read would then treat the stored boolean as
  * an explicit tenant choice and stop re-asserting the Cloud default.
  *
