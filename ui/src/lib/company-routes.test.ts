@@ -47,6 +47,11 @@ describe("company routes", () => {
     expect(applyCompanyPrefix("/since-last-visit", "PAP")).toBe("/PAP/since-last-visit");
   });
 
+  it("treats /organisations and company pages as board routes that need a company prefix (GRE-1480)", () => {
+    expect(applyCompanyPrefix("/organisations", "PAP")).toBe("/PAP/organisations");
+    expect(applyCompanyPrefix("/organisations/org-1", "PAP")).toBe("/PAP/organisations/org-1");
+  });
+
   it("rewrites company package paths with the active prefix", () => {
     expect(applyCompanyPrefix("/company/export", "NEU")).toBe("/NEU/company/export");
     expect(applyCompanyPrefix("/company/import", "NEU")).toBe("/NEU/company/import");

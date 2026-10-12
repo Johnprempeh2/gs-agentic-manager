@@ -45,6 +45,7 @@ import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, R
 import { PipelineSettings } from "./pages/PipelineSettings";
 import { PipelineAccessOverview } from "./pages/PipelineAccessOverview";
 import { Organisations } from "./pages/Organisations";
+import { OrganisationPage } from "./pages/OrganisationPage";
 import { StatusCards } from "./pages/StatusCards";
 import { RoutineDetail } from "./pages/RoutineDetail";
 import { UserProfile } from "./pages/UserProfile";
@@ -377,6 +378,10 @@ function boardRoutes(streamlinedUiEnabled: boolean) {
       <Route
         path="organisations"
         element={<PipelinesExperimentalGate><Organisations /></PipelinesExperimentalGate>}
+      />
+      <Route
+        path="organisations/:organisationId"
+        element={<PipelinesExperimentalGate><OrganisationPage /></PipelinesExperimentalGate>}
       />
       <Route
         path="pipelines"
@@ -846,6 +851,7 @@ export function App() {
           <Route path="status-cards" element={<UnprefixedBoardRedirect />} />
           <Route path="status-cards/:cardId" element={<UnprefixedBoardRedirect />} />
           <Route path="organisations" element={<UnprefixedBoardRedirect />} />
+          <Route path="organisations/:organisationId" element={<UnprefixedBoardRedirect />} />
           <Route path="pipelines" element={<UnprefixedBoardRedirect />} />
           <Route path="pipelines/:pipelineId" element={<UnprefixedBoardRedirect />} />
           <Route path="pipelines/:pipelineId/add" element={<UnprefixedBoardRedirect />} />

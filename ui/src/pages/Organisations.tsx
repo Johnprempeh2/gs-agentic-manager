@@ -4,6 +4,7 @@ import { Building2, Plus, Star } from "lucide-react";
 import {
   ORGANISATION_STATUSES,
   ORGANISATION_STATUS_LABELS,
+  type Organisation,
   type OrganisationContact,
   type OrganisationListItem,
   type OrganisationStatus,
@@ -28,9 +29,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { useIsPhone } from "@/hooks/useIsPhone";
+import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 
-const STATUS_BADGE: Record<OrganisationStatus, "default" | "secondary" | "outline"> = {
+export const ORGANISATION_STATUS_BADGE: Record<OrganisationStatus, "default" | "secondary" | "outline"> = {
   target: "outline",
   prospect: "secondary",
   client: "default",
@@ -59,7 +61,8 @@ function keyContactText(organisation: OrganisationListItem) {
 
 /**
  * Organisations (GRE-1477): every company the user works with, separate from
- * the pipeline board. Search, filter by status, add and edit. The server
+ * the pipeline board. Search, filter by status, add and edit. Each name opens
+ * the company page (GRE-1480). The server
  * checks who may change records; a refusal shows in the dialog.
  */
 export function Organisations() {
@@ -136,20 +139,19 @@ export function Organisations() {
         <ul className="space-y-3" aria-label="Organisations">
           {rows.map((organisation) => (
             <li key={organisation.id}>
-              <button
-                type="button"
-                className="w-full rounded-lg border border-border px-3 py-2 text-left hover:bg-accent/40"
-                onClick={() => setEditing(organisation)}
+              <Link
+                to={`/organisations/${organisation.id}`}
+                className="block w-full rounded-lg border border-border px-3 py-2 text-left hover:bg-accent/40"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="min-w-0 truncate font-medium">{organisation.name}</span>
-                  <Badge variant={STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
+                  <Badge variant={ORGANISATION_STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
                 </div>
                 <div className="mt-1 text-xs text-muted-foreground">
                   {[organisation.industry, organisation.country, organisation.countryOwner].filter(Boolean).join(" · ") || "No details yet"}
                 </div>
                 <div className="mt-1 truncate text-xs">{keyContactText(organisation)}</div>
-              </button>
+              </Link>
             </li>
           ))}
         </ul>
@@ -164,23 +166,35 @@ export function Organisations() {
                 <th className="px-3 py-2 font-medium">Country owner</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">Key contacts</th>
+                <th className="px-3 py-2 font-medium"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
               {rows.map((organisation) => (
                 <tr key={organisation.id} className="border-t border-border hover:bg-accent/40">
                   <td className="px-3 py-2">
-                    <button type="button" className="font-medium hover:underline" onClick={() => setEditing(organisation)}>
+                    <Link to={`/organisations/${organisation.id}`} className="font-medium hover:underline">
                       {organisation.name}
-                    </button>
+                    </Link>
                   </td>
                   <td className="px-3 py-2">{organisation.industry ?? "Not set"}</td>
                   <td className="px-3 py-2">{organisation.country ?? "Not set"}</td>
                   <td className="px-3 py-2">{organisation.countryOwner ?? "Not set"}</td>
                   <td className="px-3 py-2">
-                    <Badge variant={STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
+                    <Badge variant={ORGANISATION_STATUS_BADGE[organisation.status]}>{ORGANISATION_STATUS_LABELS[organisation.status]}</Badge>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground">{keyContactText(organisation)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="ghost"
+                      aria-label={`Edit ${organisation.name}`}
+                      onClick={() => setEditing(organisation)}
+                    >
+                      Edit
+                    </Button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -202,13 +216,13 @@ export function Organisations() {
   );
 }
 
-function OrganisationDialogContent({
+export function OrganisationDialogContent({
   companyId,
   organisation,
   onDone,
 }: {
   companyId: string;
-  organisation: OrganisationListItem | null;
+  organisation: Organisation | null;
   onDone: () => void;
 }) {
   const queryClient = useQueryClient();

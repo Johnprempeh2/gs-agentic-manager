@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrganisationListItem } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { Organisations } from "./Organisations";
 
 const state = vi.hoisted(() => ({ isPhone: false }));
@@ -87,7 +88,9 @@ describe("Organisations page", () => {
     await act(async () => {
       root.render(
         <QueryClientProvider client={client}>
-          <Organisations />
+          <MemoryRouter>
+            <Organisations />
+          </MemoryRouter>
         </QueryClientProvider>,
       );
     });
@@ -111,9 +114,11 @@ describe("Organisations page", () => {
       [...row.querySelectorAll("td")].map((cell) => cell.textContent),
     );
     expect(rows).toEqual([
-      ["Acme Mining", "Mining", "Ghana", "Ama", "Prospect", "Kofi Mensah (CEO)"],
-      ["Blue Bank", "Not set", "Ghana", "Ama", "Client", "No key contact"],
+      ["Acme Mining", "Mining", "Ghana", "Ama", "Prospect", "Kofi Mensah (CEO)", "Edit"],
+      ["Blue Bank", "Not set", "Ghana", "Ama", "Client", "No key contact", "Edit"],
     ]);
+    // Each name opens the company page (GRE-1480).
+    expect(container.querySelector("tbody tr a")?.getAttribute("href")).toBe("/organisations/org-1");
   });
 
   it("sends the search and status filter to the server", async () => {
@@ -152,6 +157,7 @@ describe("Organisations page", () => {
     expect(card.textContent).toContain("Acme Mining");
     expect(card.textContent).toContain("Mining · Ghana · Ama");
     expect(card.textContent).toContain("Kofi Mensah (CEO)");
+    expect(card.querySelector("a")?.getAttribute("href")).toBe("/organisations/org-1");
   });
 
   it("creates an organisation from the dialog", async () => {
@@ -185,7 +191,7 @@ describe("Organisations page", () => {
     mockApi.update.mockRejectedValue(new Error("You may view organisations but not change them"));
     await render();
 
-    const open = [...container.querySelectorAll("button")].find((button) => button.textContent === "Acme Mining")!;
+    const open = container.querySelector<HTMLButtonElement>('button[aria-label="Edit Acme Mining"]')!;
     await act(async () => open.click());
     await settle();
     const save = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find(

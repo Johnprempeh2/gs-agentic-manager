@@ -4,6 +4,7 @@ import type {
   Organisation,
   OrganisationContact,
   OrganisationDetail,
+  OrganisationHistory,
   OrganisationListItem,
   OrganisationStatus,
   UpdateOrganisation,
@@ -26,6 +27,8 @@ export const organisationsApi = {
   },
   get: (companyId: string, organisationId: string) =>
     api.get<OrganisationDetail>(`${base(companyId)}/${encodeURIComponent(organisationId)}`),
+  history: (companyId: string, organisationId: string) =>
+    api.get<OrganisationHistory>(`${base(companyId)}/${encodeURIComponent(organisationId)}/history`),
   create: (companyId: string, body: CreateOrganisation) => api.post<Organisation>(base(companyId), body),
   update: (companyId: string, organisationId: string, body: UpdateOrganisation) =>
     api.patch<Organisation>(`${base(companyId)}/${encodeURIComponent(organisationId)}`, body),
