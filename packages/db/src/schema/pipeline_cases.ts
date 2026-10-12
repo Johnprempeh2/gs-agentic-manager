@@ -17,6 +17,7 @@ import { companies } from "./companies.js";
 import { documents } from "./documents.js";
 import { issueAttachments } from "./issue_attachments.js";
 import { issues } from "./issues.js";
+import { organisations } from "./organisations.js";
 import { pipelineStages, pipelines } from "./pipelines.js";
 import { projects } from "./projects.js";
 import { routines } from "./routines.js";
@@ -46,6 +47,9 @@ export const pipelineCases = pgTable(
     caseKey: text("case_key").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
+    // The organisation record this case is about (GRE-1478). Required on
+    // pipelines with requires_organisation; optional elsewhere.
+    organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
     fields: jsonb("fields").$type<Record<string, unknown>>().notNull().default({}),
     workspaceRef: jsonb("workspace_ref").$type<PipelineCaseWorkspaceRef>(),
     parentCaseId: uuid("parent_case_id").references((): AnyPgColumn => pipelineCases.id, { onDelete: "set null" }),
@@ -79,6 +83,7 @@ export const pipelineCases = pgTable(
       .on(table.parentCaseId, table.requestKey)
       .where(sql`${table.requestKey} is not null and ${table.retiredAt} is null`),
     companyIdx: index("pipeline_cases_company_idx").on(table.companyId),
+    companyOrganisationIdx: index("pipeline_cases_company_organisation_idx").on(table.companyId, table.organisationId),
     pipelineStageIdx: index("pipeline_cases_pipeline_stage_idx").on(table.pipelineId, table.stageId),
     parentIdx: index("pipeline_cases_parent_idx").on(table.parentCaseId),
     automationAttemptIdx: index("pipeline_cases_automation_attempt_idx").on(table.automationAttemptId),
