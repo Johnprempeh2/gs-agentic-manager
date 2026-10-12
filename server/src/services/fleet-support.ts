@@ -16,6 +16,7 @@ import {
   FLEET_SUPPORT_CURSOR_OVERLAP_MS,
   clientSupportStatusForIssue,
   fleetSupportPriority,
+  fleetSupportSubject,
   fleetSupportTicketStateSchema,
   type FleetSupportSyncAnswer,
   type FleetSupportTicketState,
@@ -125,7 +126,7 @@ export function fleetSupportService(db: Db, deps: { storage?: StorageService; wa
               continue;
             }
             // The client may change the words. Priority and category stay with our triage.
-            await issuesSvc.update(existing.link.issueId, { title: `[${queue.clientCode}] ${item.title}`.slice(0, 200) }, tx);
+            await issuesSvc.update(existing.link.issueId, { title: `[${queue.clientCode}] ${fleetSupportSubject(existing.link.kind, item.title)}`.slice(0, 200) }, tx);
             await issuesSvc.addComment(
               existing.link.issueId,
               `**Client edited the ticket** (revision ${item.revision}).\n\n**${item.title}**\n\n${item.summary || "(No summary)"}`,

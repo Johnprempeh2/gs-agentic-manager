@@ -675,10 +675,15 @@ curl -X PUT <hub>/api/fleet/instances/<id>/support-queue -d '{"supportQueueId":"
 Until then the hub refuses the tickets with `support_not_set_up`; they stay
 `queued` in the client instance and go on a later pass. A new ticket lands in
 the queue like any support ticket (client code, triage owner, first-response
-clock, P1 alert). The hub keeps only the ticket id, client code, title,
-summary, priority, category, status, SLA times, our owner, and picked files.
-A client edit adds a comment on our ticket; priority and category stay with
-our triage.
+clock, P1 alert). From the client, the hub gets only the words the client
+typed (title, summary and edits), the ticket kind and the asked priority, and
+the files the client picked (with name, type, size and hash). The hub adds its
+own support data: category, status, SLA times, owner, our replies, and the
+link and sync records that tie the ticket to the instance. Linked issues, run
+logs and records stay in the client instance; the sync message has no field
+for them. A client edit adds a comment on our ticket and keeps the kind in
+the title; priority and category stay with our triage. An `upgrade` or
+`quality-review` ticket stays P3: triage refuses P1 or P2 for it.
 
 To answer the client, the ticket owner or a board user posts
 `POST <hub>/api/issues/<issue id>/support-ticket/client-reply` with `{"body":"..."}`.

@@ -5,7 +5,7 @@ import path from "node:path";
 import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   activityLog,
   agents,
@@ -307,6 +307,27 @@ describeEmbeddedPostgres("support bridge round trip with two sandbox instances",
     expect((await a.sync()).ok).toBe(true);
     const comments = await hubDb.select().from(issueComments).where(eq(issueComments.issueId, faultIssue.id));
     expect(comments.some((c) => c.body.includes("Client edited the ticket") && c.body.includes("Only the Monday export is empty."))).toBe(true);
+
+    // A title edit keeps the kind in our queue title.
+    const reviewIssue = hubIssues.find((i) => i.title.includes("Quality review"))!;
+    expect((await request(spokeApp).patch(`/api/companies/${spoke.companyId}/client-support/tickets/${upgrade.body.id}`).send({ title: "Add two seats" })).status).toBe(200);
+    expect((await request(spokeApp).patch(`/api/companies/${spoke.companyId}/client-support/tickets/${review.body.id}`).send({ title: "Check our routines" })).status).toBe(200);
+    expect((await a.sync()).ok).toBe(true);
+    const titleOf = async (id: string) => (await hubDb.select().from(issues).where(eq(issues.id, id)))[0]!.title;
+    expect(await titleOf(upgradeIssue.id)).toBe("[C001] Upgrade request: Add two seats");
+    expect(await titleOf(reviewIssue.id)).toBe("[C001] Quality review: Check our routines");
+
+    // Triage cannot move an upgrade or quality review to P1 or P2; a platform fault can.
+    hubActor = HUB_ADMIN;
+    for (const issueId of [upgradeIssue.id, reviewIssue.id]) {
+      for (const priority of ["P1", "P2"]) {
+        expect((await request(hubApp).post(`/api/issues/${issueId}/support-ticket`).send({ priority })).status).toBe(422);
+      }
+      expect((await request(hubApp).post(`/api/issues/${issueId}/support-ticket`).send({ priority: "P3", category: "install" })).status).toBe(200);
+    }
+    const kept = await hubDb.select().from(supportTickets).where(inArray(supportTickets.issueId, [upgradeIssue.id, reviewIssue.id]));
+    expect(kept.map((t) => t.priority)).toEqual(["P3", "P3"]);
+    expect((await request(hubApp).post(`/api/issues/${faultIssue.id}/support-ticket`).send({ priority: "P1" })).status).toBe(200);
 
     // Done on our side: the client sees resolved and cannot edit any more.
     await hubDb.update(issues).set({ status: "done", updatedAt: new Date() }).where(eq(issues.id, faultIssue.id));

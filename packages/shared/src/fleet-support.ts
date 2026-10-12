@@ -48,6 +48,11 @@ export function fleetSupportPriority(kind: FleetSupportKind, asked: FleetSupport
   return kind === "support" ? asked : "P3";
 }
 
+/** The queue title says what a ticket is, on intake and after every client edit. */
+export function fleetSupportSubject(kind: FleetSupportKind, title: string): string {
+  return kind === "upgrade" ? `Upgrade request: ${title}` : kind === "quality-review" ? `Quality review: ${title}` : title;
+}
+
 export const FLEET_SUPPORT_TITLE_MAX = 200;
 export const FLEET_SUPPORT_SUMMARY_MAX = 4000;
 export const FLEET_SUPPORT_REPLY_MAX = 8000;

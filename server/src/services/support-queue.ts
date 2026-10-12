@@ -18,6 +18,7 @@ import {
   chatEndpoints,
   companyMemberships,
   emailMessages,
+  fleetSupportTickets,
   issues,
   labels,
   projects,
@@ -25,6 +26,7 @@ import {
   supportTickets,
 } from "@greatstone/db";
 import type { IssuePriority } from "@greatstone/shared";
+import { fleetSupportSubject } from "@greatstone/shared/fleet-support";
 import { badRequest, notFound, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
@@ -318,7 +320,7 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
     tx: Tx,
   ) {
     const { route, fields } = await issueFields(queue, {
-      subject: input.kind === "upgrade" ? `Upgrade request: ${input.title}` : input.kind === "quality-review" ? `Quality review: ${input.title}` : input.title,
+      subject: fleetSupportSubject(input.kind, input.title),
       body: input.summary,
       receivedAt: input.receivedAt,
       priority: input.priority,
@@ -380,6 +382,16 @@ export function supportQueueService(db: Db, deps: { wakeup?: Wakeup; now?: () =>
         .returning();
       if (marked) await issuesSvc.addComment(issueId, `**First response recorded** at ${formatLondon(input.respondedAt)} UK. Clock stopped.`, {}, { authorType: "system" });
       return marked ?? ticket;
+    }
+    // An upgrade request or quality review is not a platform fault: it stays P3
+    // so it never enters the P1 alert path (GRE-1354).
+    if (input.priority && input.priority !== "P3") {
+      const [link] = await db
+        .select({ kind: fleetSupportTickets.kind })
+        .from(fleetSupportTickets)
+        .where(eq(fleetSupportTickets.supportTicketId, ticket.id));
+      if (link && link.kind !== "support")
+        throw unprocessable(`A client ${link.kind} ticket stays P3. Only platform faults can be P1 or P2.`);
     }
     const priority = input.priority ?? ticket.priority;
     const category = input.category ?? ticket.category;
