@@ -9,6 +9,7 @@ import {
   MailPlus,
   MonitorCog,
   Puzzle,
+  Server,
   Shield,
   ShieldCheck,
   SlidersHorizontal,
@@ -29,6 +30,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { useSidebar } from "@/context/SidebarContext";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useIsFleetHub } from "@/hooks/useFleetInstances";
 import { usePluginSlots } from "@/plugins/slots";
 import { SidebarNavItem } from "./SidebarNavItem.production";
 
@@ -50,6 +52,8 @@ export function CompanySettingsSidebar() {
   const { hidden: hiddenSettings } = useHiddenSettings();
   const showPage = (pageKey: string) => !hiddenSettings.has(pageKey);
   const showPlugins = showPage("instance.plugins");
+  // Fleet (GRE-1083): only on the Greatstone hub, to its instance admins.
+  const showFleet = useIsFleetHub();
   // Import is floored server-side on cloud-managed instances (403 cloud_managed), so the
   // nav entry is hidden rather than dead-ending. Export stays available.
   const isCloud = Boolean(useCloudInstance());
@@ -158,6 +162,14 @@ export function CompanySettingsSidebar() {
               to={`${INSTANCE_SETTINGS_PATH_PREFIX}/access`}
               label="Access"
               icon={Shield}
+              end
+            />
+          )}
+          {showFleet && (
+            <SidebarNavItem
+              to={`${INSTANCE_SETTINGS_PATH_PREFIX}/fleet`}
+              label="Fleet"
+              icon={Server}
               end
             />
           )}
