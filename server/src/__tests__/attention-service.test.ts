@@ -1319,8 +1319,16 @@ describeEmbeddedPostgres("attention service", () => {
         companyId,
         issueId,
         authorAgentId: workerId,
-        body: "**Done.** The billing page now shows fees. PR is open.",
+        body: "**Done.** The billing page now shows fees, the allowance and the usage warnings. PR is open for review.",
         createdAt: new Date("2026-07-09T12:05:00.000Z"),
+      },
+      {
+        // A newer status note from the assignee does not replace the hand-off.
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "Starting: I am checking the review notes.",
+        createdAt: new Date("2026-07-09T12:05:30.000Z"),
       },
       {
         // A newer board comment is not the assignee's hand-off.
@@ -1360,7 +1368,8 @@ describeEmbeddedPostgres("attention service", () => {
       lastUpdate: {
         commentId: handOffId,
         authorAgentId: workerId,
-        excerpt: "Done. The billing page now shows fees. PR is open.",
+        excerpt: "Done. The billing page now shows fees, the allowance and the usage warnings. PR is open for review.",
+        kind: "handoff",
       },
       workProduct: { type: "pull_request", title: "Billing fees", url: "https://github.com/acme/app/pull/12" },
     });

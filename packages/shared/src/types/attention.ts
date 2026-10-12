@@ -217,12 +217,17 @@ export type AttentionItemDetail =
       images: AttentionDetailImage[];
     };
 
-/** The newest agent comment on a review issue, trimmed to a short excerpt. */
+/** The agent comment a review card quotes, trimmed to a short excerpt. */
 export interface AttentionReviewLastUpdate {
   commentId: string;
   authorAgentId: string | null;
   excerpt: string;
   createdAt: string;
+  /**
+   * `handoff`: the assignee's newest comment that says what was done.
+   * `latest`: no hand-off was found, so this is the newest agent comment.
+   */
+  kind: "handoff" | "latest";
 }
 
 /** The work product a reviewer should check — a pull request when one exists. */
