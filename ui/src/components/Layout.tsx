@@ -67,23 +67,11 @@ import { cn } from "../lib/utils";
 import { routeSectionKey, useRouteEnterMotion } from "../hooks/useRouteEnterMotion";
 import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
+import { getAppDetailConnectionId } from "../lib/app-detail-route";
 
 function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
   return getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null;
 }
-
-const RESERVED_APP_SUBPATHS = new Set([
-  "browse",
-  "connections",
-  "connect",
-  "chat",
-  "vercel-connect",
-  "review",
-  "attention",
-  "gateways",
-  "advanced",
-  "app",
-]);
 
 export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const {
@@ -135,10 +123,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const useStreamlinedTaskDetailShell = streamlinedUiEnabled && isTaskDetailRoute;
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
-  const appDetailConnectionId =
-    isAppsRoute && companyPathSegments[1] && !RESERVED_APP_SUBPATHS.has(companyPathSegments[1].toLowerCase())
-      ? companyPathSegments[1]
-      : null;
+  const appDetailConnectionId = getAppDetailConnectionId(companyPathSegments);
   const appDetailApplicationId =
     isAppsRoute && companyPathSegments[1]?.toLowerCase() === "app" && companyPathSegments[2]
       ? companyPathSegments[2]
