@@ -57,7 +57,11 @@ const DOWN: FleetInstanceView = {
   state: "down",
   latestCheckIn: {
     ...OK.latestCheckIn!,
-    checkIn: { ...OK.latestCheckIn!.checkIn, health: { ...OK.latestCheckIn!.checkIn.health, app: "down" } },
+    checkIn: {
+      ...OK.latestCheckIn!.checkIn,
+      health: { ...OK.latestCheckIn!.checkIn.health, app: "down" },
+      alerts: [{ key: "health", ok: false }, { key: "backup-age", ok: false }, { key: "new-check", ok: false }],
+    },
   },
 };
 const PENDING: FleetInstanceView = {
@@ -128,8 +132,8 @@ describe("Fleet page", () => {
     expect(row("c001")).toContain("$12.34");
     expect(row("c001")).toContain("2 failed");
     expect(row("c001")).toContain("1 need attention");
-    expect(row("c001")).toContain("ai-connections");
-    expect(row("c001")).not.toContain("health");
+    expect(row("c001")).toContain("AI connection needs attention");
+    expect(row("c001")).not.toContain("ai-connections");
     expect(row("c002")).toContain("Down");
     expect(row("c003")).toContain("Not registered");
     expect(row("c003")).toContain("Never");
@@ -138,9 +142,8 @@ describe("Fleet page", () => {
   it("puts failed health and failing alerts under the state", async () => {
     mockFleetApi.listInstances.mockResolvedValue([OK, DOWN, PENDING]);
     await render();
-    expect(attention("c001")).toBe("ai-connections");
-    expect(attention("c002")).toContain("App down");
-    expect(attention("c002")).toContain("ai-connections");
+    expect(attention("c001")).toBe("AI connection needs attention");
+    expect(attention("c002")).toBe("App downBackup too oldNew check alert");
     expect(attention("c003")).toBe("");
   });
 

@@ -62,7 +62,7 @@ function Muted({ children }: { children: ReactNode }) {
 
 function HealthCell({ instance }: { instance: FleetInstanceView }) {
   const health = instance.latestCheckIn?.checkIn.health;
-  if (!health) return <Muted>—</Muted>;
+  if (!health) return <Muted>Not reported</Muted>;
   const check = (label: string, value: { ok: boolean; ageMinutes: number } | null) =>
     value ? `${label} ${value.ok ? "ok" : "failed"}, ${formatAgeMinutes(value.ageMinutes)} ago` : `${label} not set up`;
   return (
@@ -81,7 +81,7 @@ function HealthCell({ instance }: { instance: FleetInstanceView }) {
 
 function VersionCell({ instance }: { instance: FleetInstanceView }) {
   const version = instance.latestCheckIn?.checkIn.version;
-  if (!version) return <Muted>—</Muted>;
+  if (!version) return <Muted>Not reported</Muted>;
   return (
     <div className="space-y-0.5">
       <div className="font-mono text-xs">{version.releaseTag ?? "No release tag"}</div>
@@ -95,7 +95,7 @@ function VersionCell({ instance }: { instance: FleetInstanceView }) {
 
 function UsageCell({ instance }: { instance: FleetInstanceView }) {
   const usage = instance.latestCheckIn?.checkIn.usage;
-  if (!usage) return <Muted>—</Muted>;
+  if (!usage) return <Muted>Not reported</Muted>;
   const failed = "runsFailedLast24h" in usage ? usage.runsFailedLast24h : null;
   return (
     <div className="space-y-0.5">
@@ -119,7 +119,7 @@ function ConnectionsCell({ instance }: { instance: FleetInstanceView }) {
   const checkIn = instance.latestCheckIn?.checkIn;
   // v1 check-ins carry no connection counts; v2 sends null when the app is not up to ask.
   const connections = checkIn && "connections" in checkIn ? checkIn.connections : null;
-  if (!connections) return <Muted>—</Muted>;
+  if (!connections) return <Muted>Not reported</Muted>;
   return (
     <div className="space-y-0.5 tabular-nums">
       <LastReported instance={instance} />
@@ -134,15 +134,40 @@ function ConnectionsCell({ instance }: { instance: FleetInstanceView }) {
   );
 }
 
+/** Readable labels for the watch alert keys the instance script sends. */
+const ALERT_LABELS: Record<string, string> = {
+  health: "App down",
+  backup: "Backup check failed",
+  "backup-age": "Backup too old",
+  "restore-check": "Restore check failed",
+  "offsite-backup": "Offsite backup failed",
+  disk: "Low disk space",
+  memory: "Low memory",
+  ai: "AI connections not checked",
+  "ai-connections": "AI connection needs attention",
+  "ai-failed-auth": "AI log-in failing",
+  "budget-warn": "Near AI budget",
+  "public-url": "Public address not reachable",
+  other: "Other alert",
+};
+
+function alertLabel(key: string) {
+  const label = ALERT_LABELS[key];
+  if (label) return label;
+  const words = key.replace(/-/g, " ");
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)} alert`;
+}
+
 /** Failed health checks and failing alerts, in the danger colour, shown under the state. */
 function Attention({ instance }: { instance: FleetInstanceView }) {
   const checkIn = instance.latestCheckIn?.checkIn;
   if (!checkIn) return null;
-  const items: string[] = [];
-  if (checkIn.health.app !== "ok") items.push("App down");
-  if (checkIn.health.restoreCheck && !checkIn.health.restoreCheck.ok) items.push("Restore check failed");
-  if (checkIn.health.offsiteBackup && !checkIn.health.offsiteBackup.ok) items.push("Offsite backup failed");
-  for (const alert of checkIn.alerts) if (!alert.ok) items.push(alert.key);
+  const found = new Set<string>();
+  if (checkIn.health.app !== "ok") found.add("App down");
+  if (checkIn.health.restoreCheck && !checkIn.health.restoreCheck.ok) found.add("Restore check failed");
+  if (checkIn.health.offsiteBackup && !checkIn.health.offsiteBackup.ok) found.add("Offsite backup failed");
+  for (const alert of checkIn.alerts) if (!alert.ok) found.add(alertLabel(alert.key));
+  const items = [...found];
   if (items.length === 0) return null;
   return (
     <ul className="mt-1 space-y-0.5" data-testid={`fleet-attention-${instance.code}`}>
