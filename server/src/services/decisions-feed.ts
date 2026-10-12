@@ -813,6 +813,8 @@ function buildCard(input: {
   // (a question, a blocker) still hold the card open.
   const repairedAt = group.aiRepairedAt ?? group.setupFixedAt;
   const retryAfterRepair = repairedAt !== null && task?.status === "blocked";
+  // An in-review task with no reviewer left: the board gives the verdict (GRE-1421).
+  const stalledReview = review === null && byKind("review")?.subject.metadata?.reviewAttentionState === "stalled";
   const recoveryItem = byKind("recovery")
     ?? (retryAfterRepair ? group.cleared.find((item) => item.sourceKind === "recovery_action") ?? null : null);
   const recovery = recoveryItem ? input.recoveryById.get(recoveryItem.subject.id) ?? null : null;
@@ -843,6 +845,14 @@ function buildCard(input: {
       : main!.whyNow;
   } else if (kind === "question" || kind === "approval" || kind === "decision") {
     reason = main!.subject.title ?? main!.whyNow;
+  } else if (kind === "review") {
+    // Say what the board is asked to judge, not the task title again (GRE-1421).
+    const sender = waiting?.name ?? "The agent";
+    reason = stalledReview
+      ? `${sender} says the work is finished. No reviewer is set, so the task waits for you.`
+      : review && !review.reviewer.isYou
+        ? `${sender} sent the work for review by ${review.reviewer.name}.`
+        : `${sender} sent the work for your review.`;
   } else {
     reason = detailSummary(main!) ?? main!.subject.title ?? main!.whyNow;
   }
@@ -863,7 +873,9 @@ function buildCard(input: {
     blocked: typeof blockedCount === "number"
       ? `${blockedCount} blocked ${blockedCount === 1 ? "task waits" : "tasks wait"} until this task has a live owner. Reassign it, give an instruction, or cancel it.`
       : "The task stays blocked until you act.",
-    review: !review || review.reviewer.isYou
+    review: stalledReview
+      ? "Check the result. Then approve it, ask for changes, or send it back to work."
+      : !review || review.reviewer.isYou
       ? "The task stays in review until you approve it or ask for changes."
       : `The task stays in review until ${review.reviewer.name} approves it or asks for changes.`,
     decision: "The agent waits for your decision.",
@@ -952,6 +964,28 @@ function buildCard(input: {
         { field: "comment", type: "text", label: "What must change", required: true },
       ));
     }
+  }
+
+  // No reviewer is left, so the board decides through the stalled-review
+  // endpoint (PAP-16080 §4.4). Each description says what the choice does.
+  if (task && taskOpen && stalledReview && !actions.some((action) => action.id === "approve")) {
+    const decisionPath = `/api/issues/${task.id}/stalled-review-decision`;
+    const owner = waiting?.name ?? "its owner";
+    actions.push(
+      requestAction("approve", "Approve", "The task is marked done.", [
+        request("POST", decisionPath, { action: "approve" }),
+      ]),
+      requestAction(
+        "request_changes",
+        "Request changes",
+        `The task goes back to ${owner} with your note. Write a note first.`,
+        [request("POST", decisionPath, { action: "request_changes" })],
+        { field: "note", type: "text", label: "What must change", required: true },
+      ),
+      requestAction("send_back", "Send back to work", `The task goes back to ${owner} to continue. No note is necessary.`, [
+        request("POST", decisionPath, { action: "send_back" }),
+      ]),
+    );
   }
 
   // The blocker's own way forward, on the blocked task's card.
