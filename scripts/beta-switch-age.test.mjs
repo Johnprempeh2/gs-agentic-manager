@@ -212,8 +212,8 @@ test("parseRetiredKeys reads the real feature catalog", () => {
 test("graduated switches from the real catalog show graduated, whatever their stored value (GRE-848)", () => {
   const source = readFileSync(new URL("../packages/shared/src/feature-catalog.ts", import.meta.url), "utf8");
   const graduated = parseGraduatedKeys(source);
-  assert.deepEqual(graduated, ["enableApps", "enableGoalsSidebarLink", "enableMcpAggregators"]);
-  const settings = { ...SETTINGS, enableApps: true, enableGoalsSidebarLink: false, enableMcpAggregators: true };
+  assert.deepEqual(graduated, ["enableApps", "enableGoalsSidebarLink", "enableMcpAggregators", "enableStreamlinedLeftNavigation"]);
+  const settings = { ...SETTINGS, enableApps: true, enableGoalsSidebarLink: false, enableMcpAggregators: true, enableStreamlinedLeftNavigation: true };
   const rows = byKey(switchAges(settings, ACTIVITY, { now: NOW, graduated }));
   for (const key of graduated) {
     assert.deepEqual(rows[key], { key, state: "graduated", onSince: "-", days: null, ruleMet: "n/a", sinceAt: null });
