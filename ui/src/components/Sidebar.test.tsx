@@ -331,7 +331,6 @@ describe("Sidebar", () => {
   it("renders plugin sidebar launchers inside the Build section", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,
-      enableStreamlinedLeftNavigation: true,
     });
     const root = await renderSidebar();
 
@@ -355,7 +354,6 @@ describe("Sidebar", () => {
   it("uses the simplified work navigation with one Agents destination", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,
-      enableStreamlinedLeftNavigation: true,
     });
     const root = await renderSidebar();
 
@@ -400,6 +398,7 @@ describe("Sidebar", () => {
   it("ignores the retired streamlined navigation opt-out", async () => {
     // PAP-12472 retired the experimental opt-out; the streamlined sidebar is the
     // only path, so an old `false` setting no longer restores classic mode.
+    // GRE-1440 graduated the switch, so nothing in Settings can set it either.
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,
       enableStreamlinedLeftNavigation: false,
