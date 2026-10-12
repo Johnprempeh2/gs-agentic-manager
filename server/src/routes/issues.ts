@@ -161,6 +161,7 @@ import {
   agentService,
   agentTeamService,
   budgetService,
+  bringBackTabledIssue,
   companySkillService,
   companyService,
   companySearchService,
@@ -18167,6 +18168,16 @@ export function issueRoutes(
         if (req.body.body.trim() !== "/new" && !(await assertBoardCommentNotPaused(req, res, issue))) return;
         const actor = getActorInfo(req);
         const userId = req.actor.userId;
+        // A chat must never go silent because it was tabled (GRE-1475): the
+        // tabled gate drops every wake, so the owner's message brings it back
+        // first. No-op when the chat is not tabled.
+        if (issue.tabledAt) {
+          await bringBackTabledIssue(db, { heartbeat }, issue.id, {
+            reason: "manual",
+            actorType: "user",
+            actorId: userId,
+          });
+        }
         const publications: ActivityPublication[] = [];
         const comment = await db.transaction(async (tx) => {
           await tx.select({ id: issueRows.id }).from(issueRows).where(and(

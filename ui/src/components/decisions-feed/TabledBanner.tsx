@@ -6,8 +6,11 @@ import { queryKeys } from "../../lib/queryKeys";
 import { Button } from "../ui/button";
 import { tabledReturnLabel } from "./TabledList";
 
-/** Task page banner while a task is set aside with "Not now" (GRE-264). */
-export function TabledBanner({ issue }: { issue: Issue }) {
+/**
+ * Task page banner while a task is set aside with "Not now" (GRE-264). In an
+ * agent chat (`chat`), the owner's next message also brings it back (GRE-1475).
+ */
+export function TabledBanner({ issue, chat = false }: { issue: Issue; chat?: boolean }) {
   const queryClient = useQueryClient();
   const bringBack = useMutation({
     mutationFn: () => decisionsFeedApi.bringBack(issue.id),
@@ -26,8 +29,10 @@ export function TabledBanner({ issue }: { issue: Issue }) {
       <span className="flex items-center gap-2">
         <Clock className="size-4 text-muted-foreground" />
         <span>
-          <span className="font-medium">Set aside (Not now).</span>{" "}
-          <span className="text-muted-foreground">{tabledReturnLabel(issue)}. No agent works on it until then.</span>
+          <span className="font-medium">{chat ? "This chat is set aside (Not now)." : "Set aside (Not now)."}</span>{" "}
+          <span className="text-muted-foreground">
+            {tabledReturnLabel(issue)}. {chat ? "Your next message brings it back." : "No agent works on it until then."}
+          </span>
         </span>
       </span>
       <div className="flex items-center gap-2">
