@@ -2,6 +2,7 @@ import type { issuesApi } from "../../api/issues";
 import { DispositionRecoveryProvider } from "../../components/DispositionRecoveryNotice";
 import { ExecutionBlockerNotice } from "../../components/ExecutionBlockerNotice";
 import { EmailTaskActivity } from "../../components/EmailTaskActivity";
+import { TabledBanner } from "../../components/decisions-feed/TabledBanner";
 import { queryKeys } from "../../lib/queryKeys";
 import { createIssueDetailPath } from "../../lib/issueDetailBreadcrumb";
 import type { IssueChatComposerHandle } from "../../components/IssueChatThread";
@@ -272,6 +273,8 @@ export function IssueDetailChatPanel({
       {issue.executionBlocker && (
         <ExecutionBlockerNotice companyId={issue.companyId} issueId={issue.id} blocker={issue.executionBlocker} onRetried={invalidateIssueDetail} />
       )}
+      {/* Agent chats hide the task header, so its tabled banner too (GRE-1475). */}
+      {issue.conversationAgentId ? <TabledBanner issue={issue} chat /> : null}
       {resolvedDetailTab === "chat" ? (
         <DispositionRecoveryProvider value={{
           issue,
