@@ -2,6 +2,10 @@ import type {
   ClientEvidenceCandidatesResponse,
   ClientEvidenceItem,
   ClientFilesResponse,
+  ClientJourneyResponse,
+  ClientPortalJourneyResponse,
+  CreateClientJourneyDeliverableInput,
+  UpdateClientJourneyDeliverable,
   CreateClientEvidence,
   CreateCrmSyncSuggestion,
   CrmSyncBinding,
@@ -702,6 +706,16 @@ export const pipelinesApi = {
     api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
   removeCaseEvidence: (caseId: string, evidenceId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
+  getCaseJourney: (caseId: string) =>
+    api.get<ClientJourneyResponse>(`/cases/${caseId}/journey`),
+  getCasePortal: (caseId: string) =>
+    api.get<ClientPortalJourneyResponse>(`/cases/${caseId}/portal`),
+  fileCaseJourneyDeliverable: (caseId: string, input: CreateClientJourneyDeliverableInput) =>
+    api.post<{ id: string }>(`/cases/${caseId}/journey/deliverables`, input),
+  updateCaseJourneyDeliverable: (caseId: string, linkId: string, input: UpdateClientJourneyDeliverable) =>
+    api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
+  removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
   createIssueLink: (
     caseId: string,
     data:
