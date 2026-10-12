@@ -5,8 +5,12 @@ import { fleetInstanceCodeSchema, fleetRegisterRequestSchema, fleetSignedRequest
 import { conflict, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
+import { FLEET_SUPPORT_MESSAGE_MAX_CHARS, fleetSupportAttachmentRequestSchema } from "@greatstone/shared/fleet-support";
 import { FleetMessageError, fleetHubEnabled, fleetService } from "../services/fleet.js";
-import { assertInstanceAdmin } from "./authz.js";
+import { fleetSupportService } from "../services/fleet-support.js";
+import type { heartbeatService } from "../services/heartbeat.js";
+import type { StorageService } from "../storage/types.js";
+import { assertInstanceAdmin, getActorInfo } from "./authz.js";
 
 // Fleet hub (GRE-1082). Two routers:
 // - fleetHubRoutes: the hub's instance admins create, list, revoke and remove
@@ -17,10 +21,15 @@ import { assertInstanceAdmin } from "./authz.js";
 // Both answer 404 unless GSAM_FLEET_HUB=true. No route sends a command to a spoke.
 
 const createInstanceSchema = z.object({ code: fleetInstanceCodeSchema }).strict();
+const supportQueueLinkSchema = z.object({ supportQueueId: z.string().uuid().nullable() }).strict();
+const supportSyncRequestSchema = z.object({ message: z.string().min(1).max(FLEET_SUPPORT_MESSAGE_MAX_CHARS) }).strict();
+
+type FleetRouteDeps = { storage?: StorageService; heartbeat?: Pick<ReturnType<typeof heartbeatService>, "wakeup"> };
 
 export function fleetHubRoutes(db: Db) {
   const router = Router();
   const fleet = fleetService(db);
+  const support = fleetSupportService(db);
 
   router.use("/fleet", (req, _res, next) => {
     if (!fleetHubEnabled()) throw notFound();
@@ -65,6 +74,14 @@ export function fleetHubRoutes(db: Db) {
     res.json({ id: removed.id, removed: true });
   });
 
+  // GRE-1084: the support queue this instance's "Get help" tickets land in. Null stops intake.
+  router.put("/fleet/instances/:id/support-queue", validate(supportQueueLinkSchema), async (req, res) => {
+    const actor = getActorInfo(req);
+    const linked = await support.setSupportQueue(req.params.id as string, req.body.supportQueueId, actor);
+    logger.info({ fleetInstanceId: linked.id, supportQueueId: linked.supportQueueId }, "Fleet instance support queue set");
+    res.json(linked);
+  });
+
   router.get("/fleet/instances/:id/check-ins", async (req, res) => {
     if (!(await fleet.get(req.params.id as string))) throw notFound("Fleet instance not found");
     const limit = Math.max(1, Math.min(288, Number.parseInt(String(req.query.limit ?? "12"), 10) || 12));
@@ -83,9 +100,10 @@ function sendRejection(res: Response, error: unknown) {
   throw error;
 }
 
-export function fleetSpokeRoutes(db: Db) {
+export function fleetSpokeRoutes(db: Db, deps: FleetRouteDeps = {}) {
   const router = Router();
   const fleet = fleetService(db);
+  const support = fleetSupportService(db, { storage: deps.storage, wakeup: deps.heartbeat?.wakeup });
 
   router.use("/api/fleet/spoke", (_req, res, next) => {
     if (!fleetHubEnabled()) {
@@ -111,8 +129,8 @@ export function fleetSpokeRoutes(db: Db) {
     }
   });
 
-  const signed = (handle: (message: string) => Promise<unknown>) => async (req: Request, res: Response) => {
-    const body = fleetSignedRequestSchema.safeParse(req.body);
+  const signed = (handle: (message: string) => Promise<unknown>, schema: z.ZodType<{ message: string }> = fleetSignedRequestSchema) => async (req: Request, res: Response) => {
+    const body = schema.safeParse(req.body);
     if (!body.success) {
       res.status(400).json({ error: "fleet_bad_message" });
       return;
@@ -131,6 +149,26 @@ export function fleetSpokeRoutes(db: Db) {
     logger.info("Fleet instance removed by the spoke");
     return result;
   }));
+  // GRE-1084: the spoke's support tickets in, their status and our replies out. Only the caller's own tickets.
+  router.post("/api/fleet/spoke/support-sync", signed(async (message) => {
+    const answer = await support.sync(message);
+    logger.info({ tickets: answer.tickets.length, refused: answer.refused.length }, "Fleet support sync");
+    return answer;
+  }, supportSyncRequestSchema));
+  router.post("/api/fleet/spoke/support-attachment", async (req, res) => {
+    const body = fleetSupportAttachmentRequestSchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ error: "fleet_bad_message" });
+      return;
+    }
+    try {
+      const result = await support.attachment(body.data.message, body.data.content);
+      logger.info({ duplicate: result.duplicate }, "Fleet support attachment");
+      res.json(result);
+    } catch (error) {
+      sendRejection(res, error);
+    }
+  });
 
   return router;
 }

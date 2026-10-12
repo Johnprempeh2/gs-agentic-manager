@@ -632,8 +632,8 @@ the old key, ask the hub for a new code
 
 The hub refuses a bad signature, a revoked key, a message older than 5
 minutes, and any message it has seen (each carries a growing `seq`). One
-instance's key cannot write as another, and no route lets an instance read
-anything back. Read check-ins on the hub (instance admins only):
+instance's key cannot write as another. The only thing an instance reads
+back is the state of its own support tickets (below). Read check-ins on the hub (instance admins only):
 `GET <hub>/api/fleet/instances` and `GET <hub>/api/fleet/instances/<id>/check-ins`.
 The hub keeps 7 days of check-ins.
 
@@ -646,11 +646,58 @@ said the app was down. Set both on the hub. The hub still takes the v1
 check-in from an instance that is not yet upgraded; it keeps the last
 lifecycle it knows.
 
+**Support tickets ("Get help", GRE-1084).** A board member of the client
+opens a ticket in their instance: `POST /api/companies/<id>/client-support/tickets`
+with `kind` (`support`, `quality-review` or `upgrade`), `title`, `summary`,
+`priority` and, if they want, `linkedIssueId` (one of their own issues; it
+never leaves the instance). They may add up to 5 files to a ticket (PNG,
+JPEG, GIF, WebP, PDF, text or CSV; 5 MB each). Only those files go to the hub.
+Agents cannot open tickets.
+
+- Support is platform support only. A quality review is its own kind, apart
+  from platform faults, and not part of running the client's business.
+- An upgrade request opens a ticket and nothing more. It does not approve a
+  purchase or any spend; a person at Greatstone agrees it with the client.
+  Quality reviews and upgrade requests are always P3.
+
+Each `watch` pass, after the check-in, carries tickets both ways.
+`fleet-support-sync --root <root> --watch-config <file>` does one pass now:
+it signs in to the app as the operator, sends new and edited tickets in one
+signed message, sends each picked file in its own signed message (with its
+SHA-256), and writes the hub's answer back. `status` shows the last pass.
+
+On the hub, link the instance to its support queue once (instance admin):
+
+```sh
+curl -X PUT <hub>/api/fleet/instances/<id>/support-queue -d '{"supportQueueId":"<queue id>"}'
+```
+
+Until then the hub refuses the tickets with `support_not_set_up`; they stay
+`queued` in the client instance and go on a later pass. A new ticket lands in
+the queue like any support ticket (client code, triage owner, first-response
+clock, P1 alert). From the client, the hub gets only the words the client
+typed (title, summary and edits), the ticket kind and the asked priority, and
+the files the client picked (with name, type, size and hash). The hub adds its
+own support data: category, status, SLA times, owner, our replies, and the
+link and sync records that tie the ticket to the instance. Linked issues, run
+logs and records stay in the client instance; the sync message has no field
+for them. A client edit adds a comment on our ticket and keeps the kind in
+the title; priority and category stay with our triage. An `upgrade` or
+`quality-review` ticket stays P3: triage refuses P1 or P2 for it.
+
+To answer the client, the ticket owner or a board user posts
+`POST <hub>/api/issues/<issue id>/support-ticket/client-reply` with `{"body":"..."}`.
+The first reply stops the first-response clock. Internal issue comments never
+go to the client. The next pass brings back the status (`open`,
+`in_progress`, `resolved`, `closed`), SLA times, owner and replies. Every step
+is in the activity log on both sides (`client_support.*` on the client,
+`fleet_support.*` on the hub).
+
 Tests:
 
 ```sh
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/fleet.test.ts
-(cd server && npx vitest run src/__tests__/fleet-routes.test.ts)
+(cd server && npx vitest run src/__tests__/fleet-routes.test.ts src/__tests__/fleet-support-bridge.test.ts)
 ```
 
 ## Agree the update time with the client

@@ -500,12 +500,15 @@ describeEmbeddedPostgres("fleet hub and spoke", () => {
       "/api/fleet/spoke/delete",
       "/api/fleet/spoke/register",
       "/api/fleet/spoke/revoke",
+      "/api/fleet/spoke/support-attachment",
+      "/api/fleet/spoke/support-sync",
       "/fleet/instances",
       "/fleet/instances",
       "/fleet/instances/:id",
       "/fleet/instances/:id/check-ins",
       "/fleet/instances/:id/registration-code",
       "/fleet/instances/:id/revoke",
+      "/fleet/instances/:id/support-queue",
     ]);
   });
 });
