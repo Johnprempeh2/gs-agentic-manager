@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import {
   applyExperimentalSettingsPatch,
+  applyManagedExperimentalOverlay,
   normalizeExperimentalSettings,
   resolveWorktreeRunExecutionActivationState,
 } from "../services/instance-settings.js";
@@ -94,6 +95,24 @@ describe("instance settings service", () => {
     expect(normalizeExperimentalSettings({}).enableApps).toBe(true);
     expect(normalizeExperimentalSettings({ enablePipelines: true }).enableApps).toBe(true);
     expect(normalizeExperimentalSettings({ enableApps: false }).enableApps).toBe(true);
+  });
+
+  it("keeps Isolated Workspaces on for empty, legacy, patched, and managed-off settings (GRE-1437)", () => {
+    expect(normalizeExperimentalSettings(undefined).enableIsolatedWorkspaces).toBe(true);
+    expect(normalizeExperimentalSettings({}).enableIsolatedWorkspaces).toBe(true);
+    expect(normalizeExperimentalSettings("not an object").enableIsolatedWorkspaces).toBe(true);
+    expect(normalizeExperimentalSettings({ enableIsolatedWorkspaces: false }).enableIsolatedWorkspaces).toBe(true);
+    expect(
+      applyExperimentalSettingsPatch({}, { enableIsolatedWorkspaces: false }).enableIsolatedWorkspaces,
+    ).toBe(true);
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+      normalizeExperimentalSettings({}),
+      { features: { enableIsolatedWorkspaces: false } } as unknown as Parameters<
+        typeof applyManagedExperimentalOverlay
+      >[1],
+    );
+    expect(experimental.enableIsolatedWorkspaces).toBe(true);
+    expect(managedKeys.enableIsolatedWorkspaces).toBeUndefined();
   });
 
   it("retains the deprecated ingress key for stored-settings compatibility", () => {

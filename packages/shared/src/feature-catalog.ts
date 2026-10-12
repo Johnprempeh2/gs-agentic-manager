@@ -69,17 +69,17 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableIsolatedWorkspaces: {
-    title: "Isolated Workspaces",
+    title: "Isolated Workspaces (compatibility)",
     description:
-      "Show execution workspace controls in project configuration and allow isolated workspace behavior for task runs.",
+      "Deprecated compatibility key. Isolated workspaces are always enabled; stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableIsolatedWorkspacesByDefault: {
     title: "Isolated Workspaces By Default",
     description:
-      "Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. Requires Isolated Workspaces. A project that carries its own policy keeps it.",
+      "Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -430,6 +430,7 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
+  { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },

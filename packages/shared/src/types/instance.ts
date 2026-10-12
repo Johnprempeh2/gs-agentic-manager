@@ -116,12 +116,12 @@ export interface InstanceExperimentalSettings {
    * sandbox environment. Run selection refuses local while this is on.
    */
   enableManagedSandboxOnly: boolean;
+  /** Compatibility key (GRE-1437): isolated workspaces are always on; reads as true. */
   enableIsolatedWorkspaces: boolean;
   /**
    * Move the execution workspace default for a project that carries no policy
    * of its own from the shared project checkout to an isolated per-task
-   * worktree. Inert unless `enableIsolatedWorkspaces` is also on, and never
-   * overrides a project that stores its own policy.
+   * worktree. Never overrides a project that stores its own policy.
    */
   enableIsolatedWorkspacesByDefault: boolean;
   enableStreamlinedLeftNavigation: boolean;

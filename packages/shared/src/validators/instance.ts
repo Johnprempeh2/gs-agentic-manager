@@ -77,7 +77,9 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableEnvironments: z.boolean().default(false),
   enableNativeRunner: z.boolean().default(true),
   enableManagedSandboxOnly: z.boolean().default(false),
-  enableIsolatedWorkspaces: z.boolean().default(false),
+  // Greatstone (GRE-1437): compatibility only. Isolated workspaces are always
+  // on; old stored and managed values must still parse.
+  enableIsolatedWorkspaces: z.boolean().default(true),
   enableIsolatedWorkspacesByDefault: z.boolean().default(false),
   enableStreamlinedLeftNavigation: z.boolean().default(true),
   enableStreamlinedUi: z.boolean().default(true),

@@ -456,30 +456,26 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("hides the isolated-workspaces-by-default toggle while isolated workspaces are off", async () => {
+  it("no longer shows an Isolated Workspaces toggle (graduated, GRE-1437)", async () => {
     await renderPage();
 
-    expect(container.querySelector(ISOLATED_WORKSPACES_TOGGLE_SELECTOR)).not.toBeNull();
-    expect(
-      container.querySelector(ISOLATED_WORKSPACES_BY_DEFAULT_TOGGLE_SELECTOR),
-    ).toBeNull();
-    expect(container.textContent).not.toContain("Use Isolated Workspaces By Default");
+    expect(container.querySelector(ISOLATED_WORKSPACES_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.textContent).not.toContain("Enable Isolated Workspaces");
   });
 
-  it("keeps the dependent toggle hidden even when its stored flag is already on", async () => {
-    // The operator default is inert without isolated workspaces, so the server
-    // ignores a stored `true`. The control must not imply otherwise.
+  it("shows the isolated-workspaces-by-default toggle without the graduated switch (GRE-1437)", async () => {
+    // Isolated workspaces are always on, so the operator default is no longer
+    // a dependent toggle, even for an old row that stored the switch as off.
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
       enableIsolatedWorkspaces: false,
-      enableIsolatedWorkspacesByDefault: true,
     };
     await renderPage();
 
     expect(
       container.querySelector(ISOLATED_WORKSPACES_BY_DEFAULT_TOGGLE_SELECTOR),
-    ).toBeNull();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Use Isolated Workspaces By Default");
   });
 
   it("renders and patches the isolated-workspaces-by-default toggle on and off", async () => {

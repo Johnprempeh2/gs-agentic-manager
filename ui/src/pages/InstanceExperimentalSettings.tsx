@@ -256,7 +256,6 @@ export function InstanceExperimentalSettings() {
   const enableEnvironments = experimentalQuery.data?.enableEnvironments === true;
   const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
-  const enableIsolatedWorkspaces = experimentalQuery.data?.enableIsolatedWorkspaces === true;
   const enableIsolatedWorkspacesByDefault =
     experimentalQuery.data?.enableIsolatedWorkspacesByDefault === true;
   // Streamlined left navigation is now the standard sidebar (PAP-12472); the
@@ -498,17 +497,6 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Enable Isolated Workspaces"
-          description="Show execution workspace controls in project configuration and allow isolated workspace behavior for new and existing task runs."
-          checked={enableIsolatedWorkspaces}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableIsolatedWorkspaces: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableIsolatedWorkspaces"
-          managed={managedKeys.enableIsolatedWorkspaces}
-          ariaLabel="Toggle isolated workspaces experimental setting"
-        />
-
-        <ExperimentalToggleCard
           title="Experimental File Viewer"
           description="Show task detail controls for browsing and previewing workspace files relative to a task."
           checked={enableExperimentalFileViewer}
@@ -623,20 +611,18 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle summaries experimental setting"
         />
 
-        {enableIsolatedWorkspaces && (
-          <ExperimentalToggleCard
-            title="Use Isolated Workspaces By Default"
-            description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
-            checked={enableIsolatedWorkspacesByDefault}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableIsolatedWorkspacesByDefault: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableIsolatedWorkspacesByDefault"
-            managed={managedKeys.enableIsolatedWorkspacesByDefault}
-            ariaLabel="Toggle isolated workspaces by default experimental setting"
-          />
-        )}
+        <ExperimentalToggleCard
+          title="Use Isolated Workspaces By Default"
+          description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
+          checked={enableIsolatedWorkspacesByDefault}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate({ enableIsolatedWorkspacesByDefault: checked })
+          }
+          disabled={toggleMutation.isPending}
+          settingKey="enableIsolatedWorkspacesByDefault"
+          managed={managedKeys.enableIsolatedWorkspacesByDefault}
+          ariaLabel="Toggle isolated workspaces by default experimental setting"
+        />
 
         <ExperimentalToggleCard
           title="Website view"

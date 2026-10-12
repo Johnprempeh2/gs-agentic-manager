@@ -257,7 +257,9 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // stored off values but keep accepting the compatibility key.
       enableNativeRunner: true,
       enableManagedSandboxOnly: parsed.data.enableManagedSandboxOnly ?? false,
-      enableIsolatedWorkspaces: parsed.data.enableIsolatedWorkspaces ?? false,
+      // Greatstone (GRE-1437): Isolated Workspaces graduated from Experimental.
+      // Ignore stored off values but keep accepting the compatibility key.
+      enableIsolatedWorkspaces: true,
       enableIsolatedWorkspacesByDefault: parsed.data.enableIsolatedWorkspacesByDefault ?? false,
       enableStreamlinedLeftNavigation: parsed.data.enableStreamlinedLeftNavigation ?? true,
       enableStreamlinedUi: parsed.data.enableStreamlinedUi ?? true,
@@ -307,7 +309,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableEnvironments: false,
     enableNativeRunner: true,
     enableManagedSandboxOnly: false,
-    enableIsolatedWorkspaces: false,
+    enableIsolatedWorkspaces: true,
     enableIsolatedWorkspacesByDefault: false,
     enableStreamlinedLeftNavigation: true,
     enableStreamlinedUi: true,
@@ -380,6 +382,8 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableApps" || key === "enableMcpAggregators") continue;
     // Greatstone (GRE-1436): Runner is always on; a managed "off" is ignored.
     if (key === "enableNativeRunner") continue;
+    // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.
+    if (key === "enableIsolatedWorkspaces") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;
