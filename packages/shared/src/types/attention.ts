@@ -201,10 +201,36 @@ export type AttentionItemDetail =
       images: AttentionDetailImage[];
     }
   | {
+      /**
+       * An in-review issue the operator must decide on (GRE-1421): what the
+       * assignee last said and the main work product, so the card can be
+       * decided without opening the thread.
+       */
+      kind: "review";
+      lastUpdate: AttentionReviewLastUpdate | null;
+      workProduct: AttentionReviewWorkProduct | null;
+      images: AttentionDetailImage[];
+    }
+  | {
       kind: "generic";
       summaryExcerpt: string | null;
       images: AttentionDetailImage[];
     };
+
+/** The newest agent comment on a review issue, trimmed to a short excerpt. */
+export interface AttentionReviewLastUpdate {
+  commentId: string;
+  authorAgentId: string | null;
+  excerpt: string;
+  createdAt: string;
+}
+
+/** The work product a reviewer should check — a pull request when one exists. */
+export interface AttentionReviewWorkProduct {
+  type: string;
+  title: string;
+  url: string;
+}
 
 /**
  * Who may resolve an issue-thread interaction, as the server evaluated it

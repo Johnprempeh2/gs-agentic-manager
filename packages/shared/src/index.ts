@@ -249,6 +249,8 @@ export {
 export type {
   AttentionDecisionVerb,
   AttentionDetailDeliverable,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,

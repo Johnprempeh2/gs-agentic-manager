@@ -24,6 +24,7 @@ import {
   invites,
   issueApprovals,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueRecoveryActions,
   issueRelations,
@@ -54,6 +55,8 @@ import type {
   AttentionProjectRef,
   AttentionQueueRef,
   AttentionResolverAudience,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionSeverity,
   AttentionSortMode,
   AttentionSourceKind,
@@ -986,6 +989,76 @@ async function issueDeliverableMap(db: Db, companyId: string, issueIds: Array<st
   return map;
 }
 
+const REVIEW_UPDATE_EXCERPT_LENGTH = 280;
+
+/**
+ * What a stalled review card shows so the operator can decide in place
+ * (GRE-1421): the assignee's newest comment and the work product to check.
+ * Only called for stalled reviews, so the per-issue lookups stay small.
+ */
+async function reviewContextMap(db: Db, companyId: string, issueIds: string[]) {
+  const map = new Map<string, { lastUpdate: AttentionReviewLastUpdate | null; workProduct: AttentionReviewWorkProduct | null }>();
+  if (issueIds.length === 0) return map;
+  const [commentRows, productRows] = await Promise.all([
+    db
+      .selectDistinctOn([issueComments.issueId], {
+        id: issueComments.id,
+        issueId: issueComments.issueId,
+        authorAgentId: sql<string | null>`coalesce(${issueComments.authorAgentId}, ${issueComments.derivedAuthorAgentId})`,
+        body: issueComments.body,
+        createdAt: issueComments.createdAt,
+      })
+      .from(issueComments)
+      .where(and(
+        eq(issueComments.companyId, companyId),
+        inArray(issueComments.issueId, issueIds),
+        isNull(issueComments.deletedAt),
+        sql`coalesce(${issueComments.authorAgentId}, ${issueComments.derivedAuthorAgentId}) is not null`,
+      ))
+      .orderBy(issueComments.issueId, desc(issueComments.createdAt), desc(issueComments.id)),
+    db
+      .selectDistinctOn([issueWorkProducts.issueId], {
+        issueId: issueWorkProducts.issueId,
+        type: issueWorkProducts.type,
+        title: issueWorkProducts.title,
+        url: issueWorkProducts.url,
+      })
+      .from(issueWorkProducts)
+      .where(and(
+        eq(issueWorkProducts.companyId, companyId),
+        inArray(issueWorkProducts.issueId, issueIds),
+        isNotNull(issueWorkProducts.url),
+      ))
+      // A pull request is what a reviewer checks first; then the primary product.
+      .orderBy(
+        issueWorkProducts.issueId,
+        desc(sql`${issueWorkProducts.type} = 'pull_request'`),
+        desc(issueWorkProducts.isPrimary),
+        desc(issueWorkProducts.createdAt),
+      ),
+  ]);
+  const entry = (issueId: string) => {
+    const current = map.get(issueId) ?? { lastUpdate: null, workProduct: null };
+    map.set(issueId, current);
+    return current;
+  };
+  for (const row of commentRows) {
+    const text = excerpt(row.body, REVIEW_UPDATE_EXCERPT_LENGTH);
+    if (!text) continue;
+    entry(row.issueId).lastUpdate = {
+      commentId: row.id,
+      authorAgentId: row.authorAgentId,
+      excerpt: text,
+      createdAt: toIso(row.createdAt),
+    };
+  }
+  for (const row of productRows) {
+    if (!row.url) continue;
+    entry(row.issueId).workProduct = { type: row.type, title: row.title, url: row.url };
+  }
+  return map;
+}
+
 async function planDocumentMap(db: Db, companyId: string, issueIds: Array<string | null | undefined>) {
   const ids = [...new Set(issueIds.filter((value): value is string => Boolean(value)))];
   if (ids.length === 0) return new Map<string, PlanDocumentSummary>();
@@ -1720,6 +1793,11 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         issueSummaryMap(db, companyId, reviewIssueIds),
         issueImageMap(db, companyId, reviewIssueIds),
       ]);
+      const reviewContextByIssueId = await reviewContextMap(
+        db,
+        companyId,
+        reviewIssueIds.filter((id) => reviewAttentionByIssueId.get(id)?.state === "stalled"),
+      );
 
       for (const review of reviewRows) {
         const state = parseIssueExecutionState(review.executionState);
@@ -1744,7 +1822,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             ? { ...reviewSubject, metadata: { ...reviewSubject.metadata, reviewAttentionState: "stalled" } }
             : reviewSubject,
           whyNow: stalled
-            ? "Issue is in review without a maintained reviewer, interaction, approval, monitor, run, wake, or recovery path."
+            ? "The work is ready for review, but no reviewer is set. You must decide."
             : pendingApprovalId
             ? "Issue is in review with a linked pending approval."
             : hasHumanParticipant
@@ -1771,7 +1849,14 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           updatedAt: toIso(review.updatedAt),
           relatedIssue: null,
           ...issueContext(issue),
-          detail: genericDetail(review.title, issueImages(reviewImageMap, review.id)),
+          detail: stalled
+            ? {
+                kind: "review",
+                lastUpdate: reviewContextByIssueId.get(review.id)?.lastUpdate ?? null,
+                workProduct: reviewContextByIssueId.get(review.id)?.workProduct ?? null,
+                images: issueImages(reviewImageMap, review.id),
+              }
+            : genericDetail(review.title, issueImages(reviewImageMap, review.id)),
         }));
       }
 
