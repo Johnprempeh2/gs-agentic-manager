@@ -113,6 +113,7 @@ function sample(overrides: Partial<Deliverable> = {}): Deliverable {
     downloadPath: `/api/attachments/att-${id}/content?download=1`,
     issue: { id: "issue-1", identifier: "GRE-1", title: "Quarterly pack" },
     project: { id: "project-1", name: "Board" },
+    clientCase: null,
     createdByAgent: { id: "agent-1", name: "Everest" },
     createdAt: "2026-09-30T10:00:00.000Z",
     updatedAt: "2026-09-30T10:00:00.000Z",

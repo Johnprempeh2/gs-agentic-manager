@@ -25,6 +25,11 @@ export interface DeliverableAgentSummary {
   name: string;
 }
 
+export interface DeliverableClientCaseSummary {
+  id: string;
+  name: string;
+}
+
 export interface Deliverable {
   id: string;
   companyId: string;
@@ -45,6 +50,8 @@ export interface Deliverable {
   downloadPath: string;
   issue: DeliverableIssueSummary;
   project: DeliverableProjectSummary | null;
+  /** The client (pipeline) case the deliverable's task is linked to (GRE-1488). */
+  clientCase: DeliverableClientCaseSummary | null;
   createdByAgent: DeliverableAgentSummary | null;
   createdAt: string;
   updatedAt: string;
