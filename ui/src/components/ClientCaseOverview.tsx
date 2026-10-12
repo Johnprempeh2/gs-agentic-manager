@@ -18,7 +18,8 @@ import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
-import { PipelineCaseDeliverables, PipelineCaseEvidence } from "./PipelineCaseFiles";
+import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
+import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -118,8 +119,9 @@ function RecordRow({ label, tour, children }: { label: string; tour?: string; ch
 
 /**
  * One page for a client (GRE-1048): where the client is in the journey, who
- * owns it, what happens next, who to call, the client's files and our
- * deliverables (GRE-1311), and the open work.
+ * owns it, what happens next, who to call, the client's files (GRE-1311), our
+ * deliverables by journey stage and what the client sees on its portal
+ * (GRE-1473), and the open work.
  */
 export function ClientCaseOverview({
   detail,
@@ -180,8 +182,12 @@ export function ClientCaseOverview({
         <PipelineCaseEvidence caseId={detail.case.id} />
       </OverviewSection>
 
-      <OverviewSection title="Deliverables" tour="client-deliverables">
-        <PipelineCaseDeliverables caseId={detail.case.id} />
+      <OverviewSection title="Journey by stage" tour="client-deliverables">
+        <ClientJourneyStages caseId={detail.case.id} />
+      </OverviewSection>
+
+      <OverviewSection title="What the client sees on the portal" tour="client-portal">
+        <ClientPortalPreview caseId={detail.case.id} />
       </OverviewSection>
 
       <OverviewSection title="Open tasks">
