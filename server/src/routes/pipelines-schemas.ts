@@ -10,6 +10,7 @@ export const casePatchSchema = z.object({
   fields: jsonObjectSchema.optional(),
   workspaceRef: jsonObjectSchema.nullable().optional(),
   parentCaseId: z.string().guid().nullable().optional(),
+  organisationId: z.string().guid().nullable().optional(),
   expectedVersion: z.number().int().positive().optional(),
   leaseToken: z.string().guid().nullable().optional(),
 });
@@ -21,6 +22,7 @@ export const ingestCaseSchema = z.object({
   stageKey: z.string().trim().min(1).max(120).optional(),
   parentCaseId: z.string().guid().nullable().optional(),
   requestKey: z.string().trim().min(1).max(512).optional(),
+  organisationId: z.string().guid().nullable().optional(),
   workspaceRef: jsonObjectSchema.nullable().optional(),
   blockedByCaseIds: z.array(z.string().guid()).max(100).optional(),
   blockedByCaseKeys: z.array(z.string().max(1_024)).max(100).optional(),
@@ -31,6 +33,7 @@ export const createPipelineSchema = z.object({
   description: z.string().max(8_000).nullable().optional(),
   projectId: z.string().guid().nullable().optional(),
   enforceTransitions: z.boolean().optional(),
+  requiresOrganisation: z.boolean().optional(),
   stages: z.array(z.object({
     key: z.string().trim().min(1).max(120),
     name: z.string().trim().min(1).max(200),
@@ -43,6 +46,7 @@ export const updatePipelineSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(8_000).nullable().optional(),
   enforceTransitions: z.boolean().optional(),
+  requiresOrganisation: z.boolean().optional(),
   archived: z.boolean().optional(),
 });
 export const createStageSchema = z.object({

@@ -590,6 +590,7 @@ type PipelineAuditRow = {
   description?: string | null;
   projectId?: string | null;
   enforceTransitions?: boolean;
+  requiresOrganisation?: boolean;
   archivedAt?: Date | null;
 };
 type StageAuditRow = { id: string; key: string; name: string; kind: string; position: number; config?: unknown };
@@ -602,6 +603,7 @@ function pipelineAuditSnapshot(row: PipelineAuditRow | null | undefined) {
     description: row.description ?? null,
     projectId: row.projectId ?? null,
     enforceTransitions: row.enforceTransitions ?? null,
+    requiresOrganisation: row.requiresOrganisation ?? null,
     archived: Boolean(row.archivedAt),
   };
 }
@@ -1043,6 +1045,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         description: req.body.description,
         projectId: req.body.projectId,
         enforceTransitions: req.body.enforceTransitions,
+        requiresOrganisation: req.body.requiresOrganisation,
         stages: req.body.stages?.map((stage: {
           key: string;
           name: string;
@@ -1334,6 +1337,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     if (req.body.name !== undefined) patch.name = req.body.name;
     if (req.body.description !== undefined) patch.description = req.body.description;
     if (req.body.enforceTransitions !== undefined) patch.enforceTransitions = req.body.enforceTransitions;
+    if (req.body.requiresOrganisation !== undefined) patch.requiresOrganisation = req.body.requiresOrganisation;
     if (req.body.archived !== undefined) patch.archivedAt = req.body.archived ? new Date() : null;
     const [updated] = await db
       .update(pipelines)

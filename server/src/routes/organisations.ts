@@ -1,20 +1,43 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
-import type { Db } from "@greatstone/db";
+import { and, eq } from "drizzle-orm";
+import { toolConnections, type Db } from "@greatstone/db";
 import {
   createOrganisationContactSchema,
   createOrganisationSchema,
+  importOrganisationsFromPipedriveSchema,
   listOrganisationsQuerySchema,
   updateOrganisationContactSchema,
   updateOrganisationSchema,
 } from "@greatstone/shared";
-import { badRequest, HttpError, notFound } from "../errors.js";
+import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService } from "../services/access.js";
 import { logActivity } from "../services/activity-log.js";
+import { resolveCrmConnectionCredential } from "../services/crm-sync-runner.js";
+import {
+  createPipedriveClient,
+  PipedriveApiError,
+  PipedriveAuthError,
+  PipedriveRateLimitError,
+  resolvePipedriveBaseUrl,
+  type PipedriveFetch,
+} from "../services/crm-sync-pipedrive.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
 import { organisationService } from "../services/organisations.js";
-import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyBoardRole } from "./authz.js";
+
+type ConnectionRow = typeof toolConnections.$inferSelect;
+
+export interface OrganisationRouteDeps {
+  /** Tests pass recorded Pipedrive pages and a stub credential. */
+  pipedriveFetch?: PipedriveFetch;
+  resolveCredential?: (connection: ConnectionRow) => Promise<string>;
+}
+
+/** Companies with an import running in this process, so two clicks do not race. */
+const runningImports = new Set<string>();
 
 /** Organisations are part of the CRM, so they are off while enablePipelines is off. */
 export const ORGANISATION_ROUTE_PREFIX = "/companies/:companyId/organisations";
@@ -34,10 +57,12 @@ function parseId(value: unknown, what: string) {
  * pipelines (pipelines:cases with no pipeline scope): owners, admins and
  * operators by role, agents only with an explicit grant.
  */
-export function organisationRoutes(db: Db) {
+export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const router = Router();
   const svc = organisationService(db);
   const access = accessService(db);
+  const importer = pipedriveOrganisationImportService(db);
+  const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
 
@@ -60,6 +85,11 @@ export function organisationRoutes(db: Db) {
       actor,
       createdBy: { userId: actor.actorType === "user" ? actor.actorId : null, agentId: actor.agentId },
     };
+  }
+
+  function actorIds(req: Request) {
+    const actor = getActorInfo(req);
+    return { userId: actor.actorType === "user" ? actor.actorId : null, agentId: actor.agentId };
   }
 
   async function audit(
@@ -98,6 +128,98 @@ export function organisationRoutes(db: Db) {
     await audit(req, companyId, "organisation.created", organisation.id, { name: organisation.name });
     res.status(201).json(organisation);
   });
+
+  /**
+   * Full read-only import of every Pipedrive organisation and person (GRE-1479).
+   * Company owners only. Nothing is written to Pipedrive; a rerun updates the
+   * rows it made before instead of adding new ones.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/pipedrive`,
+    validate(importOrganisationsFromPipedriveSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the Pipedrive import", { code: "owner_required" });
+      }
+      const connection = await db
+        .select()
+        .from(toolConnections)
+        .where(and(eq(toolConnections.id, req.body.connectionId), eq(toolConnections.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      // Same answer for "missing" and "another company's" so ids do not leak.
+      if (!connection) throw unprocessable("Connection not found", { code: "connection_not_found" });
+      if (!connection.enabled || connection.status !== "active") {
+        throw unprocessable("The Pipedrive connection is turned off or not active. Turn it on in Connections first.", {
+          code: "connection_not_active",
+        });
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("A Pipedrive import is already running for this company", { code: "import_running" });
+      }
+
+      runningImports.add(companyId);
+      try {
+        let token: string;
+        try {
+          token = await resolveCredential(connection);
+        } catch (error) {
+          throw unprocessable("The Pipedrive connection has no usable credential. Reconnect it in Connections.", {
+            code: "credential_missing",
+            detail: (error as Error).message,
+          });
+        }
+        const client = createPipedriveClient({
+          token,
+          authKind: connection.authKind,
+          baseUrl: resolvePipedriveBaseUrl(connection.config),
+          fetch: deps.pipedriveFetch,
+        });
+        let result;
+        try {
+          result = await importer.run(companyId, client, actorIds(req));
+        } catch (error) {
+          if (error instanceof PipedriveAuthError) {
+            throw unprocessable("Pipedrive refused the credential. Reconnect Pipedrive in Connections.", {
+              code: "pipedrive_auth_failed",
+            });
+          }
+          if (error instanceof PipedriveRateLimitError) {
+            throw new HttpError(503, "Pipedrive rate limit reached. Run the import again later; rows already imported are updated, not duplicated.", {
+              code: "pipedrive_rate_limited",
+              retryAfterMs: error.retryAfterMs,
+            });
+          }
+          if (error instanceof PipedriveApiError) {
+            throw new HttpError(502, error.message, { code: "pipedrive_error" });
+          }
+          throw error;
+        }
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "pipedrive",
+            connectionId: connection.id,
+            organisations: result.organisations,
+            contacts: result.contacts,
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
 
   router.get(`${ORGANISATION_ROUTE_PREFIX}/:organisationId`, async (req, res) => {
     const companyId = req.params.companyId as string;

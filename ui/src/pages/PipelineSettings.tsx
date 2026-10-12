@@ -2064,6 +2064,22 @@ export function PipelineSettings() {
     },
   });
 
+  const saveRequiresOrganisation = useMutation({
+    mutationFn: (requiresOrganisation: boolean) =>
+      pipelinesApi.update(pipelineId!, { requiresOrganisation }),
+    onSuccess: async () => {
+      await refreshPipeline();
+      pushToast({ title: "Organisation rule updated", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Failed to update the organisation rule",
+        body: error instanceof Error ? error.message : "GS Agentic Manager could not update the organisation rule.",
+        tone: "error",
+      });
+    },
+  });
+
   const archivePipeline = useMutation({
     mutationFn: (archived: boolean) => pipelinesApi.update(pipelineId!, { archived }),
     onSuccess: async (_result, archived) => {
@@ -3217,6 +3233,31 @@ export function PipelineSettings() {
                           </div>
                         </FieldRow>
                         {strictTransitionsEnabled ? transitionTargetsControl : null}
+                      </div>
+                      <div className="divide-y divide-border border-b border-border">
+                        <div className="py-3">
+                          <h3 className="text-sm font-semibold text-foreground">Organisations</h3>
+                        </div>
+                        <FieldRow label="Require organisation">
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-3">
+                              <ToggleSwitch
+                                aria-label="Every item needs an organisation"
+                                checked={Boolean(pipeline?.requiresOrganisation)}
+                                disabled={saveRequiresOrganisation.isPending}
+                                onCheckedChange={(checked) => saveRequiresOrganisation.mutate(checked)}
+                              />
+                              <span className="text-sm font-medium text-foreground">
+                                Every item needs an organisation
+                              </span>
+                            </div>
+                            <p className="max-w-2xl text-sm text-muted-foreground">
+                              {pipeline?.requiresOrganisation
+                                ? "New items must link to a record in the organisation database. Use this for CRM pipelines such as Client journey."
+                                : "Items can be added without an organisation. Work pipelines usually leave this off."}
+                            </p>
+                          </div>
+                        </FieldRow>
                       </div>
                       {isPipelineTerminalStageKind(stageKind) ? null : breakdownEnabled ? (
                         <EmptyState

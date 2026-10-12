@@ -94,3 +94,11 @@ export const updateOrganisationContactSchema = z
   })
   .strict();
 export type UpdateOrganisationContact = z.input<typeof updateOrganisationContactSchema>;
+
+/** Body of the read-only Pipedrive import (GRE-1479): which company connection to read from. */
+export const importOrganisationsFromPipedriveSchema = z
+  .object({
+    connectionId: z.string().guid(),
+  })
+  .strict();
+export type ImportOrganisationsFromPipedrive = z.infer<typeof importOrganisationsFromPipedriveSchema>;
