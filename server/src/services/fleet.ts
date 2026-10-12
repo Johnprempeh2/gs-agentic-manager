@@ -18,6 +18,7 @@ import {
   type FleetInstanceStatus,
   type FleetLifecycle,
   type FleetPublicKey,
+  type FleetReceivedCheckIn,
 } from "@greatstone/shared/fleet";
 
 // Hub side of the fleet channel (GRE-1082). Same shape as the Cloud control
@@ -203,9 +204,25 @@ export function fleetService(db: Db) {
   }
 
   return {
+    /** Every instance with its newest stored check-in (F2 fleet page, GRE-1083). Null when none is kept. */
     async list(now = new Date()) {
       const rows = await db.select().from(fleetInstances).orderBy(fleetInstances.code);
-      return rows.map((row) => view(row, now));
+      const latest = await db
+        .selectDistinctOn([fleetCheckIns.fleetInstanceId], {
+          fleetInstanceId: fleetCheckIns.fleetInstanceId,
+          receivedAt: fleetCheckIns.receivedAt,
+          checkIn: fleetCheckIns.payload,
+        })
+        .from(fleetCheckIns)
+        .orderBy(fleetCheckIns.fleetInstanceId, desc(fleetCheckIns.receivedAt));
+      const latestById = new Map(latest.map((entry) => [entry.fleetInstanceId, entry]));
+      return rows.map((row) => {
+        const entry = latestById.get(row.id);
+        return {
+          ...view(row, now),
+          latestCheckIn: entry ? { receivedAt: entry.receivedAt, checkIn: entry.checkIn as FleetReceivedCheckIn } : null,
+        };
+      });
     },
 
     async get(id: string) {
