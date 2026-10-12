@@ -1,0 +1,179 @@
+import { Router, type Request } from "express";
+import { z } from "zod";
+import type { Db } from "@greatstone/db";
+import {
+  createOrganisationContactSchema,
+  createOrganisationSchema,
+  listOrganisationsQuerySchema,
+  updateOrganisationContactSchema,
+  updateOrganisationSchema,
+} from "@greatstone/shared";
+import { badRequest, HttpError, notFound } from "../errors.js";
+import { validate } from "../middleware/validate.js";
+import { accessService } from "../services/access.js";
+import { logActivity } from "../services/activity-log.js";
+import { requireEntitlement } from "../services/entitlements.js";
+import { organisationService } from "../services/organisations.js";
+import { assertCompanyAccess, getActorInfo } from "./authz.js";
+
+/** Organisations are part of the CRM, so they are off while enablePipelines is off. */
+export const ORGANISATION_ROUTE_PREFIX = "/companies/:companyId/organisations";
+
+const idSchema = z.string().guid();
+
+function parseId(value: unknown, what: string) {
+  const parsed = idSchema.safeParse(value);
+  if (!parsed.success) throw notFound(`${what} not found`);
+  return parsed.data;
+}
+
+/**
+ * CRM organisations and their contacts (GRE-1477). Every route carries the
+ * company id and every query is scoped to it, so another company's record
+ * answers 404. Reads need company access; writes need Work cases on all
+ * pipelines (pipelines:cases with no pipeline scope): owners, admins and
+ * operators by role, agents only with an explicit grant.
+ */
+export function organisationRoutes(db: Db) {
+  const router = Router();
+  const svc = organisationService(db);
+  const access = accessService(db);
+
+  router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
+
+  async function assertCrmWriter(req: Request, companyId: string) {
+    assertCompanyAccess(req, companyId);
+    const decision = await access.decide({
+      actor: req.actor,
+      action: "pipelines:cases",
+      resource: { type: "company", companyId },
+      scope: null,
+    });
+    if (!decision.allowed) {
+      throw new HttpError(403, "You may view organisations but not change them", {
+        code: "crm_write_forbidden",
+        reason: decision.reason,
+      });
+    }
+    const actor = getActorInfo(req);
+    return {
+      actor,
+      createdBy: { userId: actor.actorType === "user" ? actor.actorId : null, agentId: actor.agentId },
+    };
+  }
+
+  async function audit(
+    req: Request,
+    companyId: string,
+    action: string,
+    entityId: string,
+    details: Record<string, unknown>,
+  ) {
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action,
+      entityType: "organisation",
+      entityId,
+      details,
+    });
+  }
+
+  router.get(ORGANISATION_ROUTE_PREFIX, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const parsed = listOrganisationsQuerySchema.safeParse(req.query);
+    if (!parsed.success) throw badRequest("Invalid query", parsed.error.flatten());
+    res.json(await svc.list(companyId, parsed.data));
+  });
+
+  router.post(ORGANISATION_ROUTE_PREFIX, validate(createOrganisationSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const { createdBy } = await assertCrmWriter(req, companyId);
+    const organisation = await svc.create(companyId, req.body, createdBy);
+    await audit(req, companyId, "organisation.created", organisation.id, { name: organisation.name });
+    res.status(201).json(organisation);
+  });
+
+  router.get(`${ORGANISATION_ROUTE_PREFIX}/:organisationId`, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const organisationId = parseId(req.params.organisationId, "Organisation");
+    const detail = await svc.getDetail(companyId, organisationId);
+    if (!detail) throw notFound("Organisation not found");
+    res.json(detail);
+  });
+
+  router.patch(
+    `${ORGANISATION_ROUTE_PREFIX}/:organisationId`,
+    validate(updateOrganisationSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertCrmWriter(req, companyId);
+      const organisationId = parseId(req.params.organisationId, "Organisation");
+      const organisation = await svc.update(companyId, organisationId, req.body);
+      if (!organisation) throw notFound("Organisation not found");
+      await audit(req, companyId, "organisation.updated", organisation.id, { fields: Object.keys(req.body) });
+      res.json(organisation);
+    },
+  );
+
+  router.post(`${ORGANISATION_ROUTE_PREFIX}/:organisationId/archive`, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await assertCrmWriter(req, companyId);
+    const organisationId = parseId(req.params.organisationId, "Organisation");
+    const organisation = await svc.archive(companyId, organisationId);
+    if (!organisation) throw notFound("Organisation not found");
+    await audit(req, companyId, "organisation.archived", organisation.id, {});
+    res.json(organisation);
+  });
+
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/:organisationId/contacts`,
+    validate(createOrganisationContactSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      const { createdBy } = await assertCrmWriter(req, companyId);
+      const organisationId = parseId(req.params.organisationId, "Organisation");
+      if (!(await svc.getDetail(companyId, organisationId))) throw notFound("Organisation not found");
+      const contact = await svc.createContact(companyId, organisationId, req.body, createdBy);
+      await audit(req, companyId, "organisation.contact_created", organisationId, { contactId: contact.id });
+      res.status(201).json(contact);
+    },
+  );
+
+  router.patch(
+    `${ORGANISATION_ROUTE_PREFIX}/:organisationId/contacts/:contactId`,
+    validate(updateOrganisationContactSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      await assertCrmWriter(req, companyId);
+      const organisationId = parseId(req.params.organisationId, "Organisation");
+      const contactId = parseId(req.params.contactId, "Contact");
+      const contact = await svc.updateContact(companyId, organisationId, contactId, req.body);
+      if (!contact) throw notFound("Contact not found");
+      await audit(req, companyId, "organisation.contact_updated", organisationId, {
+        contactId,
+        fields: Object.keys(req.body),
+      });
+      res.json(contact);
+    },
+  );
+
+  router.post(`${ORGANISATION_ROUTE_PREFIX}/:organisationId/contacts/:contactId/archive`, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await assertCrmWriter(req, companyId);
+    const organisationId = parseId(req.params.organisationId, "Organisation");
+    const contactId = parseId(req.params.contactId, "Contact");
+    const contact = await svc.archiveContact(companyId, organisationId, contactId);
+    if (!contact) throw notFound("Contact not found");
+    await audit(req, companyId, "organisation.contact_archived", organisationId, { contactId });
+    res.json(contact);
+  });
+
+  return router;
+}

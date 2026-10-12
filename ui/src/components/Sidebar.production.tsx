@@ -15,6 +15,7 @@ import {
   Repeat,
   Layers,
   Microscope,
+  Building2,
   GitBranch,
   Package,
   Settings,
@@ -195,6 +196,9 @@ export function Sidebar() {
             <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
           ) : null}
           <SidebarStarredPipelines />
+          {showPipelines ? (
+            <SidebarNavItem to="/organisations" label="Organisations" icon={Building2} />
+          ) : null}
           {/* Greatstone (GRE-191): Goals graduated from Experimental; always shown. */}
           <SidebarNavItem to="/goals" label="Goals" icon={Target} />
           {/* GRE-1135: board control panel, behind enableStrategyBoard. */}
