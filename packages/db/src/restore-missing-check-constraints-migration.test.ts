@@ -20,14 +20,11 @@ type Snapshot = {
   tables: Record<string, { name: string; checkConstraints?: Record<string, { name: string }> }>;
 };
 
-// Every named check in the newest snapshot, i.e. every check a fresh install has.
+// Every named check in the schema as of 0328. Pinned to this migration's snapshot, not the
+// newest one, so a later migration that adds a check does not change what 0328 must restore.
 function schemaCheckNames(): string[] {
-  const journal = JSON.parse(fs.readFileSync(path.join(migrationsDir, "meta", "_journal.json"), "utf8")) as {
-    entries: Array<{ idx: number }>;
-  };
-  const newest = String(journal.entries.at(-1)!.idx).padStart(4, "0");
   const snapshot = JSON.parse(
-    fs.readFileSync(path.join(migrationsDir, "meta", `${newest}_snapshot.json`), "utf8"),
+    fs.readFileSync(path.join(migrationsDir, "meta", "0328_snapshot.json"), "utf8"),
   ) as Snapshot;
   return Object.values(snapshot.tables)
     .flatMap((table) => Object.values(table.checkConstraints ?? {}).map((check) => check.name))
