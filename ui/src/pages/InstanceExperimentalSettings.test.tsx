@@ -360,25 +360,12 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     )).toBeNull();
   });
 
-  it("keeps GS Agentic Manager Runner default-off and exposes an explicit opt-in", async () => {
+  it("no longer shows a GS Agentic Manager Runner toggle (graduated, GRE-1436)", async () => {
+    // The default fixture still stores the old flag as off; no card may appear.
     await renderPage();
 
-    expect(container.textContent).toContain("GS Agentic Manager Runner");
-    expect(container.textContent).toContain("Onboarding continues to use legacy adapters");
-    const toggle = container.querySelector<HTMLButtonElement>(
-      GSAM_RUNNER_TOGGLE_SELECTOR,
-    );
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableNativeRunner: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector(GSAM_RUNNER_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.textContent).not.toContain("GS Agentic Manager Runner");
   });
 
   it("hides the 4 retired switches even when their stored flags are on (GRE-196)", async () => {

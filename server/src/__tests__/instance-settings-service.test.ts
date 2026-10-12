@@ -8,6 +8,13 @@ import {
 } from "../services/instance-settings.js";
 
 describe("instance settings service", () => {
+  it("always reads the graduated Runner flag as on (GRE-1436)", () => {
+    for (const stored of [undefined, {}, { enableNativeRunner: false }, { enableNativeRunner: true }]) {
+      expect(normalizeExperimentalSettings(stored).enableNativeRunner).toBe(true);
+    }
+    const patched = applyExperimentalSettingsPatch({}, { enableNativeRunner: false });
+    expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(patched))).enableNativeRunner).toBe(true);
+  });
   it("keeps chat connectors opt-in across legacy storage and patches without disabling Apps", () => {
     for (const stored of [undefined, {}, { enableApps: true }, { enableConferenceRoomChat: true }]) {
       expect(normalizeExperimentalSettings(stored).enableChatConnectors).toBe(false);
@@ -35,7 +42,7 @@ describe("instance settings service", () => {
       enableNewestFirstIssueThread: true,
     })).toEqual({
       enableEnvironments: true,
-      enableNativeRunner: false,
+      enableNativeRunner: true,
       enableManagedSandboxOnly: false,
       enableIsolatedWorkspaces: true,
       enableIsolatedWorkspacesByDefault: false,

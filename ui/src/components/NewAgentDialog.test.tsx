@@ -117,7 +117,7 @@ it("offers native Codex, Claude ACPX, and OpenCode runners", async () => {
 });
 
 it.each([false, undefined])(
-  "hides the runner unless explicitly enabled (%s)",
+  "offers the runner whatever the old flag says (graduated, GRE-1436) (%s)",
   async (enableNativeRunner) => {
     await act(async () => {
       cache.setQueryData(queryKeys.instance.experimentalSettings, {
@@ -127,7 +127,7 @@ it.each([false, undefined])(
     await name();
     expect(
       document.querySelector('input[value="paperclip_runner"]'),
-    ).toBeNull();
+    ).not.toBeNull();
     expect(document.querySelector('input[value="codex_local"]')).not.toBeNull();
   },
 );
