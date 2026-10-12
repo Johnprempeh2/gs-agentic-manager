@@ -67,7 +67,9 @@ function HealthCell({ instance }: { instance: FleetInstanceView }) {
     value ? `${label} ${value.ok ? "ok" : "failed"}, ${formatAgeMinutes(value.ageMinutes)} ago` : `${label} not set up`;
   return (
     <div className="space-y-0.5">
-      <div>App {health.app === "ok" ? "up" : "down"}</div>
+      <div className={health.app === "ok" ? undefined : "font-medium text-destructive"}>
+        App {health.app === "ok" ? "up" : "down"}
+      </div>
       <div className="text-xs text-muted-foreground">
         {health.backupAgeMinutes === null ? "No backup" : `Backup ${formatAgeMinutes(health.backupAgeMinutes)} ago`}
       </div>
@@ -97,6 +99,7 @@ function UsageCell({ instance }: { instance: FleetInstanceView }) {
   const failed = "runsFailedLast24h" in usage ? usage.runsFailedLast24h : null;
   return (
     <div className="space-y-0.5">
+      <LastReported instance={instance} />
       <div className="tabular-nums">
         AI spend {formatCents(usage.spendCentsMonth)}
         {usage.budgetCentsMonth > 0 ? <Muted> of {formatCents(usage.budgetCentsMonth)}</Muted> : <Muted> (no budget)</Muted>}
@@ -119,6 +122,7 @@ function ConnectionsCell({ instance }: { instance: FleetInstanceView }) {
   if (!connections) return <Muted>—</Muted>;
   return (
     <div className="space-y-0.5 tabular-nums">
+      <LastReported instance={instance} />
       <div>
         AI {formatNumber(connections.ai.healthy)} ok
         {connections.ai.needsAttention > 0 ? `, ${formatNumber(connections.ai.needsAttention)} need attention` : ""}
@@ -130,20 +134,33 @@ function ConnectionsCell({ instance }: { instance: FleetInstanceView }) {
   );
 }
 
-function AlertsCell({ instance }: { instance: FleetInstanceView }) {
-  const alerts = instance.latestCheckIn?.checkIn.alerts;
-  if (!alerts) return <Muted>—</Muted>;
-  const failing = alerts.filter((alert) => !alert.ok);
-  if (failing.length === 0) return <Muted>None</Muted>;
+/** Failed health checks and failing alerts, in the danger colour, shown under the state. */
+function Attention({ instance }: { instance: FleetInstanceView }) {
+  const checkIn = instance.latestCheckIn?.checkIn;
+  if (!checkIn) return null;
+  const items: string[] = [];
+  if (checkIn.health.app !== "ok") items.push("App down");
+  if (checkIn.health.restoreCheck && !checkIn.health.restoreCheck.ok) items.push("Restore check failed");
+  if (checkIn.health.offsiteBackup && !checkIn.health.offsiteBackup.ok) items.push("Offsite backup failed");
+  for (const alert of checkIn.alerts) if (!alert.ok) items.push(alert.key);
+  if (items.length === 0) return null;
   return (
-    <ul className="space-y-0.5">
-      {failing.map((alert) => (
-        <li key={alert.key} className="font-mono text-xs text-destructive">
-          {alert.key}
+    <ul className="mt-1 space-y-0.5" data-testid={`fleet-attention-${instance.code}`}>
+      {items.map((item) => (
+        <li key={item} className="text-xs font-medium text-destructive">
+          {item}
         </li>
       ))}
     </ul>
   );
+}
+
+/** Usage and connection figures from a stale or down instance are old; say so. */
+function LastReported({ instance }: { instance: FleetInstanceView }) {
+  if (instance.state !== "stale" && instance.state !== "down") return null;
+  const receivedAt = instance.latestCheckIn?.receivedAt;
+  if (!receivedAt) return null;
+  return <div className="text-xs italic text-muted-foreground">Last reported {relativeTime(receivedAt)}</div>;
 }
 
 function stateNote(instance: FleetInstanceView) {
@@ -154,7 +171,65 @@ function stateNote(instance: FleetInstanceView) {
   return null;
 }
 
-const COLUMNS = ["Instance", "State", "Last check-in", "Health", "Version", "Usage", "Connections", "Alerts"];
+const COLUMNS = ["Instance", "State and alerts", "Last check-in", "Health", "Version", "Usage", "Connections"];
+
+function Identity({ instance }: { instance: FleetInstanceView }) {
+  const edition = instance.latestCheckIn?.checkIn.edition;
+  return (
+    <div>
+      <div className="font-mono font-medium">{instance.code}</div>
+      {edition ? <div className="text-xs text-muted-foreground">{EDITION_LABEL[edition] ?? edition}</div> : null}
+    </div>
+  );
+}
+
+function StateBlock({ instance }: { instance: FleetInstanceView }) {
+  const chip = STATE_CHIP[instance.state];
+  const note = stateNote(instance);
+  return (
+    <div>
+      <Chip tone={chip.tone}>{chip.label}</Chip>
+      {note ? <div className="mt-1 text-xs text-muted-foreground">{note}</div> : null}
+      <Attention instance={instance} />
+    </div>
+  );
+}
+
+function LastCheckIn({ instance }: { instance: FleetInstanceView }) {
+  return instance.lastCheckInAt ? <>{relativeTime(instance.lastCheckInAt)}</> : <Muted>Never</Muted>;
+}
+
+/** Phone view: code, state, alerts and last check-in together, then the details beneath. */
+function FleetCard({ instance }: { instance: FleetInstanceView }) {
+  const details: Array<[string, ReactNode]> = [
+    ["Health", <HealthCell instance={instance} />],
+    ["Version", <VersionCell instance={instance} />],
+    ["Usage", <UsageCell instance={instance} />],
+    ["Connections", <ConnectionsCell instance={instance} />],
+  ];
+  return (
+    <li className="space-y-3 p-3 text-sm" data-testid={`fleet-card-${instance.code}`}>
+      <div className="flex items-start justify-between gap-3">
+        <Identity instance={instance} />
+        <div className="text-right text-xs text-muted-foreground">
+          <div>Last check-in</div>
+          <div className="text-foreground">
+            <LastCheckIn instance={instance} />
+          </div>
+        </div>
+      </div>
+      <StateBlock instance={instance} />
+      <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2 border-t border-border pt-3">
+        {details.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="min-w-0">{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </li>
+  );
+}
 
 export function Fleet() {
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -203,46 +278,39 @@ export function Fleet() {
       {instances.length === 0 ? (
         <EmptyState icon={Server} title="No instances yet" message="An instance shows here once it is added to the hub." />
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-left text-sm" data-testid="fleet-table">
-            <thead className="bg-muted/40 text-xs text-muted-foreground">
-              <tr>
-                {COLUMNS.map((column) => (
-                  <th key={column} scope="col" className="px-3 py-2 font-medium whitespace-nowrap">
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {instances.map((instance) => {
-                const chip = STATE_CHIP[instance.state];
-                const note = stateNote(instance);
-                const edition = instance.latestCheckIn?.checkIn.edition;
-                return (
+        <>
+          <ul className="divide-y divide-border rounded-lg border border-border md:hidden" data-testid="fleet-cards">
+            {instances.map((instance) => (
+              <FleetCard key={instance.id} instance={instance} />
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto rounded-lg border border-border md:block">
+            <table className="w-full text-left text-sm" data-testid="fleet-table">
+              <thead className="bg-muted/40 text-xs text-muted-foreground">
+                <tr>
+                  {COLUMNS.map((column) => (
+                    <th key={column} scope="col" className="px-3 py-2 font-medium whitespace-nowrap">
+                      {column}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {instances.map((instance) => (
                   <tr key={instance.id} className="align-top" data-testid={`fleet-row-${instance.code}`}>
-                    <td className="px-3 py-2">
-                      <div className="font-mono font-medium">{instance.code}</div>
-                      {edition ? <div className="text-xs text-muted-foreground">{EDITION_LABEL[edition] ?? edition}</div> : null}
-                    </td>
-                    <td className="px-3 py-2">
-                      <Chip tone={chip.tone}>{chip.label}</Chip>
-                      {note ? <div className="mt-1 text-xs text-muted-foreground">{note}</div> : null}
-                    </td>
-                    <td className="px-3 py-2 whitespace-nowrap">
-                      {instance.lastCheckInAt ? relativeTime(instance.lastCheckInAt) : <Muted>Never</Muted>}
-                    </td>
+                    <td className="px-3 py-2"><Identity instance={instance} /></td>
+                    <td className="px-3 py-2"><StateBlock instance={instance} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap"><LastCheckIn instance={instance} /></td>
                     <td className="px-3 py-2"><HealthCell instance={instance} /></td>
                     <td className="px-3 py-2"><VersionCell instance={instance} /></td>
                     <td className="px-3 py-2"><UsageCell instance={instance} /></td>
                     <td className="px-3 py-2"><ConnectionsCell instance={instance} /></td>
-                    <td className="px-3 py-2"><AlertsCell instance={instance} /></td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
     </div>
   );

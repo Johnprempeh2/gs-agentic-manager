@@ -50,7 +50,16 @@ const OK: FleetInstanceView = {
   },
 };
 
-const DOWN: FleetInstanceView = { ...OK, id: "22222222-2222-2222-2222-222222222222", code: "c002", state: "down" };
+const DOWN: FleetInstanceView = {
+  ...OK,
+  id: "22222222-2222-2222-2222-222222222222",
+  code: "c002",
+  state: "down",
+  latestCheckIn: {
+    ...OK.latestCheckIn!,
+    checkIn: { ...OK.latestCheckIn!.checkIn, health: { ...OK.latestCheckIn!.checkIn.health, app: "down" } },
+  },
+};
 const PENDING: FleetInstanceView = {
   ...OK,
   id: "33333333-3333-3333-3333-333333333333",
@@ -87,6 +96,14 @@ function row(code: string) {
   return container.querySelector(`[data-testid="fleet-row-${code}"]`)?.textContent ?? "";
 }
 
+function card(code: string) {
+  return container.querySelector(`[data-testid="fleet-card-${code}"]`)?.textContent ?? "";
+}
+
+function attention(code: string) {
+  return container.querySelector(`[data-testid="fleet-row-${code}"] [data-testid="fleet-attention-${code}"]`)?.textContent ?? "";
+}
+
 beforeEach(() => {
   container = document.createElement("div");
   document.body.appendChild(container);
@@ -116,6 +133,32 @@ describe("Fleet page", () => {
     expect(row("c002")).toContain("Down");
     expect(row("c003")).toContain("Not registered");
     expect(row("c003")).toContain("Never");
+  });
+
+  it("puts failed health and failing alerts under the state", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([OK, DOWN, PENDING]);
+    await render();
+    expect(attention("c001")).toBe("ai-connections");
+    expect(attention("c002")).toContain("App down");
+    expect(attention("c002")).toContain("ai-connections");
+    expect(attention("c003")).toBe("");
+  });
+
+  it("labels usage and connections from a stale or down instance as last reported", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([OK, DOWN]);
+    await render();
+    expect(row("c001")).not.toContain("Last reported");
+    expect(row("c002").match(/Last reported/g)).toHaveLength(2);
+  });
+
+  it("has a phone card for each instance with code, state, check-in and alerts together", async () => {
+    mockFleetApi.listInstances.mockResolvedValue([OK, DOWN, PENDING]);
+    await render();
+    expect(card("c002")).toContain("c002");
+    expect(card("c002")).toContain("Down");
+    expect(card("c002")).toContain("Last check-in");
+    expect(card("c002")).toContain("App down");
+    expect(card("c003")).toContain("Never");
   });
 
   it("is read-only: no button, link or form on the page", async () => {
