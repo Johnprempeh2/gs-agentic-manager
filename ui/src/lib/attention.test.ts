@@ -381,6 +381,25 @@ describe("attentionDetailLine (§7)", () => {
     expect(line).toContain("Which auth provider?");
   });
 
+  it("quotes a review's last update, or defers to whyNow without one (GRE-1421)", () => {
+    const withUpdate = attentionDetailLine(
+      buildItem({
+        sourceKind: "review",
+        detail: {
+          kind: "review",
+          lastUpdate: { commentId: "c1", authorAgentId: null, excerpt: "Fees now show.", createdAt: "2026-07-09T12:00:00Z" },
+          workProduct: null,
+          images: [],
+        },
+      }),
+    );
+    expect(withUpdate).toBe("Ready for your review: “Fees now show.”");
+    const without = attentionDetailLine(
+      buildItem({ sourceKind: "review", detail: { kind: "review", lastUpdate: null, workProduct: null, images: [] } }),
+    );
+    expect(without).toBeNull();
+  });
+
   it("singularizes a single suggested task", () => {
     const line = attentionDetailLine(
       buildItem({

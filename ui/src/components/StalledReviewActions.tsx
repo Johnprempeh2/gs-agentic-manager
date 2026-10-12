@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Loader2, RotateCcw, Undo2 } from "lucide-react";
 import type { IssueReviewPolicy, StalledReviewDecisionAction } from "@greatstone/shared";
@@ -24,7 +24,30 @@ interface StalledReviewActionsProps {
    * approve" is what every issue already does.
    */
   reviewPolicy?: IssueReviewPolicy | null;
+  /** Names who gets the work back in the choice hints; falls back to "the assignee". */
+  assigneeName?: string | null;
   className?: string;
+}
+
+/**
+ * What each choice does, in plain words (GRE-1421). Shown above the buttons so
+ * the operator knows the result before clicking.
+ */
+export function stalledReviewChoiceHints(assigneeName?: string | null) {
+  const who = assigneeName?.trim() || "the assignee";
+  return [
+    { action: "approve" as const, label: "Approve", hint: "The task is marked done." },
+    {
+      action: "request_changes" as const,
+      label: "Request changes",
+      hint: `The task goes back to ${who} with your note. Write a note first.`,
+    },
+    {
+      action: "send_back" as const,
+      label: "Send back to work",
+      hint: `The task goes back to ${who} to continue. No note is necessary.`,
+    },
+  ];
 }
 
 const ACTION_PAST_TENSE: Record<StalledReviewDecisionAction, string> = {
@@ -49,6 +72,7 @@ export function StalledReviewActions({
   footerSlot,
   onResolved,
   reviewPolicy,
+  assigneeName,
   className,
 }: StalledReviewActionsProps) {
   const queryClient = useQueryClient();
@@ -83,6 +107,7 @@ export function StalledReviewActions({
   const runningFor = (action: StalledReviewDecisionAction) =>
     pending && decide.variables === action;
   const policyBadge = issueReviewPolicyBadge(reviewPolicy);
+  const hintIdPrefix = `stalled-review-hint-${useId()}`;
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -101,10 +126,22 @@ export function StalledReviewActions({
           <span className="min-w-0 truncate">{policyBadge.label}</span>
         </Badge>
       ) : null}
+      <section className="flex flex-col gap-1" data-testid="stalled-review-choices">
+        <h4 className="text-xs font-medium text-muted-foreground">Your choices</h4>
+        <ul className="flex flex-col gap-1 text-sm">
+          {stalledReviewChoiceHints(assigneeName).map((choice) => (
+            <li key={choice.action} id={`${hintIdPrefix}-${choice.action}`} data-testid={`stalled-review-hint-${choice.action}`}>
+              <span className="font-medium text-foreground">{choice.label}:</span>{" "}
+              <span className="text-muted-foreground">{choice.hint}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
       <Textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        placeholder="Add a note (required to request changes, optional otherwise)…"
+        placeholder="Write a note (necessary to request changes)…"
+        aria-label="Note to the assignee"
         className="min-h-16 text-sm"
         data-testid="stalled-review-note"
         disabled={pending}
@@ -119,6 +156,7 @@ export function StalledReviewActions({
             className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
             disabled={pending}
             onClick={() => decide.mutate("send_back")}
+            aria-describedby={`${hintIdPrefix}-send_back`}
             data-testid="stalled-review-send-back"
           >
             {runningFor("send_back") ? (
@@ -136,6 +174,7 @@ export function StalledReviewActions({
             disabled={pending || noteEmpty}
             title={noteEmpty ? "Add a note to request changes" : undefined}
             onClick={() => decide.mutate("request_changes")}
+            aria-describedby={`${hintIdPrefix}-request_changes`}
             data-testid="stalled-review-request-changes"
           >
             {runningFor("request_changes") ? (
@@ -151,6 +190,7 @@ export function StalledReviewActions({
             className="w-full sm:w-auto sm:flex-1 @xl:flex-none"
             disabled={pending}
             onClick={() => decide.mutate("approve")}
+            aria-describedby={`${hintIdPrefix}-approve`}
             data-testid="stalled-review-approve"
           >
             {runningFor("approve") ? (

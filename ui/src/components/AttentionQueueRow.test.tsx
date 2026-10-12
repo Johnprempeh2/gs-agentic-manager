@@ -5,7 +5,7 @@ import { flushSync } from "react-dom";
 import { useState, type AnchorHTMLAttributes, type ReactElement } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AttentionItem, AttentionSourceKind } from "@greatstone/shared";
+import type { Agent, AttentionItem, AttentionSourceKind } from "@greatstone/shared";
 import { approvalsApi } from "../api/approvals";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
@@ -179,6 +179,98 @@ describe("AttentionQueueRow", () => {
     expect(el.textContent).toContain("Approve");
     expect(el.textContent).toContain("Request changes");
     expect(el.textContent).toContain("Send back to work");
+  });
+
+  // GRE-1421: the card says what was done, what to decide, and what each choice does.
+  const stalledReviewItem = (detail: AttentionItem["detail"]) =>
+    buildItem({
+      sourceKind: "review" as AttentionSourceKind,
+      inlineResolvable: true,
+      subject: {
+        kind: "issue",
+        id: "issue-1",
+        companyId: "c1",
+        title: "Fix the billing page",
+        identifier: "PAP-1",
+        status: "in_review",
+        href: "/PAP/issues/PAP-1",
+        metadata: { reviewAttentionState: "stalled", assigneeAgentId: "agent-ridge" },
+      },
+      detail,
+    });
+  const ridgeMap = new Map([["agent-ridge", { id: "agent-ridge", name: "Ridge" } as Agent]]);
+
+  it("shows the last update, the pull request, the ask, and a hint per choice on a stalled review", () => {
+    const el = render(
+      <AttentionQueueRow
+        item={stalledReviewItem({
+          kind: "review",
+          lastUpdate: {
+            commentId: "comment-9",
+            authorAgentId: "agent-ridge",
+            excerpt: "The billing page now shows fees.",
+            createdAt: "2026-07-09T12:00:00Z",
+          },
+          workProduct: { type: "pull_request", title: "Billing fees", url: "https://github.com/acme/app/pull/12" },
+          images: [],
+        })}
+        companyId="c1"
+        expanded
+        onToggleExpand={noop}
+        onDismiss={noop}
+        agentMap={ridgeMap}
+      />,
+    );
+    const summary = el.querySelector('[data-testid="review-decision-summary"]');
+    expect(summary?.textContent).toContain("Ridge worked on this task");
+    expect(el.querySelector('[data-testid="review-last-update"]')?.textContent).toContain(
+      "The billing page now shows fees.",
+    );
+    const pr = el.querySelector<HTMLAnchorElement>('[data-testid="review-work-product"]');
+    expect(pr?.getAttribute("href")).toBe("https://github.com/acme/app/pull/12");
+    expect(pr?.textContent).toContain("Pull request: Billing fees");
+    const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1#comment-comment-9");
+    expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
+      "Ridge says this work is finished.",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-approve"]')?.textContent).toContain(
+      "The task is marked done.",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-request_changes"]')?.textContent).toContain(
+      "goes back to Ridge with your note",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-send_back"]')?.textContent).toContain(
+      "No note is necessary.",
+    );
+    // Each button points at its hint for screen readers.
+    const approve = el.querySelector('[data-testid="stalled-review-approve"]');
+    const hintId = approve?.getAttribute("aria-describedby");
+    expect(hintId && el.querySelector(`[id="${hintId}"]`)?.textContent).toContain("marked done");
+    // No internal jargon on the card.
+    expect(el.textContent).not.toMatch(/stalled|execution policy/i);
+  });
+
+  it("still explains the decision when there is no summary or work product", () => {
+    const el = render(
+      <AttentionQueueRow
+        item={stalledReviewItem({ kind: "review", lastUpdate: null, workProduct: null, images: [] })}
+        companyId="c1"
+        expanded
+        onToggleExpand={noop}
+        onDismiss={noop}
+      />,
+    );
+    expect(el.querySelector('[data-testid="review-no-update"]')).not.toBeNull();
+    expect(el.querySelector('[data-testid="review-work-product"]')).toBeNull();
+    expect(el.querySelector('[data-testid="review-ask"]')?.textContent).toContain(
+      "The assignee says this work is finished.",
+    );
+    expect(el.querySelector('[data-testid="stalled-review-hint-send_back"]')?.textContent).toContain(
+      "goes back to the assignee",
+    );
+    const thread = Array.from(el.querySelectorAll("a")).find((a) => a.textContent === "Read the full thread");
+    expect(thread?.getAttribute("href")).toBe("/PAP/issues/PAP-1");
   });
 
   // PAP-16506 P4: an opt-in policy warns before the card offers Approve, because
