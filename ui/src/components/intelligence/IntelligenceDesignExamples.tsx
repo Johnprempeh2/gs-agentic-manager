@@ -1,4 +1,5 @@
 import { MovementChip, RatingStars, SourceLink, VerdictCard } from "./IntelligenceCards";
+import { BrandLogo, TagChip } from "./IntelligenceMedia";
 
 /** Sample data for the design guide's "Intelligence cards" section. */
 export function IntelligenceDesignExamples() {
@@ -21,7 +22,8 @@ export function IntelligenceDesignExamples() {
           footer={<SourceLink href="https://example.com/muse-wonder">TechCrunch</SourceLink>}
         />
         <VerdictCard
-          eyebrow="AI coding · Free"
+          leading={<BrandLogo name="Cline" domain="cline.bot" size="lg" />}
+          eyebrow={<><TagChip>AI coding</TagChip><span>Free</span></>}
           title="Cline"
           href="https://example.com/cline"
           verdict="Open-source coding agent for the IDE and the command line."
@@ -32,6 +34,14 @@ export function IntelligenceDesignExamples() {
             </>
           }
         />
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <BrandLogo name="Anthropic" domain="anthropic.com" size="xl" />
+        <BrandLogo name="OpenAI" domain="openai.com" size="lg" />
+        <BrandLogo name="Google DeepMind" domain="deepmind.google" size="md" />
+        <BrandLogo name="Cline" size="sm" />
+        <span className="text-xs text-muted-foreground">Logo by domain through our server; with no key or no match, a monogram.</span>
+        <TagChip>Models</TagChip>
       </div>
       <div className="flex flex-wrap items-center gap-4 text-sm">
         <span className="inline-flex items-center gap-2">Up two <MovementChip movement={{ rankDelta: 2, scoreDelta: 1.4, isNew: false }} /></span>

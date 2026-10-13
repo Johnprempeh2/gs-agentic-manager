@@ -53,6 +53,32 @@ export const httpsUrlSchema = z
     }
   }, "Every item needs a real source: an https URL");
 
+/** A bare hostname for a brand logo: "anthropic.com", no scheme, path or port. */
+const DOMAIN_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i;
+export const intelligenceDomainSchema = z
+  .string()
+  .trim()
+  .regex(DOMAIN_RE, "Use a bare domain such as anthropic.com");
+
+/** The logo domain for an item: its own `domain`, else its URL's host without "www.". Null when neither gives one. */
+export function intelligenceDomain(item: { domain?: string | null; url?: string | null }): string | null {
+  if (item.domain && DOMAIN_RE.test(item.domain)) return item.domain.toLowerCase();
+  if (!item.url) return null;
+  try {
+    const host = new URL(item.url).hostname.toLowerCase().replace(/^www\./, "");
+    return DOMAIN_RE.test(host) ? host : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Optional visuals on any item: `domain` picks the brand logo (derived from
+ * `url` when missing) and `imageUrl` overrides the article's own og:image.
+ * Both optional, so data written before they existed still validates.
+ */
+const visuals = { domain: intelligenceDomainSchema.optional(), imageUrl: httpsUrlSchema.optional() };
+
 const countWords = (value: string) => value.trim().split(/\s+/).filter(Boolean).length;
 
 /** Text with a word ceiling: card text is short by rule, long analysis lives in the drawer. */
@@ -98,6 +124,7 @@ export const pulseSkillIdeaSchema = z
 
 export const pulseTrendSchema = z
   .object({
+    ...visuals,
     headline: label(),
     whyItMatters: words(50),
     freshness: z.enum(["today", "this_week", "emerging"]),
@@ -119,6 +146,7 @@ export const PULSE_TOOL_CATEGORIES = [
 
 export const pulseToolSchema = z
   .object({
+    ...visuals,
     name: label(80),
     url: httpsUrlSchema,
     what: words(35),
@@ -134,6 +162,7 @@ export const pulseToolSchema = z
 
 export const pulseCreatorSchema = z
   .object({
+    ...visuals,
     creator: label(120),
     platform: label(60),
     content: label(),
@@ -178,6 +207,7 @@ export type DailyPulseSections = z.infer<typeof dailyPulseSectionsSchema>;
  */
 export const briefingNewsItemSchema = z
   .object({
+    ...visuals,
     headline: label(400),
     tag: label(60),
     date: intelligenceDateSchema,
@@ -195,6 +225,7 @@ export const briefingNewsItemSchema = z
 
 export const radarEmergingSchema = z
   .object({
+    ...visuals,
     name: label(120),
     by: label(120),
     what: words(40),
@@ -206,6 +237,7 @@ export const radarEmergingSchema = z
 
 export const radarMoverSchema = z
   .object({
+    ...visuals,
     name: label(),
     direction: z.enum(["up", "down"]),
     note: words(40),
@@ -215,7 +247,7 @@ export const radarMoverSchema = z
   .strict();
 
 export const radarWatchSchema = z
-  .object({ name: label(), note: words(60), tag: label(60), url: httpsUrlSchema })
+  .object({ ...visuals, name: label(), note: words(60), tag: label(60), url: httpsUrlSchema })
   .strict();
 
 export const aiBriefingSectionsSchema = z
@@ -261,6 +293,7 @@ export type UpsertIntelligenceReport = z.infer<typeof upsertIntelligenceReportSc
 
 export const boardEntrySchema = z
   .object({
+    ...visuals,
     name: label(120),
     rank: z.number().int().min(1).max(500),
     /** Board score (AI Systems, Tools and Agents) or Intelligence Index (Frontier Models). */

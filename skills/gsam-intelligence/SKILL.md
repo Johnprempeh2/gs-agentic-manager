@@ -16,7 +16,8 @@ You run the Intelligence page for this company. Every morning you research the A
 - **Real sources only.** Every trend, tool, creator item, news item, radar item and opportunity carries an `https` URL you actually opened this run. The API refuses an item without one. Never invent a URL, a figure, a quote, a date or a score. If you cannot confirm a story, drop it; if it is a credible rumour, set `rumoured: true` on the news item.
 - **Write for the card.** On the card: one verdict sentence (40 words at most), up to five points (25 words each, the first three show), one "Do this" line (35 words at most). Long analysis goes in `take` (400 words at most) and `lens` (160 words at most), which sit behind "Full analysis". The API counts the words and refuses overlong card text.
 - **British English, no em or en dashes.** Use commas, colons, full stops or brackets; write "to" for ranges.
-- **Never print or paste secrets.** No API keys or tokens in reports, comments or logs. Logos are not part of this page; do not fetch or store a logo key.
+- **Never print or paste secrets.** No API keys or tokens in reports, comments or logs. Logos come from GSAM itself (the operator sets the Logo.dev key on the server); you only name the `domain`, never fetch or store a logo key.
+- **Logos and images.** Give every trend, tool, creator, news item, radar item and board entry a `domain`: the bare brand domain whose logo should show (`anthropic.com`, `openai.com`, `cursor.com`; no `https://`, no path). For news and trends that is the publisher (`techcrunch.com`); for tools, radar items and board entries it is the maker. Leave it out only when the item's `url` is already on that domain: GSAM falls back to the URL's host. Add `imageUrl` (an `https` image you saw on the page, such as its og:image) only when the article's own preview is wrong or missing; GSAM otherwise reads the page's og:image itself.
 - **Do not deploy anything.** This page replaces the old static Daily Pulse and AI hub sites; do not publish to Netlify.
 
 ## Setup
@@ -46,9 +47,9 @@ Use `$GSAM_API_URL`, `$GSAM_COMPANY_ID` and `Authorization: Bearer $GSAM_API_KEY
   "sections": {
     "quickWin": { "title": "...", "action": "...", "timeNeeded": "20 minutes", "outcome": "...", "url": "https://..." },
     "skillIdeas": [{ "name": "...", "what": "...", "whyNow": "...", "buildEstimate": "quick|medium|deep", "clientValue": "...", "sourceUrl": "https://..." }],
-    "trends": [{ "headline": "...", "whyItMatters": "...", "freshness": "today|this_week|emerging", "sourceName": "TechCrunch", "url": "https://...", "learnMore": [{ "label": "...", "url": "https://...", "tag": "Docs" }] }],
-    "tools": [{ "name": "...", "url": "https://...", "what": "...", "category": "automation|ai_coding|design|productivity|data|content|other", "pricing": "Freemium", "personalRating": 4, "clientRating": 3, "flaggedBy": "Matt Wolfe", "quickTake": "...", "learnMore": [] }],
-    "creators": [{ "creator": "...", "platform": "YouTube", "content": "...", "why": "...", "url": "https://...", "newFace": false }],
+    "trends": [{ "headline": "...", "whyItMatters": "...", "freshness": "today|this_week|emerging", "sourceName": "TechCrunch", "url": "https://...", "domain": "techcrunch.com", "learnMore": [{ "label": "...", "url": "https://...", "tag": "Docs" }] }],
+    "tools": [{ "name": "...", "url": "https://...", "domain": "cursor.com", "what": "...", "category": "automation|ai_coding|design|productivity|data|content|other", "pricing": "Freemium", "personalRating": 4, "clientRating": 3, "flaggedBy": "Matt Wolfe", "quickTake": "...", "learnMore": [] }],
+    "creators": [{ "creator": "...", "platform": "YouTube", "content": "...", "why": "...", "url": "https://...", "domain": "youtube.com", "newFace": false }],
     "opportunities": [{ "title": "...", "triggeredBy": "...", "targetClients": "...", "revenuePotential": "low|medium|high", "revenueReason": "...", "nextStep": "...", "explorePrompt": "...", "sources": [{ "label": "...", "url": "https://..." }] }]
   }
 }
@@ -66,11 +67,11 @@ Aim for 2 to 3 skill ideas, 3 to 5 trends, 3 to 5 tools, 2 to 3 creator items, 2
   "status": "draft",
   "headline": "The lead story in one line",
   "sections": {
-    "news": [{ "headline": "...", "tag": "Meta · Models", "date": "YYYY-MM-DD", "sourceName": "TechCrunch", "url": "https://...", "verdict": "...", "points": ["...", "...", "..."], "action": "...", "take": "...", "lens": "...", "lead": true, "rumoured": false }],
+    "news": [{ "headline": "...", "tag": "Meta · Models", "date": "YYYY-MM-DD", "sourceName": "TechCrunch", "url": "https://...", "domain": "techcrunch.com", "imageUrl": "https://... (optional)", "verdict": "...", "points": ["...", "...", "..."], "action": "...", "take": "...", "lens": "...", "lead": true, "rumoured": false }],
     "radar": {
-      "emerging": [{ "name": "...", "by": "...", "what": "...", "why": "...", "status": "Launched 8 Oct 2026", "url": "https://..." }],
-      "movers": [{ "name": "...", "direction": "up|down", "note": "...", "tag": "OpenAI", "url": "https://..." }],
-      "watchlist": [{ "name": "...", "note": "...", "tag": "Anthropic", "url": "https://..." }]
+      "emerging": [{ "name": "...", "by": "...", "what": "...", "why": "...", "status": "Launched 8 Oct 2026", "url": "https://...", "domain": "maker.com" }],
+      "movers": [{ "name": "...", "direction": "up|down", "note": "...", "tag": "OpenAI", "url": "https://...", "domain": "openai.com" }],
+      "watchlist": [{ "name": "...", "note": "...", "tag": "Anthropic", "url": "https://...", "domain": "anthropic.com" }]
     }
   }
 }
@@ -85,11 +86,12 @@ One call per board: `ai_systems`, `frontier_models`, `tools_agents`.
 `PUT /api/companies/$GSAM_COMPANY_ID/intelligence/boards/{board}/snapshots/DATE`
 
 ```json
-{ "entries": [{ "name": "Claude", "rank": 1, "score": 97.3, "maker": "Anthropic", "flagship": "Claude Opus 5.5", "verdict": "...", "url": "https://...", "specs": { "priceIn": 5, "priceOut": 25, "context": "1M", "speed": 80, "gpqa": 88, "swe": 79, "hle": null } }] }
+{ "entries": [{ "name": "Claude", "rank": 1, "score": 97.3, "maker": "Anthropic", "domain": "anthropic.com", "flagship": "Claude Opus 5.5", "verdict": "...", "url": "https://...", "specs": { "priceIn": 5, "priceOut": 25, "context": "1M", "speed": 80, "gpqa": 88, "swe": 79, "hle": null } }] }
 ```
 
 - `score` is the board score for AI Systems and Tools and Agents, and the Artificial Analysis Intelligence Index for Frontier Models (read each lab's current flagship page at max effort; `null` if unpublished).
 - Change a score only with dated, sourced evidence from today's sweep (a launch, a major feature, a pricing move, an outage). Keep the same names day to day so movement lines up; a renamed entry shows as new.
+- `domain` is the maker's domain and drives the podium and table logos; set it on every entry, even when `url` points elsewhere (a docs page, a leaderboard).
 - `specs` feeds the Compare tab; write it for Frontier Models. Use `null` for figures that are not published.
 - Movement is computed by GSAM against the snapshot about a week earlier. Do not write deltas yourself.
 - On Mondays, re-score every board from fresh research instead of carrying scores forward.

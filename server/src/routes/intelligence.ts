@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import { and, asc, desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
@@ -33,6 +33,7 @@ import {
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { intelligenceMediaService, type Media } from "../services/intelligence-media.js";
 import { accessService, issueService, logActivity } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 
@@ -106,7 +107,7 @@ function toRecommendation(
   };
 }
 
-export function intelligenceRoutes(db: Db) {
+export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
   const router = Router();
   const access = accessService(db);
 
@@ -348,6 +349,34 @@ export function intelligenceRoutes(db: Db) {
       });
     },
   );
+
+  // ---------- Logos and images (same-origin proxy, GRE-405) ----------
+
+  function sendMedia(res: Response, found: Media | null) {
+    // Same-origin bytes, never run as a document; misses are cached briefly too.
+    res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", `private, max-age=${found ? 86_400 : 3_600}`);
+    if (!found) {
+      res.status(404).end();
+      return;
+    }
+    res.type(found.contentType).send(found.body);
+  }
+
+  /** Brand logo by bare domain via Logo.dev (GSAM_LOGODEV_PUBLISHABLE_KEY). 404 with no key or no match: the page shows a monogram. */
+  router.get("/companies/:companyId/intelligence/logo/:domain", async (req, res) => {
+    assertCompanyAccess(req, req.params.companyId as string);
+    sendMedia(res, await media.logo(String(req.params.domain)));
+  });
+
+  /** `?url=` an image, or a page whose og:image / twitter:image is served. 404 when there is none. */
+  router.get("/companies/:companyId/intelligence/image", async (req, res) => {
+    assertCompanyAccess(req, req.params.companyId as string);
+    const url = typeof req.query.url === "string" ? req.query.url : "";
+    if (!/^https?:\/\//i.test(url) || url.length > 2000) throw unprocessable("url must be an http(s) URL");
+    sendMedia(res, await media.image(url));
+  });
 
   // ---------- Recommendations ----------
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeBoardMovement,
+  intelligenceDomain,
   pickComparisonSnapshotDate,
   upsertBoardSnapshotSchema,
   upsertIntelligenceReportSchema,
@@ -82,6 +83,47 @@ describe("intelligence validators", () => {
     expect(
       upsertBoardSnapshotSchema.safeParse({ entries: [{ name: "Claude", rank: 1, score: 97 }, { name: "claude", rank: 2, score: 96 }] }).success,
     ).toBe(false);
+  });
+
+  it("accepts domain and imageUrl everywhere, keeps old data valid, and refuses a bad domain or image", () => {
+    const visuals = { domain: "meta.com", imageUrl: "https://cdn.example.com/muse.png" };
+    const briefing = upsertIntelligenceReportSchema.safeParse({
+      kind: "ai_briefing",
+      sections: {
+        news: [{ ...news, ...visuals }],
+        radar: {
+          emerging: [{ ...visuals, name: "Muse", by: "Meta", what: "A model.", why: "It matters.", status: "Beta", url: "https://meta.com" }],
+          movers: [{ ...visuals, name: "Muse", direction: "up", note: "Climbing.", tag: "Models", url: "https://meta.com" }],
+          watchlist: [{ ...visuals, name: "Muse", note: "Watch it.", tag: "Models", url: "https://meta.com" }],
+        },
+      },
+    });
+    expect(briefing.success).toBe(true);
+    const creator = { creator: "Fireship", platform: "YouTube", content: "Muse in 100 seconds", why: "Fast primer.", url: "https://youtube.com/watch?v=1" };
+    const trend = { headline: "Muse", whyItMatters: "It matters.", freshness: "today", sourceName: "TechCrunch", url: "https://techcrunch.com/a" };
+    expect(
+      upsertIntelligenceReportSchema.safeParse({
+        ...pulse,
+        sections: { ...pulse.sections, tools: [{ ...tool, ...visuals }], creators: [{ ...creator, ...visuals }], trends: [{ ...trend, ...visuals }] },
+      }).success,
+    ).toBe(true);
+    expect(upsertBoardSnapshotSchema.safeParse({ entries: [{ name: "Claude", rank: 1, score: 97, ...visuals }] }).success).toBe(true);
+    // Old data, written before visuals existed, is unchanged and still valid.
+    expect(upsertBoardSnapshotSchema.safeParse({ entries: [{ name: "Claude", rank: 1, score: 97 }] }).success).toBe(true);
+    expect(upsertIntelligenceReportSchema.safeParse(pulse).success).toBe(true);
+
+    for (const domain of ["https://meta.com", "meta.com/path", "localhost", "meta"]) {
+      expect(upsertBoardSnapshotSchema.safeParse({ entries: [{ name: "Claude", rank: 1, score: 97, domain }] }).success).toBe(false);
+    }
+    expect(upsertBoardSnapshotSchema.safeParse({ entries: [{ name: "Claude", rank: 1, score: 97, imageUrl: "http://x.com/a.png" }] }).success).toBe(false);
+  });
+
+  it("derives the logo domain from the url when none is given", () => {
+    expect(intelligenceDomain({ domain: "Anthropic.com", url: "https://claude.ai" })).toBe("anthropic.com");
+    expect(intelligenceDomain({ url: "https://www.techcrunch.com/2026/10/12/x/" })).toBe("techcrunch.com");
+    expect(intelligenceDomain({ url: "https://10.0.0.1/x" })).toBeNull();
+    expect(intelligenceDomain({ url: "not a url" })).toBeNull();
+    expect(intelligenceDomain({})).toBeNull();
   });
 });
 
