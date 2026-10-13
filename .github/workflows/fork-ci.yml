@@ -63,6 +63,9 @@ jobs:
       - name: No em or en dashes in user-facing copy
         run: node scripts/check-no-dashes.mjs
 
+      - name: Every company page route is registered
+        run: node scripts/check-company-routes.mjs
+
       - name: Only fork-owned workflows
         run: node scripts/check-fork-workflows.mjs
 

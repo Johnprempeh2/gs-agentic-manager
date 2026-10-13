@@ -51,6 +51,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "memory",
   "website",
   "tutorials",
+  "intelligence",
   "runs",
   "budgets",
   "plugins",
