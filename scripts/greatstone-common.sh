@@ -9,6 +9,7 @@
 #   GSAM_PREVIEW_PORT   preview server port       (default 3200)
 #   GSAM_RELEASE_REPO   git repo that holds the rc-*/live-* tags (default: this checkout)
 #   GSAM_LIVE_BOARD_KEY_FILE  board API key for the live server (default $GSAM_ROOT/release-board-key)
+#   GSAM_TEST_GATE_DIR  release test gate: clone, logs, pass markers (default $GSAM_ROOT/test-gate)
 #
 # When live runs in login mode (authenticated), the restart request, the
 # serverInfo read and the active-run count need a board login. The scripts send
@@ -35,6 +36,7 @@ PREVIEW_PORT="${GSAM_PREVIEW_PORT:-3200}"
 PREVIEW_URL="http://localhost:$PREVIEW_PORT"
 RELEASE_REPO="${GSAM_RELEASE_REPO:-$GS_TOOLS_ROOT}"
 LIVE_BOARD_KEY_FILE="${GSAM_LIVE_BOARD_KEY_FILE:-$GS_ROOT/release-board-key}"
+TEST_GATE_DIR="${GSAM_TEST_GATE_DIR:-$GS_ROOT/test-gate}"
 INSTANCE_ID="default"
 
 export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
@@ -190,6 +192,20 @@ rc_tag_title() {
   say "$title"
 }
 
+# test_gate_check <commit> <tag>
+# Fails with the reason when the full test suite has not passed on <commit>:
+# scripts/greatstone-test-gate.sh writes $TEST_GATE_DIR/passed/<commit> only
+# when every lane passed on exactly that commit.
+test_gate_check() {
+  local marker="$TEST_GATE_DIR/passed/$1"
+  if [ -f "$marker" ]; then
+    say "the full test suite passed on $2 ($1) at $(sed -n 's/^passed_at=//p' "$marker")"
+    return 0
+  fi
+  say "the full test suite has not passed on $2 ($1): there is no pass marker $marker. Run it first: scripts/greatstone-test-gate.sh $2 (about 15 minutes on the PC). Only in an emergency: greatstone-release.sh --skip-test-gate \"<reason>\" $2 (logged in $TEST_GATE_DIR/overrides.log). Nothing was changed."
+  return 1
+}
+
 # Makes the annotated <live-tag> on <commit> with the message of <rc-tag>: its
 # title and changelog (GRE-120). The one place a live-* tag is made, for a
 # release from the app and a release by hand alike.
@@ -217,7 +233,7 @@ drop_unpushed_live_tag() {
 # origin/main (fetch first). A dev checkout that was not pulled runs an old
 # release script; before GRE-120 that one wrote a generic live tag message
 # with no title or changelog (GRE-178).
-RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh)
+RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh scripts/greatstone-test-gate.sh)
 release_scripts_current() {
   local repo="$1" files
   files="$(git -C "$repo" diff --name-only origin/main -- "${RELEASE_SCRIPT_FILES[@]}" 2>&1)" \

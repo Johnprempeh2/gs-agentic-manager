@@ -64,6 +64,7 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/routines-e2e.test.ts",
 ]);
 let invocationIndex = 0;
+const failedInvocations = [];
 const serializedModeName = "serialized";
 const generalModeName = "general";
 const allModeName = "all";
@@ -351,9 +352,9 @@ function runVitest(args, label, testShard = null) {
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
+  // Keep going: a lane that stops at its first failing invocation hides every
+  // later failure (the serialized lanes run one suite per invocation).
+  if (result.status !== 0) failedInvocations.push(label);
 }
 
 function runGeneralSuites(routeTests) {
@@ -560,4 +561,9 @@ if (options.mode === generalModeName || options.mode === allModeName) {
 
 if (options.mode === serializedModeName || options.mode === allModeName) {
   runSerializedSuites(routeTests, options.shardIndex ?? 0, options.shardCount ?? 1);
+}
+
+if (failedInvocations.length > 0) {
+  console.error(`\n[test:run] ${failedInvocations.length} vitest invocation(s) failed:\n${failedInvocations.map((l) => `  - ${l}`).join("\n")}`);
+  process.exit(1);
 }

@@ -109,6 +109,11 @@ to it.
   `--dry-run`). A fork pull request waits for GitHub CI.
   Note on the issue that the merge used `local-ci`. Runner and vitest lanes are
   not part of it; they are not part of Fork CI on pull requests either.
+- **Green CI is not green tests.** Fork CI runs no tests on pull requests or
+  main (the Tests lanes run only by hand, to save Actions minutes). Failing
+  tests can merge; they are stopped at the release by the test gate (step 3).
+  Run the tests your change touches before you open the pull request, and
+  name them under "Tests run".
 
 ## Taking upstream code
 
@@ -286,6 +291,24 @@ Merging does not change the live app. A version goes live in these steps.
    a version that never ran (GRE-239). A release from the app that is cancelled,
    or stops before the switch, deletes the `rc-*` tag it cut.
 
+   **Test gate.** A candidate is releasable only when the full test suite
+   passed on its exact commit. `greatstone-candidate.mjs` runs it right after
+   it cuts the tag (`scripts/greatstone-test-gate.sh <rc-tag>`, about 15
+   minutes on the PC): the lanes in `scripts/greatstone-test-gate.lanes` (the
+   Fork CI Tests matrix: server, chat, serialized route suites, UI and CLI,
+   packages) in parallel, in a clean clone at `~/GSAM/test-gate/code`. Run it
+   on the PC, never on the Mac. A pass writes `~/GSAM/test-gate/passed/<commit>`;
+   `greatstone-release.sh` refuses an `rc-*` tag without one. A failure names
+   each failing lane and test, with logs under `~/GSAM/test-gate/logs/<commit>/`,
+   and the candidate is not releasable: fix the tests on `main` (root cause:
+   fix the code, or the test if it asserts stale behaviour; never skip or
+   delete a test to go green) and cut a new candidate. A test that passes
+   alone but fails under the gate's load is a flake: fix its timing or give it
+   a longer timeout, and say so. `--no-test-gate` cuts the tag only; run the
+   gate before the hand-off to Flint. `scripts/greatstone-test-gate.sh --check
+   <rc-tag>` says whether a tag has passed. The release task names the gate
+   result ("Test gate: passed <time>").
+
    John releases the `rc-*` tag that Flint checked, by hand (step 6).
 
    The release note starts with the change list. Do not write it by hand:
@@ -354,8 +377,10 @@ Merging does not change the live app. A version goes live in these steps.
    live, a proposed title and the changelog, and Fork CI on that commit), the
    history, and the progress. **Release now** needs no prepared candidate: the
    server cuts the `rc-*` tag from `origin/main` itself, with the title and the
-   changelog, once Fork CI on that commit is green. A checked `rc-*` tag can
-   also be released. Keystone may edit the proposed title
+   changelog, once Fork CI on that commit is green. The release script then
+   refuses that tag unless the test gate already passed on the same commit
+   (the app runs no gate), so in practice the page releases only a commit the
+   gate passed. A checked `rc-*` tag can also be released. Keystone may edit the proposed title
    (`PATCH /api/companies/:companyId/releases/next`); nothing else. The
    "Update live?" card (a `request_confirmation` with `idempotencyKey`
    `live-release:rc-YYYY-MM-DD.N`) still works and calls the same service, but
@@ -410,6 +435,18 @@ Merging does not change the live app. A version goes live in these steps.
    pull first. It also refuses an rc tag that does not contain the live commit
    (an older candidate), so a release never goes backwards; to go back, roll
    back with a `live-*` tag (GRE-839).
+
+   It refuses an `rc-*` tag whose commit has no test gate pass (step 3) and
+   says how to run the gate; nothing is backed up or tagged. Only in an
+   emergency (live is broken and the fix cannot wait for the gate):
+
+   ```sh
+   scripts/greatstone-release.sh --skip-test-gate "live is down, GRE-123 fix" rc-YYYY-MM-DD.N
+   ```
+
+   The reason is required. Each override is a line in
+   `~/GSAM/test-gate/overrides.log` (time, tag, commit, user, reason); run the
+   gate on that tag afterwards. A rollback to a `live-*` tag needs no gate.
 
    **Full stop and start.** When the release task says so (a fix to the dev
    runner itself, such as #274), John runs
