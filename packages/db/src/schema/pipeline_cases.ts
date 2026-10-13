@@ -47,8 +47,9 @@ export const pipelineCases = pgTable(
     caseKey: text("case_key").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
-    // The organisation record this case is about (GRE-1478). Required on
-    // pipelines with requires_organisation; optional elsewhere.
+    // The organisation record this case is about (GRE-1478). The service
+    // requires it on every create and save (GRE-1538); the column stays
+    // nullable for cards made before the backfill and for a deleted record.
     organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
     fields: jsonb("fields").$type<Record<string, unknown>>().notNull().default({}),
     workspaceRef: jsonb("workspace_ref").$type<PipelineCaseWorkspaceRef>(),
