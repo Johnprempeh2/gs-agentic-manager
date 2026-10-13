@@ -55,6 +55,7 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   updateDeliverableSchema,
+  setCaseNdaSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -4415,10 +4416,10 @@ registry.registerPath({
   method: "put",
   path: "/api/cases/{caseId}/nda",
   tags: ["issues"],
-  summary: "Record or clear the client's accepted NDA (board only); client-labelled deliverables reach the portal only once it is recorded",
+  summary: "Set the client's NDA status (board only): required (default, holds client-labelled deliverables off the portal), accepted, or suspended with a reason. The older { accepted } body maps to accepted or required",
   request: {
     params: z.object({ caseId: z.string() }),
-    body: jsonBody(z.object({ accepted: z.boolean() })),
+    body: jsonBody(setCaseNdaSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });

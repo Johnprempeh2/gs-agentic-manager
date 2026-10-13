@@ -16,6 +16,7 @@ import {
 import {
   DEFAULT_DELIVERABLE_BRAND,
   DEFAULT_DELIVERABLE_CONFIDENTIALITY,
+  DELIVERABLE_AUDIENCE_CONFIDENTIALITY,
   deliverableKeyFromTitle,
   deliverablesQuerySchema,
   type CreateDeliverable,
@@ -611,6 +612,10 @@ export function deliverableService(db: Db, storage?: StorageService) {
       if (query.projectId) conditions.push(eq(issues.projectId, query.projectId));
       if (query.agentId) conditions.push(sql`${issueWorkProducts.metadata}->>'createdByAgentId' = ${query.agentId}`);
       if (query.confidentiality) conditions.push(sql`${confidentialityExpression} = ${query.confidentiality}`);
+      if (query.audience) {
+        const labels = DELIVERABLE_AUDIENCE_CONFIDENTIALITY[query.audience];
+        conditions.push(sql`${confidentialityExpression} IN (${sql.join(labels.map((label) => sql`${label}`), sql`, `)})`);
+      }
       if (query.linkHealth === "broken") {
         conditions.push(sql`${issueWorkProducts.metadata}->'linkCheck'->>'ok' = 'false'`);
       }

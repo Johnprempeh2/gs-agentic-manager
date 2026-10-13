@@ -47,11 +47,24 @@ export interface ClientJourneyStage {
   expected: ClientJourneyExpectedDeliverable[];
 }
 
+/** A case's NDA: required (the default), accepted (with its date) or suspended (with its reason). */
+export interface ClientNda {
+  status: "required" | "accepted" | "suspended";
+  acceptedAt: string | null;
+  /** Why the NDA is suspended; set only while suspended. */
+  suspendedReason: string | null;
+  /** The board user who last changed the status (name, else null) and when. */
+  changedBy: string | null;
+  changedAt: string | null;
+}
+
 /** GET /api/cases/:caseId/journey — the internal, per-stage view of a client. */
 export interface ClientJourneyResponse {
   caseId: string;
-  /** When the board recorded the client's accepted NDA; client-labelled items reach the portal only after it. */
+  /** When the board recorded the client's accepted NDA (null unless `nda.status` is accepted). Kept for older callers. */
   ndaAcceptedAt: string | null;
+  /** The NDA: client-labelled items reach the portal once it is accepted or suspended. */
+  nda: ClientNda;
   stages: ClientJourneyStage[];
   /** Deliverables on the client's tasks and projects that are not filed under a stage yet. */
   unfiled: Deliverable[];

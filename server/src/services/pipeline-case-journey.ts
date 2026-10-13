@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
+  authUsers,
   issueWorkProducts,
   pipelineCaseEvents,
   pipelineCases,
@@ -10,6 +11,7 @@ import {
 import {
   DELIVERABLES_MAX_LIMIT,
   isClientPortalVisible,
+  ndaClears,
   journeyStageStates,
   pipelineStageExpectedDeliverableSchema,
   pipelineStageTemplateSchema,
@@ -18,6 +20,8 @@ import {
   type ClientJourneyStage,
   type ClientJourneyStageState,
   type ClientJourneyStageTemplate,
+  type ClientNda,
+  type NdaStatus,
   type ClientPortalJourneyResponse,
   type Deliverable,
 } from "@greatstone/shared";
@@ -59,6 +63,24 @@ function readExpected(config: Record<string, unknown> | null | undefined) {
   });
 }
 
+/** The NDA a case row records, as the journey shows it. */
+function ndaOf(row: {
+  ndaStatus: string;
+  ndaAcceptedAt: Date | null;
+  ndaSuspendedReason: string | null;
+  ndaStatusChangedAt: Date | null;
+  ndaChangedBy: string | null;
+}): ClientNda {
+  const status: NdaStatus = row.ndaStatus === "accepted" || row.ndaStatus === "suspended" ? row.ndaStatus : "required";
+  return {
+    status,
+    acceptedAt: status === "accepted" ? row.ndaAcceptedAt?.toISOString() ?? null : null,
+    suspendedReason: status === "suspended" ? row.ndaSuspendedReason : null,
+    changedBy: row.ndaChangedBy,
+    changedAt: row.ndaStatusChangedAt?.toISOString() ?? null,
+  };
+}
+
 export function pipelineCaseJourneyService(db: Db) {
   const files = pipelineCaseFilesService(db);
 
@@ -70,8 +92,13 @@ export function pipelineCaseJourneyService(db: Db) {
         pipelineId: pipelineCases.pipelineId,
         stageId: pipelineCases.stageId,
         ndaAcceptedAt: pipelineCases.ndaAcceptedAt,
+        ndaStatus: pipelineCases.ndaStatus,
+        ndaSuspendedReason: pipelineCases.ndaSuspendedReason,
+        ndaStatusChangedAt: pipelineCases.ndaStatusChangedAt,
+        ndaChangedBy: authUsers.name,
       })
       .from(pipelineCases)
+      .leftJoin(authUsers, eq(authUsers.id, pipelineCases.ndaStatusChangedByUserId))
       .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId), isNull(pipelineCases.retiredAt)))
       .then((rows) => rows[0] ?? null);
     if (!row) throw notFound("Pipeline case not found");
@@ -162,7 +189,8 @@ export function pipelineCaseJourneyService(db: Db) {
     return {
       caseId,
       title: caseRow.title,
-      ndaAcceptedAt: caseRow.ndaAcceptedAt?.toISOString() ?? null,
+      ndaAcceptedAt: caseRow.ndaStatus === "accepted" ? caseRow.ndaAcceptedAt?.toISOString() ?? null : null,
+      nda: ndaOf(caseRow),
       stages: [...sections.values()],
       unfiled: deliverables.filter((item) => !filed.has(deliverableRef(item))),
       stateById,
@@ -181,8 +209,8 @@ export function pipelineCaseJourneyService(db: Db) {
 
   return {
     journey: async (companyId: string, caseId: string): Promise<ClientJourneyResponse> => {
-      const { caseId: id, ndaAcceptedAt, stages, unfiled } = await getJourney(companyId, caseId);
-      return { caseId: id, ndaAcceptedAt, stages, unfiled };
+      const { caseId: id, ndaAcceptedAt, nda, stages, unfiled } = await getJourney(companyId, caseId);
+      return { caseId: id, ndaAcceptedAt, nda, stages, unfiled };
     },
 
     /** What the client sees on its portal: the visibility rule applied, outcome fields only. */
@@ -198,7 +226,7 @@ export function pipelineCaseJourneyService(db: Db) {
               status: item.deliverable.status,
               stageState: stage.state,
               confidentiality: item.deliverable.confidentiality,
-              ndaAccepted: journey.ndaAcceptedAt !== null,
+              ndaCleared: ndaClears(journey.nda.status),
             }))
             .map(({ deliverable }) => ({
               title: deliverable.title,
@@ -219,15 +247,35 @@ export function pipelineCaseJourneyService(db: Db) {
       return { caseId, title: journey.title, stages };
     },
 
-    /** Record (or clear) the client's accepted NDA. Board only; the route checks. */
-    setNdaAccepted: async (companyId: string, caseId: string, accepted: boolean) => {
-      await loadCase(companyId, caseId);
-      const [row] = await db
+    /**
+     * Set the client's NDA status. Board only; the route checks. Accepted
+     * keeps its first date while it stays accepted; a suspension needs its
+     * reason (the validator checks) and clears the accepted date.
+     */
+    setNda: async (
+      companyId: string,
+      caseId: string,
+      input: { status: NdaStatus; reason: string | null },
+      userId: string | null,
+    ): Promise<{ ndaAcceptedAt: string | null; nda: ClientNda }> => {
+      const current = await loadCase(companyId, caseId);
+      if (input.status === "suspended" && !input.reason?.trim()) throw unprocessable("A suspended NDA needs a reason");
+      const now = new Date();
+      await db
         .update(pipelineCases)
-        .set({ ndaAcceptedAt: accepted ? new Date() : null, updatedAt: new Date() })
-        .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)))
-        .returning({ ndaAcceptedAt: pipelineCases.ndaAcceptedAt });
-      return { ndaAcceptedAt: row?.ndaAcceptedAt?.toISOString() ?? null };
+        .set({
+          ndaStatus: input.status,
+          ndaAcceptedAt: input.status === "accepted"
+            ? (current.ndaStatus === "accepted" && current.ndaAcceptedAt ? current.ndaAcceptedAt : now)
+            : null,
+          ndaSuspendedReason: input.status === "suspended" ? input.reason!.trim() : null,
+          ndaStatusChangedAt: now,
+          ndaStatusChangedByUserId: userId,
+          updatedAt: now,
+        })
+        .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)));
+      const nda = ndaOf(await loadCase(companyId, caseId));
+      return { ndaAcceptedAt: nda.acceptedAt, nda };
     },
 
     /** File a deliverable in the client's scope under one of its stages. */

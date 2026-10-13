@@ -78,6 +78,7 @@ import { SidebarReleaseFooter } from "./SidebarReleaseFooter";
 import { useCanRelease } from "../hooks/useReleases";
 import { useHasBillingAccount } from "../hooks/useBillingAccount";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
+import { SidebarAskEverest } from "./MobileEverestButton";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
 
 function useStoredSectionOpen(section: string, initial: boolean) {
@@ -394,6 +395,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
 
       <nav className={primarySidebarStyles.nav}>
         <div className={primarySidebarStyles.group}>
+          {/* Ben, 13 Oct: the first thing in the sidebar is asking Everest, in words. */}
+          <div className="mb-1">
+            <SidebarAskEverest rail={rail} />
+          </div>
           {/* New Task button aligned with nav items */}
           {(() => {
             const newTaskButton = (

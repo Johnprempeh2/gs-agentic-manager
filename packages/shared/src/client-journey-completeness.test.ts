@@ -39,15 +39,15 @@ describe("portal confidentiality and NDA gate", () => {
   const base = { clientFacing: true, status: "final" as const, stageState: "done" as const };
 
   it("never shows internal items", () => {
-    expect(isClientPortalVisible({ ...base, confidentiality: "internal", ndaAccepted: true })).toBe(false);
+    expect(isClientPortalVisible({ ...base, confidentiality: "internal", ndaCleared: true })).toBe(false);
   });
 
   it("shows client items only once the NDA is accepted", () => {
-    expect(isClientPortalVisible({ ...base, confidentiality: "client", ndaAccepted: false })).toBe(false);
-    expect(isClientPortalVisible({ ...base, confidentiality: "client", ndaAccepted: true })).toBe(true);
+    expect(isClientPortalVisible({ ...base, confidentiality: "client", ndaCleared: false })).toBe(false);
+    expect(isClientPortalVisible({ ...base, confidentiality: "client", ndaCleared: true })).toBe(true);
   });
 
   it("shows public items without an NDA", () => {
-    expect(isClientPortalVisible({ ...base, confidentiality: "public", ndaAccepted: false })).toBe(true);
+    expect(isClientPortalVisible({ ...base, confidentiality: "public", ndaCleared: false })).toBe(true);
   });
 });

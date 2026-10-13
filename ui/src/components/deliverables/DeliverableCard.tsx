@@ -1,7 +1,14 @@
-import { Briefcase, Download, ExternalLink, Eye, FolderOpen, Link2 } from "lucide-react";
+import { Briefcase, ChevronDown, Download, ExternalLink, Eye, FolderOpen, History, Link2 } from "lucide-react";
 import type { Deliverable, DeliverableKind } from "@/api/deliverables";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
 import { DeliverableThumbnail } from "./DeliverableDocument";
@@ -59,13 +66,72 @@ function QuickAction({
   );
 }
 
+/**
+ * Every version a card stands for: its own versions (same task, same key) plus
+ * the older entries folded under it (same document under another key or task).
+ */
+export function deliverableVersionTotal(deliverable: Deliverable, olderVersions: readonly Deliverable[]): number {
+  return olderVersions.reduce((sum, entry) => sum + Math.max(entry.versionCount, 1), Math.max(deliverable.versionCount, 1));
+}
+
+/** The versions control: how many there are, and the older entries one click away. */
+function VersionsMenu({
+  deliverable,
+  olderVersions,
+  onOpenVersion,
+}: {
+  deliverable: Deliverable;
+  olderVersions: readonly Deliverable[];
+  onOpenVersion: (id: string) => void;
+}) {
+  const total = deliverableVersionTotal(deliverable, olderVersions);
+  if (total <= 1) return null;
+  if (olderVersions.length === 0) {
+    // Only this entry's own versions: Quick Look lists them.
+    return <span className="ml-auto shrink-0">v{deliverable.version} of {total}</span>;
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          data-testid="deliverable-versions"
+          className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <History className="h-3 w-3" aria-hidden="true" />
+          {total} versions
+          <ChevronDown className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuLabel>Versions of this document</DropdownMenuLabel>
+        {[deliverable, ...olderVersions].map((entry, index) => (
+          <DropdownMenuItem key={entry.id} onSelect={() => onOpenVersion(entry.id)} className="flex-col items-start gap-0">
+            <span className="w-full truncate text-sm">{entry.title}</span>
+            <span className="text-xs text-muted-foreground">
+              {index === 0 ? "Latest · " : ""}
+              {formatDate(entry.createdAt)} · {entry.issue.identifier}
+              {entry.versionCount > 1 ? ` · v${entry.version}` : ""}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function DeliverableCard({
   deliverable,
+  olderVersions = [],
   onPreview,
+  onOpenVersion,
   onCopyLink,
 }: {
   deliverable: Deliverable;
+  /** Older entries for the same document, newest first (see groupDeliverableDocuments). */
+  olderVersions?: readonly Deliverable[];
   onPreview: () => void;
+  onOpenVersion?: (id: string) => void;
   onCopyLink: () => void;
 }) {
   return (
@@ -163,9 +229,7 @@ export function DeliverableCard({
           </Link>
           <span aria-hidden="true">·</span>
           <time dateTime={deliverable.createdAt} className="shrink-0">{formatDate(deliverable.createdAt)}</time>
-          {deliverable.versionCount > 1 ? (
-            <span className="ml-auto shrink-0">v{deliverable.version}</span>
-          ) : null}
+          <VersionsMenu deliverable={deliverable} olderVersions={olderVersions} onOpenVersion={onOpenVersion ?? (() => onPreview())} />
         </div>
       </div>
     </article>

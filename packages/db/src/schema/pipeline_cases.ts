@@ -69,9 +69,14 @@ export const pipelineCases = pgTable(
     retiredByAttemptId: uuid("retired_by_attempt_id"),
     retiredReason: text("retired_reason"),
     hiddenFromBoardAt: timestamp("hidden_from_board_at", { withTimezone: true }),
-    // When the board recorded the client's accepted NDA. Client-labelled
-    // deliverables reach the client portal only once this is set.
+    // The client's NDA (0335): required (the default, holds client-labelled
+    // deliverables off the portal), accepted (ndaAcceptedAt is its date) or
+    // suspended (the engagement proceeds; ndaSuspendedReason says why).
+    ndaStatus: text("nda_status").$type<"required" | "accepted" | "suspended">().notNull().default("required"),
     ndaAcceptedAt: timestamp("nda_accepted_at", { withTimezone: true }),
+    ndaSuspendedReason: text("nda_suspended_reason"),
+    ndaStatusChangedAt: timestamp("nda_status_changed_at", { withTimezone: true }),
+    ndaStatusChangedByUserId: text("nda_status_changed_by_user_id"),
     childCount: integer("child_count").notNull().default(0),
     terminalChildCount: integer("terminal_child_count").notNull().default(0),
     createdByUserId: text("created_by_user_id"),

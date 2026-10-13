@@ -448,6 +448,7 @@ export * from "./validators/client-files.js";
 export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
 export * from "./client-journey.js";
+export * from "./deliverable-versions.js";
 export * from "./types/workflow-template.js";
 export * from "./validators/workflow-template.js";
 export * from "./types/document-evidence.js";
