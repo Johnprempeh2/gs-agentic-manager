@@ -63,6 +63,10 @@ const mockTrackAgentCreated = vi.hoisted(() => vi.fn());
 const mockGetTelemetryClient = vi.hoisted(() => vi.fn());
 const mockSyncInstructionsBundleConfigFromFilePath = vi.hoisted(() => vi.fn());
 
+const mockMailboxService = vi.hoisted(() => ({
+  assigned: vi.fn(async () => []),
+}));
+
 const mockAdapter = vi.hoisted(() => ({
   listSkills: vi.fn(),
   syncSkills: vi.fn(),
@@ -111,6 +115,11 @@ vi.mock("../services/instance-settings.js", async (importOriginal) => ({
   instanceSettingsService: () => mockInstanceSettingsService,
 }));
 
+vi.mock("../services/mailboxes.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../services/mailboxes.js")>()),
+  mailboxService: () => mockMailboxService,
+}));
+
 vi.mock("../adapters/index.js", () => ({
   findServerAdapter: vi.fn(() => mockAdapter),
   findActiveServerAdapter: vi.fn(() => mockAdapter),
@@ -152,6 +161,11 @@ function registerModuleMocks() {
   vi.doMock("../services/instance-settings.js", async (importOriginal) => ({
     ...(await importOriginal<typeof import("../services/instance-settings.js")>()),
     instanceSettingsService: () => mockInstanceSettingsService,
+  }));
+
+  vi.doMock("../services/mailboxes.js", async (importOriginal) => ({
+    ...(await importOriginal<typeof import("../services/mailboxes.js")>()),
+    mailboxService: () => mockMailboxService,
   }));
 
   vi.doMock("../adapters/index.js", () => ({
