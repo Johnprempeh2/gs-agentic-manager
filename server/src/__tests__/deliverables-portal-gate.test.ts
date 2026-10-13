@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
@@ -11,6 +13,7 @@ import {
 import { errorHandler } from "../middleware/error-handler.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { deliverableService } from "../services/deliverables.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -193,6 +196,82 @@ describeEmbeddedPostgres("client portal confidentiality and NDA gate", () => {
     await http.put(`/api/cases/${caseId}/nda`).send({ accepted: false }).expect(200);
     expect(await titles()).toEqual(["Launch site"]);
     expect(JSON.stringify((await http.get(`/api/cases/${caseId}/portal`).expect(200)).body)).not.toContain("North Star");
+  });
+
+  it("has three NDA states: required holds client items, accepted and suspended (with a reason) let them through", async () => {
+    const { company, project, caseId, stageId } = await seed();
+    const http = request(app());
+    const client = await seedLink(company.id, project.id, { key: "deck", title: "Pre-read deck", confidentiality: "client" });
+    await http.post(`/api/cases/${caseId}/journey/deliverables`)
+      .send({ stageId: stageId("discovery"), deliverableId: client.id, clientFacing: true })
+      .expect(201);
+    await moveTo(caseId, "gita");
+    const titles = async () => (await http.get(`/api/cases/${caseId}/portal`).expect(200)).body.stages
+      .flatMap((stage: { deliverables: Array<{ title: string }> }) => stage.deliverables.map((item) => item.title));
+    const nda = async () => (await http.get(`/api/cases/${caseId}/journey`).expect(200)).body.nda;
+
+    // A new case starts at required.
+    expect(await nda()).toMatchObject({ status: "required", acceptedAt: null, suspendedReason: null });
+    expect(await titles()).toEqual([]);
+
+    // Suspended needs a reason, and only the board may set it.
+    await http.put(`/api/cases/${caseId}/nda`).send({ status: "suspended" }).expect(400);
+    const agentHttp = request(app({
+      type: "agent",
+      agentId: randomUUID(),
+      companyId: company.id,
+      runId: randomUUID(),
+      source: "agent_key",
+    }));
+    await agentHttp.put(`/api/cases/${caseId}/nda`).send({ status: "suspended", reason: "Under way" }).expect(403);
+
+    const suspended = await http.put(`/api/cases/${caseId}/nda`)
+      .send({ status: "suspended", reason: "Engagement already under way" })
+      .expect(200);
+    expect(suspended.body.nda).toMatchObject({
+      status: "suspended",
+      suspendedReason: "Engagement already under way",
+      acceptedAt: null,
+      changedAt: expect.any(String),
+    });
+    expect(await titles()).toEqual(["Pre-read deck"]);
+
+    const accepted = await http.put(`/api/cases/${caseId}/nda`).send({ status: "accepted" }).expect(200);
+    expect(accepted.body.nda).toMatchObject({ status: "accepted", acceptedAt: expect.any(String), suspendedReason: null });
+    expect(accepted.body.ndaAcceptedAt).toBe(accepted.body.nda.acceptedAt);
+    expect(await titles()).toEqual(["Pre-read deck"]);
+
+    await http.put(`/api/cases/${caseId}/nda`).send({ status: "required" }).expect(200);
+    expect(await nda()).toMatchObject({ status: "required", acceptedAt: null });
+    expect(await titles()).toEqual([]);
+  });
+
+  it("filters the deliverables list by audience: client-facing is client and public, internal is internal", async () => {
+    const { company, project } = await seed();
+    await seedLink(company.id, project.id, { key: "north-star", title: "North Star summary" });
+    await seedLink(company.id, project.id, { key: "deck", title: "Pre-read deck", confidentiality: "client" });
+    await seedLink(company.id, project.id, { key: "site", title: "Launch site", confidentiality: "public" });
+    const titles = async (audience: "client_facing" | "internal") =>
+      (await deliverableService(db).list(company.id, { audience })).deliverables.map((item) => item.title).sort();
+    expect(await titles("client_facing")).toEqual(["Launch site", "Pre-read deck"]);
+    expect(await titles("internal")).toEqual(["North Star summary"]);
+  });
+
+  it("migrates a recorded nda_accepted_at to accepted", async () => {
+    const { caseId } = await seed();
+    const acceptedAt = new Date("2026-10-01T09:00:00Z");
+    // What 0335 does to a case that recorded an NDA under 0334.
+    await db.execute(sql`UPDATE "pipeline_cases" SET "nda_accepted_at" = ${acceptedAt.toISOString()}::timestamptz, "nda_status" = 'required' WHERE "id" = ${caseId}`);
+    const migration = readFileSync(
+      fileURLToPath(new URL("../../../packages/db/src/migrations/0335_pipeline_case_nda_status.sql", import.meta.url)),
+      "utf8",
+    );
+    const backfill = migration.split("--> statement-breakpoint").map((part) => part.trim()).find((part) => part.startsWith("UPDATE"));
+    expect(backfill).toBeDefined();
+    await db.execute(sql.raw(backfill!));
+    const journey = await request(app()).get(`/api/cases/${caseId}/journey`).expect(200);
+    expect(journey.body.nda).toMatchObject({ status: "accepted", acceptedAt: acceptedAt.toISOString() });
+    expect(journey.body.ndaAcceptedAt).toBe(acceptedAt.toISOString());
   });
 
   it("shows expected against filed per stage, with the gap", async () => {

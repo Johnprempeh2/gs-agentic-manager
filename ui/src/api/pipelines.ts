@@ -3,6 +3,8 @@ import type {
   ClientEvidenceItem,
   ClientFilesResponse,
   ClientJourneyResponse,
+  ClientNda,
+  NdaStatus,
   ClientPortalJourneyResponse,
   CreateClientJourneyDeliverableInput,
   UpdateClientJourneyDeliverable,
@@ -725,8 +727,8 @@ export const pipelinesApi = {
     api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
   removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
-  setCaseNda: (caseId: string, accepted: boolean) =>
-    api.put<{ ndaAcceptedAt: string | null }>(`/cases/${caseId}/nda`, { accepted }),
+  setCaseNda: (caseId: string, input: { status: NdaStatus; reason?: string | null }) =>
+    api.put<{ ndaAcceptedAt: string | null; nda: ClientNda }>(`/cases/${caseId}/nda`, input),
   createIssueLink: (
     caseId: string,
     data:

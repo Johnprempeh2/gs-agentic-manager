@@ -51,17 +51,17 @@ export function journeyStageStates(
  * The portal visibility rule: the client sees a deliverable only when it is
  * marked client-facing, it is final (not a draft), its stage is complete, and
  * its confidentiality lets it out: public always, client only once the case
- * has an accepted NDA, internal never.
+ * NDA is accepted or suspended (`ndaClears`), internal never.
  */
 export function isClientPortalVisible(input: {
   clientFacing: boolean;
   status: DeliverableStatus;
   stageState: ClientJourneyStageState | null | undefined;
   confidentiality: DeliverableConfidentiality;
-  ndaAccepted: boolean;
+  ndaCleared: boolean;
 }): boolean {
   if (!input.clientFacing || input.status !== "final" || input.stageState !== "done") return false;
-  return input.confidentiality === "public" || (input.confidentiality === "client" && input.ndaAccepted);
+  return input.confidentiality === "public" || (input.confidentiality === "client" && input.ndaCleared);
 }
 
 /**

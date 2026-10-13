@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isClientPortalVisible, journeyStageStates } from "./client-journey.js";
+import { ndaClears, resolveSetCaseNda, setCaseNdaSchema } from "./validators/client-journey.js";
 
 const stages = [
   { id: "discovery", kind: "working", position: 100 },
@@ -51,11 +52,40 @@ describe("journeyStageStates", () => {
 
 describe("isClientPortalVisible", () => {
   it("needs client-facing, final and a completed stage", () => {
-    expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState: "done", confidentiality: "public", ndaAccepted: false })).toBe(true);
-    expect(isClientPortalVisible({ clientFacing: false, status: "final", stageState: "done", confidentiality: "public", ndaAccepted: false })).toBe(false);
-    expect(isClientPortalVisible({ clientFacing: true, status: "draft", stageState: "done", confidentiality: "public", ndaAccepted: false })).toBe(false);
+    expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState: "done", confidentiality: "public", ndaCleared: false })).toBe(true);
+    expect(isClientPortalVisible({ clientFacing: false, status: "final", stageState: "done", confidentiality: "public", ndaCleared: false })).toBe(false);
+    expect(isClientPortalVisible({ clientFacing: true, status: "draft", stageState: "done", confidentiality: "public", ndaCleared: false })).toBe(false);
     for (const stageState of ["current", "next", "side", null] as const) {
-      expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState, confidentiality: "public", ndaAccepted: true })).toBe(false);
+      expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState, confidentiality: "public", ndaCleared: true })).toBe(false);
     }
+  });
+});
+
+describe("NDA status", () => {
+  const visible = (status: "required" | "accepted" | "suspended", confidentiality: "internal" | "client" | "public") =>
+    isClientPortalVisible({ clientFacing: true, status: "final", stageState: "done", confidentiality, ndaCleared: ndaClears(status) });
+
+  it("required holds client items; accepted and suspended both let them through", () => {
+    expect(visible("required", "client")).toBe(false);
+    expect(visible("accepted", "client")).toBe(true);
+    expect(visible("suspended", "client")).toBe(true);
+  });
+
+  it("never lets internal items through, and public items never need the NDA", () => {
+    for (const status of ["required", "accepted", "suspended"] as const) {
+      expect(visible(status, "internal")).toBe(false);
+      expect(visible(status, "public")).toBe(true);
+    }
+  });
+
+  it("a suspension needs a reason; the old accepted body maps to accepted or required", () => {
+    expect(setCaseNdaSchema.safeParse({ status: "suspended" }).success).toBe(false);
+    expect(setCaseNdaSchema.safeParse({ status: "suspended", reason: "  " }).success).toBe(false);
+    expect(resolveSetCaseNda(setCaseNdaSchema.parse({ status: "suspended", reason: "Engagement already under way" })))
+      .toEqual({ status: "suspended", reason: "Engagement already under way" });
+    expect(resolveSetCaseNda(setCaseNdaSchema.parse({ status: "accepted", reason: "ignored" }))).toEqual({ status: "accepted", reason: null });
+    expect(resolveSetCaseNda(setCaseNdaSchema.parse({ accepted: true }))).toEqual({ status: "accepted", reason: null });
+    expect(resolveSetCaseNda(setCaseNdaSchema.parse({ accepted: false }))).toEqual({ status: "required", reason: null });
+    expect(setCaseNdaSchema.safeParse({ status: "waived" }).success).toBe(false);
   });
 });
