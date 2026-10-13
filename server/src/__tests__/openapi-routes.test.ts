@@ -4,9 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { WEBSITE_API_ROUTES } from "@greatstone/shared";
 import { COMPANY_IMPORT_TRANSFERS_ROUTE_PATH } from "@greatstone/shared/company-import-transfer";
 import { errorHandler } from "../middleware/index.js";
 import { buildOpenApiSpec, openApiRoutes } from "../routes/openapi.js";
+import { COMPANY_IMPORT_ROUTE_PATH } from "../routes/company-import-paths.js";
+import { ORGANISATION_ROUTE_PREFIX } from "../routes/organisations.js";
+import { OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH } from "../services/tool-access.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROUTES_DIR = path.resolve(__dirname, "../routes");
@@ -15,6 +19,14 @@ const apiPrefixes: Record<string, string> = {
   "pipelines.ts": "/api",
   "client-version.ts": "/api",
   "cases.ts": "/api",
+  "client-support.ts": "/api",
+  "crm-sync.ts": "/api",
+  "intelligence.ts": "/api",
+  "mailboxes.ts": "/api",
+  "organisations.ts": "/api",
+  "pipeline-access.ts": "/api",
+  "website.ts": "/api",
+  "workflow-templates.ts": "/api",
   "billing-account.ts": "/api",
   "support.ts": "/api",
   "smoke-lab.ts": "/api",
@@ -97,6 +109,10 @@ const apiPrefixes: Record<string, string> = {
 
 const ROUTE_LITERAL_PATTERN =
   /router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g;
+// A route registered with a path constant instead of a literal. The identifier
+// must resolve through routePathIdentifiers, or the coverage test fails.
+const ROUTE_IDENTIFIER_PATTERN =
+  /router\.(get|post|put|patch|delete)\(\s*([A-Za-z_$][\w$.]*)/g;
 const ROUTER_METHOD_PATTERN = /router\.(get|post|put|patch|delete)\(/;
 const HTTP_METHODS = new Set([
   "get",
@@ -135,6 +151,23 @@ function createApp() {
 // literals; substitute the constants' values before normalizing.
 const routePathConstantSubstitutions: Record<string, string> = {
   "${COMPANY_IMPORT_TRANSFERS_ROUTE_PATH}": COMPANY_IMPORT_TRANSFERS_ROUTE_PATH,
+  "${ORGANISATION_ROUTE_PREFIX}": ORGANISATION_ROUTE_PREFIX,
+};
+
+// Bare path constants passed as the first argument, resolved from the real
+// constants (the tool-access one is the CIMD path with its /api mount cut).
+const routePathIdentifiers: Record<string, string> = {
+  COMPANY_IMPORT_ROUTE_PATH,
+  COMPANY_IMPORT_TRANSFERS_ROUTE_PATH,
+  ORGANISATION_ROUTE_PREFIX,
+  "OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH.replace":
+    OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH.replace(/^\/api/, ""),
+  ...Object.fromEntries(
+    Object.entries(WEBSITE_API_ROUTES).map(([key, value]) => [
+      `WEBSITE_API_ROUTES.${key}`,
+      value,
+    ]),
+  ),
 };
 
 function normalizeExpressPath(routePath: string) {
@@ -200,28 +233,23 @@ function loadActualRoutes() {
       continue;
     }
 
-    for (const match of source.matchAll(ROUTE_LITERAL_PATTERN)) {
-      const method = match[1].toUpperCase();
-      const routePath = match[2];
+    const registrations = [...source.matchAll(ROUTE_LITERAL_PATTERN)].map(
+      (match) => [match[1], match[2]],
+    );
+    for (const match of source.matchAll(ROUTE_IDENTIFIER_PATTERN)) {
+      const routePath = routePathIdentifiers[match[2]];
+      if (routePath === undefined) unknownRouteFiles.push(`${file}:${match[2]}`);
+      else registrations.push([match[1], routePath]);
+    }
+
+    for (const [rawMethod, routePath] of registrations) {
+      const method = rawMethod.toUpperCase();
       const operation = `${method} ${normalizeExpressPath(resolveMountedPath(file, prefix, routePath))}`;
       if (explicitOpenApiOperationCoverageExclusions.has(operation)) {
         excludedRoutes.add(operation);
       } else {
         routes.add(operation);
       }
-    }
-
-    if (
-      file === "companies.ts" &&
-      source.includes("router.post(COMPANY_IMPORT_ROUTE_PATH")
-    ) {
-      routes.add("POST /api/companies/import");
-    }
-    if (
-      file === "companies.ts" &&
-      source.includes("router.post(COMPANY_IMPORT_TRANSFERS_ROUTE_PATH")
-    ) {
-      routes.add(`POST /api/companies${COMPANY_IMPORT_TRANSFERS_ROUTE_PATH}`);
     }
   }
 
