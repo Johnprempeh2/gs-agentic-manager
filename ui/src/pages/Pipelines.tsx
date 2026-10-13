@@ -56,7 +56,9 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { PipelineOrganisationsView } from "@/components/PipelineOrganisationsView";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "../api/client";
 import { activityApi, type RunForIssue } from "../api/activity";
 import { heartbeatsApi, type ActiveRunForIssue, type LiveRunForIssue } from "../api/heartbeats";
@@ -1616,6 +1618,19 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const pipelineStars = usePipelineStars(selectedCompanyId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Board or "By organisation" (GRE-1540); kept in the URL so the view survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const boardView = searchParams.get("view") === "organisations" ? "organisations" : "board";
+  const setBoardView = (value: string) =>
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value === "organisations") next.set("view", "organisations");
+        else next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
@@ -1952,16 +1967,24 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <FeatureTour tour={PIPELINE_BOARD_TOUR} />
-          <Select value={groupBy} onValueChange={handleGroupByChange}>
-            <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
-              <Layers className="h-4 w-4 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              <SelectItem value="builtFor">Built for</SelectItem>
-            </SelectContent>
-          </Select>
+          <Tabs value={boardView} onValueChange={setBoardView}>
+            <TabsList aria-label="Pipeline view">
+              <TabsTrigger value="board">Board</TabsTrigger>
+              <TabsTrigger value="organisations">By organisation</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {boardView === "board" ? (
+            <Select value={groupBy} onValueChange={handleGroupByChange}>
+              <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="builtFor">Built for</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
           <Button asChild data-tour="board-add">
             <Link to={`/pipelines/${pipelineId}/add`}>
               <Plus className="mr-2 h-4 w-4" />
@@ -1981,6 +2004,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onSelectStage={(stageId) => navigate(`/pipelines/${pipelineId}/settings?stage=${stageId}`)}
       />
 
+      {boardView === "organisations" ? (
+        <PipelineOrganisationsView companyId={pipeline.companyId} pipelineId={pipelineId} />
+      ) : (
       <DndContext
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -2038,6 +2064,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           {activeCase ? <PipelineCaseCard caseItem={activeCase} isOverlay /> : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       <Dialog
         open={Boolean(pendingMove)}

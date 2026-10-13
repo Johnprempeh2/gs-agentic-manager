@@ -35,10 +35,24 @@ export interface Organisation {
   updatedAt: string;
 }
 
-/** One row on the Organisations list: the organisation and its key contacts. */
+/** One live pipeline case about an organisation, and the stage it is in now (GRE-1540). */
+export interface OrganisationPipelineStage {
+  caseId: string;
+  caseKey: string;
+  pipelineId: string;
+  pipelineName: string;
+  stageId: string;
+  stageName: string;
+  stageKind: string;
+  terminalKind: "done" | "cancelled" | null;
+}
+
+/** One row on the Organisations list: the organisation, its key contacts and where it is in the pipelines. */
 export interface OrganisationListItem extends Organisation {
   keyContacts: Pick<OrganisationContact, "id" | "name" | "role" | "email" | "phone">[];
   contactCount: number;
+  /** Live cases in pipelines that are not archived, by pipeline name then stage order. */
+  pipelines: OrganisationPipelineStage[];
 }
 
 export interface OrganisationDetail extends Organisation {

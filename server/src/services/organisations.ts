@@ -1,12 +1,13 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { organisationContacts, organisations } from "@greatstone/db";
+import { organisationContacts, organisations, pipelineCases, pipelineStages, pipelines } from "@greatstone/db";
 import type {
   ListOrganisationsQuery,
   Organisation,
   OrganisationContact,
   OrganisationDetail,
   OrganisationListItem,
+  OrganisationPipelineStage,
   OrganisationSource,
   OrganisationStatus,
 } from "@greatstone/shared";
@@ -123,11 +124,61 @@ export function organisationService(db: Db) {
       .then((rows) => rows[0] ?? null);
   }
 
+  /** Where each organisation is now: its live cases in pipelines that are not archived (GRE-1540). */
+  async function pipelineStagesFor(companyId: string, organisationIds: string[]) {
+    const rows = await db
+      .select({
+        organisationId: pipelineCases.organisationId,
+        caseId: pipelineCases.id,
+        caseKey: pipelineCases.caseKey,
+        pipelineId: pipelineCases.pipelineId,
+        pipelineName: pipelines.name,
+        stageId: pipelineCases.stageId,
+        stageName: pipelineStages.name,
+        stageKind: pipelineStages.kind,
+        terminalKind: pipelineCases.terminalKind,
+      })
+      .from(pipelineCases)
+      .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
+      .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
+      .where(
+        and(
+          eq(pipelineCases.companyId, companyId),
+          eq(pipelines.companyId, companyId),
+          inArray(pipelineCases.organisationId, organisationIds),
+          isNull(pipelineCases.retiredAt),
+          isNull(pipelines.archivedAt),
+        ),
+      )
+      .orderBy(asc(sql`lower(${pipelines.name})`), asc(pipelineStages.position), asc(pipelineCases.caseKey));
+    const byOrganisation = new Map<string, OrganisationPipelineStage[]>();
+    for (const { organisationId, terminalKind, ...stage } of rows) {
+      if (!organisationId) continue;
+      const list = byOrganisation.get(organisationId) ?? [];
+      list.push({ ...stage, terminalKind: terminalKind as OrganisationPipelineStage["terminalKind"] });
+      byOrganisation.set(organisationId, list);
+    }
+    return byOrganisation;
+  }
+
   return {
     async list(companyId: string, query: ListOrganisationsQuery): Promise<OrganisationListItem[]> {
       const conditions: SQL[] = [eq(organisations.companyId, companyId)];
       if (!query.includeArchived) conditions.push(isNull(organisations.archivedAt));
       if (query.status) conditions.push(eq(organisations.status, query.status));
+      if (query.pipelineId || query.stageId) {
+        // A live case (not retired, pipeline not archived) in the chosen pipeline and stage.
+        conditions.push(
+          sql`exists (select 1 from ${pipelineCases}
+            inner join ${pipelines} on ${pipelines.id} = ${pipelineCases.pipelineId}
+            where ${pipelineCases.organisationId} = ${organisations.id}
+              and ${pipelineCases.companyId} = ${companyId}
+              and ${pipelineCases.retiredAt} is null
+              and ${pipelines.archivedAt} is null
+              ${query.pipelineId ? sql`and ${pipelineCases.pipelineId} = ${query.pipelineId}` : sql``}
+              ${query.stageId ? sql`and ${pipelineCases.stageId} = ${query.stageId}` : sql``})`,
+        );
+      }
       if (query.q) {
         const pattern = likePattern(query.q);
         // Search the organisation's own fields and the names of its live contacts.
@@ -162,6 +213,7 @@ export function organisationService(db: Db) {
           ),
         )
         .orderBy(desc(organisationContacts.isKeyContact), asc(organisationContacts.name));
+      const stages = await pipelineStagesFor(companyId, rows.map((row) => row.id));
       const byOrganisation = new Map<string, ContactRow[]>();
       for (const contact of contacts) {
         const list = byOrganisation.get(contact.organisationId) ?? [];
@@ -177,6 +229,7 @@ export function organisationService(db: Db) {
             .filter((contact) => contact.isKeyContact)
             .map(({ id, name, role, email, phone }) => ({ id, name, role, email, phone })),
           contactCount: own.length,
+          pipelines: stages.get(row.id) ?? [],
         };
       });
     },

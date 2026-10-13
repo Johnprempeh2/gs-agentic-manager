@@ -49,6 +49,10 @@ export const listOrganisationsQuerySchema = z
   .object({
     q: z.string().trim().max(200).optional(),
     status: organisationStatusSchema.optional(),
+    /** Only organisations with a live case in this pipeline (GRE-1540). */
+    pipelineId: z.string().guid().optional(),
+    /** Only organisations with a live case in this stage. */
+    stageId: z.string().guid().optional(),
     includeArchived: z
       .enum(["true", "false"])
       .optional()
