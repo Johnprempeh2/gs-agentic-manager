@@ -455,6 +455,8 @@ export * from "./validators/document-evidence.js";
 export * from "./document-evidence.js";
 export * from "./types/website.js";
 export * from "./validators/website.js";
+export * from "./types/intelligence.js";
+export * from "./validators/intelligence.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
 export * from "./types/chat-channels.js";
 export * from "./types/chat-github.js";

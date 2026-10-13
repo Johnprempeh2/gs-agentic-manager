@@ -1127,6 +1127,8 @@ export const PERMISSION_KEYS = [
   // or change settings. The chair also gets the slippage alerts.
   "strategy:board_member",
   "strategy:board_chair",
+  // Intelligence page: write daily reports, board snapshots and recommendations.
+  "intelligence:write",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

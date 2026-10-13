@@ -87,6 +87,11 @@
     "enableWebsiteView": [
       "server/src/__tests__/website-routes.test.ts"
     ],
+    "enableIntelligence": [
+      "packages/shared/src/validators/intelligence.test.ts",
+      "server/src/__tests__/intelligence-routes.test.ts",
+      "ui/src/pages/Intelligence.test.tsx"
+    ],
     "enableAgentChat": [
       "server/src/__tests__/agent-conversations.test.ts"
     ],

@@ -37,6 +37,8 @@ export const MANAGED_FEATURES_OFF = [
   "enableDeepDive",
   // GRE-1087: Website view; which edition gets it is Harbor and John's call.
   "enableWebsiteView",
+  // Intelligence page (Daily Pulse and AI hub): Greatstone internal for now.
+  "enableIntelligence",
   "enableAgentChat",
   "enableConferenceRoomChat",
   "enableSummaries",
