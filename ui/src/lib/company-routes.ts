@@ -41,6 +41,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   // became the "STRATEGY-BOARD" company and broke every sidebar link after it).
   "strategy-board",
   "pipelines",
+  "organisations",
   "review-queue",
   "learnings",
   "cases",

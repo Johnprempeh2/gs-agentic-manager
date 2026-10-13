@@ -75,6 +75,12 @@
     "enableDeepDive": [
       "ui/src/pages/DeepDive.test.tsx"
     ],
+    "enableStrategy": [
+      "server/src/__tests__/goals-strategy-entitlement.test.ts",
+      "server/src/__tests__/entitlements-gate.test.ts",
+      "ui/src/components/NewGoalDialog.test.tsx",
+      "ui/src/pages/Goals.test.tsx"
+    ],
     "enableStrategyBoard": [
       "server/src/__tests__/strategy-board.test.ts"
     ],

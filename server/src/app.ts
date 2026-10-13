@@ -88,6 +88,7 @@ import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
+import { organisationRoutes } from "./routes/organisations.js";
 import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -821,6 +822,7 @@ export async function createApp(
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(pipelineRoutes(db));
   api.use(crmSyncRoutes(db));
+  api.use(organisationRoutes(db));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,

@@ -453,6 +453,15 @@ export const queryKeys = {
       ["folders", companyId, kind] as const,
   },
   pipelineAccess: (companyId: string) => ["pipeline-access", companyId] as const,
+  organisations: {
+    list: (companyId: string, filters: { q?: string; status?: string }) =>
+      ["organisations", companyId, "list", filters] as const,
+    all: (companyId: string) => ["organisations", companyId] as const,
+    detail: (companyId: string, organisationId: string) =>
+      ["organisations", companyId, "detail", organisationId] as const,
+    history: (companyId: string, organisationId: string) =>
+      ["organisations", companyId, "history", organisationId] as const,
+  },
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
     detail: (pipelineId: string) =>
@@ -485,6 +494,10 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "files"] as const,
     caseEvidenceCandidates: (caseId: string) =>
       ["pipelines", "item", caseId, "evidence-candidates"] as const,
+    caseJourney: (caseId: string) =>
+      ["pipelines", "item", caseId, "journey"] as const,
+    casePortal: (caseId: string) =>
+      ["pipelines", "item", caseId, "portal"] as const,
     caseDocument: (caseId: string, key: string) =>
       ["pipelines", "item", caseId, "document", key] as const,
     caseDocumentRevisions: (caseId: string, key: string) =>

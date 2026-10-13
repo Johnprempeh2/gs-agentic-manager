@@ -3660,7 +3660,7 @@ describe("IssueDetail", () => {
         (comment) => comment.id === "interaction-response:interaction-answers",
       );
       expect(delivered).toMatchObject({
-        body: "Answered questions\n\n- Runtime — Which runtime?: Node.js",
+        body: "Answered questions\n\n- Runtime (Which runtime?): Node.js",
         createdAt: new Date("2026-04-21T00:00:04.000Z"),
         updatedAt: new Date("2026-04-21T00:00:04.000Z"),
         consumedByRunId: "run-successor",

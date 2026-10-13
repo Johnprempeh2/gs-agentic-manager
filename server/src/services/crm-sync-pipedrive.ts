@@ -1,6 +1,7 @@
 // Pipedrive client for CRM sync (GRE-1100 part 2, write-back GRE-1076).
 // Contract: doc/CRM-SYNC-CONTRACT.md. It reads deals and deal fields, and
-// updates one deal's fields. Only the sync runner calls `updateDeal`; agents
+// updates one deal's fields. The organisation import (GRE-1479) only reads
+// organisations, persons and organisation fields. Only the sync runner calls `updateDeal`; agents
 // never write to Pipedrive through it. Rate-limit answers (429) are retried
 // with back-off before the caller sees them.
 import type { CrmSyncFieldValue } from "@greatstone/shared";
@@ -8,6 +9,8 @@ import type { CrmSyncFieldValue } from "@greatstone/shared";
 export const PIPEDRIVE_PROVIDER_KEY = "pipedrive";
 export const PIPEDRIVE_DEFAULT_BASE_URL = "https://api.pipedrive.com";
 const PAGE_SIZE = 100;
+/** v1 list endpoints allow up to 500 per page. */
+const V1_LIST_PAGE_SIZE = 500;
 const DEFAULT_MAX_RETRIES = 3;
 const BASE_RETRY_DELAY_MS = 1_000;
 const MAX_RETRY_DELAY_MS = 30_000;
@@ -60,6 +63,39 @@ export interface PipedriveDealField {
   name?: string;
   field_type?: string;
   options?: Array<{ id: number | string; label: string }> | null;
+}
+
+/** A linked record in a v1 answer: `owner_id` and `org_id` come back as objects or bare ids. */
+export type PipedriveLink = number | { id?: number; value?: number; name?: string | null } | null;
+
+/** One organisation from the v1 list (GRE-1479). Only the fields the import reads are typed. */
+export interface PipedriveOrganization {
+  id: number;
+  name?: string | null;
+  owner_id?: PipedriveLink;
+  address_country?: string | null;
+  industry?: string | number | null;
+  open_deals_count?: number | null;
+  won_deals_count?: number | null;
+  lost_deals_count?: number | null;
+  [key: string]: unknown;
+}
+
+export interface PipedriveContactValue {
+  value?: string | null;
+  primary?: boolean | null;
+  label?: string | null;
+}
+
+/** One person from the v1 list (GRE-1479). */
+export interface PipedrivePerson {
+  id: number;
+  name?: string | null;
+  org_id?: PipedriveLink;
+  job_title?: string | null;
+  email?: PipedriveContactValue[] | string | null;
+  phone?: PipedriveContactValue[] | string | null;
+  [key: string]: unknown;
 }
 
 export interface PipedriveClientOptions {
@@ -141,7 +177,42 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
 
   const get = (path: string, query: Record<string, string | number | undefined>) => send("GET", path, query);
 
+  /** One page of a v1 list. `nextStart` is null on the last page. */
+  async function listV1Page<T>(path: string, start: number, limit: number) {
+    const body = await get(path, { start, limit });
+    const items = Array.isArray(body.data) ? body.data as T[] : [];
+    const pagination = (body.additional_data as { pagination?: { more_items_in_collection?: boolean; next_start?: number } } | undefined)
+      ?.pagination;
+    const nextStart = pagination?.more_items_in_collection && typeof pagination.next_start === "number"
+      ? pagination.next_start
+      : null;
+    return { items, nextStart };
+  }
+
   return {
+    /** One page of every organisation, all owners (API v1, read only). GRE-1479. */
+    async listOrganizationsPage(input: { start?: number } = {}) {
+      return listV1Page<PipedriveOrganization>("/api/v1/organizations", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** One page of every person, all owners (API v1, read only). GRE-1479. */
+    async listPersonsPage(input: { start?: number } = {}) {
+      return listV1Page<PipedrivePerson>("/api/v1/persons", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** Every organisation field, so choice fields such as industry can be shown as labels. */
+    async listOrganizationFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/organizationFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
     /** Deals in one Pipedrive pipeline changed since `updatedSince`, oldest change first (API v2). */
     async listDealsPage(input: { pipelineId: string; updatedSince?: string | null; cursor?: string | null }) {
       const body = await get("/api/v2/deals", {

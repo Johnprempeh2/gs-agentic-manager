@@ -445,6 +445,9 @@ export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
 export * from "./types/client-files.js";
 export * from "./validators/client-files.js";
+export * from "./types/client-journey.js";
+export * from "./validators/client-journey.js";
+export * from "./client-journey.js";
 export * from "./types/workflow-template.js";
 export * from "./validators/workflow-template.js";
 export * from "./types/document-evidence.js";
@@ -2490,6 +2493,7 @@ export {
   pipelineStageKindSchema,
   pipelineStageOnEnterSchema,
   pipelineStageVariableSchema,
+  pipelineStageTemplateSchema,
   rotateRoutineTriggerSecretSchema,
   routineRevisionSnapshotRoutineV1Schema,
   routineRevisionSnapshotTriggerV1Schema,
@@ -3069,6 +3073,9 @@ export * from "./memory.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
+export * from "./organisations.js";
+export * from "./types/organisations.js";
+export * from "./validators/organisations.js";
 export * from "./pipeline-fields.js";
 export * from "./types/pipeline-fields.js";
 export * from "./validators/pipeline-fields.js";

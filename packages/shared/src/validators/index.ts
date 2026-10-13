@@ -774,6 +774,7 @@ export {
   pipelineStageKindSchema,
   pipelineStageOnEnterSchema,
   pipelineStageVariableSchema,
+  pipelineStageTemplateSchema,
   type PipelineAutomationRetryCleanupOptions,
   type PipelineAutomationRetryRequest,
   type PipelineAutomationRetryScope,
@@ -783,6 +784,7 @@ export {
   type PipelineStageKind,
   type PipelineStageOnEnter,
   type PipelineStageVariable,
+  type PipelineStageTemplate,
 } from "./pipeline.js";
 
 export {

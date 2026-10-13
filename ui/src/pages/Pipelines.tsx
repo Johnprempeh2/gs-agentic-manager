@@ -148,6 +148,8 @@ import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
+import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
+import { OrganisationPicker } from "@/components/OrganisationPicker";
 
 type PipelineConversationActionableInteraction =
   | SuggestTasksInteraction
@@ -164,6 +166,7 @@ interface DraftRow {
   id: string;
   expanded: boolean;
   values: Record<string, string>;
+  organisationId?: string | null;
   serverError?: string | null;
 }
 
@@ -194,7 +197,14 @@ function isBlank(value: string | undefined) {
   return !value || value.trim().length === 0;
 }
 
-export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[]): RowErrors {
+/** Error key for the organisation picker; never a field key. */
+export const ORGANISATION_ERROR_KEY = "__organisation";
+
+export function validateDraftRows(
+  rows: DraftRow[],
+  fields: PipelineIntakeField[],
+  options: { requiresOrganisation?: boolean } = {},
+): RowErrors {
   const errors: RowErrors = {};
   for (const row of rows) {
     const rowErrors: FieldErrors = {};
@@ -202,6 +212,9 @@ export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[
       if (field.required && isBlank(row.values[field.key])) {
         rowErrors[field.key] = `${field.label} is required.`;
       }
+    }
+    if (options.requiresOrganisation && !row.organisationId) {
+      rowErrors[ORGANISATION_ERROR_KEY] = "Pick or create an organisation.";
     }
     if (Object.keys(rowErrors).length > 0) {
       errors[row.id] = rowErrors;
@@ -221,7 +234,9 @@ export function buildBatchPayload(rows: DraftRow[], fields: PipelineIntakeField[
         itemFields[field.key] = value.trim();
       }
     }
-    return { title, fields: itemFields };
+    return row.organisationId
+      ? { title, fields: itemFields, organisationId: row.organisationId }
+      : { title, fields: itemFields };
   });
 }
 
@@ -238,6 +253,15 @@ export function plainBatchError(result: Extract<PipelineBatchIngestResult, { ok:
   }
   if (details.code === "blocker_cycle") {
     return "This item waits on another row that also waits on it.";
+  }
+  if (details.code === "organisation_required") {
+    return "Pick or create an organisation for this item.";
+  }
+  if (details.code === "organisation_archived") {
+    return "This organisation is archived. Pick another one.";
+  }
+  if (details.code === "organisation_not_found") {
+    return "This organisation no longer exists. Pick another one.";
   }
   if (typeof result.error?.message === "string" && result.error.message.trim()) {
     return result.error.message.replace(/^Pipeline\s+/i, "");
@@ -2994,6 +3018,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               Stage: <span className="font-medium text-foreground">{detail.stage.name}</span>
             </div>
           </div>
+          {detail.case.organisationId && (detail.case.companyId ?? selectedCompanyId) ? (
+            <CaseOrganisationLink
+              companyId={(detail.case.companyId ?? selectedCompanyId)!}
+              organisationId={detail.case.organisationId}
+            />
+          ) : null}
           {detail.parentCase ? (
             <p className="mt-2 text-sm text-muted-foreground">
               Built for{" "}
@@ -4410,7 +4440,11 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   }, [pipeline.data?.name, pipelineId, setBreadcrumbs]);
 
   const fields = intake.data?.fields ?? [];
-  const errors = useMemo(() => validateDraftRows(rows, fields), [fields, rows]);
+  const requiresOrganisation = Boolean(pipeline.data?.requiresOrganisation);
+  const errors = useMemo(
+    () => validateDraftRows(rows, fields, { requiresOrganisation }),
+    [fields, requiresOrganisation, rows],
+  );
   const invalid = rows.length === 0 || Object.keys(errors).length > 0;
 
   const submit = useMutation({
@@ -4473,6 +4507,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
             index={index}
             fields={fields}
             intake={intake.data}
+            organisationCompanyId={requiresOrganisation ? pipeline.data.companyId : null}
             errors={errors[row.id] ?? {}}
             onToggle={() =>
               setRows((current) => current.map((candidate) => candidate.id === row.id ? { ...candidate, expanded: !candidate.expanded } : candidate))
@@ -4484,6 +4519,13 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
                   candidate.id === row.id
                     ? { ...candidate, values: { ...candidate.values, [fieldKey]: value }, serverError: null }
                     : candidate,
+                ),
+              )
+            }
+            onOrganisationChange={(organisationId) =>
+              setRows((current) =>
+                current.map((candidate) =>
+                  candidate.id === row.id ? { ...candidate, organisationId, serverError: null } : candidate,
                 ),
               )
             }
@@ -4522,19 +4564,24 @@ function DraftItemRow({
   index,
   fields,
   intake,
+  organisationCompanyId,
   errors,
   onToggle,
   onRemove,
   onChange,
+  onOrganisationChange,
 }: {
   row: DraftRow;
   index: number;
   fields: PipelineIntakeField[];
   intake: PipelineIntakeForm;
+  /** Set when the pipeline requires an organisation on every case. */
+  organisationCompanyId: string | null;
   errors: FieldErrors;
   onToggle: () => void;
   onRemove: () => void;
   onChange: (fieldKey: string, value: string) => void;
+  onOrganisationChange: (organisationId: string) => void;
 }) {
   const title = row.values.title?.trim() || `Item ${index + 1}`;
   const preview = fields
@@ -4566,6 +4613,16 @@ function DraftItemRow({
       {row.expanded ? (
         <div className="grid gap-5 border-t border-border px-4 py-4 lg:grid-cols-(--gtc-50)">
           <div className="grid gap-4 md:grid-cols-2">
+            {organisationCompanyId ? (
+              <div className="md:col-span-2">
+                <OrganisationPicker
+                  companyId={organisationCompanyId}
+                  value={row.organisationId ?? null}
+                  onChange={onOrganisationChange}
+                  error={errors[ORGANISATION_ERROR_KEY]}
+                />
+              </div>
+            ) : null}
             {fields.map((field) => (
               <GeneratedField
                 key={field.key}

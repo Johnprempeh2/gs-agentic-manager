@@ -100,7 +100,11 @@ import {
   clientFilesSearchSchema,
   computePipelineHealth,
   createClientEvidenceSchema,
+  createClientJourneyDeliverableSchema,
+  updateClientJourneyDeliverableSchema,
   type CreateClientEvidence,
+  type CreateClientJourneyDeliverable,
+  type UpdateClientJourneyDeliverable,
   createPipelineFieldSchema,
   deriveCaseType,
   envConfigSchema,
@@ -136,6 +140,7 @@ import {
   summarizePipelineCaseOutputsForContext,
 } from "../services/pipeline-case-outputs.js";
 import { pipelineCaseFilesService, type ClientEvidenceSourceIssue } from "../services/pipeline-case-files.js";
+import { pipelineCaseJourneyService } from "../services/pipeline-case-journey.js";
 
 /** Per-stage instructions document keys look like `stage-instructions:{stageId}`. */
 const STAGE_INSTRUCTIONS_PREFIX = "stage-instructions:";
@@ -585,6 +590,7 @@ type PipelineAuditRow = {
   description?: string | null;
   projectId?: string | null;
   enforceTransitions?: boolean;
+  requiresOrganisation?: boolean;
   archivedAt?: Date | null;
 };
 type StageAuditRow = { id: string; key: string; name: string; kind: string; position: number; config?: unknown };
@@ -597,6 +603,7 @@ function pipelineAuditSnapshot(row: PipelineAuditRow | null | undefined) {
     description: row.description ?? null,
     projectId: row.projectId ?? null,
     enforceTransitions: row.enforceTransitions ?? null,
+    requiresOrganisation: row.requiresOrganisation ?? null,
     archived: Boolean(row.archivedAt),
   };
 }
@@ -924,6 +931,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
   const svc = pipelineService(db, options);
   const outputsSvc = pipelineCaseOutputsService(db);
   const filesSvc = pipelineCaseFilesService(db);
+  const journeySvc = pipelineCaseJourneyService(db);
   const access = accessService(db);
   const issuesSvc = issueService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
@@ -1037,6 +1045,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         description: req.body.description,
         projectId: req.body.projectId,
         enforceTransitions: req.body.enforceTransitions,
+        requiresOrganisation: req.body.requiresOrganisation,
         stages: req.body.stages?.map((stage: {
           key: string;
           name: string;
@@ -1328,6 +1337,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     if (req.body.name !== undefined) patch.name = req.body.name;
     if (req.body.description !== undefined) patch.description = req.body.description;
     if (req.body.enforceTransitions !== undefined) patch.enforceTransitions = req.body.enforceTransitions;
+    if (req.body.requiresOrganisation !== undefined) patch.requiresOrganisation = req.body.requiresOrganisation;
     if (req.body.archived !== undefined) patch.archivedAt = req.body.archived ? new Date() : null;
     const [updated] = await db
       .update(pipelines)
@@ -2772,6 +2782,84 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
       type: "updated",
       actor,
       payload: { action: "evidence_removed", evidenceId: removed.id },
+    });
+    res.json({ deleted: true });
+  });
+
+  // Client journey by stage (GRE-1473): each stage lists its templates and the
+  // deliverables filed under it. Reads need case access; filing, moving,
+  // flagging or removing a deliverable also needs Work cases, like evidence.
+  // The portal view returns only what the client may see: client-facing,
+  // final deliverables of completed stages, with outcome fields only.
+  function parseJourneyLinkId(value: unknown) {
+    const parsed = z.string().guid().safeParse(value);
+    if (!parsed.success) throw notFound("Stage deliverable not found");
+    return parsed.data;
+  }
+
+  router.get("/cases/:caseId/journey", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    res.json(await journeySvc.journey(companyId, caseId));
+  });
+
+  router.get("/cases/:caseId/portal", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    res.json(await journeySvc.portal(companyId, caseId));
+  });
+
+  router.post("/cases/:caseId/journey/deliverables", validate(createClientJourneyDeliverableSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as CreateClientJourneyDeliverable;
+    const link = await journeySvc.fileDeliverable(
+      companyId,
+      caseId,
+      body,
+      actor.type === "agent"
+        ? { type: "agent", agentId: actor.agentId }
+        : { type: "user", userId: actor.type === "user" ? actor.userId : "board" },
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "stage_deliverable_filed", linkId: link.id, stageId: link.stageId, clientFacing: link.clientFacing },
+    });
+    res.status(201).json(link);
+  });
+
+  router.patch("/cases/:caseId/journey/deliverables/:linkId", validate(updateClientJourneyDeliverableSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const linkId = parseJourneyLinkId(req.params.linkId);
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as UpdateClientJourneyDeliverable;
+    const link = await journeySvc.updateLink(companyId, caseId, linkId, body);
+    if (!link) throw notFound("Stage deliverable not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "stage_deliverable_updated", linkId, stageId: link.stageId, clientFacing: link.clientFacing },
+    });
+    res.json(link);
+  });
+
+  router.delete("/cases/:caseId/journey/deliverables/:linkId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const linkId = parseJourneyLinkId(req.params.linkId);
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const removed = await journeySvc.removeLink(companyId, caseId, linkId);
+    if (!removed) throw notFound("Stage deliverable not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "stage_deliverable_removed", linkId },
     });
     res.json({ deleted: true });
   });

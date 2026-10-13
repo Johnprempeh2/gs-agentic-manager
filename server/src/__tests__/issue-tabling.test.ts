@@ -30,6 +30,8 @@ import {
   returnDueTabledIssues,
 } from "../services/issue-tabling.ts";
 import { issueTablingRoutes } from "../routes/issue-tabling.ts";
+import { issueRoutes } from "../routes/issues.ts";
+import { instanceSettingsService } from "../services/instance-settings.ts";
 
 // GRE-262 "Not now": a tabled task gets no wakes of any kind, its cards leave
 // the Decisions feed, and it returns to its previous status on its return date
@@ -414,6 +416,71 @@ describeEmbeddedPostgres("issue tabling (Not now)", () => {
     const logged = await db.select().from(activityLog)
       .where(and(eq(activityLog.entityId, issueId), eq(activityLog.action, "issue.untabled")));
     expect(logged).toHaveLength(1);
+  });
+
+  function issuesApp(companyId: string) {
+    const app = express();
+    app.use(express.json());
+    app.use((req, _res, next) => {
+      (req as any).actor = {
+        type: "board",
+        source: "local_implicit",
+        userId: BOARD_USER,
+        companyIds: [companyId],
+        isInstanceAdmin: false,
+      };
+      next();
+    });
+    app.use("/api", issueRoutes(db, {} as never));
+    app.use(errorHandler);
+    return app;
+  }
+
+  // GRE-1475: John tabled his Everest chat, and every later message saved but
+  // never woke Everest. An owner's chat message now brings the chat back first.
+  it("an owner's chat message brings a tabled chat back and queues a run for the agent", async () => {
+    await instanceSettingsService(db).updateExperimental({ enableAgentChat: true });
+    const { companyId, agentId, issueId } = await seed({ status: "in_review" });
+    await db.update(issues).set({
+      conversationAgentId: agentId,
+      conversationUserId: BOARD_USER,
+      conversationState: "waiting",
+    }).where(eq(issues.id, issueId));
+    await issueTablingService(db).table(issueId, { until: new Date(Date.now() + 86_400_000), userId: BOARD_USER });
+
+    const res = await request(issuesApp(companyId)).post(`/api/issues/${issueId}/comments`)
+      .send({ body: "Are you there?", clientRequestId: randomUUID() });
+    expect(res.status).toBe(201);
+
+    expect(await readIssue(issueId)).toMatchObject({ status: "in_review", tabledAt: null, tabledFromStatus: null });
+    const logged = await db.select().from(activityLog)
+      .where(and(eq(activityLog.entityId, issueId), eq(activityLog.action, "issue.untabled")));
+    expect(logged).toHaveLength(1);
+    expect(logged[0]?.details).toMatchObject({ reason: "manual", restoredStatus: "in_review" });
+
+    const wake = await db.select().from(agentWakeupRequests)
+      .where(eq(agentWakeupRequests.idempotencyKey, `conversation-comment:${res.body.id}`))
+      .then((rows) => rows[0]);
+    expect(wake?.status).not.toBe("skipped");
+    expect(wake?.runId).toBeTruthy();
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
+    expect(runs.map((run) => run.id)).toContain(wake!.runId);
+  });
+
+  it("a comment on a tabled task that is not a chat still gets no wake", async () => {
+    const { companyId, agentId, issueId } = await seed({ status: "in_progress" });
+    await issueTablingService(db).table(issueId, { until: null, userId: BOARD_USER });
+
+    await request(issuesApp(companyId)).post(`/api/issues/${issueId}/comments`)
+      .send({ body: "Any update?" }).expect(201);
+
+    expect(await readIssue(issueId)).toMatchObject({ status: "backlog", tabledFromStatus: "in_progress" });
+    expect((await readIssue(issueId)).tabledAt).not.toBeNull();
+    const runs = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.agentId, agentId));
+    expect(runs).toHaveLength(0);
+    const wakes = await db.select({ status: agentWakeupRequests.status, reason: agentWakeupRequests.reason })
+      .from(agentWakeupRequests).where(eq(agentWakeupRequests.agentId, agentId));
+    expect(wakes.every((row) => row.status === "skipped" && row.reason === "issue_tabled")).toBe(true);
   });
 
   it("moving a tabled task to another status by hand clears the tabled state", async () => {

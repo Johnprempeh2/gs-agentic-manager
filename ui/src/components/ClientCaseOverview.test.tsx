@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PipelineCaseDetail, PipelineStage } from "../api/pipelines";
 import { ClientCaseOverview } from "./ClientCaseOverview";
+import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseDeliverables, PipelineCaseEvidence } from "./PipelineCaseFiles";
 
@@ -20,6 +21,11 @@ const mockPipelinesApi = vi.hoisted(() => ({
   listCaseEvidenceCandidates: vi.fn(),
   addCaseEvidence: vi.fn(),
   removeCaseEvidence: vi.fn(),
+  getCaseJourney: vi.fn(),
+  getCasePortal: vi.fn(),
+  fileCaseJourneyDeliverable: vi.fn(),
+  updateCaseJourneyDeliverable: vi.fn(),
+  removeCaseJourneyDeliverable: vi.fn(),
 }));
 const mockPushToast = vi.hoisted(() => vi.fn());
 
@@ -112,6 +118,8 @@ describe("client case page", () => {
     vi.clearAllMocks();
     mockPipelinesApi.getCaseCrmSyncStatus.mockResolvedValue({ caseId: "case-1", sources: [] });
     mockPipelinesApi.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
+    mockPipelinesApi.getCaseJourney.mockResolvedValue({ caseId: "case-1", stages: [], unfiled: [] });
+    mockPipelinesApi.getCasePortal.mockResolvedValue({ caseId: "case-1", title: "Client", stages: [] });
     container = document.createElement("div");
     document.body.appendChild(container);
   });
@@ -197,12 +205,105 @@ describe("client case page", () => {
       "Client record",
       "Contacts",
       "Evidence",
-      "Deliverables",
+      "Journey by stage",
+      "What the client sees on the portal",
       "Open tasks",
       "Projects",
       "Stage history",
     ]);
     expect(container.textContent).toContain("Website rebuild");
+  });
+
+  it("lists each stage with its templates and deliverables, and files, flags and moves them", async () => {
+    const deliverable = (id: string, title: string, status: "draft" | "final" = "final") => ({
+      id,
+      key: id,
+      title,
+      kind: "report",
+      status,
+      version: 1,
+      updatedAt: "2026-10-10T10:00:00Z",
+      openPath: `/GRE/issues/GRE-${id}#deliverable`,
+      issue: { id: `issue-${id}`, identifier: `GRE-${id}`, title: `Task ${id}` },
+    });
+    mockPipelinesApi.getCaseJourney.mockResolvedValue({
+      caseId: "case-1",
+      stages: [
+        {
+          id: "stage-3",
+          key: "executive_discovery",
+          name: "Executive Discovery",
+          kind: "working",
+          position: 2,
+          state: "done",
+          templates: [{ title: "Pre-read template", url: "https://example.com/pre-read", note: null }],
+          deliverables: [{ linkId: "link-1", stageId: "stage-3", clientFacing: true, deliverable: deliverable("1", "North Star summary") }],
+        },
+        {
+          id: "stage-4",
+          key: "gita",
+          name: "GITA",
+          kind: "working",
+          position: 3,
+          state: "current",
+          templates: [],
+          deliverables: [],
+        },
+      ],
+      unfiled: [deliverable("2", "GITA draft", "draft")],
+    });
+    mockPipelinesApi.fileCaseJourneyDeliverable.mockResolvedValue({ id: "link-2" });
+    mockPipelinesApi.updateCaseJourneyDeliverable.mockResolvedValue({ id: "link-1" });
+
+    await render(<ClientJourneyStages caseId="case-1" />);
+
+    const discovery = container.querySelector('section[aria-labelledby="journey-stage-stage-3"]')!;
+    expect(discovery.textContent).toContain("Complete");
+    expect(discovery.querySelector('a[href="https://example.com/pre-read"]')?.textContent).toBe("Pre-read template");
+    expect(discovery.textContent).toContain("North Star summary");
+    const gita = container.querySelector('section[aria-labelledby="journey-stage-stage-4"]')!;
+    expect(gita.textContent).toContain("Now");
+    expect(gita.textContent).toContain("No templates or deliverables for this stage yet.");
+
+    click(container.querySelector('button[aria-label="Client can see North Star summary"]'));
+    await flushReact();
+    expect(mockPipelinesApi.updateCaseJourneyDeliverable).toHaveBeenCalledWith("case-1", "link-1", { clientFacing: false });
+
+    const stageSelect = container.querySelector('select[aria-label="Stage for North Star summary"]') as HTMLSelectElement;
+    stageSelect.value = "stage-4";
+    stageSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushReact();
+    expect(mockPipelinesApi.updateCaseJourneyDeliverable).toHaveBeenCalledWith("case-1", "link-1", { stageId: "stage-4" });
+
+    click([...container.querySelectorAll("button")].find((button) => button.textContent === "1 deliverable is not in a stage") ?? null);
+    await flushReact();
+    expect(container.textContent).toContain("Draft");
+    const fileSelect = container.querySelector('select[aria-label="File GITA draft under a stage"]') as HTMLSelectElement;
+    fileSelect.value = "stage-4";
+    fileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await flushReact();
+    expect(mockPipelinesApi.fileCaseJourneyDeliverable).toHaveBeenCalledWith("case-1", { stageId: "stage-4", deliverableId: "2" });
+  });
+
+  it("previews only what the portal returns, and says when the client sees nothing", async () => {
+    await render(<ClientPortalPreview caseId="case-1" />);
+    expect(container.textContent).toContain("The client sees nothing yet.");
+    flushSync(() => root?.unmount());
+
+    mockPipelinesApi.getCasePortal.mockResolvedValue({
+      caseId: "case-1",
+      title: "Client",
+      stages: [
+        { key: "executive_discovery", name: "Executive Discovery", deliverables: [{ title: "North Star summary", kind: "report", version: 2, summary: null, contentType: "text/html", updatedAt: "2026-10-10T10:00:00Z", contentPath: "/api/attachments/a/content" }] },
+        { key: "gita", name: "GITA", deliverables: [] },
+      ],
+    });
+    await render(<ClientPortalPreview caseId="case-1" />);
+    expect(container.textContent).toContain("Executive Discovery");
+    expect(container.textContent).toContain("North Star summary");
+    expect(container.textContent).toContain("Version 2");
+    // A completed stage with nothing client-facing is left out.
+    expect(container.textContent).not.toContain("GITA");
   });
 
   it("adds, edits and removes a contact", async () => {

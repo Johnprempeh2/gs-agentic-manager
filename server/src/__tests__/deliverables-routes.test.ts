@@ -13,6 +13,10 @@ import {
   issueAttachments,
   issues,
   issueWorkProducts,
+  pipelineCaseIssueLinks,
+  pipelineCases,
+  pipelines,
+  pipelineStages,
   projects,
 } from "@greatstone/db";
 import {
@@ -84,6 +88,10 @@ describeEmbeddedPostgres("deliverables", () => {
   afterEach(async () => {
     await db.delete(activityLog);
     await db.delete(issueWorkProducts);
+    await db.delete(pipelineCaseIssueLinks);
+    await db.delete(pipelineCases);
+    await db.delete(pipelineStages);
+    await db.delete(pipelines);
     await db.delete(issueAttachments);
     await db.delete(assets);
     await db.delete(heartbeatRuns);
@@ -264,6 +272,76 @@ describeEmbeddedPostgres("deliverables", () => {
       agents: [{ id: agentId, name: "Everest" }, { id: secondAgentId, name: "Summit" }],
       projects: [{ id: projectId, name: "Board" }],
     });
+  });
+
+  it("returns the client case each deliverable's task is linked to, in one query for the list (GRE-1488)", async () => {
+    await seed();
+    const retiredIssueId = randomUUID();
+    await db.insert(issues).values({
+      id: retiredIssueId, companyId, identifier: "GRE-3", title: "Old client", status: "in_progress", priority: "medium", assigneeAgentId: agentId,
+    });
+    const [pipeline] = await db.insert(pipelines).values({ companyId, key: "client-journey", name: "Client journey" }).returning();
+    const [stage] = await db.insert(pipelineStages).values({
+      pipelineId: pipeline!.id, key: "active", name: "Active", kind: "working", position: 0,
+    }).returning();
+    const [acme, beta] = await db.insert(pipelineCases).values([
+      { companyId, pipelineId: pipeline!.id, stageId: stage!.id, caseKey: "acme", title: "Acme Ltd" },
+      { companyId, pipelineId: pipeline!.id, stageId: stage!.id, caseKey: "beta", title: "Beta Co" },
+    ]).returning();
+    await db.insert(pipelineCaseIssueLinks).values([
+      // Linked to two cases: the earliest live link wins.
+      { companyId, caseId: beta!.id, issueId, role: "work", createdAt: new Date("2026-10-02T00:00:00.000Z") },
+      { companyId, caseId: acme!.id, issueId, role: "work", createdAt: new Date("2026-10-01T00:00:00.000Z") },
+      // A retired link does not count.
+      { companyId, caseId: acme!.id, issueId: retiredIssueId, role: "work", retiredAt: new Date() },
+    ]);
+
+    const svc = deliverableService(db, storage);
+    const linked = await svc.register({
+      issue: { id: issueId, companyId, projectId },
+      attachment: (await svc.getAttachment(companyId, await addAttachment({ company: companyId, issue: issueId, objectKey: "q3.html" })))!,
+      fields: { title: "Q3 board pack" },
+      createdByAgentId: agentId,
+      createdByRunId: null,
+    });
+    expect(linked.clientCase).toEqual({ id: acme!.id, name: "Acme Ltd" });
+    await svc.register({
+      issue: { id: secondIssueId, companyId, projectId: null },
+      attachment: (await svc.getAttachment(companyId, await addAttachment({ company: companyId, issue: secondIssueId, objectKey: "brief.html" })))!,
+      fields: { title: "Hiring brief" },
+      createdByAgentId: agentId,
+      createdByRunId: null,
+    });
+    await svc.register({
+      issue: { id: retiredIssueId, companyId, projectId: null },
+      attachment: (await svc.getAttachment(companyId, await addAttachment({ company: companyId, issue: retiredIssueId, objectKey: "plain-artifact.html" })))!,
+      fields: { title: "Old plan" },
+      createdByAgentId: agentId,
+      createdByRunId: null,
+    });
+
+    const selectSpy = vi.spyOn(db, "select");
+    const distinctSpy = vi.spyOn(db, "selectDistinctOn");
+    try {
+      const list = await request(boardApp()).get(`/api/companies/${companyId}/deliverables`).query({ sort: "title" });
+      expect(list.status).toBe(200);
+      expect(list.body.deliverables.map((item: { title: string; clientCase: unknown }) => [item.title, item.clientCase])).toEqual([
+        ["Hiring brief", null],
+        ["Old plan", null],
+        ["Q3 board pack", { id: acme!.id, name: "Acme Ltd" }],
+      ]);
+      // Three deliverables, one case lookup: no query per deliverable.
+      expect(distinctSpy).toHaveBeenCalledTimes(1);
+      const selectsForThree = selectSpy.mock.calls.length;
+      selectSpy.mockClear();
+      distinctSpy.mockClear();
+      await request(boardApp()).get(`/api/companies/${companyId}/deliverables`).query({ limit: "1" });
+      expect(selectSpy.mock.calls.length).toBe(selectsForThree);
+      expect(distinctSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      selectSpy.mockRestore();
+      distinctSpy.mockRestore();
+    }
   });
 
   it("keeps deliverables inside their company", async () => {

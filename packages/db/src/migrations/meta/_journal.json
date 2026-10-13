@@ -2297,6 +2297,27 @@
       "when": 1791785676284,
       "tag": "0329_restore_missing_check_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1791823454616,
+      "tag": "0330_pipeline_case_stage_deliverables",
+      "breakpoints": true
+    },
+    {
+      "idx": 331,
+      "version": "7",
+      "when": 1791825756431,
+      "tag": "0331_crm_organisations",
+      "breakpoints": true
+    },
+    {
+      "idx": 332,
+      "version": "7",
+      "when": 1791830000000,
+      "tag": "0332_pipeline_case_organisation",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,10 @@ import type {
   ClientEvidenceCandidatesResponse,
   ClientEvidenceItem,
   ClientFilesResponse,
+  ClientJourneyResponse,
+  ClientPortalJourneyResponse,
+  CreateClientJourneyDeliverableInput,
+  UpdateClientJourneyDeliverable,
   CreateClientEvidence,
   CreateCrmSyncSuggestion,
   CrmSyncBinding,
@@ -62,6 +66,8 @@ export interface PipelineListItem {
   description: string | null;
   projectId: string | null;
   enforceTransitions: boolean;
+  /** CRM pipelines (GRE-1478): every case must name an organisation record. */
+  requiresOrganisation?: boolean;
   archivedAt: Date | string | null;
   stageCount: number;
   stages?: PipelineStage[];
@@ -149,6 +155,7 @@ export interface PipelineCase {
   caseKey?: string | null;
   title: string;
   summary?: string | null;
+  organisationId?: string | null;
   fields?: Record<string, unknown> | null;
   workspaceRef?: Record<string, unknown> | null;
   parentCaseId?: string | null;
@@ -550,7 +557,13 @@ export const pipelinesApi = {
   getHealth: (pipelineId: string) => api.get<PipelineHealthReport>(`/pipelines/${pipelineId}/health`),
   update: (
     pipelineId: string,
-    data: { name?: string; description?: string | null; enforceTransitions?: boolean; archived?: boolean },
+    data: {
+      name?: string;
+      description?: string | null;
+      enforceTransitions?: boolean;
+      requiresOrganisation?: boolean;
+      archived?: boolean;
+    },
   ) => api.patch<PipelineListItem>(`/pipelines/${pipelineId}`, data),
   listFields: (pipelineId: string, options?: { includeArchived?: boolean }) =>
     api.get<PipelineFieldDefinition[]>(
@@ -702,6 +715,16 @@ export const pipelinesApi = {
     api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
   removeCaseEvidence: (caseId: string, evidenceId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
+  getCaseJourney: (caseId: string) =>
+    api.get<ClientJourneyResponse>(`/cases/${caseId}/journey`),
+  getCasePortal: (caseId: string) =>
+    api.get<ClientPortalJourneyResponse>(`/cases/${caseId}/portal`),
+  fileCaseJourneyDeliverable: (caseId: string, input: CreateClientJourneyDeliverableInput) =>
+    api.post<{ id: string }>(`/cases/${caseId}/journey/deliverables`, input),
+  updateCaseJourneyDeliverable: (caseId: string, linkId: string, input: UpdateClientJourneyDeliverable) =>
+    api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
+  removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
   createIssueLink: (
     caseId: string,
     data:
@@ -773,6 +796,7 @@ export const pipelinesApi = {
       stageKey?: string | null;
       parentCaseId?: string | null;
       requestKey?: string | null;
+      organisationId?: string | null;
       blockedByCaseIds?: string[];
       blockedByCaseKeys?: string[];
     }>;

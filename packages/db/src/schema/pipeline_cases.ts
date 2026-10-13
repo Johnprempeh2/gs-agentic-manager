@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   integer,
@@ -16,6 +17,7 @@ import { companies } from "./companies.js";
 import { documents } from "./documents.js";
 import { issueAttachments } from "./issue_attachments.js";
 import { issues } from "./issues.js";
+import { organisations } from "./organisations.js";
 import { pipelineStages, pipelines } from "./pipelines.js";
 import { projects } from "./projects.js";
 import { routines } from "./routines.js";
@@ -45,6 +47,9 @@ export const pipelineCases = pgTable(
     caseKey: text("case_key").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
+    // The organisation record this case is about (GRE-1478). Required on
+    // pipelines with requires_organisation; optional elsewhere.
+    organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
     fields: jsonb("fields").$type<Record<string, unknown>>().notNull().default({}),
     workspaceRef: jsonb("workspace_ref").$type<PipelineCaseWorkspaceRef>(),
     parentCaseId: uuid("parent_case_id").references((): AnyPgColumn => pipelineCases.id, { onDelete: "set null" }),
@@ -78,6 +83,7 @@ export const pipelineCases = pgTable(
       .on(table.parentCaseId, table.requestKey)
       .where(sql`${table.requestKey} is not null and ${table.retiredAt} is null`),
     companyIdx: index("pipeline_cases_company_idx").on(table.companyId),
+    companyOrganisationIdx: index("pipeline_cases_company_organisation_idx").on(table.companyId, table.organisationId),
     pipelineStageIdx: index("pipeline_cases_pipeline_stage_idx").on(table.pipelineId, table.stageId),
     parentIdx: index("pipeline_cases_parent_idx").on(table.parentCaseId),
     automationAttemptIdx: index("pipeline_cases_automation_attempt_idx").on(table.automationAttemptId),
@@ -194,6 +200,35 @@ export const pipelineCaseEvidence = pgTable(
         or (${table.kind} = 'document' and ${table.documentId} is not null)
         or (${table.kind} = 'link' and ${table.url} is not null)`,
     ),
+  }),
+);
+
+// A deliverable filed under one stage of a client's journey (GRE-1473). A
+// deliverable is named by its task and key, so the link follows new versions.
+// `client_facing` lets the client portal show it once the stage is complete.
+export const pipelineCaseStageDeliverables = pgTable(
+  "pipeline_case_stage_deliverables",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").notNull().references(() => pipelineStages.id, { onDelete: "cascade" }),
+    deliverableIssueId: uuid("deliverable_issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
+    deliverableKey: text("deliverable_key").notNull(),
+    clientFacing: boolean("client_facing").notNull().default(false),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    caseDeliverableUq: uniqueIndex("pipeline_case_stage_deliverables_case_deliverable_uq").on(
+      table.caseId,
+      table.deliverableIssueId,
+      table.deliverableKey,
+    ),
+    companyCaseIdx: index("pipeline_case_stage_deliverables_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_stage_deliverables_stage_idx").on(table.stageId),
   }),
 );
 

@@ -12,6 +12,7 @@ import {
   Repeat,
   Layers,
   Microscope,
+  Building2,
   GitBranch,
   Package,
   Settings,
@@ -250,6 +251,10 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const pipelinesItem = showPipelines ? (
     <SidebarNavItem to="/pipelines" label="Pipelines" icon={GitBranch} />
   ) : null;
+  // GRE-1477: CRM organisations, part of the pipelines module.
+  const organisationsItem = showPipelines ? (
+    <SidebarNavItem to="/organisations" label="Organisations" icon={Building2} />
+  ) : null;
   const websiteItem = showWebsite ? (
     <SidebarNavItem to="/website" label="Website" icon={Globe} />
   ) : null;
@@ -339,6 +344,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         {workflowsItem}
         {pipelinesItem}
         <SidebarStarredPipelines />
+        {organisationsItem}
         {workspacesItem}
         {artifactsItem}
         {casesItem}
