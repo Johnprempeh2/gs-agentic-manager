@@ -165,7 +165,7 @@ When work produces or updates an operator-facing engineering output, create or u
 If an important file intentionally remains in the project or execution workspace instead of being uploaded, annotate a work product with `metadata.resourceRef.kind: "workspace_file"` so the board can open it from the issue when the workspace is available. Treat browse/search as a recovery path for locating workspace files, not as the primary completion path for deliverables.
 
 For technical upload instructions, read `references/artifacts.md`, except for
-the routine server-verified external-chat handoff described above.
+the routine server-verified external-chat handoff described above. **Finding a deliverable.** When John asks for a deliverable ("send me the MoEnGT deck"), search with `GET /api/companies/{companyId}/deliverables?q=<words>`. `q` matches title, summary, task, agent, project, client and the site url. Reply with each match's `appUrl` (opens it in the app) and, for a live site, its `url`. Mind `confidentiality` (`internal`, `client`, `public`) before sharing outside the team. A live site is registered with `POST /api/issues/{issueId}/deliverables` and `{"url":"https://...","title":"...","kind":"deck"}` instead of an `attachmentId`.
 
 **Step 8 — Update status and communicate.** Always include the run ID header.
 

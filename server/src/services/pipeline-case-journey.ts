@@ -11,7 +11,9 @@ import {
   DELIVERABLES_MAX_LIMIT,
   isClientPortalVisible,
   journeyStageStates,
+  pipelineStageExpectedDeliverableSchema,
   pipelineStageTemplateSchema,
+  stageCompleteness,
   type ClientJourneyResponse,
   type ClientJourneyStage,
   type ClientJourneyStageState,
@@ -49,6 +51,14 @@ function readTemplates(config: Record<string, unknown> | null | undefined): Clie
   return templates;
 }
 
+function readExpected(config: Record<string, unknown> | null | undefined) {
+  const raw = Array.isArray(config?.expectedDeliverables) ? config.expectedDeliverables : [];
+  return raw.flatMap((item) => {
+    const parsed = pipelineStageExpectedDeliverableSchema.safeParse(item);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
 export function pipelineCaseJourneyService(db: Db) {
   const files = pipelineCaseFilesService(db);
 
@@ -59,6 +69,7 @@ export function pipelineCaseJourneyService(db: Db) {
         title: pipelineCases.title,
         pipelineId: pipelineCases.pipelineId,
         stageId: pipelineCases.stageId,
+        ndaAcceptedAt: pipelineCases.ndaAcceptedAt,
       })
       .from(pipelineCases)
       .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId), isNull(pipelineCases.retiredAt)))
@@ -129,6 +140,7 @@ export function pipelineCaseJourneyService(db: Db) {
         state: entry.state,
         templates: readTemplates(stage.config),
         deliverables: [],
+        expected: [],
       });
     }
     for (const link of links) {
@@ -140,10 +152,17 @@ export function pipelineCaseJourneyService(db: Db) {
       filed.add(ref);
       section.deliverables.push({ linkId: link.id, stageId: link.stageId, clientFacing: link.clientFacing, deliverable });
     }
+    for (const section of sections.values()) {
+      section.expected = stageCompleteness(
+        readExpected(stageById.get(section.id)?.config),
+        section.deliverables.map(({ deliverable }) => deliverable),
+      );
+    }
 
     return {
       caseId,
       title: caseRow.title,
+      ndaAcceptedAt: caseRow.ndaAcceptedAt?.toISOString() ?? null,
       stages: [...sections.values()],
       unfiled: deliverables.filter((item) => !filed.has(deliverableRef(item))),
       stateById,
@@ -162,8 +181,8 @@ export function pipelineCaseJourneyService(db: Db) {
 
   return {
     journey: async (companyId: string, caseId: string): Promise<ClientJourneyResponse> => {
-      const { caseId: id, stages, unfiled } = await getJourney(companyId, caseId);
-      return { caseId: id, stages, unfiled };
+      const { caseId: id, ndaAcceptedAt, stages, unfiled } = await getJourney(companyId, caseId);
+      return { caseId: id, ndaAcceptedAt, stages, unfiled };
     },
 
     /** What the client sees on its portal: the visibility rule applied, outcome fields only. */
@@ -178,6 +197,8 @@ export function pipelineCaseJourneyService(db: Db) {
               clientFacing: item.clientFacing,
               status: item.deliverable.status,
               stageState: stage.state,
+              confidentiality: item.deliverable.confidentiality,
+              ndaAccepted: journey.ndaAcceptedAt !== null,
             }))
             .map(({ deliverable }) => ({
               title: deliverable.title,
@@ -186,13 +207,27 @@ export function pipelineCaseJourneyService(db: Db) {
               version: deliverable.version,
               contentType: deliverable.contentType,
               updatedAt: deliverable.updatedAt,
-              contentPath: deliverable.contentPath,
+              // The rule above lets only client and public items through.
+              confidentiality: deliverable.confidentiality as "client" | "public",
+              contentPath: deliverable.external ? null : deliverable.contentPath,
+              url: deliverable.url,
             })),
           state: stage.state,
         }))
         .filter((stage) => stage.state === "done")
         .map(({ state: _state, ...stage }) => stage);
       return { caseId, title: journey.title, stages };
+    },
+
+    /** Record (or clear) the client's accepted NDA. Board only; the route checks. */
+    setNdaAccepted: async (companyId: string, caseId: string, accepted: boolean) => {
+      await loadCase(companyId, caseId);
+      const [row] = await db
+        .update(pipelineCases)
+        .set({ ndaAcceptedAt: accepted ? new Date() : null, updatedAt: new Date() })
+        .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)))
+        .returning({ ndaAcceptedAt: pipelineCases.ndaAcceptedAt });
+      return { ndaAcceptedAt: row?.ndaAcceptedAt?.toISOString() ?? null };
     },
 
     /** File a deliverable in the client's scope under one of its stages. */

@@ -9,11 +9,14 @@ import {
   HTML_ATTACHMENT_CSP,
   markDeliverableSchema,
   updateDeliverableCommentSchema,
+  updateDeliverableSchema,
   type CreateDeliverableComment,
   type DeliverableCommentsResponse,
   type MarkDeliverable,
   type SendDeliverableCommentsResponse,
+  type UpdateDeliverable,
   type UpdateDeliverableComment,
+  type Deliverable,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logger } from "../middleware/logger.js";
@@ -23,6 +26,7 @@ import { heartbeatService } from "../services/heartbeat.js";
 import { buildDeliverableCommentsBody, deliverableCommentService } from "../services/deliverable-comments.js";
 import { injectDeliverableReviewScript } from "../services/deliverable-review-script.js";
 import { deliverableService } from "../services/deliverables.js";
+import { captureSiteScreenshot, enqueueScreenshot, type SiteScreenshotter } from "../services/deliverable-links.js";
 import type { StorageService } from "../storage/types.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
 
@@ -39,7 +43,13 @@ type Heartbeat = ReturnType<typeof heartbeatService>;
 export function deliverableRoutes(
   db: Db,
   storage?: StorageService,
-  opts: { heartbeat?: Pick<Heartbeat, "wakeup"> } = {},
+  opts: {
+    heartbeat?: Pick<Heartbeat, "wakeup">;
+    /** Takes the screenshot of a link deliverable's site; tests pass a fake. */
+    screenshot?: SiteScreenshotter;
+    /** Public origin of the app, for absolute deliverable links. Defaults to the request's own origin. */
+    publicBaseUrl?: string;
+  } = {},
 ) {
   const router = Router();
   const svc = deliverableService(db, storage);
@@ -48,6 +58,34 @@ export function deliverableRoutes(
   const wakeup: Heartbeat["wakeup"] = (...args) => (heartbeat ??= heartbeatService(db)).wakeup(...args);
   const issuesSvc = issueService(db);
   const access = accessService(db);
+  const screenshot = opts.screenshot ?? captureSiteScreenshot;
+
+  /** Absolute link to the deliverable in the app, so an agent can hand it straight to John. */
+  function withAppUrl<T extends Deliverable>(req: Request, deliverable: T): T {
+    const base = (opts.publicBaseUrl?.trim() || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+    return { ...deliverable, appUrl: `${base}${deliverable.appPath}` };
+  }
+
+  /** Take the site's screenshot (one browser at a time) and store it; false when no browser is available. */
+  async function refreshScreenshot(companyId: string, deliverable: { id: string; url: string | null }) {
+    if (!deliverable.url) return false;
+    const url = deliverable.url;
+    const image = await enqueueScreenshot(() => screenshot(url));
+    if (!image) return false;
+    await svc.saveScreenshot(companyId, deliverable.id, image);
+    return true;
+  }
+
+  /** Board users, or agents that may change the deliverable's task. */
+  async function assertMayEditDeliverable(req: Request, issueId: string) {
+    if (req.actor.type !== "agent") {
+      assertBoard(req);
+      return;
+    }
+    const issue = await issuesSvc.getById(issueId);
+    if (!issue) throw notFound("Issue not found");
+    await assertAgentMayChangeIssue(req, issue);
+  }
 
   async function assertAgentMayChangeIssue(
     req: Request,
@@ -109,7 +147,8 @@ export function deliverableRoutes(
   router.get("/companies/:companyId/deliverables", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    res.json(await svc.list(companyId, deliverablesQuerySchema.parse(req.query)));
+    const result = await svc.list(companyId, deliverablesQuerySchema.parse(req.query));
+    res.json({ ...result, deliverables: result.deliverables.map((item) => withAppUrl(req, item)) });
   });
 
   router.get("/companies/:companyId/deliverables/:id", async (req, res) => {
@@ -117,7 +156,44 @@ export function deliverableRoutes(
     assertCompanyAccess(req, companyId);
     const detail = await svc.getDetail(companyId, req.params.id as string);
     if (!detail) throw notFound("Deliverable not found");
-    res.json(detail);
+    res.json(withAppUrl(req, detail));
+  });
+
+  router.patch("/companies/:companyId/deliverables/:id", validate(updateDeliverableSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const current = await svc.getDetail(companyId, req.params.id as string);
+    if (!current) throw notFound("Deliverable not found");
+    await assertMayEditDeliverable(req, current.issue.id);
+    const patch = req.body as UpdateDeliverable;
+    const updated = await svc.update(companyId, current.id, patch);
+    if (!updated) throw notFound("Deliverable not found");
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.deliverable_updated",
+      entityType: "issue",
+      entityId: current.issue.id,
+      details: { workProductId: current.id, key: current.key, ...patch },
+    });
+    res.json(withAppUrl(req, updated));
+  });
+
+  router.post("/companies/:companyId/deliverables/:id/screenshot", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const current = await svc.getDetail(companyId, req.params.id as string);
+    if (!current) throw notFound("Deliverable not found");
+    await assertMayEditDeliverable(req, current.issue.id);
+    if (!current.external) throw unprocessable("Only link deliverables have a site screenshot");
+    const captured = await refreshScreenshot(companyId, current);
+    const deliverable = (await svc.getDetail(companyId, current.id)) ?? current;
+    res.json({ deliverable: withAppUrl(req, deliverable), captured });
   });
 
   router.post("/companies/:companyId/deliverables/:id/opened", async (req, res) => {
@@ -131,9 +207,9 @@ export function deliverableRoutes(
     const issue = await getAccessibleResource(req, res, issuesSvc.getById(req.params.id as string), "Issue not found");
     if (!issue) return;
     await assertAgentMayChangeIssue(req, issue);
-    const { attachmentId, ...fields } = req.body as import("@greatstone/shared").CreateDeliverable;
-    const attachment = await svc.getAttachment(issue.companyId, attachmentId);
-    if (!attachment || attachment.issueId !== issue.id) {
+    const { attachmentId, url, ...fields } = req.body as import("@greatstone/shared").CreateDeliverable;
+    const attachment = attachmentId ? await svc.getAttachment(issue.companyId, attachmentId) : null;
+    if (attachmentId && (!attachment || attachment.issueId !== issue.id)) {
       throw unprocessable("attachmentId must be an attachment on this issue. Upload it first with POST /api/companies/{companyId}/issues/{issueId}/attachments.");
     }
     const actor = getActorInfo(req);
@@ -148,12 +224,19 @@ export function deliverableRoutes(
     const deliverable = await svc.register({
       issue,
       attachment,
+      url: attachment ? null : url,
       fields,
       createdByAgentId: actor.agentId,
       createdByRunId: runId,
     });
     await logRegistered(req, deliverable, "issue.deliverable_registered");
-    res.status(201).json(deliverable);
+    if (deliverable.external) {
+      // The card shows a placeholder until the screenshot lands.
+      void refreshScreenshot(issue.companyId, deliverable).catch((err) => {
+        logger.warn({ err, deliverableId: deliverable.id }, "deliverable screenshot failed");
+      });
+    }
+    res.status(201).json(withAppUrl(req, deliverable));
   });
 
   router.post("/companies/:companyId/deliverables/mark", validate(markDeliverableSchema), async (req, res) => {
@@ -231,7 +314,7 @@ export function deliverableRoutes(
 
   router.get("/companies/:companyId/deliverables/:id/review-content", async (req, res) => {
     const detail = await getDeliverableOr404(req);
-    const html = await svc.readDeliverableHtml(detail.companyId, detail.attachmentId);
+    const html = detail.attachmentId ? await svc.readDeliverableHtml(detail.companyId, detail.attachmentId) : null;
     if (html === null) throw unprocessable("Only HTML deliverables up to 5 MB can take comments on the page");
     // The same sandbox as the file opened on its own (issues.ts attachment
     // content), so review mode gives the document no more power.

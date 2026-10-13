@@ -104,6 +104,14 @@ function sample(overrides: Partial<Deliverable> = {}): Deliverable {
     kind: "report",
     brand: "Greatstone",
     status: "final",
+    confidentiality: "internal",
+    external: false,
+    url: null,
+    screenshotPath: null,
+    screenshotCapturedAt: null,
+    linkCheck: null,
+    restricted: false,
+    appPath: `/GRE/deliverables?open=${id}`,
     attachmentId: `att-${id}`,
     contentType: "text/html",
     byteSize: 100,
@@ -209,6 +217,34 @@ describe("Deliverables page", () => {
     const frame = container.querySelector<HTMLIFrameElement>("[data-testid='deliverable-thumbnail-frame']");
     expect(frame?.getAttribute("src")).toBe("/api/attachments/att-d-1/content");
     expect(frame?.getAttribute("sandbox")).toBe(DELIVERABLE_IFRAME_SANDBOX);
+  });
+
+  it("shows a live site as a placeholder or stored screenshot with Open site, never a frame", async () => {
+    const site = (id: string, screenshotPath: string | null) => sample({
+      id,
+      external: true,
+      url: "https://greatstone-moengt-deck.netlify.app",
+      attachmentId: null,
+      contentType: "text/uri-list",
+      openPath: "https://greatstone-moengt-deck.netlify.app",
+      screenshotPath,
+      confidentiality: "client",
+      linkCheck: { lastCheckedAt: "2026-10-13T09:00:00.000Z", httpStatus: 404, ok: false },
+    });
+    deliverablesApiMock.list.mockResolvedValue(response([site("s-1", null), site("s-2", "/api/attachments/shot/content")]));
+    render();
+    await flush();
+
+    expect(container.querySelector("[data-testid='deliverable-thumbnail-frame']")).toBeNull();
+    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("GM");
+    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("greatstone-moengt-deck.netlify.app");
+    expect(container.querySelector("[data-testid='deliverable-site-screenshot']")?.getAttribute("src")).toBe("/api/attachments/shot/content");
+    const open = container.querySelector<HTMLAnchorElement>("a[aria-label='Open site']");
+    expect(open?.getAttribute("href")).toBe("https://greatstone-moengt-deck.netlify.app");
+    expect(open?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(container.querySelector("a[aria-label='Download']")).toBeNull();
+    expect(container.querySelector("[data-testid='deliverable-link-broken']")?.textContent).toContain("Link broken");
+    expect(container.querySelector("[data-testid='deliverable-confidentiality']")?.textContent).toBe("Client");
   });
 
   it("groups by project by default, shows the project on each card, and puts no-project last (GRE-1471)", async () => {

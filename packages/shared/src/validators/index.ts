@@ -775,6 +775,7 @@ export {
   pipelineStageOnEnterSchema,
   pipelineStageVariableSchema,
   pipelineStageTemplateSchema,
+  pipelineStageExpectedDeliverableSchema,
   type PipelineAutomationRetryCleanupOptions,
   type PipelineAutomationRetryRequest,
   type PipelineAutomationRetryScope,

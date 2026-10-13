@@ -224,6 +224,11 @@ For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under i
 - `SourceLink` (`href`): an external source, opened in a new tab. Every news, tool or signal item carries one.
 - `IntelligenceSection` (`title`, `count?`, `action?`): section heading over a card grid that is one column on a phone.
 
+### Deliverable labels and live sites (ConfidentialityBadge, LinkStatusBadges, SiteThumbnail, ExpectedList)
+
+**Files:** `ui/src/components/deliverables/DeliverableBadges.tsx`, `ExpectedList` in `ui/src/components/ClientJourneyStages.tsx`
+**Usage:** `ConfidentialityBadge` shows internal, client or public on a deliverable. `LinkStatusBadges` marks a link deliverable whose daily check failed ("Link broken") or that is password protected or unlisted. `SiteThumbnail` shows a live site's stored screenshot, or a placeholder with its initials and domain; it never frames the live site (GRE-405). `ExpectedList` shows what a stage expects against what is filed, with "Missing" in muted text rather than red.
+
 ### CompanySwitcher
 
 **File:** `CompanySwitcher.tsx`
