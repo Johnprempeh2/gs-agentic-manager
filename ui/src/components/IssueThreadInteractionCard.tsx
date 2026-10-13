@@ -47,6 +47,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AppLogo } from "@/pages/apps/AppLogo";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { ReauthCancelledError } from "./ReauthDialog";
+import { IssueDocumentSheet } from "./IssueDocumentSheet";
 
 const OTHER_ANSWER_ID = "__paperclip_other__";
 
@@ -1503,6 +1504,14 @@ function requestConfirmationTargetHref({
   return null;
 }
 
+/**
+ * The document or link a confirmation is about, as a real control (Ben, 13
+ * Oct: "I can't click on it"). It used to be a tiny uppercase tag that read as
+ * a label, and its task link (`/issues/<id>#document-plan`) also fed the hash
+ * into the task preview, which then looked up a task that does not exist. An
+ * issue document now opens in place in a wide reader; any other target is an
+ * ordinary link.
+ */
 function RequestConfirmationTargetChip({
   interaction,
   target,
@@ -1512,33 +1521,63 @@ function RequestConfirmationTargetChip({
   target: RequestConfirmationTarget | null | undefined;
   tone?: "default" | "subtle";
 }) {
+  const [open, setOpen] = useState(false);
   if (!target) return null;
 
+  const label = requestConfirmationTargetLabel(target);
   const href = requestConfirmationTargetHref({ interaction, target });
   const className = cn(
-    "inline-flex max-w-full items-center gap-1.5 rounded-sm border px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow)",
+    "inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     tone === "default"
-      ? "border-border/70 bg-transparent text-foreground"
-      : "border-border/60 bg-transparent text-muted-foreground",
-    href && "transition-colors hover:border-sky-500/70 hover:bg-sky-500/10",
+      ? "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10"
+      : "border-border/70 bg-transparent text-foreground hover:bg-accent",
   );
   const content = (
     <>
-      <GitBranch className="h-3 w-3 shrink-0" />
-      <span className="min-w-0 truncate">{requestConfirmationTargetLabel(target)}</span>
+      <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 truncate">Open {label}</span>
     </>
   );
 
-  if (!href) return <span className={className}>{content}</span>;
+  if (target.type === "issue_document") {
+    const issueId = target.issueId ?? interaction.issueId;
+    return (
+      <>
+        <button
+          type="button"
+          className={className}
+          aria-haspopup="dialog"
+          data-testid="confirmation-target-open"
+          onClick={() => setOpen(true)}
+        >
+          {content}
+        </button>
+        <IssueDocumentSheet
+          open={open}
+          onOpenChange={setOpen}
+          document={{ issueId, key: target.key, revisionId: target.revisionId, label, taskHref: `/issues/${issueId}#document-${encodeURIComponent(target.key)}` }}
+        />
+      </>
+    );
+  }
+  if (!href) {
+    return (
+      <span className={cn(className, "cursor-default no-underline hover:no-underline")}>
+        <GitBranch className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">{label}</span>
+      </span>
+    );
+  }
   if (/^https?:\/\//i.test(href)) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className={className}>
         {content}
+        <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       </a>
     );
   }
   return (
-    <Link to={href} className={className}>
+    <Link to={href} disableIssueQuicklook className={className}>
       {content}
     </Link>
   );

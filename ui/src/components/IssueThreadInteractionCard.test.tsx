@@ -89,6 +89,12 @@ vi.mock("@/lib/router", () => ({
 
 vi.mock("@/api/connection-intents", () => ({ connectionIntentsApi: connectionIntentsApiMocks }));
 
+const issuesApiMocks = vi.hoisted(() => ({
+  listDocumentRevisions: vi.fn(),
+  getDocument: vi.fn(),
+}));
+vi.mock("../api/issues", () => ({ issuesApi: issuesApiMocks }));
+
 function renderCard(
   props: Partial<ComponentProps<typeof IssueThreadInteractionCard>> = {},
 ) {
@@ -785,18 +791,48 @@ describe("IssueThreadInteractionCard", () => {
     expect(host.textContent).not.toContain("Wakes assignee");
   });
 
-  it("renders request confirmation target links and stale-target expiry", () => {
+  it("renders request confirmation targets as open-document buttons and stale-target expiry", () => {
     const host = renderCard({
       interaction: staleTargetRequestConfirmationInteraction,
     });
 
-    const targetLinks = host.querySelectorAll("a");
+    const targets = [...host.querySelectorAll("[data-testid='confirmation-target-open']")];
     expect(host.textContent).toContain("Expired by target change");
-    expect(host.textContent).toContain("Plan v3");
-    expect(host.textContent).toContain("Plan v4");
-    expect(targetLinks[0]?.getAttribute("href")).toContain("#document-plan");
-    expect(targetLinks[1]?.getAttribute("href")).toContain("#document-plan");
+    expect(targets.map((target) => target.textContent)).toEqual(["Open Plan v3", "Open Plan v4"]);
+    expect(targets.every((target) => target.tagName === "BUTTON")).toBe(true);
     expect(host.textContent).not.toContain("Approve plan");
+  });
+
+  // Ben, 13 Oct: "I can't click on it". The plan link on a decision card opens
+  // the document itself, wide, with a labelled close.
+  it("opens the plan document in a wide reader from the decision card", async () => {
+    issuesApiMocks.listDocumentRevisions.mockResolvedValue([
+      { id: "11111111-1111-4111-8111-111111111111", body: "# Investigation Plan\n\nRevision three body." },
+    ]);
+    const host = renderCard({ interaction: staleTargetRequestConfirmationInteraction });
+    const open = [...host.querySelectorAll<HTMLButtonElement>("[data-testid='confirmation-target-open']")]
+      .find((button) => button.textContent === "Open Plan v3");
+    expect(open).toBeDefined();
+
+    await act(async () => {
+      open!.click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const sheet = document.querySelector("[data-testid='issue-document-sheet']");
+    expect(sheet).not.toBeNull();
+    expect(sheet?.textContent).toContain("Plan v3");
+    expect(sheet?.textContent).toContain("Revision three body.");
+    expect(sheet?.textContent).toContain("Full width");
+    expect(issuesApiMocks.listDocumentRevisions).toHaveBeenCalledWith(staleTargetRequestConfirmationInteraction.issueId, "plan");
+
+    const close = [...(sheet?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === "Close");
+    await act(async () => {
+      close!.click();
+    });
+    expect(document.querySelector("[data-testid='issue-document-sheet']")).toBeNull();
   });
 
   it("renders a jump link for confirmations expired by comment", () => {

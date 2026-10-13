@@ -21,6 +21,13 @@ describe("issue-reference", () => {
     expect(parseIssuePathIdFromPath("/issues/:id")).toBeNull();
   });
 
+  it("leaves a document hash or query out of the issue id", () => {
+    expect(parseIssuePathIdFromPath("/PAP/issues/PAP-12#document-plan")).toBe("PAP-12");
+    expect(parseIssuePathIdFromPath("/issues/0b6f4c2e-1111-4111-8111-111111111111#document-plan"))
+      .toBe("0b6f4c2e-1111-4111-8111-111111111111");
+    expect(parseIssuePathIdFromPath("/issues/PAP-12?tab=documents")).toBe("PAP-12");
+  });
+
   it("does not treat full issue URLs as internal issue paths", () => {
     expect(parseIssuePathIdFromPath("http://localhost:3100/PAP/issues/PAP-1179")).toBeNull();
     expect(parseIssuePathIdFromPath("http://remote.example.test:3103/PAPA/issues/PAPA-115#comment-850083f3-24de-43e7-a8cd-bc01f7cc9f0d")).toBeNull();
