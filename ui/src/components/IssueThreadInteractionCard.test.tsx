@@ -1652,7 +1652,7 @@ describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
     const steps = sheet!.querySelectorAll('[data-testid="interaction-guide-step"]');
     expect(steps).toHaveLength(3);
     expect(steps[0].textContent).toContain("Open a terminal in the project folder.");
-    expect(steps[1].querySelector("pre")?.textContent).toContain("pnpm gsam setup --company demo");
+    expect(steps[1].querySelector("pre")?.textContent).toContain("npx gsam setup --company demo");
     expect(sheet!.textContent).not.toContain("**");
 
     const copy = steps[1].querySelector('button[aria-label="Copy code"]') as HTMLButtonElement;
@@ -1661,7 +1661,7 @@ describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
     await act(async () => {
       copy.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("pnpm gsam setup --company demo"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("npx gsam setup --company demo"));
     delete (HTMLElement.prototype as { innerText?: string }).innerText;
 
     // While the guide is open the options live only in the guide.

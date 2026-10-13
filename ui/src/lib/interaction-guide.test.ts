@@ -58,7 +58,7 @@ describe("splitInteractionGuide", () => {
       "Step 3 of 3",
     ]);
     expect(steps[0].body).toBe("Open a terminal in the project folder.");
-    expect(steps[1].body).toContain("```sh\npnpm gsam setup --company demo\n```");
+    expect(steps[1].body).toContain("```sh\nnpx gsam setup --company demo\n```");
   });
 
   it("splits on headings", () => {
