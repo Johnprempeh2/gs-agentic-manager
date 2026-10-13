@@ -223,6 +223,13 @@ For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under i
 - `MovementChip` (`movement`): rank movement on a leaderboard (up, down, no change, new), coloured with status tokens and labelled in words.
 - `SourceLink` (`href`): an external source, opened in a new tab. Every news, tool or signal item carries one.
 - `IntelligenceSection` (`title`, `count?`, `action?`): section heading over a card grid that is one column on a phone.
+- `VerdictCard` also takes `leading?` (a logo beside the eyebrow), `media?` (a full-bleed image on top) and `hero?` (the lead story's larger type).
+
+**File:** `intelligence/IntelligenceMedia.tsx`
+
+- `BrandLogo` (`name`, `domain?`, `url?`, `size?` sm, md, lg, xl): a brand logo on a light chip, fetched by domain through our own server (Logo.dev behind `GSAM_LOGODEV_PUBLISHABLE_KEY`). With no key, no match or no domain it is the name's initials on a soft status-token chip, never a broken image.
+- `ArticleImage` (`url`, `imageUrl?`, `fallback?`): the article's og:image through our server, lazy, in a fixed 16:9 box; `fallback` fills the same box when there is none. The browser never loads a remote host (GRE-405).
+- `TagChip`: compact category chip, foreground on muted.
 
 ### Deliverable labels and live sites (ConfidentialityBadge, LinkStatusBadges, SiteThumbnail, ExpectedList)
 

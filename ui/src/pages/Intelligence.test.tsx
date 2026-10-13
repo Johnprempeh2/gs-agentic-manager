@@ -194,6 +194,75 @@ describe("Intelligence page", () => {
     expect(rows[0]!.querySelector('[aria-label="No change"]')).not.toBeNull();
   });
 
+  it("leads the overview with the lead story's image, logos everywhere, and never loads a remote host", async () => {
+    const briefing: IntelligenceReport = {
+      ...pulse,
+      id: "r2",
+      kind: "ai_briefing",
+      headline: null,
+      sections: {
+        news: [
+          {
+            headline: "Second story",
+            tag: "Agents",
+            date: "2026-10-12",
+            sourceName: "The Verge",
+            url: "https://www.theverge.com/x",
+            verdict: "A verdict.",
+            points: ["One point."],
+            action: "Read it.",
+            lead: false,
+            rumoured: false,
+          },
+          {
+            headline: "Meta releases Muse Wonder",
+            tag: "Models",
+            date: "2026-10-12",
+            sourceName: "TechCrunch",
+            url: "https://techcrunch.com/muse",
+            imageUrl: "https://cdn.example.com/muse.png",
+            verdict: "Meta is near the leaders.",
+            points: ["Scores 52."],
+            action: "Run it on 20 client tasks.",
+            lead: true,
+            rumoured: false,
+          },
+        ],
+        radar: { emerging: [], movers: [], watchlist: [] },
+      },
+    } as IntelligenceReport;
+    apiMock.report.mockImplementation(async (_company: string, _date: string, kind: string) => {
+      if (kind === "ai_briefing") return briefing;
+      throw new ApiError("Not found", 404, null);
+    });
+    apiMock.boards.mockResolvedValue({
+      boards: [
+        {
+          board: "tools_agents",
+          snapshotDate: "2026-10-13",
+          comparedTo: null,
+          entries: [
+            { name: "Cursor", rank: 1, score: 91, maker: "Anysphere", domain: "cursor.com", movement: { rankDelta: null, scoreDelta: null, isNew: false } },
+            { name: "Cline", rank: 2, score: 88, movement: { rankDelta: null, scoreDelta: null, isNew: false } },
+          ],
+        },
+      ],
+    });
+    await render("/intelligence");
+    await vi.waitFor(() => expect(text()).toContain("Meta releases Muse Wonder"));
+    const hero = container.querySelector("article")!;
+    expect(hero.textContent).toContain("Do this: Run it on 20 client tasks.");
+    expect(hero.querySelector("time")?.getAttribute("dateTime")).toBe("2026-10-12");
+    expect(hero.querySelector("img")?.getAttribute("src")).toContain(encodeURIComponent("https://cdn.example.com/muse.png"));
+    expect(container.querySelector('[aria-label="Trending now"]')?.textContent).toContain("Second story");
+    const strip = container.querySelector('ol[aria-label="Top tools and agents"]')!;
+    expect(strip.querySelector('[data-logo="cursor.com"]')).not.toBeNull();
+    expect(strip.querySelector('[data-monogram="CL"]')).not.toBeNull();
+    const sources = [...container.querySelectorAll("img")].map((img) => img.getAttribute("src") ?? "");
+    expect(sources.length).toBeGreaterThan(3);
+    expect(sources.every((src) => src.startsWith("/api/companies/co-1/intelligence/"))).toBe(true);
+  });
+
   it("explains the page is off while the switch is off", async () => {
     settingsMock.getExperimental.mockResolvedValue({ enableIntelligence: false });
     await render();

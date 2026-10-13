@@ -7,6 +7,7 @@ import {
 } from "@greatstone/shared";
 import { cn, formatCalendarDay } from "@/lib/utils";
 import { MovementChip, SourceLink } from "./IntelligenceCards";
+import { BrandLogo } from "./IntelligenceMedia";
 
 /** Lower-cased entry name to its score series, oldest first (nulls are gaps). */
 export type ScoreSeries = Map<string, (number | null)[]>;
@@ -87,36 +88,45 @@ export function Podium({ view, series }: { view: IntelligenceBoardView; series?:
       {order.map(({ entry, place }) => {
         const first = place === 1;
         return (
-          <li
-            key={entry.name}
-            data-place={place}
-            className={cn(
-              "flex min-w-0 flex-col items-center gap-1 rounded-lg border bg-card px-2 pb-3 text-center sm:px-4",
-              first ? "border-primary/50 pt-6 shadow-sm sm:pt-8" : "border-border pt-4",
-            )}
-          >
-            <span
+          <li key={entry.name} data-place={place} className="flex min-w-0 flex-col">
+            <div
               className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
-                first ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+                "flex min-w-0 flex-col items-center gap-1 rounded-t-lg border border-b-0 bg-card px-2 pb-3 text-center transition-colors hover:bg-accent/40 sm:px-4",
+                first ? "border-primary/40 pt-5 sm:pt-6" : "border-border pt-4",
               )}
             >
-              <span className="sr-only">Rank </span>
-              {entry.rank}
-            </span>
-            <EntryName
-              entry={entry}
-              className={cn("max-w-full break-words font-semibold leading-snug", first ? "text-sm sm:text-base" : "text-sm")}
-            />
-            {entry.maker || entry.flagship ? (
-              <span className="max-w-full truncate text-xs text-muted-foreground">{entry.maker ?? entry.flagship}</span>
-            ) : null}
-            <span className={cn("font-bold tabular-nums", first ? "text-2xl sm:text-3xl" : "text-xl sm:text-2xl")}>
-              {entry.score ?? "n/a"}
-            </span>
-            <span className="text-xs uppercase tracking-wide text-muted-foreground">{scoreLabel(view)}</span>
-            <Movement movement={entry.movement} />
-            <Sparkline values={series?.get(entry.name.toLowerCase())} className="mt-1 hidden sm:block" />
+              <BrandLogo name={entry.maker ?? entry.name} domain={entry.domain} url={entry.url} size={first ? "xl" : "lg"} className="mb-1" />
+              <EntryName
+                entry={entry}
+                className={cn("max-w-full break-words font-semibold leading-snug", first ? "text-sm sm:text-base" : "text-sm")}
+              />
+              {entry.maker || entry.flagship ? (
+                <span className="max-w-full truncate text-xs text-muted-foreground">{entry.maker ?? entry.flagship}</span>
+              ) : null}
+              <span className={cn("font-bold tabular-nums", first ? "text-2xl sm:text-3xl" : "text-xl sm:text-2xl")}>
+                {entry.score ?? "n/a"}
+              </span>
+              <span className="text-xs uppercase tracking-wide text-muted-foreground">{scoreLabel(view)}</span>
+              <Movement movement={entry.movement} />
+              <Sparkline values={series?.get(entry.name.toLowerCase())} className="mt-1 hidden sm:block" />
+            </div>
+            {/* The step: tallest for first, the rank on it. */}
+            <div
+              className={cn(
+                "flex items-start justify-center rounded-b-lg border pt-1.5",
+                first ? "h-10 border-primary/40 bg-muted" : place === 2 ? "h-7 border-border bg-muted" : "h-5 border-border bg-muted",
+              )}
+            >
+              <span
+                className={cn(
+                  "-mt-4 flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-bold ring-2 ring-background",
+                  first ? "bg-primary text-primary-foreground" : "bg-secondary text-secondary-foreground",
+                )}
+              >
+                <span className="sr-only">Rank </span>
+                {entry.rank}
+              </span>
+            </div>
           </li>
         );
       })}
@@ -141,7 +151,7 @@ export function BoardSection({ view, series }: { view: IntelligenceBoardView; se
       </div>
       <Podium view={view} series={series} />
       {rest.length > 0 ? (
-        <div className="rounded-lg border border-border">
+        <div className="overflow-hidden rounded-lg border border-border bg-card">
           <table className="w-full table-fixed text-sm">
             <thead className="text-xs text-muted-foreground">
               <tr className="border-b border-border">
@@ -154,18 +164,23 @@ export function BoardSection({ view, series }: { view: IntelligenceBoardView; se
             </thead>
             <tbody>
               {rest.map((entry) => (
-                <tr key={entry.name} className="border-b border-border last:border-0">
-                  <td className="px-2 py-1.5 font-mono text-xs text-muted-foreground sm:px-3">{entry.rank}</td>
-                  <td className="min-w-0 px-2 py-1.5 sm:px-3">
-                    <EntryName entry={entry} className="block break-words text-sm font-medium" />
-                    {entry.maker || entry.verdict ? (
-                      <div className="break-words text-xs text-muted-foreground">{[entry.maker, entry.verdict].filter(Boolean).join(". ")}</div>
-                    ) : null}
+                <tr key={entry.name} className="border-b border-border transition-colors last:border-0 hover:bg-accent/50">
+                  <td className="px-2 py-2 font-mono text-xs text-muted-foreground sm:px-3">{entry.rank}</td>
+                  <td className="min-w-0 px-2 py-2 sm:px-3">
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+                      <BrandLogo name={entry.maker ?? entry.name} domain={entry.domain} url={entry.url} size="sm" className="sm:size-8" />
+                      <div className="min-w-0">
+                        <EntryName entry={entry} className="block break-words text-sm font-medium" />
+                        {entry.maker || entry.verdict ? (
+                          <div className="break-words text-xs text-muted-foreground">{[entry.maker, entry.verdict].filter(Boolean).join(". ")}</div>
+                        ) : null}
+                      </div>
+                    </div>
                   </td>
-                  <td className="px-2 py-1.5 sm:px-3"><Movement movement={entry.movement} /></td>
-                  <td className="px-2 py-1.5 text-right tabular-nums sm:px-3">{entry.score ?? "n/a"}</td>
+                  <td className="px-2 py-2 sm:px-3"><Movement movement={entry.movement} /></td>
+                  <td className="px-2 py-2 text-right font-semibold tabular-nums sm:px-3">{entry.score ?? "n/a"}</td>
                   {hasTrend ? (
-                    <td className="hidden px-3 py-1.5 sm:table-cell">
+                    <td className="hidden px-3 py-2 sm:table-cell">
                       <div className="flex justify-end"><Sparkline values={series?.get(entry.name.toLowerCase())} /></div>
                     </td>
                   ) : null}

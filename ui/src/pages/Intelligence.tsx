@@ -28,12 +28,14 @@ import {
   SourceLink,
   VerdictCard,
 } from "../components/intelligence/IntelligenceCards";
+import { ArticleImage, BrandLogo, TagChip } from "../components/intelligence/IntelligenceMedia";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useSearchParams } from "@/lib/router";
-import { formatCalendarDay } from "@/lib/utils";
+import { cn, formatCalendarDay } from "@/lib/utils";
 
 const TABS = [
   ["overview", "Overview"],
@@ -97,7 +99,9 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
           {sections.trends.map((trend) => (
             <VerdictCard
               key={trend.url + trend.headline}
-              eyebrow={`${FRESHNESS_LABEL[trend.freshness]} · ${trend.sourceName}`}
+              media={<ArticleImage url={trend.url} imageUrl={trend.imageUrl} fallback={<BrandLogo name={trend.sourceName} domain={trend.domain} url={trend.url} size="xl" />} />}
+              leading={<BrandLogo name={trend.sourceName} domain={trend.domain} url={trend.url} size="sm" />}
+              eyebrow={<><span className="font-medium text-foreground">{trend.sourceName}</span><TagChip>{FRESHNESS_LABEL[trend.freshness]}</TagChip></>}
               title={trend.headline}
               href={trend.url}
               verdict={trend.whyItMatters}
@@ -114,7 +118,8 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
           {sections.tools.map((tool) => (
             <VerdictCard
               key={tool.url}
-              eyebrow={`${humanise(tool.category)} · ${tool.pricing}`}
+              leading={<BrandLogo name={tool.name} domain={tool.domain} url={tool.url} size="lg" />}
+              eyebrow={<><TagChip>{humanise(tool.category)}</TagChip><span>{tool.pricing}</span></>}
               title={tool.name}
               href={tool.url}
               verdict={tool.what}
@@ -154,7 +159,9 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
           {sections.creators.map((item) => (
             <VerdictCard
               key={item.url}
-              eyebrow={`${item.creator} · ${item.platform}${item.newFace ? " · New face" : ""}`}
+              media={<ArticleImage url={item.url} imageUrl={item.imageUrl} fallback={<BrandLogo name={item.platform} domain={item.domain} url={item.url} size="xl" />} />}
+              leading={<BrandLogo name={item.platform} domain={item.domain} url={item.url} size="sm" />}
+              eyebrow={<><span className="font-medium text-foreground">{item.creator}</span><span>{item.platform}</span>{item.newFace ? <TagChip>New face</TagChip> : null}</>}
               title={item.content}
               href={item.url}
               verdict={item.why}
@@ -229,8 +236,8 @@ function CompareView({ view }: { view: IntelligenceBoardView | undefined }) {
           <thead className="text-xs text-muted-foreground">
             <tr className="border-b border-border">
               <th scope="col" className="px-3 py-2 text-left font-medium">Measure</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">{a.name}</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">{b.name}</th>
+              <th scope="col" className="px-3 py-2 text-right font-medium"><span className="inline-flex items-center gap-2"><BrandLogo name={a.maker ?? a.name} domain={a.domain} url={a.url} size="sm" />{a.name}</span></th>
+              <th scope="col" className="px-3 py-2 text-right font-medium"><span className="inline-flex items-center gap-2"><BrandLogo name={b.maker ?? b.name} domain={b.domain} url={b.url} size="sm" />{b.name}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -263,17 +270,138 @@ function OverviewHeading({ title, action }: { title: string; action?: { label: s
   );
 }
 
-function StatTile({ label, value, sub }: { label: string; value: string; sub: string }) {
+type Stat = { label: string; value: string; sub: string; logo?: { name: string; domain?: string; url?: string } };
+
+function StatTile({ label, value, sub, logo }: Stat) {
   return (
-    <div className="min-w-0 rounded-lg border border-border bg-card p-3 sm:p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-bold tabular-nums">{value}</div>
-      <div className="truncate text-xs text-muted-foreground">{sub}</div>
+    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card p-3 sm:p-4">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-2xl font-bold tabular-nums">{value}</div>
+        <div className="truncate text-xs text-muted-foreground">{sub}</div>
+      </div>
+      {logo ? <BrandLogo {...logo} size="lg" className="hidden sm:inline-flex" /> : null}
     </div>
   );
 }
 
-/** The old hub's front page: stats, the lead story with what is trending, the podium and the top tools. */
+function TrendingRail({ items }: { items: NewsItem[] }) {
+  return (
+    <aside className="min-w-0 rounded-lg border border-border bg-card p-4" aria-label="Trending now">
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+        Trending now
+      </h3>
+      <ol className="space-y-1">
+        {items.map((item) => (
+          <li key={item.url + item.headline}>
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="-mx-2 flex min-w-0 gap-3 rounded-md px-2 py-2 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-accent"
+            >
+              <BrandLogo name={item.sourceName} domain={item.domain} url={item.url} size="md" />
+              <span className="min-w-0 flex-1 space-y-1">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <TagChip>{item.tag}</TagChip>
+                  <time dateTime={item.date}>{formatCalendarDay(item.date)}</time>
+                </span>
+                <span className="block break-words text-sm font-medium leading-snug">{item.headline}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </aside>
+  );
+}
+
+/** Top tools as a horizontal strip: logo, rank, score and movement. Scrolls inside itself, never the page. */
+function ToolsStrip({ entries }: { entries: IntelligenceBoardView["entries"] }) {
+  return (
+    <ol
+      className="flex snap-x gap-3 overflow-x-auto pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+      aria-label="Top tools and agents"
+      tabIndex={0}
+    >
+      {entries.map((entry) => {
+        const body = (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <BrandLogo name={entry.maker ?? entry.name} domain={entry.domain} url={entry.url} size="lg" />
+              <span className="font-mono text-xs text-muted-foreground">#{entry.rank}</span>
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">{entry.name}</div>
+              <div className="truncate text-xs text-muted-foreground">{entry.maker ?? " "}</div>
+            </div>
+            <div className="mt-auto flex items-center justify-between gap-2">
+              <span className="text-lg font-bold tabular-nums">{entry.score ?? "n/a"}</span>
+              <MovementChip movement={entry.movement} />
+            </div>
+          </>
+        );
+        const card = "flex h-full flex-col gap-3 rounded-lg border border-border bg-card p-3 transition-colors";
+        return (
+          <li key={entry.name} className="w-40 shrink-0 snap-start sm:w-44">
+            {entry.url ? (
+              <a
+                href={entry.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className={cn(card, "hover:border-muted-foreground/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-accent")}
+              >
+                {body}
+              </a>
+            ) : (
+              <div className={card}>{body}</div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** Placeholder in the shape of the page while the first data loads. */
+function IntelligenceSkeleton() {
+  return (
+    <div className="space-y-8" aria-busy="true" aria-label="Loading intelligence">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="overflow-hidden rounded-lg border border-border lg:col-span-2">
+          <Skeleton className="aspect-video rounded-none" />
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        </div>
+        <div className="space-y-4 rounded-lg border border-border p-4">
+          {[0, 1, 2, 3, 4].map((row) => (
+            <div key={row} className="flex gap-3">
+              <Skeleton className="size-8 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-4 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((tile) => <Skeleton key={tile} className="h-24 rounded-lg" />)}
+      </div>
+      <div className="grid grid-cols-3 items-end gap-2 sm:gap-3">
+        <Skeleton className="h-52 rounded-lg" />
+        <Skeleton className="h-60 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+/** The hub's front page: the lead story with what is trending, the numbers, the podium and the tools strip. */
 function OverviewView({
   boards,
   briefing,
@@ -300,50 +428,31 @@ function OverviewView({
   }
   const lead = news.find((item) => item.lead) ?? news[0];
   const trending = news.filter((item) => item !== lead).slice(0, 5);
-  const stats = [
-    systems?.entries[0] ? { label: "Top system", value: String(systems.entries[0].score ?? "n/a"), sub: systems.entries[0].name } : null,
-    models?.entries[0] ? { label: "Top model, Index", value: String(models.entries[0].score ?? "n/a"), sub: models.entries[0].name } : null,
+  const top = (view: IntelligenceBoardView | undefined) => view?.entries[0];
+  const logoOf = (entry: IntelligenceBoardView["entries"][number] | undefined) =>
+    entry ? { name: entry.maker ?? entry.name, domain: entry.domain, url: entry.url } : undefined;
+  const stats: Stat[] = [
+    top(systems) ? { label: "Top system", value: String(top(systems)!.score ?? "n/a"), sub: top(systems)!.name, logo: logoOf(top(systems)) } : null,
+    top(models) ? { label: "Top model, Index", value: String(top(models)!.score ?? "n/a"), sub: top(models)!.name, logo: logoOf(top(models)) } : null,
     tools ? { label: "Tools tracked", value: String(tools.entries.length), sub: "Agents and builders" } : null,
     briefing ? { label: "Updates", value: String(news.length), sub: "In the briefing" } : null,
   ].filter((stat) => stat !== null);
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {lead ? (
+        <section className="space-y-3" aria-label="Leading the field">
+          <OverviewHeading title="Leading the field" action={{ label: "All news", onClick: () => onOpen("news") }} />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <NewsCard item={lead} hero className="lg:col-span-2" />
+            {trending.length > 0 ? <TrendingRail items={trending} /> : null}
+          </div>
+        </section>
+      ) : null}
+
       {stats.length > 0 ? (
         <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
           {stats.map((stat) => <StatTile key={stat.label} {...stat} />)}
         </div>
-      ) : null}
-
-      {lead ? (
-        <section className="space-y-3" aria-label="Leading the field">
-          <OverviewHeading title="Leading the field" action={{ label: "All news", onClick: () => onOpen("news") }} />
-          <div className="grid gap-3 lg:grid-cols-3">
-            <NewsCard item={lead} className="lg:col-span-2" />
-            {trending.length > 0 ? (
-              <aside className="min-w-0 rounded-lg border border-border bg-card p-4" aria-label="Trending now">
-                <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
-                  Trending now
-                </h3>
-                <ol className="divide-y divide-border">
-                  {trending.map((item) => (
-                    <li key={item.url + item.headline} className="py-2 first:pt-0 last:pb-0">
-                      <div className="text-xs text-muted-foreground">{item.tag}</div>
-                      <a
-                        href={item.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        className="break-words rounded-sm text-sm font-medium leading-snug underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        {item.headline}
-                      </a>
-                    </li>
-                  ))}
-                </ol>
-              </aside>
-            ) : null}
-          </div>
-        </section>
       ) : null}
 
       {systems ? (
@@ -356,19 +465,7 @@ function OverviewView({
       {tools && tools.entries.length > 0 ? (
         <section className="space-y-3" aria-label="Top tools and agents">
           <OverviewHeading title="Top tools and agents" action={{ label: "Tools board", onClick: () => onOpen("boards") }} />
-          <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
-            {tools.entries.slice(0, 5).map((entry) => (
-              <li key={entry.name} className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-card p-3">
-                <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                  <span className="font-mono">#{entry.rank}</span>
-                  <MovementChip movement={entry.movement} />
-                </div>
-                <div className="break-words text-sm font-semibold leading-snug">{entry.name}</div>
-                {entry.maker ? <div className="truncate text-xs text-muted-foreground">{entry.maker}</div> : null}
-                <div className="mt-auto text-lg font-bold tabular-nums">{entry.score ?? "n/a"}</div>
-              </li>
-            ))}
-          </ol>
+          <ToolsStrip entries={tools.entries.slice(0, 10)} />
         </section>
       ) : null}
     </div>
@@ -379,11 +476,27 @@ function OverviewView({
 
 type NewsItem = AiBriefingSections["news"][number];
 
-function NewsCard({ item, className }: { item: NewsItem; className?: string }) {
+function NewsCard({ item, className, hero = false }: { item: NewsItem; className?: string; hero?: boolean }) {
   return (
     <VerdictCard
       className={className}
-      eyebrow={`${item.tag} · ${formatCalendarDay(item.date)}${item.rumoured ? " · Rumoured" : ""}`}
+      hero={hero}
+      media={
+        <ArticleImage
+          url={item.url}
+          imageUrl={item.imageUrl}
+          fallback={<BrandLogo name={item.sourceName} domain={item.domain} url={item.url} size="xl" />}
+        />
+      }
+      leading={<BrandLogo name={item.sourceName} domain={item.domain} url={item.url} size="sm" />}
+      eyebrow={
+        <>
+          <span className="font-medium text-foreground">{item.sourceName}</span>
+          <TagChip>{item.tag}</TagChip>
+          <time dateTime={item.date}>{formatCalendarDay(item.date)}</time>
+          {item.rumoured ? <TagChip className="bg-status-warning-soft text-status-warning-foreground">Rumoured</TagChip> : null}
+        </>
+      }
       title={item.headline}
       href={item.url}
       verdict={item.verdict}
@@ -414,7 +527,7 @@ function NewsView({ sections }: { sections: AiBriefingSections }) {
   return (
     <IntelligenceSection title="News briefing" count={sections.news.length}>
       {sections.news.map((item) => (
-        <NewsCard key={item.url + item.headline} item={item} className={item.lead ? "md:col-span-2 xl:col-span-3" : undefined} />
+        <NewsCard key={item.url + item.headline} item={item} hero={item.lead} className={item.lead ? "md:col-span-2 xl:col-span-2" : undefined} />
       ))}
     </IntelligenceSection>
   );
@@ -430,7 +543,7 @@ function RadarView({ sections }: { sections: AiBriefingSections }) {
       {emerging.length > 0 ? (
         <IntelligenceSection title="Emerging" count={emerging.length}>
           {emerging.map((item) => (
-            <VerdictCard key={item.url + item.name} eyebrow={`${item.by} · ${item.status}`} title={item.name} href={item.url} verdict={item.what} points={[item.why]} />
+            <VerdictCard key={item.url + item.name} leading={<BrandLogo name={item.by} domain={item.domain} url={item.url} />} eyebrow={<><span className="font-medium text-foreground">{item.by}</span><TagChip>{item.status}</TagChip></>} title={item.name} href={item.url} verdict={item.what} points={[item.why]} />
           ))}
         </IntelligenceSection>
       ) : null}
@@ -439,7 +552,8 @@ function RadarView({ sections }: { sections: AiBriefingSections }) {
           {movers.map((item) => (
             <VerdictCard
               key={item.url + item.name}
-              eyebrow={<span className={item.direction === "up" ? "text-status-success" : "text-status-danger"}>{item.direction === "up" ? "Up" : "Down"} · {item.tag}</span>}
+              leading={<BrandLogo name={item.name} domain={item.domain} url={item.url} />}
+              eyebrow={<><span className={cn("font-medium", item.direction === "up" ? "text-status-success" : "text-status-danger")}>{item.direction === "up" ? "Up" : "Down"}</span><TagChip>{item.tag}</TagChip></>}
               title={item.name}
               href={item.url}
               verdict={item.note}
@@ -450,7 +564,7 @@ function RadarView({ sections }: { sections: AiBriefingSections }) {
       {watchlist.length > 0 ? (
         <IntelligenceSection title="Watchlist" count={watchlist.length}>
           {watchlist.map((item) => (
-            <VerdictCard key={item.url + item.name} eyebrow={item.tag} title={item.name} href={item.url} verdict={item.note} />
+            <VerdictCard key={item.url + item.name} leading={<BrandLogo name={item.name} domain={item.domain} url={item.url} />} eyebrow={<TagChip>{item.tag}</TagChip>} title={item.name} href={item.url} verdict={item.note} />
           ))}
         </IntelligenceSection>
       ) : null}
@@ -657,7 +771,7 @@ export function Intelligence() {
   const briefing = briefingQuery.data?.kind === "ai_briefing" ? briefingQuery.data : null;
   const boards = boardsQuery.data?.boards ?? [];
   const recommendations = recommendationsQuery.data?.recommendations ?? [];
-  const loading = (query: { isLoading: boolean }) => (query.isLoading ? <PageSkeleton variant="dashboard" /> : null);
+  const loading = (query: { isLoading: boolean }) => (query.isLoading ? <IntelligenceSkeleton /> : null);
 
   return (
     <div className="w-full max-w-7xl space-y-4">
