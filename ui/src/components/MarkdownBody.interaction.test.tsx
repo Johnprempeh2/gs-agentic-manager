@@ -152,13 +152,18 @@ describe("MarkdownBody issue mention chips", () => {
     await act(async () => { await Promise.resolve(); });
     expect(issuesApi.get).not.toHaveBeenCalled();
 
-    // Query cache notifications are batched onto the next macrotask.
+    // Query cache notifications are batched onto a later macrotask. One
+    // setTimeout(0) of our own is not enough under load: when the clock moves
+    // a millisecond between the two timers, ours fires alone first. Poll.
     await act(async () => {
       resolvePool([pap7]);
-      await new Promise((resolve) => setTimeout(resolve, 0));
     });
-
-    expect(node.querySelector('[aria-label="Issue PAP-7: Ship the release"]')).not.toBeNull();
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(node.querySelector('[aria-label="Issue PAP-7: Ship the release"]')).not.toBeNull();
+    });
     expect(issuesApi.get).not.toHaveBeenCalled();
   });
 });
