@@ -43,7 +43,6 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi, healthPollInterval } from "../api/health";
 import { resolveArchivedCompanyBounce, shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
@@ -82,7 +81,6 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     peeking,
     setPeeking,
     isMobile,
-    setForceCollapsed,
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
   const { togglePanelVisible } = usePanel();
@@ -114,13 +112,12 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   mobileBackHref.current = isMobile ? mobileBackFallback(breadcrumbs) : null;
   const location = useLocation();
   const navigationType = useNavigationType();
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const shellRoute = classifyShellRoute(location.pathname, companyPrefix);
   const isCompanySettingsRoute = shellRoute.builtInContextualSurface === "settings";
   const companyPathSegments = shellRoute.companySegments;
   const isTaskDetailRoute = shellRoute.isTaskDetail;
   const isMobileChatRoute = shellRoute.isMobileChat;
-  const useStreamlinedTaskDetailShell = streamlinedUiEnabled && isTaskDetailRoute;
+  const useStreamlinedTaskDetailShell = isTaskDetailRoute;
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
   const appDetailConnectionId = getAppDetailConnectionId(companyPathSegments);
@@ -175,12 +172,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   );
   // Most contextual routes replace the global navigation inside the same
   // sidebar shell. Skills, Apps, Agent details, and Routine details are the
-  // exceptions in Streamlined UI: their local navigation is a second rail
+  // exceptions: their local navigation is a second rail
   // beside the persistent company nav.
   const sharedSecondarySidebar = isCompanySettingsRoute ? (
     <CompanySettingsSidebar />
-  ) : !streamlinedUiEnabled && shellRoute.builtInContextualSurface === "skills" ? (
-    <SkillsContextualSidebar />
   ) : appDetailConnectionId ? (
     <AppDetailSidebar kind="connection" connectionId={appDetailConnectionId} />
   ) : appDetailApplicationId ? (
@@ -188,45 +183,36 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   ) : isAppsRoute || isToolsRoute ? (
     <AppsSidebar />
   ) : routeSidebarSlot ? (
-    streamlinedUiEnabled ? (
-      <ContextualSidebarFrame
-        surface={`plugin:${routeSidebarSlot.id}`}
-        title={routeSidebarSlot.displayName}
-      >
-        <PluginSlotMount
-          slot={routeSidebarSlot}
-          context={sidebarContext}
-          className="min-h-0 flex-1"
-          missingBehavior="placeholder"
-        />
-      </ContextualSidebarFrame>
-    ) : (
+    <ContextualSidebarFrame
+      surface={`plugin:${routeSidebarSlot.id}`}
+      title={routeSidebarSlot.displayName}
+    >
       <PluginSlotMount
         slot={routeSidebarSlot}
         context={sidebarContext}
-        className="h-full w-full"
+        className="min-h-0 flex-1"
         missingBehavior="placeholder"
       />
-    )
+    </ContextualSidebarFrame>
   ) : null;
   const secondarySidebar = shellRoute.builtInContextualSurface === "agent" && agentId ? (
     <AgentContextualSidebar agentRef={agentId} />
-  ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "routine" && routineId ? (
+  ) : shellRoute.builtInContextualSurface === "routine" && routineId ? (
     <SetupWizardSidebarOutlet><RoutineContextualSidebar routineId={routineId} /></SetupWizardSidebarOutlet>
-  ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "skills" ? (
+  ) : shellRoute.builtInContextualSurface === "skills" ? (
     <SkillsContextualSidebar />
   ) : sharedSecondarySidebar;
   const hasSecondarySidebar = secondarySidebar != null;
-  const keepsPrimarySidebar = streamlinedUiEnabled && hasSecondarySidebar && (
+  const keepsPrimarySidebar = hasSecondarySidebar && (
     shellRoute.builtInContextualSurface === "skills"
     || shellRoute.builtInContextualSurface === "agent"
     || shellRoute.builtInContextualSurface === "routine"
     || isAppsRoute
     || isToolsRoute
   );
-  const replacesPrimarySidebar = streamlinedUiEnabled && hasSecondarySidebar && !keepsPrimarySidebar;
-  const showsAdjacentSecondarySidebar = hasSecondarySidebar && (!streamlinedUiEnabled || keepsPrimarySidebar);
-  const contextualSurface: ContextualSidebarSurface | null = !streamlinedUiEnabled || !hasSecondarySidebar
+  const replacesPrimarySidebar = hasSecondarySidebar && !keepsPrimarySidebar;
+  const showsAdjacentSecondarySidebar = keepsPrimarySidebar;
+  const contextualSurface: ContextualSidebarSurface | null = !hasSecondarySidebar
     ? null
     : routeSidebarSlot && !shellRoute.builtInContextualSurface
       ? `plugin:${routeSidebarSlot.id}`
@@ -243,11 +229,6 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     refetchIntervalInBackground: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;
-
-  useLayoutEffect(() => {
-    setForceCollapsed(!streamlinedUiEnabled && hasSecondarySidebar);
-    return () => setForceCollapsed(false);
-  }, [hasSecondarySidebar, setForceCollapsed, streamlinedUiEnabled]);
 
   useEffect(() => {
     const previous = previousShellRoute.current;

@@ -6,13 +6,7 @@ const CLOUD_ADAPTERS = new Set([
 ]);
 
 /** Creation policy shared by the picker and direct setup links. */
-export function isNewAgentAdapterAllowed(
-  type: string,
-  {
-    cloud,
-    nativeRunnerEnabled,
-  }: { cloud: boolean; nativeRunnerEnabled: boolean },
-) {
+export function isNewAgentAdapterAllowed(type: string, { cloud }: { cloud: boolean }) {
   if (cloud) return CLOUD_ADAPTERS.has(type);
-  return type !== "paperclip_runner" || nativeRunnerEnabled;
+  return true;
 }

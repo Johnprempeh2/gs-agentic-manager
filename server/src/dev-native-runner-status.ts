@@ -7,14 +7,11 @@ import {
 } from "@greatstone/db";
 import { resolveMigrationConnection } from "@greatstone/db/migration-runtime";
 
-import { instanceSettingsService } from "./services/instance-settings.js";
-
 async function main(): Promise<void> {
   const connection = await resolveMigrationConnection();
   const db = createDb(connection.connectionString, { maxConnections: 1 });
 
   try {
-    const experimental = await instanceSettingsService(db).getExperimental();
     const persistedActiveNativeRun = await db
       .select({ id: heartbeatRuns.id })
       .from(heartbeatRuns)
@@ -48,9 +45,9 @@ async function main(): Promise<void> {
 
     console.log(
       JSON.stringify({
-        nativeRunnerRequired:
-          experimental.enableNativeRunner === true || persistedNativeRun,
-        rolloutEnabled: experimental.enableNativeRunner === true,
+        // Greatstone (GRE-1436): the Runner is always on, so dev always needs runnerd.
+        nativeRunnerRequired: true,
+        rolloutEnabled: true,
         persistedNativeRun,
         persistedActiveNativeRun,
         persistedRetryableFailedNativeRun,

@@ -198,11 +198,10 @@ afterEach(async () => {
   container.remove();
 });
 describe("New agent setup", () => {
-  it("blocks direct runner setup links when the experiment is disabled", async () => {
+  it("opens direct runner setup links whatever the old flag says (graduated, GRE-1436)", async () => {
     settings.getExperimental.mockResolvedValue({ enableNativeRunner: false });
     await render("paperclip_runner");
-    expect(container.textContent).toContain("This adapter is unavailable");
-    expect(api.hire).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("This adapter is unavailable");
   });
   it("blocks direct setup links for unsupported Cloud adapters", async () => {
     cache.setQueryData(queryKeys.health, {

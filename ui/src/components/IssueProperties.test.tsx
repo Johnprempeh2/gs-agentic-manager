@@ -729,53 +729,6 @@ describe("IssueProperties", () => {
     act(() => root.unmount());
   });
 
-  it("restores master's production property styling when Streamlined UI is off", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: false,
-      enableStreamlinedUi: false,
-      enableClassicTaskInterface: false,
-    });
-
-    const root = renderProperties(container, {
-      issue: createIssue(),
-      childIssues: [],
-      onUpdate: vi.fn(),
-      inline: true,
-    });
-    await waitForAssertion(() => {
-      expect(container.querySelector(".task-detail-properties")).toBeNull();
-      expect(container.querySelector('[role="tab"]')).toBeNull();
-    });
-    expect(container.textContent).toContain("Status");
-    expect(container.textContent).toContain("Triage");
-
-    act(() => root.unmount());
-  });
-
-  it("restores master's plain Properties pane header when Streamlined UI is off", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableTaskWatchdogs: false,
-      enableStreamlinedUi: false,
-      enableClassicTaskInterface: false,
-    });
-    const headerSlot = document.createElement("div");
-    headerSlot.id = "properties-pane-header-slot";
-    document.body.appendChild(headerSlot);
-
-    const root = renderProperties(container, {
-      issue: createIssue(),
-      childIssues: [],
-      onUpdate: vi.fn(),
-    });
-    await waitForAssertion(() => {
-      expect(headerSlot.textContent).toBe("Properties");
-      expect(headerSlot.querySelector('[role="tab"]')).toBeNull();
-      expect(container.querySelector(".task-detail-properties")).toBeNull();
-    });
-
-    act(() => root.unmount());
-  });
-
   it("does not show a Plan tab for a planning-mode issue without a plan document", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableClassicTaskInterface: false,

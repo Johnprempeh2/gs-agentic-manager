@@ -295,10 +295,7 @@ function Setup({
     adapterType === "kimi_local" && Boolean(apiKey.trim() || selectedBinding);
   const cloud = Boolean(useCloudInstance());
   const available =
-    isNewAgentAdapterAllowed(adapterType, {
-      cloud,
-      nativeRunnerEnabled: experimental.data?.enableNativeRunner === true,
-    }) &&
+    isNewAgentAdapterAllowed(adapterType, { cloud }) &&
     adapters.data?.some(
       (adapter) =>
         adapter.type === adapterType &&

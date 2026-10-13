@@ -6030,7 +6030,7 @@ describe("company portability", () => {
     expect(preview.plan.issuePlans).toHaveLength(0);
   });
 
-  it("rejects runner imports while disabled and accepts the same selection when enabled", async () => {
+  it("accepts runner imports with no rollout gate (GRE-1436)", async () => {
     const portability = companyPortabilityService({} as any);
     const exported = await portability.exportBundle("company-1", {
       include: { company: false, agents: true, projects: false, issues: false },
@@ -6058,13 +6058,7 @@ describe("company portability", () => {
       },
     };
 
-    await expect(portability.importBundle(request, "user-1")).rejects.toMatchObject({
-      status: 422,
-      details: { code: "paperclip_runner_rollout_disabled" },
-    });
-    expect(agentSvc.create).not.toHaveBeenCalled();
-
-    instanceSettingsSvc.getExperimental.mockResolvedValue({ enableNativeRunner: true });
+    // beforeEach stores the old flag as off; Runner graduated, so it no longer gates imports.
     await portability.importBundle({
       ...request,
       adapterOverrides: {

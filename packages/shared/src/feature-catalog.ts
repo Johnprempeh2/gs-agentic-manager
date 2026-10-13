@@ -51,14 +51,13 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableNativeRunner: {
-    title: "GS Agentic Manager Runner",
+    title: "GS Agentic Manager Runner (compatibility)",
     description:
-      "Allow explicitly configured local Codex, OpenCode, and qualified ACPX agents to use the experimental Rust GS Agentic Manager Runner, including authenticated sandbox ingress when required. Onboarding remains on legacy adapters.",
+      "Deprecated compatibility key. The GS Agentic Manager Runner is always enabled; stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    // On by default for self-hosted instances. Requires a Rust toolchain (or
-    // GSAM_RUNNER_BINARY) for `pnpm dev`, which builds runnerd whenever
-    // this is on.
+    cloudDefault: true,
+    // Always on (GRE-1436). `pnpm dev` builds runnerd, so it needs a Rust
+    // toolchain or GSAM_RUNNER_BINARY.
     selfHostedDefault: true,
   },
   enableManagedSandboxOnly: {
@@ -70,17 +69,17 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableIsolatedWorkspaces: {
-    title: "Isolated Workspaces",
+    title: "Isolated Workspaces (compatibility)",
     description:
-      "Show execution workspace controls in project configuration and allow isolated workspace behavior for task runs.",
+      "Deprecated compatibility key. Isolated workspaces are always enabled; stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableIsolatedWorkspacesByDefault: {
     title: "Isolated Workspaces By Default",
     description:
-      "Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. Requires Isolated Workspaces. A project that carries its own policy keeps it.",
+      "Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -93,9 +92,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: true,
   },
   enableStreamlinedUi: {
-    title: "Streamlined UI",
+    title: "Streamlined UI (compatibility)",
     description:
-      "Use the streamlined application shell, shared task collections, focused task detail layout, contextual navigation, and simplified main sidebar.",
+      "Deprecated compatibility key. The streamlined UI is always on (GRE-1441); stored and managed values are ignored.",
     tier: "preference",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -312,17 +311,17 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableWorkspaceBranchReconcileForward: {
-    title: "Workspace Branch Reconcile Forward",
+    title: "Workspace Branch Reconcile Forward (compatibility)",
     description:
-      "Let execution workspaces reconcile a diverged recorded branch forward instead of failing branch containment.",
+      "Deprecated compatibility key. Execution workspaces always reconcile a diverged recorded branch forward when it is safe; stored and managed values are ignored.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
   },
   enableWorkspaceDirtyQuarantineRepair: {
-    title: "Workspace Dirty Quarantine Repair",
+    title: "Workspace Dirty Quarantine Repair (compatibility)",
     description:
-      "Let workspace runtime recovery quarantine and repair dirty execution workspaces before runs.",
+      "Deprecated compatibility key. Workspace runtime recovery always quarantines and repairs dirty execution workspaces before runs when it is safe; stored and managed values are ignored.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -431,8 +430,13 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
+  { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
+  { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
+  { key: "enableStreamlinedUi", issue: "GRE-1441" },
+  { key: "enableWorkspaceBranchReconcileForward", issue: "GRE-1438" },
+  { key: "enableWorkspaceDirtyQuarantineRepair", issue: "GRE-1439" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];
 
 export type GraduatedInstanceFeatureKey = (typeof GRADUATED_INSTANCE_FEATURE_KEYS)[number]["key"];

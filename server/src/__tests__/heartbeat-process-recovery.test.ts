@@ -1631,9 +1631,12 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await waitForRunToSettle(heartbeat, runId);
     await heartbeat.waitForRunExecutionDrain(runId);
 
+    // GRE-1437 graduated Isolated Workspaces, so the "isolation unavailable"
+    // gate can no longer fire; the fixture has no sandbox environment, so the
+    // run now fails closed at the next non-retryable preflight gate.
     expect(await heartbeat.getRun(runId)).toMatchObject({
       status: "failed",
-      errorCode: "low_trust_isolation_unavailable",
+      errorCode: "low_trust_requires_sandbox_environment",
     });
     expect(
       mockAdapterExecute.mock.calls.some(

@@ -301,7 +301,7 @@ async function seedBranchContainmentRun(
   db: Db,
   repoRoot: string,
   callSite: BranchContainmentCallSite,
-  opts: { enableWorkspaceBranchReconcileForward?: boolean } = {},
+  opts: { divergeRecordedBranch?: boolean; storedReconcileForwardSetting?: boolean } = {},
 ) {
   const companyId = randomUUID();
   const projectId = randomUUID();
@@ -325,7 +325,10 @@ async function seedBranchContainmentRun(
 
   await instanceSettingsService(db).updateExperimental({
     enableIsolatedWorkspaces: true,
-    enableWorkspaceBranchReconcileForward: opts.enableWorkspaceBranchReconcileForward === true,
+    // GRE-1438: reconcile-forward graduated; a stored value must not change the outcome.
+    ...(opts.storedReconcileForwardSetting === undefined
+      ? {}
+      : { enableWorkspaceBranchReconcileForward: opts.storedReconcileForwardSetting }),
   });
   await db.insert(companies).values({
     id: companyId,
@@ -388,7 +391,7 @@ async function seedBranchContainmentRun(
       worktreePath,
       expectedBranch,
       actualBranch,
-      divergeRecordedBranch: opts.enableWorkspaceBranchReconcileForward !== true,
+      divergeRecordedBranch: opts.divergeRecordedBranch === true,
     });
   }
 
@@ -1066,7 +1069,9 @@ describeEmbeddedPostgres("heartbeat workspace branch containment", () => {
   ])("contains mid-change branch divergence at %s", async (_name, callSite, expectedWorkspaceId) => {
     const repoRoot = await createGitRepo();
     tempRoots.push(repoRoot);
-    const seeded = await seedBranchContainmentRun(db, repoRoot, callSite);
+    // The recorded branch has its own commit, so it is not an ancestor of the
+    // checked-out branch and forward reconciliation cannot apply.
+    const seeded = await seedBranchContainmentRun(db, repoRoot, callSite, { divergeRecordedBranch: true });
 
     if (callSite === "finalize") {
       adapterExecute.mockImplementationOnce(async (adapterInput) => {
@@ -1123,11 +1128,11 @@ describeEmbeddedPostgres("heartbeat workspace branch containment", () => {
     ["workspace-runtime fresh worktree reuse", "fresh_realize" as const, false],
     ["workspace-runtime persisted restore", "persisted_restore" as const, false],
     ["heartbeat finalization", "finalize" as const, false],
-  ])("auto-reconciles forward branch divergence at %s when the flag is enabled", async (_name, callSite, expectsExistingRecordUpdate) => {
+  ])("auto-reconciles forward branch divergence at %s even when a stored setting says off (GRE-1438)", async (_name, callSite, expectsExistingRecordUpdate) => {
     const repoRoot = await createGitRepo();
     tempRoots.push(repoRoot);
     const seeded = await seedBranchContainmentRun(db, repoRoot, callSite, {
-      enableWorkspaceBranchReconcileForward: true,
+      storedReconcileForwardSetting: false,
     });
 
     const expectedWorktreeStateAfterReconcile = {
@@ -1246,7 +1251,6 @@ describeEmbeddedPostgres("heartbeat workspace branch containment", () => {
 
     await instanceSettingsService(db).updateExperimental({
       enableIsolatedWorkspaces: true,
-      enableWorkspaceBranchReconcileForward: false,
     });
     await db.insert(companies).values({
       id: companyId,

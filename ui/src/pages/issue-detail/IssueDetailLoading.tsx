@@ -3,7 +3,6 @@ import { readIssueDetailHeaderSeed } from "../../lib/issueDetailBreadcrumb";
 import { cn } from "../../lib/utils";
 import { ProjectTile } from "../../components/ProjectTile";
 import { useClassicTaskInterfaceEnabled } from "../../hooks/useClassicTaskInterfaceEnabled";
-import { useStreamlinedUiEnabled } from "../../hooks/useStreamlinedUiEnabled";
 import { StatusIcon } from "../../components/StatusIcon";
 import { PriorityIcon } from "../../components/PriorityIcon";
 import { SHOW_TASK_PRIORITY_UI } from "../../lib/ui-flags";
@@ -113,17 +112,14 @@ export function useTaskDetailInterfaceMode(conversationMode = false) {
     enabled: classicTaskInterfacePreferenceEnabled,
     loaded: classicTaskInterfaceLoaded,
   } = useClassicTaskInterfaceEnabled();
-  const { enabled: streamlinedUiEnabled, loaded: streamlinedUiLoaded } =
-    useStreamlinedUiEnabled();
   const classicTaskInterfaceEnabled = classicTaskInterfacePreferenceEnabled && !conversationMode;
   const taskChatShellEnabled = !classicTaskInterfaceEnabled;
 
   return {
     classicTaskInterfaceEnabled,
     taskChatShellEnabled,
-    streamlinedTaskDetailEnabled: streamlinedUiEnabled && taskChatShellEnabled,
-    streamlinedUiEnabled,
-    loaded: classicTaskInterfaceLoaded && streamlinedUiLoaded,
+    streamlinedTaskDetailEnabled: taskChatShellEnabled,
+    loaded: classicTaskInterfaceLoaded,
   };
 }
 

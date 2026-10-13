@@ -62,7 +62,6 @@ function registerModuleMocks() {
 
 function createApp(
   actorOverrides: Partial<Express.Request["actor"]> = {},
-  options: Parameters<typeof adapterRoutes>[0] = {},
 ) {
   const app = express();
   app.use(express.json());
@@ -77,7 +76,7 @@ function createApp(
     };
     next();
   });
-  app.use("/api", adapterRoutes(options));
+  app.use("/api", adapterRoutes());
   app.use(errorHandler);
   return app;
 }
@@ -149,17 +148,10 @@ describe("adapter routes", () => {
     }
   });
 
-  it("keeps paperclip_runner hidden from selection unless the rollout flag is enabled", async () => {
-    const disabledResponse = await request(createApp()).get("/api/adapters");
-    expect(disabledResponse.status).toBe(200);
-    expect(disabledResponse.body.find((adapter: any) => adapter.type === "paperclip_runner"))
-      .toMatchObject({ disabled: true });
-
-    const enabledResponse = await request(createApp({}, {
-      getNativeRunnerEnabled: async () => true,
-    })).get("/api/adapters");
-    expect(enabledResponse.status).toBe(200);
-    expect(enabledResponse.body.find((adapter: any) => adapter.type === "paperclip_runner"))
+  it("lists paperclip_runner as selectable with no rollout flag (GRE-1436)", async () => {
+    const response = await request(createApp()).get("/api/adapters");
+    expect(response.status).toBe(200);
+    expect(response.body.find((adapter: any) => adapter.type === "paperclip_runner"))
       .toMatchObject({
         disabled: false,
         capabilities: {

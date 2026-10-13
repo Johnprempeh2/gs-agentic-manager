@@ -2,11 +2,19 @@ import { describe, expect, it, vi } from "vitest";
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import {
   applyExperimentalSettingsPatch,
+  applyManagedExperimentalOverlay,
   normalizeExperimentalSettings,
   resolveWorktreeRunExecutionActivationState,
 } from "../services/instance-settings.js";
 
 describe("instance settings service", () => {
+  it("always reads the graduated Runner flag as on (GRE-1436)", () => {
+    for (const stored of [undefined, {}, { enableNativeRunner: false }, { enableNativeRunner: true }]) {
+      expect(normalizeExperimentalSettings(stored).enableNativeRunner).toBe(true);
+    }
+    const patched = applyExperimentalSettingsPatch({}, { enableNativeRunner: false });
+    expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(patched))).enableNativeRunner).toBe(true);
+  });
   it("keeps chat connectors opt-in across legacy storage and patches without disabling Apps", () => {
     for (const stored of [undefined, {}, { enableApps: true }, { enableConferenceRoomChat: true }]) {
       expect(normalizeExperimentalSettings(stored).enableChatConnectors).toBe(false);
@@ -34,7 +42,7 @@ describe("instance settings service", () => {
       enableNewestFirstIssueThread: true,
     })).toEqual({
       enableEnvironments: true,
-      enableNativeRunner: false,
+      enableNativeRunner: true,
       enableManagedSandboxOnly: false,
       enableIsolatedWorkspaces: true,
       enableIsolatedWorkspacesByDefault: false,
@@ -70,7 +78,7 @@ describe("instance settings service", () => {
       enableFirstTaskPlanProposal: false,
       autoRestartDevServerWhenIdle: false,
       enableWorkspaceBranchReconcileForward: true,
-      enableWorkspaceDirtyQuarantineRepair: false,
+      enableWorkspaceDirtyQuarantineRepair: true,
       enableOwnerInstanceAdmin: false,
       enableSandboxDuplexBridge: false,
       enableRunnerPreviewIngress: false,
@@ -94,6 +102,24 @@ describe("instance settings service", () => {
     expect(normalizeExperimentalSettings({}).enableApps).toBe(true);
     expect(normalizeExperimentalSettings({ enablePipelines: true }).enableApps).toBe(true);
     expect(normalizeExperimentalSettings({ enableApps: false }).enableApps).toBe(true);
+  });
+
+  it("keeps Isolated Workspaces on for empty, legacy, patched, and managed-off settings (GRE-1437)", () => {
+    expect(normalizeExperimentalSettings(undefined).enableIsolatedWorkspaces).toBe(true);
+    expect(normalizeExperimentalSettings({}).enableIsolatedWorkspaces).toBe(true);
+    expect(normalizeExperimentalSettings("not an object").enableIsolatedWorkspaces).toBe(true);
+    expect(normalizeExperimentalSettings({ enableIsolatedWorkspaces: false }).enableIsolatedWorkspaces).toBe(true);
+    expect(
+      applyExperimentalSettingsPatch({}, { enableIsolatedWorkspaces: false }).enableIsolatedWorkspaces,
+    ).toBe(true);
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+      normalizeExperimentalSettings({}),
+      { features: { enableIsolatedWorkspaces: false } } as unknown as Parameters<
+        typeof applyManagedExperimentalOverlay
+      >[1],
+    );
+    expect(experimental.enableIsolatedWorkspaces).toBe(true);
+    expect(managedKeys.enableIsolatedWorkspaces).toBeUndefined();
   });
 
   it("retains the deprecated ingress key for stored-settings compatibility", () => {
@@ -206,6 +232,16 @@ describe("instance settings service", () => {
     expect(
       normalizeExperimentalSettings({ enableExperimentalFileViewer: true })
         .enableWorkspaceBranchReconcileForward,
+    ).toBe(true);
+    // GRE-1438: graduated, so a stored off value reads as on.
+    expect(
+      normalizeExperimentalSettings({ enableWorkspaceBranchReconcileForward: false })
+        .enableWorkspaceBranchReconcileForward,
+    ).toBe(true);
+    // GRE-1439: graduated, so a stored off value reads as on.
+    expect(
+      normalizeExperimentalSettings({ enableWorkspaceDirtyQuarantineRepair: false })
+        .enableWorkspaceDirtyQuarantineRepair,
     ).toBe(true);
     expect(normalizeExperimentalSettings(undefined).enableWorkspaceDirtyQuarantineRepair).toBe(true);
     expect(normalizeExperimentalSettings({}).enableWorkspaceDirtyQuarantineRepair).toBe(true);

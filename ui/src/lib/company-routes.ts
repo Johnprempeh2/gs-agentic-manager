@@ -42,6 +42,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "strategy-board",
   "pipelines",
   "organisations",
+  "billing",
   "review-queue",
   "learnings",
   "cases",

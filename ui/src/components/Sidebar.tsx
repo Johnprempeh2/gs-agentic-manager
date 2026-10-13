@@ -5,11 +5,9 @@ import {
   Target,
   Landmark,
   LayoutDashboard,
-  DollarSign,
   History,
   Search,
   SquarePen,
-  Network,
   Boxes,
   Repeat,
   Layers,
@@ -21,7 +19,6 @@ import {
   FolderOpen,
   Unplug,
   MessagesSquare,
-  GanttChartSquare,
   LayoutGrid,
   UserCheck,
   Users,
@@ -57,8 +54,6 @@ import { useQuery } from "@tanstack/react-query";
 import { SidebarSection, type SidebarSectionMenuAction } from "./SidebarSection";
 import { useSidebarSectionOrder } from "../hooks/useSidebarSectionOrder";
 import { SidebarNavItem } from "./SidebarNavItem";
-import { SidebarAgents } from "./SidebarAgents";
-import { SidebarProjects } from "./SidebarProjects";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
@@ -71,7 +66,6 @@ import { instanceSettingsApi } from "../api/instanceSettings";
 import { queryKeys } from "../lib/queryKeys";
 import { useDecisionsCount, useMyTasksCount } from "../hooks/useDecisionsFeed";
 import { useInboxBadge } from "../hooks/useInboxBadge";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 import { useMemoryEnabled } from "../hooks/useMemoryEnabled";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -164,7 +158,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const [organizationOpen, setOrganizationOpen] = useStoredSectionOpen("company", true);
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { collapsed, peeking } = useSidebar();
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const rail = collapsed && !peeking;
   const inboxBadge = useInboxBadge(selectedCompanyId);
   // Releasing is the board's decision (GRE-119): agents never see the page.
@@ -381,9 +374,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     <aside
       className={cn(
         "w-full h-full min-h-0 flex flex-col",
-        streamlinedUiEnabled
-          ? primarySidebarStyles.surface
-          : "border-r border-border bg-background",
+        primarySidebarStyles.surface,
       )}
     >
       {/* Top bar: company name, aligned with top sections and borderless.
@@ -430,78 +421,28 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           {memoryEnabled ? <SidebarNavItem to="/memory" label="Memory" icon={Brain} /> : null}
           {/* GRE-259: the chat with Everest sits directly under Search and Deliverables. */}
-          {streamlinedUiEnabled && showAgentChats ? <SidebarAgentChats inline /> : null}
-          {streamlinedUiEnabled ? null : (
-            <>
-              {dashboardItem}
-              {inboxItem}
-              {myTasksItem}
-              {decisionsItem}
-              {statusItem}
-              {conferenceRoomItem}
-            </>
-          )}
+          {showAgentChats ? <SidebarAgentChats inline /> : null}
         </div>
 
-        {streamlinedUiEnabled ? (
-          <DndContext
-            sensors={sectionSensors}
-            collisionDetection={closestCenter}
-            onDragEnd={({ active, over }) => {
-              if (over && active.id !== over.id) sectionOrder.drop(String(active.id), String(over.id));
-            }}
-          >
-            <SortableContext items={sectionOrder.order} strategy={verticalListSortingStrategy}>
-              {sectionOrder.order.map((id) => (
-                <SortableSidebarSection key={id} id={id} label={SECTION_LABELS[id] ?? id}>
-                  {streamlinedSections[id]}
-                </SortableSidebarSection>
-              ))}
-            </SortableContext>
-          </DndContext>
-        ) : (
-          <SidebarSection label="Work" collapsible={{ open: workOpen, onOpenChange: setWorkOpen }}>
-            {tasksItem}
-            {routinesItem}
-            {workflowsItem}
-            {artifactsItem}
-            {casesItem}
-            {deepDiveItem}
-            {pipelinesItem}
-            <SidebarStarredPipelines />
-            {organisationsItem}
-            {goalsItem}
-            {boardItem}
-            {workspacesItem}
-            {pluginNavOutlets}
-          </SidebarSection>
-        )}
+        <DndContext
+          sensors={sectionSensors}
+          collisionDetection={closestCenter}
+          onDragEnd={({ active, over }) => {
+            if (over && active.id !== over.id) sectionOrder.drop(String(active.id), String(over.id));
+          }}
+        >
+          <SortableContext items={sectionOrder.order} strategy={verticalListSortingStrategy}>
+            {sectionOrder.order.map((id) => (
+              <SortableSidebarSection key={id} id={id} label={SECTION_LABELS[id] ?? id}>
+                {streamlinedSections[id]}
+              </SortableSidebarSection>
+            ))}
+          </SortableContext>
+        </DndContext>
 
         {children}
-        {!streamlinedUiEnabled && showAgentChats && <SidebarAgentChats />}
 
-        {streamlinedUiEnabled ? (
-          <SidebarRecentTasks companyId={selectedCompanyId} liveIssueIds={liveIssueIds} />
-        ) : (
-          <>
-            <SidebarProjects />
-            <SidebarAgents />
-            <SidebarSection
-              label="Organization"
-              collapsible={{ open: organizationOpen, onOpenChange: setOrganizationOpen }}
-            >
-              <SidebarNavItem to="/org" label="Org" icon={Network} />
-              <SidebarNavItem to="/apps" label="Connectors" icon={Unplug} />
-              {websiteItem}
-              <SidebarNavItem to="/timeline" label="Timeline" icon={GanttChartSquare} />
-              <SidebarNavItem to="/costs" label="Costs" icon={DollarSign} />
-              <SidebarNavItem to="/activity" label="Activity" icon={History} />
-              {canRelease ? <SidebarNavItem to="/releases" label="Releases" icon={Rocket} /> : null}
-              {billingItem}
-              <SidebarNavItem to="/company/settings" label="Settings" icon={Settings} />
-            </SidebarSection>
-          </>
-        )}
+        <SidebarRecentTasks companyId={selectedCompanyId} liveIssueIds={liveIssueIds} />
 
         <PluginSlotOutlet
           slotTypes={["sidebarPanel"]}

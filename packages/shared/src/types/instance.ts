@@ -106,8 +106,9 @@ export interface InstanceSystemMemory {
 export interface InstanceExperimentalSettings {
   enableEnvironments: boolean;
   /**
-   * Exposes the experimental GS Agentic Manager Runner adapter for new selections.
-   * Existing native runs ignore later flag changes so they remain recoverable.
+   * @deprecated Compatibility-only (GRE-1436). The GS Agentic Manager Runner
+   * is always enabled; this always reads as true and stored or managed values
+   * are ignored.
    */
   enableNativeRunner: boolean;
   /**
@@ -115,12 +116,12 @@ export interface InstanceExperimentalSettings {
    * sandbox environment. Run selection refuses local while this is on.
    */
   enableManagedSandboxOnly: boolean;
+  /** Compatibility key (GRE-1437): isolated workspaces are always on; reads as true. */
   enableIsolatedWorkspaces: boolean;
   /**
    * Move the execution workspace default for a project that carries no policy
    * of its own from the shared project checkout to an isolated per-task
-   * worktree. Inert unless `enableIsolatedWorkspaces` is also on, and never
-   * overrides a project that stores its own policy.
+   * worktree. Never overrides a project that stores its own policy.
    */
   enableIsolatedWorkspacesByDefault: boolean;
   enableStreamlinedLeftNavigation: boolean;
@@ -129,6 +130,7 @@ export interface InstanceExperimentalSettings {
    * Missing legacy values default on; the retired left-navigation preference
    * remains separate so an old opt-out cannot disable the broader UI.
    */
+  /** Compatibility key (GRE-1441): the streamlined UI is always on; the app ignores the value. */
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;

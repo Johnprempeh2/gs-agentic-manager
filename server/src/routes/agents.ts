@@ -2220,15 +2220,6 @@ export function agentRoutes(
    */
   async function assertSelectableAdapterType(type: string | null | undefined): Promise<string> {
     const adapterType = assertKnownAdapterType(type);
-    if (adapterType === "paperclip_runner") {
-      const experimental = await instanceSettings.getExperimental();
-      if (experimental.enableNativeRunner !== true) {
-        throw unprocessable(
-          "GS Agentic Manager Runner is experimental and disabled on this instance.",
-          { code: "paperclip_runner_rollout_disabled" },
-        );
-      }
-    }
     const disabled = new Set(getDisabledAdapterTypes());
     if (!disabled.has(adapterType)) return adapterType;
     const available = listServerAdapters()

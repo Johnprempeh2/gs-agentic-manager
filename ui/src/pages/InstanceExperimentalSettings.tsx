@@ -254,15 +254,12 @@ export function InstanceExperimentalSettings() {
     getWorktreeInstanceId(),
   );
   const enableEnvironments = experimentalQuery.data?.enableEnvironments === true;
-  const enableNativeRunner = experimentalQuery.data?.enableNativeRunner === true;
   const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
-  const enableIsolatedWorkspaces = experimentalQuery.data?.enableIsolatedWorkspaces === true;
   const enableIsolatedWorkspacesByDefault =
     experimentalQuery.data?.enableIsolatedWorkspacesByDefault === true;
   // Streamlined left navigation is now the standard sidebar (PAP-12472); the
   // experimental opt-out was retired, so it no longer surfaces a toggle here.
-  const enableStreamlinedUi = experimentalQuery.data?.enableStreamlinedUi !== false;
   const enableConferenceRoomChat = experimentalQuery.data?.enableConferenceRoomChat === true;
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
   const enableIssuePlanDecompositions =
@@ -499,17 +496,6 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Enable Isolated Workspaces"
-          description="Show execution workspace controls in project configuration and allow isolated workspace behavior for new and existing task runs."
-          checked={enableIsolatedWorkspaces}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableIsolatedWorkspaces: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableIsolatedWorkspaces"
-          managed={managedKeys.enableIsolatedWorkspaces}
-          ariaLabel="Toggle isolated workspaces experimental setting"
-        />
-
-        <ExperimentalToggleCard
           title="Experimental File Viewer"
           description="Show task detail controls for browsing and previewing workspace files relative to a task."
           checked={enableExperimentalFileViewer}
@@ -531,19 +517,6 @@ export function InstanceExperimentalSettings() {
           settingKey="enableFirstTaskPlanProposal"
           managed={managedKeys.enableFirstTaskPlanProposal}
           ariaLabel="Toggle first task plan proposal experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="GS Agentic Manager Runner"
-          description="Allow new Codex agents to select the experimental Rust GS Agentic Manager Runner, including authenticated runner ingress when a sandbox requires it. Onboarding continues to use legacy adapters. Turning this off hides the choice without affecting existing native runs."
-          checked={enableNativeRunner}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate({ enableNativeRunner: checked })
-          }
-          disabled={toggleMutation.isPending}
-          settingKey="enableNativeRunner"
-          managed={managedKeys.enableNativeRunner}
-          ariaLabel="Toggle GS Agentic Manager Runner experimental setting"
         />
 
         <ExperimentalToggleCard
@@ -607,17 +580,6 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle strategy setting"
         />
 
-        <ExperimentalToggleCard
-          title="Streamlined UI"
-          description="Use the simplified main sidebar, shared Tasks and Inbox presentation, focused task detail layout, and contextual navigation across Agents, Routines, Skills, and Settings."
-          footnote="Turning this off restores the legacy shell and navigation. Task and page data are unchanged."
-          checked={enableStreamlinedUi}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableStreamlinedUi: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableStreamlinedUi"
-          managed={managedKeys.enableStreamlinedUi}
-          ariaLabel="Toggle Streamlined UI experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Summaries"
@@ -637,20 +599,18 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle summaries experimental setting"
         />
 
-        {enableIsolatedWorkspaces && (
-          <ExperimentalToggleCard
-            title="Use Isolated Workspaces By Default"
-            description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
-            checked={enableIsolatedWorkspacesByDefault}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableIsolatedWorkspacesByDefault: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableIsolatedWorkspacesByDefault"
-            managed={managedKeys.enableIsolatedWorkspacesByDefault}
-            ariaLabel="Toggle isolated workspaces by default experimental setting"
-          />
-        )}
+        <ExperimentalToggleCard
+          title="Use Isolated Workspaces By Default"
+          description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
+          checked={enableIsolatedWorkspacesByDefault}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate({ enableIsolatedWorkspacesByDefault: checked })
+          }
+          disabled={toggleMutation.isPending}
+          settingKey="enableIsolatedWorkspacesByDefault"
+          managed={managedKeys.enableIsolatedWorkspacesByDefault}
+          ariaLabel="Toggle isolated workspaces by default experimental setting"
+        />
 
         <ExperimentalToggleCard
           title="Website view"

@@ -28,6 +28,7 @@ import { eq } from "drizzle-orm";
 import {
   buildWorkspaceRuntimeDesiredStatePatch,
   cleanupExecutionWorkspaceArtifacts,
+  ensureGitWorktreeBranchCoherent,
   ensurePersistedExecutionWorkspaceAvailable,
   ensureServerWorkspaceLinksCurrent,
   ensureRuntimeServicesForRun,
@@ -217,7 +218,6 @@ async function expectPersistedBranchMismatchRejected(input: {
         name: "Codex Coder",
         companyId: "company-1",
       },
-      enableWorkspaceBranchReconcileForward: true,
     });
   } catch (err) {
     error = err;
@@ -2960,7 +2960,7 @@ describe("realizeExecutionWorkspace", () => {
     await expect(readGit(worktreePath, ["rev-parse", "HEAD"])).resolves.toBe(detachedHead);
   }, 15_000);
 
-  it("rejects dirty persisted git worktree branch incoherence with bounded recovery evidence", async () => {
+  it("rejects dirty persisted git worktree branch incoherence without database access, with bounded recovery evidence", async () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-455-reject-dirty-branch-mismatch";
     const actualBranch = "PAP-455-publish-head";
@@ -3002,7 +3002,6 @@ describe("realizeExecutionWorkspace", () => {
         name: "Codex Coder",
         companyId: "company-1",
       },
-      enableWorkspaceDirtyQuarantineRepair: false,
     })).rejects.toMatchObject({
       code: "workspace_validation_failed",
       resultJson: {
@@ -3027,7 +3026,7 @@ describe("realizeExecutionWorkspace", () => {
             eligible: false,
             attempted: false,
             succeeded: false,
-            reason: "worktree is not clean",
+            reason: "dirty quarantine repair requires database access for claimant checks and audit",
           }),
         }),
       },
@@ -3086,7 +3085,11 @@ describe("realizeExecutionWorkspace", () => {
     });
   }, 15_000);
 
-  it("adopts an existing persisted git worktree when the checked-out branch is forward of the recorded branch", async () => {
+  // GRE-1438: forward reconciliation is always on, so a forward branch takes the
+  // audited path. Without a database it fails closed and leaves git untouched;
+  // the database-backed adoption is covered in
+  // heartbeat-workspace-branch-containment.test.ts (persisted restore).
+  it("routes a persisted git worktree whose checked-out branch is forward of the recorded branch to audited forward reconciliation", async () => {
     const repoRoot = await createTempRepo();
 
     const initial = await realizeExecutionWorkspace({
@@ -3123,7 +3126,7 @@ describe("realizeExecutionWorkspace", () => {
     await runGit(initial.cwd, ["commit", "-m", "Add publish branch work"]);
 
     if (!initial.branchName) throw new Error("expected realized worktree branch name");
-    const restored = await ensurePersistedExecutionWorkspaceAvailable({
+    const restore = ensurePersistedExecutionWorkspaceAvailable({
       base: {
         baseCwd: repoRoot,
         source: "project_primary",
@@ -3157,10 +3160,21 @@ describe("realizeExecutionWorkspace", () => {
       },
     });
 
-    expect(restored?.branchName).toBe(actualBranch);
-    expect(restored?.warnings).toEqual(expect.arrayContaining([
-      expect.stringContaining("adopted it for subsequent runs"),
-    ]));
+    await expect(restore).rejects.toMatchObject({
+      code: "workspace_validation_failed",
+      resultJson: {
+        workspaceValidation: expect.objectContaining({
+          reason: "git_worktree_branch_incoherence",
+          expectedBranch: initial.branchName,
+          actualBranch,
+          cleanliness: "clean",
+          provenance: expect.objectContaining({ ancestryVerdict: "ancestor", sameHead: false }),
+          safeRepair: expect.objectContaining({
+            reason: "forward reconciliation adoption requires database access to audit after workspace realization",
+          }),
+        }),
+      },
+    });
     await expect(readGit(initial.cwd, ["branch", "--show-current"])).resolves.toBe(actualBranch);
   }, 15_000);
 
@@ -3217,7 +3231,6 @@ describe("realizeExecutionWorkspace", () => {
           name: "Codex Coder",
           companyId: "company-1",
         },
-        enableWorkspaceBranchReconcileForward: true,
       });
     } catch (err) {
       error = err;
@@ -3246,7 +3259,7 @@ describe("realizeExecutionWorkspace", () => {
     });
   }, 15_000);
 
-  it("routes a deleted recorded branch with a clean worktree to forward adoption when reconcile-forward is enabled", async () => {
+  it("routes a deleted recorded branch with a clean worktree to forward adoption", async () => {
     const repoRoot = await createTempRepo();
     const expectedBranch = "PAP-458-deleted-recorded-branch";
     const actualBranch = "PAP-458-actual-work";
@@ -3291,7 +3304,6 @@ describe("realizeExecutionWorkspace", () => {
           name: "Codex Coder",
           companyId: "company-1",
         },
-        enableWorkspaceBranchReconcileForward: true,
       });
     } catch (err) {
       error = err;
@@ -3328,10 +3340,10 @@ describe("realizeExecutionWorkspace", () => {
     });
   }, 15_000);
 
-  it("keeps a deleted recorded branch fail-closed when reconcile-forward is disabled", async () => {
+  it("keeps a deleted recorded branch fail-closed when the caller opts out of reconcile-forward (quarantine restore)", async () => {
     const repoRoot = await createTempRepo();
-    const expectedBranch = "PAP-458-deleted-recorded-branch-flag-off";
-    const actualBranch = "PAP-458-actual-work-flag-off";
+    const expectedBranch = "PAP-458-deleted-recorded-branch-opt-out";
+    const actualBranch = "PAP-458-actual-work-opt-out";
     const worktreePath = path.join(repoRoot, ".gsam", "worktrees", expectedBranch);
 
     await fs.mkdir(path.dirname(worktreePath), { recursive: true });
@@ -3341,39 +3353,18 @@ describe("realizeExecutionWorkspace", () => {
 
     let error: unknown = null;
     try {
-      await ensurePersistedExecutionWorkspaceAvailable({
-        base: {
-          baseCwd: repoRoot,
-          source: "project_primary",
-          projectId: "project-1",
-          workspaceId: "workspace-1",
-          repoUrl: null,
-          repoRef: "HEAD",
-        },
-        workspace: {
-          id: "execution-workspace-deleted-branch-flag-off",
-          mode: "isolated_workspace",
-          strategyType: "git_worktree",
-          cwd: worktreePath,
-          providerRef: worktreePath,
-          projectId: "project-1",
-          projectWorkspaceId: "workspace-1",
-          repoUrl: null,
-          baseRef: "HEAD",
-          branchName: expectedBranch,
-          metadata: RUNTIME_OWNED_GIT_BRANCH_METADATA,
-        },
-        issue: {
-          id: "issue-deleted-branch-flag-off",
+      await ensureGitWorktreeBranchCoherent({
+        repoRoot,
+        worktreePath,
+        expectedBranchName: expectedBranch,
+        sourceIssue: {
+          id: "issue-deleted-branch-opt-out",
           identifier: "PAP-458",
           title: "Classify deleted branch ancestry",
         },
-        agent: {
-          id: "agent-1",
-          name: "Codex Coder",
-          companyId: "company-1",
-        },
+        executionWorkspaceId: "execution-workspace-deleted-branch-opt-out",
         enableWorkspaceBranchReconcileForward: false,
+        persistForwardReconcile: false,
       });
     } catch (err) {
       error = err;
@@ -6216,8 +6207,6 @@ describeEmbeddedPostgres("workspace dirty quarantine branch repair", () => {
         companyId: input.ids.companyId,
       },
       heartbeatRunId: input.ids.runId,
-      enableWorkspaceBranchReconcileForward: true,
-      enableWorkspaceDirtyQuarantineRepair: true,
       recorder: input.recorder ?? null,
     });
   }

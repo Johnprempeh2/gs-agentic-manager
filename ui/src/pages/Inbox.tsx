@@ -81,7 +81,6 @@ import {
   InboxIssueMetaLeading,
   InboxIssueTrailingColumns,
   IssueColumnPicker,
-  issueActivityText,
   issueActivityTimestamp,
   issueTrailingColumns,
 } from "../components/IssueColumns";
@@ -90,10 +89,8 @@ import { InboxArchiveButton, IssueRow } from "../components/IssueRow";
 import { TaskOwnerLabel } from "../components/TaskOwnerLabel";
 import { BlockedInboxView } from "../components/BlockedInboxView";
 import { SwipeToArchive } from "../components/SwipeToArchive";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useNeedsMe } from "../hooks/useDecisionsFeed";
 import { NeedsMeList } from "../components/NeedsMeList";
-import { Inbox as LegacyInbox } from "./LegacyInbox";
 
 import { StatusIcon } from "../components/StatusIcon";
 import { isWaitingOnMonitor } from "../components/IssueMonitorBanner";
@@ -799,12 +796,6 @@ function InboxCollectionToolbar({
 }
 
 export function Inbox() {
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  return streamlinedUiEnabled ? <StreamlinedInbox /> : <LegacyInbox />;
-}
-
-function StreamlinedInbox() {
-  const streamlinedUiEnabled = true;
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { openNewIssue } = useDialogActions();
@@ -2415,7 +2406,7 @@ function StreamlinedInbox() {
   return (
     <div className="space-y-6">
       <InboxCollectionToolbar
-        streamlined={streamlinedUiEnabled}
+        streamlined
         ariaLabel="Inbox controls"
         context={(
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
@@ -2478,7 +2469,7 @@ function StreamlinedInbox() {
                 buttonVariant="outline"
                 iconOnly
                 workspaces={isolatedWorkspacesEnabled ? executionWorkspaces.filter((w) => w.mode === "isolated_workspace").map((w) => ({ id: w.id, name: w.name })) : undefined}
-                presentation={streamlinedUiEnabled ? "streamlined" : "legacy"}
+                presentation="streamlined"
               />
               <Popover>
                 <PopoverTrigger asChild>
@@ -2584,7 +2575,7 @@ function StreamlinedInbox() {
                 buttonVariant="outline"
                 iconOnly
                 workspaces={isolatedWorkspacesEnabled ? executionWorkspaces.filter((w) => w.mode === "isolated_workspace").map((w) => ({ id: w.id, name: w.name })) : undefined}
-                presentation={streamlinedUiEnabled ? "streamlined" : "legacy"}
+                presentation="streamlined"
                 inboxScopeFilters={tab === "all" ? {
                   category: allCategoryFilter,
                   approvalStatus: allApprovalFilter,
@@ -2651,7 +2642,7 @@ function StreamlinedInbox() {
                 onResetColumns={() => setIssueColumns(DEFAULT_INBOX_ISSUE_COLUMNS)}
                 title="Choose which inbox columns stay visible"
                 iconOnly
-                rowPresentation={streamlinedUiEnabled ? "task" : "legacy"}
+                rowPresentation="task"
               />
               {canMarkAllRead && (
                 <>
@@ -2724,7 +2715,7 @@ function StreamlinedInbox() {
           showStatusColumn={visibleIssueColumnSet.has("status") && availableIssueColumnSet.has("status")}
           showIdentifierColumn={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
           showUpdatedColumn={visibleIssueColumnSet.has("updated") && availableIssueColumnSet.has("updated")}
-          presentation={streamlinedUiEnabled ? "task" : "legacy"}
+          presentation="task"
         />
         </div>
       ) : null}
@@ -2811,10 +2802,10 @@ function StreamlinedInbox() {
                     <IssueRow
                       key={`issue:${issue.id}`}
                       issue={issue}
-                      presentation={streamlinedUiEnabled ? "task" : "legacy"}
+                      presentation="task"
                       issueLinkState={issueLinkState}
                       treeGuides={depth}
-                      chevronInGuide={streamlinedUiEnabled && depth > 0 && hasChildren}
+                      chevronInGuide={depth > 0 && hasChildren}
                       selected={selected}
                       ownerLabel={<TaskOwnerLabel issue={issue} currentUserId={currentUserId} userLabels={companyUserLabelMap} />}
                       className={
@@ -2822,7 +2813,7 @@ function StreamlinedInbox() {
                           ? "pointer-events-none -translate-x-4 scale-(--s-0_98) opacity-0 transition-all duration-200 ease-out"
                           : "transition-all duration-200 ease-out"
                       }
-                      leadingControl={streamlinedUiEnabled && nestingEnabled && hasChildren && collapseParentId ? (
+                      leadingControl={nestingEnabled && hasChildren && collapseParentId ? (
                         <button
                           type="button"
                           data-slot="icon-button"
@@ -2836,11 +2827,11 @@ function StreamlinedInbox() {
                         >
                           <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
                         </button>
-                      ) : streamlinedUiEnabled ? (
+                      ) : (
                         <span data-slot="task-row-disclosure-spacer" className={cn("h-4 w-4 shrink-0", !nestingEnabled && "hidden sm:block")} aria-hidden="true" />
-                      ) : undefined}
-                      statusSlot={streamlinedUiEnabled ? rowStatusIcon : undefined}
-                      metadata={streamlinedUiEnabled ? (
+                      )}
+                      statusSlot={rowStatusIcon}
+                      metadata={(
                         <InboxIssueMetaLeading
                           issue={issue}
                           isLive={isLive}
@@ -2849,74 +2840,23 @@ function StreamlinedInbox() {
                           showStatus={false}
                           showIdentifier={false}
                         />
-                      ) : undefined}
-                      showIdentifier={streamlinedUiEnabled
-                        ? visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")
-                        : undefined}
-                      desktopMetaLeading={!streamlinedUiEnabled ? (
-                        <>
-                          {nestingEnabled ? (
-                            depth === 0 && hasChildren && collapseParentId ? (
-                              <button
-                                type="button"
-                                data-slot="icon-button"
-                                className="hidden w-4 shrink-0 items-center justify-center sm:inline-flex"
-                                onClick={(event) => {
-                                  event.preventDefault();
-                                  event.stopPropagation();
-                                  toggleInboxParentCollapse(collapseParentId);
-                                }}
-                              >
-                                <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
-                              </button>
-                            ) : (
-                              <span className="hidden w-4 shrink-0 sm:block" />
-                            )
-                          ) : null}
-                          <InboxIssueMetaLeading
-                            issue={issue}
-                            isLive={isLive}
-                            subtreeLiveCount={liveDescendantCount}
-                            showSubtreeLiveChip={showSubtreeLiveChip}
-                            showStatus={showStatus}
-                            showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
-                            statusSlot={rowStatusIcon}
-                          />
-                        </>
-                      ) : undefined}
+                      )}
+                      showIdentifier={visibleIssueColumnSet.has("id") && availableIssueColumnSet.has("id")}
                       titleSuffix={hasChildren && !isExpanded ? (
                         <span className="ml-1.5 text-xs text-muted-foreground">
                           ({childCount} sub-task{childCount !== 1 ? "s" : ""})
                         </span>
                       ) : undefined}
-                      mobileTitleMeta={streamlinedUiEnabled ? issueActivityTimestamp(issue) : undefined}
-                      mobileMeta={streamlinedUiEnabled ? undefined : issueActivityText(issue).toLowerCase()}
-                      mobileLeading={!streamlinedUiEnabled ? (
-                        depth === 0 && hasChildren && collapseParentId ? (
-                          <button
-                            type="button"
-                            data-slot="icon-button"
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              toggleInboxParentCollapse(collapseParentId);
-                            }}
-                          >
-                            <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", isExpanded && "rotate-90")} />
-                          </button>
-                        ) : (
-                          <StatusIcon status={issue.status} externalConversationState={issue.externalConversationState} blockerAttention={blockerAttention} waiting={isWaitingOnMonitor(issue)} size="md" />
-                        )
-                      ) : undefined}
+                      mobileTitleMeta={issueActivityTimestamp(issue)}
                       unreadState={isUnread ? "visible" : isFading ? "fading" : "hidden"}
                       onMarkRead={() => markReadMutation.mutate(issue.id)}
                       onArchive={allowArchive ? () => archiveIssueMutation.mutate(issue.id) : undefined}
                       archiveDisabled={isArchiving}
                       desktopTrailing={
-                        (streamlinedUiEnabled ? visibleTaskDataColumns : visibleTrailingIssueColumns).length > 0 ? (
+                        visibleTaskDataColumns.length > 0 ? (
                           <InboxIssueTrailingColumns
                             issue={issue}
-                            columns={streamlinedUiEnabled ? visibleTaskDataColumns : visibleTrailingIssueColumns}
+                            columns={visibleTaskDataColumns}
                             projectName={project?.name ?? null}
                             projectColor={project?.color ?? null}
                             workspaceName={resolveIssueWorkspaceName(issue, {
@@ -2943,14 +2883,12 @@ function StreamlinedInbox() {
                           />
                         ) : undefined
                       }
-                      trailingMeta={streamlinedUiEnabled && showTaskTimestamp ? issueActivityTimestamp(issue) : null}
+                      trailingMeta={showTaskTimestamp ? issueActivityTimestamp(issue) : null}
                     />
                   );
                 };
 
                 let previousDateGroup: TaskDateGroup | null = null;
-                let previousTimestamp = Number.POSITIVE_INFINITY;
-                const legacyTodayCutoff = Date.now() - 24 * 60 * 60 * 1000;
                 return groupedSections.flatMap((group, groupIndex) => {
                   const elements: ReactNode[] = [];
                   const isGroupCollapsed = collapsedGroupKeys.has(group.key);
@@ -3034,18 +2972,11 @@ function StreamlinedInbox() {
                       </div>
                     );
                     const currentDateGroup = taskDateGroup(item.timestamp);
-                    const dateGroupLabel = streamlinedUiEnabled
-                      && filterPreferences.showDateGroupSeparators
+                    const dateGroupLabel = filterPreferences.showDateGroupSeparators
                       && groupBy === "none"
                       ? taskDateGroupSeparator(previousDateGroup, currentDateGroup)
                       : null;
                     previousDateGroup = currentDateGroup;
-                    const showLegacyEarlierDivider = !streamlinedUiEnabled
-                      && groupBy === "none"
-                      && item.timestamp > 0
-                      && item.timestamp < legacyTodayCutoff
-                      && previousTimestamp >= legacyTodayCutoff;
-                    previousTimestamp = item.timestamp > 0 ? item.timestamp : previousTimestamp;
                     if (dateGroupLabel) {
                       elements.push(
                         <div
@@ -3063,18 +2994,6 @@ function StreamlinedInbox() {
                             {dateGroupLabel}
                           </span>
                           <span className="h-px min-w-0 flex-1" aria-hidden="true" data-date-group-rule="" />
-                        </div>,
-                      );
-                    } else if (showLegacyEarlierDivider) {
-                      elements.push(
-                        <div key={`earlier-divider-${group.key}-${index}`} className="my-2 flex items-center gap-3 px-4">
-                          <div className="flex-1 border-t border-border" />
-                          <span
-                            className="shrink-0 text-(length:--text-micro) font-medium uppercase tracking-wider text-subtle-foreground"
-                            data-date-group-label=""
-                          >
-                            Earlier
-                          </span>
                         </div>,
                       );
                     }
