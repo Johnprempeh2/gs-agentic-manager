@@ -22,6 +22,7 @@ import {
   upsertIntelligenceReportSchema,
   type IntelligenceBoard,
   type IntelligenceBoardEntry,
+  type IntelligenceBoardHistory,
   type IntelligenceBoardView,
   type IntelligenceRecommendation,
   type IntelligenceReport,
@@ -277,6 +278,40 @@ export function intelligenceRoutes(db: Db) {
       });
     }
     res.json({ boards });
+  });
+
+  /** The last `limit` snapshots of each board (default 12, at most 90), up to `date`, for score sparklines. */
+  router.get("/companies/:companyId/intelligence/boards/history", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const date = req.query.date === undefined ? null : parseDate(req.query.date);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 12, 2), 90);
+    const history: IntelligenceBoardHistory[] = [];
+    for (const board of INTELLIGENCE_BOARDS) {
+      const rows = await db
+        .select({ snapshotDate: intelligenceBoardSnapshots.snapshotDate, entries: intelligenceBoardSnapshots.entries })
+        .from(intelligenceBoardSnapshots)
+        .where(
+          and(
+            eq(intelligenceBoardSnapshots.companyId, companyId),
+            eq(intelligenceBoardSnapshots.board, board),
+            date ? lte(intelligenceBoardSnapshots.snapshotDate, date) : undefined,
+          ),
+        )
+        .orderBy(desc(intelligenceBoardSnapshots.snapshotDate))
+        .limit(limit);
+      if (rows.length === 0) continue;
+      history.push({
+        board,
+        points: rows.reverse().map((row) => ({
+          snapshotDate: row.snapshotDate,
+          scores: Object.fromEntries(
+            (row.entries as unknown as IntelligenceBoardEntry[]).map((entry) => [entry.name.toLowerCase(), entry.score]),
+          ),
+        })),
+      });
+    }
+    res.json({ history });
   });
 
   router.put(

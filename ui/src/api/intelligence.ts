@@ -1,4 +1,5 @@
 import type {
+  IntelligenceBoardHistory,
   IntelligenceBoards,
   IntelligenceRecommendation,
   IntelligenceRecommendationStatus,
@@ -19,6 +20,8 @@ export const intelligenceApi = {
     api.get<{ reports: IntelligenceReportSummary[] }>(`${base(companyId)}/reports?limit=120`),
   boards: (companyId: string, date?: string | null) =>
     api.get<IntelligenceBoards>(`${base(companyId)}/boards${date ? `?date=${encodeURIComponent(date)}` : ""}`),
+  boardHistory: (companyId: string, date?: string | null) =>
+    api.get<{ history: IntelligenceBoardHistory[] }>(`${base(companyId)}/boards/history${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   recommendations: (companyId: string) =>
     api.get<{ recommendations: IntelligenceRecommendation[] }>(`${base(companyId)}/recommendations`),
   decide: (id: string, status: IntelligenceRecommendationStatus) =>

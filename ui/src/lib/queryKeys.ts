@@ -637,6 +637,7 @@ export const queryKeys = {
     report: (companyId: string, date: string, kind: string) => ["intelligence", companyId, "report", date, kind] as const,
     reports: (companyId: string) => ["intelligence", companyId, "reports"] as const,
     boards: (companyId: string, date: string | null) => ["intelligence", companyId, "boards", date] as const,
+    boardHistory: (companyId: string, date: string | null) => ["intelligence", companyId, "boardHistory", date] as const,
     recommendations: (companyId: string) => ["intelligence", companyId, "recommendations"] as const,
   },
   website: {

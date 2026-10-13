@@ -54,6 +54,12 @@ export interface IntelligenceBoards {
   boards: IntelligenceBoardView[];
 }
 
+/** Score history for sparklines: the last N snapshots of a board, oldest first, scores keyed by lower-cased entry name. */
+export interface IntelligenceBoardHistory {
+  board: IntelligenceBoard;
+  points: { snapshotDate: string; scores: Record<string, number | null> }[];
+}
+
 export interface IntelligenceBoardSnapshot {
   id: string;
   companyId: string;
