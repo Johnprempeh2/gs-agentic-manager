@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { Project } from "@greatstone/shared";
+import { groupDeliverableDocuments, type DeliverableAudience, type Project } from "@greatstone/shared";
 import { ArrowUpDown, Briefcase, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
 import {
   deliverablesApi,
@@ -80,6 +80,13 @@ const CONFIDENTIALITY_OPTIONS = (Object.keys(CONFIDENTIALITY_LABELS) as Delivera
   value,
   label: CONFIDENTIALITY_LABELS[value],
 }));
+
+/** Ben's first question of a document: can the client see it? (13 Oct). */
+export const AUDIENCE_OPTIONS: { value: DeliverableAudience | null; label: string; hint: string }[] = [
+  { value: null, label: "Everything", hint: "Client-facing and internal" },
+  { value: "client_facing", label: "Client-facing", hint: "Labelled client or public" },
+  { value: "internal", label: "Internal", hint: "Never shown to the client" },
+];
 
 const LINK_HEALTH_OPTIONS: { value: "broken"; label: string }[] = [{ value: "broken", label: "Broken" }];
 
@@ -242,6 +249,8 @@ export function Deliverables() {
   const confidentiality = CONFIDENTIALITY_OPTIONS.some((option) => option.value === confidentialityParam)
     ? confidentialityParam as DeliverableConfidentiality
     : null;
+  const audienceParam = searchParams.get("audience");
+  const audience = AUDIENCE_OPTIONS.find((option) => option.value === audienceParam)?.value ?? null;
   const linkHealth = searchParams.get("links") === "broken" ? "broken" as const : null;
   const dateRange = parseOption(searchParams.get("date"), DATE_OPTIONS, "all");
   const sort = parseOption(searchParams.get("sort"), DELIVERABLE_SORT_OPTIONS, "newest");
@@ -319,6 +328,7 @@ export function Deliverables() {
     agentId: agentId ?? undefined,
     brand: brand ?? undefined,
     confidentiality: confidentiality ?? undefined,
+    audience: audience ?? undefined,
     linkHealth: linkHealth ?? undefined,
     from,
     sort,
@@ -355,12 +365,23 @@ export function Deliverables() {
   const deliverables = useMemo(() => data?.pages.flatMap((page) => page.deliverables) ?? [], [data]);
   const facets = data?.pages[0]?.facets ?? { brands: [], agents: [], projects: [] };
   const total = data?.pages[0]?.total ?? 0;
-  const groups = useMemo(() => groupDeliverables(deliverables, groupBy), [deliverables, groupBy]);
+  // One card per document (Ben, 13 Oct): versions registered under another
+  // key or on another task fold under their newest entry.
+  const documents = useMemo(() => groupDeliverableDocuments(deliverables), [deliverables]);
+  const olderById = useMemo(
+    () => new Map(documents.map((document) => [document.latest.id, document.older])),
+    [documents],
+  );
+  const foldedCount = deliverables.length - documents.length;
+  const groups = useMemo(
+    () => groupDeliverables(documents.map((document) => document.latest), groupBy),
+    [documents, groupBy],
+  );
   // Quick Look moves through cards in the order they are shown.
   const ordered = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const openIndex = openId ? ordered.findIndex((item) => item.id === openId) : -1;
 
-  const filtered = !!(query || kind || projectId || agentId || brand || confidentiality || linkHealth || dateRange !== "all");
+  const filtered = !!(query || kind || projectId || agentId || brand || confidentiality || audience || linkHealth || dateRange !== "all");
 
   const copyLink = useCallback(async (id: string) => {
     try {
@@ -434,6 +455,31 @@ export function Deliverables() {
               /
             </kbd>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2" data-testid="deliverable-audience">
+          <span id="deliverable-audience-label" className="text-sm font-medium text-foreground">Who it is for</span>
+          <div role="radiogroup" aria-labelledby="deliverable-audience-label" className="inline-flex rounded-full border border-border p-0.5">
+            {AUDIENCE_OPTIONS.map((option) => {
+              const active = audience === option.value;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  title={option.hint}
+                  onClick={() => setParam("audience", option.value)}
+                  className={cn(
+                    "inline-flex h-8 items-center rounded-full px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -591,6 +637,9 @@ export function Deliverables() {
         <div className="space-y-8">
           <p className="text-xs text-muted-foreground" aria-live="polite">
             {total} {total === 1 ? "deliverable" : "deliverables"}
+            {foldedCount > 0
+              ? ` · ${foldedCount} older ${foldedCount === 1 ? "version" : "versions"} grouped under the latest`
+              : null}
           </p>
           {groups.map((group) => (
             <section key={group.key} className="space-y-3" aria-label={group.label ?? "Deliverables"}>
@@ -620,7 +669,9 @@ export function Deliverables() {
                       <DeliverableCard
                         key={deliverable.id}
                         deliverable={deliverable}
+                        olderVersions={olderById.get(deliverable.id) ?? []}
                         onPreview={() => setParam("open", deliverable.id)}
+                        onOpenVersion={(id) => setParam("open", id)}
                         onCopyLink={() => void copyLink(deliverable.id)}
                       />
                     ))}

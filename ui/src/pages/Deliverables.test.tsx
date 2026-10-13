@@ -222,6 +222,7 @@ describe("Deliverables page", () => {
   it("shows a live site as a placeholder or stored screenshot with Open site, never a frame", async () => {
     const site = (id: string, screenshotPath: string | null) => sample({
       id,
+      title: `MoEnGT deck ${id === "s-1" ? "site" : "mirror"}`,
       external: true,
       url: "https://greatstone-moengt-deck.netlify.app",
       attachmentId: null,
@@ -451,6 +452,61 @@ describe("Deliverables page", () => {
     expect(quickLook()).toBeNull();
     expect(currentLocation()).toBe("/deliverables");
     expect(container.querySelectorAll("[data-testid='deliverable-card']")).toHaveLength(1);
+  });
+
+  // Ben, 13 Oct: the same document showed as three cards.
+  it("shows one card per document, with its versions one click away", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "brief-3", key: "brief-v3", title: "Ghana Airport Taxi discovery prep brief v3", createdAt: "2026-10-12T10:00:00.000Z" }),
+      sample({ id: "toolkit", key: "toolkit", title: "The Greatstone Method Toolkit", createdAt: "2026-10-11T10:00:00.000Z" }),
+      sample({ id: "brief-2", key: "brief-draft", title: "Ghana airport taxi discovery prep brief (draft)", createdAt: "2026-10-10T10:00:00.000Z", issue: { id: "issue-2", identifier: "GRE-2", title: "Prep" } }),
+      sample({ id: "brief-1", key: "brief", title: "Ghana Airport Taxi discovery prep brief", createdAt: "2026-10-01T10:00:00.000Z", versionCount: 2, version: 2 }),
+    ]));
+    render();
+    await flush();
+
+    const cards = [...container.querySelectorAll("[data-testid='deliverable-card']")];
+    expect(cards.map((card) => card.querySelector("h3")?.textContent)).toEqual([
+      "Ghana Airport Taxi discovery prep brief v3",
+      "The Greatstone Method Toolkit",
+    ]);
+    const versions = cards[0]!.querySelector<HTMLButtonElement>("[data-testid='deliverable-versions']");
+    // Three entries, one of which has two versions of its own.
+    expect(versions?.textContent).toContain("4 versions");
+    expect(cards[1]!.querySelector("[data-testid='deliverable-versions']")).toBeNull();
+    expect(container.textContent).toContain("2 older versions grouped under the latest");
+
+    await act(async () => {
+      versions!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    });
+    await flush(2);
+    const older = [...document.querySelectorAll("[role='menuitem']")].find((item) => item.textContent?.includes("(draft)"));
+    expect(older?.textContent).toContain("GRE-2");
+    await act(async () => {
+      (older as HTMLElement).click();
+    });
+    await flush();
+    expect(currentLocation()).toContain("open=brief-2");
+  });
+
+  it("filters by who a deliverable is for, first and in words", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([sample()]));
+    render();
+    await flush();
+
+    const audience = container.querySelector("[data-testid='deliverable-audience']");
+    const options = [...(audience?.querySelectorAll("[role='radio']") ?? [])] as HTMLButtonElement[];
+    expect(options.map((option) => option.textContent)).toEqual(["Everything", "Client-facing", "Internal"]);
+    expect(options[0]!.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      options[1]!.click();
+    });
+    await flush();
+    expect(currentLocation()).toContain("audience=client_facing");
+    expect(deliverablesApiMock.list.mock.calls.at(-1)?.[1]).toMatchObject({ audience: "client_facing" });
+    const checked = container.querySelector("[data-testid='deliverable-audience'] [aria-checked='true']");
+    expect(checked?.textContent).toBe("Client-facing");
   });
 
   it("explains the page and shows an example prompt when there is nothing yet", async () => {

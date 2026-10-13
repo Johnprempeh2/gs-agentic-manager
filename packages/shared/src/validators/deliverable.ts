@@ -43,6 +43,14 @@ export const deliverableSortSchema = z.enum(["newest", "recently_opened", "title
 export const deliverableConfidentialitySchema = z.enum(["internal", "client", "public"]);
 export const DEFAULT_DELIVERABLE_CONFIDENTIALITY = "internal" as const;
 
+/** Who a deliverable is for, as the Deliverables filter asks it: client-facing (client or public) or internal. */
+export const deliverableAudienceSchema = z.enum(["client_facing", "internal"]);
+export type DeliverableAudience = z.infer<typeof deliverableAudienceSchema>;
+export const DELIVERABLE_AUDIENCE_CONFIDENTIALITY: Record<DeliverableAudience, Array<z.infer<typeof deliverableConfidentialitySchema>>> = {
+  client_facing: ["client", "public"],
+  internal: ["internal"],
+};
+
 /** A link deliverable points at a live site: https only, so the server never fetches plain http. */
 export const deliverableUrlSchema = z
   .string()
@@ -129,6 +137,8 @@ export const deliverablesQuerySchema = z.object({
   agentId: z.string().guid().optional(),
   brand: z.string().trim().min(1).max(80).optional(),
   confidentiality: deliverableConfidentialitySchema.optional(),
+  /** "client_facing": client and public items; "internal": internal only. */
+  audience: deliverableAudienceSchema.optional(),
   /** "broken": only link deliverables whose last check failed. */
   linkHealth: z.enum(["broken"]).optional(),
   from: optionalDate,
