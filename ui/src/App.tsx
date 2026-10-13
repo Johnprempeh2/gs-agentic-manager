@@ -55,6 +55,7 @@ import { Billing } from "./pages/Billing";
 import { Artifacts } from "./pages/Artifacts";
 import { Deliverables } from "./pages/Deliverables";
 import { Website } from "./pages/Website";
+import { Intelligence } from "./pages/Intelligence";
 import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
@@ -395,6 +396,7 @@ function boardRoutes() {
       />
       <Route path="deliverables" element={<Deliverables />} />
       <Route path="website" element={<Website />} />
+      <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />

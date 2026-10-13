@@ -272,6 +272,7 @@ export function InstanceExperimentalSettings() {
   const enableSummaries = experimentalQuery.data?.enableSummaries === true;
   const enableStatusCards = experimentalQuery.data?.enableStatusCards === true;
   const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
+  const enableIntelligence = experimentalQuery.data?.enableIntelligence === true;
   const summariesManaged = managedKeys.enableSummaries?.managed === true;
   const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
   const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
@@ -517,6 +518,18 @@ export function InstanceExperimentalSettings() {
           settingKey="enableFirstTaskPlanProposal"
           managed={managedKeys.enableFirstTaskPlanProposal}
           ariaLabel="Toggle first task plan proposal experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Intelligence"
+          description="The Intelligence page: the Daily Pulse, the AI leaderboards with movement, compare, radar and news, and GSAM feature and skill recommendations. An agent with the intelligence:write permission writes it every day."
+          footnote="Turning this off hides the Intelligence page and blocks its API; stored reports are kept."
+          checked={enableIntelligence}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableIntelligence: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableIntelligence"
+          managed={managedKeys.enableIntelligence}
+          ariaLabel="Toggle intelligence experimental setting"
         />
 
         <ExperimentalToggleCard

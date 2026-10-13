@@ -13,6 +13,7 @@ import { announcementPreview, announcementAnimationPreview, announcementAnimatio
 import { TaskDetailTasksPanel } from "@/components/task-detail/TaskDetailTasksPanel";
 import { AiConnectionDesignExamples } from "@/components/ai-connections/AiConnectionDesignExamples";
 import { StrategyBoardDesignExamples } from "@/components/strategy-board/StrategyBoardDesignExamples";
+import { IntelligenceDesignExamples } from "@/components/intelligence/IntelligenceDesignExamples";
 import { SavedProviderKeySelect } from "../components/onboarding/SavedProviderKeySelect";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { AgentCharacter } from "@/components/AgentCharacter";
@@ -2476,6 +2477,10 @@ export function DesignGuide() {
 
       <Section title="Board control panel">
         <StrategyBoardDesignExamples />
+      </Section>
+
+      <Section title="Intelligence cards">
+        <IntelligenceDesignExamples />
       </Section>
 
       <Section title="Built-in Agent Lifecycle Chips">
