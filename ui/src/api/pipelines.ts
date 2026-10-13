@@ -66,8 +66,6 @@ export interface PipelineListItem {
   description: string | null;
   projectId: string | null;
   enforceTransitions: boolean;
-  /** CRM pipelines (GRE-1478): every case must name an organisation record. */
-  requiresOrganisation?: boolean;
   archivedAt: Date | string | null;
   stageCount: number;
   stages?: PipelineStage[];
@@ -561,7 +559,6 @@ export const pipelinesApi = {
       name?: string;
       description?: string | null;
       enforceTransitions?: boolean;
-      requiresOrganisation?: boolean;
       archived?: boolean;
     },
   ) => api.patch<PipelineListItem>(`/pipelines/${pipelineId}`, data),
@@ -653,6 +650,8 @@ export const pipelinesApi = {
     return api.get<PipelineCaseChildRow[]>(`/pipelines/${pipelineId}/cases${qs ? `?${qs}` : ""}`);
   },
   getCase: (caseId: string) => api.get<PipelineCaseDetail>(`/cases/${caseId}`),
+  setCaseOrganisation: (caseId: string, organisationId: string) =>
+    api.patch<PipelineCase>(`/cases/${caseId}`, { organisationId }),
   getCaseChildren: (caseId: string) =>
     api.get<PipelineCaseChildrenResponse>(`/cases/${caseId}/children`),
   getCaseChildrenTree: (caseId: string) =>
