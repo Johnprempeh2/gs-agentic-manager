@@ -111,9 +111,20 @@ export const pipelineStageTemplateSchema = z.object({
   note: z.string().trim().max(1000).optional().nullable(),
 });
 
+/**
+ * A deliverable the toolkit expects at a stage, for the completeness check on
+ * the client journey. A filed deliverable meets it by key or by title.
+ */
+export const pipelineStageExpectedDeliverableSchema = z.object({
+  key: z.string().trim().min(1).max(64),
+  title: z.string().trim().min(1).max(200),
+  kind: z.enum(["report", "brief", "plan", "deck", "other"]).optional().nullable(),
+});
+
 export const pipelineStageConfigSchema = z.object({
   variables: z.array(pipelineStageVariableSchema).default([]),
   templates: z.array(pipelineStageTemplateSchema).max(50).optional(),
+  expectedDeliverables: z.array(pipelineStageExpectedDeliverableSchema).max(50).optional(),
   disabled: z.boolean().optional(),
   disabledReason: z.string().trim().max(1_000).nullable().optional(),
   requireApproval: z.boolean().optional(),

@@ -2809,6 +2809,24 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.json(await journeySvc.portal(companyId, caseId));
   });
 
+  // The client's accepted NDA (board only). Client-labelled deliverables reach
+  // the portal only once it is recorded; public ones do not need it.
+  router.put("/cases/:caseId/nda", validate(z.object({ accepted: z.boolean() })), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can record a client's NDA");
+    const accepted = (req.body as { accepted: boolean }).accepted;
+    const result = await journeySvc.setNdaAccepted(companyId, caseId, accepted);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: accepted ? "nda_accepted" : "nda_cleared" },
+    });
+    res.json(result);
+  });
+
   router.post("/cases/:caseId/journey/deliverables", validate(createClientJourneyDeliverableSchema), async (req, res) => {
     const caseId = req.params.caseId as string;
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);

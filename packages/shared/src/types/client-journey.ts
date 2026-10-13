@@ -1,4 +1,4 @@
-import type { Deliverable, DeliverableKind } from "./deliverable.js";
+import type { Deliverable, DeliverableConfidentiality, DeliverableKind } from "./deliverable.js";
 
 // Client journey by stage (GRE-1473): each stage of a client's journey
 // (Executive Discovery, GITA, Deep Dive, GDXP, playback) lists the standard
@@ -23,6 +23,18 @@ export interface ClientJourneyStageDeliverable {
   deliverable: Deliverable;
 }
 
+/**
+ * A deliverable the stage config expects (`expectedDeliverables`), and the
+ * filed deliverable that meets it, if any. Read-only: it shows the gap.
+ */
+export interface ClientJourneyExpectedDeliverable {
+  key: string;
+  title: string;
+  kind: DeliverableKind | null;
+  /** The filed deliverable that matches by key or title, or null while it is missing. */
+  deliverableId: string | null;
+}
+
 export interface ClientJourneyStage {
   id: string;
   key: string;
@@ -32,11 +44,14 @@ export interface ClientJourneyStage {
   state: ClientJourneyStageState;
   templates: ClientJourneyStageTemplate[];
   deliverables: ClientJourneyStageDeliverable[];
+  expected: ClientJourneyExpectedDeliverable[];
 }
 
 /** GET /api/cases/:caseId/journey — the internal, per-stage view of a client. */
 export interface ClientJourneyResponse {
   caseId: string;
+  /** When the board recorded the client's accepted NDA; client-labelled items reach the portal only after it. */
+  ndaAcceptedAt: string | null;
   stages: ClientJourneyStage[];
   /** Deliverables on the client's tasks and projects that are not filed under a stage yet. */
   unfiled: Deliverable[];
@@ -53,11 +68,15 @@ export interface ClientPortalDeliverable {
   version: number;
   contentType: string;
   updatedAt: string;
+  confidentiality: Exclude<DeliverableConfidentiality, "internal">;
   /**
    * Authenticated in-app path the portal publisher uses to fetch the file
-   * and copy it to the portal. It is not shown to the client.
+   * and copy it to the portal. It is not shown to the client. Null for a
+   * link deliverable, which the portal links to at `url` instead.
    */
-  contentPath: string;
+  contentPath: string | null;
+  /** The live site of a link deliverable. */
+  url: string | null;
 }
 
 export interface ClientPortalStage {

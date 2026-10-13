@@ -5,6 +5,7 @@ import { ArrowUpDown, Briefcase, Check, ChevronDown, FileCheck2, Layers, Search,
 import {
   deliverablesApi,
   type Deliverable,
+  type DeliverableConfidentiality,
   type DeliverableKind,
   type DeliverableSort,
 } from "../api/deliverables";
@@ -21,6 +22,7 @@ import {
   DeliverableCard,
   deliverableShareUrl,
 } from "../components/deliverables/DeliverableCard";
+import { CONFIDENTIALITY_LABELS } from "../components/deliverables/DeliverableBadges";
 import { DeliverableQuickLook } from "../components/deliverables/DeliverableQuickLook";
 import { LivePreviewCard, workspaceHasPreview } from "../components/LivePreviewCard";
 import { projectsApi } from "../api/projects";
@@ -73,6 +75,13 @@ const DATE_OPTIONS: { value: DateRange; label: string }[] = [
   { value: "week", label: "This week" },
   { value: "month", label: "This month" },
 ];
+
+const CONFIDENTIALITY_OPTIONS = (Object.keys(CONFIDENTIALITY_LABELS) as DeliverableConfidentiality[]).map((value) => ({
+  value,
+  label: CONFIDENTIALITY_LABELS[value],
+}));
+
+const LINK_HEALTH_OPTIONS: { value: "broken"; label: string }[] = [{ value: "broken", label: "Broken" }];
 
 const KIND_OPTIONS = (Object.keys(DELIVERABLE_KIND_LABELS) as DeliverableKind[]).map((value) => ({
   value,
@@ -229,6 +238,11 @@ export function Deliverables() {
   const projectId = searchParams.get("projectId");
   const agentId = searchParams.get("agentId");
   const brand = searchParams.get("brand");
+  const confidentialityParam = searchParams.get("label");
+  const confidentiality = CONFIDENTIALITY_OPTIONS.some((option) => option.value === confidentialityParam)
+    ? confidentialityParam as DeliverableConfidentiality
+    : null;
+  const linkHealth = searchParams.get("links") === "broken" ? "broken" as const : null;
   const dateRange = parseOption(searchParams.get("date"), DATE_OPTIONS, "all");
   const sort = parseOption(searchParams.get("sort"), DELIVERABLE_SORT_OPTIONS, "newest");
   const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, DEFAULT_GROUP);
@@ -304,6 +318,8 @@ export function Deliverables() {
     projectId: projectId ?? undefined,
     agentId: agentId ?? undefined,
     brand: brand ?? undefined,
+    confidentiality: confidentiality ?? undefined,
+    linkHealth: linkHealth ?? undefined,
     from,
     sort,
   };
@@ -344,7 +360,7 @@ export function Deliverables() {
   const ordered = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const openIndex = openId ? ordered.findIndex((item) => item.id === openId) : -1;
 
-  const filtered = !!(query || kind || projectId || agentId || brand || dateRange !== "all");
+  const filtered = !!(query || kind || projectId || agentId || brand || confidentiality || linkHealth || dateRange !== "all");
 
   const copyLink = useCallback(async (id: string) => {
     try {
@@ -383,7 +399,7 @@ export function Deliverables() {
     <div className="w-full max-w-7xl space-y-6">
       <header className="space-y-1">
         <h1 className="text-xl font-bold">Deliverables</h1>
-        <p className="text-sm text-muted-foreground">Finished documents your agents made for you.</p>
+        <p className="text-sm text-muted-foreground">Finished documents and sites your agents made for you.</p>
       </header>
 
       <div className="space-y-3">
@@ -400,7 +416,7 @@ export function Deliverables() {
               }
             }}
             type="search"
-            placeholder="Search titles, tasks, agents and document text"
+            placeholder="Search titles, projects, clients, sites and document text"
             aria-label="Search deliverables"
             className="h-12 w-full rounded-lg border border-input bg-background pl-12 pr-16 text-base shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
           />
@@ -466,6 +482,22 @@ export function Deliverables() {
             options={facets.brands.map((name) => ({ value: name, label: name }))}
             onChange={(value) => setParam("brand", value)}
             testId="deliverable-filter-brand"
+          />
+          <FilterMenu
+            label="Label"
+            allLabel="All labels"
+            value={confidentiality}
+            options={CONFIDENTIALITY_OPTIONS}
+            onChange={(value) => setParam("label", value)}
+            testId="deliverable-filter-label"
+          />
+          <FilterMenu
+            label="Links"
+            allLabel="All links"
+            value={linkHealth}
+            options={LINK_HEALTH_OPTIONS}
+            onChange={(value) => setParam("links", value)}
+            testId="deliverable-filter-links"
           />
           <FilterMenu
             label="Date"

@@ -157,7 +157,7 @@ describeEmbeddedPostgres("client journey by stage", () => {
       title: input.title,
       summary: "Internal working note",
       status: "active",
-      metadata: { version: 1, attachmentId: attachment!.id, kind: "report", deliverableStatus: input.status ?? "final" },
+      metadata: { version: 1, attachmentId: attachment!.id, kind: "report", deliverableStatus: input.status ?? "final", confidentiality: "public" },
     }).returning();
     return row!;
   }
@@ -226,7 +226,7 @@ describeEmbeddedPostgres("client journey by stage", () => {
     });
     // Only outcome fields: no task, agent, project or link ids.
     expect(Object.keys(portal.body.stages[0].deliverables[0]).sort()).toEqual(
-      ["contentPath", "contentType", "kind", "summary", "title", "updatedAt", "version"],
+      ["confidentiality", "contentPath", "contentType", "kind", "summary", "title", "updatedAt", "url", "version"],
     );
     const raw = JSON.stringify(portal.body);
     for (const internal of ["Discovery working notes", "GITA demos", "Journey maps", "Loose report", "J-1", "issue", "agent", "linkId"]) {

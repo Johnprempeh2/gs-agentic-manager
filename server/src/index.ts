@@ -134,6 +134,7 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { supportQueueService } from "./services/support-queue.js";
+import { deliverableService } from "./services/deliverables.js";
 import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
 import {
   LEFTOVER_PROCESS_SWEEP_INTERVAL_MS,
@@ -1492,6 +1493,22 @@ async function startServerWithDatabaseTeardown(
       workspaceReaperCooldownDays: config.workspaceReaperCooldownDays,
     });
     const supportQueue = supportQueueService(db as any, { wakeup: heartbeat.wakeup });
+    // Daily check of link deliverables (live sites): a few per tick, never-checked first.
+    const deliverableLinks = deliverableService(db as any);
+    let deliverableLinkCheckInFlight = false;
+    const scheduleDeliverableLinkCheck = () => {
+      if (heartbeatSchedulerStopped || deliverableLinkCheckInFlight) return;
+      deliverableLinkCheckInFlight = true;
+      trackHeartbeatSchedulerWork(deliverableLinks
+        .checkDueLinks()
+        .then((result) => {
+          if (result.broken > 0) logger.info(result, "deliverable link check found broken links");
+        })
+        .catch((err) => {
+          logger.error({ err }, "deliverable link check failed");
+        })
+        .finally(() => { deliverableLinkCheckInFlight = false; }));
+    };
     const scheduleSupportClockSweep = () => {
       if (heartbeatSchedulerStopped) return;
       trackHeartbeatSchedulerWork(supportQueue
@@ -1917,6 +1934,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
         scheduleSupportClockSweep();
+        scheduleDeliverableLinkCheck();
         scheduleUnrecordedWorktreeSweep();
         scheduleRunProcessSweep();
         scheduleAdapterLoginReaperSweep();

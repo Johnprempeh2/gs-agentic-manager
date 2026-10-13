@@ -725,6 +725,8 @@ export const pipelinesApi = {
     api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
   removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
+  setCaseNda: (caseId: string, accepted: boolean) =>
+    api.put<{ ndaAcceptedAt: string | null }>(`/cases/${caseId}/nda`, { accepted }),
   createIssueLink: (
     caseId: string,
     data:

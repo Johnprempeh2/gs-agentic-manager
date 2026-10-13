@@ -51,11 +51,11 @@ describe("journeyStageStates", () => {
 
 describe("isClientPortalVisible", () => {
   it("needs client-facing, final and a completed stage", () => {
-    expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState: "done" })).toBe(true);
-    expect(isClientPortalVisible({ clientFacing: false, status: "final", stageState: "done" })).toBe(false);
-    expect(isClientPortalVisible({ clientFacing: true, status: "draft", stageState: "done" })).toBe(false);
+    expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState: "done", confidentiality: "public", ndaAccepted: false })).toBe(true);
+    expect(isClientPortalVisible({ clientFacing: false, status: "final", stageState: "done", confidentiality: "public", ndaAccepted: false })).toBe(false);
+    expect(isClientPortalVisible({ clientFacing: true, status: "draft", stageState: "done", confidentiality: "public", ndaAccepted: false })).toBe(false);
     for (const stageState of ["current", "next", "side", null] as const) {
-      expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState })).toBe(false);
+      expect(isClientPortalVisible({ clientFacing: true, status: "final", stageState, confidentiality: "public", ndaAccepted: true })).toBe(false);
     }
   });
 });

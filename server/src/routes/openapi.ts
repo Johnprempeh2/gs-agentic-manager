@@ -54,6 +54,7 @@ import {
   updateIssueWorkProductSchema,
   createDeliverableSchema,
   markDeliverableSchema,
+  updateDeliverableSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -4360,7 +4361,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/deliverables",
   tags: ["issues"],
-  summary: "List the latest version of each deliverable, with search, filters and sort",
+  summary: "List the latest version of each deliverable. q searches title, summary, task, agent, project, client and site url; each item carries appUrl (direct link in the app) and url (the live site, for link deliverables)",
   request: {
     params: z.object({ companyId: z.string() }),
     query: deliverablesQuerySchema,
@@ -4396,6 +4397,39 @@ registry.registerPath({
     body: jsonBody(markDeliverableSchema),
   },
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/deliverables/{id}",
+  tags: ["issues"],
+  summary: "Relabel every version of a deliverable: confidentiality (internal, client, public) and the restricted mark",
+  request: {
+    params: z.object({ companyId: z.string(), id: z.string() }),
+    body: jsonBody(updateDeliverableSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/cases/{caseId}/nda",
+  tags: ["issues"],
+  summary: "Record or clear the client's accepted NDA (board only); client-labelled deliverables reach the portal only once it is recorded",
+  request: {
+    params: z.object({ caseId: z.string() }),
+    body: jsonBody(z.object({ accepted: z.boolean() })),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/deliverables/{id}/screenshot",
+  tags: ["issues"],
+  summary: "Take a new screenshot of a link deliverable's site for its card",
+  request: { params: z.object({ companyId: z.string(), id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileStack, Package, Trash2 } from "lucide-react";
+import { CircleCheck, CircleDashed, FileStack, Globe, Package, Trash2 } from "lucide-react";
 import type {
   ClientJourneyStage,
   ClientJourneyStageDeliverable,
@@ -17,6 +17,7 @@ import { cn, formatDate } from "../lib/utils";
 import { Button } from "./ui/button";
 import { NativeSelect } from "./ui/native-select";
 import { ToggleSwitch } from "./ui/toggle-switch";
+import { ConfidentialityBadge } from "./deliverables/DeliverableBadges";
 
 // Client journey by stage (GRE-1473): each stage of the client's journey as a
 // section with its standard templates and the deliverables filed under it, and
@@ -39,6 +40,20 @@ function kindLabel(kind: Deliverable["kind"]) {
 }
 
 function DeliverableTitle({ item }: { item: Deliverable }) {
+  if (item.external && item.url) {
+    return (
+      <a
+        href={item.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex min-w-0 items-center gap-1 font-medium text-foreground hover:underline"
+        title={`${item.title} (opens the site)`}
+      >
+        <span className="truncate">{item.title}</span>
+        <Globe className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      </a>
+    );
+  }
   return (
     <Link to={item.openPath} className="block truncate font-medium text-foreground hover:underline" title={item.title}>
       {item.title}
@@ -50,6 +65,7 @@ function DeliverableMeta({ item }: { item: Deliverable }) {
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
       <span>{kindLabel(item.kind)}</span>
+      <ConfidentialityBadge value={item.confidentiality} />
       {item.status === "draft" ? <span className="font-medium text-foreground">Draft</span> : null}
       <span>{formatDay(item.updatedAt)}</span>
       <Link to={createIssueDetailPath(item.issue.identifier ?? item.issue.id)} className="text-foreground hover:underline" title={item.issue.title}>
@@ -135,7 +151,8 @@ function StageSection({
   onUpdate: (linkId: string, patch: UpdateClientJourneyDeliverable) => void;
   onRemove: (linkId: string) => void;
 }) {
-  const empty = stage.templates.length === 0 && stage.deliverables.length === 0;
+  const empty = stage.templates.length === 0 && stage.deliverables.length === 0 && stage.expected.length === 0;
+  const met = stage.expected.filter((entry) => entry.deliverableId).length;
   return (
     <section aria-labelledby={`journey-stage-${stage.id}`} className="py-3">
       <h3 id={`journey-stage-${stage.id}`} className="flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -172,6 +189,7 @@ function StageSection({
           ))}
         </ul>
       ) : null}
+      {stage.expected.length > 0 ? <ExpectedList stage={stage} met={met} /> : null}
       {stage.deliverables.length > 0 ? (
         <ul className="mt-1 divide-y divide-border" aria-label={`${stage.name} deliverables`}>
           {stage.deliverables.map((row) => (
@@ -188,6 +206,54 @@ function StageSection({
       ) : null}
       {empty ? <p className="mt-1 text-sm text-muted-foreground">No templates or deliverables for this stage yet.</p> : null}
     </section>
+  );
+}
+
+/**
+ * What the toolkit expects at this stage against what is filed. Read-only and
+ * calm: a met entry gets a tick, a missing one a dashed ring and "Missing".
+ */
+export function ExpectedList({ stage, met }: { stage: Pick<ClientJourneyStage, "name" | "expected">; met: number }) {
+  return (
+    <div className="mt-2" data-testid="journey-stage-expected">
+      <p className="text-xs text-muted-foreground">
+        Toolkit expects {stage.expected.length}: {met} filed
+        {met < stage.expected.length ? `, ${stage.expected.length - met} missing` : ""}
+      </p>
+      <ul className="mt-1 space-y-1" aria-label={`${stage.name} expected deliverables`}>
+        {stage.expected.map((entry) => (
+          <li key={entry.key} className="flex items-center gap-2 text-sm">
+            {entry.deliverableId ? (
+              <CircleCheck className="h-4 w-4 shrink-0 text-status-success" aria-hidden="true" />
+            ) : (
+              <CircleDashed className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+            )}
+            <span className={cn("min-w-0 truncate", entry.deliverableId ? "text-foreground" : "text-muted-foreground")}>
+              {entry.title}
+            </span>
+            {entry.kind ? <span className="text-xs text-muted-foreground">{kindLabel(entry.kind)}</span> : null}
+            <span className="ml-auto shrink-0 text-xs text-muted-foreground">{entry.deliverableId ? "Filed" : "Missing"}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The client's NDA: client-labelled deliverables reach the portal only once it is recorded. */
+function NdaRow({ acceptedAt, busy, onChange }: { acceptedAt: string | null; busy: boolean; onChange: (accepted: boolean) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-3 text-sm" data-testid="journey-nda">
+      <label className="flex items-center gap-2 font-medium text-foreground">
+        <ToggleSwitch checked={acceptedAt !== null} disabled={busy} aria-label="NDA accepted" onCheckedChange={onChange} />
+        NDA accepted
+      </label>
+      <span className="text-xs text-muted-foreground">
+        {acceptedAt
+          ? `Recorded ${formatDay(acceptedAt)}. Client-labelled deliverables can reach the portal.`
+          : "Client-labelled deliverables stay off the portal until the NDA is recorded. Public ones do not need it."}
+      </span>
+    </div>
   );
 }
 
@@ -260,6 +326,11 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
     onSuccess: invalidate,
     onError: onError("Could not change the deliverable"),
   });
+  const setNda = useMutation({
+    mutationFn: (accepted: boolean) => pipelinesApi.setCaseNda(caseId, accepted),
+    onSuccess: invalidate,
+    onError: () => pushToast({ title: "Could not record the NDA", body: "Only board users can record a client's NDA.", tone: "error" }),
+  });
   const removeLink = useMutation({
     mutationFn: (linkId: string) => pipelinesApi.removeCaseJourneyDeliverable(caseId, linkId),
     onSuccess: invalidate,
@@ -269,11 +340,12 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
   if (journey.isLoading) return <p className="py-3 text-sm text-muted-foreground">Loading the journey...</p>;
   if (journey.error || !journey.data) return <p className="py-3 text-sm text-destructive">Could not load the journey.</p>;
 
-  const { stages, unfiled } = journey.data;
-  const busy = fileDeliverable.isPending || updateLink.isPending || removeLink.isPending;
+  const { stages, unfiled, ndaAcceptedAt } = journey.data;
+  const busy = fileDeliverable.isPending || updateLink.isPending || removeLink.isPending || setNda.isPending;
   const journeyIndex = new Map(stages.filter((stage) => stage.state !== "side").map((stage, index) => [stage.id, index]));
   return (
     <div className="divide-y divide-border">
+      <NdaRow acceptedAt={ndaAcceptedAt} busy={busy} onChange={(accepted) => setNda.mutate(accepted)} />
       {stages.map((stage) => (
         <StageSection
           key={stage.id}
@@ -326,7 +398,7 @@ export function ClientPortalPreview({ caseId }: { caseId: string }) {
   if (stages.length === 0) {
     return (
       <p className="py-3 text-sm text-muted-foreground">
-        The client sees nothing yet. A deliverable shows here when it is final, marked "Client can see", and its stage is complete.
+        The client sees nothing yet. A deliverable shows here when it is final, marked "Client can see", its stage is complete, and it is labelled Public, or Client with the NDA recorded.
       </p>
     );
   }
@@ -338,7 +410,9 @@ export function ClientPortalPreview({ caseId }: { caseId: string }) {
           <ul className="mt-1 space-y-1">
             {stage.deliverables.map((item) => (
               <li key={`${item.title}-${item.version}`} className="text-sm text-foreground">
-                {item.title}
+                {item.url ? (
+                  <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:underline">{item.title}</a>
+                ) : item.title}
                 <span className="ml-3 text-xs text-muted-foreground">{kindLabel(item.kind)}</span>
                 <span className="ml-3 text-xs text-muted-foreground">Version {item.version}</span>
               </li>

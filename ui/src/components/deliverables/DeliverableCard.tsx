@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
 import { DeliverableThumbnail } from "./DeliverableDocument";
+import { ConfidentialityBadge, LinkStatusBadges } from "./DeliverableBadges";
 
 export const DELIVERABLE_KIND_LABELS: Record<DeliverableKind, string> = {
   report: "Report",
@@ -42,7 +43,7 @@ function QuickAction({
     return (
       <a
         href={href}
-        {...(download ? { download: "" } : { target: "_blank", rel: "noreferrer" })}
+        {...(download ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" })}
         title={label}
         aria-label={label}
         className={className}
@@ -88,25 +89,39 @@ export function DeliverableCard({
         <QuickAction label="Preview" onClick={onPreview}>
           <Eye className="h-3.5 w-3.5" />
         </QuickAction>
-        <QuickAction label="Open in new tab" href={deliverable.openPath}>
-          <ExternalLink className="h-3.5 w-3.5" />
-        </QuickAction>
-        <QuickAction label="Download" href={deliverable.downloadPath} download>
-          <Download className="h-3.5 w-3.5" />
-        </QuickAction>
+        {deliverable.external && deliverable.url ? (
+          <QuickAction label="Open site" href={deliverable.url}>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </QuickAction>
+        ) : (
+          <>
+            <QuickAction label="Open in new tab" href={deliverable.openPath}>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </QuickAction>
+            <QuickAction label="Download" href={deliverable.downloadPath} download>
+              <Download className="h-3.5 w-3.5" />
+            </QuickAction>
+          </>
+        )}
         <QuickAction label="Copy link" onClick={onCopyLink}>
           <Link2 className="h-3.5 w-3.5" />
         </QuickAction>
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{DELIVERABLE_KIND_LABELS[deliverable.kind]}</Badge>
-          <span className="truncate text-xs text-muted-foreground">{deliverable.brand}</span>
+          <ConfidentialityBadge value={deliverable.confidentiality} />
+          <span className="min-w-0 truncate text-xs text-muted-foreground">{deliverable.brand}</span>
           {deliverable.status === "draft" ? (
             <Badge variant="outline" className="ml-auto">Draft</Badge>
           ) : null}
         </div>
+        {deliverable.external ? (
+          <div className="-mt-1 flex flex-wrap items-center gap-1.5 empty:hidden">
+            <LinkStatusBadges deliverable={deliverable} />
+          </div>
+        ) : null}
         <p
           data-testid="deliverable-card-project"
           className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground"

@@ -118,7 +118,7 @@ describe("client case page", () => {
     vi.clearAllMocks();
     mockPipelinesApi.getCaseCrmSyncStatus.mockResolvedValue({ caseId: "case-1", sources: [] });
     mockPipelinesApi.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
-    mockPipelinesApi.getCaseJourney.mockResolvedValue({ caseId: "case-1", stages: [], unfiled: [] });
+    mockPipelinesApi.getCaseJourney.mockResolvedValue({ caseId: "case-1", ndaAcceptedAt: null, stages: [], unfiled: [] });
     mockPipelinesApi.getCasePortal.mockResolvedValue({ caseId: "case-1", title: "Client", stages: [] });
     container = document.createElement("div");
     document.body.appendChild(container);
@@ -238,6 +238,7 @@ describe("client case page", () => {
           state: "done",
           templates: [{ title: "Pre-read template", url: "https://example.com/pre-read", note: null }],
           deliverables: [{ linkId: "link-1", stageId: "stage-3", clientFacing: true, deliverable: deliverable("1", "North Star summary") }],
+          expected: [],
         },
         {
           id: "stage-4",
@@ -248,6 +249,7 @@ describe("client case page", () => {
           state: "current",
           templates: [],
           deliverables: [],
+          expected: [],
         },
       ],
       unfiled: [deliverable("2", "GITA draft", "draft")],

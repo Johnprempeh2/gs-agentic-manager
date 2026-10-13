@@ -1,5 +1,5 @@
 import { buffer } from "node:stream/consumers";
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -15,21 +15,26 @@ import {
 } from "@greatstone/db";
 import {
   DEFAULT_DELIVERABLE_BRAND,
+  DEFAULT_DELIVERABLE_CONFIDENTIALITY,
   deliverableKeyFromTitle,
   deliverablesQuerySchema,
   type CreateDeliverable,
   type Deliverable,
   type DeliverableClientCaseSummary,
+  type DeliverableConfidentiality,
   type DeliverableDetail,
   type DeliverableFacets,
   type DeliverableKind,
+  type DeliverableLinkCheck,
   type DeliverablesQuery,
   type DeliverablesResponse,
   type DeliverableStatus,
+  type UpdateDeliverable,
 } from "@greatstone/shared";
 import { isUniqueViolation } from "../db-errors.js";
 import { notFound, unprocessable } from "../errors.js";
 import type { StorageService } from "../storage/types.js";
+import { checkLinkStatus, classifyLinkStatus } from "./deliverable-links.js";
 
 // Deliverables (GRE-388): finished documents John asked for. Each version is
 // an issue_work_products row of type "deliverable"; the key is external_id and
@@ -44,6 +49,10 @@ const TITLE_MAX_LENGTH = 200;
 const HTML_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 
 const DELIVERABLE_KINDS = new Set<DeliverableKind>(["report", "brief", "plan", "deck", "other"]);
+const CONFIDENTIALITY = new Set<DeliverableConfidentiality>(["internal", "client", "public"]);
+/** Link deliverables carry this content type: a URL, not a stored file. */
+const LINK_CONTENT_TYPE = "text/uri-list";
+const LINK_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 type DeliverableRow = typeof issueWorkProducts.$inferSelect;
 
@@ -135,6 +144,40 @@ function readStatus(metadata: Record<string, unknown> | null): DeliverableStatus
   return metadataString(metadata, "deliverableStatus") === "draft" ? "draft" : "final";
 }
 
+/** Unlabelled deliverables (everything made before labels) are internal. */
+export function readConfidentiality(metadata: Record<string, unknown> | null): DeliverableConfidentiality {
+  const value = metadataString(metadata, "confidentiality");
+  return value && CONFIDENTIALITY.has(value as DeliverableConfidentiality)
+    ? value as DeliverableConfidentiality
+    : DEFAULT_DELIVERABLE_CONFIDENTIALITY;
+}
+
+function readLinkCheck(metadata: Record<string, unknown> | null): DeliverableLinkCheck | null {
+  const raw = metadata?.linkCheck as Record<string, unknown> | undefined;
+  if (!raw || typeof raw.lastCheckedAt !== "string") return null;
+  return {
+    lastCheckedAt: raw.lastCheckedAt,
+    httpStatus: typeof raw.httpStatus === "number" ? raw.httpStatus : null,
+    ok: raw.ok === true,
+  };
+}
+
+function isExternal(metadata: Record<string, unknown> | null) {
+  return metadata?.external === true;
+}
+
+/** Where a version opens: the site for a link, else the stored file. */
+function versionContentPath(row: DeliverableRow, metadata: Record<string, unknown> | null) {
+  return isExternal(metadata) ? row.url ?? "" : attachmentContentPath(metadataString(metadata, "attachmentId") ?? "");
+}
+
+function versionDownloadPath(row: DeliverableRow, metadata: Record<string, unknown> | null) {
+  const contentPath = versionContentPath(row, metadata);
+  return isExternal(metadata) ? contentPath : `${contentPath}?download=1`;
+}
+
+const confidentialityExpression = sql<string>`coalesce(${issueWorkProducts.metadata}->>'confidentiality', ${DEFAULT_DELIVERABLE_CONFIDENTIALITY})`;
+
 const versionExpression = sql<number>`((${issueWorkProducts.metadata}->>'version')::integer)`;
 
 /** Same issue, same key, a newer version exists: this row is not the latest. */
@@ -213,9 +256,12 @@ function toDeliverable(
 ): Deliverable {
   const { row } = input;
   const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
-  const attachmentId = metadataString(metadata, "attachmentId") ?? "";
-  const contentPath = attachmentContentPath(attachmentId);
+  const external = isExternal(metadata);
+  const contentPath = versionContentPath(row, metadata);
   const identifier = input.issueIdentifier ?? row.issueId;
+  const linkCheck = readLinkCheck(metadata);
+  const screenshot = metadata?.screenshot as { attachmentId?: unknown; capturedAt?: unknown } | undefined;
+  const screenshotAttachmentId = typeof screenshot?.attachmentId === "string" ? screenshot.attachmentId : null;
   return {
     id: row.id,
     companyId: row.companyId,
@@ -227,13 +273,20 @@ function toDeliverable(
     kind: readKind(metadata),
     brand: metadataString(metadata, "brand") ?? DEFAULT_DELIVERABLE_BRAND,
     status: readStatus(metadata),
-    attachmentId,
+    confidentiality: readConfidentiality(metadata),
+    attachmentId: external ? null : metadataString(metadata, "attachmentId") ?? "",
+    external,
+    url: external ? row.url ?? null : null,
+    screenshotPath: screenshotAttachmentId ? attachmentContentPath(screenshotAttachmentId) : null,
+    screenshotCapturedAt: typeof screenshot?.capturedAt === "string" ? screenshot.capturedAt : null,
+    linkCheck,
+    restricted: metadata?.restricted === true || (linkCheck !== null && classifyLinkStatus(linkCheck.httpStatus).restricted),
     contentType: metadataString(metadata, "contentType") ?? "application/octet-stream",
     byteSize: metadataNumber(metadata, "byteSize") ?? 0,
     originalFilename: metadataString(metadata, "originalFilename"),
     contentPath,
     openPath: contentPath,
-    downloadPath: `${contentPath}?download=1`,
+    downloadPath: versionDownloadPath(row, metadata),
     issue: { id: row.issueId, identifier, title: input.issueTitle },
     project: input.projectId && input.projectName ? { id: input.projectId, name: input.projectName } : null,
     clientCase,
@@ -242,6 +295,7 @@ function toDeliverable(
     updatedAt: row.updatedAt.toISOString(),
     lastOpenedAt: metadataString(metadata, "lastOpenedAt"),
     href: `/${encodeURIComponent(issuePrefix)}/issues/${encodeURIComponent(identifier)}#work-product-${row.id}`,
+    appPath: `/${encodeURIComponent(issuePrefix)}/deliverables?open=${row.id}`,
   };
 }
 
@@ -377,14 +431,13 @@ export function deliverableService(db: Db, storage?: StorageService) {
       ...toDeliverable(listRow, prefix, clientCases.get(listRow.row.issueId) ?? null),
       versions: versionRows.map((row) => {
         const metadata = (row.metadata as Record<string, unknown> | null) ?? null;
-        const contentPath = attachmentContentPath(metadataString(metadata, "attachmentId") ?? "");
         return {
           id: row.id,
           version: metadataNumber(metadata, "version") ?? 1,
           title: row.title,
           status: readStatus(metadata),
-          contentPath,
-          downloadPath: `${contentPath}?download=1`,
+          contentPath: versionContentPath(row, metadata),
+          downloadPath: versionDownloadPath(row, metadata),
           createdAt: row.createdAt.toISOString(),
         };
       }),
@@ -431,18 +484,23 @@ export function deliverableService(db: Db, storage?: StorageService) {
      */
     register: async (input: {
       issue: { id: string; companyId: string; projectId: string | null };
-      attachment: DeliverableAttachment;
-      fields: Omit<CreateDeliverable, "attachmentId">;
+      /** The stored file, or `url`: a live https site for a link deliverable. Exactly one. */
+      attachment?: DeliverableAttachment | null;
+      url?: string | null;
+      fields: Omit<CreateDeliverable, "attachmentId" | "url">;
       createdByAgentId: string | null;
       createdByRunId: string | null;
     }): Promise<DeliverableDetail> => {
-      const { issue, attachment, fields } = input;
-      if (attachment.companyId !== issue.companyId || attachment.issueId !== issue.id) {
+      const { issue, fields } = input;
+      const attachment = input.attachment ?? null;
+      const url = input.url ?? null;
+      if (!attachment === !url) throw unprocessable("Send exactly one of attachmentId or url");
+      if (attachment && (attachment.companyId !== issue.companyId || attachment.issueId !== issue.id)) {
         throw unprocessable("attachmentId must be an attachment on this issue");
       }
       const key = fields.key ?? deliverableKeyFromTitle(fields.title);
-      const searchText = await readSearchText(attachment);
-      const createdByAgentId = input.createdByAgentId ?? attachment.createdByAgentId;
+      const searchText = attachment ? await readSearchText(attachment) : null;
+      const createdByAgentId = input.createdByAgentId ?? attachment?.createdByAgentId ?? null;
       const createdByRunId = input.createdByRunId
         ? await db
           .select({ id: heartbeatRuns.id })
@@ -468,7 +526,18 @@ export function deliverableService(db: Db, storage?: StorageService) {
               .then((rows) => rows[0] ?? null);
             const previousMetadata = (previous?.metadata as Record<string, unknown> | null) ?? null;
             const version = (metadataNumber(previousMetadata, "version") ?? 0) + 1;
-            const contentPath = attachmentContentPath(attachment.id);
+            const sourceMetadata: Record<string, unknown> = attachment
+              ? {
+                attachmentId: attachment.id,
+                contentType: attachment.contentType,
+                byteSize: attachment.byteSize,
+                contentPath: attachmentContentPath(attachment.id),
+                openPath: attachmentContentPath(attachment.id),
+                downloadPath: `${attachmentContentPath(attachment.id)}?download=1`,
+                originalFilename: attachment.originalFilename,
+              }
+              : { external: true, contentType: LINK_CONTENT_TYPE };
+            const restricted = fields.restricted ?? previousMetadata?.restricted === true;
             const [row] = await tx
               .insert(issueWorkProducts)
               .values({
@@ -479,23 +548,20 @@ export function deliverableService(db: Db, storage?: StorageService) {
                 provider: "paperclip",
                 externalId: key,
                 title: fields.title,
+                url,
                 summary: fields.summary === undefined ? previous?.summary ?? null : fields.summary,
                 status: "active",
                 createdByRunId,
                 metadata: {
-                  attachmentId: attachment.id,
-                  contentType: attachment.contentType,
-                  byteSize: attachment.byteSize,
-                  contentPath,
-                  openPath: contentPath,
-                  downloadPath: `${contentPath}?download=1`,
-                  originalFilename: attachment.originalFilename,
+                  ...sourceMetadata,
                   version,
                   kind: fields.kind ?? (previous ? readKind(previousMetadata) : "report"),
                   brand: fields.brand ?? metadataString(previousMetadata, "brand") ?? DEFAULT_DELIVERABLE_BRAND,
                   deliverableStatus: fields.status ?? (previous ? readStatus(previousMetadata) : "final"),
+                  confidentiality: fields.confidentiality ?? readConfidentiality(previousMetadata),
+                  ...(restricted ? { restricted: true } : {}),
                   createdByAgentId,
-                  searchText,
+                  searchText: searchText ?? (url ? url : null),
                 },
               })
               .returning({ id: issueWorkProducts.id });
@@ -544,6 +610,10 @@ export function deliverableService(db: Db, storage?: StorageService) {
       if (query.brand) conditions.push(sql`lower(coalesce(${issueWorkProducts.metadata}->>'brand', ${DEFAULT_DELIVERABLE_BRAND})) = lower(${query.brand})`);
       if (query.projectId) conditions.push(eq(issues.projectId, query.projectId));
       if (query.agentId) conditions.push(sql`${issueWorkProducts.metadata}->>'createdByAgentId' = ${query.agentId}`);
+      if (query.confidentiality) conditions.push(sql`${confidentialityExpression} = ${query.confidentiality}`);
+      if (query.linkHealth === "broken") {
+        conditions.push(sql`${issueWorkProducts.metadata}->'linkCheck'->>'ok' = 'false'`);
+      }
       if (query.from) conditions.push(gte(issueWorkProducts.createdAt, new Date(query.from)));
       if (query.to) conditions.push(lte(issueWorkProducts.createdAt, new Date(query.to)));
       if (query.q) {
@@ -556,6 +626,18 @@ export function deliverableService(db: Db, storage?: StorageService) {
           OR coalesce(${agents.name}, '') ILIKE ${q} ESCAPE '\\'
           OR coalesce(${issueWorkProducts.metadata}->>'brand', '') ILIKE ${q} ESCAPE '\\'
           OR coalesce(${issueWorkProducts.metadata}->>'searchText', '') ILIKE ${q} ESCAPE '\\'
+          OR coalesce(${issueWorkProducts.url}, '') ILIKE ${q} ESCAPE '\\'
+          OR coalesce(${projects.name}, '') ILIKE ${q} ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1 FROM ${pipelineCaseIssueLinks}
+            INNER JOIN ${pipelineCases} ON ${pipelineCases.id} = ${pipelineCaseIssueLinks.caseId}
+              AND ${pipelineCases.companyId} = ${pipelineCaseIssueLinks.companyId}
+            WHERE ${pipelineCaseIssueLinks.issueId} = ${issues.id}
+              AND ${pipelineCaseIssueLinks.companyId} = ${issues.companyId}
+              AND ${pipelineCaseIssueLinks.retiredAt} IS NULL
+              AND ${pipelineCases.retiredAt} IS NULL
+              AND ${pipelineCases.title} ILIKE ${q} ESCAPE '\\'
+          )
         )`);
       }
 
@@ -579,6 +661,7 @@ export function deliverableService(db: Db, storage?: StorageService) {
           .select({ count: sql<number>`count(*)::integer` })
           .from(issueWorkProducts)
           .innerJoin(issues, and(eq(issueWorkProducts.issueId, issues.id), eq(issues.companyId, issueWorkProducts.companyId)))
+          .leftJoin(projects, and(eq(issues.projectId, projects.id), eq(projects.companyId, issues.companyId)))
           .leftJoin(agents, agentJoinCondition)
           .where(and(...conditions))
           .then((result) => result[0]),
@@ -650,6 +733,121 @@ export function deliverableService(db: Db, storage?: StorageService) {
           eq(issueWorkProducts.externalId, target.key ?? ""),
         ));
       return true;
+    },
+
+    /** Relabel every version of a deliverable: confidentiality and the restricted mark. */
+    update: async (companyId: string, id: string, patch: UpdateDeliverable): Promise<DeliverableDetail | null> => {
+      const target = await db
+        .select({ issueId: issueWorkProducts.issueId, key: issueWorkProducts.externalId })
+        .from(issueWorkProducts)
+        .where(and(
+          eq(issueWorkProducts.id, id),
+          eq(issueWorkProducts.companyId, companyId),
+          eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+        ))
+        .then((rows) => rows[0] ?? null);
+      if (!target) return null;
+      const changes: Record<string, unknown> = {};
+      if (patch.confidentiality) changes.confidentiality = patch.confidentiality;
+      if (patch.restricted !== undefined) changes.restricted = patch.restricted;
+      await db
+        .update(issueWorkProducts)
+        .set({
+          metadata: sql`coalesce(${issueWorkProducts.metadata}, '{}'::jsonb) || ${JSON.stringify(changes)}::jsonb`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(issueWorkProducts.companyId, companyId),
+          eq(issueWorkProducts.issueId, target.issueId),
+          eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+          eq(issueWorkProducts.externalId, target.key ?? ""),
+        ));
+      return getDetail(companyId, id);
+    },
+
+    /**
+     * Store a screenshot of a link deliverable's site as an image attachment
+     * on its task and point the card at it. Older screenshots stay on the task.
+     */
+    saveScreenshot: async (companyId: string, id: string, image: Buffer): Promise<void> => {
+      if (!storage) throw unprocessable("This server has no file storage for screenshots");
+      const row = await db
+        .select({ issueId: issueWorkProducts.issueId, key: issueWorkProducts.externalId })
+        .from(issueWorkProducts)
+        .where(and(eq(issueWorkProducts.id, id), eq(issueWorkProducts.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!row) throw notFound("Deliverable not found");
+      const stored = await storage.putFile({
+        companyId,
+        namespace: `issues/${row.issueId}`,
+        originalFilename: `${row.key ?? "site"}-screenshot.jpg`,
+        contentType: "image/jpeg",
+        body: image,
+      });
+      const attachmentId = await db.transaction(async (tx) => {
+        const [asset] = await tx
+          .insert(assets)
+          .values({
+            companyId,
+            provider: stored.provider,
+            objectKey: stored.objectKey,
+            contentType: stored.contentType,
+            byteSize: stored.byteSize,
+            sha256: stored.sha256,
+            originalFilename: stored.originalFilename,
+          })
+          .returning({ id: assets.id });
+        const [attachment] = await tx
+          .insert(issueAttachments)
+          .values({ companyId, issueId: row.issueId, assetId: asset!.id })
+          .returning({ id: issueAttachments.id });
+        return attachment!.id;
+      });
+      const screenshot = { attachmentId, capturedAt: new Date().toISOString() };
+      await db
+        .update(issueWorkProducts)
+        .set({ metadata: sql`coalesce(${issueWorkProducts.metadata}, '{}'::jsonb) || ${JSON.stringify({ screenshot })}::jsonb` })
+        .where(and(eq(issueWorkProducts.id, id), eq(issueWorkProducts.companyId, companyId)));
+    },
+
+    /**
+     * The daily link check: the latest version of each link deliverable whose
+     * last check is more than a day old (never-checked first), up to `limit`
+     * per call, so each scheduler tick does a little.
+     */
+    checkDueLinks: async (input: {
+      now?: Date;
+      limit?: number;
+      check?: (url: string) => Promise<number | null>;
+    } = {}): Promise<{ checked: number; broken: number }> => {
+      const now = input.now ?? new Date();
+      const check = input.check ?? checkLinkStatus;
+      const cutoff = new Date(now.getTime() - LINK_CHECK_INTERVAL_MS).toISOString();
+      const lastChecked = sql`(${issueWorkProducts.metadata}->'linkCheck'->>'lastCheckedAt')::timestamptz`;
+      const due = await db
+        .select({ id: issueWorkProducts.id, url: issueWorkProducts.url })
+        .from(issueWorkProducts)
+        .where(and(
+          eq(issueWorkProducts.type, DELIVERABLE_TYPE),
+          sql`${issueWorkProducts.metadata}->>'external' = 'true'`,
+          isNotNull(issueWorkProducts.url),
+          latestVersionOnly,
+          sql`(${lastChecked} IS NULL OR ${lastChecked} < ${cutoff}::timestamptz)`,
+        ))
+        .orderBy(sql`${lastChecked} ASC NULLS FIRST`)
+        .limit(input.limit ?? 5);
+      let broken = 0;
+      for (const item of due) {
+        const httpStatus = await check(item.url!);
+        const { ok } = classifyLinkStatus(httpStatus);
+        if (!ok) broken += 1;
+        const linkCheck: DeliverableLinkCheck = { lastCheckedAt: now.toISOString(), httpStatus, ok };
+        await db
+          .update(issueWorkProducts)
+          .set({ metadata: sql`coalesce(${issueWorkProducts.metadata}, '{}'::jsonb) || ${JSON.stringify({ linkCheck })}::jsonb` })
+          .where(eq(issueWorkProducts.id, item.id));
+      }
+      return { checked: due.length, broken };
     },
   };
 }

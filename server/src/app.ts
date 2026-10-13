@@ -814,7 +814,7 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
-  api.use(deliverableRoutes(db, opts.storageService));
+  api.use(deliverableRoutes(db, opts.storageService, { publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
