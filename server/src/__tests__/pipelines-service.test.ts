@@ -29,6 +29,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { withTestOrganisations } from "./helpers/case-organisation.js";
 import {
   PIPELINE_AUTOMATION_DEFAULT_TITLE_TEMPLATE,
   pipelineService,
@@ -57,7 +58,7 @@ describeEmbeddedPostgres("pipelineService", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipelines-service-");
     db = createDb(tempDb.connectionString);
-    svc = pipelineService(db, { heartbeat: noopHeartbeat });
+    svc = withTestOrganisations(pipelineService(db, { heartbeat: noopHeartbeat }), db);
   }, 20_000);
 
   afterEach(async () => {
