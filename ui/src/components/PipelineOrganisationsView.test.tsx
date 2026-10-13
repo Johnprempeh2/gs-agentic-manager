@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrganisationListItem } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyOrganisationCrmFields } from "@/fixtures/organisationCrmFields";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { PipelineOrganisationsView } from "./PipelineOrganisationsView";
 
@@ -22,6 +23,7 @@ function organisation(overrides: Partial<OrganisationListItem>): OrganisationLis
   return {
     id: "org-1",
     companyId: "company-1",
+    ...emptyOrganisationCrmFields,
     name: "Acme Mining",
     website: null,
     industry: "Mining",

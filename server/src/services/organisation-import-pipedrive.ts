@@ -28,6 +28,21 @@ export interface MappedPipedriveOrganisation {
   countryOwner: string | null;
   /** Used only when the organisation is created; a rerun never changes the GSAM status. */
   status: OrganisationStatus;
+  /**
+   * Global CRM fields Pipedrive has (GRE-1539). Only the ones with a value are
+   * here, so a rerun fills them in but never blanks what someone typed in GSAM.
+   */
+  crm: Partial<{
+    website: string;
+    linkedinUrl: string;
+    addressStreet: string;
+    addressCity: string;
+    addressRegion: string;
+    addressPostalCode: string;
+    employeeCount: number;
+    annualRevenue: number;
+    annualRevenueCurrency: string;
+  }>;
 }
 
 export interface MappedPipedriveContact {
@@ -66,6 +81,25 @@ function primaryValue(values: PipedriveContactValue[] | string | null | undefine
   return chosen ? text(chosen.value, max) : null;
 }
 
+/** A whole, non-negative number, or null. Pipedrive sends numbers as numbers or text. */
+function count(value: unknown, max: number): number | null {
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed >= 0 && parsed <= max ? parsed : null;
+}
+
+function webAddress(value: unknown): string | null {
+  const raw = text(value, 500);
+  if (!raw) return null;
+  return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`.slice(0, 500);
+}
+
+/** Drops null entries so only fields Pipedrive filled in are written. */
+function present<T extends Record<string, unknown>>(fields: T) {
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null)) as {
+    [K in keyof T]?: NonNullable<T[K]>;
+  };
+}
+
 /** Labels of the organisation `industry` choice field, by option id. */
 export function industryLabels(fields: PipedriveDealField[]) {
   const field = fields.find((item) => item.key === "industry");
@@ -85,6 +119,11 @@ export function mapPipedriveOrganization(
   const rawIndustry = text(org.industry, 200);
   const won = Number(org.won_deals_count ?? 0);
   const open = Number(org.open_deals_count ?? 0);
+  const employeeCount = count(org.employee_count, 10_000_000);
+  const currency = text(org.annual_revenue_currency, 3)?.toUpperCase() ?? null;
+  // Revenue without a currency cannot be read, so it is only taken with one.
+  const revenue = currency && /^[A-Z]{3}$/.test(currency) ? count(org.annual_revenue, 1e15) : null;
+  const street = [text(org.address_street_number, 40), text(org.address_route, 250)].filter(Boolean).join(" ");
   return {
     externalId: String(org.id),
     name,
@@ -92,7 +131,32 @@ export function mapPipedriveOrganization(
     country: text(org.address_country, 120),
     countryOwner: linkName(org.owner_id),
     status: won > 0 ? "client" : open > 0 ? "prospect" : "target",
+    crm: present({
+      website: text(org.website, 500),
+      linkedinUrl: webAddress(org.linkedin),
+      addressStreet: street || null,
+      addressCity: text(org.address_locality, 120),
+      addressRegion: text(org.address_admin_area_level_1, 120),
+      addressPostalCode: text(org.address_postal_code, 40),
+      employeeCount: employeeCount === null ? null : Math.round(employeeCount),
+      annualRevenue: revenue,
+      annualRevenueCurrency: revenue === null ? null : currency,
+    }),
   };
+}
+
+/** True when every CRM field Pipedrive sent already has that value on the row. */
+function crmUnchanged(existing: typeof organisations.$inferSelect, crm: MappedPipedriveOrganisation["crm"]) {
+  return Object.entries(crm).every(([key, value]) => {
+    const current = existing[key as keyof typeof existing];
+    return key === "annualRevenue" ? current !== null && Number(current) === value : current === value;
+  });
+}
+
+/** numeric columns take text in Drizzle. */
+function crmRowValues(crm: MappedPipedriveOrganisation["crm"]) {
+  const { annualRevenue, ...rest } = crm;
+  return annualRevenue === undefined ? rest : { ...rest, annualRevenue: String(annualRevenue) };
 }
 
 /** Pipedrive person -> GSAM contact. Null when it has no name. */
@@ -168,6 +232,7 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
                   country: mapped.country,
                   countryOwner: mapped.countryOwner,
                   status: mapped.status,
+                  ...crmRowValues(mapped.crm),
                   source: SOURCE,
                   externalId: mapped.externalId,
                   createdByUserId: actor.userId,
@@ -188,14 +253,15 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
               existing.name === fields.name &&
               existing.industry === fields.industry &&
               existing.country === fields.country &&
-              existing.countryOwner === fields.countryOwner
+              existing.countryOwner === fields.countryOwner &&
+              crmUnchanged(existing, mapped.crm)
             ) {
               result.organisations.skipped += 1;
               continue;
             }
             const [row] = await db
               .update(organisations)
-              .set({ ...fields, updatedAt: now() })
+              .set({ ...fields, ...crmRowValues(mapped.crm), updatedAt: now() })
               .where(and(eq(organisations.companyId, companyId), eq(organisations.id, existing.id)))
               .returning();
             orgByExternalId.set(mapped.externalId, row!);

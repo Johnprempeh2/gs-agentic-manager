@@ -1,4 +1,9 @@
-import type { OrganisationSource, OrganisationStatus } from "../organisations.js";
+import type {
+  OrganisationOwnershipType,
+  OrganisationSizeBand,
+  OrganisationSource,
+  OrganisationStatus,
+} from "../organisations.js";
 
 /** API response shapes for CRM organisations (GRE-1477). Every record is scoped to one company. */
 
@@ -28,6 +33,32 @@ export interface Organisation {
   countryOwner: string | null;
   status: OrganisationStatus;
   notes: string | null;
+  // Global CRM fields (GRE-1539). All optional; `country` above is the address country.
+  legalName: string | null;
+  domain: string | null;
+  phone: string | null;
+  email: string | null;
+  addressStreet: string | null;
+  addressCity: string | null;
+  addressRegion: string | null;
+  addressPostalCode: string | null;
+  employeeCount: number | null;
+  sizeBand: OrganisationSizeBand | null;
+  annualRevenue: number | null;
+  /** ISO 4217 code such as "GBP"; set together with annualRevenue. */
+  annualRevenueCurrency: string | null;
+  ownershipType: OrganisationOwnershipType | null;
+  /** Another organisation of the same company. */
+  parentOrganisationId: string | null;
+  linkedinUrl: string | null;
+  /** Account owner: one person or one agent of the company, never both. */
+  accountOwnerUserId: string | null;
+  accountOwnerAgentId: string | null;
+  segment: string | null;
+  tags: string[];
+  description: string | null;
+  registrationNumber: string | null;
+  taxId: string | null;
   source: OrganisationSource;
   externalId: string | null;
   archivedAt: string | null;
