@@ -49,6 +49,7 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
   enableStrategyBoard: async () => (await import("../routes/strategy-board.js")).strategyBoardRoutes(fakeDb),
   enableEnvironments: async () => (await import("../routes/environments.js")).environmentRoutes(fakeDb),
   enableWebsiteView: async () => (await import("../routes/website.js")).websiteRoutes(fakeDb),
+  enableIntelligence: async () => (await import("../routes/intelligence.js")).intelligenceRoutes(fakeDb),
 };
 
 async function issueRouter() {

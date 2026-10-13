@@ -185,6 +185,20 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "get", path: "/website/google/callback?code=x&state=x" },
     ],
   },
+  enableIntelligence: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/intelligence/reports` },
+      { method: "get", path: `${COMPANY}/intelligence/reports/latest` },
+      { method: "put", path: `${COMPANY}/intelligence/reports/2026-10-13` },
+      { method: "get", path: `${COMPANY}/intelligence/boards` },
+      { method: "put", path: `${COMPANY}/intelligence/boards/ai_systems/snapshots/2026-10-13` },
+      { method: "get", path: `${COMPANY}/intelligence/recommendations` },
+      { method: "post", path: `${COMPANY}/intelligence/recommendations` },
+      { method: "patch", path: `/intelligence/recommendations/${ID}` },
+      { method: "post", path: `/intelligence/recommendations/${ID}/task` },
+    ],
+  },
   enableSmokeLab: {
     kind: "runtime",
     reason: "Retired: always reads off. The smoke-lab service refuses every call through assertEntitled.",

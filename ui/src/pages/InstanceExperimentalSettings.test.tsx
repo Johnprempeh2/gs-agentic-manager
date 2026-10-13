@@ -97,6 +97,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableStrategyBoard: false,
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
+    enableIntelligence: false,
     enableAgentChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,

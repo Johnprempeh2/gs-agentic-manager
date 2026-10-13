@@ -632,6 +632,13 @@ export const queryKeys = {
     detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
     comments: (companyId: string, id: string) => ["deliverables", companyId, "comments", id] as const,
   },
+  intelligence: {
+    all: (companyId: string) => ["intelligence", companyId] as const,
+    report: (companyId: string, date: string, kind: string) => ["intelligence", companyId, "report", date, kind] as const,
+    reports: (companyId: string) => ["intelligence", companyId, "reports"] as const,
+    boards: (companyId: string, date: string | null) => ["intelligence", companyId, "boards", date] as const,
+    recommendations: (companyId: string) => ["intelligence", companyId, "recommendations"] as const,
+  },
   website: {
     overview: (companyId: string) => ["website", companyId, "overview"] as const,
     report: (companyId: string, propertyId: string) =>

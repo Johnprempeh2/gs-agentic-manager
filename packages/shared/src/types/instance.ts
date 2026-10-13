@@ -155,6 +155,8 @@ export interface InstanceExperimentalSettings {
   strategyBoardSecretaryAgentId: string | null;
   /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
   enableWebsiteView: boolean;
+  /** Greatstone: the Intelligence page (Daily Pulse and AI hub). Off = `403 not_entitled`. */
+  enableIntelligence: boolean;
   enableAgentChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;

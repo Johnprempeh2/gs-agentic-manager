@@ -213,6 +213,17 @@ Use in property rows, comment headers, assignee displays, and anywhere a user/ag
 
 For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under it (`ragRollup`); `GoalHealthPill` (task progress) only when there are no KPIs. `StrategyCascade`'s `CascadeStatus` follows this rule.
 
+### Intelligence cards (VerdictCard, RatingStars, MovementChip, SourceLink, IntelligenceSection)
+
+**File:** `intelligence/IntelligenceCards.tsx`
+**Usage:** The Intelligence page (`/intelligence`), shown with sample data in the design guide's "Intelligence cards" section.
+
+- `VerdictCard` (`title`, `href?`, `eyebrow?`, `verdict?`, `points?`, `action?`, `meta?`, `analysis?`, `footer?`): the two-layer card. The card shows one verdict sentence, at most three points and one "Do this" line; `analysis` goes behind a "Full analysis" sheet. Never put a paragraph on the card.
+- `RatingStars` (`value` 1 to 5, `label`): stars with the value spoken to screen readers.
+- `MovementChip` (`movement`): rank movement on a leaderboard (up, down, no change, new), coloured with status tokens and labelled in words.
+- `SourceLink` (`href`): an external source, opened in a new tab. Every news, tool or signal item carries one.
+- `IntelligenceSection` (`title`, `count?`, `action?`): section heading over a card grid that is one column on a phone.
+
 ### CompanySwitcher
 
 **File:** `CompanySwitcher.tsx`

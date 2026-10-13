@@ -104,6 +104,7 @@ export { organisations, organisationContacts } from "./organisations.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
 export { websiteProperties, websitePulls } from "./website.js";
+export { intelligenceReports, intelligenceBoardSnapshots, intelligenceRecommendations } from "./intelligence.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
 export { issueApprovals } from "./issue_approvals.js";

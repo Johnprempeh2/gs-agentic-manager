@@ -64,6 +64,7 @@ describe("instance settings service", () => {
       enableStrategyBoard: false,
       strategyBoardSecretaryAgentId: null,
       enableWebsiteView: false,
+      enableIntelligence: false,
       enableIssuePlanDecompositions: true,
       enableExperimentalFileViewer: true,
       enableBuiltInAgents: true,

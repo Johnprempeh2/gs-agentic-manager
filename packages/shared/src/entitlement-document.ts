@@ -35,6 +35,7 @@ export const ENTITLEMENT_FEATURE_KEYS = [
   "enableDeepDive",
   "enableEnvironments",
   "enableExternalObjects",
+  "enableIntelligence",
   "enableIssuePlanDecompositions",
   "enableMemoryConnectors",
   "enablePipelines",

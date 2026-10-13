@@ -28,6 +28,7 @@ import {
   Brain,
   Workflow,
   Globe,
+  Radar,
   ArrowUp,
   ArrowDown,
   RotateCcw,
@@ -180,6 +181,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showPipelines = experimentalSettings?.enablePipelines === true;
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
+  const showIntelligence = experimentalSettings?.enableIntelligence === true;
   const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
@@ -258,6 +260,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const websiteItem = showWebsite ? (
     <SidebarNavItem to="/website" label="Website" icon={Globe} />
   ) : null;
+  const intelligenceItem = showIntelligence ? (
+    <SidebarNavItem to="/intelligence" label="Intelligence" icon={Radar} textBadge="beta" />
+  ) : null;
   const workspacesItem = showWorkspacesLink ? (
     <SidebarNavItem to="/workspaces" label="Workspaces" icon={GitBranch} />
   ) : null;
@@ -317,6 +322,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         {tasksItem}
         {goalsItem}
         {boardItem}
+        {intelligenceItem}
       </SidebarSection>
     ),
     team: (dragHandle) => (

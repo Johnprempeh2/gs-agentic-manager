@@ -109,6 +109,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   strategyBoardSecretaryAgentId: z.string().uuid().nullable().default(null),
   // Greatstone: read-only Website view (GA4 and Search Console), GRE-1085.
   enableWebsiteView: z.boolean().default(false),
+  // Greatstone: the Intelligence page (Daily Pulse and AI Intelligence Hub, written by an agent).
+  enableIntelligence: z.boolean().default(false),
   enableAgentChat: z.boolean().default(false),
   enableConferenceRoomChat: z.boolean().default(false),
   enableClassicTaskInterface: z.boolean().default(false),

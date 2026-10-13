@@ -178,6 +178,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableIntelligence: {
+    title: "Intelligence",
+    description:
+      "The Intelligence page: the Daily Pulse brief, the AI leaderboards with movement, compare, radar and news, plus GSAM feature and skill recommendations. An agent writes it through the API. Off answers every Intelligence route with 403 not_entitled.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableAgentChat: {
     title: "Agent Chat",
     description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",
