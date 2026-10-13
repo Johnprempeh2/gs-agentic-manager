@@ -34,7 +34,7 @@ import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { accessService, issueService, logActivity } from "../services/index.js";
-import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 // Intelligence page: the Daily Pulse and the AI Intelligence Hub inside GSAM.
 // Everyone in the company reads. Board users write; an agent writes only with
@@ -365,7 +365,9 @@ export function intelligenceRoutes(db: Db) {
       .select()
       .from(intelligenceRecommendations)
       .where(eq(intelligenceRecommendations.id, req.params.id as string));
-    if (!row) throw notFound("Recommendation not found");
+    // Another company's recommendation answers 404 like a missing one, so the
+    // id cannot be probed across companies (403 would say it exists).
+    if (!row || !hasCompanyAccess(req, row.companyId)) throw notFound("Recommendation not found");
     assertCompanyAccess(req, row.companyId);
     assertBoard(req);
     return row;

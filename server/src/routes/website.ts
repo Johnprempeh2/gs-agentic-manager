@@ -19,7 +19,7 @@ import { requireEntitlement } from "../services/entitlements.js";
 import { websiteService, type WebsiteServiceOptions } from "../services/website/index.js";
 import { isLoopbackHost } from "../url-utils.js";
 import { logger } from "../middleware/logger.js";
-import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 // Website view routes (GRE-1087). The `enableWebsiteView` switch gates every
 // one of them through the shared entitlement gate (GRE-1077) before anything
@@ -187,7 +187,9 @@ export function websiteRoutes(db: Db, opts: WebsiteServiceOptions = {}) {
     const code = typeof req.query.code === "string" ? req.query.code : null;
     const error = typeof req.query.error === "string" ? req.query.error : null;
     const pending = state ? service.peekGoogleConnect(state) : null;
-    if (!pending) {
+    // A sign-in started in a company the caller cannot reach answers like an
+    // expired one, so a state value tells nothing about other companies.
+    if (!pending || !hasCompanyAccess(req, pending.companyId)) {
       res.status(400).json({ error: "This Google sign-in has expired. Start it again from the Website page.", code: "website_google_state_invalid" });
       return;
     }
