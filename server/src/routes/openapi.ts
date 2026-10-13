@@ -14027,6 +14027,15 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/boards/history",
+  tags: ["intelligence"],
+  summary: "Get each leaderboard's recent snapshots, oldest first (date caps the newest; limit 2 to 90, default 12)",
+  query: z.object({ date: z.string().optional(), limit: z.string().optional() }),
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
   method: "put",
   path: "/api/companies/{companyId}/intelligence/boards/{board}/snapshots/{snapshotDate}",
   tags: ["intelligence"],

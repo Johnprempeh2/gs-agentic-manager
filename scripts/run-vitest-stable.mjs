@@ -109,6 +109,13 @@ const serializedServerVitestArgs = [
   "--maxWorkers=1",
 ];
 const sourceOnlyVitestArgs = ["--exclude", "**/dist/**"];
+// The release test gate (scripts/greatstone-test-gate.sh) runs every lane at
+// once on one machine, where a test that passes alone can run past its
+// project's default timeout (cold module transforms; 13 Oct 2026: 10 suites).
+// GSAM_VITEST_TIMEOUT_MS raises the default test and hook timeout of every
+// project. A test's own explicit timeout still applies, so a hang still fails.
+const gateTimeoutMs = Number(process.env.GSAM_VITEST_TIMEOUT_MS) || 0;
+const gateTimeoutArgs = gateTimeoutMs > 0 ? [`--testTimeout=${gateTimeoutMs}`, `--hookTimeout=${gateTimeoutMs}`] : [];
 
 function walk(dir) {
   const entries = readdirSync(dir);
@@ -343,7 +350,7 @@ function runVitest(args, label, testShard = null) {
     console.log(`[test:run] chat shard ${testShard.index + 1}/${testShard.count}: ${selected.tests.length}/${collected.length} tests, ${selected.lines.length} source lines; exact filter coverage verified`);
     args.push("--allowOnly=false");
   }
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
+  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...gateTimeoutArgs, ...args], {
     cwd: repoRoot,
     env,
     stdio: "inherit",
