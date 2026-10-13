@@ -2001,10 +2001,23 @@ describeEmbeddedPostgres("tool access service", () => {
         }
       });
 
-      // The first replacement still owns the departing member lock, so this
-      // gives cleanup time to queue for that lock before the empty replacement
-      // queues for the grant lock.
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait until `n` backends queue on a lock. A fixed 50ms sleep did not
+      // always let cleanup queue first when the whole suite ran at once (the
+      // release test gate), and the empty replacement then won the race.
+      const untilLockWaiters = async (n: number) => {
+        for (let attempt = 0; attempt < 1000; attempt++) {
+          const rows = (await db.execute(
+            sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+          )) as unknown as Array<{ waiting: number }>;
+          if (rows[0]!.waiting >= n) return;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        throw new Error(`fewer than ${n} backends queued on a lock`);
+      };
+      // The first replacement still owns the departing member lock, so cleanup
+      // queues for that lock before the empty replacement queues for the grant
+      // lock.
+      await untilLockWaiters(1);
       let replacementSettled = false;
       const replacement = replacementService
         .replaceConnectionGrantMembers(connection.id, grant.id, [])
@@ -2015,7 +2028,7 @@ describeEmbeddedPostgres("tool access service", () => {
         .finally(() => {
           replacementSettled = true;
         });
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await untilLockWaiters(2);
       expect(replacementSettled).toBe(false);
 
       releaseFirstReplacement();
