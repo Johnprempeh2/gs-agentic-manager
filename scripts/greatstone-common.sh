@@ -202,7 +202,7 @@ test_gate_check() {
     say "the full test suite passed on $2 ($1) at $(sed -n 's/^passed_at=//p' "$marker")"
     return 0
   fi
-  say "the full test suite has not passed on $2 ($1): there is no pass marker $marker. Run it first: scripts/greatstone-test-gate.sh $2 (about 15 minutes on the PC). Only in an emergency: greatstone-release.sh --skip-test-gate \"<reason>\" $2 (logged in $TEST_GATE_DIR/overrides.log). Nothing was changed."
+  say "the full test suite has not passed on $2 ($1): there is no pass marker $marker. Run it first: scripts/greatstone-test-gate.sh $2 (about 20 minutes on the PC). Only in an emergency: greatstone-release.sh --skip-test-gate \"<reason>\" $2 (logged in $TEST_GATE_DIR/overrides.log). Nothing was changed."
   return 1
 }
 

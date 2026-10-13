@@ -293,7 +293,7 @@ Merging does not change the live app. A version goes live in these steps.
 
    **Test gate.** A candidate is releasable only when the full test suite
    passed on its exact commit. `greatstone-candidate.mjs` runs it right after
-   it cuts the tag (`scripts/greatstone-test-gate.sh <rc-tag>`, about 15
+   it cuts the tag (`scripts/greatstone-test-gate.sh <rc-tag>`, about 20
    minutes on the PC): the lanes in `scripts/greatstone-test-gate.lanes` (the
    Fork CI Tests matrix: server, chat, serialized route suites, UI and CLI,
    packages) in parallel, in a clean clone at `~/GSAM/test-gate/code`. Run it
