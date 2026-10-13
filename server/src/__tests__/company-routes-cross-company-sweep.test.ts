@@ -7,7 +7,8 @@ import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
-  companyMemberships, companySecretProviderConfigs, companySecrets, decisions, decisionTrainingExamples,
+  companyMemberships, companySecretProviderConfigs, companySecrets, crmSyncBindings, crmSyncConflicts,
+  decisions, decisionTrainingExamples, intelligenceRecommendations, workflowTemplates,
   environmentLeases, environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns,
   invites, issueAttachments, issues, goalWhyRequests, strategyBoardPacks,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
@@ -113,6 +114,10 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
     + "Swept by the tool-gateway test below: company B sends its own companyId with company A's ids.",
   "/api/plugins/:pluginId": "Plugins are instance-wide (no company column). Company data sits under "
     + "/plugins/:pluginId/companies/:companyId, which is swept, or in the request body, which this sweep does not fill.",
+  "/api/fleet/instances/:id": "Fleet hub only: the /fleet router answers 404 unless the hub is enabled, then calls "
+    + "assertInstanceAdmin. Fleet instances are client installs registered with the hub, not company records.",
+  "/api/instance/client-support/attachments/:attachmentId": "Instance-admin only: the handler calls assertInstanceAdmin "
+    + "before reading the attachment, so a company owner is refused before any lookup. The operator relays every company's outbox.",
 };
 
 // Id routes that answer 200 with an empty body for both "missing" and "another
@@ -276,7 +281,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       enablePipelines: true, enableCases: true, enableDeepDive: true, enableAgentChat: true,
       enableConferenceRoomChat: true, enableIssuePlanDecompositions: true, enableExternalObjects: true,
       enableSmokeLab: true, enableBuiltInAgents: true, enableBetaSkills: true, enableSummaries: true,
-      enableStatusCards: true, enableStrategyBoard: true,
+      enableStatusCards: true, enableStrategyBoard: true, enableIntelligence: true,
     });
 
     await ctx.db.insert(companies).values([
@@ -323,6 +328,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const profileEntryId = id(), intentId = id(), voteId = id(), traceId = id(), trainingId = id();
     const inviteId = id(), decisionId = id();
     const boardPackId = id(), whyRequestId = id();
+    const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -414,6 +420,20 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       snapshot: {}, body: "Company A pack",
     });
     await ctx.db.insert(goalWhyRequests).values({ ...A, id: whyRequestId, goalId, question: "Why?", askedByUserId: ownerAId });
+    // Intelligence recommendations, CRM sync bindings and conflicts, workflow templates.
+    await ctx.db.insert(intelligenceRecommendations).values({
+      ...A, id: recommendationId, kind: "tool", title: "Company A recommendation", why: "Company A", effort: "low",
+    });
+    await ctx.db.insert(crmSyncBindings).values({
+      ...A, id: bindingId, connectionId, pipelineId, providerKey: "hubspot", containerKind: "crm_pipeline",
+      externalContainerId: "a-pipeline",
+    });
+    await ctx.db.insert(crmSyncConflicts).values({
+      ...A, id: conflictId, bindingId, entityKind: "case", entityId: caseId, externalId: "a-deal",
+      gsamField: "title", externalField: "dealname", crmValue: { value: "A" }, gsamValue: { value: "A" },
+    });
+    // The id routes check the company before they read the definition.
+    await ctx.db.insert(workflowTemplates).values({ ...A, id: workflowTemplateId, key: "a-template", name: "Company A template", definition: {} });
 
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
@@ -438,6 +458,9 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/feedback-traces/:traceId": traceId, "/api/decision-training/:id": trainingId,
       "/api/invites/:inviteId": inviteId, "/api/decisions/:id": decisionId,
       "/api/strategy-board/packs/:id": boardPackId, "/api/why-requests/:id": whyRequestId,
+      "/api/intelligence/recommendations/:id": recommendationId,
+      "/api/crm-sync/bindings/:bindingId": bindingId, "/api/crm-sync/conflicts/:conflictId": conflictId,
+      "/api/workflow-templates/:id": workflowTemplateId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
