@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "slug": "pipedrive",
+  "name": "Pipedrive",
+  "description": "Import your Pipedrive organisations and people into Organisations.",
+  "categories": [
+    "crm"
+  ],
+  "featured": false,
+  "branding": {
+    "logoUrl": "/brands/apps/pipedrive.png"
+  },
+  "urlPatterns": [
+    "https://*.pipedrive.com/*"
+  ],
+  "methods": [
+    {
+      "key": "api-token",
+      "transport": "rest_api",
+      "auth": "api_key",
+      "ownershipModes": [
+        "customer"
+      ],
+      "whenToUse": "Use the personal API token from your Pipedrive account.",
+      "defaults": {},
+      "guidanceMd": "Paste the personal API token of a Pipedrive user who can see every organisation and person you want to import. Find it in Pipedrive under Settings > Personal preferences > API. Importing only reads from Pipedrive; nothing is written back.",
+      "riskTier": "S3",
+      "label": "Use a personal API token",
+      "grantKinds": [
+        "organization"
+      ],
+      "credentialFields": [
+        {
+          "key": "api_token",
+          "label": "Pipedrive API token",
+          "type": "password",
+          "required": true,
+          "placeholder": "Paste your personal API token",
+          "secret": true,
+          "helperMd": "In Pipedrive, open Settings > Personal preferences > API and copy Your personal API token."
+        }
+      ],
+      "tenantFields": [
+        {
+          "key": "companyDomain",
+          "label": "Company domain",
+          "type": "text",
+          "required": false,
+          "placeholder": "greatstone",
+          "helperMd": "Optional. The part before .pipedrive.com in your Pipedrive address, for example greatstone for greatstone.pipedrive.com.",
+          "validation": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$",
+            "maxLength": 63
+          }
+        }
+      ],
+      "keyPlacement": {
+        "location": "header",
+        "name": "x-api-token"
+      },
+      "consoleLinks": {
+        "keys": "https://app.pipedrive.com/settings/api",
+        "docs": "https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key"
+      }
+    }
+  ],
+  "docsUrl": "https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key"
+}

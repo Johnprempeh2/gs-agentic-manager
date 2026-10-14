@@ -5120,6 +5120,7 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(res.body.apps.map((app: { slug: string }) => app.slug)).toEqual(
       expect.arrayContaining([
         "agentmail",
+        "pipedrive",
         "imessage-photon",
         "jira",
         "airtable",
@@ -5142,7 +5143,7 @@ describeEmbeddedPostgres("tool access service", () => {
         "youcom",
       ]),
     );
-    expect(res.body.apps).toHaveLength(57);
+    expect(res.body.apps).toHaveLength(58);
     expect(
       res.body.apps.find((app: { slug: string }) => app.slug === "gmail")
         .ownershipAvailability,
