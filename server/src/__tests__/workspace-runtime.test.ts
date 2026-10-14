@@ -343,6 +343,10 @@ async function closeNetServer(server: net.Server) {
 
 async function listenOnPort(port: number) {
   const server = net.createServer();
+  // These servers only hold a port. A connection left open (another process
+  // probing the port while the whole suite runs) would keep close() waiting
+  // until the test timed out (release test gate, 14 Oct 2026), so drop it.
+  server.on("connection", (socket) => socket.destroy());
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, "127.0.0.1", resolve);

@@ -9,7 +9,7 @@ import { forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { teamChatService, type TeamChatService } from "../services/team-chats.js";
-import { assertCompanyAccess, hasCompanyBoardRole } from "./authz.js";
+import { assertCompanyAccess, hasCompanyAccess, hasCompanyBoardRole } from "./authz.js";
 
 // Team chats (enableTeamChat): direct messages and group chats of people and
 // agents. These routes manage the chats and their members; messages go
@@ -33,7 +33,9 @@ export function teamChatRoutes(db: Db, opts: { service?: TeamChatService } = {})
   async function loadChat(req: Request) {
     const id = req.params.id as string;
     const chat = UUID_RE.test(id) ? await chats.getChat(id) : null;
-    if (!chat) throw notFound("Chat not found");
+    // One 404 for missing and cross-company chats, so ids from another
+    // company cannot be probed (403 vs 404).
+    if (!chat || !hasCompanyAccess(req, chat.companyId)) throw notFound("Chat not found");
     assertCompanyAccess(req, chat.companyId);
     const userId = boardUserId(req);
     if (!(await chats.isParticipant(chat.id, { type: "user", id: userId })) && !hasCompanyBoardRole(req, chat.companyId)) {

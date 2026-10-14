@@ -15,6 +15,7 @@ import {
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
   toolMcpGateways, toolMcpGatewayTokens, toolProfileEntries, toolProfiles, toolRuntimeSlots, workspaceOperations,
 } from "@greatstone/db";
+import { TEAM_CHAT_ORIGIN_KIND } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
 import { createApp } from "../app.js";
 import { environmentService } from "../services/environments.js";
@@ -281,7 +282,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       enablePipelines: true, enableCases: true, enableDeepDive: true, enableAgentChat: true,
       enableConferenceRoomChat: true, enableIssuePlanDecompositions: true, enableExternalObjects: true,
       enableSmokeLab: true, enableBuiltInAgents: true, enableBetaSkills: true, enableSummaries: true,
-      enableStatusCards: true, enableStrategyBoard: true, enableIntelligence: true,
+      enableStatusCards: true, enableStrategyBoard: true, enableIntelligence: true, enableTeamChat: true,
     });
 
     await ctx.db.insert(companies).values([
@@ -329,6 +330,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const inviteId = id(), decisionId = id();
     const boardPackId = id(), whyRequestId = id();
     const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
+    const teamChatId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -435,6 +437,11 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     // The id routes check the company before they read the definition.
     await ctx.db.insert(workflowTemplates).values({ ...A, id: workflowTemplateId, key: "a-template", name: "Company A template", definition: {} });
 
+    // Team chats are issues with the team_chat origin kind.
+    await ctx.db.insert(issues).values({
+      ...A, id: teamChatId, title: "Company A chat", originKind: TEAM_CHAT_ORIGIN_KIND,
+    });
+
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
       "/api/agents/:id": agentId, "/api/agents/:agentId": agentId,
@@ -461,6 +468,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/intelligence/recommendations/:id": recommendationId,
       "/api/crm-sync/bindings/:bindingId": bindingId, "/api/crm-sync/conflicts/:conflictId": conflictId,
       "/api/workflow-templates/:id": workflowTemplateId,
+      "/api/team-chats/:id": teamChatId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),
