@@ -437,6 +437,8 @@ export const issuesApi = {
       selectedClientKeys?: string[];
       selectedOptionIds?: string[];
       rememberAction?: boolean;
+      editedBody?: string;
+      learnFromEdits?: boolean;
     },
     options?: RequestOptions,
   ) =>

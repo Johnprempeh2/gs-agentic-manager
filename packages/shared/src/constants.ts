@@ -263,6 +263,7 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_checkbox_confirmation",
   "request_item_verdicts",
   "connection_intent",
+  "request_draft_review",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
 

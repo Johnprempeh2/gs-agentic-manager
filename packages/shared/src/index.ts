@@ -450,6 +450,7 @@ export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
 export * from "./client-journey.js";
 export * from "./deliverable-versions.js";
+export * from "./draft-diff.js";
 export * from "./types/workflow-template.js";
 export * from "./validators/workflow-template.js";
 export * from "./types/document-evidence.js";
@@ -1348,6 +1349,9 @@ export type {
   RequestItemVerdictsPayload,
   RequestItemVerdictsResultItem,
   RequestItemVerdictsResult,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
+  RequestDraftReviewResultDraft,
   AcceptedPlanDecompositionStatus,
   AcceptedPlanDecompositionChild,
   AcceptedPlanDecomposition,
@@ -1360,6 +1364,7 @@ export type {
   RequestConfirmationInteraction,
   RequestCheckboxConfirmationInteraction,
   RequestItemVerdictsInteraction,
+  RequestDraftReviewInteraction,
   ConnectionIntentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
@@ -2222,6 +2227,8 @@ export {
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultItemSchema,
   requestItemVerdictsResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,

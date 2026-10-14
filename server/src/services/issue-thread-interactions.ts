@@ -52,6 +52,7 @@ import type {
   RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
   RequestConfirmationTarget,
+  RequestDraftReviewInteraction,
   RequestItemVerdictsInteraction,
   RequestItemVerdictsResult,
   RequestItemVerdictsResultItem,
@@ -78,6 +79,8 @@ import {
   requestCheckboxConfirmationResultSchema,
   requestConfirmationPayloadSchema,
   requestConfirmationResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultSchema,
   skipIssueThreadInteractionSchema,
@@ -85,6 +88,8 @@ import {
   suggestTasksResultSchema,
   submitIssueThreadInteractionVerdictsSchema,
   withdrawIssueThreadInteractionSchema,
+  describeDraftEdit,
+  diffDraftWords,
 } from "@greatstone/shared";
 import { z } from "zod";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
@@ -375,6 +380,8 @@ export const DEFAULT_RESOLVER_POLICY_BY_KIND: Record<
   request_checkbox_confirmation: "anyone",
   request_item_verdicts: "anyone",
   connection_intent: "human_only",
+  // A person edits or approves a draft; the drafting agent never signs off its own.
+  request_draft_review: "human_only",
 };
 
 const RESOLVER_POLICY_RESTRICTION_RANK: Record<
@@ -406,7 +413,7 @@ export function resolveInteractionPolicy(args: {
   let effectiveResolverPolicy = requestedResolverPolicy;
   let effectiveResolverPolicySource: IssueThreadInteractionEffectiveResolverPolicySource =
     "requested";
-  if (args.hasToolAction || args.hasSecretProposal) {
+  if (args.hasToolAction || args.hasSecretProposal || args.kind === "request_draft_review") {
     effectiveResolverPolicy = "human_only";
     effectiveResolverPolicySource = "governed_action";
   } else if (kindGovernance?.cap) {
@@ -523,11 +530,14 @@ async function assertRequestConfirmationResolutionAllowedUnderLock(
 const REQUEST_CONFIRMATION_INTERACTION_KINDS = [
   "request_confirmation",
   "request_checkbox_confirmation",
+  "request_draft_review",
 ] as const;
 type RequestConfirmationLikeKind =
   (typeof REQUEST_CONFIRMATION_INTERACTION_KINDS)[number];
 type RequestConfirmationLikeInteraction =
-  RequestConfirmationInteraction | RequestCheckboxConfirmationInteraction;
+  | RequestConfirmationInteraction
+  | RequestCheckboxConfirmationInteraction
+  | RequestDraftReviewInteraction;
 
 const TARGET_BOUND_INTERACTION_KINDS = [
   ...REQUEST_CONFIRMATION_INTERACTION_KINDS,
@@ -737,6 +747,17 @@ function hydrateInteraction(
           row,
         ),
       } satisfies RequestItemVerdictsInteraction;
+    case "request_draft_review":
+      return {
+        ...base,
+        kind: "request_draft_review",
+        payload: requestDraftReviewPayloadSchema.parse(row.payload),
+        result: parseStoredInteractionResult(
+          requestDraftReviewResultSchema,
+          row.result,
+          row,
+        ),
+      } satisfies RequestDraftReviewInteraction;
     case "connection_intent":
       return {
         ...base,
@@ -832,6 +853,24 @@ function shouldReturnAcceptedConfirmationToCreatorAgent(args: {
   return Boolean(args.issue.assigneeUserId);
 }
 
+function buildDraftReviewResult(
+  interaction: RequestDraftReviewInteraction,
+  input: AcceptIssueThreadInteraction,
+) {
+  const originalBody = interaction.payload.body;
+  const finalBody = input.editedBody ?? originalBody;
+  const diff = diffDraftWords(originalBody, finalBody);
+  return {
+    originalBody,
+    finalBody,
+    edited: diff.changeCount > 0,
+    changeCount: diff.changeCount,
+    diff: diff.segments,
+    editSummary: describeDraftEdit(diff),
+    learnFromEdits: input.learnFromEdits !== false,
+  };
+}
+
 function shouldSupersedeInteractionOnUserComment(interaction: UserCommentSupersedableInteraction) {
   if (interaction.kind === "connection_intent") return false;
   if (interaction.kind === "request_confirmation" && interaction.payload.toolAction) return false;
@@ -877,6 +916,16 @@ function normalizeCreateInteractionInput(
         payload: {
           ...input.payload,
           supersedeOnUserComment: input.payload.supersedeOnUserComment ?? true,
+        },
+      };
+    case "request_draft_review":
+      // A comment in the thread should not throw away a draft the person may
+      // still be editing; the agent posts a newer card to replace it.
+      return {
+        ...input,
+        payload: {
+          ...input.payload,
+          supersedeOnUserComment: input.payload.supersedeOnUserComment ?? false,
         },
       };
     default:
@@ -1383,7 +1432,9 @@ async function emitInteractionResolvedTelemetry(
 
     trackInteractionResolved(telemetryClient, {
       interactionKind:
-        interaction.kind === "connection_intent" ? "other" : interaction.kind,
+        interaction.kind === "connection_intent" || interaction.kind === "request_draft_review"
+          ? "other"
+          : interaction.kind,
       status: interaction.status,
       resolvedByKind: resolveActorKind(interaction),
       resolutionReason: deriveResolutionReason(interaction),
@@ -1416,7 +1467,8 @@ function emitInteractionCreatedTelemetry(args: {
     trackInteractionCreated(telemetryClient, {
       ...args,
       interactionKind:
-        args.interactionKind === "connection_intent"
+        args.interactionKind === "connection_intent" ||
+        args.interactionKind === "request_draft_review"
           ? "other"
           : args.interactionKind,
     });
@@ -2183,6 +2235,10 @@ export function issueThreadInteractionService(
               selectedOptionIds: args.input.selectedOptionIds,
             })
           : undefined;
+      const draft =
+        interaction.kind === "request_draft_review"
+          ? buildDraftReviewResult(interaction, args.input)
+          : undefined;
 
       const [updated] = await tx
         .update(issueThreadInteractions)
@@ -2192,6 +2248,7 @@ export function issueThreadInteractionService(
             version: 1,
             outcome: "accepted",
             ...(selectedOptionIds ? { selectedOptionIds } : {}),
+            ...(draft ? { draft } : {}),
           },
           resolvedByAgentId: args.actor.agentId ?? null,
           resolvedByRunId: args.actor.runId ?? null,
@@ -2388,6 +2445,7 @@ export function issueThreadInteractionService(
     ) as RequestConfirmationLikeInteraction;
     const reason = args.input.reason?.trim() ?? "";
     if (
+      interaction.kind !== "request_draft_review" &&
       interaction.payload.rejectRequiresReason === true &&
       reason.length === 0
     ) {
@@ -3705,6 +3763,7 @@ export function issueThreadInteractionService(
             createdIssues: [],
           };
         }
+        case "request_draft_review":
         case "request_checkbox_confirmation": {
           await assertIssueWorkspaceFinalizedForAccept({
             db,
@@ -3957,6 +4016,7 @@ export function issueThreadInteractionService(
           );
         case "request_confirmation":
         case "request_checkbox_confirmation":
+        case "request_draft_review":
           return rejectRequestConfirmation({
             issue,
             current,

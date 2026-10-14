@@ -1,3 +1,4 @@
+import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
@@ -2831,13 +2832,20 @@ async function queueResolvedInteractionContinuationWakeup(input: {
       input.interaction.kind === "request_checkbox_confirmation")
       ? readNonEmptyString(readObject(input.interaction.result).reason)
       : null;
-  const rejectionAgentMessage = genericRejectionReason
+  const draftReviewMessage = buildDraftReviewAgentMessage(input.interaction);
+  const rejectionAgentMessage = draftReviewMessage
     ? {
-        text: genericRejectionReason,
-        source: "interaction_rejection",
+        text: draftReviewMessage,
+        source: "draft_review",
         sessionId: input.interaction.id,
       }
-    : null;
+    : genericRejectionReason
+      ? {
+          text: genericRejectionReason,
+          source: "interaction_rejection",
+          sessionId: input.interaction.id,
+        }
+      : null;
   const externalPromptPublications = await input.db
     .select({
       endpointId: chatPublications.endpointId,

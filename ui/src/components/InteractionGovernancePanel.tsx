@@ -23,6 +23,7 @@ const INTERACTION_KIND_LABELS: Record<IssueThreadInteractionKind, string> = {
   request_checkbox_confirmation: "Checkbox confirmations",
   request_item_verdicts: "Item verdicts",
   connection_intent: "Connection requests",
+  request_draft_review: "Draft reviews",
 };
 
 /**

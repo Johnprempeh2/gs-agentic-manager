@@ -1757,6 +1757,38 @@ export const requestCheckboxConfirmationResultSchema =
       }
     });
 
+export const requestDraftReviewPayloadSchema = z.object({
+  version: z.literal(1),
+  purpose: z.string().trim().min(1).max(240),
+  body: multilineTextSchema.pipe(z.string().min(1).max(50000)),
+  subject: z.string().trim().max(500).nullable().optional(),
+  recipients: z.array(z.string().trim().min(1).max(320)).max(50).optional(),
+  channel: z.string().trim().max(80).nullable().optional(),
+  detailsMarkdown: z.string().max(20000).nullable().optional(),
+  supersedeOnUserComment: z.boolean().optional(),
+  target: requestConfirmationTargetSchema.nullable().optional(),
+});
+
+export const requestDraftReviewResultSchema = requestConfirmationResultSchema.extend({
+  draft: z
+    .object({
+      originalBody: z.string(),
+      finalBody: z.string(),
+      edited: z.boolean(),
+      changeCount: z.number().int().min(0),
+      diff: z.array(
+        z.object({
+          type: z.enum(["same", "added", "removed"]),
+          text: z.string(),
+        }),
+      ),
+      editSummary: z.string(),
+      learnFromEdits: z.boolean(),
+    })
+    .nullable()
+    .optional(),
+});
+
 export const requestItemVerdictValueSchema = z.enum([
   "approve",
   "reject",
@@ -2023,6 +2055,19 @@ export const createIssueThreadInteractionSchema = z.discriminatedUnion("kind", [
       .default("wake_assignee"),
     payload: requestItemVerdictsPayloadSchema,
   }),
+  z.object({
+    ...createIssueThreadInteractionCommon,
+    kind: z.literal("request_draft_review"),
+    idempotencyKey: z.string().trim().max(255).nullable().optional(),
+    sourceCommentId: z.string().guid().nullable().optional(),
+    sourceRunId: z.string().guid().nullable().optional(),
+    title: z.string().trim().max(240).nullable().optional(),
+    summary: z.string().trim().max(1000).nullable().optional(),
+    continuationPolicy: issueThreadInteractionContinuationPolicySchema
+      .optional()
+      .default("wake_assignee"),
+    payload: requestDraftReviewPayloadSchema,
+  }),
 ]);
 
 export type CreateIssueThreadInteraction = z.infer<
@@ -2041,6 +2086,10 @@ export const acceptIssueThreadInteractionSchema = z
       .array(z.string().trim().min(1).max(120))
       .max(REQUEST_CHECKBOX_CONFIRMATION_OPTION_LIMIT)
       .optional(),
+    /** request_draft_review: the person's edited text ("Send edits"). */
+    editedBody: multilineTextSchema.pipe(z.string().min(1).max(50000)).optional(),
+    /** request_draft_review: false stops the agent noting these edits. */
+    learnFromEdits: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     const seenClientKeys = new Set<string>();
