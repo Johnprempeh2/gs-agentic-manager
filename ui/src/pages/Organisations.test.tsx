@@ -24,6 +24,8 @@ vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => state.isPhone }));
+// The Pipedrive import has its own tests (PipedriveImport.test.tsx).
+vi.mock("@/components/PipedriveImport", () => ({ PipedriveImport: () => null }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
