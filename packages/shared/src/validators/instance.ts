@@ -112,6 +112,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   // Greatstone: the Intelligence page (Daily Pulse and AI Intelligence Hub, written by an agent).
   enableIntelligence: z.boolean().default(false),
   enableAgentChat: z.boolean().default(false),
+  // Greatstone: direct messages and group chats of people and agents.
+  enableTeamChat: z.boolean().default(false),
   enableConferenceRoomChat: z.boolean().default(false),
   enableClassicTaskInterface: z.boolean().default(false),
   enableIssuePlanDecompositions: z.boolean().default(false),

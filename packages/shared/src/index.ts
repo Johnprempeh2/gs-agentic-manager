@@ -61,6 +61,7 @@ export {
   type StrategyBoardKpiInput,
   type StrategyBoardActionTask,
 } from "./strategy-board.js";
+export * from "./team-chat.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,

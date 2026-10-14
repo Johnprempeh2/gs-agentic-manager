@@ -369,6 +369,18 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
+          title="Team Chat"
+          description="Message colleagues directly, and start group chats with people and agents. Agents in a group reply only when you @mention them."
+          footnote="Turning this off hides Chats and blocks new team chat messages; existing chats are kept."
+          checked={experimentalQuery.data?.enableTeamChat ?? false}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableTeamChat: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableTeamChat"
+          managed={managedKeys.enableTeamChat}
+          ariaLabel="Toggle team chat experimental setting"
+        />
+
+        <ExperimentalToggleCard
           title="Beta skills"
           description="Allow agents to pin beta releases of the GS Agentic Manager core skill. Disabling this returns every agent to the default live skill without removing saved pins."
           checked={enableBetaSkills}

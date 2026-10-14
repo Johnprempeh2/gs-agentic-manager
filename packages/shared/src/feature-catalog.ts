@@ -193,6 +193,14 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     cloudDefault: false,
     selfHostedDefault: false,
   },
+  enableTeamChat: {
+    title: "Team Chat",
+    description:
+      "Direct messages between people and group chats of people and agents. Agents in a group reply only when @mentioned, and can turn an ask into a linked task.",
+    tier: "managed",
+    cloudDefault: false,
+    selfHostedDefault: false,
+  },
   enableConferenceRoomChat: {
     title: "Conference Room Chat",
     description:

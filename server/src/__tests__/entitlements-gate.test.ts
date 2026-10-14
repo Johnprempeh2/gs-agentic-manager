@@ -50,6 +50,7 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
   enableEnvironments: async () => (await import("../routes/environments.js")).environmentRoutes(fakeDb),
   enableWebsiteView: async () => (await import("../routes/website.js")).websiteRoutes(fakeDb),
   enableIntelligence: async () => (await import("../routes/intelligence.js")).intelligenceRoutes(fakeDb),
+  enableTeamChat: async () => (await import("../routes/team-chats.js")).teamChatRoutes(fakeDb, { service: {} as never }),
 };
 
 async function issueRouter() {

@@ -40,6 +40,7 @@ export const MANAGED_FEATURES_OFF = [
   // Intelligence page (Daily Pulse and AI hub): Greatstone internal for now.
   "enableIntelligence",
   "enableAgentChat",
+  "enableTeamChat",
   "enableConferenceRoomChat",
   "enableSummaries",
   "enableStatusCards",

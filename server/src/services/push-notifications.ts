@@ -17,13 +17,13 @@ export interface PushSubscriptionInput {
   userAgent?: string | null;
 }
 
-/** What the phone shows. `url` opens on tap; `badge` sets the app icon count. */
+/** What the phone shows. `url` opens on tap; `badge` sets the app icon count (left alone when absent). */
 export interface DecisionPushMessage {
   title: string;
   body: string;
   url: string;
   tag: string;
-  badge: number;
+  badge?: number;
 }
 
 type FeedBuilder = (companyId: string, userId: string) => Promise<Pick<DecisionsFeed, "cards" | "count">>;
@@ -135,6 +135,9 @@ export function pushNotificationService(
         .where(and(eq(pushSubscriptions.companyId, companyId), eq(pushSubscriptions.userId, userId), eq(pushSubscriptions.endpoint, endpoint)));
       return Boolean(row);
     },
+
+    /** One notification to every phone this user registered for the company (team chat messages). */
+    sendToUser: (companyId: string, userId: string, message: DecisionPushMessage) => deliver(companyId, userId, message),
 
     /** A test notification to every phone this user registered for the company. */
     async sendTest(companyId: string, userId: string, prefix: string) {

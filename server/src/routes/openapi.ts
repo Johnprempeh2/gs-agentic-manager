@@ -393,6 +393,9 @@ import {
   updateWorkflowTemplateSchema,
   upsertBoardSnapshotSchema,
   upsertIntelligenceReportSchema,
+  addTeamChatMembersSchema,
+  createDirectMessageSchema,
+  createTeamChatSchema,
 } from "@greatstone/shared";
 import {
   clientSupportInboxSchema,
@@ -1459,6 +1462,12 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/crm-sync/conflicts/{conflictId}/accept-proposal",
   "POST /api/crm-sync/conflicts/{conflictId}/dismiss",
   "PATCH /api/intelligence/recommendations/{id}",
+  "GET /api/companies/{companyId}/team-chats",
+  "POST /api/companies/{companyId}/team-chats",
+  "POST /api/companies/{companyId}/team-chats/direct",
+  "GET /api/team-chats/{id}",
+  "POST /api/team-chats/{id}/members",
+  "DELETE /api/team-chats/{id}/members/{type}/{principalId}",
   "POST /api/intelligence/recommendations/{id}/task",
   "GET /api/companies/{companyId}/mailbox-oauth/apps",
   "PUT /api/companies/{companyId}/mailbox-oauth/apps/{provider}",
@@ -13983,6 +13992,63 @@ registerCurrentRoute({
   tags: ["crm-sync"],
   summary: "Get a case's CRM sync status",
   responses: crmSyncResponses,
+});
+
+// ─── Team chats (direct messages and group chats) ────────────────────────────
+// Board users only. Members (and company owners) read and manage a chat;
+// messages use the issue comment routes. enableTeamChat gates every route.
+
+const teamChatResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/team-chats",
+  tags: ["team-chats"],
+  summary: "List the caller's direct messages and group chats with members and unread counts",
+  responses: teamChatResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/team-chats",
+  tags: ["team-chats"],
+  summary: "Start a group chat with people and agents",
+  body: createTeamChatSchema,
+  responses: teamChatResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/team-chats/direct",
+  tags: ["team-chats"],
+  summary: "Open the direct message with one person, reusing an existing one",
+  body: createDirectMessageSchema,
+  responses: teamChatResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/team-chats/{id}",
+  tags: ["team-chats"],
+  summary: "Get one team chat with its members",
+  responses: teamChatResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/team-chats/{id}/members",
+  tags: ["team-chats"],
+  summary: "Add people or agents to a group chat",
+  body: addTeamChatMembersSchema,
+  responses: teamChatResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/team-chats/{id}/members/{type}/{principalId}",
+  tags: ["team-chats"],
+  summary: "Remove a person or agent from a group chat",
+  responses: teamChatResponses,
 });
 
 // ─── Intelligence (Daily Pulse and AI Intelligence Hub) ───────────────────────

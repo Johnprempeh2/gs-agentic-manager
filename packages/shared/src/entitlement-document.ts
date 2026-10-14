@@ -43,6 +43,7 @@ export const ENTITLEMENT_FEATURE_KEYS = [
   "enableStrategy",
   "enableStrategyBoard",
   "enableSummaries",
+  "enableTeamChat",
   "enableWebsiteView",
 ] as const satisfies readonly InstanceFeatureKey[];
 
