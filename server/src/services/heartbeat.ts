@@ -25271,9 +25271,17 @@ export function heartbeatService(
           return { dispatched: false };
         const repairBlock = await recovery.legacyRepairDispatchBlock(run.id);
         if (repairBlock) {
+          // The gate runs before provider handoff. Without this evidence the
+          // stranded-work sweep holds the issue for execution reconciliation
+          // and every later wake parks for good (GRE-1560).
           const cancelled = await setRunStatusIfRunning(run.id, "cancelled", {
             finishedAt: new Date(), errorCode: "legacy_disposition_repair_suppressed",
             error: `Disposition repair suppressed: ${repairBlock}`,
+            resultJson: {
+              ...run.resultJson,
+              stopReason: "legacy_disposition_repair_suppressed",
+              executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
+            },
           });
           if (cancelled.updated) {
             await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: new Date(), error: repairBlock });
