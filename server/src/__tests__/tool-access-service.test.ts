@@ -1939,11 +1939,15 @@ describeEmbeddedPostgres("tool access service", () => {
       const firstReplacementDb = createDb(tempDb!.connectionString, {
         maxConnections: 1,
       });
+      // Named so the test can wait on exactly these backends' lock queues.
+      const raceTag = randomUUID().slice(0, 8);
       const replacementDb = createDb(tempDb!.connectionString, {
         maxConnections: 1,
+        applicationName: `race-replacement-${raceTag}`,
       });
       const cleanupDb = createDb(tempDb!.connectionString, {
         maxConnections: 1,
+        applicationName: `race-cleanup-${raceTag}`,
       });
       const replacementService = createTestToolAccessService(replacementDb);
       let releaseFirstReplacement!: () => void;
@@ -2001,23 +2005,33 @@ describeEmbeddedPostgres("tool access service", () => {
         }
       });
 
-      // Wait until `n` backends queue on a lock. A fixed 50ms sleep did not
-      // always let cleanup queue first when the whole suite ran at once (the
-      // release test gate), and the empty replacement then won the race.
-      const untilLockWaiters = async (n: number) => {
+      // Wait until the named backend is queued on a lock (counting every lock
+      // waiter in the database could be satisfied by another backend).
+      const untilQueuedOnLock = async (applicationName: string) => {
         for (let attempt = 0; attempt < 1000; attempt++) {
           const rows = (await db.execute(
-            sql`select count(*)::int as waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock'`,
+            sql`select count(*)::int as waiting from pg_stat_activity where application_name = ${applicationName} and wait_event_type = 'Lock'`,
           )) as unknown as Array<{ waiting: number }>;
-          if (rows[0]!.waiting >= n) return;
+          if (rows[0]!.waiting > 0) return;
           await new Promise((resolve) => setTimeout(resolve, 10));
         }
-        throw new Error(`fewer than ${n} backends queued on a lock`);
+        throw new Error(`${applicationName} never queued on a lock`);
       };
-      // The first replacement still owns the departing member lock, so cleanup
-      // queues for that lock before the empty replacement queues for the grant
-      // lock.
-      await untilLockWaiters(1);
+      // Cleanup queues on the departing member's row, which the first
+      // replacement holds, and takes it when that commits.
+      await untilQueuedOnLock(`race-cleanup-${raceTag}`);
+      releaseFirstReplacement();
+      await firstReplacement;
+      await membershipIsLocked;
+
+      // Only now start the empty replacement. Started earlier it queued on the
+      // grant row and, once the first replacement committed, raced cleanup for
+      // the member row. A woken waiter still has to take the row, so arriving
+      // first does not mean winning, and under load the replacement sometimes
+      // won (a valid order:
+      // widen, then suspend), which failed the release test gate on
+      // 14 Oct 2026. Started here, it reads the audience the first replacement
+      // committed and then waits on the member row cleanup holds.
       let replacementSettled = false;
       const replacement = replacementService
         .replaceConnectionGrantMembers(connection.id, grant.id, [])
@@ -2028,12 +2042,7 @@ describeEmbeddedPostgres("tool access service", () => {
         .finally(() => {
           replacementSettled = true;
         });
-      await untilLockWaiters(2);
-      expect(replacementSettled).toBe(false);
-
-      releaseFirstReplacement();
-      await firstReplacement;
-      await membershipIsLocked;
+      await untilQueuedOnLock(`race-replacement-${raceTag}`);
       expect(replacementSettled).toBe(false);
       releaseCleanup();
       await cleanup;
