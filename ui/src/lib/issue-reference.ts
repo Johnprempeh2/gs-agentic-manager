@@ -11,7 +11,9 @@ const ISSUE_REFERENCE_TOKEN_RE = /issue:\/\/:?[^\s<>()]+|https?:\/\/[^\s<>()]+|\
 
 export function parseIssuePathIdFromPath(pathOrUrl: string | null | undefined): string | null {
   if (!pathOrUrl) return null;
-  const pathname = pathOrUrl.trim();
+  // A hash or query is not part of the task id: `/issues/<id>#document-plan`
+  // used to preview a task called `<id>#document-plan`, which does not exist.
+  const pathname = pathOrUrl.trim().replace(/[?#].*$/, "");
   if (!pathname) return null;
   if (/^https?:\/\//i.test(pathname)) return null;
 

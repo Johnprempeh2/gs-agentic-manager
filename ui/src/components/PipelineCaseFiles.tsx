@@ -7,6 +7,7 @@ import type {
   ClientFileSourceIssue,
   Deliverable,
 } from "@greatstone/shared";
+import { groupDeliverableDocuments } from "@greatstone/shared";
 import { pipelinesApi } from "../api/pipelines";
 import { useToastActions } from "../context/ToastContext";
 import { Link } from "@/lib/router";
@@ -297,7 +298,7 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
   );
 }
 
-function DeliverableRow({ item }: { item: Deliverable }) {
+function DeliverableRow({ item, olderCount }: { item: Deliverable; olderCount: number }) {
   return (
     <li className="flex items-start gap-2 py-2 text-sm">
       <KindIcon kind="deliverable" />
@@ -309,6 +310,7 @@ function DeliverableRow({ item }: { item: Deliverable }) {
             formatDay(item.createdAt),
             item.createdByAgent ? `Added by ${item.createdByAgent.name}` : null,
             <SourceTask issue={item.issue} />,
+            olderCount > 0 ? `${olderCount} older ${olderCount === 1 ? "version" : "versions"}` : null,
           ]}
         />
       </div>
@@ -331,8 +333,9 @@ export function PipelineCaseDeliverables({ caseId }: { caseId: string }) {
   }
   return (
     <ul className="divide-y divide-border">
-      {rows.map((item) => (
-        <DeliverableRow key={item.id} item={item} />
+      {/* One row per document: older versions under another key or task fold in (Ben, 13 Oct). */}
+      {groupDeliverableDocuments(rows).map(({ latest, older }) => (
+        <DeliverableRow key={latest.id} item={latest} olderCount={older.length} />
       ))}
     </ul>
   );

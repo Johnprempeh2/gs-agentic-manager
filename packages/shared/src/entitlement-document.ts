@@ -43,6 +43,7 @@ export const ENTITLEMENT_FEATURE_KEYS = [
   "enableStrategy",
   "enableStrategyBoard",
   "enableSummaries",
+  "enableWebsiteView",
 ] as const satisfies readonly InstanceFeatureKey[];
 
 export type EntitlementFeatureKey = (typeof ENTITLEMENT_FEATURE_KEYS)[number];

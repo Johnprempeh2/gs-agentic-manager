@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import { and, asc, desc, eq, inArray, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
@@ -22,6 +22,7 @@ import {
   upsertIntelligenceReportSchema,
   type IntelligenceBoard,
   type IntelligenceBoardEntry,
+  type IntelligenceBoardHistory,
   type IntelligenceBoardView,
   type IntelligenceRecommendation,
   type IntelligenceReport,
@@ -32,8 +33,9 @@ import {
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { intelligenceMediaService, type Media } from "../services/intelligence-media.js";
 import { accessService, issueService, logActivity } from "../services/index.js";
-import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 // Intelligence page: the Daily Pulse and the AI Intelligence Hub inside GSAM.
 // Everyone in the company reads. Board users write; an agent writes only with
@@ -105,7 +107,7 @@ function toRecommendation(
   };
 }
 
-export function intelligenceRoutes(db: Db) {
+export function intelligenceRoutes(db: Db, media = intelligenceMediaService()) {
   const router = Router();
   const access = accessService(db);
 
@@ -279,6 +281,40 @@ export function intelligenceRoutes(db: Db) {
     res.json({ boards });
   });
 
+  /** The last `limit` snapshots of each board (default 12, at most 90), up to `date`, for score sparklines. */
+  router.get("/companies/:companyId/intelligence/boards/history", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const date = req.query.date === undefined ? null : parseDate(req.query.date);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 12, 2), 90);
+    const history: IntelligenceBoardHistory[] = [];
+    for (const board of INTELLIGENCE_BOARDS) {
+      const rows = await db
+        .select({ snapshotDate: intelligenceBoardSnapshots.snapshotDate, entries: intelligenceBoardSnapshots.entries })
+        .from(intelligenceBoardSnapshots)
+        .where(
+          and(
+            eq(intelligenceBoardSnapshots.companyId, companyId),
+            eq(intelligenceBoardSnapshots.board, board),
+            date ? lte(intelligenceBoardSnapshots.snapshotDate, date) : undefined,
+          ),
+        )
+        .orderBy(desc(intelligenceBoardSnapshots.snapshotDate))
+        .limit(limit);
+      if (rows.length === 0) continue;
+      history.push({
+        board,
+        points: rows.reverse().map((row) => ({
+          snapshotDate: row.snapshotDate,
+          scores: Object.fromEntries(
+            (row.entries as unknown as IntelligenceBoardEntry[]).map((entry) => [entry.name.toLowerCase(), entry.score]),
+          ),
+        })),
+      });
+    }
+    res.json({ history });
+  });
+
   router.put(
     "/companies/:companyId/intelligence/boards/:board/snapshots/:snapshotDate",
     validate(upsertBoardSnapshotSchema),
@@ -314,6 +350,34 @@ export function intelligenceRoutes(db: Db) {
     },
   );
 
+  // ---------- Logos and images (same-origin proxy, GRE-405) ----------
+
+  function sendMedia(res: Response, found: Media | null) {
+    // Same-origin bytes, never run as a document; misses are cached briefly too.
+    res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Cache-Control", `private, max-age=${found ? 86_400 : 3_600}`);
+    if (!found) {
+      res.status(404).end();
+      return;
+    }
+    res.type(found.contentType).send(found.body);
+  }
+
+  /** Brand logo by bare domain via Logo.dev (GSAM_LOGODEV_PUBLISHABLE_KEY). 404 with no key or no match: the page shows a monogram. */
+  router.get("/companies/:companyId/intelligence/logo/:domain", async (req, res) => {
+    assertCompanyAccess(req, req.params.companyId as string);
+    sendMedia(res, await media.logo(String(req.params.domain)));
+  });
+
+  /** `?url=` an image, or a page whose og:image / twitter:image is served. 404 when there is none. */
+  router.get("/companies/:companyId/intelligence/image", async (req, res) => {
+    assertCompanyAccess(req, req.params.companyId as string);
+    const url = typeof req.query.url === "string" ? req.query.url : "";
+    if (!/^https?:\/\//i.test(url) || url.length > 2000) throw unprocessable("url must be an http(s) URL");
+    sendMedia(res, await media.image(url));
+  });
+
   // ---------- Recommendations ----------
 
   async function withIdentifiers(rows: (typeof intelligenceRecommendations.$inferSelect)[]) {
@@ -330,7 +394,9 @@ export function intelligenceRoutes(db: Db) {
       .select()
       .from(intelligenceRecommendations)
       .where(eq(intelligenceRecommendations.id, req.params.id as string));
-    if (!row) throw notFound("Recommendation not found");
+    // Another company's recommendation answers 404 like a missing one, so the
+    // id cannot be probed across companies (403 would say it exists).
+    if (!row || !hasCompanyAccess(req, row.companyId)) throw notFound("Recommendation not found");
     assertCompanyAccess(req, row.companyId);
     assertBoard(req);
     return row;

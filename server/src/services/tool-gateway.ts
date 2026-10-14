@@ -3933,7 +3933,7 @@ export function createToolGatewayService(
       if (tracked)
         await recordGitHubDelegationUse(db, {
           companyId: session.companyId, grant, agentId: session.agentId,
-          responsibleUserId: session.responsibleUserId, heartbeatRunId: session.runId,
+          responsibleUserId: githubScopeForSession(session).responsibleUserId, heartbeatRunId: session.runId,
           issueId: session.issueId, consumer: "tool_gateway",
         });
       if (tracked)

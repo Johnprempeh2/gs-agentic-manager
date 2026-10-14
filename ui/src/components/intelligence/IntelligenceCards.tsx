@@ -104,6 +104,9 @@ export function VerdictCard({
   meta,
   analysis,
   footer,
+  leading,
+  media,
+  hero = false,
   className,
 }: {
   eyebrow?: ReactNode;
@@ -115,47 +118,66 @@ export function VerdictCard({
   meta?: ReactNode;
   analysis?: ReactNode;
   footer?: ReactNode;
+  /** Brand logo beside the eyebrow. */
+  leading?: ReactNode;
+  /** Full-bleed image on top, in a fixed-ratio box. */
+  media?: ReactNode;
+  /** The lead story: larger title and verdict. */
+  hero?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <article className={cn("flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-card p-4", className)}>
-      {eyebrow ? <div className="text-xs text-muted-foreground">{eyebrow}</div> : null}
-      <h3 className="text-sm font-semibold leading-snug">
-        {href ? (
-          <a href={href} target="_blank" rel="noreferrer noopener" className="hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">
-            {title}
-            <ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" aria-hidden="true" />
-          </a>
-        ) : (
-          title
-        )}
-      </h3>
-      {verdict ? <p className="text-sm">{verdict}</p> : null}
-      {points.length > 0 ? (
-        <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
-          {points.slice(0, 3).map((point) => (
-            <li key={point}>{point}</li>
-          ))}
-        </ul>
-      ) : null}
-      {action ? (
-        <p className="rounded-md border border-status-success/30 bg-status-success/10 px-3 py-2 text-sm">
-          <span className="font-semibold">Do this: </span>
-          {action}
-        </p>
-      ) : null}
-      {meta ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1">{meta}</div> : null}
-      {analysis || footer ? (
-        <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
-          {analysis ? (
-            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-              Full analysis
-            </Button>
-          ) : null}
-          {footer}
-        </div>
-      ) : null}
+    <article
+      className={cn(
+        "flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-muted-foreground/40",
+        className,
+      )}
+    >
+      {media}
+      <div className={cn("flex min-w-0 flex-1 flex-col gap-2 p-4", hero ? "gap-3 sm:p-5" : null)}>
+        {eyebrow || leading ? (
+          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+            {leading}
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">{eyebrow}</div>
+          </div>
+        ) : null}
+        <h3 className={cn("font-semibold leading-snug", hero ? "text-lg" : "text-sm")}>
+          {href ? (
+            <a href={href} target="_blank" rel="noreferrer noopener" className="hover:underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm">
+              {title}
+              <ExternalLink className="ml-1 inline h-3 w-3 text-muted-foreground" aria-hidden="true" />
+            </a>
+          ) : (
+            title
+          )}
+        </h3>
+        {verdict ? <p className={hero ? "text-base" : "text-sm"}>{verdict}</p> : null}
+        {points.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-4 text-sm text-muted-foreground">
+            {points.slice(0, 3).map((point) => (
+              <li key={point}>{point}</li>
+            ))}
+          </ul>
+        ) : null}
+        {action ? (
+          <p className="rounded-md border border-status-success/30 bg-status-success/10 px-3 py-2 text-sm">
+            <span className="font-semibold">Do this: </span>
+            {action}
+          </p>
+        ) : null}
+        {meta ? <div className="flex flex-wrap items-center gap-x-3 gap-y-1">{meta}</div> : null}
+        {analysis || footer ? (
+          <div className="mt-auto flex flex-wrap items-center gap-2 pt-1">
+            {analysis ? (
+              <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+                Full analysis
+              </Button>
+            ) : null}
+            {footer}
+          </div>
+        ) : null}
+      </div>
       {analysis ? (
         <Sheet open={open} onOpenChange={setOpen}>
           <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-lg">

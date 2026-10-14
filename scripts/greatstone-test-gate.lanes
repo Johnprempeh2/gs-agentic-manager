@@ -1,0 +1,28 @@
+# The full test suite the release test gate runs (scripts/greatstone-test-gate.sh).
+# The gate reads this file from the commit it tests, so a commit carries its own lanes.
+#
+#   setup: <command>    runs first, one after another, from the clone root; a failure stops the gate
+#   <lane>: <command>   runs after setup, in parallel (GSAM_TEST_GATE_JOBS at a time)
+#
+# The vitest lanes are the Tests matrix of .github/workflows/fork-ci.yml, run on one machine.
+# The server lanes run one worker each. VITEST_MAX_WORKERS caps the UI and packages lanes,
+# which otherwise take a worker per core and starve the serialized route suites into
+# timeouts (measured 13 Oct 2026: load 34 on the 24-thread PC, 6 suites timed out).
+# GSAM_VITEST_TIMEOUT_MS=60000 stretches the server default timeouts (15s test, 30s hook) for
+# the cold module transform each route suite pays while every lane runs (server/vitest.config.ts).
+setup: pnpm install --frozen-lockfile --prefer-offline --config.confirm-modules-purge=false --reporter=silent
+setup: pnpm run preflight:workspace-links
+setup: pnpm --filter @greatstone/plugin-sdk ensure-build-deps
+server-1: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-server-without-chat --shard-index 0 --shard-count 6
+server-2: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-server-without-chat --shard-index 1 --shard-count 6
+server-3: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-server-without-chat --shard-index 2 --shard-count 6
+server-4: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-server-without-chat --shard-index 3 --shard-count 6
+server-5: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-server-without-chat --shard-index 4 --shard-count 6
+server-6: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-server-without-chat --shard-index 5 --shard-count 6
+server-chat: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode general --group general-chat
+ui-and-cli: GSAM_VITEST_TIMEOUT_MS=60000 VITEST_MAX_WORKERS=6 node scripts/run-vitest-stable.mjs --mode general --group general-workspaces-a
+packages: GSAM_VITEST_TIMEOUT_MS=60000 VITEST_MAX_WORKERS=4 node scripts/run-vitest-stable.mjs --mode general --group general-workspaces-b
+serialized-1: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode serialized --shard-index 0 --shard-count 4
+serialized-2: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode serialized --shard-index 1 --shard-count 4
+serialized-3: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode serialized --shard-index 2 --shard-count 4
+serialized-4: GSAM_VITEST_TIMEOUT_MS=60000 node scripts/run-vitest-stable.mjs --mode serialized --shard-index 3 --shard-count 4

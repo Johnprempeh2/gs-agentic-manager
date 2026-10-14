@@ -25,7 +25,16 @@ const mockMemoryGraphApi = vi.hoisted(() => ({
   settings: vi.fn(),
 }));
 
+const mockAgentsApi = vi.hoisted(() => ({
+  list: vi.fn(),
+}));
+
+vi.mock("../api/agents", () => ({ agentsApi: mockAgentsApi }));
+vi.mock("./AgentAvatar", () => ({ AgentAvatar: () => <span data-testid="agent-avatar" /> }));
+
 vi.mock("@/lib/router", () => ({
+  Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
+  useLocation: () => ({ pathname: "/PAP/dashboard" }),
   NavLink: ({ to, children, className, ...props }: {
     to: string;
     children: ReactNode;
@@ -186,6 +195,7 @@ describe("Sidebar", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(false));
+    mockAgentsApi.list.mockResolvedValue([]);
     mockHeartbeatsApi.liveRunsForCompany.mockResolvedValue([]);
     mockDecisionsFeedApi.needsMe.mockResolvedValue({
       companyId: "company-1",
@@ -216,6 +226,25 @@ describe("Sidebar", () => {
     expect(sidebar?.classList).not.toContain("border-r");
     expect(sidebar?.classList).not.toContain("border-border");
     expect(sidebar?.classList).toContain("primary-sidebar-surface");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("puts Ask Everest first, in words, linking to the lead agent's chat (Ben, 13 Oct)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    mockAgentsApi.list.mockResolvedValue([
+      { id: "agent-cto", name: "Atlas", role: "cto", status: "idle", reportsTo: "agent-ceo", urlKey: "atlas" },
+      { id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null, urlKey: "everest" },
+    ]);
+    const root = await renderSidebar();
+
+    const ask = container.querySelector("[data-testid=\"sidebar-ask-everest\"]");
+    expect(ask?.textContent).toContain("Ask Everest");
+    expect(ask?.getAttribute("href")).toBe("/chats/everest");
+    // First link in the navigation.
+    expect(container.querySelector("nav a")).toBe(ask);
 
     flushSync(() => {
       root.unmount();

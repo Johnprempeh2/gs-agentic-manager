@@ -5,7 +5,9 @@ import type {
   ClientJourneyStage,
   ClientJourneyStageDeliverable,
   ClientJourneyStageState,
+  ClientNda,
   Deliverable,
+  NdaStatus,
   UpdateClientJourneyDeliverable,
 } from "@greatstone/shared";
 import { pipelinesApi } from "../api/pipelines";
@@ -16,6 +18,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDate } from "../lib/utils";
 import { Button } from "./ui/button";
 import { NativeSelect } from "./ui/native-select";
+import { Textarea } from "./ui/textarea";
 import { ToggleSwitch } from "./ui/toggle-switch";
 import { ConfidentialityBadge } from "./deliverables/DeliverableBadges";
 
@@ -240,19 +243,109 @@ export function ExpectedList({ stage, met }: { stage: Pick<ClientJourneyStage, "
   );
 }
 
-/** The client's NDA: client-labelled deliverables reach the portal only once it is recorded. */
-function NdaRow({ acceptedAt, busy, onChange }: { acceptedAt: string | null; busy: boolean; onChange: (accepted: boolean) => void }) {
+const NDA_OPTIONS: Array<{ value: NdaStatus; label: string }> = [
+  { value: "required", label: "Required" },
+  { value: "accepted", label: "Accepted" },
+  { value: "suspended", label: "Suspended" },
+];
+
+/** What each NDA status means for the engagement, in one line. */
+function ndaSummary(nda: ClientNda): string {
+  const by = nda.changedBy ? ` by ${nda.changedBy}` : "";
+  if (nda.status === "accepted") {
+    return `Accepted${nda.acceptedAt ? ` ${formatDay(nda.acceptedAt)}` : ""}${by}. The engagement proceeds and client-labelled deliverables can reach the portal.`;
+  }
+  if (nda.status === "suspended") {
+    return `Suspended${nda.changedAt ? ` ${formatDay(nda.changedAt)}` : ""}${by}, not waived. The engagement proceeds and client-labelled deliverables can reach the portal.`;
+  }
+  return "Every engagement needs a mutual NDA (governing law England and Wales). Until it is accepted or suspended, client-labelled deliverables stay off the portal. Public ones do not need it.";
+}
+
+/**
+ * The client's NDA as a three-way control (Ben and John, 13 Oct): required,
+ * accepted or suspended. Suspending asks for the reason first and shows it
+ * while suspended. Board only; the server refuses anyone else.
+ */
+export function NdaRow({
+  nda,
+  busy,
+  onChange,
+}: {
+  nda: ClientNda;
+  busy: boolean;
+  onChange: (input: { status: NdaStatus; reason?: string | null }) => void;
+}) {
+  const [suspending, setSuspending] = useState(false);
+  const [reason, setReason] = useState("");
+  const choose = (status: NdaStatus) => {
+    if (status === nda.status && status !== "suspended") return;
+    if (status === "suspended") {
+      setReason(nda.suspendedReason ?? "");
+      setSuspending(true);
+      return;
+    }
+    setSuspending(false);
+    onChange({ status });
+  };
   return (
-    <div className="flex flex-wrap items-center gap-3 py-3 text-sm" data-testid="journey-nda">
-      <label className="flex items-center gap-2 font-medium text-foreground">
-        <ToggleSwitch checked={acceptedAt !== null} disabled={busy} aria-label="NDA accepted" onCheckedChange={onChange} />
-        NDA accepted
-      </label>
-      <span className="text-xs text-muted-foreground">
-        {acceptedAt
-          ? `Recorded ${formatDay(acceptedAt)}. Client-labelled deliverables can reach the portal.`
-          : "Client-labelled deliverables stay off the portal until the NDA is recorded. Public ones do not need it."}
-      </span>
+    <div className="space-y-2 py-3 text-sm" data-testid="journey-nda" data-nda-status={nda.status}>
+      <div className="flex flex-wrap items-center gap-3">
+        <span id="journey-nda-label" className="font-medium text-foreground">NDA</span>
+        <div role="radiogroup" aria-labelledby="journey-nda-label" className="inline-flex rounded-md border border-border p-0.5">
+          {NDA_OPTIONS.map((option) => {
+            const checked = suspending ? option.value === "suspended" : nda.status === option.value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                disabled={busy}
+                onClick={() => choose(option.value)}
+                className={cn(
+                  "rounded-sm px-3 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed",
+                  checked ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                )}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">{ndaSummary(nda)}</p>
+      {nda.status === "suspended" && nda.suspendedReason && !suspending ? (
+        <p className="text-xs text-foreground" data-testid="journey-nda-reason">
+          <span className="font-medium">Reason: </span>{nda.suspendedReason}
+        </p>
+      ) : null}
+      {suspending ? (
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!reason.trim()) return;
+            onChange({ status: "suspended", reason: reason.trim() });
+            setSuspending(false);
+          }}
+        >
+          <label className="block text-xs font-medium text-foreground" htmlFor="journey-nda-reason">
+            Why is the NDA suspended? (required)
+          </label>
+          <Textarea
+            id="journey-nda-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="For example: the engagement was already under way when the NDA policy started."
+            maxLength={500}
+            className="min-h-16 text-sm"
+          />
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSuspending(false)}>Cancel</Button>
+            <Button type="submit" size="sm" disabled={busy || !reason.trim()}>Suspend NDA</Button>
+          </div>
+        </form>
+      ) : null}
     </div>
   );
 }
@@ -327,9 +420,9 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
     onError: onError("Could not change the deliverable"),
   });
   const setNda = useMutation({
-    mutationFn: (accepted: boolean) => pipelinesApi.setCaseNda(caseId, accepted),
+    mutationFn: (input: { status: NdaStatus; reason?: string | null }) => pipelinesApi.setCaseNda(caseId, input),
     onSuccess: invalidate,
-    onError: () => pushToast({ title: "Could not record the NDA", body: "Only board users can record a client's NDA.", tone: "error" }),
+    onError: () => pushToast({ title: "Could not change the NDA", body: "Only board users can change a client's NDA.", tone: "error" }),
   });
   const removeLink = useMutation({
     mutationFn: (linkId: string) => pipelinesApi.removeCaseJourneyDeliverable(caseId, linkId),
@@ -340,12 +433,20 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
   if (journey.isLoading) return <p className="py-3 text-sm text-muted-foreground">Loading the journey...</p>;
   if (journey.error || !journey.data) return <p className="py-3 text-sm text-destructive">Could not load the journey.</p>;
 
-  const { stages, unfiled, ndaAcceptedAt } = journey.data;
+  const { stages, unfiled } = journey.data;
+  // A server from before 0335 sends only ndaAcceptedAt.
+  const nda: ClientNda = journey.data.nda ?? {
+    status: journey.data.ndaAcceptedAt ? "accepted" : "required",
+    acceptedAt: journey.data.ndaAcceptedAt,
+    suspendedReason: null,
+    changedBy: null,
+    changedAt: null,
+  };
   const busy = fileDeliverable.isPending || updateLink.isPending || removeLink.isPending || setNda.isPending;
   const journeyIndex = new Map(stages.filter((stage) => stage.state !== "side").map((stage, index) => [stage.id, index]));
   return (
     <div className="divide-y divide-border">
-      <NdaRow acceptedAt={ndaAcceptedAt} busy={busy} onChange={(accepted) => setNda.mutate(accepted)} />
+      <NdaRow nda={nda} busy={busy} onChange={(input) => setNda.mutate(input)} />
       {stages.map((stage) => (
         <StageSection
           key={stage.id}

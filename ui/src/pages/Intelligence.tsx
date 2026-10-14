@@ -20,6 +20,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { BoardSection, Podium, seriesFor, type ScoreSeries } from "../components/intelligence/IntelligenceBoards";
 import {
   IntelligenceSection,
   MovementChip,
@@ -27,14 +28,17 @@ import {
   SourceLink,
   VerdictCard,
 } from "../components/intelligence/IntelligenceCards";
+import { ArticleImage, BrandLogo, TagChip } from "../components/intelligence/IntelligenceMedia";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Link, useSearchParams } from "@/lib/router";
-import { formatCalendarDay } from "@/lib/utils";
+import { cn, formatCalendarDay } from "@/lib/utils";
 
 const TABS = [
+  ["overview", "Overview"],
   ["today", "Today"],
   ["boards", "Leaderboards"],
   ["compare", "Compare"],
@@ -54,9 +58,16 @@ function humanise(key: string) {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function Empty({ title, message }: { title: string; message: string }) {
-  return <EmptyState icon={Radar} title={title} message={message} />;
+function Empty({ title, message, action, onAction }: { title: string; message: string; action?: string; onAction?: () => void }) {
+  return <EmptyState icon={Radar} title={title} message={message} action={action} onAction={onAction} hideActionIcon />;
 }
+
+// What fills each tab, and when. Lodestone is the Intelligence Analyst agent.
+const WHEN = {
+  pulse: "Lodestone, the Intelligence Analyst agent, publishes the Daily Pulse around 07:00 UK time each morning.",
+  briefing: "Lodestone, the Intelligence Analyst agent, publishes the AI briefing around 06:00 UK time each morning.",
+  ideas: "Lodestone, the Intelligence Analyst agent, proposes them with the morning briefing, around 06:00 UK time. Each one can become a task in one click.",
+} as const;
 
 // ---------- Today (Daily Pulse) ----------
 
@@ -88,7 +99,9 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
           {sections.trends.map((trend) => (
             <VerdictCard
               key={trend.url + trend.headline}
-              eyebrow={`${FRESHNESS_LABEL[trend.freshness]} · ${trend.sourceName}`}
+              media={<ArticleImage url={trend.url} imageUrl={trend.imageUrl} fallback={<BrandLogo name={trend.sourceName} domain={trend.domain} url={trend.url} size="xl" />} />}
+              leading={<BrandLogo name={trend.sourceName} domain={trend.domain} url={trend.url} size="sm" />}
+              eyebrow={<><span className="font-medium text-foreground">{trend.sourceName}</span><TagChip>{FRESHNESS_LABEL[trend.freshness]}</TagChip></>}
               title={trend.headline}
               href={trend.url}
               verdict={trend.whyItMatters}
@@ -105,7 +118,8 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
           {sections.tools.map((tool) => (
             <VerdictCard
               key={tool.url}
-              eyebrow={`${humanise(tool.category)} · ${tool.pricing}`}
+              leading={<BrandLogo name={tool.name} domain={tool.domain} url={tool.url} size="lg" />}
+              eyebrow={<><TagChip>{humanise(tool.category)}</TagChip><span>{tool.pricing}</span></>}
               title={tool.name}
               href={tool.url}
               verdict={tool.what}
@@ -145,7 +159,9 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
           {sections.creators.map((item) => (
             <VerdictCard
               key={item.url}
-              eyebrow={`${item.creator} · ${item.platform}${item.newFace ? " · New face" : ""}`}
+              media={<ArticleImage url={item.url} imageUrl={item.imageUrl} fallback={<BrandLogo name={item.platform} domain={item.domain} url={item.url} size="xl" />} />}
+              leading={<BrandLogo name={item.platform} domain={item.domain} url={item.url} size="sm" />}
+              eyebrow={<><span className="font-medium text-foreground">{item.creator}</span><span>{item.platform}</span>{item.newFace ? <TagChip>New face</TagChip> : null}</>}
               title={item.content}
               href={item.url}
               verdict={item.why}
@@ -190,54 +206,6 @@ function TodayView({ sections, headline, date }: { sections: DailyPulseSections;
 
 // ---------- Leaderboards and Compare ----------
 
-function BoardTable({ view }: { view: IntelligenceBoardView }) {
-  return (
-    <section className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{INTELLIGENCE_BOARD_LABELS[view.board]}</h2>
-        <span className="text-xs text-muted-foreground">
-          {formatCalendarDay(view.snapshotDate, { includeYear: true })}
-          {view.comparedTo ? `, movement since ${formatCalendarDay(view.comparedTo)}` : ""}
-        </span>
-      </div>
-      <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-sm">
-          <thead className="text-xs text-muted-foreground">
-            <tr className="border-b border-border">
-              <th scope="col" className="px-3 py-2 text-left font-medium">#</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Name</th>
-              <th scope="col" className="px-3 py-2 text-left font-medium">Move</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">{view.board === "frontier_models" ? "Index" : "Score"}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {view.entries.map((entry) => (
-              <tr key={entry.name} className="border-b border-border last:border-0">
-                <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{entry.rank}</td>
-                <td className="px-3 py-2">
-                  <div className="font-medium">{entry.url ? <SourceLink href={entry.url} className="text-sm text-foreground">{entry.name}</SourceLink> : entry.name}</div>
-                  {entry.flagship || entry.verdict ? (
-                    <div className="text-xs text-muted-foreground">{[entry.flagship, entry.verdict].filter(Boolean).join(". ")}</div>
-                  ) : null}
-                </td>
-                <td className="px-3 py-2"><MovementChip movement={entry.movement} /></td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {entry.score ?? "n/a"}
-                  {entry.movement.scoreDelta ? (
-                    <span className="ml-1 text-xs text-muted-foreground">
-                      ({entry.movement.scoreDelta > 0 ? "+" : ""}{entry.movement.scoreDelta})
-                    </span>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
-
 function CompareView({ view }: { view: IntelligenceBoardView | undefined }) {
   const names = view?.entries.map((entry) => entry.name) ?? [];
   const [left, setLeft] = useState<string | null>(null);
@@ -268,8 +236,8 @@ function CompareView({ view }: { view: IntelligenceBoardView | undefined }) {
           <thead className="text-xs text-muted-foreground">
             <tr className="border-b border-border">
               <th scope="col" className="px-3 py-2 text-left font-medium">Measure</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">{a.name}</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">{b.name}</th>
+              <th scope="col" className="px-3 py-2 text-right font-medium"><span className="inline-flex items-center gap-2"><BrandLogo name={a.maker ?? a.name} domain={a.domain} url={a.url} size="sm" />{a.name}</span></th>
+              <th scope="col" className="px-3 py-2 text-right font-medium"><span className="inline-flex items-center gap-2"><BrandLogo name={b.maker ?? b.name} domain={b.domain} url={b.url} size="sm" />{b.name}</span></th>
             </tr>
           </thead>
           <tbody>
@@ -287,39 +255,279 @@ function CompareView({ view }: { view: IntelligenceBoardView | undefined }) {
   );
 }
 
+// ---------- Overview ----------
+
+function OverviewHeading({ title, action }: { title: string; action?: { label: string; onClick: () => void } }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{title}</h2>
+      {action ? (
+        <Button variant="link" size="sm" className="h-auto shrink-0 p-0 text-xs" onClick={action.onClick}>
+          {action.label}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+type Stat = { label: string; value: string; sub: string; logo?: { name: string; domain?: string; url?: string } };
+
+function StatTile({ label, value, sub, logo }: Stat) {
+  return (
+    <div className="flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card p-3 sm:p-4">
+      <div className="min-w-0 flex-1">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="text-2xl font-bold tabular-nums">{value}</div>
+        <div className="truncate text-xs text-muted-foreground">{sub}</div>
+      </div>
+      {logo ? <BrandLogo {...logo} size="lg" className="hidden sm:inline-flex" /> : null}
+    </div>
+  );
+}
+
+function TrendingRail({ items }: { items: NewsItem[] }) {
+  return (
+    <aside className="min-w-0 rounded-lg border border-border bg-card p-4" aria-label="Trending now">
+      <h3 className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />
+        Trending now
+      </h3>
+      <ol className="space-y-1">
+        {items.map((item) => (
+          <li key={item.url + item.headline}>
+            <a
+              href={item.url}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="-mx-2 flex min-w-0 gap-3 rounded-md px-2 py-2 transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-accent"
+            >
+              <BrandLogo name={item.sourceName} domain={item.domain} url={item.url} size="md" />
+              <span className="min-w-0 flex-1 space-y-1">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                  <TagChip>{item.tag}</TagChip>
+                  <time dateTime={item.date}>{formatCalendarDay(item.date)}</time>
+                </span>
+                <span className="block break-words text-sm font-medium leading-snug">{item.headline}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
+    </aside>
+  );
+}
+
+/** Top tools as a horizontal strip: logo, rank, score and movement. Scrolls inside itself, never the page. */
+function ToolsStrip({ entries }: { entries: IntelligenceBoardView["entries"] }) {
+  return (
+    <ol
+      className="flex snap-x gap-3 overflow-x-auto pb-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg"
+      aria-label="Top tools and agents"
+      tabIndex={0}
+    >
+      {entries.map((entry) => {
+        const body = (
+          <>
+            <div className="flex items-start justify-between gap-2">
+              <BrandLogo name={entry.maker ?? entry.name} domain={entry.domain} url={entry.url} size="lg" />
+              <span className="font-mono text-xs text-muted-foreground">#{entry.rank}</span>
+            </div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold">{entry.name}</div>
+              <div className="truncate text-xs text-muted-foreground">{entry.maker ?? " "}</div>
+            </div>
+            <div className="mt-auto flex items-center justify-between gap-2">
+              <span className="text-lg font-bold tabular-nums">{entry.score ?? "n/a"}</span>
+              <MovementChip movement={entry.movement} />
+            </div>
+          </>
+        );
+        const card = "flex h-full flex-col gap-3 rounded-lg border border-border bg-card p-3 transition-colors";
+        return (
+          <li key={entry.name} className="w-40 shrink-0 snap-start sm:w-44">
+            {entry.url ? (
+              <a
+                href={entry.url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className={cn(card, "hover:border-muted-foreground/40 hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:bg-accent")}
+              >
+                {body}
+              </a>
+            ) : (
+              <div className={card}>{body}</div>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** Placeholder in the shape of the page while the first data loads. */
+function IntelligenceSkeleton() {
+  return (
+    <div className="space-y-8" aria-busy="true" aria-label="Loading intelligence">
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="overflow-hidden rounded-lg border border-border lg:col-span-2">
+          <Skeleton className="aspect-video rounded-none" />
+          <div className="space-y-2 p-4">
+            <Skeleton className="h-3 w-40" />
+            <Skeleton className="h-5 w-3/4" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        </div>
+        <div className="space-y-4 rounded-lg border border-border p-4">
+          {[0, 1, 2, 3, 4].map((row) => (
+            <div key={row} className="flex gap-3">
+              <Skeleton className="size-8 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-4 w-full" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[0, 1, 2, 3].map((tile) => <Skeleton key={tile} className="h-24 rounded-lg" />)}
+      </div>
+      <div className="grid grid-cols-3 items-end gap-2 sm:gap-3">
+        <Skeleton className="h-52 rounded-lg" />
+        <Skeleton className="h-60 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+/** The hub's front page: the lead story with what is trending, the numbers, the podium and the tools strip. */
+function OverviewView({
+  boards,
+  briefing,
+  systemsSeries,
+  onOpen,
+}: {
+  boards: IntelligenceBoardView[];
+  briefing: AiBriefingSections | null;
+  systemsSeries: ScoreSeries | undefined;
+  onOpen: (tab: Tab) => void;
+}) {
+  const byBoard = (board: IntelligenceBoardView["board"]) => boards.find((view) => view.board === board);
+  const systems = byBoard("ai_systems");
+  const models = byBoard("frontier_models");
+  const tools = byBoard("tools_agents");
+  const news = briefing?.news ?? [];
+  if (boards.length === 0 && news.length === 0) {
+    return (
+      <Empty
+        title="Nothing to show yet"
+        message={`The overview draws on the AI briefing and the leaderboards. ${WHEN.briefing} The Daily Pulse follows around 07:00.`}
+      />
+    );
+  }
+  const lead = news.find((item) => item.lead) ?? news[0];
+  const trending = news.filter((item) => item !== lead).slice(0, 5);
+  const top = (view: IntelligenceBoardView | undefined) => view?.entries[0];
+  const logoOf = (entry: IntelligenceBoardView["entries"][number] | undefined) =>
+    entry ? { name: entry.maker ?? entry.name, domain: entry.domain, url: entry.url } : undefined;
+  const stats: Stat[] = [
+    top(systems) ? { label: "Top system", value: String(top(systems)!.score ?? "n/a"), sub: top(systems)!.name, logo: logoOf(top(systems)) } : null,
+    top(models) ? { label: "Top model, Index", value: String(top(models)!.score ?? "n/a"), sub: top(models)!.name, logo: logoOf(top(models)) } : null,
+    tools ? { label: "Tools tracked", value: String(tools.entries.length), sub: "Agents and builders" } : null,
+    briefing ? { label: "Updates", value: String(news.length), sub: "In the briefing" } : null,
+  ].filter((stat) => stat !== null);
+  return (
+    <div className="space-y-8">
+      {lead ? (
+        <section className="space-y-3" aria-label="Leading the field">
+          <OverviewHeading title="Leading the field" action={{ label: "All news", onClick: () => onOpen("news") }} />
+          <div className="grid gap-4 lg:grid-cols-3">
+            <NewsCard item={lead} hero className="lg:col-span-2" />
+            {trending.length > 0 ? <TrendingRail items={trending} /> : null}
+          </div>
+        </section>
+      ) : null}
+
+      {stats.length > 0 ? (
+        <div className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+          {stats.map((stat) => <StatTile key={stat.label} {...stat} />)}
+        </div>
+      ) : null}
+
+      {systems ? (
+        <section className="space-y-3" aria-label="The podium">
+          <OverviewHeading title={`Podium, ${INTELLIGENCE_BOARD_LABELS.ai_systems}`} action={{ label: "Full leaderboard", onClick: () => onOpen("boards") }} />
+          <Podium view={systems} series={systemsSeries} />
+        </section>
+      ) : null}
+
+      {tools && tools.entries.length > 0 ? (
+        <section className="space-y-3" aria-label="Top tools and agents">
+          <OverviewHeading title="Top tools and agents" action={{ label: "Tools board", onClick: () => onOpen("boards") }} />
+          <ToolsStrip entries={tools.entries.slice(0, 10)} />
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 // ---------- News and Radar (AI briefing) ----------
+
+type NewsItem = AiBriefingSections["news"][number];
+
+function NewsCard({ item, className, hero = false }: { item: NewsItem; className?: string; hero?: boolean }) {
+  return (
+    <VerdictCard
+      className={className}
+      hero={hero}
+      media={
+        <ArticleImage
+          url={item.url}
+          imageUrl={item.imageUrl}
+          fallback={<BrandLogo name={item.sourceName} domain={item.domain} url={item.url} size="xl" />}
+        />
+      }
+      leading={<BrandLogo name={item.sourceName} domain={item.domain} url={item.url} size="sm" />}
+      eyebrow={
+        <>
+          <span className="font-medium text-foreground">{item.sourceName}</span>
+          <TagChip>{item.tag}</TagChip>
+          <time dateTime={item.date}>{formatCalendarDay(item.date)}</time>
+          {item.rumoured ? <TagChip className="bg-status-warning-soft text-status-warning-foreground">Rumoured</TagChip> : null}
+        </>
+      }
+      title={item.headline}
+      href={item.url}
+      verdict={item.verdict}
+      points={item.points}
+      action={item.action}
+      analysis={
+        <>
+          {item.points.length > 3 ? (
+            <ul className="list-disc space-y-1 pl-4">{item.points.map((point) => <li key={point}>{point}</li>)}</ul>
+          ) : null}
+          {item.take ? <p>{item.take}</p> : null}
+          {item.lens ? (
+            <div className="space-y-1">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Greatstone lens</h3>
+              <p>{item.lens}</p>
+            </div>
+          ) : null}
+          <SourceLink href={item.url}>{item.sourceName}</SourceLink>
+        </>
+      }
+      footer={<SourceLink href={item.url}>{item.sourceName}</SourceLink>}
+    />
+  );
+}
 
 function NewsView({ sections }: { sections: AiBriefingSections }) {
   if (sections.news.length === 0) return <Empty title="No news in this briefing" message="The briefing for this day has no news items." />;
   return (
     <IntelligenceSection title="News briefing" count={sections.news.length}>
       {sections.news.map((item) => (
-        <VerdictCard
-          key={item.url + item.headline}
-          className={item.lead ? "md:col-span-2 xl:col-span-3" : undefined}
-          eyebrow={`${item.tag} · ${formatCalendarDay(item.date)}${item.rumoured ? " · Rumoured" : ""}`}
-          title={item.headline}
-          href={item.url}
-          verdict={item.verdict}
-          points={item.points}
-          action={item.action}
-          analysis={
-            <>
-              {item.points.length > 3 ? (
-                <ul className="list-disc space-y-1 pl-4">{item.points.map((point) => <li key={point}>{point}</li>)}</ul>
-              ) : null}
-              {item.take ? <p>{item.take}</p> : null}
-              {item.lens ? (
-                <div className="space-y-1">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Greatstone lens</h3>
-                  <p>{item.lens}</p>
-                </div>
-              ) : null}
-              <SourceLink href={item.url}>{item.sourceName}</SourceLink>
-            </>
-          }
-          footer={<SourceLink href={item.url}>{item.sourceName}</SourceLink>}
-        />
+        <NewsCard key={item.url + item.headline} item={item} hero={item.lead} className={item.lead ? "md:col-span-2 xl:col-span-2" : undefined} />
       ))}
     </IntelligenceSection>
   );
@@ -335,7 +543,7 @@ function RadarView({ sections }: { sections: AiBriefingSections }) {
       {emerging.length > 0 ? (
         <IntelligenceSection title="Emerging" count={emerging.length}>
           {emerging.map((item) => (
-            <VerdictCard key={item.url + item.name} eyebrow={`${item.by} · ${item.status}`} title={item.name} href={item.url} verdict={item.what} points={[item.why]} />
+            <VerdictCard key={item.url + item.name} leading={<BrandLogo name={item.by} domain={item.domain} url={item.url} />} eyebrow={<><span className="font-medium text-foreground">{item.by}</span><TagChip>{item.status}</TagChip></>} title={item.name} href={item.url} verdict={item.what} points={[item.why]} />
           ))}
         </IntelligenceSection>
       ) : null}
@@ -344,7 +552,8 @@ function RadarView({ sections }: { sections: AiBriefingSections }) {
           {movers.map((item) => (
             <VerdictCard
               key={item.url + item.name}
-              eyebrow={<span className={item.direction === "up" ? "text-status-success" : "text-status-danger"}>{item.direction === "up" ? "Up" : "Down"} · {item.tag}</span>}
+              leading={<BrandLogo name={item.name} domain={item.domain} url={item.url} />}
+              eyebrow={<><span className={cn("font-medium", item.direction === "up" ? "text-status-success" : "text-status-danger")}>{item.direction === "up" ? "Up" : "Down"}</span><TagChip>{item.tag}</TagChip></>}
               title={item.name}
               href={item.url}
               verdict={item.note}
@@ -355,7 +564,7 @@ function RadarView({ sections }: { sections: AiBriefingSections }) {
       {watchlist.length > 0 ? (
         <IntelligenceSection title="Watchlist" count={watchlist.length}>
           {watchlist.map((item) => (
-            <VerdictCard key={item.url + item.name} eyebrow={item.tag} title={item.name} href={item.url} verdict={item.note} />
+            <VerdictCard key={item.url + item.name} leading={<BrandLogo name={item.name} domain={item.domain} url={item.url} />} eyebrow={<TagChip>{item.tag}</TagChip>} title={item.name} href={item.url} verdict={item.note} />
           ))}
         </IntelligenceSection>
       ) : null}
@@ -408,9 +617,9 @@ function RecommendationsView({
         action={kind === "skill" ? <Link to="/skills" className="text-xs text-muted-foreground hover:text-foreground hover:underline underline-offset-4">Open Skills</Link> : null}
       >
         {rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground md:col-span-2 xl:col-span-3">
-            No {kind === "gsam_feature" ? "GSAM feature ideas" : "skill recommendations"} yet. The intelligence agent proposes them with the daily run.
-          </p>
+          <div className="md:col-span-2 xl:col-span-3">
+            <Empty title={`No ${kind === "gsam_feature" ? "GSAM feature ideas" : "skill recommendations"} yet`} message={WHEN.ideas} />
+          </div>
         ) : (
           rows.map((item) => (
             <VerdictCard
@@ -451,7 +660,7 @@ function RecommendationsView({
 }
 
 function ArchiveView({ reports, onOpen }: { reports: IntelligenceReportSummary[]; onOpen: (date: string, tab: Tab) => void }) {
-  if (reports.length === 0) return <Empty title="No reports yet" message="Past Daily Pulse and briefing reports appear here once the agent writes them." />;
+  if (reports.length === 0) return <Empty title="No reports yet" message={`Every Daily Pulse and AI briefing is kept here. ${WHEN.briefing}`} />;
   return (
     <ul className="divide-y divide-border rounded-lg border border-border">
       {reports.map((report) => (
@@ -478,7 +687,7 @@ export function Intelligence() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get("tab");
-  const tab: Tab = TABS.some(([id]) => id === tabParam) ? (tabParam as Tab) : "today";
+  const tab: Tab = TABS.some(([id]) => id === tabParam) ? (tabParam as Tab) : "overview";
   const date = searchParams.get("date");
   const reportDate = date ?? "latest";
 
@@ -518,6 +727,11 @@ export function Intelligence() {
     queryFn: () => intelligenceApi.boards(companyId, date),
     enabled: on,
   });
+  const historyQuery = useQuery({
+    queryKey: queryKeys.intelligence.boardHistory(companyId, date),
+    queryFn: () => intelligenceApi.boardHistory(companyId, date),
+    enabled: on,
+  });
   const recommendationsQuery = useQuery({
     queryKey: queryKeys.intelligence.recommendations(companyId),
     queryFn: () => intelligenceApi.recommendations(companyId),
@@ -532,6 +746,11 @@ export function Intelligence() {
   const frontier = useMemo(
     () => boardsQuery.data?.boards.find((view) => view.board === "frontier_models"),
     [boardsQuery.data],
+  );
+  // Sparklines are a nice-to-have: a failed history read leaves them out rather than failing the page.
+  const series = useMemo(
+    () => new Map((historyQuery.data?.history ?? []).map((history) => [history.board, seriesFor(history)])),
+    [historyQuery.data],
   );
 
   if (!selectedCompanyId) return <EmptyState icon={Radar} message="Select an organization to see its intelligence." />;
@@ -552,7 +771,7 @@ export function Intelligence() {
   const briefing = briefingQuery.data?.kind === "ai_briefing" ? briefingQuery.data : null;
   const boards = boardsQuery.data?.boards ?? [];
   const recommendations = recommendationsQuery.data?.recommendations ?? [];
-  const loading = (query: { isLoading: boolean }) => (query.isLoading ? <PageSkeleton variant="dashboard" /> : null);
+  const loading = (query: { isLoading: boolean }) => (query.isLoading ? <IntelligenceSkeleton /> : null);
 
   return (
     <div className="w-full max-w-7xl space-y-4">
@@ -591,6 +810,18 @@ export function Intelligence() {
           </TabsList>
         </div>
 
+        <TabsContent value="overview" className="mt-4">
+          {loading(boardsQuery) ??
+            loading(briefingQuery) ?? (
+              <OverviewView
+                boards={boards}
+                briefing={briefing?.sections ?? null}
+                systemsSeries={series.get("ai_systems")}
+                onOpen={(next) => setParams({ tab: next })}
+              />
+            )}
+        </TabsContent>
+
         <TabsContent value="today" className="mt-4">
           {loading(pulseQuery) ??
             (pulse ? (
@@ -598,7 +829,9 @@ export function Intelligence() {
             ) : (
               <Empty
                 title={date ? "No Daily Pulse for this day" : "No Daily Pulse yet"}
-                message="The intelligence agent writes the Daily Pulse each morning. Once it publishes, it shows here."
+                message={date ? "Lodestone did not publish a Daily Pulse on this day. Try another day, or the Archive." : `${WHEN.pulse} It shows here as soon as it lands.`}
+                action={date ? "Show latest" : undefined}
+                onAction={date ? () => setParams({ date: null }) : undefined}
               />
             ))}
         </TabsContent>
@@ -606,9 +839,12 @@ export function Intelligence() {
         <TabsContent value="boards" className="mt-4 space-y-6">
           {loading(boardsQuery) ??
             (boards.length > 0 ? (
-              boards.map((view) => <BoardTable key={view.board} view={view} />)
+              boards.map((view) => <BoardSection key={view.board} view={view} series={series.get(view.board)} />)
             ) : (
-              <Empty title="No leaderboard snapshots yet" message="The agent writes a snapshot of each board every day; movement shows from the second week." />
+              <Empty
+                title="No leaderboard snapshots yet"
+                message="Lodestone, the Intelligence Analyst agent, writes a snapshot of each board with its morning run. Movement arrows appear once there is a week of history."
+              />
             ))}
         </TabsContent>
 
@@ -618,12 +854,12 @@ export function Intelligence() {
 
         <TabsContent value="radar" className="mt-4">
           {loading(briefingQuery) ??
-            (briefing ? <RadarView sections={briefing.sections} /> : <Empty title="No briefing yet" message="Radar comes from the daily AI briefing." />)}
+            (briefing ? <RadarView sections={briefing.sections} /> : <Empty title="No briefing yet" message={`Radar comes from the AI briefing. ${WHEN.briefing}`} />)}
         </TabsContent>
 
         <TabsContent value="news" className="mt-4">
           {loading(briefingQuery) ??
-            (briefing ? <NewsView sections={briefing.sections} /> : <Empty title="No briefing yet" message="The news briefing comes from the daily AI briefing." />)}
+            (briefing ? <NewsView sections={briefing.sections} /> : <Empty title="No briefing yet" message={`${WHEN.briefing} News lands here as soon as it is written.`} />)}
         </TabsContent>
 
         <TabsContent value="gsam" className="mt-4">

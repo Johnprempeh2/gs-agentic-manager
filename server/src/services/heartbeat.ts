@@ -24198,7 +24198,7 @@ export function heartbeatService(
         !acceptedPlanWakeRoutingDecision?.suppressAcceptedContinuation
           ? [...runScopedMentionedSkillKeys, ACCEPTED_PLAN_CONVERSION_SKILL_KEY]
           : runScopedMentionedSkillKeys;
-      const { githubSelection, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
+      const { githubSelection, githubAccessNote, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
         companyId: agent.companyId,
         agentId: agent.id,
         cause: identityContext.cause,
@@ -24206,6 +24206,10 @@ export function heartbeatService(
         trustKind: trustPreset.kind,
         environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
       });
+      if (githubAccessNote) {
+        const { message, ...payload } = githubAccessNote;
+        await appendRunEvent(run, { eventType: "lifecycle", stream: "system", level: "info", message, payload });
+      }
       const aiAccessRoute = agentAiAccessRoute(agent);
       let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
       const { resolvedConfig, secretKeys, secretManifest } =
@@ -25267,9 +25271,17 @@ export function heartbeatService(
           return { dispatched: false };
         const repairBlock = await recovery.legacyRepairDispatchBlock(run.id);
         if (repairBlock) {
+          // The gate runs before provider handoff. Without this evidence the
+          // stranded-work sweep holds the issue for execution reconciliation
+          // and every later wake parks for good (GRE-1560).
           const cancelled = await setRunStatusIfRunning(run.id, "cancelled", {
             finishedAt: new Date(), errorCode: "legacy_disposition_repair_suppressed",
             error: `Disposition repair suppressed: ${repairBlock}`,
+            resultJson: {
+              ...run.resultJson,
+              stopReason: "legacy_disposition_repair_suppressed",
+              executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
+            },
           });
           if (cancelled.updated) {
             await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: new Date(), error: repairBlock });

@@ -3,6 +3,7 @@ import type {
   CreateDeliverableCommentInput,
   DeliverableComment,
   DeliverableCommentsResponse,
+  DeliverableAudience,
   DeliverableConfidentiality,
   DeliverableDetail,
   DeliverableKind,
@@ -38,6 +39,7 @@ export interface ListDeliverablesParams {
   agentId?: string;
   brand?: string;
   confidentiality?: DeliverableConfidentiality;
+  audience?: DeliverableAudience;
   linkHealth?: "broken";
   from?: string;
   sort?: DeliverableSort;

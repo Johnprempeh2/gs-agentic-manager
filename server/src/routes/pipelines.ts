@@ -101,6 +101,9 @@ import {
   computePipelineHealth,
   createClientEvidenceSchema,
   createClientJourneyDeliverableSchema,
+  resolveSetCaseNda,
+  setCaseNdaSchema,
+  type SetCaseNda,
   updateClientJourneyDeliverableSchema,
   type CreateClientEvidence,
   type CreateClientJourneyDeliverable,
@@ -2807,20 +2810,25 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.json(await journeySvc.portal(companyId, caseId));
   });
 
-  // The client's accepted NDA (board only). Client-labelled deliverables reach
-  // the portal only once it is recorded; public ones do not need it.
-  router.put("/cases/:caseId/nda", validate(z.object({ accepted: z.boolean() })), async (req, res) => {
+  // The client's NDA (board only): required, accepted or suspended with a
+  // reason. Client-labelled deliverables reach the portal once it is accepted
+  // or suspended; public ones do not need it. The older { accepted } body
+  // still works.
+  router.put("/cases/:caseId/nda", validate(setCaseNdaSchema), async (req, res) => {
     const caseId = req.params.caseId as string;
     const companyId = await assertCaseAccess(db, req, caseId);
-    if (req.actor.type !== "board") throw forbidden("Only board users can record a client's NDA");
-    const accepted = (req.body as { accepted: boolean }).accepted;
-    const result = await journeySvc.setNdaAccepted(companyId, caseId, accepted);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's NDA");
+    const input = resolveSetCaseNda(req.body as SetCaseNda);
+    const result = await journeySvc.setNda(companyId, caseId, input, req.actor.userId ?? null);
     await writeRouteEvent(db, {
       companyId,
       caseId,
       type: "updated",
       actor: actorForMutation(req),
-      payload: { action: accepted ? "nda_accepted" : "nda_cleared" },
+      payload: {
+        action: input.status === "accepted" ? "nda_accepted" : input.status === "suspended" ? "nda_suspended" : "nda_cleared",
+        ...(input.reason ? { reason: input.reason } : {}),
+      },
     });
     res.json(result);
   });

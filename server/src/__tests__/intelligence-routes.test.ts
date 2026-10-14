@@ -173,6 +173,17 @@ describePostgres("intelligence routes", () => {
       { rankDelta: -1, scoreDelta: 1.6, isNew: false },
       { rankDelta: null, scoreDelta: null, isNew: true },
     ]);
+
+    const history = await http.get(`/api/companies/${company.id}/intelligence/boards/history?limit=2`).expect(200);
+    expect(history.body.history).toEqual([
+      {
+        board: "ai_systems",
+        points: [
+          { snapshotDate: "2026-10-12", scores: { claude: 96, gemini: 96 } },
+          { snapshotDate: "2026-10-13", scores: { claude: 97.3, gemini: 96.6, kimi: 72 } },
+        ],
+      },
+    ]);
   });
 
   it("keeps recommendation decisions and task creation for board users", async () => {

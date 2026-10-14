@@ -1081,7 +1081,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await db.insert(companies).values({
       id: companyId,
       name: `Chat Test ${companyId.slice(0, 8)}`,
-      issuePrefix: `C${companyId.replaceAll("-", "").slice(0, 7).toUpperCase()}`,
+      // Issue prefixes are unique. Seven hex digits (28 bits) collided once in
+      // a full run of this suite's ~400 companies (13 Oct 2026); nine digits
+      // keep the prefix within the 10 characters an identifier mention allows.
+      issuePrefix: `C${companyId.replaceAll("-", "").slice(0, 9).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
     const now = new Date();

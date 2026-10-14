@@ -49,8 +49,8 @@ export function ShareWithAgentsSection({ connectionId, grant, agents }: {
         <FeatureTour tour={GITHUB_SHARE_TOUR} />
       </div>
       <p className="text-sm text-muted-foreground">
-        Agents you tick can use your GitHub for work they start themselves. Their commits and pull requests appear as you.
-        Work someone asks for still uses that person's own GitHub.
+        Agents you tick can use your GitHub for work they start themselves, and for work asked for by someone who has not connected their own GitHub.
+        Their commits and pull requests appear as you. Anyone who has connected their own GitHub still uses it.
       </p>
     </div>
     {grant.status !== "active"
