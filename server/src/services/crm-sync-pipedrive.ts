@@ -119,7 +119,10 @@ export function pipedriveRetryDelayMs(headers: { get(name: string): string | nul
 
 /** Only https URLs on pipedrive.com, so a connection config cannot point the token elsewhere. */
 export function resolvePipedriveBaseUrl(config: Record<string, unknown>) {
-  const domain = typeof config.companyDomain === "string" ? config.companyDomain.trim() : "";
+  // Apps setup stores the optional domain under methodConfig (pipedrive.json).
+  const methodConfig = (config.methodConfig ?? {}) as Record<string, unknown>;
+  const raw = config.companyDomain ?? methodConfig.companyDomain;
+  const domain = typeof raw === "string" ? raw.trim() : "";
   if (domain && /^[a-z0-9][a-z0-9-]{0,62}$/i.test(domain)) return `https://${domain}.pipedrive.com`;
   return PIPEDRIVE_DEFAULT_BASE_URL;
 }
@@ -190,6 +193,11 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
   }
 
   return {
+    /** The token's own user: a cheap read that proves the connection works. */
+    async getCurrentUser() {
+      return get("/api/v1/users/me", {});
+    },
+
     /** One page of every organisation, all owners (API v1, read only). GRE-1479. */
     async listOrganizationsPage(input: { start?: number } = {}) {
       return listV1Page<PipedriveOrganization>("/api/v1/organizations", input.start ?? 0, V1_LIST_PAGE_SIZE);

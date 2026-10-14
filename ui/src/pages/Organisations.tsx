@@ -11,6 +11,7 @@ import {
 } from "@greatstone/shared";
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
+import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -98,10 +99,13 @@ export function Organisations() {
             Every company you work with: targets, prospects, clients and former clients.
           </p>
         </div>
-        <Button onClick={() => setEditing("new")}>
-          <Plus />
-          Add organisation
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {selectedCompanyId ? <PipedriveImport companyId={selectedCompanyId} /> : null}
+          <Button onClick={() => setEditing("new")}>
+            <Plus />
+            Add organisation
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">

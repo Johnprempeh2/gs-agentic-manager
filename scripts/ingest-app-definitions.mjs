@@ -799,6 +799,48 @@ const apps = [
     ),
   ],
   [
+    "pipedrive",
+    "Pipedrive",
+    "Import your Pipedrive organisations and people into Organisations.",
+    "crm",
+    "pipedrive.com",
+    ["https://*.pipedrive.com/*"],
+    method(
+      "api-token",
+      "rest_api",
+      "api_key",
+      {},
+      "S3",
+      "Paste the personal API token of a Pipedrive user who can see every organisation and person you want to import. Find it in Pipedrive under Settings > Personal preferences > API. Importing only reads from Pipedrive; nothing is written back.",
+      {
+        label: "Use a personal API token",
+        whenToUse: "Use the personal API token from your Pipedrive account.",
+        // The CRM import reads the token from credentials.api_token and the
+        // company domain from methodConfig.companyDomain (crm-sync-pipedrive.ts).
+        grantKinds: ["organization"],
+        credentialFields: [{
+          ...field("api_token", "Pipedrive API token", "Paste your personal API token"),
+          helperMd: "In Pipedrive, open Settings > Personal preferences > API and copy Your personal API token.",
+        }],
+        tenantFields: [{
+          key: "companyDomain",
+          label: "Company domain",
+          type: "text",
+          required: false,
+          placeholder: "greatstone",
+          helperMd: "Optional. The part before .pipedrive.com in your Pipedrive address, for example greatstone for greatstone.pipedrive.com.",
+          validation: { pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$", maxLength: 63 },
+        }],
+        keyPlacement: { location: "header", name: "x-api-token" },
+        consoleLinks: {
+          keys: "https://app.pipedrive.com/settings/api",
+          docs: "https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key",
+        },
+      },
+    ),
+    { docsUrl: "https://support.pipedrive.com/en/article/how-can-i-find-my-personal-api-key" },
+  ],
+  [
     "anthropic",
     "Anthropic",
     "Use Anthropic APIs with a restricted key.",

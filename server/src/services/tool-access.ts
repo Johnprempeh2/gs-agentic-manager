@@ -222,6 +222,12 @@ import { generateRailwaySshKey, RAILWAY_SSH_SECRET_PATH, validateRailwayKnownHos
 import { createRailwayClient, discoverRailwayWorkspace, isRailwayConnection, isRailwayEndpoint, isRailwayToolBlocked, normalizeRailwayToolName, RAILWAY_TOOLS, RAILWAY_TOOL_PREFIX, railwayRisk, RailwayError } from "./railway.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
 import {
+  createPipedriveClient,
+  PipedriveAuthError,
+  PipedriveRateLimitError,
+  resolvePipedriveBaseUrl,
+} from "./crm-sync-pipedrive.js";
+import {
   readSignedToolArgumentsPayload,
   TOOL_ACTION_REQUEST_SIGNING_GRACE_MS,
 } from "./tool-content-guards.js";
@@ -2839,7 +2845,7 @@ function healthFailureHttpStatus(failure: {
   if (failure.code === "user_authorization_required") return 422;
   if (failure.code === "composio_broker_retired") return 422;
   if (failure.code === "tool_connection_transport_unsupported") return 422;
-  if (failure.code === "cognee_access_unverified" || failure.code === "memory_api_key_rejected") return 422;
+  if (failure.code === "cognee_access_unverified" || failure.code === "memory_api_key_rejected" || failure.code === "pipedrive_auth_failed") return 422;
   if (failure.code.endsWith("_endpoint_rejected")) return 422;
   return 502;
 }
@@ -2858,7 +2864,7 @@ function sanitizeHttpFailure(error: unknown): {
 } {
   if (error instanceof HttpError) {
     const code = asRecord(error.details).code;
-    if (code === "cognee_access_unverified" || code === "memory_api_key_rejected") {
+    if (code === "cognee_access_unverified" || code === "memory_api_key_rejected" || code === "pipedrive_auth_failed" || code === "pipedrive_rate_limited") {
       return { status: "error", message: error.message, code };
     }
     if (code === "slack_mcp_access_disabled") {
@@ -7098,6 +7104,58 @@ export function toolAccessService(
     await agentmailStep("checkKey", () => agentmailApi(key).whoami());
   }
 
+  /** Pipedrive from Apps (pipedrive.json): a REST API token the CRM import reads; it has no agent tools. */
+  function isPipedriveConnection(connection: typeof toolConnections.$inferSelect) {
+    return connection.transport === "rest_api" && connection.config.sourceTemplateKey === "pipedrive";
+  }
+
+  async function validatePipedriveConnection(
+    connection: typeof toolConnections.$inferSelect,
+  ) {
+    const configPath = "credentials.api_token";
+    const ref = connection.credentialSecretRefs.find(
+      (candidate) => candidate.configPath === configPath,
+    );
+    if (!ref) {
+      throw unprocessable("Reconnect Pipedrive to restore its API token", {
+        code: "missing_secret",
+      });
+    }
+    const token = await secrets.resolveSecretValue(
+      connection.companyId,
+      ref.secretId,
+      ref.versionSelector ?? "latest",
+      {
+        consumerType: "tool_connection",
+        consumerId: connection.id,
+        configPath,
+        actorType: "system",
+        actorId: null,
+      },
+    );
+    try {
+      await createPipedriveClient({
+        token,
+        authKind: connection.authKind,
+        baseUrl: resolvePipedriveBaseUrl(connection.config),
+        maxRetries: 0,
+      }).getCurrentUser();
+    } catch (error) {
+      if (error instanceof PipedriveAuthError) {
+        throw unprocessable(
+          "Pipedrive refused the API token. Copy it again from Settings > Personal preferences > API in Pipedrive.",
+          { code: "pipedrive_auth_failed" },
+        );
+      }
+      if (error instanceof PipedriveRateLimitError) {
+        throw unprocessable("Pipedrive rate limit reached. Try again in a minute.", {
+          code: "pipedrive_rate_limited",
+        });
+      }
+      throw error;
+    }
+  }
+
   function assertSupportedConnection(connection: typeof toolConnections.$inferSelect) {
     if (isRetiredComposioConnection(connection)) {
       throw unprocessable(RETIRED_COMPOSIO_MESSAGE, { code: "composio_broker_retired" });
@@ -7113,6 +7171,10 @@ export function toolAccessService(
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections provide runtime authentication, not tool actions");
     if (isAgentMailConnection(connection)) {
       await validateAgentMailConnection(connection);
+      return [];
+    }
+    if (isPipedriveConnection(connection)) {
+      await validatePipedriveConnection(connection);
       return [];
     }
     if (connection.transport === "mcp_remote")
@@ -7278,6 +7340,8 @@ export function toolAccessService(
           await refreshManagedGitHubGrantAccess(connection, grant, actor);
       } else if (isAgentMailConnection(connection)) {
         await validateAgentMailConnection(connection);
+      } else if (isPipedriveConnection(connection)) {
+        await validatePipedriveConnection(connection);
       } else if (connection.transport === "mcp_remote") {
         const canProbeWithoutAuthorization =
           options.allowUnauthenticatedProbe === true &&
@@ -7330,6 +7394,8 @@ export function toolAccessService(
           ? "GitHub account, installation, and repository access are available."
           : isAgentMailConnection(connection)
             ? "AgentMail API key is connected."
+            : isPipedriveConnection(connection)
+              ? "Pipedrive API token is connected."
             : connection.transport === "local_stdio"
               ? "Approved stdio template is ready."
               : "Remote MCP server responded to tools/list.",
@@ -7610,7 +7676,9 @@ export function toolAccessService(
         healthStatus: "ok",
         healthMessage: isAgentMailConnection(connection)
           ? "AgentMail API key is connected."
-          : "Tool catalog refreshed.",
+          : isPipedriveConnection(connection)
+            ? "Pipedrive API token is connected."
+            : "Tool catalog refreshed.",
         healthCheckedAt: refreshedAt,
         lastHealthAt: refreshedAt,
         lastCatalogRefreshAt: refreshedAt,

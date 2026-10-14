@@ -306,6 +306,12 @@
       "localAsset": "/brands/apps/pagerduty.svg"
     },
     {
+      "slug": "pipedrive",
+      "provider": "Pipedrive",
+      "catalogVisible": true,
+      "localAsset": "/brands/apps/pipedrive.png"
+    },
+    {
       "slug": "planetscale",
       "provider": "PlanetScale",
       "catalogVisible": false,
