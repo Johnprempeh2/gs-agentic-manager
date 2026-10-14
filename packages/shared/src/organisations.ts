@@ -23,12 +23,12 @@ export const ORGANISATION_SIZE_BANDS = ["1-10", "11-50", "51-200", "201-500", "5
 export type OrganisationSizeBand = (typeof ORGANISATION_SIZE_BANDS)[number];
 
 export const ORGANISATION_SIZE_BAND_LABELS: Record<OrganisationSizeBand, string> = {
-  "1-10": "1–10 employees",
-  "11-50": "11–50 employees",
-  "51-200": "51–200 employees",
-  "201-500": "201–500 employees",
-  "501-1000": "501–1,000 employees",
-  "1001-5000": "1,001–5,000 employees",
+  "1-10": "1 to 10 employees",
+  "11-50": "11 to 50 employees",
+  "51-200": "51 to 200 employees",
+  "201-500": "201 to 500 employees",
+  "501-1000": "501 to 1,000 employees",
+  "1001-5000": "1,001 to 5,000 employees",
   "5001+": "5,001+ employees",
 };
 
