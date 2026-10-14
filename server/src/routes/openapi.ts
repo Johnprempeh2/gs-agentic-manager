@@ -14103,6 +14103,23 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/logo/{domain}",
+  tags: ["intelligence"],
+  summary: "Brand logo for a domain, proxied and cached from Logo.dev (404 when no key or no logo, so the page shows a monogram)",
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/image",
+  tags: ["intelligence"],
+  summary: "Article image (an image URL, or a page's og:image) fetched through the private-network guard, size-capped and cached",
+  query: z.object({ url: z.string() }),
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
   method: "put",
   path: "/api/companies/{companyId}/intelligence/boards/{board}/snapshots/{snapshotDate}",
   tags: ["intelligence"],
