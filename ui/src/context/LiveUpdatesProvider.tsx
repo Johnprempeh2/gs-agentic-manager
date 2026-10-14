@@ -1354,6 +1354,10 @@ function invalidateActivityQueries(
         if (action === "issue.comment_added" || action === "issue.conversation_session_started") {
           queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref), ...invalidationOptions });
         }
+        // Team chat unread counts (only refetches while the chats list is shown).
+        if (action === "issue.comment_added") {
+          queryClient.invalidateQueries({ queryKey: queryKeys.teamChats.all });
+        }
         if (action?.startsWith("issue.attachment_") || action?.startsWith("issue.work_product_")) {
           // These cards are durable API objects, not streamed text. Refresh the
           // visible task too, including attachments bound to an existing comment.

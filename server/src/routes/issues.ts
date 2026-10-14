@@ -1,6 +1,7 @@
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
+import { isTeamChat, teamChatService } from "../services/team-chats.js";
 import { issueRecoveryActionReadModel } from "../services/issue-recovery-actions.js";
 import { getExecutionBlocker } from "../services/execution-blocker.js";
 import {
@@ -248,6 +249,7 @@ import {
   getAccessibleResource,
   getActorInfo,
   hasCompanyAccess,
+  hasCompanyBoardRole,
 } from "./authz.js";
 import {
   assertNoAgentHostWorkspaceCommandMutation,
@@ -3756,6 +3758,7 @@ export function issueRoutes(
   const instanceSettings = instanceSettingsService(db);
   const agentsSvc = agentService(db);
   const boardChats = strategyBoardChatService(db);
+  const teamChats = teamChatService(db);
   // GRE-1090: refuse these feature routes while their managed switch is off,
   // before validation. Agent Chat on existing conversations checks per route.
   router.use(
@@ -8113,10 +8116,43 @@ export function issueRoutes(
     };
   }
 
+  /**
+   * A team chat (enableTeamChat) is private to its members: only member people
+   * and agents, and company owners for moderation, reach it through any issue
+   * route; everyone else gets the same 404 as a missing issue. A chat takes
+   * messages, read marks and attachments only; nothing else may change it.
+   */
+  const TEAM_CHAT_WRITE_PATH_RE = /\/(comments|read|attachments)(\/|$)/;
+  const ISSUE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  async function teamChatAccessGuard(req: Request, issueId: string) {
+    if (!ISSUE_UUID_RE.test(issueId)) return;
+    // ponytail: a failed lookup lets the route run; its own reads hit the same
+    // database and fail the same way. Route tests also run on stub databases.
+    const chat = await teamChats.getChat(issueId).catch((err) => {
+      logger.warn({ err, issueId }, "team chat lookup failed");
+      return null;
+    });
+    if (!chat || !isTeamChat(chat)) return;
+    const actor = req.actor;
+    const member =
+      actor.type === "board" && actor.userId
+        ? (await teamChats.isParticipant(chat.id, { type: "user", id: actor.userId })) || hasCompanyBoardRole(req, chat.companyId)
+        : actor.type === "agent" && actor.agentId && actor.companyId === chat.companyId
+          ? await teamChats.isParticipant(chat.id, { type: "agent", id: actor.agentId })
+          : false;
+    if (!member) throw notFound("Issue not found");
+    if (req.method === "GET" || req.method === "HEAD") return;
+    await assertEntitled(instanceSettings, "enableTeamChat");
+    if (!TEAM_CHAT_WRITE_PATH_RE.test(req.path)) {
+      throw unprocessable("A team chat takes messages only", { code: "team_chat_read_only" });
+    }
+  }
+
   // Resolve issue identifiers (e.g. "PAP-39") to UUIDs for all /issues/:id routes
   router.param("id", async (req, res, next, rawId) => {
     try {
       req.params.id = await resolveIssueRouteId(rawId);
+      await teamChatAccessGuard(req, req.params.id);
       next();
     } catch (err) {
       next(err);
@@ -8127,6 +8163,7 @@ export function issueRoutes(
   router.param("issueId", async (req, res, next, rawId) => {
     try {
       req.params.issueId = await resolveIssueRouteId(rawId);
+      await teamChatAccessGuard(req, req.params.issueId);
       next();
     } catch (err) {
       next(err);
@@ -18724,6 +18761,10 @@ export function issueRoutes(
 
       await issueReferencesSvc.syncComment(comment.id);
       await externalObjectsSvc.syncCommentSafely(comment.id);
+      // Phone pushes for @mentioned people and the other side of a direct message.
+      if (actor.actorType === "user" || actor.actorType === "agent") {
+        void teamChats.notifyPeople(currentIssue, comment, { type: actor.actorType, id: actor.actorId });
+      }
       if (
         currentIssue.assigneeAgentId &&
         // Slack-linked messages need the normal attributed wake boundary so
@@ -18800,9 +18841,11 @@ export function issueRoutes(
         entityId: currentIssue.id,
         details: {
           commentId: comment.id,
-          bodySnippet: comment.body.slice(0, 120),
+          // Activity reaches the whole company; a team chat's words stay in the chat.
+          ...(isTeamChat(currentIssue)
+            ? {}
+            : { bodySnippet: comment.body.slice(0, 120), issueTitle: currentIssue.title }),
           identifier: currentIssue.identifier,
-          issueTitle: currentIssue.title,
           authorizationReason: commentAuthorizationReason,
           ...(isDirectParentReportDecision(commentAccessDecision)
             ? { directParentReportGrant: true }
@@ -19088,10 +19131,13 @@ export function issueRoutes(
 
         let mentionedIds: string[] = [];
         try {
-          mentionedIds = await svc.findMentionedAgents(
-            issue.companyId,
-            req.body.body,
-          );
+          // A team chat wakes only mentioned member agents, with the loop guard.
+          mentionedIds = isTeamChat(currentIssue)
+            ? await teamChats.agentsToWake(currentIssue, req.body.body, {
+                type: actorIsAgent ? "agent" : "user",
+                id: actor.actorId,
+              })
+            : await svc.findMentionedAgents(issue.companyId, req.body.body);
         } catch (err) {
           logger.warn({ err, issueId: id }, "failed to resolve @-mentions");
         }

@@ -1964,9 +1964,10 @@ function assigneeUserFilterCondition(assigneeUserId: string, aliases: readonly s
 /** Conversation containers cannot acquire new child edges, even with the experiment disabled. */
 async function assertExecutionTaskParent(db: Db, companyId: string, parentId?: string | null) {
   if (!parentId) return;
-  const [parent] = await db.select({ conversationAgentId: issues.conversationAgentId })
+  const [parent] = await db.select({ conversationAgentId: issues.conversationAgentId, originKind: issues.originKind })
     .from(issues).where(and(eq(issues.id, parentId), eq(issues.companyId, companyId)));
   if (parent?.conversationAgentId) throw unprocessable("Conversations cannot have new subtasks; create a task in a project instead");
+  if (parent?.originKind === "team_chat") throw unprocessable("Team chats cannot have subtasks; create a task in a project and link it in the chat");
 }
 
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -2890,6 +2891,14 @@ function touchedByUserCondition(companyId: string, userId: string) {
         WHERE ${issueComments.issueId} = ${issues.id}
           AND ${issueComments.companyId} = ${companyId}
           AND ${issueComments.authorUserId} = ${userId}
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM ${issueComments}
+        WHERE ${issueComments.issueId} = ${issues.id}
+          AND ${issueComments.companyId} = ${companyId}
+          AND ${issueComments.deletedAt} IS NULL
+          AND position(${`(user://${userId})`} in ${issueComments.body}) > 0
       )
     )
   `;

@@ -1,6 +1,6 @@
 import { AgentIdentity } from "./AgentIdentity";
 import { AgentAvatar } from "@/components/AgentAvatar";
-import { memo, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { createContext, memo, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import type {
   Agent,
@@ -27,6 +27,12 @@ import { cn, formatDateTime } from "../lib/utils";
 import { restoreSubmittedCommentDraft } from "../lib/comment-submit-draft";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { PluginSlotOutlet } from "@/plugins/slots";
+
+/**
+ * Names the author of a comment not written by an agent. Unset, every such
+ * comment reads "You" (a task thread has one person). Team chats set it.
+ */
+export const CommentAuthorNameContext = createContext<((comment: IssueComment) => string) | null>(null);
 
 interface CommentWithRunMeta extends IssueComment {
   runId?: string | null;
@@ -329,6 +335,7 @@ function CommentCard({
   const isQueued = queued || comment.queueState === "queued" || comment.clientStatus === "queued";
   const isDeleted = Boolean(comment.deletedAt);
   const followUpRequested = comment.followUpRequested === true;
+  const authorName = useContext(CommentAuthorNameContext);
 
   return (
     <div
@@ -351,7 +358,7 @@ function CommentCard({
             />
           </Link>
         ) : (
-          <Identity name="You" size="sm" />
+          <Identity name={authorName?.(comment) ?? "You"} size="sm" />
         )}
         <span className="flex items-center gap-1.5">
           {isQueued ? (

@@ -372,6 +372,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "strategy_board_why_request",
   // A board member's questions-only chat with an agent set for them (GRE-1186).
   "strategy_board_question",
+  // A direct message or group chat of people and agents (enableTeamChat).
+  "team_chat",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

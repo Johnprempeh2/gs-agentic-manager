@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { pipelinesApi } from "@/api/pipelines";
+import { teamChatsApi } from "@/api/teamChats";
 import { toolsApi } from "@/api/tools";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +41,10 @@ async function resolveStart(tourId: string, companyId: string): Promise<StartTar
       const { connections } = await toolsApi.listConnections(companyId);
       const github = connections.find((connection) => connection.config?.sourceTemplateKey === "github");
       return github ? { path: `/apps/${github.id}/permissions` } : { nothing: "GitHub is not connected yet. Connect it in Apps first." };
+    }
+    case "team-chat": {
+      const [first] = await teamChatsApi.list(companyId);
+      return first ? { path: `/messages/${first.id}` } : { nothing: "You are in no chats yet. Start one from the sidebar first." };
     }
     default:
       return { nothing: "This tour has no page to open." };

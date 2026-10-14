@@ -107,6 +107,16 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "post", path: `${COMPANY}/chats/agent` },
     ],
   },
+  enableTeamChat: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/team-chats` },
+      { method: "post", path: `${COMPANY}/team-chats` },
+      { method: "post", path: `${COMPANY}/team-chats/direct` },
+      { method: "post", path: `/team-chats/${ID}/members` },
+      { method: "delete", path: `/team-chats/${ID}/members/user/x` },
+    ],
+  },
   enableMemoryConnectors: {
     kind: "api",
     probes: [{ method: "get", path: `${COMPANY}/tools/apps/mem0/preflight` }],
