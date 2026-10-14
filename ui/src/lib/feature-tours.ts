@@ -221,6 +221,27 @@ export const GITHUB_SHARE_TOUR: TourDefinition = {
   ],
 };
 
+export const TEAM_CHAT_TOUR: TourDefinition = {
+  id: "team-chat",
+  title: "Team chat",
+  description: "Messaging people, and asking agents in a group with @mentions.",
+  version: 1,
+  flag: "enableTeamChat",
+  label: "this chat",
+  steps: [
+    {
+      target: "team-chat-members",
+      title: "Who is here",
+      body: "Everyone in this chat, people and agents. Only members can read it. Add or remove members here.",
+    },
+    {
+      target: "team-chat-thread",
+      title: "Ask an agent with @",
+      body: "Type @ and pick a member to mention them. Agents reply only when mentioned; if the ask needs real work, the agent makes a task and links it here.",
+    },
+  ],
+};
+
 /** Every tour, in the order the Tutorials list shows them. */
 export const ALL_TOURS: TourDefinition[] = [
   PIPELINES_LIST_TOUR,
@@ -229,4 +250,5 @@ export const ALL_TOURS: TourDefinition[] = [
   STRATEGY_BOARD_TOUR,
   WEBSITE_TOUR,
   GITHUB_SHARE_TOUR,
+  TEAM_CHAT_TOUR,
 ];

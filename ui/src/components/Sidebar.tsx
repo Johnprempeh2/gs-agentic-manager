@@ -58,6 +58,8 @@ import { SidebarNavItem } from "./SidebarNavItem";
 import { SidebarStarredProjects } from "./SidebarStarredProjects";
 import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
+import { SidebarTeamChats } from "./SidebarTeamChats";
+import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { SidebarRecentTasks } from "./SidebarRecentTasks";
 import { useDialogActions } from "../context/DialogContext";
@@ -152,6 +154,7 @@ function SortableSidebarSection({
 export function Sidebar({ children }: { children?: ReactNode }) {
   const { openNewIssue } = useDialogActions();
   const { enabled: agentChatEnabled } = useAgentChatEnabled();
+  const { enabled: teamChatEnabled } = useTeamChatEnabled();
   // Every labeled section is collapsible, default open, and remembers being
   // closed, so a section the owner folds away stays folded after a reload.
   const [workOpen, setWorkOpen] = useStoredSectionOpen("work", true);
@@ -285,6 +288,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     </>
   );
   const showAgentChats = agentChatEnabled && !children;
+  const showTeamChats = teamChatEnabled && !children;
   const sectionOrder = useSidebarSectionOrder(SECTION_IDS);
   // Drag starts only from the grip. Touch waits a moment so a swipe still
   // scrolls the sidebar; the keyboard sensor lets the grip move with arrows.
@@ -432,6 +436,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
           <SidebarNavItem to="/deliverables" label="Deliverables" icon={FileCheck2} />
           {memoryEnabled ? <SidebarNavItem to="/memory" label="Memory" icon={Brain} /> : null}
           {/* GRE-259: the chat with Everest sits directly under Search and Deliverables. */}
+          {showTeamChats ? <SidebarTeamChats agentChatsFollow={showAgentChats} /> : null}
           {showAgentChats ? <SidebarAgentChats inline /> : null}
         </div>
 

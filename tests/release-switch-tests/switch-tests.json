@@ -98,7 +98,8 @@
     "enableTeamChat": [
       "packages/shared/src/team-chat.test.ts",
       "server/src/__tests__/team-chats.test.ts",
-      "ui/src/components/NewTeamChatDialog.test.tsx"
+      "ui/src/components/NewTeamChatDialog.test.tsx",
+      "ui/src/lib/team-chats.test.ts"
     ],
     "enableConferenceRoomChat": [
       "server/src/__tests__/board-chat-route-feature-flag.test.ts",

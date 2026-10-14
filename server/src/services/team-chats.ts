@@ -424,8 +424,9 @@ export function teamChatService(
         const nameOf = await names([author]);
         const authorName = nameOf(author.type, author.id);
         const [company] = await db.select({ prefix: companies.issuePrefix }).from(companies).where(eq(companies.id, issue.companyId));
-        const ref = issue.identifier ?? issue.id;
-        const url = chat ? `/${company?.prefix ?? ""}/messages/${ref}` : `/${company?.prefix ?? ""}/issues/${ref}`;
+        const url = chat
+          ? `/${company?.prefix ?? ""}/messages/${issue.id}`
+          : `/${company?.prefix ?? ""}/issues/${issue.identifier ?? issue.id}`;
         let sent = 0;
         for (const [userId, why] of due) {
           lastPushAt.set(`${userId}:${issue.id}`, at);
