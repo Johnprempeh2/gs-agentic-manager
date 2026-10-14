@@ -50,6 +50,7 @@ import { errorHandler } from "../middleware/index.js";
 import { agentRoutes } from "../routes/agents.js";
 import { issueRoutes } from "../routes/issues.js";
 import { heartbeatService } from "../services/heartbeat.js";
+import { instanceSettingsService } from "../services/instance-settings.js";
 import { LOW_TRUST_QUARANTINED_BODY } from "../services/source-trust.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
@@ -857,6 +858,10 @@ describeEmbeddedPostgres(
         "paperclip-low-trust-red-team-routes-",
       );
       db = createDb(tempDb.connectionString);
+      // The bulk external-object summary route answers 403 not_entitled while
+      // External Objects is off (GRE-1090), which would hide the scope check
+      // this suite proves.
+      await instanceSettingsService(db).updateExperimental({ enableExternalObjects: true });
     }, 20_000);
 
     afterEach(async () => {

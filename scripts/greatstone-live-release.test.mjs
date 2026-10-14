@@ -443,7 +443,7 @@ function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
   git(root, "clone", "--quiet", origin, dev);
   configure(dev);
   mkdirSync(join(dev, "scripts"));
-  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh"]) {
+  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh", "greatstone-test-gate.sh"]) {
     copyFileSync(join(scriptsDir, f), join(dev, "scripts", f));
   }
   const addFiles = (files) => {
@@ -474,6 +474,13 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
   const live = join(root, "live");
   git(root, "clone", "--quiet", origin, live);
   git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
+  // The full test suite passed on the candidate (scripts/greatstone-test-gate.sh).
+  const passGate = (tag) => {
+    mkdirSync(join(root, "test-gate", "passed"), { recursive: true });
+    const commit = git(dev, "rev-parse", `${tag}^{commit}`);
+    writeFileSync(join(root, "test-gate", "passed", commit), `commit=${commit}\ntag=${tag}\npassed_at=2026-09-29T07:00:00Z\n`);
+  };
+  passGate("rc-2026-09-29.1");
   const db = join(root, "data", "instances", "default", "db");
   mkdirSync(db, { recursive: true });
   writeFileSync(join(db, "postmaster.pid"), `${process.pid}\n/x\n0\n5432\n`);
@@ -491,7 +498,7 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
     GSAM_RELEASE_POLL_SECONDS: "0.05",
     PATH: `${bin}:${process.env.PATH}`,
   });
-  return { root, origin, dev, live, env };
+  return { root, origin, dev, live, env, passGate };
 }
 
 test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
@@ -514,11 +521,12 @@ test("a release that fails after tagging pushes no live tag and deletes the loca
 // silently take live back. Live here is on the rc-2026-09-29.1 commit. A check
 // that passes stops later, at the failing `pnpm install`.
 test("a release refuses a candidate older than live; a newer candidate and a rollback pass", (t) => {
-  const { dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  const { dev, live, env, passGate } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
   git(dev, "tag", "-a", "live-2026-09-29.1", "-m", "Current release", "rc-2026-09-29.1^{commit}");
   git(dev, "tag", "-a", "rc-2026-09-28.1", "-m", "Older candidate", "live-2026-09-01.1^{commit}");
   git(dev, "commit", "--quiet", "--allow-empty", "-m", "newer");
   git(dev, "tag", "-a", "rc-2026-09-30.1", "-m", "Newer candidate");
+  passGate("rc-2026-09-30.1");
   git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-29.1");
   git(live, "fetch", "--quiet", "--tags", "origin");
   git(live, "checkout", "--quiet", "--detach", "live-2026-09-29.1");
@@ -540,6 +548,52 @@ test("a release refuses a candidate older than live; a newer candidate and a rol
   const rollback = release("live-2026-09-01.1");
   assert.doesNotMatch(rollback.stderr, /older than live/, rollback.stderr);
   assert.match(rollback.stdout, /^Live checkout is on live-2026-09-01\.1 /m, rollback.stderr);
+});
+
+// The release test gate: Fork CI runs no tests on pull requests, so an rc tag
+// is released only when scripts/greatstone-test-gate.sh passed the full suite
+// on its exact commit, or with a logged --skip-test-gate "<reason>".
+test("a release refuses a candidate with no test gate pass before anything moves; the override is logged", (t) => {
+  const { root, dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  rmSync(join(root, "test-gate"), { recursive: true, force: true });
+  const commit = git(dev, "rev-parse", "rc-2026-09-29.1^{commit}");
+  const release = (...args) => spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), ...args], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+
+  const refused = release("rc-2026-09-29.1");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, new RegExp(`^release: the full test suite has not passed on rc-2026-09-29\\.1 \\(${commit}\\).*Run it first: scripts/greatstone-test-gate\\.sh rc-2026-09-29\\.1 .*--skip-test-gate .*Nothing was changed\\.$`, "m"));
+  assert.doesNotMatch(refused.stdout, /Backed up|Tagged/);
+  assert.equal(existsSync(join(root, "gs-db.log")), false);
+  assert.equal(git(dev, "tag", "--list", "live-*"), "live-2026-09-01.1");
+  assert.equal(git(live, "describe", "--tags", "--exact-match", "HEAD"), "live-2026-09-01.1");
+
+  // A pass marker for another commit does not count.
+  mkdirSync(join(root, "test-gate", "passed"), { recursive: true });
+  writeFileSync(join(root, "test-gate", "passed", git(dev, "rev-parse", "live-2026-09-01.1^{commit}")), "passed_at=x\n");
+  assert.equal(release("rc-2026-09-29.1").status, 1);
+
+  for (const bad of [["--skip-test-gate", "rc-2026-09-29.1"], ["--skip-test-gate", " ", "rc-2026-09-29.1"]]) {
+    const run = release(...bad);
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /^release: --skip-test-gate needs a reason first/m);
+  }
+  assert.equal(existsSync(join(root, "test-gate", "overrides.log")), false);
+
+  const skipped = release("--skip-test-gate", "live is down; GRE-1 hotfix", "rc-2026-09-29.1");
+  assert.match(skipped.stdout, new RegExp(`^Test gate SKIPPED for rc-2026-09-29\\.1 \\(${commit}\\): live is down; GRE-1 hotfix\\.`, "m"), skipped.stderr);
+  // Past the gate: it goes on to the backup and the tag (and stops at the failing install).
+  assert.match(skipped.stdout, /^Tagged rc-2026-09-29\.1 as /m);
+  const [line, ...more] = readFileSync(join(root, "test-gate", "overrides.log"), "utf8").trim().split("\n");
+  assert.equal(more.length, 0);
+  assert.deepEqual(line.split("\t").slice(1, 3).concat(line.split("\t")[4]), ["rc-2026-09-29.1", commit, "live is down; GRE-1 hotfix"]);
+});
+
+test("a release with a test gate pass says so and needs no override", (t) => {
+  const { root, dev, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  const run = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+  assert.match(run.stdout, /^Test gate: the full test suite passed on rc-2026-09-29\.1 \([0-9a-f]{40}\) at 2026-09-29T07:00:00Z$/m, run.stderr);
+  assert.match(run.stdout, /^Tagged rc-2026-09-29\.1 as /m);
+  assert.equal(existsSync(join(root, "test-gate", "overrides.log")), false);
 });
 
 // GRE-930: the live database has a random password. The backup gets it as

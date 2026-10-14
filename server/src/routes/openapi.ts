@@ -343,6 +343,66 @@ import {
   resumeBillingRenewalSchema,
   upsertBillingAccountSchema,
 } from "@greatstone/shared/billing-account";
+import {
+  acceptCrmSyncConflictProposalSchema,
+  clientFilesQuerySchema,
+  clientFilesSearchSchema,
+  createClientEvidenceSchema,
+  createClientJourneyDeliverableSchema,
+  createCrmSyncBindingSchema,
+  createCrmSyncSuggestionSchema,
+  createIntelligenceRecommendationSchema,
+  createIntelligenceRecommendationTaskSchema,
+  createOrganisationContactSchema,
+  createOrganisationSchema,
+  createPipelineFieldSchema,
+  createWebsitePropertySchema,
+  createWorkflowTemplateSchema,
+  dismissCrmSyncConflictSchema,
+  importOrganisationsFromPipedriveSchema,
+  listCrmSyncConflictsQuerySchema,
+  listCrmSyncEventsQuerySchema,
+  listOrganisationsQuerySchema,
+  listPipelineFieldsQuerySchema,
+  mailboxAgentsSchema,
+  mailboxConnectSchema,
+  mailboxOAuthAppSchema,
+  mailboxOAuthStartSchema,
+  mailboxReadSchema,
+  mailboxSaveSchema,
+  mailboxSearchSchema,
+  memoryReviewQueueQuerySchema,
+  memoryStewardActionSchema,
+  pauseCompanySchema,
+  proposeCrmSyncConflictResolutionSchema,
+  replaceCrmSyncFieldMapSchema,
+  resolveCrmSyncConflictSchema,
+  resumeCompanySchema,
+  runCrmSyncBindingSchema,
+  setAgentPipelineLevelSchema,
+  setMemoryScopeStewardSchema,
+  startWebsiteGoogleConnectSchema,
+  startWorkflowTemplateSchema,
+  updateClientJourneyDeliverableSchema,
+  updateCrmSyncBindingSchema,
+  updateIntelligenceRecommendationSchema,
+  updateOrganisationContactSchema,
+  updateOrganisationSchema,
+  updatePipelineFieldSchema,
+  updateWebsitePropertySchema,
+  updateWorkflowTemplateSchema,
+  upsertBoardSnapshotSchema,
+  upsertIntelligenceReportSchema,
+} from "@greatstone/shared";
+import {
+  clientSupportInboxSchema,
+  fleetSupportAttachmentRequestSchema,
+} from "@greatstone/shared/fleet-support";
+import {
+  createCaseContactSchema,
+  createProjectLinkSchema,
+  updateCaseContactSchema,
+} from "./pipelines-schemas.js";
 
 type JsonSchema = Record<string, unknown>;
 type OpenApiResponse = Record<string, unknown>;
@@ -1340,6 +1400,10 @@ const RUNTIME_TOOLS_OPERATIONS = new Set([
 ]);
 
 const PUBLIC_OPERATIONS = new Set([
+  // OAuth Client ID Metadata Document: authorization servers fetch it server-to-server.
+  "GET /api/tools/oauth/client-metadata",
+  "POST /api/fleet/spoke/support-sync",
+  "POST /api/fleet/spoke/support-attachment",
   "GET /api/agent-avatars/{version}/{palette}/{file}",
   // Fleet spokes (GRE-1082): no session; the signed message is the authorization.
   "POST /api/fleet/spoke/register",
@@ -1379,6 +1443,41 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/pause",
+  "POST /api/companies/{companyId}/resume",
+  "PUT /api/companies/{companyId}/memory/stewards/{scopeId}",
+  "POST /api/tool-connections/{connectionId}/reenable-after-pause",
+  "POST /api/companies/{companyId}/client-support/tickets",
+  "PATCH /api/companies/{companyId}/client-support/tickets/{ticketId}",
+  "POST /api/companies/{companyId}/client-support/tickets/{ticketId}/attachments",
+  "POST /api/companies/{companyId}/crm-sync/bindings",
+  "PATCH /api/crm-sync/bindings/{bindingId}",
+  "DELETE /api/crm-sync/bindings/{bindingId}",
+  "PUT /api/crm-sync/bindings/{bindingId}/field-map",
+  "POST /api/crm-sync/bindings/{bindingId}/sync",
+  "POST /api/crm-sync/conflicts/{conflictId}/resolve",
+  "POST /api/crm-sync/conflicts/{conflictId}/accept-proposal",
+  "POST /api/crm-sync/conflicts/{conflictId}/dismiss",
+  "PATCH /api/intelligence/recommendations/{id}",
+  "POST /api/intelligence/recommendations/{id}/task",
+  "GET /api/companies/{companyId}/mailbox-oauth/apps",
+  "PUT /api/companies/{companyId}/mailbox-oauth/apps/{provider}",
+  "POST /api/companies/{companyId}/mailbox-oauth/start",
+  "GET /api/mailbox-oauth/callback",
+  "POST /api/companies/{companyId}/mailboxes",
+  "PUT /api/companies/{companyId}/mailboxes/{mailboxId}/agents",
+  "DELETE /api/companies/{companyId}/mailboxes/{mailboxId}",
+  "POST /api/companies/{companyId}/mailboxes/{mailboxId}/test",
+  "POST /api/companies/{companyId}/organisations/import/pipedrive",
+  "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
+  "POST /api/companies/{companyId}/website/properties",
+  "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
+  "POST /api/companies/{companyId}/website/properties/{propertyId}/google/connect",
+  "POST /api/companies/{companyId}/website/properties/{propertyId}/google/disconnect",
+  "POST /api/companies/{companyId}/website/properties/{propertyId}/pull",
+  "GET /api/website/google/callback",
+  "POST /api/companies/{companyId}/workflow-templates",
+  "PATCH /api/workflow-templates/{id}",
   "GET /api/companies/{companyId}/releases",
   "POST /api/companies/{companyId}/releases/promote",
   "POST /api/companies/{companyId}/releases/release",
@@ -1613,6 +1712,11 @@ const BOARD_ONLY_OPERATIONS = new Set([
 ]);
 
 const INSTANCE_ADMIN_OPERATIONS = new Set([
+  "PUT /api/fleet/instances/{id}/support-queue",
+  "POST /api/instance/entitlements/sync",
+  "GET /api/instance/client-support/outbox",
+  "GET /api/instance/client-support/attachments/{attachmentId}/content",
+  "POST /api/instance/client-support/inbox",
   "GET /api/fleet/instances",
   "POST /api/fleet/instances",
   "POST /api/fleet/instances/{id}/registration-code",
@@ -2141,6 +2245,24 @@ registry.registerPath({
   summary: "Delete a company",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/pause",
+  tags: ["companies"],
+  summary: "Pause a company: stops runs, wakes, routines and every connection (owners and admins)",
+  body: pauseCompanySchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/resume",
+  tags: ["companies"],
+  summary: "Resume a paused company with a named operator and reason; turns no connection back on (owners and admins)",
+  body: resumeCompanySchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -3297,6 +3419,15 @@ registry.registerPath({
   summary: "Triage a support ticket or record its first response",
   request: { params: z.object({ issueId: z.string() }), body: jsonBody(z.object({}).passthrough()) },
   responses: { 200: r.ok(), 404: r.notFound, ...supportResponses },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/issues/{issueId}/support-ticket/client-reply",
+  tags: ["support"],
+  summary: "Queue a reply for the client of a ticket from their instance; it goes out on the instance's next sync (board, or the ticket's owner, triage or cover agent)",
+  request: { params: z.object({ issueId: z.string() }), body: jsonBody(z.object({ body: z.string().min(1) }).strict()) },
+  responses: { 201: r.ok(), 404: r.notFound, ...supportResponses },
 });
 
 const summarySlotParams = z.object({
@@ -5685,6 +5816,44 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
+// Shared memory review queue and stewards per scope (GRE-1089)
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/review-queue",
+  tags: ["memory"],
+  summary: "List the proposals waiting for review that the caller may act on, with filters",
+  request: { params: memoryCompanyParams, query: memoryReviewQueueQuerySchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/steward-action",
+  tags: ["memory"],
+  summary: "Take a review action on a proposal (reviewers and the scope's stewards); 409 when the card changed since it was opened, 422 for sensitive content",
+  request: { params: memoryRecordParams, body: jsonBody(memoryStewardActionSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/stewards",
+  tags: ["memory"],
+  summary: "List the memory scopes the caller may see with their primary and backup stewards",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/memory/stewards/{scopeId}",
+  tags: ["memory"],
+  summary: "Name the primary and backup steward of an organization or project scope (owners and admins)",
+  request: { params: z.object({ companyId: z.string(), scopeId: z.string() }), body: jsonBody(setMemoryScopeStewardSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
 // ─── Goals ───────────────────────────────────────────────────────────────────
 
 registry.registerPath({
@@ -7772,6 +7941,22 @@ registry.registerPath({
   summary:
     "Unarchive the Cloud-pinned primary company (idempotent); used by the Cloud control plane while restoring an archived stack",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/instance/entitlements",
+  tags: ["instance"],
+  summary: "Get the instance's effective feature entitlements (board users)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/instance/entitlements/sync",
+  tags: ["instance"],
+  summary: "Re-read the entitlement file now instead of waiting for the timer (instance admins); 409 when entitlements are not configured",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 409: r.conflict },
 });
 
 // ─── Board chat (Conference Room Chat, experimental) ──────────────────────────
@@ -10630,6 +10815,33 @@ registry.registerPath({
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
 });
 
+registry.registerPath({
+  method: "put",
+  path: "/api/fleet/instances/{id}/support-queue",
+  tags: ["fleet"],
+  summary: "Set the support queue an instance's Get help tickets land in; null stops intake",
+  request: { params: fleetIdParams, body: jsonBody(z.object({ supportQueueId: z.string().uuid().nullable() }).strict()) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/support-sync",
+  tags: ["fleet"],
+  summary: "Spoke: send its support tickets and receive their status and replies (only its own tickets)",
+  request: { body: { content: { "application/json": { schema: fleetSignedBody } } } },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/fleet/spoke/support-attachment",
+  tags: ["fleet"],
+  summary: "Spoke: upload one file for one of its own support tickets",
+  request: { body: jsonBody(fleetSupportAttachmentRequestSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 404: r.notFound, 409: r.conflict },
+});
+
 // ─── LLM text endpoints ───────────────────────────────────────────────────────
 
 registry.registerPath({
@@ -12494,6 +12706,22 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "post",
+  path: "/api/tool-connections/{connectionId}/reenable-after-pause",
+  tags: ["tool-access"],
+  summary: "Turn back on a connection a company pause turned off; it runs a health check first and stays off if that fails (creator or connection manager)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/tools/oauth/client-metadata",
+  tags: ["tool-access"],
+  summary: "Get this deployment's OAuth Client ID Metadata Document (public; no company or secret data)",
+  responses: { 200: r.ok() },
+});
+
+registerCurrentRoute({
+  method: "post",
   path: "/api/tool-connections/{connectionId}/health-check",
   tags: ["tool-access"],
   summary: "Run a tool connection health check",
@@ -13290,6 +13518,866 @@ registerCurrentRoute({
     search: z.string().optional(),
     cursor: z.string().optional(),
   }),
+});
+
+// ─── Pipelines: typed fields, case contacts, project links, client files ─────
+// Reads need pipeline or case access; changes also need Work cases (or
+// Administer for fields). Agents with the same grants may call them.
+
+const pipelineReadResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+const pipelineCreateResponses = { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/pipelines/{pipelineId}/fields",
+  tags: ["pipelines"],
+  summary: "List a pipeline's typed fields; archived ones only with includeArchived",
+  query: listPipelineFieldsQuerySchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/pipelines/{pipelineId}/fields",
+  tags: ["pipelines"],
+  summary: "Add a typed field to a pipeline (pipeline writers)",
+  body: createPipelineFieldSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/pipelines/{pipelineId}/fields/{fieldId}",
+  tags: ["pipelines"],
+  summary: "Edit, archive or restore a pipeline's typed field; fields are never deleted (pipeline writers)",
+  body: updatePipelineFieldSchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/project-links",
+  tags: ["pipelines"],
+  summary: "List the projects linked to a pipeline case, with their goals; only projects the caller may read",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/project-links",
+  tags: ["pipelines"],
+  summary: "Link a project in the case's own company to a pipeline case (Work cases); 409 when already linked",
+  body: createProjectLinkSchema,
+  responses: { ...pipelineCreateResponses, 409: r.conflict },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{caseId}/project-links/{projectId}",
+  tags: ["pipelines"],
+  summary: "Unlink a project from a pipeline case (Work cases)",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/projects/{id}/pipeline-cases",
+  tags: ["pipelines"],
+  summary: "List the live pipeline cases a project is linked to, with pipeline and stage",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/contacts",
+  tags: ["pipelines"],
+  summary: "List the contacts on a pipeline case",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/contacts",
+  tags: ["pipelines"],
+  summary: "Add a contact to a pipeline case (Work cases)",
+  body: createCaseContactSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/cases/{caseId}/contacts/{contactId}",
+  tags: ["pipelines"],
+  summary: "Edit a contact on a pipeline case (Work cases)",
+  body: updateCaseContactSchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{caseId}/contacts/{contactId}",
+  tags: ["pipelines"],
+  summary: "Remove a contact from a pipeline case (Work cases)",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/files",
+  tags: ["pipelines"],
+  summary: "List a client's files on a pipeline case: evidence and deliverables, with a name search",
+  query: clientFilesSearchSchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/evidence",
+  tags: ["pipelines"],
+  summary: "List the evidence (the client's own material) filed on a pipeline case",
+  query: clientFilesSearchSchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/evidence/candidates",
+  tags: ["pipelines"],
+  summary: "List files that could be filed as evidence on a pipeline case",
+  query: clientFilesSearchSchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/evidence",
+  tags: ["pipelines"],
+  summary: "File evidence on a pipeline case (Work cases, and read access to the source task)",
+  body: createClientEvidenceSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{caseId}/evidence/{evidenceId}",
+  tags: ["pipelines"],
+  summary: "Remove evidence from a pipeline case (Work cases)",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/journey",
+  tags: ["pipelines"],
+  summary: "Get a client's journey by stage: each stage's templates and the deliverables filed under it",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/portal",
+  tags: ["pipelines"],
+  summary: "Get the portal view of a client's journey: client-facing final deliverables of completed stages, outcome fields only",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/journey/deliverables",
+  tags: ["pipelines"],
+  summary: "File a deliverable under a stage of a client's journey (Work cases)",
+  body: createClientJourneyDeliverableSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/cases/{caseId}/journey/deliverables/{linkId}",
+  tags: ["pipelines"],
+  summary: "Move or flag a deliverable filed under a journey stage (Work cases)",
+  body: updateClientJourneyDeliverableSchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{caseId}/journey/deliverables/{linkId}",
+  tags: ["pipelines"],
+  summary: "Remove a deliverable from a journey stage (Work cases)",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/client-files",
+  tags: ["pipelines"],
+  summary: "List client files by client (caseId) or by project (projectId), with a name search",
+  query: clientFilesQuerySchema,
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/pipeline-access",
+  tags: ["pipelines"],
+  summary: "Get the pipeline access matrix and the viewer's own pipeline write rights",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/pipeline-access/agents/{agentId}",
+  tags: ["pipelines"],
+  summary: "Set an agent's pipeline access level (board users with users:manage_permissions)",
+  body: setAgentPipelineLevelSchema,
+  responses: pipelineReadResponses,
+});
+
+// ─── Organisations (CRM) ──────────────────────────────────────────────────────
+// Everyone in the company reads; writers need Work cases. Pipelines must be enabled.
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisations",
+  tags: ["organisations"],
+  summary: "List the company's organisations, with a search and status filter",
+  query: listOrganisationsQuerySchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations",
+  tags: ["organisations"],
+  summary: "Create an organisation (Work cases)",
+  body: createOrganisationSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/import/pipedrive",
+  tags: ["organisations"],
+  summary: "Import organisations from a Pipedrive connection (company owners); 409 while an import runs",
+  body: importOrganisationsFromPipedriveSchema,
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+    502: { description: "Pipedrive error", content: { "application/json": { schema: ErrorSchema } } },
+    503: { description: "Pipedrive rate limit reached", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisations/{organisationId}",
+  tags: ["organisations"],
+  summary: "Get an organisation with its contacts",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/history",
+  tags: ["organisations"],
+  summary: "Get an organisation's change history",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/organisations/{organisationId}",
+  tags: ["organisations"],
+  summary: "Edit an organisation (Work cases)",
+  body: updateOrganisationSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/archive",
+  tags: ["organisations"],
+  summary: "Archive an organisation (Work cases)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/contacts",
+  tags: ["organisations"],
+  summary: "Add a contact to an organisation (Work cases)",
+  body: createOrganisationContactSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/contacts/{contactId}",
+  tags: ["organisations"],
+  summary: "Edit an organisation's contact (Work cases)",
+  body: updateOrganisationContactSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/{organisationId}/contacts/{contactId}/archive",
+  tags: ["organisations"],
+  summary: "Archive an organisation's contact (Work cases)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// ─── CRM sync ─────────────────────────────────────────────────────────────────
+// Reads for anyone in the company (another company's ids answer 404). Binding
+// changes and conflict decisions are board users; agents with Work cases may
+// propose resolutions and suggest changes. Pipelines must be enabled.
+
+const crmSyncResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-sync/bindings",
+  tags: ["crm-sync"],
+  summary: "List the company's CRM sync bindings",
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/crm-sync/bindings",
+  tags: ["crm-sync"],
+  summary: "Bind a CRM container to a pipeline with a field map (board users)",
+  body: createCrmSyncBindingSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/crm-sync/bindings/{bindingId}",
+  tags: ["crm-sync"],
+  summary: "Get a CRM sync binding",
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/crm-sync/bindings/{bindingId}",
+  tags: ["crm-sync"],
+  summary: "Change a CRM sync binding's direction or status (board users)",
+  body: updateCrmSyncBindingSchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/crm-sync/bindings/{bindingId}",
+  tags: ["crm-sync"],
+  summary: "Delete a CRM sync binding and dismiss its open conflicts (board users)",
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/crm-sync/bindings/{bindingId}/field-map",
+  tags: ["crm-sync"],
+  summary: "Get a CRM sync binding's field map",
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/crm-sync/bindings/{bindingId}/field-map",
+  tags: ["crm-sync"],
+  summary: "Replace a CRM sync binding's field map (board users)",
+  body: replaceCrmSyncFieldMapSchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/crm-sync/bindings/{bindingId}/sync",
+  tags: ["crm-sync"],
+  summary: "Queue a sync run for a binding now (board users)",
+  body: runCrmSyncBindingSchema,
+  responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/crm-sync/bindings/{bindingId}/events",
+  tags: ["crm-sync"],
+  summary: "List a CRM sync binding's events, newest first",
+  query: listCrmSyncEventsQuerySchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-sync/conflicts",
+  tags: ["crm-sync"],
+  summary: "List the company's CRM sync conflicts and suggestions (open by default)",
+  query: listCrmSyncConflictsQuerySchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/crm-sync/conflicts/{conflictId}/resolve",
+  tags: ["crm-sync"],
+  summary: "Resolve a CRM sync conflict (a person with Administer on the bound pipeline)",
+  body: resolveCrmSyncConflictSchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/crm-sync/conflicts/{conflictId}/accept-proposal",
+  tags: ["crm-sync"],
+  summary: "Accept the proposed resolution of a CRM sync conflict (a person with Administer on the bound pipeline)",
+  body: acceptCrmSyncConflictProposalSchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/crm-sync/conflicts/{conflictId}/propose",
+  tags: ["crm-sync"],
+  summary: "Propose a resolution for a CRM sync conflict without changing either side (Work cases; agents too)",
+  body: proposeCrmSyncConflictResolutionSchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/crm-sync/conflicts/{conflictId}/dismiss",
+  tags: ["crm-sync"],
+  summary: "Dismiss a CRM sync conflict (Administer), or withdraw your own suggestion",
+  body: dismissCrmSyncConflictSchema,
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/crm-sync/suggestions",
+  tags: ["crm-sync"],
+  summary: "Suggest a change to a CRM-owned field of a case; it waits for a person before write-back (Work cases; agents too)",
+  body: createCrmSyncSuggestionSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/crm-sync/links",
+  tags: ["crm-sync"],
+  summary: "List a case's links to CRM records",
+  responses: crmSyncResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/crm-sync/status",
+  tags: ["crm-sync"],
+  summary: "Get a case's CRM sync status",
+  responses: crmSyncResponses,
+});
+
+// ─── Intelligence (Daily Pulse and AI Intelligence Hub) ───────────────────────
+// Everyone in the company reads. Board users write, or an agent with the
+// intelligence:write grant. Accept, dismiss and create-task are board actions.
+// enableIntelligence gates every route: off answers 403 not_entitled.
+
+const intelligenceResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/reports",
+  tags: ["intelligence"],
+  summary: "List intelligence reports, newest first, optionally by kind",
+  query: z.object({ kind: z.string().optional(), limit: z.coerce.number().int().min(1).max(366).optional() }),
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/reports/{reportDate}",
+  tags: ["intelligence"],
+  summary: "Get the intelligence report for one date (YYYY-MM-DD)",
+  query: z.object({ kind: z.string().optional() }),
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/intelligence/reports/{reportDate}",
+  tags: ["intelligence"],
+  summary: "Write the intelligence report for one date as a draft or published (board users, or agents with intelligence:write)",
+  body: upsertIntelligenceReportSchema,
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/boards",
+  tags: ["intelligence"],
+  summary: "Get the leaderboards with movement against an earlier snapshot",
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/boards/history",
+  tags: ["intelligence"],
+  summary: "Get each leaderboard's recent snapshots, oldest first (date caps the newest; limit 2 to 90, default 12)",
+  query: z.object({ date: z.string().optional(), limit: z.string().optional() }),
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/intelligence/boards/{board}/snapshots/{snapshotDate}",
+  tags: ["intelligence"],
+  summary: "Write one leaderboard's snapshot for a date (board users, or agents with intelligence:write)",
+  body: upsertBoardSnapshotSchema,
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/intelligence/recommendations",
+  tags: ["intelligence"],
+  summary: "List intelligence recommendations",
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/intelligence/recommendations",
+  tags: ["intelligence"],
+  summary: "Add an intelligence recommendation (board users, or agents with intelligence:write); 409 for a duplicate title",
+  body: createIntelligenceRecommendationSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/intelligence/recommendations/{id}",
+  tags: ["intelligence"],
+  summary: "Accept, dismiss or reopen an intelligence recommendation (board users)",
+  body: updateIntelligenceRecommendationSchema,
+  responses: intelligenceResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/intelligence/recommendations/{id}/task",
+  tags: ["intelligence"],
+  summary: "Create a task from an intelligence recommendation and accept it (board users); 200 when it already has one",
+  body: createIntelligenceRecommendationTaskSchema,
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// ─── Mailboxes (read-only) ────────────────────────────────────────────────────
+// Board users with tools:manage_connections add and remove them; agents reach
+// only the mailboxes installed for them.
+
+const mailboxResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/mailbox-oauth/apps",
+  tags: ["mailboxes"],
+  summary: "List the mailbox sign-in OAuth apps and the redirect URI to register (connection managers)",
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/mailbox-oauth/apps/{provider}",
+  tags: ["mailboxes"],
+  summary: "Save the OAuth app for one mailbox sign-in provider (connection managers)",
+  body: mailboxOAuthAppSchema,
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailbox-oauth/start",
+  tags: ["mailboxes"],
+  summary: "Start a mailbox OAuth sign-in and get the provider URL (connection managers)",
+  body: mailboxOAuthStartSchema,
+  responses: { ...mailboxResponses, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/mailbox-oauth/callback",
+  tags: ["mailboxes"],
+  summary: "Complete a mailbox OAuth sign-in",
+  description: "Requires the same signed-in board user who started it and single-use state. Always answers with a redirect back to the app, never a 4xx.",
+  request: { query: z.object({ state: z.string().optional(), code: z.string().optional(), error: z.string().optional() }) },
+  responses: { 303: { description: "Redirect back to the app's mailboxes page with the outcome" } },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/mailboxes",
+  tags: ["mailboxes"],
+  summary: "List mailboxes: all of them for connection managers, the installed ones for an agent",
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailboxes",
+  tags: ["mailboxes"],
+  summary: "Connect a read-only mailbox (connection managers)",
+  body: mailboxConnectSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/agents",
+  tags: ["mailboxes"],
+  summary: "Set which agents may read a mailbox (connection managers)",
+  body: mailboxAgentsSchema,
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}",
+  tags: ["mailboxes"],
+  summary: "Remove a mailbox (connection managers)",
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/test",
+  tags: ["mailboxes"],
+  summary: "Test a mailbox connection (connection managers)",
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/folders",
+  tags: ["mailboxes"],
+  summary: "List a mailbox's folders (connection managers, or an agent it is installed for)",
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/search",
+  tags: ["mailboxes"],
+  summary: "Search a mailbox (connection managers, or an agent it is installed for)",
+  body: mailboxSearchSchema,
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/read",
+  tags: ["mailboxes"],
+  summary: "Read one message from a mailbox (connection managers, or an agent it is installed for)",
+  body: mailboxReadSchema,
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/save",
+  tags: ["mailboxes"],
+  summary: "Save a message (as .eml) or one attachment from a mailbox onto a task (connection managers, or an agent it is installed for)",
+  body: mailboxSaveSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+// ─── Website view ─────────────────────────────────────────────────────────────
+// enableWebsiteView gates every route: off answers 403 not_entitled.
+
+const websiteResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website",
+  tags: ["website"],
+  summary: "Get the website overview: its properties and whether Google sign-in is available",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/website/properties",
+  tags: ["website"],
+  summary: "Add a website property (owners and admins)",
+  body: createWebsitePropertySchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}",
+  tags: ["website"],
+  summary: "Edit a website property (owners and admins)",
+  body: updateWebsitePropertySchema,
+  responses: websiteResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}/report",
+  tags: ["website"],
+  summary: "Get a website property's latest stored report, last pull time and errors",
+  responses: websiteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}/google/connect",
+  tags: ["website"],
+  summary: "Start Google sign-in for a website property and get the authorization URL (owners and admins)",
+  body: startWebsiteGoogleConnectSchema,
+  responses: { ...websiteResponses, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}/google/disconnect",
+  tags: ["website"],
+  summary: "Disconnect Google from a website property and remove its token from the vault (owners and admins)",
+  responses: websiteResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/website/properties/{propertyId}/pull",
+  tags: ["website"],
+  summary: "Pull a website property's data now (board users)",
+  responses: websiteResponses,
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/website/google/callback",
+  tags: ["website"],
+  summary: "Complete Google sign-in for a website property",
+  description: "Called by Google after consent. Only the board user who started the sign-in may finish it, into the company it was started for; redirects back to the app.",
+  request: { query: z.object({ state: z.string(), code: z.string().optional(), error: z.string().optional() }) },
+  responses: { 302: { description: "Redirect back to the website page with the outcome" }, 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+// ─── Workflow templates ───────────────────────────────────────────────────────
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/workflow-templates",
+  tags: ["workflow-templates"],
+  summary: "List the company's workflow templates",
+  query: z.object({ includeArchived: z.enum(["true", "false"]).optional() }),
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/workflow-templates",
+  tags: ["workflow-templates"],
+  summary: "Create a workflow template (board members with tasks:assign)",
+  body: createWorkflowTemplateSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/workflow-templates/{id}",
+  tags: ["workflow-templates"],
+  summary: "Get a workflow template",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/workflow-templates/{id}",
+  tags: ["workflow-templates"],
+  summary: "Edit or archive a workflow template (board members with tasks:assign)",
+  body: updateWorkflowTemplateSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/workflow-templates/{id}/start",
+  tags: ["workflow-templates"],
+  summary: "Start a workflow template: create its coordinator and step tasks (the caller must be allowed to assign each step)",
+  body: startWorkflowTemplateSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+// ─── Client support ("Get help" in a client instance) ─────────────────────────
+// The client's board users open, edit and attach files to tickets; the host
+// script reads the outbox and writes back the hub's answer as an instance admin.
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/client-support/tickets",
+  tags: ["support"],
+  summary: "List the company's Get help tickets",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/client-support/tickets",
+  tags: ["support"],
+  summary: "Open a Get help ticket or upgrade request (board users)",
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/client-support/tickets/{ticketId}",
+  tags: ["support"],
+  summary: "Edit a Get help ticket's title or summary (board users)",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/client-support/tickets/{ticketId}/attachments",
+  tags: ["support"],
+  summary: "Attach a file (base64) to a Get help ticket (board users)",
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/instance/client-support/outbox",
+  tags: ["support"],
+  summary: "Read the Get help outbox the host script sends to the hub (instance admins)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/instance/client-support/attachments/{attachmentId}/content",
+  tags: ["support"],
+  summary: "Read one outgoing Get help attachment's content (instance admins)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/instance/client-support/inbox",
+  tags: ["support"],
+  summary: "Write back the hub's answer: what was sent, what was refused, and ticket status and replies (instance admins)",
+  body: clientSupportInboxSchema,
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
 });
 
 // Every experimental REST route remains discoverable while its runtime feature

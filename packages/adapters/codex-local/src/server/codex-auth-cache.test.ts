@@ -1,7 +1,7 @@
 import { chmod, lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   assertAccountHomeCacheDirStillValid,
@@ -395,9 +395,10 @@ describe("codex auth cache store", () => {
         events.push("first-exit");
         return "first";
       });
-      // Give the first caller a chance to acquire the lock and enter its
-      // callback before the second caller starts racing for the same lock.
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      // Wait until the first caller holds the lock and is in its callback
+      // before the second caller races for it. A fixed 20ms sleep was not
+      // always enough under load (the release test gate runs 13 lanes at once).
+      await vi.waitFor(() => expect(events).toContain("first-enter"));
       const secondCall = withCodexAccountHomePromotionLock(env, "company-shared", async () => {
         events.push("second-enter");
         events.push("second-exit");
@@ -432,7 +433,7 @@ describe("codex auth cache store", () => {
         await companyAGate;
         events.push("a-exit");
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.waitFor(() => expect(events).toContain("a-enter"));
       const companyBCall = withCodexAccountHomePromotionLock(env, "company-b", async () => {
         events.push("b-enter");
         events.push("b-exit");
@@ -469,7 +470,7 @@ describe("codex auth cache store", () => {
         events.push("first-exit");
         return "first";
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.waitFor(() => expect(events).toContain("first-enter"));
       const secondCall = withAccountHomeSecretMutationLock(env, "company-shared", async () => {
         events.push("second-enter");
         events.push("second-exit");
@@ -502,7 +503,7 @@ describe("codex auth cache store", () => {
         await companyAGate;
         events.push("a-exit");
       });
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await vi.waitFor(() => expect(events).toContain("a-enter"));
       const companyBCall = withAccountHomeSecretMutationLock(env, "company-b", async () => {
         events.push("b-enter");
         events.push("b-exit");

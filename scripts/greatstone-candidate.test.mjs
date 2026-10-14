@@ -3,7 +3,7 @@
 // temp folder; nothing under ~/GSAM is read or written.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -79,6 +79,38 @@ test("--json prints the changes for the live server and --print makes no tag", (
     { pr: 41, issue: "GRE-72", kind: "fix", line: "Flag a blocked issue (#41, GRE-72)" },
   ]);
   assert.equal(spawnSync("git", ["rev-parse", "--verify", "--quiet", "refs/tags/rc-2026-09-02.1"], { cwd: dir }).status, 1);
+});
+
+// The cut runs the release test gate on the new tag; the release refuses an rc
+// tag whose commit has no pass marker. The fake repo's lanes are one command.
+test("cutting a candidate runs the test gate on it; --no-test-gate only cuts", (t) => {
+  const dir = fakeRepo();
+  const root = mkdtempSync(join(tmpdir(), "gs-candidate-root-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(dir, "scripts"));
+  writeFileSync(join(dir, "scripts", "greatstone-test-gate.lanes"), "unit: true\n");
+  git(dir, "add", "scripts");
+  git(dir, "commit", "--quiet", "-m", "Merge pull request #42 from owner/GRE-80-gate", "-m", "feat: test gate (GRE-80)");
+  const cut = (...extra) => spawnSync("node", [join(scriptsDir, "greatstone-candidate.mjs"), ...extra, "--title", "Next", "--ref", "main"], {
+    cwd: dir, encoding: "utf8", env: { ...process.env, GSAM_ROOT: root },
+  });
+
+  const skipped = cut("rc-2026-09-02.1", "--no-test-gate");
+  assert.equal(skipped.status, 0, skipped.stderr);
+  assert.match(skipped.stdout, /No test gate run \(--no-test-gate\)\. Before the release: scripts\/greatstone-test-gate\.sh rc-2026-09-02\.1/);
+  assert.equal(existsSync(join(root, "test-gate")), false);
+
+  const gated = cut("rc-2026-09-02.2");
+  assert.equal(gated.status, 0, gated.stderr);
+  assert.match(gated.stdout, /^PASSED: all 1 lanes on rc-2026-09-02\.2/m);
+  assert.ok(existsSync(join(root, "test-gate", "passed", git(dir, "rev-parse", "rc-2026-09-02.2^{commit}"))));
+
+  writeFileSync(join(dir, "scripts", "greatstone-test-gate.lanes"), "unit: false\n");
+  git(dir, "commit", "--quiet", "-am", "Merge pull request #43 from owner/GRE-81-red", "-m", "feat: red (GRE-81)");
+  const red = cut("rc-2026-09-02.3");
+  assert.equal(red.status, 1);
+  assert.match(red.stdout, /^FAILED: 1 of 1 lanes failed on rc-2026-09-02\.3/m);
 });
 
 test("refuses a candidate without a title or without changes", (t) => {

@@ -599,9 +599,12 @@ describe("AgentMail durable email pipeline", () => {
     await f.service.tick();
     const sent = f.messages.get(`sent-${input.idempotencyKey}`)!;
 
-    await f.receive(f.message("stranger-reply", sent.thread_id, { from: "someone@else.test", text: "K1: 999" }));
-    await f.receive(f.message("owner-reply", sent.thread_id, { from: "Owner <owner@example.test>", text: "K1: 321" }));
-    await f.receive(f.message("owner-reply", sent.thread_id, { from: "Owner <owner@example.test>", text: "K1: 321" }));
+    // Both pass DMARC (GRE-1215 stores a reply only then), so the stranger is
+    // refused for the sender, not for the mail check.
+    const dmarcPass = { authentication_results: { dmarc: "pass" } };
+    await f.receive(f.message("stranger-reply", sent.thread_id, { from: "someone@else.test", text: "K1: 999", ...dmarcPass }));
+    await f.receive(f.message("owner-reply", sent.thread_id, { from: "Owner <owner@example.test>", text: "K1: 321", ...dmarcPass }));
+    await f.receive(f.message("owner-reply", sent.thread_id, { from: "Owner <owner@example.test>", text: "K1: 321", ...dmarcPass }));
     const readings = await db.select().from(goalKpiReadings).where(eq(goalKpiReadings.goalId, kpi.id));
     expect(readings.map((r) => [r.value, r.source, r.recordedByUserId])).toEqual([[321, "owner_reported", "email-board"]]);
     // The secretary still sees both replies in the thread.
