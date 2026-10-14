@@ -193,7 +193,7 @@ export const WEBSITE_TOUR: TourDefinition = {
 export const GITHUB_SHARE_TOUR: TourDefinition = {
   id: "github-share-with-agents",
   title: "Share with agents",
-  description: "Letting agents use your GitHub for work they start themselves.",
+  description: "Letting agents use your GitHub for their own work and for people without GitHub.",
   version: 1,
   flag: "enableApps",
   label: "sharing",
@@ -201,7 +201,7 @@ export const GITHUB_SHARE_TOUR: TourDefinition = {
     {
       target: "share-intro",
       title: "Sharing your GitHub",
-      body: "Agents you share with can use your GitHub for work they start themselves. Anything they push or open there shows up as you.",
+      body: "Agents you share with can use your GitHub for work they start themselves, and for work asked for by someone with no GitHub of their own. Anything they push or open there shows up as you.",
     },
     {
       target: "share-all",
@@ -211,7 +211,7 @@ export const GITHUB_SHARE_TOUR: TourDefinition = {
     {
       target: "share-stop",
       title: "Stop sharing",
-      body: "Takes your GitHub away from every agent at once. Work a person asks for still uses that person's own GitHub.",
+      body: "Takes your GitHub away from every agent at once. Anyone who has connected their own GitHub still uses it.",
     },
     {
       target: "share-list",

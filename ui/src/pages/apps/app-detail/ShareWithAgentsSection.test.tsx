@@ -26,7 +26,7 @@ const box = (name: string) => container.querySelector<HTMLButtonElement>(`[id$="
 describe("Share with agents", () => {
   it("shows current shares and shares or unshares through the delegation API", async () => {
     await render();
-    expect(container.textContent).toContain("Agents you tick can use your GitHub for work they start themselves.");
+    expect(container.textContent).toContain("and for work asked for by someone who has not connected their own GitHub.");
     expect(container.textContent).not.toContain("Gone");
     expect(box("keystone").getAttribute("data-state")).toBe("checked");
     expect(box("ridge").getAttribute("data-state")).toBe("unchecked");
