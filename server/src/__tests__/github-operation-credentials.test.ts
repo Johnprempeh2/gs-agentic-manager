@@ -19,6 +19,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   agents,
+  authUsers,
   companies,
   companyMemberships,
   companySecrets,
@@ -673,10 +674,73 @@ const support = await getEmbeddedPostgresTestSupport();
         const b = await grant(input, "B");
         await share(input, b.id, "B");
         expect(await resolveGitHubOperationCredentials(db, input)).toMatchObject({ status: "available", login: "A", grantId: a.id });
-        await switchTo(input, "C");
-        expect((await resolveGitHubOperationCredentials(db, input)).env).toEqual({});
         expect(await db.select().from(toolAccessAuditEvents)
           .where(eq(toolAccessAuditEvents.companyId, input.companyId))).toEqual([]);
+      });
+
+      it("falls back to the shared grant when the responsible person has no GitHub grant, and audits it", async () => {
+        const input = await seed();
+        const b = await grant(input, "B");
+        const delegation = await share(input, b.id, "B");
+        await switchTo(input, "C");
+        const result = await resolveGitHubOperationCredentials(db, input);
+        expect(result).toMatchObject({ status: "available", login: "B", grantId: b.id });
+        expect(result.env.GH_TOKEN).toBe("test-token-B");
+        expect(await db.select().from(toolAccessAuditEvents)
+          .where(eq(toolAccessAuditEvents.companyId, input.companyId))).toEqual([expect.objectContaining({
+          action: "connection_grant.delegation_used",
+          details: expect.objectContaining({
+            delegationId: delegation.id, grantOwnerUserId: "B", responsibleUserId: "C", personFallback: true,
+          }),
+        })]);
+        await db.insert(authUsers).values(["B", "C"].map((id) => ({
+          id, name: id === "B" ? "John Owner" : "Ben Person", email: `${id}-${input.companyId}@example.test`,
+          createdAt: new Date(), updatedAt: new Date(),
+        }))).onConflictDoNothing();
+        const access = await resolveHeartbeatGitHubAccess(db, {
+          ...input, cause: "instruction", responsibleUserId: "C", trustKind: "standard", environmentDriver: "local",
+        });
+        expect(access.githubSelection.grant?.id).toBe(b.id);
+        expect(access.githubAccessNote).toEqual({
+          message: "GitHub: using shared access delegated by John Owner because Ben Person has no GitHub connection",
+          grantOwnerUserId: "B", responsibleUserId: "C", grantId: b.id,
+        });
+      });
+
+      it("names both fixes when the responsible person has no grant and nothing is shared", async () => {
+        const input = await seed();
+        await grant(input, "B");
+        await switchTo(input, "C");
+        vault.resolveUserSecretValue.mockClear();
+        const result = await resolveGitHubOperationCredentials(db, input);
+        expect(result.status).toBe("unavailable");
+        expect(result.env).toEqual({});
+        expect(result.reason).toContain("Connect your own GitHub in Apps (Connect as me), or ask the GitHub owner to share access with this agent");
+        expect(vault.resolveUserSecretValue).not.toHaveBeenCalled();
+      });
+
+      it("never uses a revoked delegation for a person with no grant", async () => {
+        const input = await seed();
+        const b = await grant(input, "B");
+        const delegation = await share(input, b.id, "B");
+        // Revoking Share with agents deletes the delegation row.
+        await db.delete(connectionGrantDelegations).where(eq(connectionGrantDelegations.id, delegation.id));
+        await switchTo(input, "C");
+        const access = await resolveHeartbeatGitHubAccess(db, {
+          ...input, cause: "instruction", responsibleUserId: "C", trustKind: "standard", environmentDriver: "local",
+        });
+        expect(access.githubSelection.grant).toBeUndefined();
+        expect(access.githubAccessNote).toBeNull();
+        expect((await resolveGitHubOperationCredentials(db, input)).env).toEqual({});
+      });
+
+      it("never uses a shared grant that was revoked for a person with no grant", async () => {
+        const input = await seed();
+        const b = await grant(input, "B");
+        await share(input, b.id, "B");
+        await db.update(connectionGrants).set({ status: "revoked" }).where(eq(connectionGrants.id, b.id));
+        await switchTo(input, "C");
+        expect((await resolveGitHubOperationCredentials(db, input)).env).toEqual({});
       });
 
       it("lets a dedicated agent grant win over a shared personal grant", async () => {

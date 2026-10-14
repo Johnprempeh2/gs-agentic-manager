@@ -24198,7 +24198,7 @@ export function heartbeatService(
         !acceptedPlanWakeRoutingDecision?.suppressAcceptedContinuation
           ? [...runScopedMentionedSkillKeys, ACCEPTED_PLAN_CONVERSION_SKILL_KEY]
           : runScopedMentionedSkillKeys;
-      const { githubSelection, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
+      const { githubSelection, githubAccessNote, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
         companyId: agent.companyId,
         agentId: agent.id,
         cause: identityContext.cause,
@@ -24206,6 +24206,10 @@ export function heartbeatService(
         trustKind: trustPreset.kind,
         environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
       });
+      if (githubAccessNote) {
+        const { message, ...payload } = githubAccessNote;
+        await appendRunEvent(run, { eventType: "lifecycle", stream: "system", level: "info", message, payload });
+      }
       const aiAccessRoute = agentAiAccessRoute(agent);
       let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
       const { resolvedConfig, secretKeys, secretManifest } =

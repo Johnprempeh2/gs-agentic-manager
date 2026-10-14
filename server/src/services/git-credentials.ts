@@ -298,18 +298,20 @@ export function createGitRemoteAuthProvider(
 }
 
 /**
- * The one rule for whose GitHub login a run may use. Work a person caused uses
- * that person's own grant. Work nobody caused (`company_default`) may use only
- * a personal grant its owner explicitly shared with this agent through
- * Share with agents. A dedicated agent grant wins either way.
+ * The one rule for whose GitHub login a run may use. A dedicated agent grant
+ * wins. Work a person caused uses that person's own grant; when that person has
+ * no GitHub grant at all, it falls back to a personal grant its owner shared
+ * with this agent through Share with agents (owner decision, 14 Oct). Work
+ * nobody caused (`company_default`) uses only that shared grant.
  */
 export function githubIdentityScopeForRun(context: {
   cause?: string | null;
   responsibleUserId?: string | null;
 } | null | undefined): { responsibleUserId: string | null; allowStandingDelegation: boolean } {
-  return context?.cause === "company_default"
-    ? { responsibleUserId: null, allowStandingDelegation: true }
-    : { responsibleUserId: context?.responsibleUserId ?? null, allowStandingDelegation: false };
+  return {
+    responsibleUserId: context?.cause === "company_default" ? null : context?.responsibleUserId ?? null,
+    allowStandingDelegation: true,
+  };
 }
 
 export const NO_SHARED_GITHUB_LOGIN =
@@ -349,7 +351,9 @@ export async function recordGitHubDelegationUse(
     reasonCode: "standing_delegation",
     details: {
       grantId: input.grant.id, delegationId: delegation.id, agentId: input.agentId,
-      grantOwnerUserId: input.grant.subjectUserId, heartbeatRunId: input.heartbeatRunId ?? null,
+      grantOwnerUserId: input.grant.subjectUserId, responsibleUserId: input.responsibleUserId ?? null,
+      // A person caused this run but has no GitHub grant of their own.
+      personFallback: Boolean(input.responsibleUserId), heartbeatRunId: input.heartbeatRunId ?? null,
       issueId: input.issueId ?? null, consumer: input.consumer,
     },
   });
@@ -448,11 +452,13 @@ export async function resolveManagedGitHubIdentitySelection(
     : [];
   // Connections are already restricted above to the owner-selected install
   // targets. Within that consent boundary the server-resolved responsible user
-  // is authoritative; standing delegation is only an ownerless-run fallback.
+  // is authoritative; standing delegation is the fallback when that person has
+  // no GitHub grant at all (or nobody caused the run). A delegation row exists
+  // only while sharing is on: revoking deletes it.
   const personalAll = context.responsibleUserId
     ? allGrants.filter((grant) => grant.kind === "user" && grant.subjectUserId === context.responsibleUserId)
     : [];
-  const delegatedAll = context.allowStandingDelegation !== false && !context.responsibleUserId && context.agentId
+  const delegatedAll = context.allowStandingDelegation !== false && personalAll.length === 0 && context.agentId
     ? await db.select({ grantId: connectionGrantDelegations.grantId }).from(connectionGrantDelegations).where(and(
         eq(connectionGrantDelegations.companyId, companyId),
         eq(connectionGrantDelegations.agentId, context.agentId),
@@ -492,10 +498,11 @@ export async function resolveManagedGitHubIdentitySelection(
     return {
       configured: true, identitySource,
       error: candidates.length === 0
-        ? viaDelegation
+        ? viaDelegation && !context.responsibleUserId
           ? NO_SHARED_GITHUB_LOGIN
           : `No managed GitHub identity is available for this run (no GitHub grant for agent ${context.agentId ?? "none"}`
-            + ` or responsible user ${context.responsibleUserId ?? "none"} on connection ${[...eligibleConnectionIds].join(", ")}). Connect your own GitHub in Apps (Connect as me).`
+            + ` or responsible user ${context.responsibleUserId ?? "none"}, and no GitHub login shared with this agent, on connection ${[...eligibleConnectionIds].join(", ")}).`
+            + " Connect your own GitHub in Apps (Connect as me), or ask the GitHub owner to share access with this agent (Apps, GitHub, Share with agents)."
         : viaDelegation
           ? `More than one GitHub login is shared with this agent (${logins.join(", ")}). In Apps, keep Share with agents on for one GitHub account only.`
           : "More than one managed GitHub identity matches this run",
