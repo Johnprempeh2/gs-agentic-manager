@@ -447,6 +447,8 @@ function durableInputLabel(
     return interaction.title ?? "Review items";
   if (interaction.kind === "connection_intent")
     return interaction.title ?? "Connect service";
+  if (interaction.kind === "request_draft_review")
+    return interaction.title ?? "Review draft";
   if (
     interaction.payload.target?.type === "issue_document" &&
     interaction.payload.target.key === "plan"

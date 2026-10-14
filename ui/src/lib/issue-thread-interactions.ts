@@ -26,6 +26,9 @@ export type {
   RequestConfirmationTarget,
   RequestConfirmationToolActionPayload,
   RequestConfirmationToolActionResult,
+  RequestDraftReviewInteraction,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
   RequestItemVerdictsInteraction,
   RequestItemVerdictsItem,
   RequestItemVerdictsPayload,
@@ -73,6 +76,7 @@ export function interactionReplacesComposerSkip(
 ): boolean {
   return interaction.kind === "request_confirmation"
     || interaction.kind === "request_checkbox_confirmation"
+    || interaction.kind === "request_draft_review"
     || interaction.kind === "suggest_tasks";
 }
 
@@ -91,6 +95,7 @@ export function isIssueThreadInteraction(
       || candidate.kind === "request_checkbox_confirmation"
       || candidate.kind === "request_item_verdicts"
       || candidate.kind === "connection_intent"
+      || candidate.kind === "request_draft_review"
     );
 }
 
@@ -259,6 +264,16 @@ export function buildIssueThreadInteractionSummary(
 
   if (interaction.kind === "request_item_verdicts") {
     return buildItemVerdictsSummary(interaction);
+  }
+
+  if (interaction.kind === "request_draft_review") {
+    const purpose = interaction.payload.purpose;
+    if (interaction.status === "accepted") {
+      return interaction.result?.draft?.edited ? `Edited and sent back: ${purpose}` : `Approved draft: ${purpose}`;
+    }
+    if (interaction.status === "rejected") return `Asked for a redraft: ${purpose}`;
+    if (interaction.status === "expired") return `Draft expired: ${purpose}`;
+    return `Draft to review: ${purpose}`;
   }
 
   if (interaction.kind === "connection_intent") {

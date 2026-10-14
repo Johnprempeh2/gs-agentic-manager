@@ -361,7 +361,7 @@ function interactionDetail(input: {
 
   return {
     kind: "confirmation",
-    promptExcerpt: excerpt(input.payload.prompt ?? input.payload.detailsMarkdown),
+    promptExcerpt: excerpt(input.payload.prompt ?? input.payload.purpose ?? input.payload.detailsMarkdown),
     isPlanTarget: false,
     images: input.images,
     deliverables: input.deliverables,
@@ -709,6 +709,8 @@ function interactionLabel(kind: string) {
       return "Suggested tasks need a decision";
     case "request_item_verdicts":
       return "Item verdicts need a decision";
+    case "request_draft_review":
+      return "Draft needs your review";
     default:
       return "Interaction needs a decision";
   }
