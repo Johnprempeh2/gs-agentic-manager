@@ -35,6 +35,8 @@ export interface TeamChatSummary {
   members: TeamChatMember[];
   lastMessageAt: string | null;
   unreadCount: number;
+  /** The reader muted this chat: no alerts except when @mentioned. */
+  muted: boolean;
 }
 
 const memberIds = {
@@ -53,6 +55,29 @@ export type CreateDirectMessage = z.infer<typeof createDirectMessageSchema>;
 
 export const addTeamChatMembersSchema = z.object(memberIds);
 export type AddTeamChatMembers = z.infer<typeof addTeamChatMembersSchema>;
+
+export const setTeamChatMuteSchema = z.object({ muted: z.boolean() });
+export type SetTeamChatMute = z.infer<typeof setTeamChatMuteSchema>;
+
+export type TeamChatAlertReason = "message" | "mention";
+
+/**
+ * Whether one new message alerts one person in the chat. Every message alerts
+ * every person in it except its author; muting stops that, but an @mention
+ * still gets through. Agents are not covered here: they wake only when
+ * mentioned (see agentsToWake).
+ */
+export function teamChatAlertReason(input: {
+  recipientUserId: string;
+  author: { type: "user" | "agent" | "system"; id: string | null };
+  muted: boolean;
+  mentionedUserIds: readonly string[];
+}): TeamChatAlertReason | null {
+  if (input.author.type === "system") return null;
+  if (input.author.type === "user" && input.author.id === input.recipientUserId) return null;
+  if (input.mentionedUserIds.includes(input.recipientUserId)) return "mention";
+  return input.muted ? null : "message";
+}
 
 /**
  * Loop guard. Counts agent-authored messages that mention agents since the

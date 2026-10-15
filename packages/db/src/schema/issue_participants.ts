@@ -14,6 +14,8 @@ export const issueParticipants = pgTable(
     principalType: text("principal_type").$type<"user" | "agent">().notNull(),
     principalId: text("principal_id").notNull(),
     addedBy: text("added_by"),
+    // A person muted the chat: no alerts for it except @mentions.
+    mutedAt: timestamp("muted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

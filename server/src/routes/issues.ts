@@ -18850,8 +18850,9 @@ export function issueRoutes(
         details: {
           commentId: comment.id,
           // Activity reaches the whole company; a team chat's words stay in the chat.
+          // teamChat lets members' browsers raise their own alert instead of a generic toast.
           ...(isTeamChat(currentIssue)
-            ? {}
+            ? { teamChat: true }
             : { bodySnippet: comment.body.slice(0, 120), issueTitle: currentIssue.title }),
           identifier: currentIssue.identifier,
           authorizationReason: commentAuthorizationReason,
