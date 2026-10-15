@@ -113,14 +113,14 @@ export function TeamChatThread({
           ),
         )}
       </ol>
-      <div ref={endRef} />
       <div
         data-testid="team-chat-composer-dock"
         className={cn(
           "sticky z-sticky -mx-1 border-t border-border bg-background px-1 pt-3",
+          // Desktop: cover the page's bottom padding so messages never show below the composer.
           isMobile
             ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] pb-1"
-            : "bottom-0 pb-4",
+            : "-bottom-6 -mb-6 pb-6",
         )}
       >
         {composerDisabledReason ? (
@@ -136,6 +136,7 @@ export function TeamChatThread({
           />
         )}
       </div>
+      <div ref={endRef} />
     </div>
   );
 }
@@ -253,7 +254,7 @@ function MessageBubble({
       id={`comment-${message.id}`}
       data-testid="team-chat-message"
       className={cn(
-        "min-w-0 max-w-full break-words rounded-2xl px-3.5 py-2 text-sm",
+        "group/message min-w-0 max-w-full break-words rounded-2xl px-3.5 py-2 text-sm",
         own ? "gs-human-bubble" : "bg-muted text-foreground",
         first && (own ? "rounded-tr-sm" : "rounded-tl-sm"),
         deleted && "bg-muted/50 italic text-muted-foreground",
@@ -279,7 +280,10 @@ function MessageBubble({
       ) : null}
       <div className={cn("mt-0.5 flex items-center justify-end gap-2 text-(length:--text-nano)", own ? "opacity-75" : "text-muted-foreground")}>
         {message.createdByRunId && message.authorAgentId ? (
-          <Link to={`/agents/${message.authorAgentId}/runs/${message.createdByRunId}`} className="font-mono hover:underline">
+          <Link
+            to={`/agents/${message.authorAgentId}/runs/${message.createdByRunId}`}
+            className="font-mono opacity-0 transition-opacity hover:underline focus-visible:opacity-100 group-hover/message:opacity-100"
+          >
             run {message.createdByRunId.slice(0, 8)}
           </Link>
         ) : null}

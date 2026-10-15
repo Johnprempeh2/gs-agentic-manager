@@ -114,7 +114,8 @@ export function TeamChat() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-      <header className="sticky top-0 z-sticky -mx-1 flex flex-col gap-2 border-b border-border bg-background px-1 pb-3">
+      {/* Desktop: the header also covers the page's top padding so messages never show above it. */}
+      <header className="sticky top-0 z-sticky -mx-1 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-1 pb-3 pt-2 md:-top-6 md:-mt-6 md:pt-6">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0 truncate text-xl font-bold">{label}</h1>
           <FeatureTour tour={TEAM_CHAT_TOUR} />
