@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useNavigate, type NavigateFunction } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IssueComment } from "@greatstone/shared";
 import { buildTeamChatRows, formatTeamChatDay } from "@/lib/team-chat-messages";
@@ -172,6 +172,32 @@ describe("TeamChatThread", () => {
   it("scrolls to the newest message", async () => {
     await render({ comments: [message({ user: "u-ama" }, "2026-10-15T09:00:00")] });
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+  });
+
+  it("lands on and highlights the message an alert links to, even with the chat already open", async () => {
+    const alerted = message({ user: "u-ama" }, "2026-10-15T09:00:00", "the alert");
+    const comments = [alerted, message({ user: "u-ama" }, "2026-10-15T09:10:00", "newer")];
+    let navigate: NavigateFunction = () => {};
+    const Capture = () => {
+      navigate = useNavigate();
+      return null;
+    };
+    const props: TeamChatThreadProps = { comments, currentUserId: ME, senderName: () => "Ama", onSend: vi.fn(async () => {}) };
+    await act(async () => {
+      root.render(
+        <MemoryRouter initialEntries={["/messages/chat"]}>
+          <Capture />
+          <TeamChatThread {...props} />
+        </MemoryRouter>,
+      );
+    });
+    const target = container.querySelector<HTMLElement>(`#comment-${alerted.id}`)!;
+    target.scrollIntoView = vi.fn();
+    expect(target.className).not.toContain("ring-2");
+
+    await act(async () => navigate(`/messages/chat#comment-${alerted.id}`));
+    expect(target.scrollIntoView).toHaveBeenCalledWith({ block: "center" });
+    expect(target.className).toContain("ring-2");
   });
 
   describe("following new replies", () => {

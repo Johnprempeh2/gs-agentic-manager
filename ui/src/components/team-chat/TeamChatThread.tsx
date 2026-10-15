@@ -102,6 +102,7 @@ export function TeamChatThread({
   const chatId = comments[0]?.issueId ?? null;
   const highlightId = location.hash.startsWith("#comment-") ? location.hash.slice("#comment-".length) : null;
   const openedChatRef = useRef<string | null>(null);
+  const shownHighlightRef = useRef<string | null>(null);
   const nearBottomRef = useRef(true);
   const [nearBottom, setNearBottom] = useState(true);
   const [hasUnseen, setHasUnseen] = useState(false);
@@ -125,12 +126,17 @@ export function TeamChatThread({
 
   // Open at the newest message (or the one a link points at). After that, follow new
   // replies only for a reader already at the end, or after they send one themselves.
+  // A link to a message (an alert, a search hit) also lands there when the chat is already open.
   useEffect(() => {
     if (!lastId) return;
     const firstOpen = openedChatRef.current !== chatId;
     openedChatRef.current = chatId;
-    if (firstOpen && highlightId) {
-      document.getElementById(`comment-${highlightId}`)?.scrollIntoView?.({ block: "center" });
+    const linkTarget = highlightId && shownHighlightRef.current !== highlightId
+      ? document.getElementById(`comment-${highlightId}`)
+      : null;
+    if (linkTarget) {
+      shownHighlightRef.current = highlightId;
+      linkTarget.scrollIntoView?.({ block: "center" });
       return;
     }
     if (firstOpen || lastIsOwn || nearBottomRef.current) {

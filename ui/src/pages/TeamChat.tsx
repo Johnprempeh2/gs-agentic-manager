@@ -184,13 +184,16 @@ export function TeamChat() {
         </ul>
         {group && <p className="text-xs text-muted-foreground">Agents here reply only when you @mention them.</p>}
         {alertsPermission === "default" && !alertsAsked && (
-          <div role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span>Get an alert on this device when a message arrives and you are not looking.</span>
-            <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => void turnOnAlerts()}>
+          <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Bell aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              {summary.muted ? "Alert me here when @mentioned" : "Alert me here for new messages"}
+            </span>
+            <Button type="button" variant="outline" size="sm" className="ml-auto h-6 shrink-0 px-2 text-xs" onClick={() => void turnOnAlerts()}>
               Turn on
             </Button>
-            <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={closeAlertsPrompt}>
-              Not now
+            <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label="Not now" title="Not now" onClick={closeAlertsPrompt}>
+              <X aria-hidden="true" className="size-3.5" />
             </Button>
           </div>
         )}

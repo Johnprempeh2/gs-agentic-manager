@@ -308,9 +308,12 @@ describeEmbeddedPostgres("team chats", () => {
     const chats = teamChatService(ctx.db, { push: { sendToUser }, now: () => clock });
     const issue = (await ctx.db.select().from(issues).where(eq(issues.id, chat.id)))[0]!;
 
-    await chats.notifyPeople(issue, { body: "standup in 5" }, { type: "user", id: alice.userId });
+    await chats.notifyPeople(issue, { id: "c-1", body: "standup in 5" }, { type: "user", id: alice.userId });
     expect(sendToUser.mock.calls.map((call) => call[1])).toEqual([carol.userId]);
-    expect(sendToUser).toHaveBeenLastCalledWith(companyId, carol.userId, expect.objectContaining({ title: `${alice.userId} in Launch` }));
+    expect(sendToUser).toHaveBeenLastCalledWith(companyId, carol.userId, expect.objectContaining({
+      title: `${alice.userId} in Launch`,
+      url: expect.stringMatching(new RegExp(`/messages/${chat.id}#comment-c-1$`)),
+    }));
 
     // Carol mutes the chat through the route: plain messages stop, mentions still reach her.
     const muted = await request(app(carol.actor)).put(`/api/team-chats/${chat.id}/mute`).send({ muted: true });

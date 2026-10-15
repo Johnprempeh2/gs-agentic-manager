@@ -19,7 +19,7 @@ export function desktopAlertsPermission(): NotificationPermission | "unsupported
 /**
  * Alerts for new team chat messages (enableTeamChat). With the app in front, a
  * toast; with the tab in the background, a desktop notification (when allowed)
- * that opens the chat. Nothing for the chat you are reading, your own messages,
+ * that opens the chat at the message. Nothing for the chat you are reading, your own messages,
  * or a muted chat unless you are @mentioned. Renders nothing.
  */
 export function TeamChatAlerts() {
@@ -49,7 +49,8 @@ export function TeamChatAlerts() {
       .then((comment) => {
         const alert = buildTeamChatAlert(hit.chat, comment, userId);
         if (!alert) return;
-        const path = `/messages/${hit.chat.id}`;
+        // Open the chat at this message, which may not be the newest by the time it is clicked.
+        const path = `/messages/${hit.chat.id}#comment-${hit.commentId}`;
         if (getPageVisibility().focused) {
           toast?.pushToast({
             title: alert.title,

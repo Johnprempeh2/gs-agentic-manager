@@ -401,7 +401,7 @@ export function teamChatService(
      * Only people who turned push on have phones registered. At most one push
      * per person per chat every two minutes, except @mentions, which always go.
      */
-    async notifyPeople(issue: { id: string; companyId: string; identifier: string | null; title: string; originKind?: string | null; originId?: string | null }, comment: { body: string }, author: TeamChatActor) {
+    async notifyPeople(issue: { id: string; companyId: string; identifier: string | null; title: string; originKind?: string | null; originId?: string | null }, comment: { id?: string; body: string }, author: TeamChatActor) {
       try {
         const chat = isTeamChat(issue);
         const mentioned = new Set(extractUserMentionIds(comment.body));
@@ -438,8 +438,9 @@ export function teamChatService(
         const nameOf = await names([author]);
         const authorName = nameOf(author.type, author.id);
         const [company] = await db.select({ prefix: companies.issuePrefix }).from(companies).where(eq(companies.id, issue.companyId));
+        // A chat alert opens at the message itself, not just the newest one.
         const url = chat
-          ? `/${company?.prefix ?? ""}/messages/${issue.id}`
+          ? `/${company?.prefix ?? ""}/messages/${issue.id}${comment.id ? `#comment-${comment.id}` : ""}`
           : `/${company?.prefix ?? ""}/issues/${issue.identifier ?? issue.id}`;
         let sent = 0;
         for (const [userId, why] of due) {
