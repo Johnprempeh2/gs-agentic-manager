@@ -636,6 +636,11 @@ export const queryKeys = {
         groupIssueId ?? "",
       ] as const,
   },
+  images: {
+    all: (companyId: string) => ["images", companyId] as const,
+    status: (companyId: string) => ["images", companyId, "status"] as const,
+    list: (companyId: string) => ["images", companyId, "list"] as const,
+  },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
     list: (companyId: string, params: Record<string, string | undefined>) =>

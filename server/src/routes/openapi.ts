@@ -54,6 +54,8 @@ import {
   updateIssueWorkProductSchema,
   createDeliverableSchema,
   markDeliverableSchema,
+  createGeneratedImageSchema,
+  generatedImagesQuerySchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
   setCaseEngagementSchema,
@@ -1456,6 +1458,7 @@ const BOARD_ONLY_PREFIXES = [
 ];
 
 const BOARD_ONLY_OPERATIONS = new Set([
+  "DELETE /api/generated-images/{id}",
   "POST /api/companies/{companyId}/pause",
   "POST /api/companies/{companyId}/resume",
   "PUT /api/companies/{companyId}/memory/stewards/{scopeId}",
@@ -1824,6 +1827,7 @@ const CREATED_OPERATIONS = new Set([
 ]);
 
 const ACCEPTED_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/generated-images",
   "POST /api/companies/{companyId}/releases/release",
   "POST /api/companies/{companyId}/releases/rollback",
   "POST /api/companies/{companyId}/email/send",
@@ -4509,6 +4513,51 @@ registry.registerPath({
     415: r.unsupportedMediaType,
     422: r.unprocessable,
   },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/image-generation",
+  tags: ["assets"],
+  summary: "Whether image generation is set up, and which image service the server uses (Higgsfield, OpenAI or practice mode)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/generated-images",
+  tags: ["assets"],
+  summary: "List images made from a description, newest first, with prompt, shape, status and contentPath once ready",
+  request: { params: z.object({ companyId: z.string() }), query: generatedImagesQuerySchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/generated-images",
+  tags: ["assets"],
+  summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). 422 code image_generation_not_configured when no image service key is set; 429 when 6 images are already being made",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageSchema) },
+  responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/generated-images/{id}",
+  tags: ["assets"],
+  summary: "Get one generated image and its status",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/generated-images/{id}",
+  tags: ["assets"],
+  summary: "Delete a generated image and its stored file (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

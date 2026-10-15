@@ -46,6 +46,7 @@ const apiPrefixes: Record<string, string> = {
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
+  "generated-images.ts": "/api",
   "auth.ts": "/api/auth",
   "board-chat.ts": "/api",
   "built-in-agents.ts": "/api",
