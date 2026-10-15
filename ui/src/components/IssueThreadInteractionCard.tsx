@@ -32,6 +32,7 @@ import {
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
+import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { InteractionGuideSheet, InteractionGuideText } from "./InteractionGuide";
 import { interactionGuideSummary, needsInteractionGuide } from "../lib/interaction-guide";
 import { Button } from "./ui/button";
@@ -2822,6 +2823,9 @@ function RequestConfirmationCard({
             interaction={interaction}
             target={interaction.payload.target}
           />
+          <div className="flex justify-end">
+            <CopyMarkdownButton markdown={details ? `${prompt}\n\n${details}` : prompt} />
+          </div>
         </div>
       ) : null}
 
