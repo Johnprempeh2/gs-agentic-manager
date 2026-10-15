@@ -158,6 +158,7 @@ import {
   // Sidebar
   upsertSidebarOrderPreferenceSchema,
   upsertSidebarSectionOrderSchema,
+  upsertSidebarLayoutSchema,
   // Announcements
   announcementIdSchema,
   announcementSchema,
@@ -7636,6 +7637,23 @@ registry.registerPath({
   tags: ["sidebar"],
   summary: "Update the current user's sidebar section order",
   request: { body: jsonBody(upsertSidebarSectionOrderSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/sidebar-preferences/me/layout",
+  tags: ["sidebar"],
+  summary: "Get the current user's sidebar layout (item order, sections, hidden, pinned, folded)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/sidebar-preferences/me/layout",
+  tags: ["sidebar"],
+  summary: "Save the current user's sidebar layout",
+  request: { body: jsonBody(upsertSidebarLayoutSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized },
 });
 

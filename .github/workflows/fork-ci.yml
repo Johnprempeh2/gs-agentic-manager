@@ -94,6 +94,12 @@ jobs:
       - name: Typecheck every workspace
         run: pnpm typecheck
 
+      # The full suite only runs on the PC release gate; this one test is cheap
+      # and catches the commonest miss (a new route not added to the API
+      # document), which otherwise only fails at release time.
+      - name: Every mounted route is in the API document
+        run: pnpm --filter @greatstone/server exec vitest run src/__tests__/openapi-routes.test.ts
+
   build:
     name: Build
     runs-on: ubuntu-latest
