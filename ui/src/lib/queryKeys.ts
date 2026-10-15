@@ -667,6 +667,7 @@ export const queryKeys = {
     graph: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "graph", filters] as const,
     node: (companyId: string, recordId: string) => ["memory-graph", companyId, "node", recordId] as const,
+    scopes: (companyId: string) => ["memory-graph", companyId, "scopes"] as const,
     edge: (companyId: string, edgeId: string) => ["memory-graph", companyId, "edge", edgeId] as const,
     activity: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "activity", filters] as const,
