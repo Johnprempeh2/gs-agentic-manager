@@ -76,7 +76,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   ScanEye,
+  Sparkles,
 } from "lucide-react";
+import { TASK_QUICK_STARTS, firstPlaceholderRange, type TaskQuickStart } from "../lib/task-quick-starts";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -785,6 +787,19 @@ export function NewIssueDialog() {
     selectedExecutionWorkspaceId,
     workMode,
   ]);
+
+  const applyQuickStart = useCallback((quickStart: TaskQuickStart) => {
+    setIssueText(quickStart.title, quickStart.description);
+    queueDraftSave({ title: quickStart.title, description: quickStart.description });
+    // Select the first [placeholder] in the title so typing replaces it.
+    requestAnimationFrame(() => {
+      const titleField = dialogBodyRef.current?.querySelector("textarea");
+      const range = firstPlaceholderRange(quickStart.title);
+      if (!titleField) return;
+      titleField.focus();
+      if (range) titleField.setSelectionRange(range.start, range.end);
+    });
+  }, [setIssueText, queueDraftSave]);
 
   const handleTitleChange = useCallback((nextTitle: string) => {
     titleRef.current = nextTitle;
@@ -1543,6 +1558,27 @@ export function NewIssueDialog() {
               onChange={handleTitleChange}
             />
           </div>
+
+          {!draftHasText && stagedFiles.length === 0 && !createIssue.isPending ? (
+            <div className="px-4 pb-2" data-testid="task-quick-starts">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Sparkles className="size-3.5" aria-hidden />
+                Not sure how to start? Pick one and fill in the words in brackets.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {TASK_QUICK_STARTS.map((quickStart) => (
+                  <button
+                    key={quickStart.id}
+                    type="button"
+                    onClick={() => applyQuickStart(quickStart)}
+                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                  >
+                    {quickStart.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {effectiveCompanyId ? (
             <div className="px-4 pb-2">
