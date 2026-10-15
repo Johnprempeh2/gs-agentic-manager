@@ -301,6 +301,49 @@ describeEmbeddedPostgres("team chats", () => {
     expect(inbox.map((issue) => issue.id)).toContain(task.id);
   });
 
+  it("pushes every group message to the other people, minus the author and those who muted it, unless mentioned", async () => {
+    const { companyId, alice, carol, chat } = await seed();
+    const sendToUser = vi.fn(async () => ({ targets: 1, delivered: 1 }));
+    let clock = 1_000_000;
+    const chats = teamChatService(ctx.db, { push: { sendToUser }, now: () => clock });
+    const issue = (await ctx.db.select().from(issues).where(eq(issues.id, chat.id)))[0]!;
+
+    await chats.notifyPeople(issue, { id: "c-1", body: "standup in 5" }, { type: "user", id: alice.userId });
+    expect(sendToUser.mock.calls.map((call) => call[1])).toEqual([carol.userId]);
+    expect(sendToUser).toHaveBeenLastCalledWith(companyId, carol.userId, expect.objectContaining({
+      title: `${alice.userId} in Launch`,
+      url: expect.stringMatching(new RegExp(`/messages/${chat.id}#comment-c-1$`)),
+    }));
+
+    // Carol mutes the chat through the route: plain messages stop, mentions still reach her.
+    const muted = await request(app(carol.actor)).put(`/api/team-chats/${chat.id}/mute`).send({ muted: true });
+    expect(muted.status).toBe(200);
+    expect((muted.body as TeamChatSummary).muted).toBe(true);
+    expect(((await request(app(alice.actor)).get(`/api/team-chats/${chat.id}`)).body as TeamChatSummary).muted).toBe(false);
+    sendToUser.mockClear();
+    clock += 3 * 60_000;
+    await chats.notifyPeople(issue, { body: "anyone?" }, { type: "user", id: alice.userId });
+    expect(sendToUser).not.toHaveBeenCalled();
+    await chats.notifyPeople(issue, { body: `[@carol](user://${carol.userId}) you?` }, { type: "user", id: alice.userId });
+    expect(sendToUser).toHaveBeenCalledWith(companyId, carol.userId, expect.objectContaining({ title: `${alice.userId} mentioned you in Launch` }));
+
+    // Unmuting brings plain messages back; muting is for members only.
+    await request(app(carol.actor)).put(`/api/team-chats/${chat.id}/mute`).send({ muted: false });
+    sendToUser.mockClear();
+    clock += 3 * 60_000;
+    await chats.notifyPeople(issue, { body: "back on" }, { type: "user", id: alice.userId });
+    expect(sendToUser).toHaveBeenCalledTimes(1);
+    expect((await request(app(alice.actor)).put(`/api/team-chats/${chat.id}/mute`).send({ muted: "yes" })).status).toBe(400);
+  });
+
+  it("flags team chat messages in the activity feed without their words", async () => {
+    const { alice, chat } = await seed();
+    await say(alice.actor, chat.id, "secret plans");
+    const [row] = await ctx.db.select().from(activityLog).where(and(eq(activityLog.entityId, chat.id), eq(activityLog.action, "issue.comment_added")));
+    expect(row?.details).toMatchObject({ teamChat: true });
+    expect(JSON.stringify(row?.details)).not.toContain("secret plans");
+  });
+
   it("gives a woken agent the directive and the recent thread", async () => {
     const { alice, a, chat } = await seed();
     await say(alice.actor, chat.id, `${mention(a)} what is the launch date?`);
