@@ -36,6 +36,37 @@ export function PropertySection({
   );
 }
 
+/**
+ * Plain-words meaning of each task property, shown when the label is hovered.
+ * Someone who did not build GS Agentic Manager should understand every row.
+ */
+export const PROPERTY_HINTS: Record<string, string> = {
+  Status: "Where the task is: to do, in progress, in review, blocked or done.",
+  Priority: "How urgent this task is.",
+  Assignee: "The one agent or person doing this task.",
+  Team: "The team this task belongs to.",
+  Model: "The AI model the agent uses for this task.",
+  Project: "The project this task is part of.",
+  Labels: "Tags for grouping and finding tasks.",
+  Parent: "The bigger task this one is part of.",
+  "Blocked by": "Tasks that must finish before this one can carry on.",
+  Blocking: "Tasks that are waiting for this one to finish.",
+  Subtasks: "Smaller tasks this one was split into.",
+  "Sub-tasks": "Smaller tasks this one was split into.",
+  "Related tasks": "Other tasks that link to this one.",
+  Approvals: "Requests on this task that need a yes or no.",
+  Reviewers: "Who checks the work before the task can be done.",
+  Approvers: "Who gives the final yes before the task is done.",
+  Execution: "Where the agent does the work for this task.",
+  Workspace: "The folder and branch the agent works in for this task.",
+  "Scheduled retry": "When the agent will try again after a failed attempt.",
+  Monitor: "A check booked for later that wakes the agent, for example to look at an outside service again.",
+  Watchdog: "An agent that looks at this task when work stops and restarts it if it stopped by mistake.",
+  Originating: "Who or what created this task.",
+  Started: "When an agent first started work on this task.",
+  Completed: "When the task was finished.",
+};
+
 export function PropertyRow({
   label,
   children,
@@ -60,7 +91,7 @@ export function PropertyRow({
           wrap && "mt-0.5",
         )}
         data-property-label={typeof label === "string" ? label : undefined}
-        title={typeof label === "string" ? label : undefined}
+        title={typeof label === "string" ? (PROPERTY_HINTS[label] ?? label) : undefined}
       >
         {label}
       </span>
