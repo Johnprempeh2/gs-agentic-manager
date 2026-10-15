@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Lock, Radar, Sparkles } from "lucide-react";
+import { ListenButton } from "../components/ListenButton";
 import {
   INTELLIGENCE_BOARD_LABELS,
   type AiBriefingSections,
@@ -686,6 +687,8 @@ export function Intelligence() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
+  const todayRef = useRef<HTMLDivElement>(null);
+  const newsRef = useRef<HTMLDivElement>(null);
   const tabParam = searchParams.get("tab");
   const tab: Tab = TABS.some(([id]) => id === tabParam) ? (tabParam as Tab) : "overview";
   const date = searchParams.get("date");
@@ -825,7 +828,14 @@ export function Intelligence() {
         <TabsContent value="today" className="mt-4">
           {loading(pulseQuery) ??
             (pulse ? (
-              <TodayView sections={pulse.sections} headline={pulse.headline} date={pulse.reportDate} />
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <ListenButton targetRef={todayRef} label="Listen to the Pulse" />
+                </div>
+                <div ref={todayRef}>
+                  <TodayView sections={pulse.sections} headline={pulse.headline} date={pulse.reportDate} />
+                </div>
+              </div>
             ) : (
               <Empty
                 title={date ? "No Daily Pulse for this day" : "No Daily Pulse yet"}
@@ -859,7 +869,16 @@ export function Intelligence() {
 
         <TabsContent value="news" className="mt-4">
           {loading(briefingQuery) ??
-            (briefing ? <NewsView sections={briefing.sections} /> : <Empty title="No briefing yet" message={`${WHEN.briefing} News lands here as soon as it is written.`} />)}
+            (briefing ? (
+              <div className="space-y-3">
+                <div className="flex justify-end">
+                  <ListenButton targetRef={newsRef} label="Listen to the news" />
+                </div>
+                <div ref={newsRef}>
+                  <NewsView sections={briefing.sections} />
+                </div>
+              </div>
+            ) : <Empty title="No briefing yet" message={`${WHEN.briefing} News lands here as soon as it is written.`} />)}
         </TabsContent>
 
         <TabsContent value="gsam" className="mt-4">
