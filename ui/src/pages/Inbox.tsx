@@ -90,6 +90,7 @@ import { InboxArchiveButton, IssueRow } from "../components/IssueRow";
 import { TaskOwnerLabel } from "../components/TaskOwnerLabel";
 import { BlockedInboxView } from "../components/BlockedInboxView";
 import { BlockedWorkSummary } from "../components/BlockedWorkSummary";
+import { RecoveryHoldsPanel } from "../components/RecoveryHoldsPanel";
 import { SwipeToArchive } from "../components/SwipeToArchive";
 import { useNeedsMe } from "../hooks/useDecisionsFeed";
 import { NeedsMeList } from "../components/NeedsMeList";
@@ -2719,6 +2720,7 @@ export function Inbox() {
 
       {tab === "blocked" ? (
         <div className="-mx-2 sm:mx-0">
+        <RecoveryHoldsPanel companyId={selectedCompanyId!} agentNameById={agentById} />
         <BlockedWorkSummary
           companyId={selectedCompanyId!}
           agentNameById={agentById}
