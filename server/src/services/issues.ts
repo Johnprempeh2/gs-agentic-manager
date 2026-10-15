@@ -1,4 +1,5 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
+import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion } from "./closed-card-wake.js";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
@@ -250,12 +251,25 @@ const ISSUE_WAKE_DIAGNOSTICS_ACTIVITY_ACTIONS = [
   "issue.tree_hold_wakeup_deferred",
 ] as const;
 
-export type IssuePostCommitAction = {
-  type: "cancel_native_question_run";
-  runId: string;
-  issueId: string;
-  issueStatus: string;
-};
+export type IssuePostCommitAction =
+  | {
+      type: "cancel_native_question_run";
+      runId: string;
+      issueId: string;
+      issueStatus: string;
+    }
+  | {
+      // An agent or the system closed a task under another agent's pending
+      // card. Tell the card's maker its question was never answered.
+      type: "wake_closed_card_maker";
+      companyId: string;
+      agentId: string;
+      interactionId: string;
+      issueId: string;
+      issueLabel: string;
+      question: string | null;
+      closerAgentId: string | null;
+    };
 
 /** Execute side effects that must never run before the issue transaction commits. */
 export async function executeIssuePostCommitActions(
@@ -267,6 +281,10 @@ export async function executeIssuePostCommitActions(
   const heartbeat = heartbeatService(db);
   const cancelledRunIds = new Set<string>();
   for (const action of actions) {
+    if (action.type === "wake_closed_card_maker") {
+      await wakeClosedCardMaker(db, heartbeat, action);
+      continue;
+    }
     if (cancelledRunIds.has(action.runId)) continue;
     cancelledRunIds.add(action.runId);
     try {
@@ -289,6 +307,57 @@ export async function executeIssuePostCommitActions(
         "native question cancellation deferred to recovery sweep",
       );
     }
+  }
+}
+
+async function wakeClosedCardMaker(
+  db: Db,
+  heartbeat: { wakeup: (agentId: string, input: any) => Promise<unknown> },
+  action: Extract<IssuePostCommitAction, { type: "wake_closed_card_maker" }>,
+): Promise<void> {
+  try {
+    const closerName = action.closerAgentId
+      ? await db
+          .select({ name: agents.name })
+          .from(agents)
+          .where(and(eq(agents.id, action.closerAgentId), eq(agents.companyId, action.companyId)))
+          .then((rows) => rows[0]?.name ?? null)
+      : "GS Agentic Manager";
+    const text = buildClosedCardAgentMessage({
+      question: action.question,
+      issueLabel: action.issueLabel,
+      closerName,
+    });
+    const agentMessage = { text, source: "closed_card_expired", sessionId: action.interactionId };
+    // No issueId: the task is closed, and the maker should ask again elsewhere.
+    await heartbeat.wakeup(action.agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: "interaction_expired",
+      idempotencyKey: `interaction:${action.interactionId}:issue_closed`,
+      requestedByActorType: "system",
+      requestedByActorId: "closed_card_guard",
+      payload: {
+        closedIssueId: action.issueId,
+        interactionId: action.interactionId,
+        interactionStatus: "expired",
+        paperclipAgentMessage: agentMessage,
+      },
+      contextSnapshot: {
+        closedIssueId: action.issueId,
+        interactionId: action.interactionId,
+        interactionStatus: "expired",
+        paperclipAgentMessage: agentMessage,
+        wakeReason: "interaction_expired",
+        source: "issue.status_transition.issue_closed",
+      },
+    });
+  } catch (err) {
+    // The card is already expired and logged; a lost wake must not fail the close.
+    logger.warn(
+      { err, interactionId: action.interactionId, agentId: action.agentId },
+      "failed to wake the maker of a card expired by a task close",
+    );
   }
 }
 
@@ -11308,6 +11377,22 @@ export function issueService(db: Db) {
               agentId: actorAgentId ?? null,
               userId: actorUserId ?? null,
             });
+            const closedCards = new Map(expiredInteractions.map((interaction) => [interaction.id, interaction]));
+            for (const wake of closedCardMakersToWake(expiredInteractions, {
+              agentId: actorAgentId ?? null,
+              userId: actorUserId ?? null,
+            })) {
+              queuedPostCommitActions.push({
+                type: "wake_closed_card_maker",
+                companyId: updated.companyId,
+                agentId: wake.agentId,
+                interactionId: wake.interactionId,
+                issueId: updated.id,
+                issueLabel: updated.identifier ?? `"${updated.title}"`,
+                question: closedCardQuestion(closedCards.get(wake.interactionId)!),
+                closerAgentId: actorAgentId ?? null,
+              });
+            }
             const {
               nativeQuestionCancellationIdentity,
               requestNativeQuestionRunCancellation,
