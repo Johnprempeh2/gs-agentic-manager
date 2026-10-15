@@ -14,6 +14,7 @@ import { scrollTeamChatToLatest, TeamChatThread } from "@/components/team-chat/T
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { buildCompanyUserLabelMap, isAgentTaskTarget } from "@/lib/company-members";
 import { TEAM_CHAT_TOUR } from "@/lib/feature-tours";
@@ -37,6 +38,7 @@ export function TeamChat() {
   const [alertsPermission, setAlertsPermission] = useState(desktopAlertsPermission);
   const [alertsAsked, setAlertsAsked] = useState(() => localStorage.getItem(ALERTS_ASKED_KEY) === "1");
   const { visible } = usePageVisibility();
+  const push = usePushNotifications(selectedCompanyId);
   const session = useQuery({ queryKey: queryKeys.auth.session, queryFn: () => authApi.getSession() });
   const userId = session.data?.user?.id ?? session.data?.session?.userId ?? "local-board";
   const chat = useQuery({
@@ -97,8 +99,11 @@ export function TeamChat() {
     localStorage.setItem(ALERTS_ASKED_KEY, "1");
     setAlertsAsked(true);
   };
+  // Web Push reaches a hidden or closed tab; without it, alerts show only while the app is open.
   const turnOnAlerts = async () => {
-    setAlertsPermission(await window.Notification.requestPermission());
+    if (push.state === "off") await push.enable();
+    else await window.Notification.requestPermission();
+    setAlertsPermission(desktopAlertsPermission());
     closeAlertsPrompt();
   };
 
@@ -180,7 +185,7 @@ export function TeamChat() {
         {group && <p className="text-xs text-muted-foreground">Agents here reply only when you @mention them.</p>}
         {alertsPermission === "default" && !alertsAsked && (
           <div role="status" className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <span>Get a desktop alert when a message arrives and this tab is in the background.</span>
+            <span>Get an alert on this device when a message arrives and you are not looking.</span>
             <Button type="button" variant="outline" size="sm" className="h-6 px-2 text-xs" onClick={() => void turnOnAlerts()}>
               Turn on
             </Button>

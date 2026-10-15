@@ -146,12 +146,18 @@ self.addEventListener("push", (event) => {
     data = {};
   }
   const title = typeof data.title === "string" && data.title ? data.title : "GS Agentic Manager";
-  const shown = self.registration.showNotification(title, {
+  const url = typeof data.url === "string" ? data.url : "/";
+  const show = () => self.registration.showNotification(title, {
     body: typeof data.body === "string" ? data.body : "",
     icon: "/android-chrome-192x192.png",
     tag: typeof data.tag === "string" ? data.tag : undefined,
-    data: { url: typeof data.url === "string" ? data.url : "/" },
+    data: { url },
   });
+  // A team chat message for the chat someone is reading right now needs no alert.
+  const shown = typeof data.tag === "string" && data.tag.startsWith("chat:")
+    ? self.clients.matchAll({ type: "window" }).then((windows) =>
+      windows.some((client) => client.focused && new URL(client.url).pathname === url) ? undefined : show())
+    : show();
   const badge = typeof data.badge === "number" && self.navigator && "setAppBadge" in self.navigator
     ? (data.badge > 0 ? self.navigator.setAppBadge(data.badge) : self.navigator.clearAppBadge())
     : Promise.resolve();
