@@ -18,6 +18,7 @@ import {
   extractUserMentionIds,
   teamChatAgentHops,
   teamChatAlertReason,
+  teamChatSnippet,
   type TeamChatAlertReason,
   type IssueCommentPresentation,
   type TeamChatMember,
@@ -59,16 +60,6 @@ function isDirect(issue: { originId: string | null }) {
 
 function notice(title: string): IssueCommentPresentation {
   return { kind: "system_notice", tone: "info", title: title.slice(0, NOTICE_TITLE_LIMIT), detailsDefaultOpen: false, density: "compact" };
-}
-
-/** Mention links read as their label; markdown punctuation is dropped. */
-export function plainSnippet(markdown: string, limit = 140): string {
-  const text = markdown
-    .replace(/\[([^\]]*)]\([^)]*\)/g, "$1")
-    .replace(/[*_`>#~]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
 function authorTypeOf(row: { authorType: string | null; authorAgentId: string | null; authorUserId: string | null }) {
@@ -457,7 +448,7 @@ export function teamChatService(
             title: why === "mention"
               ? chat && !direct ? `${authorName} mentioned you in ${issue.title}` : `${authorName} mentioned you`
               : direct ? authorName : `${authorName} in ${issue.title}`,
-            body: plainSnippet(comment.body),
+            body: teamChatSnippet(comment.body),
             url,
             tag: `chat:${issue.id}`,
           };

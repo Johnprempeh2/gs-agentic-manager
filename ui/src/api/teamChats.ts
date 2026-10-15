@@ -10,6 +10,7 @@ export const teamChatsApi = {
     api.post<TeamChatSummary>(`/companies/${companyId}/team-chats/direct`, { userId }),
   addMembers: (chatId: string, data: Partial<AddTeamChatMembers>) =>
     api.post<TeamChatSummary>(`/team-chats/${chatId}/members`, data),
+  setMuted: (chatId: string, muted: boolean) => api.put<TeamChatSummary>(`/team-chats/${chatId}/mute`, { muted }),
   removeMember: (chatId: string, type: "user" | "agent", principalId: string) =>
     api.delete<TeamChatSummary>(`/team-chats/${chatId}/members/${type}/${encodeURIComponent(principalId)}`),
 };

@@ -59,6 +59,16 @@ export type AddTeamChatMembers = z.infer<typeof addTeamChatMembersSchema>;
 export const setTeamChatMuteSchema = z.object({ muted: z.boolean() });
 export type SetTeamChatMute = z.infer<typeof setTeamChatMuteSchema>;
 
+/** One line of a message for an alert: mention links read as their label; markdown punctuation is dropped. */
+export function teamChatSnippet(markdown: string, limit = 140): string {
+  const text = markdown
+    .replace(/\[([^\]]*)]\([^)]*\)/g, "$1")
+    .replace(/[*_`>#~]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
+}
+
 export type TeamChatAlertReason = "message" | "mention";
 
 /**
