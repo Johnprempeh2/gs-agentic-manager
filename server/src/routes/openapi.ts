@@ -397,6 +397,7 @@ import {
   addTeamChatMembersSchema,
   createDirectMessageSchema,
   createTeamChatSchema,
+  setTeamChatMuteSchema,
 } from "@greatstone/shared";
 import {
   clientSupportInboxSchema,
@@ -1468,6 +1469,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/team-chats/direct",
   "GET /api/team-chats/{id}",
   "POST /api/team-chats/{id}/members",
+  "PUT /api/team-chats/{id}/mute",
   "DELETE /api/team-chats/{id}/members/{type}/{principalId}",
   "POST /api/intelligence/recommendations/{id}/task",
   "GET /api/companies/{companyId}/mailbox-oauth/apps",
@@ -14058,6 +14060,15 @@ registerCurrentRoute({
   tags: ["team-chats"],
   summary: "Add people or agents to a group chat",
   body: addTeamChatMembersSchema,
+  responses: teamChatResponses,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/team-chats/{id}/mute",
+  tags: ["team-chats"],
+  summary: "Mute or unmute a chat for the caller; a muted chat still alerts on @mentions",
+  body: setTeamChatMuteSchema,
   responses: teamChatResponses,
 });
 
