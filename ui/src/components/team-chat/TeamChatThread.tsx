@@ -84,7 +84,10 @@ export function TeamChatThread({
       document.getElementById(`comment-${highlightId}`)?.scrollIntoView?.({ block: "center" });
       return;
     }
-    endRef.current?.scrollIntoView?.({ block: "end" });
+    // Desktop scrolls inside <main>; jump it to the very end so the sticky composer clears the last message.
+    const main = document.getElementById("main-content");
+    if (main && main.scrollHeight > main.clientHeight) main.scrollTop = main.scrollHeight;
+    else endRef.current?.scrollIntoView?.({ block: "end" });
   }, [lastId, highlightId]);
 
   return (
@@ -116,7 +119,7 @@ export function TeamChatThread({
       <div
         data-testid="team-chat-composer-dock"
         className={cn(
-          "sticky z-sticky -mx-1 border-t border-border bg-background px-1 pt-3",
+          "sticky z-sticky -mx-4 border-t border-border bg-background px-4 pt-3 md:-mx-1 md:px-1",
           // Desktop: cover the page's bottom padding so messages never show below the composer.
           isMobile
             ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] pb-1"
