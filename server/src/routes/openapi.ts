@@ -6984,6 +6984,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/blocked-work",
+  tags: ["issues"],
+  summary: "Blocked work overview: how long each blocked task has waited, who must act, and the root task holding each chain",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/agent-work-digest/visit",
   tags: ["inbox"],
