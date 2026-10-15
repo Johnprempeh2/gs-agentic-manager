@@ -18,6 +18,8 @@ describe("shell navigation", () => {
     expect(classifyShellRoute("/PAP/strategy-board", "PAP").isMobileChat).toBe(false);
     expect(classifyShellRoute("/PAP/strategy-board/ask/agent-1", "PAP").isMobileChat).toBe(true);
     expect(classifyShellRoute("/PAP/strategy-board/ask/agent-1", "PAP").isTaskDetail).toBe(false);
+    expect(classifyShellRoute("/PAP/messages/chat-1", "PAP").isMobileChat).toBe(true);
+    expect(classifyShellRoute("/PAP/messages/chat-1", "PAP").isTaskDetail).toBe(false);
   });
 
   it("classifies the built-in contextual surfaces", () => {

@@ -7,9 +7,9 @@ import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
 import { issuesApi } from "@/api/issues";
 import { teamChatsApi } from "@/api/teamChats";
-import { CommentAuthorNameContext, CommentThread } from "@/components/CommentThread";
 import { FeatureTour } from "@/components/FeatureTour";
 import { NewTeamChatDialog, type NewTeamChatInput } from "@/components/NewTeamChatDialog";
+import { scrollTeamChatToLatest, TeamChatThread } from "@/components/team-chat/TeamChatThread";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
@@ -70,14 +70,16 @@ export function TeamChat() {
 
   const agentMap = useMemo(() => new Map((agents.data ?? []).map((agent) => [agent.id, agent])), [agents.data]);
   const names = useMemo(() => new Map((summary?.members ?? []).map((member) => [member.id, member.name])), [summary?.members]);
-  const authorName = useCallback(
+  const senderName = useCallback(
     (comment: IssueComment) =>
-      comment.authorType === "system" && !comment.authorUserId
-        ? "System"
-        : comment.authorUserId === userId
-          ? "You"
-          : names.get(comment.authorUserId ?? "") ?? "Former member",
-    [names, userId],
+      comment.authorAgentId
+        ? names.get(comment.authorAgentId) ?? agentMap.get(comment.authorAgentId)?.name ?? "Agent"
+        : comment.authorType === "system" && !comment.authorUserId
+          ? "System"
+          : comment.authorUserId === userId
+            ? "You"
+            : names.get(comment.authorUserId ?? "") ?? "Former member",
+    [agentMap, names, userId],
   );
   const mentions = useMemo(() => teamChatMentionOptions(summary?.members ?? [], userId), [summary?.members, userId]);
 
@@ -112,10 +114,11 @@ export function TeamChat() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-      <header className="flex flex-col gap-2 border-b border-border pb-3">
+      {/* Desktop: the header also covers the page's top padding so messages never show above it. */}
+      <header className="sticky top-0 z-sticky -mx-4 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-4 pb-3 pt-2 md:-mx-1 md:px-1 md:-top-6 md:-mt-6 md:pt-6">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0 truncate text-xl font-bold">{label}</h1>
-          <FeatureTour tour={TEAM_CHAT_TOUR} />
+          <FeatureTour tour={TEAM_CHAT_TOUR} onClose={scrollTeamChatToLatest} />
         </div>
         <ul aria-label="Members" data-tour="team-chat-members" className="flex flex-wrap items-center gap-1.5">
           {summary.members.map((member) => (
@@ -149,21 +152,25 @@ export function TeamChat() {
         {group && <p className="text-xs text-muted-foreground">Agents here reply only when you @mention them.</p>}
       </header>
       <div data-tour="team-chat-thread">
-      <CommentAuthorNameContext.Provider value={authorName}>
-        <CommentThread
+        <TeamChatThread
           comments={comments.data ?? []}
-          agentMap={agentMap}
           currentUserId={userId}
-          companyId={summary ? selectedCompanyId : null}
+          agentMap={agentMap}
+          senderName={senderName}
+          companyId={selectedCompanyId}
           mentions={mentions}
           draftKey={`team-chat-draft:${summary.id}`}
           composerDisabledReason={enabled ? null : "Team Chat is off, so new messages cannot be sent."}
-          onAdd={async (body) => {
+          imageUploadHandler={
+            selectedCompanyId
+              ? async (file) => (await issuesApi.uploadAttachment(selectedCompanyId, summary.id, file)).contentPath
+              : undefined
+          }
+          onSend={async (body) => {
             await issuesApi.addComment(summary.id, body);
             await client.invalidateQueries({ queryKey: queryKeys.issues.comments(summary.id) });
           }}
         />
-      </CommentAuthorNameContext.Provider>
       </div>
       <NewTeamChatDialog
         mode="add"
