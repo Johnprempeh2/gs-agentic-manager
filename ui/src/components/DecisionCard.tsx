@@ -320,7 +320,7 @@ export function DecisionCard({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-background/82 p-4 text-sm",
+        "rounded-xl border bg-card p-4 text-sm",
         SHELL[tone],
         dimmed && "opacity-80",
         className,
