@@ -154,9 +154,14 @@ self.addEventListener("push", (event) => {
     data: { url },
   });
   // A team chat message for the chat someone is reading right now needs no alert.
+  // The url carries a #comment-<id> anchor, so compare paths only.
   const shown = typeof data.tag === "string" && data.tag.startsWith("chat:")
-    ? self.clients.matchAll({ type: "window" }).then((windows) =>
-      windows.some((client) => client.focused && new URL(client.url).pathname === url) ? undefined : show())
+    ? self.clients.matchAll({ type: "window" }).then((windows) => {
+      const chatPath = new URL(url, self.location.origin).pathname;
+      return windows.some((client) => client.focused && new URL(client.url).pathname === chatPath)
+        ? undefined
+        : show();
+    })
     : show();
   const badge = typeof data.badge === "number" && self.navigator && "setAppBadge" in self.navigator
     ? (data.badge > 0 ? self.navigator.setAppBadge(data.badge) : self.navigator.clearAppBadge())
