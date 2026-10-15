@@ -711,6 +711,8 @@ export const queryKeys = {
       ["sidebar-preferences", "company-order", userId] as const,
     sectionOrder: (userId: string) =>
       ["sidebar-preferences", "section-order", userId] as const,
+    layout: (userId: string) =>
+      ["sidebar-preferences", "layout", userId] as const,
     projectOrder: (companyId: string, userId: string) =>
       ["sidebar-preferences", "project-order", companyId, userId] as const,
   },

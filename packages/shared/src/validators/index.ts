@@ -135,6 +135,9 @@ export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
   upsertSidebarSectionOrderSchema,
+  sidebarLayoutSchema,
+  upsertSidebarLayoutSchema,
+  type SidebarLayout,
   type UpsertSidebarOrderPreference,
 } from "./sidebar-preferences.js";
 export {

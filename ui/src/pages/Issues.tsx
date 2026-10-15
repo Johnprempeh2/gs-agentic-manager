@@ -140,7 +140,7 @@ export function Issues() {
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
-        "Agent tasks",
+        "Tasks",
         `${location.pathname}${location.search}${location.hash}`,
         "issues",
       ),
@@ -148,7 +148,7 @@ export function Issues() {
   );
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Agent tasks" }]);
+    setBreadcrumbs([{ label: "Tasks" }]);
   }, [setBreadcrumbs]);
 
   const issuePageSize = workspaceIdFilter ? WORKSPACE_FILTER_ISSUE_LIMIT : ISSUES_PAGE_SIZE;

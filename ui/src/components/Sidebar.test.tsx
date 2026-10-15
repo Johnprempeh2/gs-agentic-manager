@@ -30,11 +30,28 @@ const mockAgentsApi = vi.hoisted(() => ({
 }));
 
 vi.mock("../api/agents", () => ({ agentsApi: mockAgentsApi }));
+
+// The signed-in user's saved sidebar arrangement (server side in the app).
+const mockSidebarPrefs = vi.hoisted(() => ({
+  layout: {} as Record<string, unknown>,
+  api: {
+    getLayout: vi.fn(),
+    updateLayout: vi.fn(),
+    getSectionOrder: vi.fn(),
+    updateSectionOrder: vi.fn(),
+  },
+}));
+vi.mock("../api/sidebarPreferences", () => ({ sidebarPreferencesApi: mockSidebarPrefs.api }));
+vi.mock("../api/auth", () => ({
+  authApi: { getSession: vi.fn(async () => ({ user: { id: "user-1" }, session: { userId: "user-1" } })) },
+}));
 vi.mock("./AgentAvatar", () => ({ AgentAvatar: () => <span data-testid="agent-avatar" /> }));
+
+const mockLocation = vi.hoisted(() => ({ pathname: "/PAP/dashboard" }));
 
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
-  useLocation: () => ({ pathname: "/PAP/dashboard" }),
+  useLocation: () => mockLocation,
   NavLink: ({ to, children, className, ...props }: {
     to: string;
     children: ReactNode;
@@ -183,6 +200,29 @@ describe("Sidebar", () => {
     return [...(section?.querySelectorAll("a") ?? [])].map((anchor) => anchor.textContent?.trim());
   }
 
+  async function click(element: Element | null | undefined) {
+    expect(element).toBeTruthy();
+    element?.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    element?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await flushReact();
+  }
+
+  function button(label: string) {
+    return container.querySelector(`button[aria-label="${label}"]`);
+  }
+
+  function textButton(text: string) {
+    return [...container.querySelectorAll("button")].find((node) => node.textContent?.trim() === text);
+  }
+
+  function menuItem(text: string) {
+    return [...document.body.querySelectorAll('[role="menuitem"]')].find((node) => node.textContent?.trim() === text);
+  }
+
+  function lastSavedLayout() {
+    return mockSidebarPrefs.api.updateLayout.mock.calls.at(-1)?.[0];
+  }
+
   function memorySettings(enabled: boolean) {
     return { companyId: "company-1", enabled, retainMode: "extract", updatedAt: null };
   }
@@ -206,6 +246,12 @@ describe("Sidebar", () => {
       decisions: [],
       assignedTasks: [],
     });
+    mockSidebarPrefs.layout = {};
+    mockLocation.pathname = "/PAP/dashboard";
+    mockSidebarPrefs.api.getLayout.mockImplementation(async () => ({ layout: mockSidebarPrefs.layout, updatedAt: null }));
+    mockSidebarPrefs.api.updateLayout.mockImplementation(async (layout: unknown) => ({ layout, updatedAt: null }));
+    mockSidebarPrefs.api.getSectionOrder.mockResolvedValue({ orderedIds: [], updatedAt: null });
+    mockSidebarPrefs.api.updateSectionOrder.mockResolvedValue({ orderedIds: [], updatedAt: null });
     mockSidebar.isMobile = false;
     mockSidebar.collapsed = false;
     mockSidebar.collapseLocked = false;
@@ -253,6 +299,7 @@ describe("Sidebar", () => {
 
   it("shows Releases only to the board (GRE-122)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
+    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const releasesLink = () =>
       [...container.querySelectorAll("nav a")].find((anchor) => anchor.textContent?.trim() === "Releases");
 
@@ -299,15 +346,20 @@ describe("Sidebar", () => {
     });
   });
 
-  it("gives each section a drag grip and a rearrange menu, separate from the nav links", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+  it("gives each section a rearrange menu, and drag grips only while customising", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
     const root = await renderSidebar();
 
-    for (const label of ["Work", "Team", "Build", "Company"]) {
-      const grip = container.querySelector(`button[aria-label="Drag to move the ${label} section"]`);
+    for (const label of ["Today", "Chats", "Clients", "Work", "Team", "Admin"]) {
+      expect(button(`Rearrange ${label} section`)).not.toBeNull();
+      expect(button(`Drag to move the ${label} section`)).toBeNull();
+    }
+
+    await click(textButton("Customise sidebar"));
+    for (const label of ["Today", "Chats", "Clients", "Work", "Team", "Admin"]) {
+      const grip = button(`Drag to move the ${label} section`);
       expect(grip).not.toBeNull();
       expect(grip?.closest("a")).toBeNull();
-      expect(container.querySelector(`button[aria-label="Rearrange ${label} section"]`)).not.toBeNull();
     }
 
     flushSync(() => {
@@ -332,7 +384,7 @@ describe("Sidebar", () => {
     });
   });
 
-  it("renders plugin sidebar launchers inside the Build section", async () => {
+  it("renders plugin sidebar launchers after the sections", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,
     });
@@ -341,14 +393,11 @@ describe("Sidebar", () => {
     const launcher = [...container.querySelectorAll("nav [data-plugin-launcher-zone]")]
       .find((node) => node.getAttribute("data-plugin-launcher-zone") === "sidebar");
     expect(launcher?.textContent).toContain("Plugin launcher outlet");
-    // Sections are Collapsibles (one extra wrapper level), so resolve the
-    // section root by walking up until the header label appears.
-    let buildSectionContainer = launcher?.parentElement ?? null;
-    while (buildSectionContainer && !buildSectionContainer.textContent?.startsWith("Build")) {
-      buildSectionContainer = buildSectionContainer.parentElement;
-    }
-    expect(buildSectionContainer?.textContent).toContain("Projects");
-    expect(buildSectionContainer?.textContent).toContain("Routines");
+    expect(launcher?.closest("[data-sidebar-section]")).toBeNull();
+    const workSection = container.querySelector('[data-sidebar-section="work"]');
+    expect(
+      workSection!.compareDocumentPosition(launcher!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
 
     flushSync(() => {
       root.unmount();
@@ -365,19 +414,17 @@ describe("Sidebar", () => {
     expect(container.textContent).not.toContain("New Issue");
 
     const navLabels = [...container.querySelectorAll("nav a")].map((a) => a.textContent?.trim());
-    expect(navLabels).toContain("Agent tasks");
+    expect(navLabels).toContain("Tasks");
+    expect(navLabels).not.toContain("Agent tasks");
     expect(navLabels).not.toContain("Issues");
 
     const projectsLink = [...container.querySelectorAll("nav a")].find((a) => a.textContent?.trim() === "Projects");
     expect(projectsLink?.getAttribute("href")).toBe("/projects");
     const agentLinks = [...container.querySelectorAll('a[href="/agents"]')];
     expect(agentLinks).toHaveLength(1);
-    expect([...container.querySelectorAll('a[href="/activity"]')]).toHaveLength(1);
-    expect(navLabels).toContain("Audit");
-    // GS: Settings is a visible owner destination (owner UX audit, 1 Oct).
-    expect(navLabels).toContain("Settings");
-    expect(navLabels).not.toContain("Activity");
-    expect(navLabels).not.toContain("Costs");
+    // Audit and Settings live in the Admin section, folded by default.
+    expect(container.querySelector('a[href="/activity"]')).toBeNull();
+    expect(button("Expand Admin")).not.toBeNull();
     expect(container.querySelector('[data-testid="sidebar-recent-tasks"]')).not.toBeNull();
 
     flushSync(() => {
@@ -410,7 +457,7 @@ describe("Sidebar", () => {
     const root = await renderSidebar();
 
     const navLabels = [...container.querySelectorAll("nav a")].map((a) => a.textContent?.trim());
-    expect(navLabels).toContain("Agent tasks");
+    expect(navLabels).toContain("Tasks");
     // Top-level Projects link + starred children stay, per-project collapsible gone.
     expect(navLabels).toContain("Projects");
     expect(container.querySelector('[data-testid="sidebar-starred-projects"]')).not.toBeNull();
@@ -421,18 +468,14 @@ describe("Sidebar", () => {
     });
   });
 
-  it("renders plugin sidebar slots in Build below Workspaces", async () => {
+  it("renders plugin sidebar slots after the sections, outside the top group", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
     const root = await renderSidebar();
 
     const sidebarSlot = [...container.querySelectorAll("nav [data-plugin-slot-types]")]
       .find((node) => node.getAttribute("data-plugin-slot-types") === "sidebar");
     expect(sidebarSlot?.textContent).toContain("Plugin slot outlet");
-    const buildSection = [...container.querySelectorAll("nav > div")]
-      .find((section) => section.textContent?.startsWith("Build"));
-    const buildText = buildSection?.textContent ?? "";
-    expect(buildText).toContain("Workspaces");
-    expect(buildText.indexOf("Workspaces")).toBeLessThan(buildText.indexOf("Plugin slot outlet"));
+    expect(sidebarSlot?.closest("[data-sidebar-section]")).toBeNull();
 
     const primaryNavText = container.querySelector("nav > div:first-child")?.textContent ?? "";
     expect(primaryNavText).not.toContain("Plugin slot outlet");
@@ -483,7 +526,7 @@ describe("Sidebar", () => {
     );
     const root = await renderSidebar();
 
-    expect(sectionLabels("Work")).toContain("Decisions");
+    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox"]);
 
     flushSync(() => {
       root.unmount();
@@ -496,7 +539,7 @@ describe("Sidebar", () => {
 
     const decisionsLink = container.querySelector('a[href="/decisions"]');
     expect(decisionsLink?.textContent?.trim()).toBe("Decisions");
-    expect(sectionLabels("Work")).toContain("Decisions");
+    expect(sectionLabels("Today")).toContain("Decisions");
     expect(mockDecisionsFeedApi.needsMe).toHaveBeenCalledWith("company-1");
 
     flushSync(() => {
@@ -521,38 +564,150 @@ describe("Sidebar", () => {
     });
   });
 
-  it("remembers a section the owner folded away", async () => {
-    window.localStorage.setItem("gsam.sidebar.build.open", "0");
-    try {
-      const root = await renderSidebar();
-      const navLabels = [...container.querySelectorAll("nav a")].map((anchor) => anchor.textContent?.trim());
-      expect(navLabels).not.toContain("Projects");
-      expect(navLabels).toContain("Skills");
-      flushSync(() => {
-        root.unmount();
-      });
-    } finally {
-      window.localStorage.removeItem("gsam.sidebar.build.open");
-    }
-  });
-
-  it("puts Deliverables then the Everest chat directly under Search (GRE-259, GRE-585)", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
+  it("remembers folded sections from the saved layout and saves a toggle", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    mockSidebarPrefs.layout = { collapsed: { work: true, admin: false } };
     const root = await renderSidebar();
 
-    const top = container.querySelector("nav > div:first-child");
-    expect(top?.textContent).toBe("New TaskSearchDeliverablesEverest");
-    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
-    expect(top?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
-    expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
+    const navLabels = [...container.querySelectorAll("nav a")].map((anchor) => anchor.textContent?.trim());
+    expect(navLabels).not.toContain("Dashboard");
+    expect(navLabels).toContain("Skills");
+
+    await click(button("Collapse Admin"));
+    expect(lastSavedLayout()).toEqual({ collapsed: { work: true, admin: true } });
+    expect(button("Expand Admin")).not.toBeNull();
 
     flushSync(() => {
       root.unmount();
     });
   });
 
+  it("puts Search under Ask Everest and New Task, and the chats in their own section", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
+    const root = await renderSidebar();
+
+    const top = container.querySelector("nav > div:first-child");
+    expect(top?.textContent).toBe("New TaskSearch");
+    expect(container.querySelectorAll('a[href="/deliverables"]')).toHaveLength(1);
+    const chats = container.querySelector('[data-sidebar-section="chats"]');
+    expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
+    expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables"]);
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  describe("customise mode", () => {
+    it("stays out of the way until asked for, then swaps links for editable rows", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      const root = await renderSidebar();
+
+      expect(container.querySelector('[data-testid="sidebar-customise-panel"]')).toBeNull();
+      expect(button("Hide Goals")).toBeNull();
+
+      await click(textButton("Customise sidebar"));
+      expect(container.querySelector('[data-testid="sidebar-customise-panel"]')).not.toBeNull();
+      expect(container.querySelector('a[href="/goals"]')).toBeNull();
+      expect(container.querySelector('[data-testid="sidebar-customise-item-goals"]')).not.toBeNull();
+      // Admin opens while customising, so its items can be moved too.
+      expect(container.querySelector('[data-testid="sidebar-customise-item-settings"]')).not.toBeNull();
+      expect(container.textContent).toContain("Nothing hidden");
+
+      await click(textButton("Done"));
+      expect(container.querySelector('[data-testid="sidebar-customise-panel"]')).toBeNull();
+      expect(container.querySelector('a[href="/goals"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("hides an item, lists it under Hidden items and shows it again", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      const root = await renderSidebar();
+
+      await click(textButton("Customise sidebar"));
+      await click(button("Hide Goals"));
+      expect(lastSavedLayout()).toEqual({ hidden: ["goals"], pinned: [] });
+      expect(container.querySelector('[data-testid="sidebar-customise-item-goals"]')).toBeNull();
+      expect(button("Show Goals")).not.toBeNull();
+
+      await click(textButton("Done"));
+      expect(container.querySelector('a[href="/goals"]')).toBeNull();
+
+      await click(textButton("Customise sidebar"));
+      await click(button("Show Goals"));
+      expect(lastSavedLayout()?.hidden).toEqual([]);
+      await click(textButton("Done"));
+      expect(container.querySelector('a[href="/goals"]')).not.toBeNull();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("moves an item from its menu and pins one to the top", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      const root = await renderSidebar();
+
+      await click(textButton("Customise sidebar"));
+      await click(button("More options for Inbox"));
+      await click(menuItem("Move up"));
+      expect(lastSavedLayout()?.sections?.today).toEqual(["decisions", "inbox", "my-tasks"]);
+
+      await click(button("More options for Agents"));
+      await click(menuItem("Pin to top"));
+      expect(lastSavedLayout()?.pinned).toEqual(["agents"]);
+      expect(button("Unpin Agents")).not.toBeNull();
+
+      await click(textButton("Done"));
+      expect(sectionLabels("Today")).toEqual(["Decisions", "Inbox", "My tasks"]);
+      expect(sectionLabels("Pinned")).toEqual(["Agents"]);
+      // Pinned items move to the top group; they are not listed twice.
+      expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("resets the items and the section order to the default", async () => {
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      mockSidebarPrefs.layout = { hidden: ["goals"], pinned: ["agents"] };
+      const root = await renderSidebar();
+
+      expect(container.querySelector('a[href="/goals"]')).toBeNull();
+      await click(textButton("Customise sidebar"));
+      await click(textButton("Reset to default"));
+      expect(lastSavedLayout()).toEqual({});
+      expect(mockSidebarPrefs.api.updateSectionOrder).toHaveBeenCalledWith({ orderedIds: [] });
+
+      await click(textButton("Done"));
+      expect(container.querySelector('a[href="/goals"]')).not.toBeNull();
+      expect(sectionLabels("Pinned")).toEqual([]);
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+
+    it("keeps the customise button off the collapsed rail", async () => {
+      mockSidebar.collapsed = true;
+      mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+      const root = await renderSidebar();
+
+      expect(textButton("Customise sidebar")).toBeUndefined();
+
+      flushSync(() => {
+        root.unmount();
+      });
+    });
+  });
+
   describe("Memory link", () => {
-    it("shows Memory directly below Deliverables when memory is on for the company", async () => {
+    it("shows Memory last in Work when memory is on for the company", async () => {
       mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableAgentChat: true });
       mockMemoryGraphApi.settings.mockResolvedValue(memorySettings(true));
       const root = await renderSidebar();
@@ -563,9 +718,7 @@ describe("Sidebar", () => {
       expect(link.getAttribute("href")).toBe("/memory");
       expect(link.textContent?.trim()).toBe("Memory");
       expect(link.querySelector("svg")?.classList).toContain("lucide-brain");
-      expect(container.querySelector("nav > div:first-child")?.textContent).toBe(
-        "New TaskSearchDeliverablesMemoryEverest",
-      );
+      expect(sectionLabels("Work").at(-1)).toBe("Memory");
 
       flushSync(() => {
         root.unmount();
@@ -579,9 +732,7 @@ describe("Sidebar", () => {
 
       expect(mockMemoryGraphApi.settings).toHaveBeenCalledWith("company-1");
       expect(memoryLinks()).toHaveLength(0);
-      expect(container.querySelector("nav > div:first-child")?.textContent).toBe(
-        "New TaskSearchDeliverablesEverest",
-      );
+      expect(sectionLabels("Work")).not.toContain("Memory");
 
       flushSync(() => {
         root.unmount();
@@ -613,28 +764,34 @@ describe("Sidebar", () => {
     });
   });
 
-  it("groups the streamlined navigation into Work, Team, Build and Company (GRE-259)", async () => {
+  it("groups the navigation into Today, Chats, Clients, Work, Team and a folded Admin (PR #551 audit)", async () => {
     mockCanRelease.value = true;
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: true,
       enableCases: true,
+      enableDeepDive: true,
+      enablePipelines: true,
       enableStatusCards: true,
       enableConferenceRoomChat: true,
+      enableAgentChat: true,
     });
+    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
 
-    const headings = [...container.querySelectorAll("nav > div")]
-      .map((section) => section.textContent)
-      .flatMap((text) => ["Work", "Team", "Build", "Company"].filter((label) => text?.startsWith(label)));
-    expect(headings).toEqual(["Work", "Team", "Build", "Company"]);
-    expect(sectionLabels("Work")).toEqual(["Dashboard", "Inbox", "My tasks", "Decisions", "Agent tasks", "Goals"]);
+    const headings = [...container.querySelectorAll("[data-sidebar-section]")]
+      .map((section) => section.getAttribute("data-sidebar-section"));
+    expect(headings).toEqual(["today", "chats", "clients", "work", "team", "admin"]);
+    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox"]);
+    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables"]);
+    expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta"]);
-    expect(sectionLabels("Company")).toEqual(["Skills", "Connectors", "Audit", "Releases", "Settings"]);
+    expect(sectionLabels("Admin")).toEqual([
+      "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta",
+      "Audit", "Releases", "Settings", "Design guide",
+    ]);
     expect(
       container.querySelector('a[href="/issues"] svg')?.classList.contains("lucide-circle-check"),
     ).toBe(true);
-    expect(container.textContent).not.toContain("Org");
 
     flushSync(() => {
       root.unmount();
@@ -642,10 +799,42 @@ describe("Sidebar", () => {
     mockCanRelease.value = false;
   });
 
-  it("shows Deep Dive after Cases only while both flags are on", async () => {
+  it("opens folded-by-default Admin while you are on one of its pages, unless you folded it", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    mockLocation.pathname = "/PAP/apps/advanced";
+    let root = await renderSidebar();
+    expect(container.querySelector('a[href="/apps"]')?.textContent).toBe("Connectors");
+    flushSync(() => {
+      root.unmount();
+    });
+
+    mockSidebarPrefs.layout = { collapsed: { admin: true } };
+    root = await renderSidebar();
+    expect(container.querySelector('a[href="/apps"]')).toBeNull();
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("folds Admin by default and leaves out a section with nothing to show", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({});
+    const root = await renderSidebar();
+
+    expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
+    expect(button("Expand Admin")).not.toBeNull();
+    // Pipelines and Deep Dive are off, so Clients holds only Deliverables; chats are off, so no Chats section.
+    expect(sectionLabels("Clients")).toEqual(["Deliverables"]);
+    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("shows Deep Dive in Clients only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Build")).toEqual(["Projects", "Routines", "Workflows", "Artifacts", "Casesbeta", "Deep Divebeta"]);
+    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables"]);
     flushSync(() => {
       root.unmount();
     });
@@ -709,7 +898,7 @@ describe("Sidebar", () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: false });
     const root = await renderSidebar();
 
-    expect(sectionLabels("Build")).toContain("Projects");
+    expect(sectionLabels("Work")).toContain("Projects");
     expect(container.querySelector('a[href="/timeline"]')).toBeNull();
 
     flushSync(() => {
@@ -773,8 +962,9 @@ describe("Sidebar", () => {
     });
   });
 
-  it("always shows Connectors in the Company section", async () => {
+  it("always shows Connectors in the Admin section", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableApps: false });
+    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
 
     const links = [...container.querySelectorAll("a")];
@@ -821,6 +1011,7 @@ describe("Sidebar", () => {
 
   it("shows the Workspaces link when isolated workspaces are enabled", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIsolatedWorkspaces: true });
+    mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
 
     const link = [...container.querySelectorAll("a")].find((anchor) => anchor.textContent === "Workspaces");
