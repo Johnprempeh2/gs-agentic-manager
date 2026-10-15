@@ -458,7 +458,7 @@ export function DecisionCard({
                     disabled && "cursor-not-allowed text-subtle-foreground",
                     destructive
                       ? "border-rose-500/70 bg-rose-500/5 text-foreground hover:border-rose-500 hover:bg-rose-500/10"
-                      : "border-border/70 bg-transparent text-foreground hover:border-sky-500/70 hover:bg-sky-500/10",
+                      : "border-border/70 bg-field text-foreground hover:border-sky-500/70 hover:bg-sky-500/10",
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">

@@ -3099,3 +3099,4 @@ export * from "./types/pipeline-fields.js";
 export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
 export * from "./partner-branding.js";
+export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";

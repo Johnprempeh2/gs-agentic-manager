@@ -76,7 +76,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   ScanEye,
+  Sparkles,
 } from "lucide-react";
+import { TASK_QUICK_STARTS, firstPlaceholderRange, type TaskQuickStart } from "../lib/task-quick-starts";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -474,7 +476,7 @@ const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
         setDraftValue(nextValue);
         onChange(nextValue);
       }}
-      placeholder="Add description..."
+      placeholder="What should the agent do? Say what a good result looks like and anything it needs to know."
       bordered={false}
       mentions={mentions}
       contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
@@ -785,6 +787,19 @@ export function NewIssueDialog() {
     selectedExecutionWorkspaceId,
     workMode,
   ]);
+
+  const applyQuickStart = useCallback((quickStart: TaskQuickStart) => {
+    setIssueText(quickStart.title, quickStart.description);
+    queueDraftSave({ title: quickStart.title, description: quickStart.description });
+    // Select the first [placeholder] in the title so typing replaces it.
+    requestAnimationFrame(() => {
+      const titleField = dialogBodyRef.current?.querySelector("textarea");
+      const range = firstPlaceholderRange(quickStart.title);
+      if (!titleField) return;
+      titleField.focus();
+      if (range) titleField.setSelectionRange(range.start, range.end);
+    });
+  }, [setIssueText, queueDraftSave]);
 
   const handleTitleChange = useCallback((nextTitle: string) => {
     titleRef.current = nextTitle;
@@ -1544,6 +1559,27 @@ export function NewIssueDialog() {
             />
           </div>
 
+          {!draftHasText && stagedFiles.length === 0 && !createIssue.isPending ? (
+            <div className="px-4 pb-2" data-testid="task-quick-starts">
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Sparkles className="size-3.5" aria-hidden />
+                Not sure how to start? Pick one and fill in the words in brackets.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {TASK_QUICK_STARTS.map((quickStart) => (
+                  <button
+                    key={quickStart.id}
+                    type="button"
+                    onClick={() => applyQuickStart(quickStart)}
+                    className="rounded-full border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                  >
+                    {quickStart.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           {effectiveCompanyId ? (
             <div className="px-4 pb-2">
               {neededUserSecretKeys.length > 0 ? (
@@ -2238,7 +2274,7 @@ export function NewIssueDialog() {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
+            <PopoverContent className="w-64 p-1" align="start">
               {priorities.map((p) => (
                 <button
                   key={p.value}
@@ -2288,6 +2324,7 @@ export function NewIssueDialog() {
                 data-issue-work-mode-chip={workMode}
                 data-slot="new-issue-compact-control"
                 aria-keyshortcuts="Meta+Period Control+Period"
+                title={currentWorkMode.description}
                 className={cn(
                   "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 py-0 text-xs transition-colors sm:h-auto sm:px-2 sm:py-1",
                   currentWorkMode.classes.chip,
@@ -2297,7 +2334,7 @@ export function NewIssueDialog() {
                 {currentWorkMode.label}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
+            <PopoverContent className="w-64 p-1" align="start">
               {workModeOptions.map((option) => {
                 const Icon = option.icon;
                 return (
@@ -2314,9 +2351,12 @@ export function NewIssueDialog() {
                       setWorkModeOpen(false);
                     }}
                   >
-                    <Icon className="h-3 w-3" />
-                    {option.label}
-                    {option.value === workMode ? <Check className="ml-auto h-3 w-3" aria-hidden /> : null}
+                    <Icon className="h-3 w-3 shrink-0 self-start mt-0.5" />
+                    <span className="flex min-w-0 flex-col items-start text-left">
+                      <span>{option.label}</span>
+                      <span className="text-muted-foreground">{option.description}</span>
+                    </span>
+                    {option.value === workMode ? <Check className="ml-auto h-3 w-3 shrink-0 self-start mt-0.5" aria-hidden /> : null}
                   </button>
                 );
               })}

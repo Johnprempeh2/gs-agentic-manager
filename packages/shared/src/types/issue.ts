@@ -1,4 +1,5 @@
 import type { DraftDiffSegment } from "../draft-diff.js";
+import type { AskType } from "../ask-types.js";
 import type { ExecutionProjection, ExecutionBlocker } from "./execution-projection.js";
 import type {
   IssueCommentAuthorType,
@@ -935,6 +936,7 @@ export type CompactIssue = Pick<
   | "cancelledAt"
   | "createdAt"
   | "updatedAt"
+  | "dueDate"
 > & {
   labelIds?: string[];
   labels?: IssueLabel[];
@@ -1437,6 +1439,8 @@ export interface RequestConfirmationPayload {
   connectionAuthorization?: RequestConfirmationConnectionAuthorizationPayload;
   /** Needs the board user at the computer (GRE-450). */
   atDesk?: InteractionAtDesk | null;
+  /** What the agent needs the person to do; names the ask in Decisions and always wakes the agent. */
+  askType?: AskType | null;
 }
 
 export interface RequestCheckboxConfirmationOption {

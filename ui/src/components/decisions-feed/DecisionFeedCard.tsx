@@ -11,6 +11,7 @@ import type {
   DecisionCardAgentRef,
   DecisionCardKind,
 } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { decisionsFeedApi, runDecisionCardAction } from "../../api/decisionsFeed";
 import { attentionDetailDeliverables, attentionDetailImages, attentionImageUrl, severityStyle } from "../../lib/attention";
@@ -56,6 +57,8 @@ export function decisionKindLabel(card: DecisionCard, kind: DecisionCardKind): s
   if (kind === "question") {
     const interactionKind = card.items.find(isFocusItem);
     const itemKind = interactionKind ? focusItemKind(interactionKind) : null;
+    const askType = interactionKind ? readAskType(interactionKind.subject.metadata) : null;
+    if (askType) return ASK_TYPE_COPY[askType].label;
     if (itemKind === "request_confirmation" || itemKind === "request_checkbox_confirmation") return "Confirmation";
     if (itemKind === "suggest_tasks") return "Suggested tasks";
   }
@@ -257,7 +260,10 @@ export function DecisionFeedCard({
       </h3>
 
       <dl className="grid gap-x-3 gap-y-1.5 text-sm sm:grid-cols-(--gtc-16)">
-        <CardFact label="Why">{card.reason}</CardFact>
+        {/* The question box below already shows these words; say them once. */}
+        {questionItem && card.kind === "question" && card.reason === questionItem.subject.title ? null : (
+          <CardFact label="Why">{card.reason}</CardFact>
+        )}
         {card.reviewer ? (
           <CardFact label="Reviewer">{card.reviewer.isYou ? `You (${card.reviewer.name})` : card.reviewer.name}</CardFact>
         ) : null}
