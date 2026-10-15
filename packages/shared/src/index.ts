@@ -300,6 +300,7 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./types/agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./types/calendar.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
