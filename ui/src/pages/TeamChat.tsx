@@ -9,7 +9,7 @@ import { issuesApi } from "@/api/issues";
 import { teamChatsApi } from "@/api/teamChats";
 import { FeatureTour } from "@/components/FeatureTour";
 import { NewTeamChatDialog, type NewTeamChatInput } from "@/components/NewTeamChatDialog";
-import { TeamChatThread } from "@/components/team-chat/TeamChatThread";
+import { scrollTeamChatToLatest, TeamChatThread } from "@/components/team-chat/TeamChatThread";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
@@ -118,7 +118,7 @@ export function TeamChat() {
       <header className="sticky top-0 z-sticky -mx-4 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-4 pb-3 pt-2 md:-mx-1 md:px-1 md:-top-6 md:-mt-6 md:pt-6">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0 truncate text-xl font-bold">{label}</h1>
-          <FeatureTour tour={TEAM_CHAT_TOUR} />
+          <FeatureTour tour={TEAM_CHAT_TOUR} onClose={scrollTeamChatToLatest} />
         </div>
         <ul aria-label="Members" data-tour="team-chat-members" className="flex flex-wrap items-center gap-1.5">
           {summary.members.map((member) => (

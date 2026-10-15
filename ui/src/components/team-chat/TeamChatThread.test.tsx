@@ -174,6 +174,59 @@ describe("TeamChatThread", () => {
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
   });
 
+  describe("following new replies", () => {
+    let main: HTMLElement;
+    const metrics = { scrollHeight: 2000, clientHeight: 500 };
+    beforeEach(() => {
+      main = document.createElement("main");
+      main.id = "main-content";
+      Object.defineProperty(main, "scrollHeight", { configurable: true, get: () => metrics.scrollHeight });
+      Object.defineProperty(main, "clientHeight", { configurable: true, get: () => metrics.clientHeight });
+      document.body.append(main);
+    });
+    afterEach(() => main.remove());
+
+    const first = [message({ user: "u-ama" }, "2026-10-15T09:00:00", "one")];
+    const readHistory = async () => {
+      await act(async () => {
+        main.scrollTop = 100;
+        main.dispatchEvent(new Event("scroll"));
+      });
+    };
+    const jumpButton = () =>
+      [...container.querySelectorAll("button")].find((button) => /New messages|Jump to latest/.test(button.textContent ?? ""));
+
+    it("keeps a reader's place in older messages and offers a jump to the newest", async () => {
+      await render({ comments: first });
+      expect(main.scrollTop).toBe(2000);
+      await readHistory();
+      expect(jumpButton()?.textContent).toContain("Jump to latest");
+
+      await render({ comments: [...first, message({ agent: "a-atlas" }, "2026-10-15T09:05:00", "reply")] });
+      expect(main.scrollTop).toBe(100);
+      expect(jumpButton()?.textContent).toContain("New messages");
+
+      await act(async () => jumpButton()!.click());
+      expect(main.scrollTop).toBe(2000);
+    });
+
+    it("follows a reply when the reader is already at the newest message", async () => {
+      await render({ comments: first });
+      metrics.scrollHeight = 2400;
+      await render({ comments: [...first, message({ agent: "a-atlas" }, "2026-10-15T09:05:00", "reply")] });
+      expect(main.scrollTop).toBe(2400);
+      expect(jumpButton()).toBeUndefined();
+      metrics.scrollHeight = 2000;
+    });
+
+    it("always goes to the newest message after I send one", async () => {
+      await render({ comments: first });
+      await readHistory();
+      await render({ comments: [...first, message({ user: ME }, "2026-10-15T09:05:00", "mine")] });
+      expect(main.scrollTop).toBe(2000);
+    });
+  });
+
   it("shows the reason instead of the composer when sending is off", async () => {
     await render({ composerDisabledReason: "Team Chat is off." });
     expect(container.querySelector("textarea")).toBeNull();

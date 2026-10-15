@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useLocation } from "react-router-dom";
-import { Loader2, PaperclipIcon, SendHorizontal } from "lucide-react";
+import { ArrowDown, Bot, Loader2, PaperclipIcon, SendHorizontal } from "lucide-react";
 import type { Agent, IssueComment } from "@greatstone/shared";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { deriveInitials } from "@/components/Identity";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "@/components/MarkdownEditor";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useSidebar } from "@/context/SidebarContext";
 import { restoreSubmittedCommentDraft } from "@/lib/comment-submit-draft";
@@ -21,6 +22,28 @@ import { cn, formatDateTime } from "@/lib/utils";
 import { PluginSlotOutlet } from "@/plugins/slots";
 
 const DRAFT_DEBOUNCE_MS = 800;
+/** Within this distance of the end, a reader counts as "at the newest message" and new replies are followed. */
+const NEAR_BOTTOM_PX = 120;
+const END_ID = "team-chat-end";
+
+/** Desktop scrolls inside <main>; phones scroll the page. */
+function chatScroller(): HTMLElement | null {
+  const main = document.getElementById("main-content");
+  if (main && main.scrollHeight > main.clientHeight) return main;
+  return (document.scrollingElement as HTMLElement | null) ?? null;
+}
+
+function isNearBottom() {
+  const scroller = chatScroller();
+  return !scroller || scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < NEAR_BOTTOM_PX;
+}
+
+/** Jump to the newest message. Desktop goes to the very end of <main> so the sticky composer clears the last message. */
+export function scrollTeamChatToLatest() {
+  const main = document.getElementById("main-content");
+  if (main && main.scrollHeight > main.clientHeight) main.scrollTop = main.scrollHeight;
+  else document.getElementById(END_ID)?.scrollIntoView?.({ block: "end" });
+}
 
 function readDraft(key: string) {
   try {
@@ -73,22 +96,55 @@ export function TeamChatThread({
   const rows = useMemo(() => buildTeamChatRows(comments, currentUserId), [comments, currentUserId]);
   const { isMobile } = useSidebar();
   const location = useLocation();
-  const endRef = useRef<HTMLDivElement>(null);
-  const lastId = comments.at(-1)?.id;
+  const last = comments.at(-1);
+  const lastId = last?.id;
+  const lastIsOwn = Boolean(last && !last.authorAgentId && last.authorUserId === currentUserId);
+  const chatId = comments[0]?.issueId ?? null;
   const highlightId = location.hash.startsWith("#comment-") ? location.hash.slice("#comment-".length) : null;
+  const openedChatRef = useRef<string | null>(null);
+  const nearBottomRef = useRef(true);
+  const [nearBottom, setNearBottom] = useState(true);
+  const [hasUnseen, setHasUnseen] = useState(false);
 
-  // Open at the newest message and follow new ones, unless a link points at one message.
+  // Remember whether the reader is at the newest message, measured before new messages make the page taller.
+  useEffect(() => {
+    const onScroll = () => {
+      const near = isNearBottom();
+      nearBottomRef.current = near;
+      setNearBottom(near);
+      if (near) setHasUnseen(false);
+    };
+    const main = document.getElementById("main-content");
+    main?.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      main?.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
+  // Open at the newest message (or the one a link points at). After that, follow new
+  // replies only for a reader already at the end, or after they send one themselves.
   useEffect(() => {
     if (!lastId) return;
-    if (highlightId) {
+    const firstOpen = openedChatRef.current !== chatId;
+    openedChatRef.current = chatId;
+    if (firstOpen && highlightId) {
       document.getElementById(`comment-${highlightId}`)?.scrollIntoView?.({ block: "center" });
       return;
     }
-    // Desktop scrolls inside <main>; jump it to the very end so the sticky composer clears the last message.
-    const main = document.getElementById("main-content");
-    if (main && main.scrollHeight > main.clientHeight) main.scrollTop = main.scrollHeight;
-    else endRef.current?.scrollIntoView?.({ block: "end" });
-  }, [lastId, highlightId]);
+    if (firstOpen || lastIsOwn || nearBottomRef.current) {
+      scrollTeamChatToLatest();
+      setHasUnseen(false);
+    } else {
+      setHasUnseen(true);
+    }
+  }, [lastId, lastIsOwn, chatId, highlightId]);
+
+  const jumpToLatest = () => {
+    scrollTeamChatToLatest();
+    setHasUnseen(false);
+  };
 
   return (
     <div className="flex flex-col">
@@ -126,6 +182,18 @@ export function TeamChatThread({
             : "-bottom-6 -mb-6 pb-6",
         )}
       >
+        {!nearBottom || hasUnseen ? (
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={jumpToLatest}
+            className="absolute bottom-full left-1/2 mb-3 -translate-x-1/2 rounded-full border border-border shadow-md"
+          >
+            <ArrowDown className="size-4" aria-hidden="true" />
+            {hasUnseen ? "New messages" : "Jump to latest"}
+          </Button>
+        ) : null}
         {composerDisabledReason ? (
           <div className="rounded-md border border-amber-300/70 bg-amber-50/80 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100">
             {composerDisabledReason}
@@ -139,7 +207,7 @@ export function TeamChatThread({
           />
         )}
       </div>
-      <div ref={endRef} />
+      <div id={END_ID} />
     </div>
   );
 }
@@ -216,9 +284,10 @@ function MessageGroup({
               <span className="font-medium text-foreground">{name}</span>
             )}
             {sender.kind === "agent" ? (
-              <span className="rounded-sm bg-accent px-1 py-px text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+              <Badge variant="secondary" className="gap-0.5 px-1.5 py-0">
+                <Bot aria-hidden="true" />
                 Agent
-              </span>
+              </Badge>
             ) : null}
           </div>
         ) : null}
