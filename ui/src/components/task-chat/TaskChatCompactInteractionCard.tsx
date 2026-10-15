@@ -31,6 +31,7 @@ import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionC
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { DraftReviewCard } from "@/components/DraftReviewCard";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
 import {
   InteractionGuideSheet,
   InteractionGuideText,
@@ -264,13 +265,21 @@ function Details({ children }: { children?: ReactNode }) {
 function ActionRow({
   children,
   hint,
+  leading,
 }: {
   children: ReactNode;
   hint?: string | null;
+  /** Secondary action shown on the left, apart from the decision buttons. */
+  leading?: ReactNode;
 }) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      {hint ? (
+      {leading ? (
+        <div className="mr-auto flex items-center gap-2">
+          {leading}
+          {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+        </div>
+      ) : hint ? (
         <span className="mr-auto text-xs text-muted-foreground">{hint}</span>
       ) : (
         <span className="mr-auto" />
@@ -942,7 +951,11 @@ function ConfirmationCard({
         </div>
       ) : null}
       <InteractionActionError message={actionError} />
-      <ActionRow>
+      <ActionRow
+        leading={!isPlanConfirmation && !rejecting ? (
+          <CopyMarkdownButton markdown={details ? `${prompt}\n\n${details}` : prompt} />
+        ) : null}
+      >
         {rejecting ? (
           <>
             <Button
