@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { CalendarItem, CalendarItemKind } from "@greatstone/shared";
 import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
@@ -136,6 +136,7 @@ export function Calendar() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [showEarlierDays, setShowEarlierDays] = useState(false);
   const today = localToday();
 
   useEffect(() => {
@@ -166,6 +167,10 @@ export function Calendar() {
   const byDate = useMemo(() => groupByDate(visibleItems), [visibleItems]);
   const overdueCount = visibleItems.filter((item) => isOverdue(item, today)).length;
   const monthItemCount = visibleItems.filter((item) => monthKey(item.date) === month).length;
+  const monthDays = [...byDate.entries()].filter(([date]) => monthKey(date) === month);
+  // Earlier days fold away on phones, except those still holding overdue work.
+  const earlierDays = monthDays.filter(([date, items]) => date < today && !items.some((item) => isOverdue(item, today)));
+  const phoneDays = showEarlierDays ? monthDays : monthDays.filter((day) => !earlierDays.includes(day));
 
   function update(next: Record<string, string | null>) {
     const params = new URLSearchParams(searchParams);
@@ -316,13 +321,16 @@ export function Calendar() {
             ))}
           </div>
 
-          {/* Phones: the month as a list of the days that have something on. */}
+          {/* Phones: the month as a list of the days that have something on, from today unless asked. */}
           <div className="space-y-5 md:hidden">
-            {[...byDate.entries()]
-              .filter(([date]) => monthKey(date) === month)
-              .map(([date, items]) => (
-                <DayList key={date} date={date} items={items} today={today} />
-              ))}
+            {earlierDays.length > 0 && !showEarlierDays ? (
+              <Button size="sm" variant="ghost" className="w-full" onClick={() => setShowEarlierDays(true)}>
+                Show {earlierDays.length} earlier {earlierDays.length === 1 ? "day" : "days"}
+              </Button>
+            ) : null}
+            {phoneDays.map(([date, items]) => (
+              <DayList key={date} date={date} items={items} today={today} />
+            ))}
             {monthItemCount === 0 ? (
               <EmptyState icon={CalendarDays} message={`Nothing is scheduled for ${monthTitle(month)}.`} />
             ) : null}
