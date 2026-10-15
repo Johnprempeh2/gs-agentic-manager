@@ -223,8 +223,8 @@
      paper, so lime only ever appears as a fill under ink, see --gs-highlight).
      Depth comes from the canvas/card step, the sage sidebar and layered
      shadows rather than from extra borders. Contrast audited: every text pair
-     AA on canvas, card, muted and sidebar (muted-foreground 6.2:1 at worst,
-     subtle-foreground 5.0:1); focus ring #0b2a1c clears 3:1 at the /50 outline. */
+     AA on canvas, card, muted and sidebar (muted-foreground 6.0:1 at worst,
+     subtle-foreground 4.8:1); focus ring #0b2a1c clears 3:1 at the /50 outline. */
   --brand-mark: #1b5039;              /* stone mark on paper: emerald (lime is 1.15:1 here) */
   --brand-build-cycle: 2.4s;          /* BrandLoading: one build-and-clear loop */
   --brand-build-stagger: 160ms;       /* delay between successive slabs */
@@ -239,9 +239,9 @@
   --popover-foreground: #121512;
   --primary: #1b5039;
   --primary-foreground: #f5f7f2;
-  --secondary: #e9ece4;
+  --secondary: #e4e8de;
   --secondary-foreground: #1b2a21;
-  --muted: #e9ece4;
+  --muted: #e4e8de;
   --muted-foreground: #4f5750;
   --subtle-foreground: #5d655e; /* third text tier: de-emphasis as a colour step, never alpha (AA on every light surface) */
   --accent: color-mix(in oklab, #1b5039 8%, #ffffff);
