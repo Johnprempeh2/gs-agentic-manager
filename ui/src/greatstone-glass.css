@@ -255,6 +255,17 @@
     color: var(--gs-key-data);
   }
 
+  /* Daylight panels. Hundreds of list and settings panels are drawn as a
+     bare bordered box (`rounded-* border border-border`, no fill) because on
+     the old paper canvas transparent and card were the same colour. On the
+     sage canvas a bare box reads as a grey hole, so in daylight it takes the
+     card fill. Inside a white card this changes nothing; any explicit bg-*
+     utility still wins (it is excluded, and utilities outrank this layer).
+     The void keeps its transparent panels. */
+  html:not(.dark) :is(.rounded-md, .rounded-lg, .rounded-xl).border.border-border:not([class*="bg-"]) {
+    background-color: var(--card);
+  }
+
   .gs-glass-card-interactive {
     transition-property: transform, box-shadow, border-color;
     transition-duration: var(--motion-hover-lift);

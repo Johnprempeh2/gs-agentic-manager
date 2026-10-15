@@ -103,3 +103,20 @@ tokenize motion. Principles — reasoning only; values live in `ui/src/index.css
 - **Reduced motion is honored at the token layer.** A `prefers-reduced-motion: reduce`
   block collapses the duration/stagger tokens to zero, cascading to every scoped token,
   in addition to each animation's own component-level guard.
+
+## Daylight (light mode) surfaces
+
+Light mode is a sage-stone canvas (`--background`) under white surfaces
+(`--card`). Depth comes from that step plus layered shadows, not extra borders.
+
+- **Surfaces.** Use `bg-card` (or the `Card` component, `gs-glass-card`) for
+  anything that holds content. A bare `rounded-* border border-border` box with
+  no `bg-*` class takes the card fill in light mode automatically
+  (`greatstone-glass.css`); give it an explicit `bg-*` to opt out. Never assume
+  `--card` and `--background` are the same colour.
+- **Fields.** Inputs, textareas and select triggers use `bg-field`: white in
+  light mode, transparent on the void (where `dark:bg-input/30` applies).
+- **Lime.** `bg-highlight text-highlight-foreground` is the brand lime under ink
+  in both themes. Lime is never text or a thin line on a light surface (1.15:1).
+- **Destructive.** A deep brick (`--destructive`) in light mode, so a Reject
+  button can sit beside Approve without shouting.
