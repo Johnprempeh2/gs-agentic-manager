@@ -1498,6 +1498,7 @@ export type {
   UserProfileWindowStats,
   SidebarBadges,
   SidebarOrderPreference,
+  SidebarLayoutPreference,
   InboxDismissal,
   InboxDismissalKind,
   AccessUserProfile,
@@ -1909,6 +1910,9 @@ export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
   upsertSidebarSectionOrderSchema,
+  sidebarLayoutSchema,
+  upsertSidebarLayoutSchema,
+  type SidebarLayout,
   type UpsertSidebarOrderPreference,
 } from "./validators/sidebar-preferences.js";
 export {

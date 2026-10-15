@@ -77,7 +77,8 @@ function SidebarSectionHeader({
   const hasMenu = Boolean(
     menu && ((menu.actions?.length ?? 0) > 0 || (menu.radioChoices?.length ?? 0) > 0),
   );
-  const labelClassName = "text-(length:--text-nano) font-medium uppercase tracking-widest font-mono text-subtle-foreground";
+  // Design guide "Section heading" pattern.
+  const labelClassName = "text-sm font-semibold uppercase tracking-wide text-muted-foreground";
   const headerControlVisibilityClassName = isMobile
     ? "opacity-100"
     : "opacity-0 group-hover/sidebar-section:opacity-100 group-focus-within/sidebar-section:opacity-100";
@@ -85,7 +86,8 @@ function SidebarSectionHeader({
     "h-3 w-3 shrink-0 text-subtle-foreground transition-all",
     headerControlVisibilityClassName,
     collapsible?.open && "rotate-90",
-    menuOpen && "opacity-100",
+    // A folded section always shows its caret, so it reads as openable.
+    (menuOpen || collapsible?.open === false) && "opacity-100",
   );
   const actionClassName = cn(
     "h-5 w-5 shrink-0 text-subtle-foreground transition-opacity hover:text-foreground data-[state=open]:opacity-100",
@@ -233,7 +235,7 @@ export function SidebarSection({
           headerAction={headerAction}
           dragHandle={dragHandle}
         />
-        <CollapsibleContent>{content}</CollapsibleContent>
+        <CollapsibleContent className="gs-sidebar-collapsible">{content}</CollapsibleContent>
       </Collapsible>
     );
   }

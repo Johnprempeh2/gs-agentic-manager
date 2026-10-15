@@ -391,7 +391,7 @@ const FLOWS: Record<FlowId, (ctx: FlowContext) => Promise<void>> = {
   },
 
   async "4-task-latest-result"({ page, rec, viewport, seed: seedData }) {
-    await rec.click(nav(page, viewport).link(viewport === "desktop" ? /Agent tasks/ : /Tasks/));
+    await rec.click(nav(page, viewport).link(/^Tasks/));
     const chips = page.getByRole("group", { name: "Show tasks" });
     // The dashboard links the same tasks (Open tasks, Recent runs), so look only
     // inside the page once it holds the task list's chips (GRE-372).
