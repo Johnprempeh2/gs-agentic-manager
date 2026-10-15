@@ -9,7 +9,7 @@ import {
   startEmbeddedPostgresTestDatabase,
 } from "./test-embedded-postgres.js";
 
-const MIGRATION_FILE = "0336_organisation_crm_fields.sql";
+const MIGRATION_FILE = "0338_organisation_crm_fields.sql";
 const migrationSql = fs.readFileSync(path.join(import.meta.dirname, "migrations", MIGRATION_FILE), "utf8");
 const cleanups: Array<() => Promise<void>> = [];
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
