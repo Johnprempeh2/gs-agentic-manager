@@ -369,6 +369,10 @@ Merging does not change the live app. A version goes live in these steps.
    command (step 6, "By hand") and the rollback command. Keystone also creates
    a Flint "check live" task blocked by John's task. John may try the preview
    too. "Not yet" leaves live as it is; the fixes become new issues.
+   John runs releases from Claude (15 Oct 2026), so release tasks stay out
+   of Decisions and the "needs me" list: a task whose title names an `rc-*`
+   or `live-*` tag and the word "release" (`server/src/services/release-task.ts`).
+   They still show in Issues and Inbox.
 6. **Release (John, by hand).** John runs the release from the dev checkout
    (see "By hand" below) and marks his task done. The **Releases** page in the
    app (board only; agents get 403 on every release action) still works but
