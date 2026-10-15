@@ -987,6 +987,30 @@ describe("NewIssueDialog", () => {
     act(() => root.unmount());
   });
 
+  it("fills the title and brief from a quick start, then hides the quick starts", async () => {
+    const { root } = renderDialog(container);
+    await flush();
+
+    const quickStarts = container.querySelector('[data-testid="task-quick-starts"]');
+    expect(quickStarts).not.toBeNull();
+    const research = Array.from(quickStarts!.querySelectorAll("button"))
+      .find((button) => button.textContent === "Research a company");
+    expect(research).not.toBeUndefined();
+
+    await act(async () => {
+      research!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flush();
+
+    const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
+    expect(titleInput?.value).toBe("Research [company name]");
+    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]') as HTMLTextAreaElement | null;
+    expect(descriptionInput?.value).toContain("## Done when");
+    expect(container.querySelector('[data-testid="task-quick-starts"]')).toBeNull();
+
+    act(() => root.unmount());
+  });
+
   it("submits the latest locally typed title and description", async () => {
     let resolveProjects: (projects: Array<{
       id: string;
