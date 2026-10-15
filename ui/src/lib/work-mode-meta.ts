@@ -6,6 +6,8 @@ export type WorkModeTone = "neutral" | "ask" | "planning";
 export interface WorkModeMeta {
   value: IssueWorkMode;
   label: string;
+  /** What the agent will do in this mode, in plain words. */
+  description: string;
   icon: LucideIcon;
   tone: WorkModeTone;
   classes: {
@@ -46,6 +48,7 @@ export function workModeMetaList(): WorkModeMeta[] {
     {
       value: "standard",
       label: "Auto mode",
+      description: "The agent starts the work straight away.",
       icon: Hammer,
       tone: "neutral",
       classes: STANDARD_CLASSES,
@@ -53,6 +56,7 @@ export function workModeMetaList(): WorkModeMeta[] {
     {
       value: "planning",
       label: "Plan mode",
+      description: "The agent writes a plan for you to approve before it starts.",
       icon: ClipboardList,
       tone: "planning",
       classes: PLANNING_CLASSES,
@@ -60,6 +64,7 @@ export function workModeMetaList(): WorkModeMeta[] {
     {
       value: "ask",
       label: "Ask mode",
+      description: "The agent answers your question and changes nothing.",
       icon: MessageCircleQuestion,
       tone: "ask",
       classes: ASK_CLASSES,
@@ -79,11 +84,6 @@ export function nextWorkMode(mode: IssueWorkMode): IssueWorkMode {
 }
 
 export function titleForPendingWorkMode(mode: IssueWorkMode): string {
-  if (mode === "ask") {
-    return "Ask mode for this submission. Click to change. The responsible will answer in this thread; no implementation work.";
-  }
-  if (mode === "planning") {
-    return "Plan mode is on for this submission. Click to change.";
-  }
-  return "Auto mode for this submission. Click to change.";
+  const meta = workModeMetaFor(mode);
+  return `${meta.label}: ${meta.description} Click to change.`;
 }
