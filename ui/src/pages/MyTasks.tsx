@@ -543,6 +543,7 @@ export function MyTasks() {
         <EmptyState
           icon={CheckCircle2}
           message="Nothing needs you right now."
+          description="Tasks assigned to you show up here. Questions and approvals from agents are in Decisions."
           action="Create task"
           onAction={() => openNewIssue()}
         />

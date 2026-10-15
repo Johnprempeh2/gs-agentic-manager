@@ -1027,7 +1027,7 @@ describe("NewIssueDialog", () => {
     await flush();
 
     const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
-    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]') as HTMLTextAreaElement | null;
+    const descriptionInput = container.querySelector('textarea[aria-label="What should the agent do? Say what a good result looks like and anything it needs to know."]') as HTMLTextAreaElement | null;
     expect(titleInput).not.toBeNull();
     expect(descriptionInput).not.toBeNull();
 
@@ -1107,7 +1107,7 @@ describe("NewIssueDialog", () => {
     await flush();
 
     const titleInput = container.querySelector('textarea[placeholder="Task title"]') as HTMLTextAreaElement | null;
-    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]') as HTMLTextAreaElement | null;
+    const descriptionInput = container.querySelector('textarea[aria-label="What should the agent do? Say what a good result looks like and anything it needs to know."]') as HTMLTextAreaElement | null;
     expect(titleInput).not.toBeNull();
     expect(descriptionInput).not.toBeNull();
 
@@ -1375,7 +1375,7 @@ describe("NewIssueDialog", () => {
     expect(dialogContent?.className).toContain("overflow-hidden");
 
     const titleInput = container.querySelector('textarea[placeholder="Task title"]');
-    const descriptionInput = container.querySelector('textarea[aria-label="Add description..."]');
+    const descriptionInput = container.querySelector('textarea[aria-label="What should the agent do? Say what a good result looks like and anything it needs to know."]');
     // Safari offers contacts for "title" boxes unless the name contains "search".
     expect(titleInput?.getAttribute("autocomplete")).toBe("off");
     expect(titleInput?.getAttribute("name")).toBe("search_task");
@@ -1413,7 +1413,7 @@ describe("NewIssueDialog", () => {
       element.className.includes("max-h-(--new-issue-dialog-height)"),
     );
     const descriptionInput = container.querySelector<HTMLTextAreaElement>(
-      'textarea[aria-label="Add description..."]',
+      'textarea[aria-label="What should the agent do? Say what a good result looks like and anything it needs to know."]',
     );
     const scrollIntoView = vi.fn();
     Object.defineProperty(descriptionInput!, "scrollIntoView", {

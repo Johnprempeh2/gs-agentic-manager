@@ -476,7 +476,7 @@ const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
         setDraftValue(nextValue);
         onChange(nextValue);
       }}
-      placeholder="Add description..."
+      placeholder="What should the agent do? Say what a good result looks like and anything it needs to know."
       bordered={false}
       mentions={mentions}
       contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
@@ -2274,7 +2274,7 @@ export function NewIssueDialog() {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
+            <PopoverContent className="w-64 p-1" align="start">
               {priorities.map((p) => (
                 <button
                   key={p.value}
@@ -2324,6 +2324,7 @@ export function NewIssueDialog() {
                 data-issue-work-mode-chip={workMode}
                 data-slot="new-issue-compact-control"
                 aria-keyshortcuts="Meta+Period Control+Period"
+                title={currentWorkMode.description}
                 className={cn(
                   "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 py-0 text-xs transition-colors sm:h-auto sm:px-2 sm:py-1",
                   currentWorkMode.classes.chip,
@@ -2333,7 +2334,7 @@ export function NewIssueDialog() {
                 {currentWorkMode.label}
               </button>
             </PopoverTrigger>
-            <PopoverContent className="w-36 p-1" align="start">
+            <PopoverContent className="w-64 p-1" align="start">
               {workModeOptions.map((option) => {
                 const Icon = option.icon;
                 return (
@@ -2350,9 +2351,12 @@ export function NewIssueDialog() {
                       setWorkModeOpen(false);
                     }}
                   >
-                    <Icon className="h-3 w-3" />
-                    {option.label}
-                    {option.value === workMode ? <Check className="ml-auto h-3 w-3" aria-hidden /> : null}
+                    <Icon className="h-3 w-3 shrink-0 self-start mt-0.5" />
+                    <span className="flex min-w-0 flex-col items-start text-left">
+                      <span>{option.label}</span>
+                      <span className="text-muted-foreground">{option.description}</span>
+                    </span>
+                    {option.value === workMode ? <Check className="ml-auto h-3 w-3 shrink-0 self-start mt-0.5" aria-hidden /> : null}
                   </button>
                 );
               })}

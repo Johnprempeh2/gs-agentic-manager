@@ -893,8 +893,10 @@ function normalizeCreateInteractionInput(
       return {
         ...input,
         // "Done" on an at-your-desk card wakes the agent to check (GRE-450).
+        // A typed ask (access, file, signature...) always wakes its agent:
+        // the person acted, so the agent must carry on.
         continuationPolicy:
-          input.payload.atDesk && input.continuationPolicy === "none"
+          (input.payload.atDesk || input.payload.askType) && input.continuationPolicy === "none"
             ? "wake_assignee"
             : input.continuationPolicy,
         payload: {

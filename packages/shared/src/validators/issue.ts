@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ASK_TYPES } from "../ask-types.js";
 import {
   ISSUE_EXECUTION_DECISION_OUTCOMES,
   ISSUE_EXECUTION_MONITOR_CLEAR_REASONS,
@@ -1567,6 +1568,7 @@ export const requestConfirmationPayloadSchema = z.object({
   toolAction: requestConfirmationToolActionPayloadSchema.optional(),
   secretProposal: requestConfirmationSecretProposalPayloadSchema.optional(),
   atDesk: interactionAtDeskSchema.nullable().optional(),
+  askType: z.enum(ASK_TYPES).nullable().optional(),
 });
 
 export const requestCheckboxConfirmationOptionSchema = z.object({
