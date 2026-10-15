@@ -862,7 +862,9 @@ function buildCard(input: {
 
   const blockedCount = (blockedItem?.detail as { blockedTaskCount?: unknown } | null)?.blockedTaskCount;
   const nextStepByKind: Record<DecisionCardKind, string> = {
-    question: `${waiting?.name ?? "The agent"} waits for your answer, then continues.`,
+    question: readString(main?.subject.metadata, "askType")
+      ? `${waiting?.name ?? "The agent"} is woken as soon as you answer, either way.`
+      : `${waiting?.name ?? "The agent"} waits for your answer, then continues.`,
     approval: main?.subject.metadata?.type === "permission_grant"
       ? `${waiting?.name ?? "The agent"} stays blocked until you grant or deny the permission.`
       : "Nothing moves until you approve or reject it.",

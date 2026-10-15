@@ -447,6 +447,9 @@ function ZeroState() {
       <BrandCaughtUpMark />
       <p className="text-lg font-semibold text-foreground">You're all caught up</p>
       <p className="mt-1 text-sm text-muted-foreground">Nothing needs a decision from you right now.</p>
+      <p className="mt-1 max-w-md text-sm text-muted-foreground">
+        When an agent needs an answer, an approval, access or a file from you, it shows up here.
+      </p>
     </div>
   );
 }
