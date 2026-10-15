@@ -44,6 +44,7 @@ export function DashboardDecisionsBoxView({
       className="flex min-w-0 flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-3 sm:py-2.5"
       aria-label="Decisions"
       data-testid="dashboard-decisions"
+      data-tour="dashboard-decisions"
       role="region"
     >
       <div className="flex min-w-0 items-center justify-between gap-3 sm:contents">

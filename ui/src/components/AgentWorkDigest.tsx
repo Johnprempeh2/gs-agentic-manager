@@ -68,7 +68,7 @@ export function DashboardDigestCardView({
   const hidden = agents.length - shown.length;
 
   return (
-    <Card className="flex min-w-0 flex-col gap-2 px-4 py-3" aria-label="Since you were last here" data-testid="dashboard-digest" role="region">
+    <Card className="flex min-w-0 flex-col gap-2 px-4 py-3" aria-label="Since you were last here" data-testid="dashboard-digest" data-tour="dashboard-digest" role="region">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Since you were last here</h3>

@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureTour } from "@/components/FeatureTour";
-import { PIPELINE_BOARD_TOUR } from "@/lib/feature-tours";
+import { CORE_TOURS, PIPELINE_BOARD_TOUR } from "@/lib/feature-tours";
 import { tourSeenKey } from "@/hooks/useTourSeen";
 import { Tutorials } from "./Tutorials";
 
@@ -103,19 +103,34 @@ describe("Tutorials", () => {
     await render();
     const ids = [...document.querySelectorAll("[data-testid^='tutorial-']")].map((el) => el.getAttribute("data-testid"));
     // Board and Share with agents are hidden: their switches are off.
-    expect(ids).toEqual(["tutorial-pipelines-list", "tutorial-pipeline-board", "tutorial-client-case", "tutorial-website"]);
+    expect(ids).toEqual([
+      ...CORE_TOURS.map((tour) => `tutorial-${tour.id}`),
+      "tutorial-pipelines-list",
+      "tutorial-pipeline-board",
+      "tutorial-client-case",
+      "tutorial-website",
+    ]);
     expect(row("pipelines-list")!.textContent).toContain("Seen");
     expect(row("pipeline-board")!.textContent).toContain("Not seen yet");
     expect(row("website")!.textContent).toContain("Visitors and Google Search");
   });
 
-  it("says so when no tour's feature is switched on", async () => {
+  it("keeps the everyday pages when no feature is switched on, and drops the Features group", async () => {
     flags.enablePipelines = false;
     flags.enableWebsiteView = false;
     await render();
-    expect(document.querySelector("[data-testid^='tutorial-']")).toBeNull();
-    expect(container.textContent).toContain("No tutorials yet");
+    expect(row("dashboard")).not.toBeNull();
+    expect(row("website")).toBeNull();
+    expect(document.querySelector('section[aria-label="Features"]')).toBeNull();
+    expect(document.querySelector('section[aria-label="Everyday pages"]')).not.toBeNull();
     flags.enableWebsiteView = true;
+  });
+
+  it("Start on an everyday page opens that page with its tour", async () => {
+    await render();
+    await act(async () => startButton("decisions").click());
+    await flush();
+    expect(pathname).toBe("/decisions");
   });
 
   it("Start opens the first live pipeline's board and starts its tour there", async () => {

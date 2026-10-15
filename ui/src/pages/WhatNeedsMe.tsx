@@ -282,7 +282,7 @@ export function WhatNeedsMe() {
 
       {isPhone ? deskGroup : null}
 
-      <div className="space-y-4">
+      <div className="space-y-4" data-tour="decisions-history">
         {tabledCount > 0 && (
           <Curtain label="Tabled" count={tabledCount} open={tabledOpen} onToggle={() => setTabledOpen((prev) => !prev)}>
             <p className="text-xs text-muted-foreground">
@@ -380,7 +380,7 @@ export function DecisionsViewSwitch({
   onChange: (view: DecisionsView) => void;
 }) {
   return (
-    <div className="inline-flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Decisions view">
+    <div className="inline-flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Decisions view" data-tour="decisions-view">
       {(["list", "focus"] as const).map((option) => (
         <button
           key={option}

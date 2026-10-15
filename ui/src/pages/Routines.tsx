@@ -751,14 +751,14 @@ export function Routines() {
         <div className="space-y-1">
           <h1 className="text-xl font-bold">Routines</h1>
           <p className="text-sm text-muted-foreground">
-            Recurring work definitions that materialize into auditable execution tasks.
+            Work that repeats on a schedule, such as a weekly report. Each run makes a task you can follow.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
             <Link to={auditSectionHref("runs", {})}>View all runs</Link>
           </Button>
-          <Button onClick={openCreateRoutine}>
+          <Button onClick={openCreateRoutine} data-tour="routines-create">
             <Plus className="mr-2 h-4 w-4" />
             Create routine
           </Button>
