@@ -40,20 +40,31 @@ export function StatusBadge({ status, label }: { status: string; label?: string 
   );
 }
 
+/** What each agent status means, in plain words, for the chip's tooltip. */
+export const AGENT_STATUS_HINTS: Record<string, string> = {
+  idle: "Ready and waiting for work.",
+  running: "Working on a task right now.",
+  paused: "Paused. It takes no new work until it is resumed.",
+  error: "Its last run failed. Open the agent to see why.",
+  pending_approval: "Waiting for you to approve it before it can start.",
+  terminated: "Switched off. It takes no more work.",
+};
+
 /**
  * Agent status chip — bordered chip recoloured from the editable
  * `--status-agent-*` base hue via the `.status-chip` color-mix helper. `active`
- * renders as "idle" (alias for dead code).
+ * renders as "Idle" (alias for dead code). Sentence case, like task statuses.
  */
 export function AgentStatusBadge({ status }: { status: string }) {
   const cssVar = agentStatusVar[status] ?? agentStatusVarDefault;
-  const label = status === "active" ? "idle" : status;
+  const key = status === "active" ? "idle" : status;
   return (
     <span
       className="status-chip inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium leading-none whitespace-nowrap shrink-0"
       style={scStyle(cssVar)}
+      title={AGENT_STATUS_HINTS[key]}
     >
-      {label.replace(/_/g, " ")}
+      {sentenceCaseStatus(key)}
     </span>
   );
 }
