@@ -10,7 +10,7 @@ import {
   createApprovalSchema,
   createIssueInputSchema,
   issueThreadInteractionContinuationPolicySchema,
-  requestCheckboxConfirmationPayloadSchema,
+  requestCheckboxConfirmationPayloadSchema, requestDraftReviewPayloadSchema,
   requestConfirmationPayloadSchema,
   suggestTasksPayloadSchema,
   updateIssueSchema,
@@ -736,5 +736,34 @@ export function createToolDefinitions(client: PaperclipApiClient): ToolDefinitio
         });
       },
     ),
+    makeTool(
+      "request_draft_review",
+      REQUEST_DRAFT_REVIEW_TOOL_DESCRIPTION,
+      mcpToolHints("write"),
+      createRequestDraftReviewToolSchema,
+      async ({ issueId, ...body }) =>
+        client.requestJson("POST", `/issues/${encodeURIComponent(issueId)}/interactions`, {
+          body: {
+            kind: "request_draft_review",
+            ...body,
+          },
+        }),
+    ),
   ];
 }
+
+const createRequestDraftReviewToolSchema = z.object({
+  issueId: issueIdSchema,
+  idempotencyKey: z.string().trim().max(255).nullable().optional(),
+  sourceCommentId: z.string().guid().nullable().optional(),
+  sourceRunId: z.string().guid().nullable().optional(),
+  title: z.string().trim().max(240).nullable().optional(),
+  summary: z.string().trim().max(1000).nullable().optional(),
+  continuationPolicy: issueThreadInteractionContinuationPolicySchema.optional().default("wake_assignee"),
+  payload: requestDraftReviewPayloadSchema,
+});
+
+// Not a legacy paperclip* alias: named like the interaction kind, as the
+// connection tools are, so the frozen legacy capability inventory is unchanged.
+const REQUEST_DRAFT_REVIEW_TOOL_DESCRIPTION =
+  "Post an editable draft card (email, client message, post, document section) for a person to edit, approve or send back for a redraft. You wake with their final text and what they changed.";

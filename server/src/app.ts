@@ -67,6 +67,7 @@ import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
 import { intelligenceRoutes } from "./routes/intelligence.js";
+import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import type { SetupTokenSessionService } from "./services/setup-token-session.js";
@@ -729,6 +730,7 @@ export async function createApp(
   api.use(statusCardRoutes(db));
   api.use(websiteRoutes(db));
   api.use(intelligenceRoutes(db));
+  api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
   // The setup-token login session service. The router builds it and hands it
   // back through the callback below, so the shutdown hook can cancel every live

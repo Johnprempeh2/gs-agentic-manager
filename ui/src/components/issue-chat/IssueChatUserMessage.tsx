@@ -1,5 +1,5 @@
 import type { ThreadMessage } from "@assistant-ui/react";
-import { useContext, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import { useOptionalToastActions } from "../../context/ToastContext";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Button } from "@/components/ui/button";
@@ -69,6 +69,9 @@ export function IssueChatUserMessage({
       ? custom.queueTargetRunId
       : null;
   const [copied, setCopied] = useState(false);
+  // Cleared on unmount so the "copied" reset never fires on a gone component.
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(copiedTimer.current), []);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const toastActions = useOptionalToastActions();
   const {
@@ -242,7 +245,8 @@ export function IssueChatUserMessage({
                 void copyTextToClipboard(text)
                   .then(() => {
                     setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
+                    clearTimeout(copiedTimer.current);
+                    copiedTimer.current = setTimeout(() => setCopied(false), 2000);
                   })
                   .catch((error) => {
                     toastActions?.pushToast({

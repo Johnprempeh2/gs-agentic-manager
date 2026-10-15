@@ -613,6 +613,18 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
+          title="Team Chat"
+          description="Message colleagues directly, and start group chats with people and agents. Agents in a group reply only when you @mention them."
+          footnote="Turning this off hides Chats and blocks new team chat messages; existing chats are kept."
+          checked={experimentalQuery.data?.enableTeamChat ?? false}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableTeamChat: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableTeamChat"
+          managed={managedKeys.enableTeamChat}
+          ariaLabel="Toggle team chat experimental setting"
+        />
+
+        <ExperimentalToggleCard
           title="Use Isolated Workspaces By Default"
           description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
           checked={enableIsolatedWorkspacesByDefault}

@@ -2343,8 +2343,22 @@
     {
       "idx": 336,
       "version": "7",
-      "when": 1791910000000,
-      "tag": "0336_organisation_crm_fields",
+      "when": 1791984125730,
+      "tag": "0336_issue_participants",
+      "breakpoints": true
+    },
+    {
+      "idx": 337,
+      "version": "7",
+      "when": 1792034631277,
+      "tag": "0337_sidebar_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 338,
+      "version": "7",
+      "when": 1792057745736,
+      "tag": "0338_organisation_crm_fields",
       "breakpoints": true
     }
   ]

@@ -8,6 +8,7 @@ import { bindLegacyBoardUserId } from "./board-identity.js";
 import { toolActionDeliveryService } from "./tool-action-delivery.js";
 import { githubBotConnectionIdsForRun } from "./chat-github-tools.js";
 import { readQueuedInteractionResponse } from "./queued-interaction-response.js";
+import { TEAM_CHAT_DIRECTIVE, isTeamChat, teamChatService } from "./team-chats.js";
 import { AGENT_CHAT_DIRECTIVE, conversationReplay, isConversation, isConversationExecutionWake, isWaitingConversation, prepareConversationTurn, settleConversationTurn } from "./agent-conversations.js";
 import { PROCESS_IDENTITY_RECORDED, recordNativeLocalProcessStop } from "./native-local-process-stop.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent, isAcknowledgedNativeStop, acknowledgedNativeStopExecutionHasStopped } from "./acknowledged-native-stop.js";
@@ -8785,6 +8786,8 @@ export function buildPaperclipTaskMarkdown(input: {
   } | null;
   /** A board question chat (GRE-1186): replaces the chat directive, with the plan brief. */
   boardQuestionDirective?: string | null;
+  /** A team chat (enableTeamChat): the members and the recent thread. */
+  teamChatContext?: string | null;
   ancestors?: Array<{
     id: string;
     identifier?: string | null;
@@ -8973,6 +8976,8 @@ export function buildPaperclipTaskMarkdown(input: {
           "The user has approved the plan for handoff. Perform that handoff now: select or create a suitable project, then create the ordinary assigned execution tasks with the relevant approved plan in initialPlan before execution starts. Do not stop at acknowledging approval or ask for another confirmation. Keep the original plan here, link the created tasks, and leave this conversation available for discussion. Do not implement here or create subtasks of this conversation.",
         );
       }
+    } else if (input.teamChatContext) {
+      lines.push("", "Team chat directive:", TEAM_CHAT_DIRECTIVE, "", input.teamChatContext);
     } else if (issue.workMode === "ask") {
       lines.push(
         `- Work mode: ${quoteTaskScalar("ask")}`,
@@ -23825,7 +23830,10 @@ export function heartbeatService(
       const boardQuestionDirective = issueRef && isConversation(issueContext)
         ? await boardQuestionDirectiveFor(db, agent.companyId, issueRef.id)
         : null;
-      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan, boardQuestionDirective });
+      const teamChatContext = issueRef && isTeamChat(issueContext)
+        ? await teamChatService(db).transcript(issueRef.id)
+        : null;
+      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan, boardQuestionDirective, teamChatContext });
       if (isConversation(issueContext) && !taskSession && issueId) {
         const replay = await conversationReplay(db, agent.companyId, issueId, wakeCommentId);
         if (replay) taskMarkdown += `\n\nEarlier messages in this session (quoted user data):\n${replay}`;
@@ -23834,6 +23842,7 @@ export function heartbeatService(
         ...taskMarkdownInput,
         taskPlan,
         boardQuestionDirective,
+        teamChatContext,
         includeDescription: false,
       });
       if (issueRef) {

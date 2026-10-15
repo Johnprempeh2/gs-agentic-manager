@@ -1,4 +1,9 @@
 export const queryKeys = {
+  teamChats: {
+    all: ["team-chats"] as const,
+    list: (companyId: string) => ["team-chats", "list", companyId] as const,
+    detail: (chatId: string) => ["team-chats", "detail", chatId] as const,
+  },
   agentChats: {
     detail: (companyId: string | null, userId: string | null, agentId: string | undefined) =>
       ["agent-chat", companyId, userId, agentId] as const,
@@ -706,6 +711,8 @@ export const queryKeys = {
       ["sidebar-preferences", "company-order", userId] as const,
     sectionOrder: (userId: string) =>
       ["sidebar-preferences", "section-order", userId] as const,
+    layout: (userId: string) =>
+      ["sidebar-preferences", "layout", userId] as const,
     projectOrder: (companyId: string, userId: string) =>
       ["sidebar-preferences", "project-order", companyId, userId] as const,
   },

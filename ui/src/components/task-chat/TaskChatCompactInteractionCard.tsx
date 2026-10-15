@@ -20,6 +20,7 @@ import {
   Plug,
   Search,
   X,
+  PenLine,
 } from "lucide-react";
 import type { IssueDocument } from "@greatstone/shared";
 import type {
@@ -28,6 +29,7 @@ import type {
 } from "@greatstone/adapter-utils";
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
+import { DraftReviewCard } from "@/components/DraftReviewCard";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import {
   InteractionGuideSheet,
@@ -121,6 +123,11 @@ const KIND_COPY = {
     fallbackTitle: "Connect service",
     label: "Connection",
     icon: Plug,
+  },
+  request_draft_review: {
+    fallbackTitle: "Review draft",
+    label: "Draft",
+    icon: PenLine,
   },
 } as const;
 
@@ -523,6 +530,12 @@ function ReceiptDisclosure({
       <p className="text-sm text-foreground">
         {interaction.payload.requestingAgentName} requested access to{" "}
         {interaction.payload.serviceName}.
+      </p>
+    );
+  } else if (interaction.kind === "request_draft_review") {
+    request = (
+      <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+        {interaction.result?.draft?.finalBody ?? interaction.payload.body}
       </p>
     );
   } else {
@@ -1992,6 +2005,29 @@ export function TaskChatCompactInteractionCard({
     interaction.kind === "request_confirmation" &&
     interaction.payload.target?.type === "issue_document" &&
     interaction.payload.target.key === "plan";
+
+  if (interaction.kind === "request_draft_review") {
+    return (
+      <InteractionShell
+        interaction={interaction}
+        audienceLabel={audienceLabel}
+        presentation={presentation}
+      >
+        <DraftReviewCard
+          interaction={interaction}
+          drafterLabel={creatorLabel ?? "the agent"}
+          resolvedByLabel={
+            interaction.resolvedByUserId
+              ? interaction.resolvedByUserId === currentUserId
+                ? "you"
+                : (userLabelMap?.get(interaction.resolvedByUserId) ?? null)
+              : null
+          }
+          errorMessage={errorMessage}
+        />
+      </InteractionShell>
+    );
+  }
 
   if (interaction.kind === "connection_intent") {
     return (

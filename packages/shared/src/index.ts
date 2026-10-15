@@ -61,6 +61,7 @@ export {
   type StrategyBoardKpiInput,
   type StrategyBoardActionTask,
 } from "./strategy-board.js";
+export * from "./team-chat.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
@@ -449,6 +450,7 @@ export * from "./types/client-journey.js";
 export * from "./validators/client-journey.js";
 export * from "./client-journey.js";
 export * from "./deliverable-versions.js";
+export * from "./draft-diff.js";
 export * from "./types/workflow-template.js";
 export * from "./validators/workflow-template.js";
 export * from "./types/document-evidence.js";
@@ -1347,6 +1349,9 @@ export type {
   RequestItemVerdictsPayload,
   RequestItemVerdictsResultItem,
   RequestItemVerdictsResult,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
+  RequestDraftReviewResultDraft,
   AcceptedPlanDecompositionStatus,
   AcceptedPlanDecompositionChild,
   AcceptedPlanDecomposition,
@@ -1359,6 +1364,7 @@ export type {
   RequestConfirmationInteraction,
   RequestCheckboxConfirmationInteraction,
   RequestItemVerdictsInteraction,
+  RequestDraftReviewInteraction,
   ConnectionIntentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
@@ -1492,6 +1498,7 @@ export type {
   UserProfileWindowStats,
   SidebarBadges,
   SidebarOrderPreference,
+  SidebarLayoutPreference,
   InboxDismissal,
   InboxDismissalKind,
   AccessUserProfile,
@@ -1903,6 +1910,9 @@ export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
   upsertSidebarSectionOrderSchema,
+  sidebarLayoutSchema,
+  upsertSidebarLayoutSchema,
+  type SidebarLayout,
   type UpsertSidebarOrderPreference,
 } from "./validators/sidebar-preferences.js";
 export {
@@ -2221,6 +2231,8 @@ export {
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultItemSchema,
   requestItemVerdictsResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,

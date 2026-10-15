@@ -135,6 +135,9 @@ export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
   upsertSidebarSectionOrderSchema,
+  sidebarLayoutSchema,
+  upsertSidebarLayoutSchema,
+  type SidebarLayout,
   type UpsertSidebarOrderPreference,
 } from "./sidebar-preferences.js";
 export {
@@ -490,6 +493,8 @@ export {
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultItemSchema,
   requestItemVerdictsResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,

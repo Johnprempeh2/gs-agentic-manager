@@ -158,6 +158,8 @@ export interface InstanceExperimentalSettings {
   /** Greatstone: the Intelligence page (Daily Pulse and AI hub). Off = `403 not_entitled`. */
   enableIntelligence: boolean;
   enableAgentChat: boolean;
+  /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
+  enableTeamChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
   enableIssuePlanDecompositions: boolean;

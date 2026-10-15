@@ -263,6 +263,7 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_checkbox_confirmation",
   "request_item_verdicts",
   "connection_intent",
+  "request_draft_review",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
 
@@ -372,6 +373,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "strategy_board_why_request",
   // A board member's questions-only chat with an agent set for them (GRE-1186).
   "strategy_board_question",
+  // A direct message or group chat of people and agents (enableTeamChat).
+  "team_chat",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

@@ -1,3 +1,4 @@
+import type { DraftDiffSegment } from "../draft-diff.js";
 import type { ExecutionProjection, ExecutionBlocker } from "./execution-projection.js";
 import type {
   IssueCommentAuthorType,
@@ -1486,6 +1487,41 @@ export interface RequestItemVerdictsPayload {
   target?: RequestConfirmationTarget | null;
 }
 
+/**
+ * An agent's draft for a person to edit, approve or send back (an email, a
+ * client message, a post, a document section). Resolved through accept
+ * (approve as is, or send edits) and reject (ask for a redraft).
+ */
+export interface RequestDraftReviewPayload {
+  version: 1;
+  /** What the draft is for, e.g. "Email to Indago". */
+  purpose: string;
+  body: string;
+  subject?: string | null;
+  recipients?: string[];
+  /** Where it will go: email, linkedin, chat, document and so on. */
+  channel?: string | null;
+  detailsMarkdown?: string | null;
+  supersedeOnUserComment?: boolean;
+  target?: RequestConfirmationTarget | null;
+}
+
+export interface RequestDraftReviewResultDraft {
+  originalBody: string;
+  finalBody: string;
+  edited: boolean;
+  changeCount: number;
+  diff: DraftDiffSegment[];
+  /** Factual one-line summary of the edit (counts only). */
+  editSummary: string;
+  /** The person allowed the agent to keep a note of these edits. */
+  learnFromEdits: boolean;
+}
+
+export interface RequestDraftReviewResult extends RequestConfirmationResult {
+  draft?: RequestDraftReviewResultDraft | null;
+}
+
 export interface RequestConfirmationResult {
   version: 1;
   outcome:
@@ -1602,6 +1638,12 @@ export interface RequestItemVerdictsInteraction extends IssueThreadInteractionBa
   result?: RequestItemVerdictsResult | null;
 }
 
+export interface RequestDraftReviewInteraction extends IssueThreadInteractionBase {
+  kind: "request_draft_review";
+  payload: RequestDraftReviewPayload;
+  result?: RequestDraftReviewResult | null;
+}
+
 export interface ConnectionIntentInteraction extends IssueThreadInteractionBase {
   kind: "connection_intent";
   payload: ConnectionIntentPayload;
@@ -1614,7 +1656,8 @@ export type IssueThreadInteraction =
   | RequestConfirmationInteraction
   | RequestCheckboxConfirmationInteraction
   | RequestItemVerdictsInteraction
-  | ConnectionIntentInteraction;
+  | ConnectionIntentInteraction
+  | RequestDraftReviewInteraction;
 
 export type IssueThreadInteractionPayload =
   | SuggestTasksPayload
@@ -1622,7 +1665,8 @@ export type IssueThreadInteractionPayload =
   | RequestConfirmationPayload
   | RequestCheckboxConfirmationPayload
   | RequestItemVerdictsPayload
-  | ConnectionIntentPayload;
+  | ConnectionIntentPayload
+  | RequestDraftReviewPayload;
 
 export type IssueThreadInteractionResult =
   | SuggestTasksResult
@@ -1630,7 +1674,8 @@ export type IssueThreadInteractionResult =
   | RequestConfirmationResult
   | RequestCheckboxConfirmationResult
   | RequestItemVerdictsResult
-  | ConnectionIntentResult;
+  | ConnectionIntentResult
+  | RequestDraftReviewResult;
 
 export interface IssueAttachment {
   id: string;

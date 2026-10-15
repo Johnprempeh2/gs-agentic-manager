@@ -55,10 +55,14 @@ if (mode === "hang") {
     log("snapshot written");
     listener.close(() => {
       log("listener closed");
-      db.once("exit", () => {
+      const exit = () => {
         log("server exit");
         process.exit(0);
-      });
+      };
+      // A signal to the whole group can stop the database first; its exit
+      // event has then already fired, and waiting for it would hang.
+      if (db.exitCode !== null || db.signalCode !== null) return exit();
+      db.once("exit", exit);
       db.kill("SIGINT");
     });
   });

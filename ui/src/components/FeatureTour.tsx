@@ -26,8 +26,17 @@ type ShownStep = TourStep & { el: HTMLElement };
  * A short guided tour for a feature page: opens by itself the first time a
  * person visits (once per tour version), and again from the "Show me around"
  * button it renders. Steps whose element is not on the page are skipped.
+ * `onClose` runs when the tour ends, so a page can put back the scroll the steps moved.
  */
-export function FeatureTour({ tour, className }: { tour: TourDefinition; className?: string }) {
+export function FeatureTour({
+  tour,
+  className,
+  onClose,
+}: {
+  tour: TourDefinition;
+  className?: string;
+  onClose?: () => void;
+}) {
   const { data: settings, isFetched: flagsFetched } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -113,6 +122,7 @@ export function FeatureTour({ tour, className }: { tour: TourDefinition; classNa
   const close = () => {
     if (steps) markSeen(tour);
     setSteps(null);
+    if (steps) onClose?.();
   };
   const go = (delta: number) => {
     if (!steps) return;
@@ -151,7 +161,7 @@ export function FeatureTour({ tour, className }: { tour: TourDefinition; classNa
             aria-labelledby={titleId}
             aria-describedby={bodyId}
             onOpenAutoFocus={(event) => { event.preventDefault(); nextRef.current?.focus(); }}
-            onCloseAutoFocus={(event) => { event.preventDefault(); helpRef.current?.focus(); }}
+            onCloseAutoFocus={(event) => { event.preventDefault(); helpRef.current?.focus({ preventScroll: Boolean(onClose) }); }}
             onKeyDown={onKeyDown}
             className={cn(
               "space-y-3 motion-reduce:animate-none",

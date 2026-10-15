@@ -25,6 +25,7 @@ const CONFIRMATION_KINDS = new Set([
   "request_confirmation",
   "request_checkbox_confirmation",
   "request_item_verdicts",
+  "request_draft_review",
 ]);
 
 // Terminal outcomes that mean "this confirmation was retracted or replaced": it

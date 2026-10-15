@@ -45,11 +45,13 @@ export function classifyShellRoute(
   const isBoardAgentChat = root === "strategy-board"
     && companySegments[1]?.toLowerCase() === "ask"
     && companySegments.length >= 3;
+  // A team chat (GRE-1575) reads like Messages too.
+  const isTeamChat = root === "messages" && companySegments.length >= 2;
 
   return {
     companySegments,
     isTaskDetail,
-    isMobileChat: isTaskDetail || isBoardAgentChat,
+    isMobileChat: isTaskDetail || isBoardAgentChat || isTeamChat,
     builtInContextualSurface: isCompanySettings
       ? "settings"
       : root === "apps" || root === "tools"

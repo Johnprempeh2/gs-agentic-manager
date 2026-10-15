@@ -365,6 +365,43 @@ describe("paperclip MCP tools", () => {
     });
   });
 
+  it("creates request_draft_review interactions with draft payloads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      mockJsonResponse({ id: "interaction-2", kind: "request_draft_review" }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tool = getTool("request_draft_review");
+    await tool.execute({
+      issueId: "PAP-1135",
+      title: "Draft email to Indago",
+      payload: {
+        version: 1,
+        purpose: "Email to Indago",
+        body: "Hi Martyn,\n\nThanks for the call.",
+        subject: "Next steps",
+        recipients: ["martyn@example.com"],
+        channel: "email",
+      },
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/issues/PAP-1135/interactions");
+    expect(JSON.parse(String(init.body))).toEqual({
+      kind: "request_draft_review",
+      continuationPolicy: "wake_assignee",
+      title: "Draft email to Indago",
+      payload: {
+        version: 1,
+        purpose: "Email to Indago",
+        body: "Hi Martyn,\n\nThanks for the call.",
+        subject: "Next steps",
+        recipients: ["martyn@example.com"],
+        channel: "email",
+      },
+    });
+  });
+
   it("creates approvals with the expected company-scoped payload", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       mockJsonResponse({ id: "approval-1" }),

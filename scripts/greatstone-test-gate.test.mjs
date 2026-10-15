@@ -91,6 +91,25 @@ test("a failing lane names the lane and its failing tests and writes no marker",
   assert.match(check.stderr, /^test-gate: the full test suite has not passed on rc-2026-10-13\.1 .*Run it first: scripts\/greatstone-test-gate\.sh rc-2026-10-13\.1/m);
 });
 
+test("a lane that fails once and passes alone on the retry still passes, and the marker names it", (t) => {
+  const box = sandbox(t);
+  const commit = box.candidate("rc-2026-10-13.1", [
+    "ok: true",
+    // Fails the first time only, like a suite that flakes under parallel load.
+    "flaky: test -f .flaky-tried || { touch .flaky-tried; exit 1; }",
+  ].join("\n"));
+  const run = box.gate(["rc-2026-10-13.1"]);
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(run.stdout, /^ {2}flaky passed on retry$/m);
+  assert.match(readFileSync(join(box.gateDir, "passed", commit), "utf8"), /^retried=flaky$/m);
+  assert.ok(existsSync(join(box.gateDir, "logs", commit, "flaky.first-attempt.log")));
+
+  // With the retry off, the same lane fails the gate.
+  const box2 = sandbox(t);
+  box2.candidate("rc-2026-10-13.1", "flaky: test -f .flaky-tried || { touch .flaky-tried; exit 1; }\n");
+  assert.equal(box2.gate(["rc-2026-10-13.1"], { GSAM_TEST_GATE_RETRY: "0" }).status, 1);
+});
+
 test("a failing setup stops the gate before any lane", (t) => {
   const box = sandbox(t);
   box.candidate("rc-2026-10-13.1", "setup: exit 1\nlane: touch ran\n");

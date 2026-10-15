@@ -1,5 +1,5 @@
 {
-  "id": "ffb979e7-9067-4728-9c6c-0fabd206d7b9",
+  "id": "d633e9a9-329f-4b25-806c-ba128efca912",
   "prevId": "ee50f9fd-5dfa-4371-ab75-e388c0a673b2",
   "version": "7",
   "dialect": "postgresql",
@@ -31012,6 +31012,150 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.issue_participants": {
+      "name": "issue_participants",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_id": {
+          "name": "issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_type": {
+          "name": "principal_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "principal_id": {
+          "name": "principal_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "added_by": {
+          "name": "added_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "issue_participants_issue_principal_uq": {
+          "name": "issue_participants_issue_principal_uq",
+          "columns": [
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issue_participants_company_principal_idx": {
+          "name": "issue_participants_company_principal_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "principal_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "issue_participants_company_id_companies_id_fk": {
+          "name": "issue_participants_company_id_companies_id_fk",
+          "tableFrom": "issue_participants",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_participants_issue_id_issues_id_fk": {
+          "name": "issue_participants_issue_id_issues_id_fk",
+          "tableFrom": "issue_participants",
+          "tableTo": "issues",
+          "columnsFrom": [
+            "issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "issue_participants_principal_type_check": {
+          "name": "issue_participants_principal_type_check",
+          "value": "\"issue_participants\".\"principal_type\" in ('user', 'agent')"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.issue_plan_decompositions": {
       "name": "issue_plan_decompositions",
       "schema": "",
@@ -39070,139 +39214,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "legal_name": {
-          "name": "legal_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "domain": {
-          "name": "domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_street": {
-          "name": "address_street",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_city": {
-          "name": "address_city",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_region": {
-          "name": "address_region",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_postal_code": {
-          "name": "address_postal_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "employee_count": {
-          "name": "employee_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "size_band": {
-          "name": "size_band",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "annual_revenue": {
-          "name": "annual_revenue",
-          "type": "numeric(20, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "annual_revenue_currency": {
-          "name": "annual_revenue_currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ownership_type": {
-          "name": "ownership_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_organisation_id": {
-          "name": "parent_organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "linkedin_url": {
-          "name": "linkedin_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_owner_user_id": {
-          "name": "account_owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_owner_agent_id": {
-          "name": "account_owner_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "segment": {
-          "name": "segment",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tags": {
-          "name": "tags",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "registration_number": {
-          "name": "registration_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tax_id": {
-          "name": "tax_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source": {
           "name": "source",
           "type": "text",
@@ -39261,42 +39272,6 @@
             },
             {
               "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "organisations_company_domain_idx": {
-          "name": "organisations_company_domain_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "organisations_parent_idx": {
-          "name": "organisations_parent_idx",
-          "columns": [
-            {
-              "expression": "parent_organisation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -39371,32 +39346,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "organisations_parent_organisation_id_organisations_id_fk": {
-          "name": "organisations_parent_organisation_id_organisations_id_fk",
-          "tableFrom": "organisations",
-          "tableTo": "organisations",
-          "columnsFrom": [
-            "parent_organisation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "organisations_account_owner_agent_id_agents_id_fk": {
-          "name": "organisations_account_owner_agent_id_agents_id_fk",
-          "tableFrom": "organisations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "account_owner_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "organisations_created_by_agent_id_agents_id_fk": {
           "name": "organisations_created_by_agent_id_agents_id_fk",
           "tableFrom": "organisations",
@@ -39422,22 +39371,6 @@
         "organisations_source_check": {
           "name": "organisations_source_check",
           "value": "\"organisations\".\"source\" in ('manual', 'pipedrive', 'csv')"
-        },
-        "organisations_size_band_check": {
-          "name": "organisations_size_band_check",
-          "value": "\"organisations\".\"size_band\" is null or \"organisations\".\"size_band\" in ('1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5001+')"
-        },
-        "organisations_ownership_type_check": {
-          "name": "organisations_ownership_type_check",
-          "value": "\"organisations\".\"ownership_type\" is null or \"organisations\".\"ownership_type\" in ('private', 'public', 'subsidiary', 'government', 'non_profit', 'partnership', 'other')"
-        },
-        "organisations_one_account_owner_check": {
-          "name": "organisations_one_account_owner_check",
-          "value": "\"organisations\".\"account_owner_user_id\" is null or \"organisations\".\"account_owner_agent_id\" is null"
-        },
-        "organisations_not_own_parent_check": {
-          "name": "organisations_not_own_parent_check",
-          "value": "\"organisations\".\"parent_organisation_id\" <> \"organisations\".\"id\""
         }
       },
       "isRLSEnabled": false

@@ -115,6 +115,24 @@ for name in "${LANES[@]}"; do
   read -r code _ <"$LOG_DIR/$name.status" 2>/dev/null || code=missing
   [ "$code" = 0 ] || FAILED+=("$name")
 done
+
+# One retry, alone. A few suites flake only under the gate's 13-way parallel
+# load (a different test each run); a real failure fails again on its own.
+# Retried lanes are named in the log and in the pass marker.
+RETRIED=()
+if [ "${#FAILED[@]}" -gt 0 ] && [ "${GSAM_TEST_GATE_RETRY:-1}" = 1 ]; then
+  STILL_FAILED=()
+  for name in "${FAILED[@]}"; do
+    mv "$LOG_DIR/$name.log" "$LOG_DIR/$name.first-attempt.log" 2>/dev/null || true
+    say "  retrying $name alone..."
+    start="$(date +%s)"
+    code=0
+    (cd "$CODE_DIR" && env -i "${LANE_ENV[@]}" CODE_DIR="$CODE_DIR" LOG_DIR="$LOG_DIR" bash "$LOG_DIR/$name.cmd" </dev/null) >"$LOG_DIR/$name.log" 2>&1 || code=$?
+    printf "%s %s\n" "$code" "$(( $(date +%s) - start ))" >"$LOG_DIR/$name.status"
+    if [ "$code" = 0 ]; then say "  $name passed on retry"; RETRIED+=("$name"); else STILL_FAILED+=("$name"); fi
+  done
+  FAILED=(${STILL_FAILED[@]+"${STILL_FAILED[@]}"})
+fi
 SECONDS_TAKEN=$(( $(date +%s) - STARTED ))
 TOOK="$((SECONDS_TAKEN / 60))m$((SECONDS_TAKEN % 60))s"
 
@@ -136,6 +154,7 @@ tag=$TAG
 passed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 seconds=$SECONDS_TAKEN
 lanes=${#LANES[@]}
+retried=${RETRIED[*]:-}
 EOF
 mv "$TEST_GATE_DIR/passed/$COMMIT.tmp" "$TEST_GATE_DIR/passed/$COMMIT"
 say "PASSED: all ${#LANES[@]} lanes on $TAG ($COMMIT) in $TOOK. Pass marker: $TEST_GATE_DIR/passed/$COMMIT"

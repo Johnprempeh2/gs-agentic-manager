@@ -226,6 +226,7 @@ Supported `kind` values:
 - `request_confirmation`: ask the board/user to accept or reject a proposal
 - `request_checkbox_confirmation`: ask for one accept/reject decision over selected option ids
 - `request_item_verdicts`: collect approve/reject/defer verdicts per item
+- `request_draft_review`: show an editable draft (email, client message, post, document section). A person sends edits (`accept` with `editedBody`), approves it as is (`accept`), or asks for a redraft (`reject` with an optional `reason`). Always human-only. The result stores `draft.originalBody`, `draft.finalBody`, a word-level `draft.diff` and `draft.learnFromEdits`
 
 Create accepts optional canonical `resolverPolicy: "anyone" | "not_creator" | "human_only"`. Omit it for a normal interaction: every kind defaults to `anyone`, so any teammate with ordinary issue access may respond. Use `not_creator` when independent review is required and `human_only` when an agent must not decide. Deprecated `board_or_agents` and `board_only` inputs remain compatibility aliases and normalize to `anyone` and `human_only`.
 

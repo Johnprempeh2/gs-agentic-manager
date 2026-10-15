@@ -77,7 +77,7 @@ function LocationProbe() {
 }
 
 /** A fresh render with a fresh query cache: a new page load (or another device, after localStorage.clear()). */
-async function render(url = "/page") {
+async function render(url = "/page", onClose?: () => void) {
   if (root) await act(async () => root?.unmount());
   container?.remove();
   container = document.createElement("div");
@@ -91,7 +91,7 @@ async function render(url = "/page") {
             <>
               <div data-tour="one">one</div>
               <div data-tour="two">two</div>
-              <FeatureTour tour={tour} />
+              <FeatureTour tour={tour} onClose={onClose} />
               <LocationProbe />
             </>
           )} />
@@ -123,6 +123,16 @@ describe("FeatureTour", () => {
 
     await render();
     expect(card()).toBeNull();
+  });
+
+  it("tells the page when the tour ends, so it can put the scroll back", async () => {
+    const onClose = vi.fn();
+    await render("/page", onClose);
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => button("Next")!.click());
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => button("Done")!.click());
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it("stays seen on another device through the server", async () => {

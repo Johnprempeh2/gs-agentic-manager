@@ -48,6 +48,7 @@ import { AppLogo } from "@/pages/apps/AppLogo";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { ReauthCancelledError } from "./ReauthDialog";
 import { IssueDocumentSheet } from "./IssueDocumentSheet";
+import { DraftReviewCard } from "./DraftReviewCard";
 
 const OTHER_ANSWER_ID = "__paperclip_other__";
 
@@ -218,6 +219,8 @@ function interactionKindLabel(kind: IssueThreadInteraction["kind"]) {
       return "Item verdicts";
     case "connection_intent":
       return "Connection request";
+    case "request_draft_review":
+      return "Draft";
     default:
       return kind;
   }
@@ -3807,6 +3810,7 @@ export function IssueThreadInteractionCard({
     creatorLabel: createdByLabel,
     addresseeLabel,
   });
+  const resolutionErrorMessage = (error: unknown) => interactionResolutionErrorMessage(error, audience);
   if (isToolAction && interaction.kind === "request_confirmation" && toolActionState) {
     return (
       <InteractionAudienceContext.Provider value={audience}>
@@ -3922,6 +3926,8 @@ export function IssueThreadInteractionCard({
                       ? "Tool approval requested"
                       : interaction.kind === "request_item_verdicts"
                         ? "Review these items"
+                      : interaction.kind === "request_draft_review"
+                        ? "Review this draft"
                         : isPlan
                           ? "Plan review"
                           : "Confirmation requested")}
@@ -4007,6 +4013,13 @@ export function IssueThreadInteractionCard({
               currentUserId={currentUserId}
               addresseeLabel={addresseeLabel ?? "the addressed person"}
             />
+          ) : interaction.kind === "request_draft_review" ? (
+            <DraftReviewCard
+              interaction={interaction}
+              drafterLabel={createdByLabel}
+              resolvedByLabel={resolvedByLabel}
+              errorMessage={resolutionErrorMessage}
+            />
           ) : interaction.kind === "request_item_verdicts" ? (
             <RequestItemVerdictsCard
               interaction={interaction}
@@ -4050,7 +4063,7 @@ export function IssueThreadInteractionCard({
           >
             {formatShortDate(interaction.resolvedAt)}
           </div>
-        ) : resolvedByLabel && !isToolAction && !connectionAuthorization ? (
+        ) : resolvedByLabel && !isToolAction && !connectionAuthorization && interaction.kind !== "request_draft_review" ? (
           // The connection-authorization card states its own resolver and
           // timestamp inside the "Gmail connected" block, so the shared footer
           // would repeat it.
