@@ -19,7 +19,12 @@
 // which records a pass marker for the commit. The release script refuses an
 // rc tag with no pass. It exits with the gate's status. --no-test-gate (and
 // --json, the server's call) only cuts the tag; run the gate later by hand.
+//
+// One candidate at a time: it takes the "candidate" lock in ~/GSAM/locks
+// (--print does not), the same lock folder as gs_lock in greatstone-common.sh.
 import { execFileSync, spawnSync } from "node:child_process";
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { userInfo } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { issueId, mergedChanges, whatChanged } from "./greatstone-changes.mjs";
@@ -89,6 +94,38 @@ export function cutCandidate(cwd, { tag, title, ref = "origin/main", since = nul
   return { sha, since: from, message, changes: summary };
 }
 
+// Takes the lock <root>/locks/<name>.lock and returns the function that frees
+// it; throws, naming the holder, when another live process holds it. A lock
+// whose holder is gone (killed, so it could not free it) is taken over.
+// Must match gs_lock in scripts/greatstone-common.sh.
+export function takeLock(root, name, command) {
+  const dir = join(root, "locks", `${name}.lock`);
+  mkdirSync(join(root, "locks"), { recursive: true });
+  try {
+    mkdirSync(dir);
+  } catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    let owner = "";
+    try { owner = readFileSync(join(dir, "owner"), "utf8"); } catch {}
+    const pid = Number(/^pid=(\d+)$/m.exec(owner)?.[1] ?? 0);
+    let alive = false;
+    if (pid > 0) {
+      try { process.kill(pid, 0); alive = true; } catch (e) { alive = e.code === "EPERM"; }
+    }
+    // No owner yet: the holder made the folder a moment ago and writes it next.
+    const starting = !pid && Date.now() - statSync(dir).mtimeMs < 60_000;
+    if (alive || starting) {
+      throw new Error(`another ${name} step runs (${owner.trim().replace(/\n/g, " ")}); wait for it to end. If none runs, remove ${dir}.`);
+    }
+    rmSync(dir, { recursive: true, force: true });
+    mkdirSync(dir);
+  }
+  const line = (v) => String(v ?? "").replace(/[\r\n]/g, "");
+  writeFileSync(join(dir, "owner"), `pid=${process.pid}\ncommand=${line(command)}\nrun_id=${line(process.env.GSAM_RUN_ID)}\n`
+    + `issue_id=${line(process.env.GSAM_TASK_ID)}\nstarted_at=${new Date().toISOString().replace(/\.\d+Z$/, "Z")}\n`);
+  return () => rmSync(dir, { recursive: true, force: true });
+}
+
 function main(argv) {
   const args = [...argv];
   const opt = (name) => { const i = args.indexOf(name); if (i < 0) return null; const v = args[i + 1]; args.splice(i, 2); return v; };
@@ -102,6 +139,10 @@ function main(argv) {
   if (args.length !== 1) {
     process.stderr.write('usage: greatstone-candidate.mjs <rc-tag> --title "<title>" [--ref origin/main] [--since <live-tag>] [--print] [--json] [--no-test-gate]\n');
     process.exit(2);
+  }
+  if (!print) {
+    const root = process.env.GSAM_ROOT || join(userInfo().homedir, "GSAM");
+    process.on("exit", takeLock(root, "candidate", `greatstone-candidate.mjs ${args[0]}`));
   }
   const result = cutCandidate(process.cwd(), { tag: args[0], title, ref, since, print });
   const { sha, since: from, message } = result;

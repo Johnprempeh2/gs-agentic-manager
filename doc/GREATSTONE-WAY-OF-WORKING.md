@@ -344,7 +344,11 @@ Merging does not change the live app. A version goes live in these steps.
    scripts/greatstone-preview.sh start rc-YYYY-MM-DD.N   # http://localhost:3200
    scripts/greatstone-preview.sh status                  # tag, commit, migrations applied, agent runs since start
    scripts/greatstone-preview.sh switch-tests            # tests of every Experimental switch on in live
+   scripts/greatstone-preview.sh script walk.mjs         # your own Playwright walk-through (never in ~/GSAM/live)
    ```
+
+   One preview step at a time: if `start`, `switch-tests` or `stop` says
+   "another preview step runs", wait for that run; do not kill it.
 
    Go through each "what to check" line and record pass or fail with evidence on
    the release issue. `status` must show 0 agent runs. Its "migrations applied
@@ -447,6 +451,20 @@ Merging does not change the live app. A version goes live in these steps.
    The reason is required. Each override is a line in
    `~/GSAM/test-gate/overrides.log` (time, tag, commit, user, reason); run the
    gate on that tag afterwards. A rollback to a `live-*` tag needs no gate.
+
+   It also refuses an `rc-*` tag when the preview does not run that tag and
+   answer on `/api/health` right now (`preview_check`). Before 15 Oct 2026 it
+   refused only a preview of another tag, so a preview that never came up let
+   the release go out with no check. Start the preview and release again, or,
+   only in an emergency:
+
+   ```sh
+   scripts/greatstone-release.sh --skip-preview "preview host down, GRE-123 fix" rc-YYYY-MM-DD.N
+   ```
+
+   Each override is a line in `~/GSAM/preview-overrides.log`. The one-click
+   release from the app checks no preview, as before. When the live checkout
+   has local changes, the refusal names them (`Changed: ?? scripts/...`).
 
    **Full stop and start.** When the release task says so (a fix to the dev
    runner itself, such as #274), John runs
@@ -667,6 +685,20 @@ on a throwaway sandbox, in both modes.
   the preview.
 - `stop` stops only the preview process group and its database. The code and
   data folders stay until the next `start` replaces them.
+- **One at a time:** `start`, `switch-tests` and `stop` take the preview lock
+  (`~/GSAM/locks/preview.lock`, with the pid, run and issue of the holder).
+  A second one fails at once and names the holder; wait for it, do not stop
+  or restart the preview under it. On 15 Oct 2026 parallel starts removed each
+  other's seed and data copy ("Failed to restore preview-seed.sql.gz:
+  unexpected end of file"). A lock whose holder no longer runs is taken over.
+  `greatstone-candidate.mjs` takes `~/GSAM/locks/candidate.lock` the same way.
+  The seed is written to a `.tmp` file and renamed, so it is never half written.
+- **Your own Playwright script:** run it with
+  `scripts/greatstone-preview.sh script <file.mjs> [args]`. It runs from
+  `~/GSAM/preview/code/scripts` with the preview's dependencies, so
+  `@playwright/test` and `./chromium-libs.mjs` resolve. Never copy a script
+  into `~/GSAM/live` to borrow its dependencies: an untracked file there makes
+  the release refuse (15 Oct 2026).
 - **Run from a fresh checkout:** the script uses the dependencies of the
   checkout it runs from. In a fresh clone of a tag, run
   `pnpm install --frozen-lockfile` there first; `start` says so if you forget.

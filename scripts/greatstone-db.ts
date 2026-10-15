@@ -16,7 +16,7 @@
 //
 // The source is only read: a backup is one read-only transaction, so the live
 // database does not need to be quiet and nothing is written under its folder.
-import { createReadStream, createWriteStream, existsSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync, renameSync, rmSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { Readable } from "node:stream";
@@ -144,7 +144,16 @@ async function seedPreview(options: Record<string, string>): Promise<void> {
   const liveBackup = await backup(sourceUrl, workDir, "live-copy");
   console.log(`Copied the live database: ${liveBackup}`);
   const previewBackup = path.join(workDir, "preview-seed.sql.gz");
-  const rewritten = await rewritePaths(liveBackup, previewBackup, rewriteFrom, rewriteTo);
+  // Written beside it and renamed into place, so preview-seed.sql.gz is only
+  // ever whole: a run that is stopped half way leaves the .tmp, not a short seed.
+  const partial = `${previewBackup}.${process.pid}.tmp`;
+  let rewritten: number;
+  try {
+    rewritten = await rewritePaths(liveBackup, partial, rewriteFrom, rewriteTo);
+    renameSync(partial, previewBackup);
+  } finally {
+    rmSync(partial, { force: true });
+  }
   console.log(`Pointed ${rewritten} line(s) with live data paths at the preview data folder`);
 
   const handle = await ensureEmbeddedPostgres(targetDbDir, 54339, { allowExisting: false });
