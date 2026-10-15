@@ -42,6 +42,7 @@ import {
 import { normalizeExternalObjectHref } from "../lib/external-object-href";
 import { inAppDeliverablePath } from "../lib/deliverable-links";
 import { copyTextToClipboard } from "../lib/clipboard";
+import { richClipboardContentForSelection, writeRichClipboardEvent } from "../lib/rich-clipboard";
 import { isPlainPrimaryClick, parseAttachmentContentHref } from "../lib/attachment-preview";
 import { AttachmentPreviewContext } from "../context/AttachmentPreviewContext";
 import type {
@@ -1022,6 +1023,7 @@ function MarkdownBodyImpl({
 
   return (
     <div
+      onCopy={handleRichCopy}
       className={cn(
         "paperclip-markdown prose prose-sm min-w-0 max-w-full break-words overflow-hidden",
         theme === "dark" && "prose-invert",
@@ -1041,6 +1043,16 @@ function MarkdownBodyImpl({
 }
 
 export const MarkdownBody = memo(MarkdownBodyImpl);
+
+/**
+ * The browser copies rendered markdown with GSAM's computed styles inlined,
+ * which Outlook and Word paste as grey boxes in our font (GRE-1585). Replace
+ * it with semantic HTML and clean plain text so the target app's look wins.
+ */
+function handleRichCopy(event: React.ClipboardEvent<HTMLDivElement>) {
+  const content = richClipboardContentForSelection(window.getSelection(), event.currentTarget);
+  if (content) writeRichClipboardEvent(event, content);
+}
 
 /**
  * A wide table scrolls sideways inside its own box. On a phone the cut-off
