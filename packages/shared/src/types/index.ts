@@ -88,6 +88,7 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./calendar.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,

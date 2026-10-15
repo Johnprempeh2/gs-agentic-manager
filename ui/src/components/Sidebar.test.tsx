@@ -526,7 +526,7 @@ describe("Sidebar", () => {
     );
     const root = await renderSidebar();
 
-    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox"]);
+    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox", "Calendar"]);
 
     flushSync(() => {
       root.unmount();
@@ -655,7 +655,7 @@ describe("Sidebar", () => {
       await click(textButton("Customise sidebar"));
       await click(button("More options for Inbox"));
       await click(menuItem("Move up"));
-      expect(lastSavedLayout()?.sections?.today).toEqual(["decisions", "inbox", "my-tasks"]);
+      expect(lastSavedLayout()?.sections?.today).toEqual(["decisions", "inbox", "my-tasks", "calendar"]);
 
       await click(button("More options for Agents"));
       await click(menuItem("Pin to top"));
@@ -663,7 +663,7 @@ describe("Sidebar", () => {
       expect(button("Unpin Agents")).not.toBeNull();
 
       await click(textButton("Done"));
-      expect(sectionLabels("Today")).toEqual(["Decisions", "Inbox", "My tasks"]);
+      expect(sectionLabels("Today")).toEqual(["Decisions", "Inbox", "My tasks", "Calendar"]);
       expect(sectionLabels("Pinned")).toEqual(["Agents"]);
       // Pinned items move to the top group; they are not listed twice.
       expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
@@ -781,7 +781,7 @@ describe("Sidebar", () => {
     const headings = [...container.querySelectorAll("[data-sidebar-section]")]
       .map((section) => section.getAttribute("data-sidebar-section"));
     expect(headings).toEqual(["today", "chats", "clients", "work", "team", "admin"]);
-    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox"]);
+    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);

@@ -43,6 +43,7 @@ import {
   SlidersHorizontal,
   FolderInput,
   type LucideIcon,
+  CalendarDays,
 } from "lucide-react";
 import {
   DndContext,
@@ -395,6 +396,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </>
       ) : null,
     },
+    calendar: link("/calendar", "Calendar", CalendarDays),
     // GRE-1477: CRM organisations, part of the pipelines module.
     organisations: gated(showPipelines, link("/organisations", "Organisations", Building2)),
     pipelines: gated(showPipelines, {
