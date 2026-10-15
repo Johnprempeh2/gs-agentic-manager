@@ -44,6 +44,7 @@ import {
   FolderInput,
   type LucideIcon,
   CalendarDays,
+  Trophy,
 } from "lucide-react";
 import {
   DndContext,
@@ -433,6 +434,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     intelligence: gated(showIntelligence, link("/intelligence", "Intelligence", Radar, { textBadge: "beta" })),
     memory: gated(memoryEnabled, link("/memory", "Memory", Brain)),
     agents: link("/agents", "Agents", Users),
+    scorecard: link("/scorecard", "Scorecard", Trophy),
     "conference-room": gated(conferenceRoomChatEnabled, link("/board-chat", "Conference Room", MessagesSquare)),
     status: gated(showStatusCards, link("/status", "Status", LayoutGrid, { textBadge: "beta" })),
     skills: link("/skills", "Skills", Boxes),

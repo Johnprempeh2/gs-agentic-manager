@@ -557,7 +557,7 @@ describe("Sidebar", () => {
     const statusLink = container.querySelector('a[href="/status"]');
     expect(statusLink?.textContent).toContain("Status");
     expect(statusLink?.textContent).toContain("beta");
-    expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "Conference Room", "Statusbeta"]);
 
     flushSync(() => {
       root.unmount();
@@ -784,7 +784,7 @@ describe("Sidebar", () => {
     expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
-    expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "Conference Room", "Statusbeta"]);
     expect(sectionLabels("Admin")).toEqual([
       "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta",
       "Audit", "Releases", "Settings", "Design guide",

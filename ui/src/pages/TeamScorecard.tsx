@@ -1,0 +1,175 @@
+import { useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+import type { TeamScorecardAgent } from "@greatstone/shared";
+import { AlertTriangle, CircleCheck, Clock, Eye, Loader, Trophy } from "lucide-react";
+import { teamScorecardApi } from "../api/teamScorecard";
+import { costsApi } from "../api/costs";
+import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useCompany } from "../context/CompanyContext";
+import { EmptyState } from "../components/EmptyState";
+import { ErrorState } from "../components/ErrorState";
+import { deriveInitials } from "../components/Identity";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PageSkeleton } from "../components/PageSkeleton";
+import { queryKeys } from "../lib/queryKeys";
+import { scorecardSentence, workValueLabel } from "../lib/team-scorecard";
+import { Link, useSearchParams } from "@/lib/router";
+import { cn } from "@/lib/utils";
+
+const PERIODS = [
+  { days: 7, label: "Last 7 days" },
+  { days: 30, label: "Last 30 days" },
+] as const;
+
+function Stat({ icon: Icon, value, label, tone }: { icon: typeof CircleCheck; value: number; label: string; tone?: "danger" | "success" }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-3 py-2">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className={cn("size-3.5", tone === "danger" && value > 0 && "text-status-danger", tone === "success" && "text-status-success")} aria-hidden />
+        {label}
+      </div>
+      <div className={cn("text-2xl font-semibold tabular-nums", tone === "danger" && value > 0 && "text-status-danger")}>{value}</div>
+    </div>
+  );
+}
+
+function TaskLinks({ title, tasks }: { title: string; tasks: TeamScorecardAgent["recentlyFinished"] }) {
+  if (tasks.length === 0) return null;
+  return (
+    <div className="min-w-0 space-y-1">
+      <div className="text-xs font-medium text-muted-foreground">{title}</div>
+      <ul className="space-y-0.5">
+        {tasks.map((task) => (
+          <li key={task.id} className="truncate text-sm">
+            <Link to={`/issues/${task.identifier ?? task.id}`} className="hover:underline">
+              {task.identifier ? <span className="mr-1.5 text-muted-foreground">{task.identifier}</span> : null}
+              {task.title}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AgentCard({ agent, days, workCents }: { agent: TeamScorecardAgent; days: number; workCents: number | null }) {
+  return (
+    <li className="space-y-3 rounded-lg border border-border bg-card p-4">
+      <div className="flex items-start gap-3">
+        <Avatar size="lg" aria-hidden="true">
+          <AvatarFallback>{deriveInitials(agent.name)}</AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <Link to={`/agents/${agent.agentId}`} className="font-semibold hover:underline">
+              {agent.name}
+            </Link>
+            {workCents != null && workCents > 0 ? (
+              <span className="text-xs tabular-nums text-muted-foreground" title="What this agent's work would cost on the API">
+                {workValueLabel(workCents)} of work
+              </span>
+            ) : null}
+          </div>
+          {agent.title ? <div className="text-xs text-muted-foreground">{agent.title}</div> : null}
+          <p className="mt-1 text-sm">{scorecardSentence(agent, days)}</p>
+        </div>
+      </div>
+      {agent.recentlyFinished.length > 0 || agent.stuckTasks.length > 0 ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <TaskLinks title="Recently finished" tasks={agent.recentlyFinished} />
+          <TaskLinks title="Stuck, needs a look" tasks={agent.stuckTasks} />
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * Team scorecard: each agent's recent work in plain words, the stuck ones
+ * first, so an owner can see who is delivering and who needs help.
+ */
+export function TeamScorecard() {
+  const { selectedCompanyId } = useCompany();
+  const { setBreadcrumbs } = useBreadcrumbs();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const days = searchParams.get("days") === "30" ? 30 : 7;
+
+  useEffect(() => {
+    setBreadcrumbs([{ label: "Scorecard" }]);
+  }, [setBreadcrumbs]);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: queryKeys.teamScorecard(selectedCompanyId ?? "", days),
+    queryFn: () => teamScorecardApi.get(selectedCompanyId!, days as 7 | 30),
+    enabled: !!selectedCompanyId,
+  });
+
+  // Work value is a nice-to-have: people without cost access simply do not see it.
+  const from = data?.since;
+  const { data: value } = useQuery({
+    queryKey: queryKeys.apiEquivalent(selectedCompanyId ?? "", from),
+    queryFn: () => costsApi.apiEquivalent(selectedCompanyId!, from),
+    enabled: !!selectedCompanyId && !!from,
+    retry: false,
+  });
+  const valueByAgent = useMemo(
+    () => new Map((value?.byAgent ?? []).map((row) => [row.agentId, row.apiEquivalentCents])),
+    [value],
+  );
+
+  if (!selectedCompanyId) return <EmptyState icon={Trophy} message="Select an organisation to see its scorecard." />;
+
+  return (
+    <div className="mx-auto w-full max-w-4xl space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-semibold">Scorecard</h1>
+          <p className="text-sm text-muted-foreground">
+            What each agent finished, and what they are working on now. Agents with stuck work come first.
+          </p>
+        </div>
+        <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period">
+          {PERIODS.map((period) => (
+            <button
+              key={period.days}
+              type="button"
+              aria-pressed={days === period.days}
+              onClick={() => setSearchParams(period.days === 7 ? {} : { days: String(period.days) }, { replace: true })}
+              className={cn(
+                "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                days === period.days ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {period.label}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {isLoading ? (
+        <PageSkeleton variant="list" />
+      ) : error && !data ? (
+        <ErrorState error={error} onRetry={() => void refetch()} />
+      ) : data ? (
+        <>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <Stat icon={CircleCheck} value={data.totals.finished} label="Finished" tone="success" />
+            <Stat icon={Loader} value={data.totals.underWay} label="Under way" />
+            <Stat icon={Eye} value={data.totals.inReview} label="Waiting for review" />
+            <Stat icon={AlertTriangle} value={data.totals.stuck} label="Stuck" tone="danger" />
+            <Stat icon={Clock} value={data.totals.overdue} label="Past due date" tone="danger" />
+          </div>
+          {data.agents.length === 0 ? (
+            <EmptyState icon={Trophy} message="No agents yet. Hire one from the Agents page and their work shows here." />
+          ) : (
+            <ul className="space-y-3">
+              {data.agents.map((agent) => (
+                <AgentCard key={agent.agentId} agent={agent} days={data.days} workCents={valueByAgent.get(agent.agentId) ?? null} />
+              ))}
+            </ul>
+          )}
+        </>
+      ) : null}
+    </div>
+  );
+}
