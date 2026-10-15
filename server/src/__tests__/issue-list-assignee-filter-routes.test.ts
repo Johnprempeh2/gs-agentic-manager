@@ -271,6 +271,31 @@ describeEmbeddedPostgres("issue list routes assigneeAgentId filter", () => {
     expect(byTitle["Plain task"]).not.toHaveProperty("monitorNextCheckAt");
   });
 
+  // The spreadsheet download and the calendar read the due date from list rows.
+  it("carries the due date in compact rows when one is set", async () => {
+    const companyId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: uniqueIssuePrefix(),
+      requireBoardApprovalForNewAgents: false,
+    });
+    await seedCloudTenantMember(companyId);
+    await db.insert(issues).values([
+      { companyId, title: "Dated task", status: "todo", priority: "medium", dueDate: "2026-10-20" },
+      { companyId, title: "Undated task", status: "todo", priority: "medium" },
+    ]);
+
+    const res = await request(createApp(companyId))
+      .get(`/api/companies/${companyId}/issues`)
+      .query({ view: "compact", limit: "20" });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    const byTitle = Object.fromEntries(res.body.map((row: { title: string }) => [row.title, row]));
+    expect(byTitle["Dated task"].dueDate).toBe("2026-10-20");
+    expect(byTitle["Undated task"]).not.toHaveProperty("dueDate");
+  });
+
   it("marks a required successful-run handoff live while a run targets the issue", async () => {
     const companyId = randomUUID();
     const agentId = randomUUID();

@@ -936,6 +936,7 @@ export type CompactIssue = Pick<
   | "cancelledAt"
   | "createdAt"
   | "updatedAt"
+  | "dueDate"
 > & {
   labelIds?: string[];
   labels?: IssueLabel[];

@@ -3218,6 +3218,8 @@ function toCompactIssue(issue: any): CompactIssue {
     cancelledAt: issue.cancelledAt,
     createdAt: issue.createdAt,
     updatedAt: issue.updatedAt,
+    // Only when set, so lists and the spreadsheet download can show it.
+    ...(issue.dueDate ? { dueDate: issue.dueDate } : {}),
     ...(issue.labelIds ? { labelIds: issue.labelIds } : {}),
     ...(issue.labels ? { labels: issue.labels } : {}),
     ...(issue.blockedBy ? { blockedBy: issue.blockedBy } : {}),
