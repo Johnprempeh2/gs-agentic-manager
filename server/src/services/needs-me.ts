@@ -6,6 +6,7 @@ import type { AttentionServiceOptions } from "./attention.js";
 import { viewerPrincipalUserIds } from "./board-identity.js";
 import { decisionsFeedService } from "./decisions-feed.js";
 import { executionIssueCondition } from "./issue-visibility.js";
+import { isReleaseTask } from "./release-task.js";
 import {
   humanWaitAgeMs,
   humanWaitRecheckCutoff,
@@ -74,6 +75,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
       ]);
 
       const overdueWaits: NeedsMeOverdueWait[] = waits
+        .filter((wait) => !isReleaseTask(wait.title))
         .filter((wait) => viewerUserIds.some((id) => isHumanWaitOwnedBy(wait.unblockDescriptor, id)) && isOverdueHumanWait(wait, now))
         .map((wait) => ({
           id: wait.id,
@@ -95,7 +97,8 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
       const cardTaskIds = new Set(feed.cards.map((card) => card.task?.id).filter(Boolean));
       const waitIds = new Set(overdueWaits.map((wait) => wait.id));
       const assignedTasks = assigned
-        .filter((task) => !cardTaskIds.has(task.id) && !waitIds.has(task.id))
+        // Releases run from Claude, not from here (release-task.ts).
+        .filter((task) => !cardTaskIds.has(task.id) && !waitIds.has(task.id) && !isReleaseTask(task.title))
         .map((task) => ({ ...task, updatedAt: task.updatedAt.toISOString() }));
       const uncountedWaits = overdueWaits.filter((wait) => !cardTaskIds.has(wait.id));
 
