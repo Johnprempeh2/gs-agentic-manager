@@ -32,10 +32,13 @@ function sandbox(t) {
     git(dev, "tag", "-a", tag, "-m", `Candidate ${tag}`);
     return git(dev, "rev-parse", "HEAD");
   };
+  // No BASH_ENV: an agent run's .bashrc puts its own git launcher back first on
+  // PATH, which would hide the launcher test's stub.
+  const { BASH_ENV: _bashEnv, ...callerEnv } = process.env;
   const gate = (args, extraEnv = {}) =>
     spawnSync("bash", [join(dev, "scripts", "greatstone-test-gate.sh"), ...args], {
       encoding: "utf8",
-      env: { ...process.env, GSAM_ROOT: root, GSAM_RELEASE_REPO: dev, ...extraEnv },
+      env: { ...callerEnv, GSAM_ROOT: root, GSAM_RELEASE_REPO: dev, ...extraEnv },
     });
   return { root, dev, candidate, gate, gateDir: join(root, "test-gate") };
 }
@@ -72,8 +75,9 @@ test("a candidate whose lanes all pass gets a pass marker for its exact commit",
   assert.match(check.stdout, /^the full test suite passed on rc-2026-10-13\.1/);
 });
 
-test("an agent run's managed git launcher stays off the lanes' PATH", (t) => {
+test("an agent run's managed git launcher stays off the gate's and the lanes' PATH", (t) => {
   // GRE-1605: the launcher came first on PATH, so tests that run git got it.
+  // The stub is not git, so the gate's own clone fails too if it reaches it.
   const box = sandbox(t);
   const launcher = join(box.root, "tmp", "paperclip-github-runtime", "run-1");
   mkdirSync(launcher, { recursive: true });
