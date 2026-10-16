@@ -225,3 +225,22 @@ export function formatDealTotals(totals: Array<{ currency: string; total: number
     .map(({ currency, total }) => `${formatNumber(total, { maximumFractionDigits: 0 })}${currency ? ` ${currency}` : ""}`)
     .join(" + ");
 }
+
+/** Deals won or lost in the calendar month of `now` (UTC), with their values per currency. */
+export function dealsClosedThisMonth(
+  cases: Array<{ fields?: Record<string, unknown> | null }>,
+  outcome: "won" | "lost",
+  now: Date = new Date(),
+) {
+  const closed = cases.filter((item) => {
+    const deal = readDevtoolsDeal(item.fields);
+    if (deal.status?.trim().toLowerCase() !== outcome || !deal.closedOn) return false;
+    const closedOn = new Date(deal.closedOn);
+    return (
+      !Number.isNaN(closedOn.getTime()) &&
+      closedOn.getUTCFullYear() === now.getUTCFullYear() &&
+      closedOn.getUTCMonth() === now.getUTCMonth()
+    );
+  });
+  return { count: closed.length, totals: sumDealValues(closed) };
+}
