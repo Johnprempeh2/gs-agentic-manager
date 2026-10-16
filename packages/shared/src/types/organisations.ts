@@ -130,6 +130,10 @@ export interface OrganisationHistoryCase {
   /** The client's NDA and engagement pack, as on the journey (Ben, 12 Oct). */
   ndaStatus?: "required" | "accepted" | "suspended";
   engagementStatus?: "not_sent" | "sent" | "accepted";
+  /** The case's filled-in fields under the pipeline's labels, such as a Pipedrive deal's value, owner and products. */
+  details?: CrmRecordField[];
+  /** The people on the case, main contact first. */
+  people?: Array<{ name: string; role: string | null }>;
   createdAt: string;
   updatedAt: string;
   /** Oldest first. */
