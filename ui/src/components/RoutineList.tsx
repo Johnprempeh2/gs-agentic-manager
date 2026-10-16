@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { formatDateTime } from "@/lib/utils";
-import { lastRunLabel, nextRunLabel, nextScheduledRun, type ScheduleTriggerSummary } from "@/lib/routine-schedule";
+import { lastRunLabel, nextRunLabel, nextScheduledRun, scheduleSummary, type ScheduleTriggerSummary } from "@/lib/routine-schedule";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -38,7 +38,7 @@ export type RoutineListRowItem = {
     status?: string | null;
   } | null;
   /** Schedules, so the row can say when the routine runs next. */
-  triggers?: readonly ScheduleTriggerSummary[] | null;
+  triggers?: readonly (ScheduleTriggerSummary & { cronExpression?: string | null })[] | null;
 };
 
 export function formatLastRunTimestamp(value: Date | string | null | undefined) {
@@ -111,6 +111,8 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   const runDisabled = runningRoutineId === routine.id || isArchived || disableRunNow;
   const lastRunAt = routine.lastRun?.triggeredAt ?? null;
   const nextRunAt = enabled ? nextScheduledRun(routine.triggers) : null;
+  // Before the scheduler has worked out the next run, say when it repeats.
+  const repeats = enabled && !nextRunAt ? scheduleSummary(routine.triggers) : null;
 
   return (
     <Link
@@ -169,6 +171,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
               {nextRunLabel(nextRunAt)}
             </span>
           ) : null}
+          {repeats ? <span className="text-foreground">{repeats}</span> : null}
         </div>
         {secondaryDetails ? (
           <div className="text-xs text-muted-foreground">{secondaryDetails}</div>

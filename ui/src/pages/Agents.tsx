@@ -26,7 +26,7 @@ import { costsApi } from "../api/costs";
 import { agentTeamsApi } from "../api/agentTeams";
 import { AgentTeamsDialog, TeamColorDot } from "../components/AgentTeamsDialog";
 import { filterAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "../lib/agent-teams";
-import { agentsSheet, agentsUpdateText } from "../lib/agents-export";
+import { agentsSheet, agentsUpdateText, budgetUseLabel } from "../lib/agents-export";
 import { useCopyAction } from "../lib/use-copy-action";
 import { downloadBytes, exportFileName, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -481,6 +481,17 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                   liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                 />
               )}
+              {(() => {
+                const budgetUse = budgetUseLabel(agent);
+                return budgetUse ? (
+                  <span
+                    className={cn("whitespace-nowrap text-xs font-medium", budgetUse.tone === "danger" ? "text-status-danger" : "text-status-warning")}
+                    title="How much of this month's budget the agent has spent"
+                  >
+                    {budgetUse.text}
+                  </span>
+                ) : null;
+              })()}
               <span className="w-20 flex justify-end">
                 <AgentStatusBadge status={agent.status} />
               </span>

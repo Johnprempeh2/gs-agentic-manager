@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Agent, AgentTeam } from "@greatstone/shared";
-import { agentsSheet, agentsUpdateText } from "./agents-export";
+import { agentsSheet, agentsUpdateText, budgetUseLabel } from "./agents-export";
 
 const agent = (over: Partial<Agent>): Agent =>
   ({
@@ -53,5 +53,14 @@ describe("agentsUpdateText", () => {
       "• Ridge, Head of sales: Working now",
       "• Quartz: Idle",
     ]);
+  });
+});
+
+describe("budgetUseLabel", () => {
+  it("warns from 80% and says when the budget is used up", () => {
+    expect(budgetUseLabel({ budgetMonthlyCents: 0, spentMonthlyCents: 500 })).toBeNull();
+    expect(budgetUseLabel({ budgetMonthlyCents: 1000, spentMonthlyCents: 799 })).toBeNull();
+    expect(budgetUseLabel({ budgetMonthlyCents: 1000, spentMonthlyCents: 825 })).toEqual({ text: "82% of budget", tone: "warning" });
+    expect(budgetUseLabel({ budgetMonthlyCents: 1000, spentMonthlyCents: 1000 })).toEqual({ text: "Budget used up", tone: "danger" });
   });
 });

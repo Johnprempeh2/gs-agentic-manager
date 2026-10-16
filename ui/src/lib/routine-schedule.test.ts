@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lastRunLabel, nextRunLabel, nextScheduledRun, routinesScheduleText } from "./routine-schedule";
+import { lastRunLabel, nextRunLabel, nextScheduledRun, routinesScheduleText, scheduleSummary } from "./routine-schedule";
 
 const NOW = new Date(2026, 9, 16, 14, 0);
 
@@ -58,5 +58,18 @@ describe("routinesScheduleText", () => {
     expect(lines[1]).toBe("2 routines: 1 on, 1 paused.");
     expect(lines[3]).toMatch(/^• Weekly report: Every Monday at 09:00, next run tomorrow at 09:00, Ridge$/);
     expect(lines[4]).toBe("• Daily check: Paused");
+  });
+});
+
+describe("scheduleSummary", () => {
+  it("describes enabled schedules and skips the rest", () => {
+    expect(
+      scheduleSummary([
+        { kind: "schedule", enabled: true, nextRunAt: null, cronExpression: "0 9 * * 1" },
+        { kind: "schedule", enabled: false, nextRunAt: null, cronExpression: "0 9 * * 2" },
+        { kind: "webhook", enabled: true, nextRunAt: null },
+      ]),
+    ).toBe("Every Monday at 09:00");
+    expect(scheduleSummary([])).toBeNull();
   });
 });
