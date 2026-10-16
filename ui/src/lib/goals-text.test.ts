@@ -9,7 +9,7 @@ function goal(overrides: Partial<GoalWithProgress> = {}): GoalWithProgress {
     ownerAgentId: null,
     ownerUserId: null,
     targetDate: null,
-    progress: { percent: null, source: "tasks", done: 0, open: 0, blocked: 0, total: 0 },
+    progress: { percent: null, source: "issues", done: 0, open: 0, blocked: 0, total: 0 },
     ...overrides,
   } as GoalWithProgress;
 }
@@ -27,7 +27,7 @@ describe("goalsUpdateText", () => {
           goal: goal({
             ownerAgentId: "a1",
             targetDate: "2026-12-31",
-            progress: { percent: 40, source: "tasks", done: 4, open: 6, blocked: 1, total: 10 } as GoalWithProgress["progress"],
+            progress: { percent: 40, source: "issues", done: 4, open: 6, blocked: 1, total: 10 },
           }),
           health: "at_risk",
           subGoals: [
