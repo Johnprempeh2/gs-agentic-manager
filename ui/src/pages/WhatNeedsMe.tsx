@@ -95,7 +95,12 @@ export function WhatNeedsMe() {
 
   // Decision history — decided / expired decisions leave the open feed, so we
   // fetch them directly for the curtains.
-  const { data: decidedDecisions, isLoading: decidedDecisionsLoading } = useQuery({
+  const {
+    data: decidedDecisions,
+    isLoading: decidedDecisionsLoading,
+    error: decidedDecisionsError,
+    refetch: refetchDecidedDecisions,
+  } = useQuery({
     queryKey: queryKeys.decisions.list(selectedCompanyId!, "decided"),
     queryFn: () => decisionsApi.list(selectedCompanyId!, { status: "decided", limit: DECISION_HISTORY_QUERY_LIMIT }),
     enabled: decisionHistoryQueryEnabled(selectedCompanyId, decidedOpen),
@@ -111,7 +116,12 @@ export function WhatNeedsMe() {
     () => (decisionLogEvents ?? []).filter((event) => event.actorType === "user"),
     [decisionLogEvents],
   );
-  const { data: expiredDecisions, isLoading: expiredDecisionsLoading } = useQuery({
+  const {
+    data: expiredDecisions,
+    isLoading: expiredDecisionsLoading,
+    error: expiredDecisionsError,
+    refetch: refetchExpiredDecisions,
+  } = useQuery({
     queryKey: queryKeys.decisions.list(selectedCompanyId!, "expired"),
     queryFn: () => decisionsApi.list(selectedCompanyId!, { status: "expired", limit: DECISION_HISTORY_QUERY_LIMIT }),
     enabled: decisionHistoryQueryEnabled(selectedCompanyId, expiredOpen),
@@ -329,6 +339,13 @@ export function WhatNeedsMe() {
           <DecisionLog events={boardAnswers} />
           {decidedDecisionsLoading ? (
             <p className="text-xs text-muted-foreground">Loading decided decisions…</p>
+          ) : decidedDecisionsError && !decidedDecisions ? (
+            <ErrorState
+              error={decidedDecisionsError}
+              title="Could not load decided decisions"
+              onRetry={() => void refetchDecidedDecisions()}
+              compact
+            />
           ) : (decidedDecisions?.length ?? 0) > 0 ? (
             decidedDecisions!.slice(0, DECISION_HISTORY_VISIBLE_LIMIT).map((decision) => (
               <DecisionResolver
@@ -352,6 +369,13 @@ export function WhatNeedsMe() {
         >
           {expiredDecisionsLoading ? (
             <p className="text-xs text-muted-foreground">Loading expired decisions…</p>
+          ) : expiredDecisionsError && !expiredDecisions ? (
+            <ErrorState
+              error={expiredDecisionsError}
+              title="Could not load expired decisions"
+              onRetry={() => void refetchExpiredDecisions()}
+              compact
+            />
           ) : (expiredDecisions?.length ?? 0) > 0 ? (
             expiredDecisions!.slice(0, DECISION_HISTORY_VISIBLE_LIMIT).map((decision) => (
               <DecisionResolver

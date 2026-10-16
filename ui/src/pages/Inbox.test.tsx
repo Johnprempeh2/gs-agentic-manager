@@ -389,6 +389,31 @@ describe("Inbox toolbar", () => {
     container.remove();
   });
 
+  it("says the inbox failed to load instead of showing Inbox zero", async () => {
+    routerMock.location.pathname = "/inbox/mine";
+    apiMocks.issuesList.mockRejectedValue(new Error("Server unavailable"));
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
+    });
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Inbox />
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("The inbox could not load");
+    });
+    expect(container.textContent).toContain("Server unavailable");
+    expect(container.textContent).not.toContain("Inbox zero.");
+
+    act(() => root.unmount());
+  });
+
   it("does not render external-object summaries in inbox rows", async () => {
     routerMock.location.pathname = "/inbox/mine";
     const issue = createIssue({ title: "Inbox row without external object column" });
