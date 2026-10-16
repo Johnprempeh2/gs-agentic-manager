@@ -20,7 +20,10 @@ const mockApi = vi.hoisted(() => ({
   archiveContact: vi.fn(),
 }));
 
+const accessMock = vi.hoisted(() => ({ listMembers: vi.fn() }));
+
 vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
+vi.mock("@/api/access", () => ({ accessApi: accessMock }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => state.isPhone }));
@@ -69,6 +72,13 @@ describe("Organisations page", () => {
     root = createRoot(container);
     state.isPhone = false;
     for (const fn of Object.values(mockApi)) fn.mockReset();
+    accessMock.listMembers.mockReset();
+    accessMock.listMembers.mockResolvedValue({
+      members: [
+        { principalId: "user-ama", status: "active", user: { name: "Ama Owusu", email: "ama@example.com" } },
+        { principalId: "user-gone", status: "suspended", user: { name: "Former Member", email: null } },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -204,5 +214,43 @@ describe("Organisations page", () => {
 
     expect(mockApi.update).toHaveBeenCalledWith("company-1", "org-1", expect.objectContaining({ name: "Acme Mining" }));
     expect(document.body.textContent).toContain("You may view organisations but not change them");
+  });
+
+  it("picks the country owner from the team, or takes a typed name", async () => {
+    mockApi.list.mockResolvedValue([]);
+    mockApi.create.mockResolvedValue(organisation({}));
+    await render();
+
+    const add = [...container.querySelectorAll("button")].find((button) => button.textContent === "Add organisation")!;
+    await act(async () => add.click());
+    await settle();
+    await act(async () => setValue(document.querySelector<HTMLInputElement>("#organisation-name")!, "Acme Mining"));
+    const owner = document.querySelector<HTMLSelectElement>("#organisation-countryOwnerUserId")!;
+    const options = [...owner.options].map((option) => option.textContent);
+    expect(options).toEqual(["Nobody yet", "Ama Owusu", "Someone else (type a name)"]);
+
+    await act(async () => setValue(owner, "user-ama"));
+    const submit = () => [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find(
+      (button) => button.textContent === "Add organisation",
+    )!;
+    await act(async () => submit().click());
+    await settle();
+    expect(mockApi.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({
+      countryOwnerUserId: "user-ama",
+      countryOwner: "Ama Owusu",
+    }));
+
+    // Saving closes the dialog; a second organisation takes a typed owner.
+    await act(async () => add.click());
+    await settle();
+    await act(async () => setValue(document.querySelector<HTMLInputElement>("#organisation-name")!, "Blue Bank"));
+    await act(async () => setValue(document.querySelector<HTMLSelectElement>("#organisation-countryOwnerUserId")!, "__other"));
+    await act(async () => setValue(document.querySelector<HTMLInputElement>('input[aria-label="Country owner name"]')!, "Kwame"));
+    await act(async () => submit().click());
+    await settle();
+    expect(mockApi.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({
+      countryOwnerUserId: null,
+      countryOwner: "Kwame",
+    }));
   });
 });

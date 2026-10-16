@@ -16,6 +16,9 @@ export const organisations = pgTable(
     industry: text("industry"),
     country: text("country"),
     countryOwner: text("country_owner"),
+    // The GSAM user who owns the country (Ben, 12 Oct), when the owner is a
+    // member. country_owner keeps their name for search and imports.
+    countryOwnerUserId: text("country_owner_user_id"),
     status: text("status").notNull().default("target"),
     notes: text("notes"),
     source: text("source").notNull().default("manual"),

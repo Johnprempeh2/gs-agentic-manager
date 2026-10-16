@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { organisationContacts, organisations } from "@greatstone/db";
+import { authUsers, companyMemberships, organisationContacts, organisations } from "@greatstone/db";
 import type {
   ListOrganisationsQuery,
   Organisation,
@@ -10,7 +10,7 @@ import type {
   OrganisationSource,
   OrganisationStatus,
 } from "@greatstone/shared";
-import { conflict } from "../errors.js";
+import { conflict, unprocessable } from "../errors.js";
 
 type OrganisationRow = typeof organisations.$inferSelect;
 type ContactRow = typeof organisationContacts.$inferSelect;
@@ -23,6 +23,7 @@ export type OrganisationInput = {
   industry: string | null;
   country: string | null;
   countryOwner: string | null;
+  countryOwnerUserId?: string | null;
   status: OrganisationStatus;
   notes: string | null;
   source: OrganisationSource;
@@ -56,6 +57,7 @@ function toOrganisation(row: OrganisationRow): Organisation {
     industry: row.industry,
     country: row.country,
     countryOwner: row.countryOwner,
+    countryOwnerUserId: row.countryOwnerUserId,
     status: row.status as OrganisationStatus,
     notes: row.notes,
     source: row.source as OrganisationSource,
@@ -101,6 +103,29 @@ function isUniqueViolation(error: unknown): boolean {
  * one company never sees another's records; routes check the caller first.
  */
 export function organisationService(db: Db) {
+  /**
+   * A country owner picked from the company's members: they must be an active
+   * member, and their name becomes countryOwner so search and lists still work.
+   * undefined leaves both as they are; null unlinks and keeps the typed name.
+   */
+  async function ownerFields(companyId: string, userId: string | null | undefined) {
+    if (userId === undefined) return {};
+    if (userId === null) return { countryOwnerUserId: null };
+    const member = await db
+      .select({ name: authUsers.name, email: authUsers.email })
+      .from(companyMemberships)
+      .leftJoin(authUsers, eq(authUsers.id, companyMemberships.principalId))
+      .where(and(
+        eq(companyMemberships.companyId, companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.principalId, userId),
+        eq(companyMemberships.status, "active"),
+      ))
+      .then((rows) => rows[0] ?? null);
+    if (!member) throw unprocessable("The country owner must be an active member of this company");
+    return { countryOwnerUserId: userId, countryOwner: member.name?.trim() || member.email || userId };
+  }
+
   async function getRow(companyId: string, id: string) {
     return db
       .select()
@@ -193,6 +218,7 @@ export function organisationService(db: Db) {
     },
 
     async create(companyId: string, input: OrganisationInput, actor: OrganisationActor): Promise<Organisation> {
+      input = { ...input, ...(await ownerFields(companyId, input.countryOwnerUserId)) };
       try {
         const [row] = await db
           .insert(organisations)
@@ -214,7 +240,8 @@ export function organisationService(db: Db) {
     },
 
     async update(companyId: string, id: string, patch: OrganisationPatch): Promise<Organisation | null> {
-      const { archived, ...fields } = patch;
+      const { archived, ...rest } = patch;
+      const fields = { ...rest, ...(await ownerFields(companyId, rest.countryOwnerUserId)) };
       const [row] = await db
         .update(organisations)
         .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
