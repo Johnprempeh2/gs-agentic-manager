@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { documentRevisions, documents, issueDocuments, issues } from "@greatstone/db";
-import { isSystemIssueDocumentKey, issueDocumentKeySchema } from "@greatstone/shared";
+import { documentRevisions, documents, issueDocumentLinks, issueDocuments, issues } from "@greatstone/db";
+import { isSystemIssueDocumentKey, issueDocumentKeySchema, type IssueDocumentLink } from "@greatstone/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { isUniqueViolation } from "../db-errors.js";
 import { insertRowsInChunks } from "./batch-insert.js";
@@ -58,6 +58,12 @@ export function mapIssueDocumentRow(
     lockedByAgentId: string | null;
     lockedByUserId: string | null;
     sourceTrust: typeof documents.$inferSelect.sourceTrust;
+    makerAgentId?: string | null;
+    approvedRevisionId?: string | null;
+    approvedRevisionNumber?: number | null;
+    approvedAt?: Date | null;
+    approvedByAgentId?: string | null;
+    approvedByUserId?: string | null;
     createdAt: Date;
     updatedAt: Date;
   },
@@ -81,6 +87,12 @@ export function mapIssueDocumentRow(
     lockedByAgentId: row.lockedByAgentId,
     lockedByUserId: row.lockedByUserId,
     sourceTrust: row.sourceTrust ?? null,
+    makerAgentId: row.makerAgentId ?? null,
+    approvedRevisionId: row.approvedRevisionId ?? null,
+    approvedRevisionNumber: row.approvedRevisionNumber ?? null,
+    approvedAt: row.approvedAt ?? null,
+    approvedByAgentId: row.approvedByAgentId ?? null,
+    approvedByUserId: row.approvedByUserId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -104,6 +116,12 @@ export const issueDocumentSelect = {
   lockedByAgentId: documents.lockedByAgentId,
   lockedByUserId: documents.lockedByUserId,
   sourceTrust: documents.sourceTrust,
+  makerAgentId: issueDocuments.makerAgentId,
+  approvedRevisionId: documents.approvedRevisionId,
+  approvedRevisionNumber: documents.approvedRevisionNumber,
+  approvedAt: documents.approvedAt,
+  approvedByAgentId: documents.approvedByAgentId,
+  approvedByUserId: documents.approvedByUserId,
   createdAt: documents.createdAt,
   updatedAt: documents.updatedAt,
 };
@@ -240,6 +258,12 @@ export function documentService(db: Db) {
               lockedByAgentId: documents.lockedByAgentId,
               lockedByUserId: documents.lockedByUserId,
               sourceTrust: documents.sourceTrust,
+              makerAgentId: issueDocuments.makerAgentId,
+              approvedRevisionId: documents.approvedRevisionId,
+              approvedRevisionNumber: documents.approvedRevisionNumber,
+              approvedAt: documents.approvedAt,
+              approvedByAgentId: documents.approvedByAgentId,
+              approvedByUserId: documents.approvedByUserId,
               createdAt: documents.createdAt,
               updatedAt: documents.updatedAt,
             })
@@ -334,6 +358,12 @@ export function documentService(db: Db) {
                     lockedByAgentId: null,
                     lockedByUserId: null,
                     sourceTrust: document.sourceTrust ?? null,
+                    makerAgentId: null,
+                    approvedRevisionId: null,
+                    approvedRevisionNumber: null,
+                    approvedAt: null,
+                    approvedByAgentId: null,
+                    approvedByUserId: null,
                     createdAt: document.createdAt,
                     updatedAt: document.updatedAt,
                   },
@@ -493,6 +523,12 @@ export function documentService(db: Db) {
               lockedByAgentId: document.lockedByAgentId,
               lockedByUserId: document.lockedByUserId,
               sourceTrust: document.sourceTrust ?? null,
+              makerAgentId: null,
+              approvedRevisionId: null,
+              approvedRevisionNumber: null,
+              approvedAt: null,
+              approvedByAgentId: null,
+              approvedByUserId: null,
               createdAt: document.createdAt,
               updatedAt: document.updatedAt,
             },
@@ -808,6 +844,178 @@ export function documentService(db: Db) {
           latestRevisionId: existing.latestRevisionId ?? null,
         };
       });
+    },
+
+    /**
+     * The maker named on a document, read without the body. Used by the write
+     * route to let that one extra agent update an existing document.
+     */
+    getIssueDocumentWriteAccess: async (issueId: string, rawKey: string) => {
+      const key = normalizeDocumentKey(rawKey);
+      return db
+        .select({ documentId: issueDocuments.documentId, makerAgentId: issueDocuments.makerAgentId })
+        .from(issueDocuments)
+        .where(and(eq(issueDocuments.issueId, issueId), eq(issueDocuments.key, key)))
+        .then((rows) => rows[0] ?? null);
+    },
+
+    setIssueDocumentMaker: async (issueId: string, rawKey: string, makerAgentId: string | null) => {
+      const key = normalizeDocumentKey(rawKey);
+      const [row] = await db
+        .update(issueDocuments)
+        .set({ makerAgentId, updatedAt: new Date() })
+        .where(and(eq(issueDocuments.issueId, issueId), eq(issueDocuments.key, key)))
+        .returning({ documentId: issueDocuments.documentId });
+      if (!row) throw notFound("Document not found");
+      return row;
+    },
+
+    setIssueDocumentApprovedRevision: async (input: {
+      issueId: string;
+      key: string;
+      revisionId: string | null;
+      approvedByAgentId?: string | null;
+      approvedByUserId?: string | null;
+    }) => {
+      const key = normalizeDocumentKey(input.key);
+      return db.transaction(async (tx) => {
+        const existing = await tx
+          .select({ documentId: issueDocuments.documentId })
+          .from(issueDocuments)
+          .where(and(eq(issueDocuments.issueId, input.issueId), eq(issueDocuments.key, key)))
+          .then((rows) => rows[0] ?? null);
+        if (!existing) throw notFound("Document not found");
+
+        let revisionNumber: number | null = null;
+        if (input.revisionId) {
+          const revision = await tx
+            .select({ revisionNumber: documentRevisions.revisionNumber })
+            .from(documentRevisions)
+            .where(
+              and(
+                eq(documentRevisions.id, input.revisionId),
+                eq(documentRevisions.documentId, existing.documentId),
+              ),
+            )
+            .then((rows) => rows[0] ?? null);
+          if (!revision) throw notFound("Document revision not found");
+          revisionNumber = revision.revisionNumber;
+        }
+
+        const approved = input.revisionId !== null;
+        await tx
+          .update(documents)
+          .set({
+            approvedRevisionId: input.revisionId,
+            approvedRevisionNumber: revisionNumber,
+            approvedAt: approved ? new Date() : null,
+            approvedByAgentId: approved ? input.approvedByAgentId ?? null : null,
+            approvedByUserId: approved ? input.approvedByUserId ?? null : null,
+          })
+          .where(eq(documents.id, existing.documentId));
+
+        const row = await tx
+          .select(issueDocumentSelect)
+          .from(issueDocuments)
+          .innerJoin(documents, eq(issueDocuments.documentId, documents.id))
+          .where(eq(issueDocuments.documentId, existing.documentId))
+          .then((rows) => rows[0]!);
+        return mapIssueDocumentRow(row, false);
+      });
+    },
+
+    listIssueDocumentLinks: async (issueId: string): Promise<IssueDocumentLink[]> => {
+      const rows = await db
+        .select({
+          id: issueDocumentLinks.id,
+          companyId: issueDocumentLinks.companyId,
+          issueId: issueDocumentLinks.issueId,
+          sourceIssueId: issueDocumentLinks.sourceIssueId,
+          sourceIssueIdentifier: issues.identifier,
+          sourceIssueTitle: issues.title,
+          sourceIssueAssigneeAgentId: issues.assigneeAgentId,
+          documentId: issueDocumentLinks.documentId,
+          key: issueDocuments.key,
+          title: documents.title,
+          latestRevisionId: documents.latestRevisionId,
+          latestRevisionNumber: documents.latestRevisionNumber,
+          makerAgentId: issueDocuments.makerAgentId,
+          approvedRevisionId: documents.approvedRevisionId,
+          approvedRevisionNumber: documents.approvedRevisionNumber,
+          approvedAt: documents.approvedAt,
+          documentUpdatedAt: documents.updatedAt,
+          createdByAgentId: issueDocumentLinks.createdByAgentId,
+          createdByUserId: issueDocumentLinks.createdByUserId,
+          createdAt: issueDocumentLinks.createdAt,
+        })
+        .from(issueDocumentLinks)
+        .innerJoin(documents, eq(issueDocumentLinks.documentId, documents.id))
+        .innerJoin(
+          issueDocuments,
+          and(
+            eq(issueDocuments.documentId, issueDocumentLinks.documentId),
+            eq(issueDocuments.issueId, issueDocumentLinks.sourceIssueId),
+          ),
+        )
+        .innerJoin(issues, eq(issues.id, issueDocumentLinks.sourceIssueId))
+        .where(eq(issueDocumentLinks.issueId, issueId))
+        .orderBy(asc(issueDocumentLinks.createdAt));
+      return rows;
+    },
+
+    createIssueDocumentLink: async (input: {
+      issue: { id: string; companyId: string };
+      sourceIssue: { id: string; companyId: string };
+      key: string;
+      createdByAgentId?: string | null;
+      createdByUserId?: string | null;
+    }) => {
+      const key = normalizeDocumentKey(input.key);
+      if (input.issue.companyId !== input.sourceIssue.companyId) {
+        throw notFound("Document not found");
+      }
+      if (input.issue.id === input.sourceIssue.id) {
+        throw unprocessable("A task cannot link to its own document");
+      }
+      const source = await db
+        .select({ documentId: issueDocuments.documentId })
+        .from(issueDocuments)
+        .where(
+          and(
+            eq(issueDocuments.issueId, input.sourceIssue.id),
+            eq(issueDocuments.companyId, input.sourceIssue.companyId),
+            eq(issueDocuments.key, key),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!source) throw notFound("Document not found");
+      try {
+        const [link] = await db
+          .insert(issueDocumentLinks)
+          .values({
+            companyId: input.issue.companyId,
+            issueId: input.issue.id,
+            sourceIssueId: input.sourceIssue.id,
+            documentId: source.documentId,
+            createdByAgentId: input.createdByAgentId ?? null,
+            createdByUserId: input.createdByUserId ?? null,
+          })
+          .returning();
+        return { link, key };
+      } catch (error) {
+        if (isUniqueViolation(error)) {
+          throw conflict("This document is already linked to the task", { key });
+        }
+        throw error;
+      }
+    },
+
+    deleteIssueDocumentLink: async (issueId: string, linkId: string) => {
+      const [row] = await db
+        .delete(issueDocumentLinks)
+        .where(and(eq(issueDocumentLinks.id, linkId), eq(issueDocumentLinks.issueId, issueId)))
+        .returning();
+      return row ?? null;
     },
   };
 }

@@ -17,6 +17,7 @@ import type {
   IssueComment,
   IssueQueuedCommentQueue,
   IssueDocument,
+  IssueDocumentLink,
   IssueLabel,
   IssueRecoveryAction,
   IssueRetryNowResponse,
@@ -581,6 +582,26 @@ export const issuesApi = {
     api.delete<{ ok: true }>(
       `/issues/${id}/documents/${encodeURIComponent(key)}`,
     ),
+  setDocumentApprovedRevision: (
+    id: string,
+    key: string,
+    revisionId: string | null,
+  ) =>
+    api.put<IssueDocument>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/approved-revision`,
+      { revisionId },
+    ),
+  setDocumentMaker: (id: string, key: string, makerAgentId: string | null) =>
+    api.put<IssueDocument>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/maker`,
+      { makerAgentId },
+    ),
+  listDocumentLinks: (id: string) =>
+    api.get<IssueDocumentLink[]>(`/issues/${id}/document-links`),
+  createDocumentLink: (id: string, data: { sourceIssueId: string; key: string }) =>
+    api.post<IssueDocumentLink>(`/issues/${id}/document-links`, data),
+  deleteDocumentLink: (id: string, linkId: string) =>
+    api.delete<{ ok: true }>(`/issues/${id}/document-links/${linkId}`),
   listAttachments: (id: string) =>
     api.get<IssueAttachment[]>(`/issues/${id}/attachments`),
   uploadAttachment: (

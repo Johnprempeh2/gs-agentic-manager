@@ -841,6 +841,7 @@ export type {
   IssueThreadInteractionResult,
   IssueDocument,
   IssueDocumentSummary,
+  IssueDocumentLink,
   DocumentRevision,
   DocumentFormat,
   LegacyPlanDocument,

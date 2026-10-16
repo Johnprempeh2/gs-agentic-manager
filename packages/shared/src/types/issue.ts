@@ -116,12 +116,47 @@ export interface IssueDocumentSummary {
   lockedByAgentId: string | null;
   lockedByUserId: string | null;
   sourceTrust?: SourceTrustMetadata | null;
+  /** One extra agent allowed to write this document besides the task's assignee. */
+  makerAgentId?: string | null;
+  /** The revision marked as the current approved one, if any. */
+  approvedRevisionId?: string | null;
+  approvedRevisionNumber?: number | null;
+  approvedAt?: Date | null;
+  approvedByAgentId?: string | null;
+  approvedByUserId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface IssueDocument extends IssueDocumentSummary {
   body: string;
+}
+
+/**
+ * A task's link to a document owned by another task in the same company. The
+ * linking task reads the one live document instead of keeping a copy.
+ */
+export interface IssueDocumentLink {
+  id: string;
+  companyId: string;
+  issueId: string;
+  sourceIssueId: string;
+  sourceIssueIdentifier: string | null;
+  sourceIssueTitle: string;
+  sourceIssueAssigneeAgentId: string | null;
+  documentId: string;
+  key: string;
+  title: string | null;
+  latestRevisionId: string | null;
+  latestRevisionNumber: number;
+  makerAgentId: string | null;
+  approvedRevisionId: string | null;
+  approvedRevisionNumber: number | null;
+  approvedAt: Date | null;
+  documentUpdatedAt: Date;
+  createdByAgentId: string | null;
+  createdByUserId: string | null;
+  createdAt: Date;
 }
 
 export interface DocumentRevision {
