@@ -304,7 +304,11 @@ export function Images() {
         </p>
       </header>
 
-      <section className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="images-composer-title">
+      <section
+        className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+        aria-labelledby="images-composer-title"
+        data-tour="images-composer"
+      >
         <div className="flex items-center gap-2">
           <Wand2 className="h-4 w-4 text-primary" aria-hidden="true" />
           <h2 id="images-composer-title" className="text-sm font-semibold">Make an image</h2>
@@ -355,7 +359,7 @@ export function Images() {
           <p className="text-xs text-muted-foreground">
             Usually ready in under a minute. You can leave this page; it keeps going.
           </p>
-          <Button onClick={submit} disabled={!canSubmit} data-testid="make-image">
+          <Button onClick={submit} disabled={!canSubmit} data-testid="make-image" data-tour="images-make">
             {create.isPending ? (
               <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
             ) : (
@@ -366,69 +370,71 @@ export function Images() {
         </div>
       </section>
 
-      {images.length > 0 || filtering ? (
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative sm:w-80">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-            <Input
-              aria-label="Search images"
-              placeholder="Search by what the image shows"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="pl-8"
-              data-testid="image-search"
-            />
+      <div className="space-y-4" data-tour="images-gallery">
+        {images.length > 0 || filtering ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative sm:w-80">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                aria-label="Search images"
+                placeholder="Search by what the image shows"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="pl-8"
+                data-testid="image-search"
+              />
+            </div>
+            {organisations && organisations.length > 0 ? (
+              <NativeSelect
+                aria-label="Show images for a client"
+                value={clientFilter}
+                onChange={(event) => setClientFilter(event.target.value)}
+                className="sm:w-56"
+              >
+                <option value="">All clients</option>
+                {organisations.map((organisation) => (
+                  <option key={organisation.id} value={organisation.id}>
+                    {organisation.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            ) : null}
           </div>
-          {organisations && organisations.length > 0 ? (
-            <NativeSelect
-              aria-label="Show images for a client"
-              value={clientFilter}
-              onChange={(event) => setClientFilter(event.target.value)}
-              className="sm:w-56"
-            >
-              <option value="">All clients</option>
-              {organisations.map((organisation) => (
-                <option key={organisation.id} value={organisation.id}>
-                  {organisation.name}
-                </option>
-              ))}
-            </NativeSelect>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
 
-      {images.length === 0 ? (
-        filtering ? (
-          <EmptyState icon={Search} title="No images match" message="Try other words, or show all clients." />
-        ) : (
-          <EmptyState
-            icon={ImageIcon}
-            title="No images yet"
-            message="Images you and your agents make will appear here, ready to download or reuse."
-          />
-        )
-      ) : (
-        <section aria-label="Your images" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {images.map((image) => (
-            <ImageCard
-              key={image.id}
-              image={image}
-              makerName={makerName(image)}
-              onOpen={() => setOpenId(image.id)}
-              onRetry={() =>
-                create.mutate({
-                  prompt: image.prompt,
-                  aspectRatio: image.aspectRatio,
-                  style: image.style,
-                  organisationId: image.organisation?.id ?? null,
-                  issueId: image.issue?.id ?? null,
-                })
-              }
-              retrying={create.isPending || !configured}
+        {images.length === 0 ? (
+          filtering ? (
+            <EmptyState icon={Search} title="No images match" message="Try other words, or show all clients." />
+          ) : (
+            <EmptyState
+              icon={ImageIcon}
+              title="No images yet"
+              message="Images you and your agents make will appear here, ready to download or reuse."
             />
-          ))}
-        </section>
-      )}
+          )
+        ) : (
+          <section aria-label="Your images" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {images.map((image) => (
+              <ImageCard
+                key={image.id}
+                image={image}
+                makerName={makerName(image)}
+                onOpen={() => setOpenId(image.id)}
+                onRetry={() =>
+                  create.mutate({
+                    prompt: image.prompt,
+                    aspectRatio: image.aspectRatio,
+                    style: image.style,
+                    organisationId: image.organisation?.id ?? null,
+                    issueId: image.issue?.id ?? null,
+                  })
+                }
+                retrying={create.isPending || !configured}
+              />
+            ))}
+          </section>
+        )}
+      </div>
 
       <Dialog open={!!opened} onOpenChange={(open) => (!open ? setOpenId(null) : undefined)}>
         <DialogContent className="max-w-4xl">
