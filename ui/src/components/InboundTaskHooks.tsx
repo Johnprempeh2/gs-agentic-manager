@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { useCopyToast } from "@/lib/use-copy-action";
 import { queryKeys } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/utils";
 
@@ -93,6 +94,7 @@ function TokenReveal({ hook, onDone }: { hook: InboundTaskHookWithToken; onDone:
  * one, and tasks stay unassigned unless the person picks an agent.
  */
 export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { companyId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const copyToast = useCopyToast();
   const queryClient = useQueryClient();
   const hooks = useQuery({
     queryKey: inboundHooksKey(companyId),
@@ -168,7 +170,7 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
                     </p>
                     <p className={hook.lastError ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>{hookStatusLine(hook)}</p>
                     <div className="flex flex-wrap gap-2 pt-1">
-                      <Button type="button" size="sm" variant="outline" onClick={() => void copyTextToClipboard(hookUrl(hook))}>
+                      <Button type="button" size="sm" variant="outline" onClick={() => void copyToast(hookUrl(hook), "Address copied")}>
                         <Copy />
                         Copy URL
                       </Button>
