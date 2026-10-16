@@ -81,6 +81,21 @@ describeEmbeddedPostgres("memory connections for Claude, Codex and other MCP app
     expect(again.body.connection.keys).toHaveLength(2);
     expect((await ctx.db.select().from(agents)).filter((row) => row.status !== "terminated")).toHaveLength(1);
 
+    const quiet = await request(board).get(`${base}/${agent.id}/activity`);
+    expect(quiet.status).toBe(200);
+    expect(quiet.body).toEqual({ lastUsedAt: null, operations: [], contributions: [] });
+    await ctx.db.insert(memoryOperations).values({
+      companyId,
+      operation: "recall",
+      outcome: "ok",
+      actorType: "agent",
+      actorId: agent.id,
+      agentId: agent.id,
+      app: "memory_key",
+    });
+    const busy = await request(board).get(`${base}/${agent.id}/activity`);
+    expect(busy.body.operations).toEqual([expect.objectContaining({ operation: "recall", outcome: "ok" })]);
+
     const listed = await request(board).get(base);
     expect(listed.status).toBe(200);
     expect(listed.body).toHaveLength(1);
@@ -89,6 +104,7 @@ describeEmbeddedPostgres("memory connections for Claude, Codex and other MCP app
     const asKey = routeApp(ctx.db, { type: "agent", agentId: agent.id, companyId, runId: null, source: "agent_key", keyScope: { kind: "memory_only" } } as never, factory);
     expect((await request(asKey).get(base)).status).toBe(403);
     expect((await request(asKey).post(base).send({ app: "codex" })).status).toBe(403);
+    expect((await request(asKey).get(`${base}/${agent.id}/activity`)).status).toBe(403);
 
     const revoked = await request(board).delete(`${base}/${agent.id}`);
     expect(revoked.status).toBe(200);
