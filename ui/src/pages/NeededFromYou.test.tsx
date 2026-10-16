@@ -6,7 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NeededFromYou } from "./NeededFromYou";
 
-const state = vi.hoisted(() => ({ cards: [] as unknown[], assignedTasks: [] as unknown[], pipelines: false }));
+const state = vi.hoisted(() => ({ cards: [] as unknown[], assignedTasks: [] as unknown[], pipelines: false, dismissals: [] as unknown[] }));
+const inbox = vi.hoisted(() => ({ snooze: vi.fn(), restore: vi.fn(), pushToast: vi.fn() }));
 
 vi.mock("@/hooks/useDecisionsFeed", () => ({
   useDecisionsFeed: () => ({ data: { cards: state.cards }, isLoading: false, error: null, refetch: vi.fn() }),
@@ -24,6 +25,10 @@ vi.mock("@/components/decisions-feed/DecisionFeedCard", () => ({
   ),
 }));
 vi.mock("@/components/AgentWorkDigest", () => ({ DashboardDigestCard: () => <div data-testid="digest">digest</div> }));
+vi.mock("@/hooks/useInboxBadge", () => ({
+  useInboxDismissals: () => ({ dismissals: state.dismissals, snooze: inbox.snooze, restore: inbox.restore }),
+}));
+vi.mock("@/context/ToastContext", () => ({ useToastActions: () => ({ pushToast: inbox.pushToast }) }));
 vi.mock("@/components/BrandPageTitle", () => ({ BrandCaughtUpMark: () => null }));
 
 let root: Root | undefined;
@@ -33,6 +38,10 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   state.cards = [];
   state.assignedTasks = [];
+  state.dismissals = [];
+  inbox.snooze.mockReset();
+  inbox.restore.mockReset();
+  inbox.pushToast.mockReset();
 });
 afterEach(async () => {
   if (root) await act(async () => root?.unmount());
@@ -95,5 +104,18 @@ describe("NeededFromYou", () => {
     const close = [...container.querySelectorAll("button")].find((el) => el.textContent === "Close")!;
     await act(async () => close.click());
     expect(container.querySelector('[data-testid="decision-card"]')).toBeNull();
+  });
+
+  it("leaves out rows put away for later until the snooze ends", async () => {
+    state.cards = [questionCard("1"), questionCard("2")];
+    state.dismissals = [
+      { kind: "snooze", itemKey: "attention:needed:1", snoozedUntil: new Date(Date.now() + 3_600_000).toISOString() },
+      { kind: "snooze", itemKey: "attention:needed:2", snoozedUntil: new Date(Date.now() - 3_600_000).toISOString() },
+    ];
+    await render();
+    const answer = container.querySelector('[data-testid="needed-group-answer"]')!;
+    expect(answer.textContent).not.toContain("Pick a supplier 1");
+    expect(answer.textContent).toContain("Pick a supplier 2");
+    expect(container.querySelector('[data-testid="needed-summary"]')?.textContent).toContain("1 thing needs you");
   });
 });

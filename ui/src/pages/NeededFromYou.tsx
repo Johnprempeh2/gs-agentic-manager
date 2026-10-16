@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -24,15 +24,22 @@ import { DashboardDigestCard } from "@/components/AgentWorkDigest";
 import { ErrorState } from "@/components/ErrorState";
 import { DecisionFeedCard } from "@/components/decisions-feed/DecisionFeedCard";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import { SwipeToArchive } from "@/components/SwipeToArchive";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { useToastActions } from "@/context/ToastContext";
 import { useDecisionsFeed, useNeedsMe } from "@/hooks/useDecisionsFeed";
+import { useInboxDismissals } from "@/hooks/useInboxBadge";
+import { inboxSnoozeUntilTomorrow } from "@/lib/inbox";
 import {
   buildNeededFromYou,
+  neededLaterKey,
   neededSummary,
   waitedFor,
+  withoutPutAway,
   type NeededGroup,
   type NeededGroupId,
+  type NeededItem,
 } from "@/lib/needed-from-you";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
@@ -96,13 +103,46 @@ export function NeededFromYou() {
     };
   }, [selectedCompanyId, feed.data, agents, session]);
 
-  const groups = useMemo(
-    () => buildNeededFromYou({
+  const { dismissals, snooze, restore } = useInboxDismissals(selectedCompanyId);
+  const { pushToast } = useToastActions();
+  // Rows swiped away this visit, hidden at once while the snooze saves.
+  const [laterIds, setLaterIds] = useState<ReadonlySet<string>>(new Set());
+
+  const groups = useMemo(() => {
+    const all = buildNeededFromYou({
       cards: feed.data?.cards ?? [],
       needsMe: needsMe.data,
       clients: pipelinesOn ? clients.data : null,
-    }),
-    [feed.data, needsMe.data, clients.data, pipelinesOn],
+    });
+    return withoutPutAway(all, dismissals)
+      .map((group) => ({ ...group, items: group.items.filter((item) => !laterIds.has(item.id)) }))
+      .filter((group) => group.items.length > 0);
+  }, [feed.data, needsMe.data, clients.data, pipelinesOn, dismissals, laterIds]);
+
+  const putAwayForLater = useCallback(
+    (item: NeededItem) => {
+      const itemKey = neededLaterKey(item.id);
+      setLaterIds((prev) => new Set(prev).add(item.id));
+      snooze(itemKey, inboxSnoozeUntilTomorrow().toISOString());
+      pushToast({
+        id: `needed-later-${item.id}`,
+        title: "Back tomorrow at 08:00",
+        body: item.title,
+        tone: "info",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            setLaterIds((prev) => {
+              const next = new Set(prev);
+              next.delete(item.id);
+              return next;
+            });
+            restore(itemKey);
+          },
+        },
+      });
+    },
+    [pushToast, restore, snooze],
   );
 
   if (!selectedCompanyId) {
@@ -150,7 +190,7 @@ export function NeededFromYou() {
 
       {groups.length === 0 && !error ? <AllClear /> : (
         <div className="space-y-4">
-          {groups.map((group) => <NeededGroupCard key={group.id} group={group} decide={decide} />)}
+          {groups.map((group) => <NeededGroupCard key={group.id} group={group} decide={decide} onLater={putAwayForLater} />)}
         </div>
       )}
 
@@ -171,7 +211,15 @@ interface DecideContext {
   currentUserId: string | null;
 }
 
-function NeededGroupCard({ group, decide }: { group: NeededGroup; decide: DecideContext | null }) {
+function NeededGroupCard({
+  group,
+  decide,
+  onLater,
+}: {
+  group: NeededGroup;
+  decide: DecideContext | null;
+  onLater: (item: NeededItem) => void;
+}) {
   const [openId, setOpenId] = useState<string | null>(null);
   const Icon = GROUP_ICON[group.id];
   const shown = group.items.slice(0, NEEDED_ROWS_PER_GROUP);
@@ -219,31 +267,35 @@ function NeededGroupCard({ group, decide }: { group: NeededGroup; decide: Decide
             );
           }
           return (
-            <li key={item.id} className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Link
-                to={item.href}
-                className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-inherit no-underline hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <span className="line-clamp-2 text-sm font-medium text-foreground">{item.title}</span>
-                {item.reason ? <span className="line-clamp-2 text-sm text-muted-foreground">{item.reason}</span> : null}
-                {item.since ? (
-                  <span className="text-xs text-muted-foreground">
-                    {item.waiting ? `${item.waiting} has waited` : "Waiting"} {waitedFor(Date.now() - new Date(item.since).getTime())}
-                  </span>
-                ) : null}
-              </Link>
-              {card ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mx-3 mb-2.5 shrink-0 self-start sm:mb-0 sm:self-center"
-                  onClick={() => setOpenId(item.id)}
-                  aria-label={`Act on ${item.title} here`}
-                >
-                  Act here
-                </Button>
-              ) : null}
+            <li key={item.id}>
+              <SwipeToArchive onSnooze={() => onLater(item)} surfaceClassName="bg-card">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Link
+                    to={item.href}
+                    className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-inherit no-underline hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <span className="line-clamp-2 text-sm font-medium text-foreground">{item.title}</span>
+                    {item.reason ? <span className="line-clamp-2 text-sm text-muted-foreground">{item.reason}</span> : null}
+                    {item.since ? (
+                      <span className="text-xs text-muted-foreground">
+                        {item.waiting ? `${item.waiting} has waited` : "Waiting"} {waitedFor(Date.now() - new Date(item.since).getTime())}
+                      </span>
+                    ) : null}
+                  </Link>
+                  {card ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="mx-3 mb-2.5 shrink-0 self-start sm:mb-0 sm:self-center"
+                      onClick={() => setOpenId(item.id)}
+                      aria-label={`Act on ${item.title} here`}
+                    >
+                      Act here
+                    </Button>
+                  ) : null}
+                </div>
+              </SwipeToArchive>
             </li>
           );
         })}
