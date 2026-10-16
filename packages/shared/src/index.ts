@@ -2521,6 +2521,7 @@ export {
   pipelineStageVariableSchema,
   pipelineStageTemplateSchema,
   pipelineStageExpectedDeliverableSchema,
+  pipelineStageRequestedDocumentSchema,
   rotateRoutineTriggerSecretSchema,
   routineRevisionSnapshotRoutineV1Schema,
   routineRevisionSnapshotTriggerV1Schema,
