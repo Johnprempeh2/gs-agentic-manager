@@ -18,6 +18,7 @@ import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
+import { ClientJourneyOverview } from "./ClientJourneyOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
@@ -149,6 +150,10 @@ export function ClientCaseOverview({
   return (
     <div className="space-y-8">
       <StageStrip stages={stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
+
+      <OverviewSection title="Where things stand">
+        <ClientJourneyOverview caseId={detail.case.id} ownerName={record.owner} />
+      </OverviewSection>
 
       <OverviewSection title="Client record">
         <dl className="divide-y divide-border">
