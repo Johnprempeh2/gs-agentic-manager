@@ -541,7 +541,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(third.body.activities).toEqual({ created: 0, updated: 1, skipped: 1, errors: 0 });
     expect(rerun.body.emails).toEqual({ created: 0, updated: 0, skipped: 1, errors: 0 });
     expect(rerun.body.stageChanges).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
-    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(7);
+    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(8);
   }, 60_000);
 
   it("brings the product catalogue and each deal's products across, and a rerun updates in place", async () => {
