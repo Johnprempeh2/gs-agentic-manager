@@ -7,6 +7,7 @@ import {
   createOrganisationSchema,
   importOrganisationsFromPipedriveSchema,
   importHubspotExportSchema,
+  importNotionSchema,
   importPipedriveExportSchema,
   listOrganisationsQuerySchema,
   updateOrganisationContactSchema,
@@ -27,6 +28,7 @@ import {
 } from "../services/crm-sync-pipedrive.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
+import { notionImportService } from "../services/organisation-import-notion.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
 import {
   hubspotExportImportService,
@@ -71,6 +73,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const importer = pipedriveOrganisationImportService(db);
   const exportImporter = pipedriveExportImportService(db);
   const hubspotImporter = hubspotExportImportService(db);
+  const notionImporter = notionImportService(db);
   const history = organisationHistoryService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
@@ -318,6 +321,56 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             organisations: result.organisations,
             contacts: result.contacts,
             deals: result.deals ?? null,
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
+
+  /**
+   * Import of client notes from a Notion export (the Markdown pages). Company
+   * owners only. `preview` writes nothing; `import` makes or updates clients,
+   * adds the notes and makes a task for each unticked to-do. A rerun adds
+   * nothing twice.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/notion`,
+    validate(importNotionSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the Notion import", { code: "owner_required" });
+      }
+      if (req.body.mode === "preview") {
+        res.json(await notionImporter.preview(companyId, req.body));
+        return;
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("An import is already running for this company", { code: "import_running" });
+      }
+      runningImports.add(companyId);
+      try {
+        const result = await notionImporter.run(companyId, req.body, actorIds(req));
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "notion",
+            via: "export",
+            organisations: { ...result.organisations, skipped: result.skipped.length },
+            tasks: { created: result.tasksCreated },
           },
         });
         res.json(result);
