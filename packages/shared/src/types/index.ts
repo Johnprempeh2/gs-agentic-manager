@@ -417,6 +417,7 @@ export type {
   CompanySearchFilterOptionCounts,
   CompanySearchHighlight,
   CompanySearchArtifactSummary,
+  CompanySearchFileSummary,
   CompanySearchIssueFilterKey,
   CompanySearchIssueSummary,
   CompanySearchResponse,

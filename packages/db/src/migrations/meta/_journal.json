@@ -2451,6 +2451,13 @@
       "when": 1792126948463,
       "tag": "0351_shared_issue_documents",
       "breakpoints": true
+    },
+    {
+      "idx": 352,
+      "version": "7",
+      "when": 1792128930600,
+      "tag": "0352_asset_texts",
+      "breakpoints": true
     }
   ]
 }

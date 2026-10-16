@@ -8,6 +8,7 @@ import {
   companies,
   documents,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueWorkProducts,
   issues,
@@ -24,6 +25,7 @@ import {
   SYSTEM_ISSUE_DOCUMENT_KEYS,
   type CompanyArtifact,
   type CompanySearchArtifactSummary,
+  type CompanySearchFileSummary,
   type CompanySearchCountType,
   type CompanySearchFilterOptionCounts,
   type CompanySearchIssueFilterKey,
@@ -38,7 +40,7 @@ import {
 } from "@greatstone/shared";
 import { companyArtifactsService } from "./company-artifacts.js";
 import { companySearchExtractService } from "./company-search-extract.js";
-import { visibleIssueCondition } from "./issue-visibility.js";
+import { visibleIssueCondition, visibleIssueSql } from "./issue-visibility.js";
 import { parseTaskSearch, taskSearchCtes, taskSearchScore, taskSearchFieldMatch, taskSearchTermMatch } from "./task-search.js";
 
 const SNIPPET_MAX_CHARS = 240;
@@ -187,7 +189,7 @@ function matchTerms(normalizedQuery: string, tokens: string[]) {
 }
 
 function emptySearchCounts(): Record<CompanySearchCountType, number> {
-  return { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 };
+  return { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 };
 }
 
 function emptyFilterOptionCounts(): CompanySearchFilterOptionCounts {
@@ -385,6 +387,97 @@ function scopeIncludesIssues(scope: CompanySearchScope) {
 
 function scopeIncludesAgents(scope: CompanySearchScope) {
   return scope === "all" || scope === "agents";
+}
+
+function scopeIncludesFiles(scope: CompanySearchScope) {
+  return scope === "all" || scope === "files";
+}
+
+type FileSearchRow = {
+  assetId: string;
+  filename: string | null;
+  contentType: string;
+  createdAt: Date;
+  /** Text around the first match, enough to find the matching line. */
+  excerpt: string | null;
+  attachmentId: string | null;
+  issueId: string | null;
+  issueIdentifier: string | null;
+  issueTitle: string | null;
+  caseId: string | null;
+  casePipelineId: string | null;
+  caseTitle: string | null;
+  altText?: string | null;
+};
+
+/** The line of a file that best matches: the one holding the most search words. */
+export function matchingFileLine(excerpt: string | null, terms: string[]): string | null {
+  if (!excerpt) return null;
+  const lines = excerpt.split("\n").map((line) => line.trim()).filter(Boolean);
+  let best: string | null = null;
+  let bestHits = 0;
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    const hits = terms.filter((term) => lower.includes(term.toLowerCase())).length;
+    if (hits > bestHits) {
+      best = line;
+      bestHits = hits;
+    }
+  }
+  return best;
+}
+
+function fileResult(row: FileSearchRow, prefix: string, normalizedQuery: string, tokens: string[]): CompanySearchResult | null {
+  const owner: CompanySearchFileSummary["owner"] | null = row.caseId && row.casePipelineId
+    ? { kind: "client", label: row.caseTitle ?? "Client", href: `/${prefix}/pipelines/${encodeURIComponent(row.casePipelineId)}/items/${encodeURIComponent(row.caseId)}` }
+    : row.issueId
+      ? { kind: "task", label: [row.issueIdentifier, row.issueTitle].filter(Boolean).join(" "), href: issueHref(prefix, { id: row.issueId, identifier: row.issueIdentifier }) }
+      : null;
+  if (!owner) return null;
+  const terms = matchTerms(normalizedQuery, tokens);
+  const title = row.filename?.trim() || "File";
+  const matchedAltText = Boolean(row.altText);
+  const line = matchedAltText ? row.altText! : matchingFileLine(row.excerpt, terms);
+  const snippet = createSnippet("file", matchedAltText ? "Image description" : title, line, terms);
+  const mediaKind = row.contentType.startsWith("image/") ? "image" : "document";
+  const contentPath = row.attachmentId ? `/api/attachments/${row.attachmentId}/content` : null;
+  return {
+    id: `file:${row.assetId}`,
+    type: "file",
+    score: scoreSimpleRow({ id: row.assetId, title, description: line, createdAt: row.createdAt, updatedAt: row.createdAt }, normalizedQuery, tokens),
+    title,
+    href: owner.href,
+    matchedFields: ["file"],
+    sourceLabel: snippet?.label ?? title,
+    snippet: snippet?.text ?? null,
+    snippets: snippet ? [snippet] : [],
+    file: {
+      assetId: row.assetId,
+      filename: row.filename,
+      contentType: row.contentType,
+      mediaKind,
+      owner,
+      contentPath,
+      matchedAltText,
+    },
+    updatedAt: iso(row.createdAt),
+    previewImageUrl: mediaKind === "image" ? contentPath : null,
+  };
+}
+
+const ATTACHMENT_IMAGE_PATTERN = /!\[([^\]]+)\]\(\s*\/api\/attachments\/([0-9a-f-]{36})\/content/gi;
+
+/** Images written into a comment or description whose alt text holds every search word. */
+export function imagesMatchingAltText(body: string, tokens: string[]): Array<{ attachmentId: string; altText: string }> {
+  const found: Array<{ attachmentId: string; altText: string }> = [];
+  for (const match of body.matchAll(ATTACHMENT_IMAGE_PATTERN)) {
+    const altText = match[1]!.trim();
+    const lower = altText.toLowerCase();
+    if (altText && tokens.every((token) => lower.includes(token.toLowerCase()))) {
+      found.push({ attachmentId: match[2]!.toLowerCase(), altText });
+    }
+  }
+  return found;
 }
 
 function scopeIncludesArtifacts(scope: CompanySearchScope) {
@@ -997,6 +1090,101 @@ export function companySearchService(db: Db) {
         return result.artifacts;
       }
 
+      // --- files: words inside uploaded documents, and images by alt text ---
+      const fileTextMatch = sql<boolean>`t.text ILIKE ALL(${tokenPatternArray})`;
+      const fileFrom = sql`
+        FROM asset_texts t
+        JOIN assets a ON a.id = t.asset_id AND a.company_id = t.company_id
+        LEFT JOIN issue_attachments ia ON ia.asset_id = a.id AND ia.company_id = a.company_id
+        LEFT JOIN issues i ON i.id = ia.issue_id AND i.company_id = a.company_id AND ${sql.raw(visibleIssueSql("i"))}
+        LEFT JOIN pipeline_case_evidence e ON e.company_id = a.company_id
+          AND (e.asset_id = a.id OR (ia.id IS NOT NULL AND e.attachment_id = ia.id))
+        LEFT JOIN pipeline_cases pc ON pc.id = e.case_id AND pc.retired_at IS NULL
+        WHERE t.company_id = ${companyId} AND t.status = 'indexed' AND ${fileTextMatch}
+          AND (i.id IS NOT NULL OR pc.id IS NOT NULL)`;
+
+      async function fetchFileTextRows(): Promise<FileSearchRow[]> {
+        const firstToken = (tokens[0] ?? normalizedQuery).toLowerCase();
+        const result = await db.execute(sql`
+          SELECT * FROM (
+            SELECT DISTINCT ON (a.id)
+              a.id AS "assetId", a.original_filename AS "filename", a.content_type AS "contentType",
+              a.created_at AS "createdAt",
+              substring(t.text FROM greatest(1, strpos(lower(t.text), ${firstToken}) - 300) FOR 700) AS "excerpt",
+              ia.id AS "attachmentId", i.id AS "issueId", i.identifier AS "issueIdentifier", i.title AS "issueTitle",
+              pc.id AS "caseId", pc.pipeline_id AS "casePipelineId", pc.title AS "caseTitle"
+            ${fileFrom}
+            ORDER BY a.id, (pc.id IS NULL), (i.id IS NULL)
+          ) files
+          ORDER BY "createdAt" DESC
+          LIMIT ${fetchLimit}`) as unknown as FileSearchRow[];
+        return result;
+      }
+
+      async function fetchAltTextRows(): Promise<FileSearchRow[]> {
+        const altCondition = (field: SQL) => sql<boolean>`${field} ILIKE ALL(${tokenPatternArray}) AND ${field} LIKE '%](/api/attachments/%'`;
+        const [commentBodies, descriptionBodies] = await Promise.all([
+          db
+            .select({ body: issueComments.body })
+            .from(issueComments)
+            .innerJoin(issues, and(eq(issues.id, issueComments.issueId), eq(issues.companyId, issueComments.companyId)))
+            .where(and(eq(issueComments.companyId, companyId), visibleIssueCondition(), altCondition(sql`${issueComments.body}`)))
+            .orderBy(desc(issueComments.createdAt))
+            .limit(50),
+          db
+            .select({ body: issues.description })
+            .from(issues)
+            .where(and(eq(issues.companyId, companyId), visibleIssueCondition(), altCondition(sql`coalesce(${issues.description}, '')`)))
+            .orderBy(desc(issues.updatedAt))
+            .limit(50),
+        ]);
+        const altById = new Map<string, string>();
+        for (const row of [...commentBodies, ...descriptionBodies]) {
+          for (const image of imagesMatchingAltText(row.body ?? "", tokens)) {
+            if (!altById.has(image.attachmentId)) altById.set(image.attachmentId, image.altText);
+          }
+        }
+        if (altById.size === 0) return [];
+        const rows = await db
+          .select({
+            assetId: assets.id,
+            filename: assets.originalFilename,
+            contentType: assets.contentType,
+            createdAt: assets.createdAt,
+            attachmentId: issueAttachments.id,
+            issueId: issues.id,
+            issueIdentifier: issues.identifier,
+            issueTitle: issues.title,
+          })
+          .from(issueAttachments)
+          .innerJoin(assets, and(eq(assets.id, issueAttachments.assetId), eq(assets.companyId, issueAttachments.companyId)))
+          .innerJoin(issues, and(eq(issues.id, issueAttachments.issueId), eq(issues.companyId, issueAttachments.companyId)))
+          .where(and(eq(issueAttachments.companyId, companyId), inArray(issueAttachments.id, [...altById.keys()]), visibleIssueCondition()));
+        return rows.map((row) => ({
+          ...row,
+          excerpt: null,
+          caseId: null,
+          casePipelineId: null,
+          caseTitle: null,
+          altText: altById.get(row.attachmentId) ?? null,
+        }));
+      }
+
+      async function fetchFileRows(filters: CompanySearchQuery = query): Promise<FileSearchRow[]> {
+        if (!hasSearchText || tokens.length === 0 || !scopeIncludesFiles(scope) || issueOnlyFiltersActive(filters)) return [];
+        const [textRows, altRows] = await Promise.all([fetchFileTextRows(), fetchAltTextRows()]);
+        const seen = new Set(textRows.map((row) => row.assetId));
+        return [...textRows, ...altRows.filter((row) => !seen.has(row.assetId) && seen.add(row.assetId))];
+      }
+
+      async function countFiles(filters: CompanySearchQuery = query, fetched?: FileSearchRow[]) {
+        if (!hasSearchText || tokens.length === 0 || !scopeIncludesFiles(scope) || issueOnlyFiltersActive(filters)) return 0;
+        const rows = await db.execute(sql`SELECT count(DISTINCT a.id)::int AS count ${fileFrom}`) as unknown as Array<{ count: number }>;
+        const textCount = Number(rows[0]?.count ?? 0);
+        const altCount = fetched ? fetched.filter((row) => row.altText).length : 0;
+        return textCount + altCount;
+      }
+
       const [company, issueSearchData, artifactRows, agentRows, projectRows, artifactCount, agentCount, projectCount] = await Promise.all([
         db
           .select({ issuePrefix: companies.issuePrefix })
@@ -1011,6 +1199,8 @@ export function companySearchService(db: Db) {
         scopeIncludesAgents(scope) ? countAgents(query) : Promise.resolve(0),
         scopeIncludesProjects(scope) ? countProjects(query) : Promise.resolve(0),
       ]);
+      const fileRows = await fetchFileRows();
+      const fileCount = fileRows.length > 0 ? await countFiles(query, fileRows) : 0;
       const prefix = routePrefix(company?.issuePrefix);
       const { rows: issueRows, aggregates } = issueSearchData;
 
@@ -1021,11 +1211,13 @@ export function companySearchService(db: Db) {
       countsByType.artifact = artifactCount;
       countsByType.agent = agentCount;
       countsByType.project = projectCount;
+      countsByType.file = fileCount;
 
       const currentTotalCount = (scopeIncludesIssues(scope) ? aggregates.totals.current : 0)
         + artifactCount
         + agentCount
-        + projectCount;
+        + projectCount
+        + fileCount;
 
       const results: SearchResultWithSort[] = [
         ...issueRows.map((row) => {
@@ -1041,6 +1233,12 @@ export function companySearchService(db: Db) {
           sortCreatedAt: artifact.updatedAt,
           sortPriorityRank: ISSUE_PRIORITIES.length,
         })),
+        ...fileRows.flatMap((row) => {
+          const result = fileResult(row, prefix, normalizedQuery, tokens);
+          return result
+            ? [{ ...result, sortCreatedAt: iso(row.createdAt), sortPriorityRank: ISSUE_PRIORITIES.length }]
+            : [];
+        }),
         ...(agentRows as SimpleSearchRow[]).map((row) => {
           const terms = matchTerms(normalizedQuery, tokens);
           const snippet = createSnippet("capabilities", "Agent", row.description ?? row.role ?? row.title, terms);
@@ -1082,12 +1280,13 @@ export function companySearchService(db: Db) {
       ].sort(compareSearchResults(sort));
 
       async function countTotalNonIssue(filters: CompanySearchQuery) {
-        const [artifactTotal, agentTotal, projectTotal] = await Promise.all([
+        const [artifactTotal, agentTotal, projectTotal, fileTotal] = await Promise.all([
           scopeIncludesArtifacts(scope) ? countArtifacts(filters) : Promise.resolve(0),
           scopeIncludesAgents(scope) ? countAgents(filters) : Promise.resolve(0),
           scopeIncludesProjects(scope) ? countProjects(filters) : Promise.resolve(0),
+          countFiles(filters),
         ]);
-        return artifactTotal + agentTotal + projectTotal;
+        return artifactTotal + agentTotal + projectTotal + fileTotal;
       }
 
       const filtersActive = activeIssueFilters(query);
