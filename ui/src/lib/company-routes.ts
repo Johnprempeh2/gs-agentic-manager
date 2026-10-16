@@ -65,6 +65,15 @@ const BOARD_ROUTE_ROOTS = new Set([
   "dev",
 ]);
 
+/**
+ * Board roots a bare link can start with (/inbox/mine, /morning): each is
+ * redirected to the same path under the selected company. Upper-case roots are
+ * left out so a company prefix is never mistaken for one.
+ */
+export const UNPREFIXED_BOARD_ROOTS: readonly string[] = [...BOARD_ROUTE_ROOTS].filter(
+  (root) => root === root.toLowerCase(),
+);
+
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
 
 export function normalizeCompanyPrefix(prefix: string): string {
