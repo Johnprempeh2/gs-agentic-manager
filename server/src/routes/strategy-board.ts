@@ -168,55 +168,57 @@ export function strategyBoardRoutes(db: Db) {
    * chat or null; POST opens it on the first message. Only board members, and
    * only with an agent set for them. The chat is in Ask mode and questions only.
    */
-  for (const method of ["get", "post"] as const) {
-    router[method]("/companies/:companyId/strategy-board/chats/:agentId", async (req, res) => {
-      const companyId = req.params.companyId as string;
-      const agentId = req.params.agentId as string;
-      if (!hasCompanyAccess(req, companyId)) {
-        res.status(404).json({ error: "Not found" });
+  const boardChatHandler = async (req: Request, res: Response) => {
+    // HEAD reaches the GET registration, so only POST opens a chat.
+    const method = req.method === "POST" ? "post" : "get";
+    const companyId = req.params.companyId as string;
+    const agentId = req.params.agentId as string;
+    if (!hasCompanyAccess(req, companyId)) {
+      res.status(404).json({ error: "Not found" });
+      return;
+    }
+    const userId = req.actor.type === "board" ? req.actor.userId : null;
+    if (!userId || !(await chats.mayChat(companyId, userId, agentId))) {
+      throw forbidden("You can ask only the agents set for you on the board", { code: "board_agent_not_allowed" });
+    }
+    const existing = await issuesSvc.getConversation(companyId, agentId, userId);
+    if (existing) {
+      if (!isBoardQuestionChat(existing)) {
+        // An older chat from before this person sat on the board: it stays
+        // theirs, but from now on it is a questions-only board chat.
+        if (method === "get") { res.json(null); return; }
+        res.status(409).json({ error: "You already have a chat with this agent from before you joined the board. Ask a company owner to close it first.", code: "board_chat_conflict" });
         return;
       }
-      const userId = req.actor.type === "board" ? req.actor.userId : null;
-      if (!userId || !(await chats.mayChat(companyId, userId, agentId))) {
-        throw forbidden("You can ask only the agents set for you on the board", { code: "board_agent_not_allowed" });
-      }
-      const existing = await issuesSvc.getConversation(companyId, agentId, userId);
-      if (existing) {
-        if (!isBoardQuestionChat(existing)) {
-          // An older chat from before this person sat on the board: it stays
-          // theirs, but from now on it is a questions-only board chat.
-          if (method === "get") { res.json(null); return; }
-          res.status(409).json({ error: "You already have a chat with this agent from before you joined the board. Ask a company owner to close it first.", code: "board_chat_conflict" });
-          return;
-        }
-        res.json(existing);
-        return;
-      }
-      if (method === "get") { res.json(null); return; }
-      const agent = (await chats.listAgents(companyId, userId)).find((item) => item.id === agentId)!;
-      const issue = await issuesSvc.create(companyId, {
-        title: `Board questions for ${agent.name}`,
-        assigneeAgentId: agentId,
-        conversationAgentId: agentId,
-        conversationUserId: userId,
-        conversationState: "waiting",
-        status: "in_review",
-        workMode: "ask",
-        originKind: BOARD_QUESTION_ORIGIN_KIND,
-        createdByUserId: userId,
-      });
-      await logActivity(db, {
-        companyId,
-        actorType: "user",
-        actorId: userId,
-        action: "issue.conversation_opened",
-        entityType: "issue",
-        entityId: issue.id,
-        details: { agentId, boardQuestion: true },
-      });
-      res.status(201).json(issue);
+      res.json(existing);
+      return;
+    }
+    if (method === "get") { res.json(null); return; }
+    const agent = (await chats.listAgents(companyId, userId)).find((item) => item.id === agentId)!;
+    const issue = await issuesSvc.create(companyId, {
+      title: `Board questions for ${agent.name}`,
+      assigneeAgentId: agentId,
+      conversationAgentId: agentId,
+      conversationUserId: userId,
+      conversationState: "waiting",
+      status: "in_review",
+      workMode: "ask",
+      originKind: BOARD_QUESTION_ORIGIN_KIND,
+      createdByUserId: userId,
     });
-  }
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "issue.conversation_opened",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { agentId, boardQuestion: true },
+    });
+    res.status(201).json(issue);
+  };
+  router.get("/companies/:companyId/strategy-board/chats/:agentId", boardChatHandler);
+  router.post("/companies/:companyId/strategy-board/chats/:agentId", boardChatHandler);
 
   // Board email (GRE-1187): owners and admins read the settings and the log;
   // only company owners choose the meeting date and the secretary inbox.

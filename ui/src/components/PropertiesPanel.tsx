@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { X } from "lucide-react";
 import { usePanel } from "../context/PanelContext";
 import { useClassicTaskInterfaceEnabled } from "../hooks/useClassicTaskInterfaceEnabled";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,8 +17,6 @@ export function PropertiesPanel({ taskDetailLayout = false }: { taskDetailLayout
     clearPanelMaximizeRequest,
   } = usePanel();
   const { enabled: classicTaskInterfaceEnabled } = useClassicTaskInterfaceEnabled();
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  const streamlinedTaskDetailLayout = streamlinedUiEnabled && taskDetailLayout;
 
   if (!panelContent) return null;
 
@@ -46,12 +43,12 @@ export function PropertiesPanel({ taskDetailLayout = false }: { taskDetailLayout
 
   return (
     <ResizablePropertiesPanel
-      key={streamlinedTaskDetailLayout ? "task-detail" : "default"}
+      key={taskDetailLayout ? "task-detail" : "default"}
       panelContent={panelContent}
       panelContentMode={panelContentMode}
       panelVisible={panelVisible}
       setPanelVisible={setPanelVisible}
-      taskDetailLayout={streamlinedTaskDetailLayout}
+      taskDetailLayout={taskDetailLayout}
       maximizeRequested={panelMaximizeRequested}
       clearMaximizeRequest={clearPanelMaximizeRequest}
     />

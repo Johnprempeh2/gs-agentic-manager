@@ -57,6 +57,7 @@ In agent runtime settings, configure heartbeat policy:
 
 - `enabled`: allow scheduled heartbeats
 - `intervalSec`: timer interval (0 = disabled)
+- `skipTimerWhenNothingChanged`: skip a timer run when no task assigned to or made by the agent changed, and nobody else commented on its tasks, since its last run. The agent still runs at least once a day. New agents turn this on; existing agents keep it off until you turn it on in the Run Policy settings.
 - `wakeOnAssignment`: wake when assigned work
 - `wakeOnOnDemand`: allow ping-style on-demand wakeups
 - `wakeOnAutomation`: allow system automation wakeups
@@ -70,6 +71,7 @@ For local adapters, set:
 - `graceSec` (time before force-kill after timeout/cancel)
 - optional env vars and extra CLI args
 - use **Test environment** in agent configuration to run adapter-specific diagnostics before saving
+- optional `requiredCapabilities`: a list of tools the agent needs on the machine that runs it. Choose from `git`, `github_cli` (gh installed and signed in), `docker` (installed and running) and `chromium` (a Chromium browser that Playwright can use, found through `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, `CHROME_PATH`, `PLAYWRIGHT_BROWSERS_PATH` or the default Playwright folder). In the agent's configuration this is **Required on this machine** under Advanced Run Policy. At the start of each local run the server checks each listed tool at the same time, with a 5 second limit per check, and only reads (no push, no install). If one is missing, the run stops before the agent starts, the run fails as `configuration_incomplete` with a plain reason such as "Docker is not running on this machine", the run log gets a `capability_check` event, and the task is moved to blocked with a notice for whoever runs the machine. With no list, nothing is checked. Sandbox and remote runs skip the check, because their tools are on another machine.
 
 ## 3.4 Prompt templates
 

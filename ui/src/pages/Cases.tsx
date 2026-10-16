@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/StatusBadge";
 import { EmptyState } from "@/components/EmptyState";
 import { PageSkeleton } from "@/components/PageSkeleton";
+import { ErrorState } from "@/components/ErrorState";
 import { FilterBar, type FilterValue } from "@/components/FilterBar";
 import { IssueGroupHeader } from "@/components/IssueGroupHeader";
 import { Button } from "@/components/ui/button";
@@ -1186,6 +1187,10 @@ export function Cases() {
   }, [caseHref, keyboardNavItems, keyboardShortcutsEnabled, navigate, selectedIndex, viewState.treeView]);
 
   if (casesQuery.isLoading) return <PageSkeleton variant="list" />;
+  // A failed load is not "no cases yet": say what failed and offer a retry.
+  if (casesQuery.error && !casesQuery.data) {
+    return <ErrorState error={casesQuery.error} title="Could not load cases" onRetry={() => void casesQuery.refetch()} />;
+  }
 
   const noCasesAtAll = allCases.length === 0 && activeFilters.length === 0;
   const hasActiveFilters = activeFilters.length > 0;

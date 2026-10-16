@@ -45,9 +45,12 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
       .use((await import("../routes/projects.js")).projectRoutes(fakeDb)),
   enableIssuePlanDecompositions: issueRouter,
   enableDeepDive: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
+  enableStrategy: async () => (await import("../routes/goals.js")).goalRoutes(fakeDb),
   enableStrategyBoard: async () => (await import("../routes/strategy-board.js")).strategyBoardRoutes(fakeDb),
   enableEnvironments: async () => (await import("../routes/environments.js")).environmentRoutes(fakeDb),
   enableWebsiteView: async () => (await import("../routes/website.js")).websiteRoutes(fakeDb),
+  enableIntelligence: async () => (await import("../routes/intelligence.js")).intelligenceRoutes(fakeDb),
+  enableTeamChat: async () => (await import("../routes/team-chats.js")).teamChatRoutes(fakeDb, { service: {} as never }),
 };
 
 async function issueRouter() {
@@ -139,6 +142,21 @@ describe("managed feature reads that stay open with the switch off (GRE-1090)", 
     const app = await appFor("enableEnvironments");
     const res = await request(app).get(`/api/environments/00000000-0000-4000-8000-000000000001`);
     expect(res.body.code).not.toBe(NOT_ENTITLED_ERROR_CODE);
+  });
+
+  it("keeps plain goal routes open with Strategy off (GRE-1382)", async () => {
+    mockGetExperimental.mockResolvedValue(onlyOff("enableStrategy"));
+    const app = await appFor("enableStrategy");
+    const goal = "/api/goals/00000000-0000-4000-8000-000000000001";
+    const company = "/api/companies/00000000-0000-4000-8000-000000000001";
+    for (const res of [
+      await request(app).get(`${company}/goals`),
+      await request(app).post(`${company}/goals`).send({ title: "Ship the website" }),
+      await request(app).get(goal),
+      await request(app).get(`${goal}/check-ins`),
+    ]) {
+      expect(res.body.code).not.toBe(NOT_ENTITLED_ERROR_CODE);
+    }
   });
 
   it("lets ordinary case types through with Deep Dive off", async () => {

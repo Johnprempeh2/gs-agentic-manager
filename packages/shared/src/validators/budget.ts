@@ -4,6 +4,7 @@ import {
   BUDGET_METRICS,
   BUDGET_SCOPE_TYPES,
   BUDGET_WINDOW_KINDS,
+  DEFAULT_BUDGET_WARN_PERCENT,
 } from "../constants.js";
 
 export const upsertBudgetPolicySchema = z.object({
@@ -12,7 +13,7 @@ export const upsertBudgetPolicySchema = z.object({
   metric: z.enum(BUDGET_METRICS).optional().default("billed_cents"),
   windowKind: z.enum(BUDGET_WINDOW_KINDS).optional().default("calendar_month_utc"),
   amount: z.number().int().nonnegative(),
-  warnPercent: z.number().int().min(1).max(99).optional().default(80),
+  warnPercent: z.number().int().min(1).max(99).optional().default(DEFAULT_BUDGET_WARN_PERCENT),
   hardStopEnabled: z.boolean().optional().default(true),
   notifyEnabled: z.boolean().optional().default(true),
   isActive: z.boolean().optional().default(true),

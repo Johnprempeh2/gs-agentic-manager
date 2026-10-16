@@ -46,6 +46,7 @@ import {
 } from "../components/IssueMonitorBanner";
 import { TaskActivityLine } from "../components/TaskActivityLine";
 import { TaskStopReasonLine } from "../components/TaskStopReasonLine";
+import { WhyBlockedCallout } from "../components/WhyBlockedCallout";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -55,6 +56,7 @@ import { AttachmentPreviewContext } from "../context/AttachmentPreviewContext";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import { TaskPreviewLink } from "../components/LivePreviewCard";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
+import { MakeImageButton } from "../components/MakeImageDialog";
 import { FileViewerProvider } from "../context/FileViewerContext";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
@@ -125,7 +127,6 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     classicTaskInterfaceEnabled,
     taskChatShellEnabled,
     streamlinedTaskDetailEnabled,
-    streamlinedUiEnabled,
     loaded: taskInterfaceSettingsLoaded,
   } = useTaskDetailInterfaceMode(!!conversation);
   // Chat-style: the page wrapper spans the full center pane so the thread's
@@ -340,7 +341,6 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     streamlinedTaskDetailEnabled,
     tasksTab,
     selectedCompanyId,
-    streamlinedUiEnabled,
     detailTab,
     treeControlMode,
     treeControlOpen,
@@ -445,7 +445,6 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     commentComposerRef,
     selectedCompanyId,
     pushToast,
-    streamlinedUiEnabled,
     sessionResolved,
     currentUserId,
     runStateIssueId,
@@ -501,7 +500,6 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     invalidateIssueThreadLazily,
     setLocallyQueuedCommentRunIds,
     commentRenderKeys,
-    streamlinedUiEnabled,
     sessionResolved,
     issueCacheRefs,
     invalidateIssueRunState,
@@ -673,7 +671,6 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     isMobile,
     isFromInbox,
     setMobileToolbar,
-    streamlinedUiEnabled,
     preferInboxHistoryBack,
     attachmentsLoading,
     fetchOlderComments,
@@ -873,7 +870,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     !treeControlPreviewLoading &&
     !treeControlPreviewError;
   const attachmentUploadButton = (
-    <>
+    <div className="flex items-center gap-2">
       <input
         ref={fileInputRef}
         type="file"
@@ -903,7 +900,13 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           </>
         )}
       </Button>
-    </>
+      <MakeImageButton
+        companyId={issue.companyId}
+        issueId={issue.id}
+        onAttach={(file) => uploadAttachment.mutateAsync(file)}
+        disabled={uploadAttachment.isPending}
+      />
+    </div>
   );
 
   // Task Chat Redesign ("not sticky" header): the parent breadcrumb, the
@@ -976,14 +979,34 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             agentNames={agentMap}
             userLabels={userLabelMap}
           />
-          <TaskStopReasonLine
-            issueId={issue.id}
-            issue={issue}
-            hasLiveRuns={hasLiveRuns}
-            currentUserId={currentUserId}
-            agentNames={agentMap}
-            userLabels={userLabelMap}
-          />
+          {issue.status === "blocked" ? (
+            <WhyBlockedCallout
+              className="mt-2"
+              issue={issue}
+              interactions={interactions}
+              pauseHold={
+                activePauseHold
+                  ? {
+                      isRoot: activePauseHold.isRoot,
+                      reason: activePauseHold.reason,
+                      rootIssue: activePauseHoldRoot,
+                    }
+                  : null
+              }
+              currentUserId={currentUserId}
+              agents={agentMap}
+              userLabels={userLabelMap}
+            />
+          ) : (
+            <TaskStopReasonLine
+              issueId={issue.id}
+              issue={issue}
+              hasLiveRuns={hasLiveRuns}
+              currentUserId={currentUserId}
+              agentNames={agentMap}
+              userLabels={userLabelMap}
+            />
+          )}
         </>
       }
       issue={issue}

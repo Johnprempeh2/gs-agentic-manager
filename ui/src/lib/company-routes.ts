@@ -7,6 +7,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "org",
   "agents",
   "chats",
+  "messages",
   "apps",
   "projects",
   "workspaces",
@@ -19,6 +20,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "releases",
   "artifacts",
   "deliverables",
+  "images",
   "tools",
   "approvals",
   "costs",
@@ -28,6 +30,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "decisions",
   "deep-dive",
   "my-tasks",
+  "needed",
   "inbox",
   "board-chat",
   "u",
@@ -36,11 +39,20 @@ const BOARD_ROUTE_ROOTS = new Set([
   "settings",
   "timeline",
   "since-last-visit",
+  "calendar",
+  "scorecard",
+  "weekly-report",
+  "notifications",
+  "morning",
+  "today",
   // Every root mounted under /:companyPrefix must be listed, or a link to it is
   // mistaken for an already-prefixed path and left bare (GRE: /strategy-board
   // became the "STRATEGY-BOARD" company and broke every sidebar link after it).
   "strategy-board",
   "pipelines",
+  "organisations",
+  "billing",
+  "intelligence",
   "review-queue",
   "learnings",
   "cases",
@@ -49,11 +61,22 @@ const BOARD_ROUTE_ROOTS = new Set([
   "memory",
   "website",
   "tutorials",
+  "whats-new",
+  "intelligence",
   "runs",
   "budgets",
   "plugins",
   "dev",
 ]);
+
+/**
+ * Board roots a bare link can start with (/inbox/mine, /morning): each is
+ * redirected to the same path under the selected company. Upper-case roots are
+ * left out so a company prefix is never mistaken for one.
+ */
+export const UNPREFIXED_BOARD_ROOTS: readonly string[] = [...BOARD_ROUTE_ROOTS].filter(
+  (root) => root === root.toLowerCase(),
+);
 
 const GLOBAL_ROUTE_ROOTS = new Set(["auth", "invite", "board-claim", "cli-auth", "docs", "instance"]);
 

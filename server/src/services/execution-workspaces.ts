@@ -906,7 +906,6 @@ async function quarantineRestoreDirtyWorkspaceBranch(input: {
       executionWorkspaceId: input.workspace.id,
       heartbeatRunId: input.actor.runId,
       enableWorkspaceBranchReconcileForward: false,
-      enableWorkspaceDirtyQuarantineRepair: true,
       persistForwardReconcile: false,
       reconcileOperationPhase: "worktree_prepare",
       recorder: null,

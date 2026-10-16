@@ -42,6 +42,21 @@ function applyObservabilityHeaders(headers: Headers) {
   }
 }
 
+/**
+ * What to tell a person when the server failed without saying why. Kept in
+ * plain words because these reach error banners and toasts as they are.
+ */
+export function plainHttpErrorMessage(status: number): string {
+  if (status === 401) return "You are signed out. Sign in again to carry on.";
+  if (status === 403) return "You don't have permission to do that.";
+  if (status === 404) return "We couldn't find that. It may have been deleted or moved.";
+  if (status === 409) return "This changed while you were working on it. Refresh and try again.";
+  if (status === 413) return "That is too large to send. Try a smaller file.";
+  if (status === 429) return "Too many requests at once. Wait a moment and try again.";
+  if (status >= 500) return "Something went wrong on the server. Try again in a moment.";
+  return `Request failed (${status}). Try again.`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers ?? undefined);
   const body = init?.body;
@@ -60,7 +75,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const recovery = tenantSessionRecovery.recoverIfNeeded(res.status, errorBody);
     if (recovery) return recovery;
     throw new ApiError(
-      (errorBody as { error?: string } | null)?.error ?? `Request failed: ${res.status}`,
+      (errorBody as { error?: string } | null)?.error || plainHttpErrorMessage(res.status),
       res.status,
       errorBody,
     );

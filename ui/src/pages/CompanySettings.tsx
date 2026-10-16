@@ -29,6 +29,7 @@ import {
   type GovernanceSelectValue,
 } from "../components/InteractionGovernancePanel";
 import { CompanyPatternIcon } from "../components/CompanyPatternIcon";
+import { CompanyPauseSection } from "../components/CompanyPauseSection";
 import {
   Field,
   ToggleField,
@@ -281,6 +282,7 @@ export function CompanySettings() {
           onValueChange={handleTabChange}
           align="start"
           ariaLabel="Settings section"
+          mobileLabel="Section of this page"
         />
 
         <TabsContent value="general" className="space-y-8">
@@ -462,6 +464,8 @@ export function CompanySettings() {
           </div>
 
           <InstanceGeneralSettings embedded sections={["aiAccessRoute", "signOut"]} />
+
+          <CompanyPauseSection company={selectedCompany} />
 
           {/* Danger Zone */}
           <div className="space-y-4">

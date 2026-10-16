@@ -24,6 +24,7 @@ import {
   invites,
   issueApprovals,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueRecoveryActions,
   issueRelations,
@@ -43,6 +44,7 @@ import {
   deriveProjectUrlKey,
   readAiCredentialRecord,
 } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import type {
   AttentionDecisionVerb,
   AttentionFeed,
@@ -54,6 +56,8 @@ import type {
   AttentionProjectRef,
   AttentionQueueRef,
   AttentionResolverAudience,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionSeverity,
   AttentionSortMode,
   AttentionSourceKind,
@@ -67,6 +71,7 @@ import type {
 import { badRequest } from "../errors.js";
 import { listAttentionExhaustedRuns } from "./attention-exhausted-runs.js";
 import { budgetService } from "./budgets.js";
+import { billingAccountService } from "./billing-account.js";
 import {
   BLOCKER_ATTENTION_MAX_DEPTH,
   BLOCKER_ATTENTION_MAX_NODES,
@@ -357,7 +362,7 @@ function interactionDetail(input: {
 
   return {
     kind: "confirmation",
-    promptExcerpt: excerpt(input.payload.prompt ?? input.payload.detailsMarkdown),
+    promptExcerpt: excerpt(input.payload.prompt ?? input.payload.purpose ?? input.payload.detailsMarkdown),
     isPlanTarget: false,
     images: input.images,
     deliverables: input.deliverables,
@@ -705,9 +710,29 @@ function interactionLabel(kind: string) {
       return "Suggested tasks need a decision";
     case "request_item_verdicts":
       return "Item verdicts need a decision";
+    case "request_draft_review":
+      return "Draft needs your review";
     default:
       return "Interaction needs a decision";
   }
+}
+
+function readAskTypeCopy(payload: Record<string, unknown>) {
+  const askType = readAskType(payload);
+  return askType ? ASK_TYPE_COPY[askType] : null;
+}
+
+/**
+ * What the card asks, in the agent's words. A confirmation with no title is
+ * named by its prompt, so Decisions never shows "Confirmation requested"
+ * under a card already labelled Confirmation.
+ */
+function interactionSubjectTitle(interaction: { kind: string; title: string | null; summary: string | null }, payload: Record<string, unknown>) {
+  if (interaction.title ?? interaction.summary) return interaction.title ?? interaction.summary;
+  if (interaction.kind === "request_confirmation" && typeof payload.prompt === "string" && payload.prompt.trim()) {
+    return payload.prompt.trim();
+  }
+  return interactionLabel(interaction.kind);
 }
 
 function interactionVerbs(kind: string, payload: Record<string, unknown>) {
@@ -719,12 +744,13 @@ function interactionVerbs(kind: string, payload: Record<string, unknown>) {
     });
   }
   if (kind === "request_confirmation") {
+    const askCopy = readAskTypeCopy(payload);
     const acceptLabel = typeof payload.acceptLabel === "string" && payload.acceptLabel.trim()
       ? payload.acceptLabel.trim()
-      : "Confirm";
+      : askCopy?.acceptLabel ?? "Confirm";
     const rejectLabel = typeof payload.rejectLabel === "string" && payload.rejectLabel.trim()
       ? payload.rejectLabel.trim()
-      : "Decline";
+      : askCopy?.rejectLabel ?? "Decline";
     return decisionVerbs(
       {
         id: "accept",
@@ -981,6 +1007,128 @@ async function issueDeliverableMap(db: Db, companyId: string, issueIds: Array<st
       originalFilename: typeof metadata.originalFilename === "string" ? metadata.originalFilename : null,
     });
     map.set(row.issueId, deliverables);
+  }
+  return map;
+}
+
+const REVIEW_UPDATE_EXCERPT_LENGTH = 280;
+/** How many recent agent comments per issue are searched for the hand-off. */
+const REVIEW_UPDATE_LOOKBACK = 20;
+/** A hand-off says what was done; a shorter comment is a status note. */
+const REVIEW_HANDOFF_MIN_LENGTH = 80;
+/** Comments that open with these words announce work; they do not hand it over. */
+const REVIEW_STATUS_NOTE_PATTERN =
+  /^(starting|started|picking up|picked up|on it|acknowledged|ack\b|working on|looking at|reviewing|i am (starting|reviewing|looking|picking|working|checking)|i will|i'll|checking|next:|status:|still )/i;
+
+type ReviewCommentRow = { id: string; authorAgentId: string | null; body: string; createdAt: Date };
+
+/**
+ * The comment a review card quotes (GRE-1421): the assignee's newest comment
+ * that says what was done. A newer "Starting…" note or a note from another
+ * agent does not replace it. When no such comment exists, the newest agent
+ * comment is shown as the latest update instead.
+ * `rows` is newest first.
+ */
+export function pickReviewLastUpdate(
+  rows: ReviewCommentRow[],
+  assigneeAgentId: string | null,
+): AttentionReviewLastUpdate | null {
+  const toUpdate = (row: ReviewCommentRow, kind: AttentionReviewLastUpdate["kind"], text: string) => ({
+    commentId: row.id,
+    authorAgentId: row.authorAgentId,
+    excerpt: text,
+    createdAt: toIso(row.createdAt),
+    kind,
+  });
+  if (assigneeAgentId) {
+    for (const row of rows) {
+      if (row.authorAgentId !== assigneeAgentId) continue;
+      const cleaned = stripMarkdown(row.body);
+      if (cleaned.length < REVIEW_HANDOFF_MIN_LENGTH || REVIEW_STATUS_NOTE_PATTERN.test(cleaned)) continue;
+      const text = excerpt(row.body, REVIEW_UPDATE_EXCERPT_LENGTH);
+      if (text) return toUpdate(row, "handoff", text);
+    }
+  }
+  for (const row of rows) {
+    const text = excerpt(row.body, REVIEW_UPDATE_EXCERPT_LENGTH);
+    if (text) return toUpdate(row, "latest", text);
+  }
+  return null;
+}
+
+/**
+ * What a stalled review card shows so the operator can decide in place
+ * (GRE-1421): the assignee's hand-off comment and the work product to check.
+ * Only called for stalled reviews, so the per-issue lookups stay small.
+ */
+async function reviewContextMap(db: Db, companyId: string, assigneeByIssueId: Map<string, string | null>) {
+  const map = new Map<string, { lastUpdate: AttentionReviewLastUpdate | null; workProduct: AttentionReviewWorkProduct | null }>();
+  const issueIds = [...assigneeByIssueId.keys()];
+  if (issueIds.length === 0) return map;
+  const authorAgentId = sql<string | null>`coalesce(${issueComments.authorAgentId}, ${issueComments.derivedAuthorAgentId})`;
+  const recentAgentComments = db
+    .select({
+      id: issueComments.id,
+      issueId: issueComments.issueId,
+      authorAgentId: authorAgentId.as("author_agent_id"),
+      // Long reports only need their start for the excerpt.
+      body: sql<string>`left(${issueComments.body}, 4000)`.as("body"),
+      createdAt: issueComments.createdAt,
+      rank: sql<number>`row_number() over (partition by ${issueComments.issueId} order by ${issueComments.createdAt} desc, ${issueComments.id} desc)`.as("rank"),
+    })
+    .from(issueComments)
+    .where(and(
+      eq(issueComments.companyId, companyId),
+      inArray(issueComments.issueId, issueIds),
+      isNull(issueComments.deletedAt),
+      sql`${authorAgentId} is not null`,
+    ))
+    .as("recent_agent_comments");
+  const [commentRows, productRows] = await Promise.all([
+    db
+      .select()
+      .from(recentAgentComments)
+      .where(sql`${recentAgentComments.rank} <= ${REVIEW_UPDATE_LOOKBACK}`)
+      .orderBy(recentAgentComments.issueId, asc(recentAgentComments.rank)),
+    db
+      .selectDistinctOn([issueWorkProducts.issueId], {
+        issueId: issueWorkProducts.issueId,
+        type: issueWorkProducts.type,
+        title: issueWorkProducts.title,
+        url: issueWorkProducts.url,
+      })
+      .from(issueWorkProducts)
+      .where(and(
+        eq(issueWorkProducts.companyId, companyId),
+        inArray(issueWorkProducts.issueId, issueIds),
+        isNotNull(issueWorkProducts.url),
+      ))
+      // A pull request is what a reviewer checks first; then the primary product.
+      .orderBy(
+        issueWorkProducts.issueId,
+        desc(sql`${issueWorkProducts.type} = 'pull_request'`),
+        desc(issueWorkProducts.isPrimary),
+        desc(issueWorkProducts.createdAt),
+      ),
+  ]);
+  const entry = (issueId: string) => {
+    const current = map.get(issueId) ?? { lastUpdate: null, workProduct: null };
+    map.set(issueId, current);
+    return current;
+  };
+  const commentsByIssueId = new Map<string, ReviewCommentRow[]>();
+  for (const row of commentRows) {
+    const list = commentsByIssueId.get(row.issueId) ?? [];
+    list.push({ id: row.id, authorAgentId: row.authorAgentId, body: row.body, createdAt: new Date(row.createdAt) });
+    commentsByIssueId.set(row.issueId, list);
+  }
+  for (const [issueId, rows] of commentsByIssueId) {
+    const lastUpdate = pickReviewLastUpdate(rows, assigneeByIssueId.get(issueId) ?? null);
+    if (lastUpdate) entry(issueId).lastUpdate = lastUpdate;
+  }
+  for (const row of productRows) {
+    if (!row.url) continue;
+    entry(row.issueId).workProduct = { type: row.type, title: row.title, url: row.url };
   }
   return map;
 }
@@ -1313,7 +1461,9 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           .where(eq(agents.companyId, companyId))
         : [];
       const companyAgentMap = new Map(companyAgentRows.map((agent) => [agent.id, agent]));
+      // A question one agent asks another is answered by that agent, never by a person.
       const boardInteractionRows = interactionRows.filter((row) =>
+        row.kind !== "ask_agent" &&
         (row.addresseeAgentId === null ||
           !evaluateAgentInvokability(companyAgentMap.get(row.addresseeAgentId), companyAgentRows).invokable)
         && (row.addresseeUserId === null || row.addresseeUserId === options.userId
@@ -1347,7 +1497,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             kind: "interaction",
             id: interaction.id,
             companyId,
-            title: isPlanTarget && issue ? `Plan approval - ${issue.title}` : interaction.title ?? interaction.summary ?? interactionLabel(interaction.kind),
+            title: isPlanTarget && issue ? `Plan approval - ${issue.title}` : interactionSubjectTitle(interaction, payload),
             identifier: null,
             status: interaction.status,
             href: issue ? `${issueHref(prefix, issue)}#interaction-${interaction.id}` : null,
@@ -1355,6 +1505,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               kind: interaction.kind,
               issueId: interaction.issueId,
               createdByAgentId: interaction.createdByAgentId,
+              askType: interaction.kind === "request_confirmation" ? readAskType(payload) : null,
               isPlanTarget,
               targetDocumentKey: isPlanTarget ? "plan" : null,
             },
@@ -1719,6 +1870,13 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
         issueSummaryMap(db, companyId, reviewIssueIds),
         issueImageMap(db, companyId, reviewIssueIds),
       ]);
+      const reviewContextByIssueId = await reviewContextMap(
+        db,
+        companyId,
+        new Map(reviewRows
+          .filter((row) => reviewAttentionByIssueId.get(row.id)?.state === "stalled")
+          .map((row) => [row.id, row.assigneeAgentId])),
+      );
 
       for (const review of reviewRows) {
         const state = parseIssueExecutionState(review.executionState);
@@ -1743,7 +1901,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             ? { ...reviewSubject, metadata: { ...reviewSubject.metadata, reviewAttentionState: "stalled" } }
             : reviewSubject,
           whyNow: stalled
-            ? "Issue is in review without a maintained reviewer, interaction, approval, monitor, run, wake, or recovery path."
+            ? "The work is ready for review, but no reviewer is set. You must decide."
             : pendingApprovalId
             ? "Issue is in review with a linked pending approval."
             : hasHumanParticipant
@@ -1770,7 +1928,14 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
           updatedAt: toIso(review.updatedAt),
           relatedIssue: null,
           ...issueContext(issue),
-          detail: genericDetail(review.title, issueImages(reviewImageMap, review.id)),
+          detail: stalled
+            ? {
+                kind: "review",
+                lastUpdate: reviewContextByIssueId.get(review.id)?.lastUpdate ?? null,
+                workProduct: reviewContextByIssueId.get(review.id)?.workProduct ?? null,
+                images: issueImages(reviewImageMap, review.id),
+              }
+            : genericDetail(review.title, issueImages(reviewImageMap, review.id)),
         }));
       }
 
@@ -1917,6 +2082,52 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             observedPercent,
             amountObserved: incident.amountObserved,
             amountLimit: incident.amountLimit,
+            images: [],
+          },
+        }));
+      }
+
+      // AT-1.4 (GRE-1389): AI usage of the month crossed the warn level of the
+      // allowance. One card per window: its time is the crossing's, so a
+      // dismissal holds for the rest of the month however often usage crosses.
+      const usageWarning = await billingAccountService(db).usageWarningCard(companyId, new Date(now));
+      if (usageWarning) {
+        const { account, usage, warnedAt } = usageWarning;
+        add(createItem({
+          companyId,
+          sourceKind: "budget_alert",
+          subject: {
+            kind: "billing_account",
+            id: account.id,
+            companyId,
+            title: `AI usage at ${Math.floor(usage.usedPercent)}% of the monthly allowance`,
+            identifier: null,
+            status: "warning",
+            href: `/${prefix}/billing`,
+            // Percent only: the client reads this card, and sees no money for the included allowance (GRE-1395).
+            metadata: {
+              windowStart: usage.windowStart,
+              usedPercent: usage.usedPercent,
+              warnPercent: usage.warnPercent,
+            },
+          },
+          whyNow: `AI usage this month reached the ${usage.warnPercent}% warn level of the allowance.`,
+          decisionVerbs: decisionVerbs(
+            { id: "inspect", label: "Open billing", description: "See usage, forecast and allowance." },
+            { id: "dismiss", label: "Dismiss", description: "Dismiss this warning for the rest of the month." },
+          ),
+          inlineResolvable: true,
+          entryRule: "billing usage of the current UTC month >= warnPercent of the allowance (marked once per window).",
+          exitRule: "Usage falls under the warn level (allowance raised), the month ends, or the row is dismissed.",
+          dedupKey: `billing_usage:${usage.windowStart}`,
+          severity: "medium",
+          activityAt: toIso(warnedAt),
+          createdAt: toIso(warnedAt),
+          updatedAt: toIso(warnedAt),
+          relatedIssue: null,
+          detail: {
+            kind: "generic",
+            summaryExcerpt: `${Math.floor(usage.usedPercent)}% of the included AI usage used this month (warn at ${usage.warnPercent}%).`,
             images: [],
           },
         }));

@@ -297,7 +297,10 @@ function readLinuxProcessGroupActivity(processGroupId: number): boolean | null {
   // kill(-pgid, 0) also succeeds for a group that contains only zombies. Such
   // processes cannot run or own a listener and are waiting only for their
   // parent to reap them, so termination is complete for service-control use.
-  return foundMember ? false : null;
+  // No member at all means the last one was reaped after kill(-pgid, 0)
+  // succeeded: the group is gone. (Answering "alive" here made a stop that had
+  // finished SIGKILL the group and report "killed", seen under load.)
+  return false;
 }
 
 function tokenizeCommandLine(value: string) {

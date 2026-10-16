@@ -1,0 +1,125 @@
+{
+  "_about": "Pipedrive API answers in the recorded shape of GET /api/v1/organizationFields, /api/v1/organizations and /api/v1/persons (two pages each), trimmed to the fields the organisation import reads. Company names and people are made up. Used by organisation-import-pipedrive.test.ts; no test calls Pipedrive.",
+  "organizationFields": {
+    "success": true,
+    "data": [
+      { "key": "name", "name": "Name", "field_type": "varchar" },
+      { "key": "address", "name": "Address", "field_type": "address" },
+      {
+        "key": "industry",
+        "name": "Industry",
+        "field_type": "enum",
+        "options": [
+          { "id": 21, "label": "Mining" },
+          { "id": 22, "label": "Energy" },
+          { "id": 23, "label": "Financial services" }
+        ]
+      }
+    ],
+    "additional_data": { "pagination": { "start": 0, "limit": 500, "more_items_in_collection": false } }
+  },
+  "organizationsPage1": {
+    "success": true,
+    "data": [
+      {
+        "id": 101,
+        "name": "Northwind Minerals",
+        "owner_id": { "id": 9001, "name": "Ama Owusu", "email": "ama@example.test", "value": 9001 },
+        "address_country": "Ghana",
+        "industry": "21",
+        "open_deals_count": 0,
+        "won_deals_count": 2,
+        "lost_deals_count": 0
+      },
+      {
+        "id": 102,
+        "name": "Blue Harbour Energy",
+        "owner_id": { "id": 9002, "name": "Kofi Mensah", "value": 9002 },
+        "address_country": "Nigeria",
+        "industry": 22,
+        "open_deals_count": 1,
+        "won_deals_count": 0,
+        "lost_deals_count": 0
+      }
+    ],
+    "additional_data": { "pagination": { "start": 0, "limit": 2, "more_items_in_collection": true, "next_start": 2 } }
+  },
+  "organizationsPage2": {
+    "success": true,
+    "data": [
+      {
+        "id": 103,
+        "name": "  Cedar Lane Capital  ",
+        "owner_id": 9003,
+        "address_country": null,
+        "industry": null,
+        "open_deals_count": 0,
+        "won_deals_count": 0,
+        "lost_deals_count": 0
+      },
+      {
+        "id": 104,
+        "name": "",
+        "owner_id": { "id": 9001, "name": "Ama Owusu", "value": 9001 },
+        "address_country": "Kenya",
+        "open_deals_count": 0,
+        "won_deals_count": 0,
+        "lost_deals_count": 1
+      }
+    ],
+    "additional_data": { "pagination": { "start": 2, "limit": 2, "more_items_in_collection": false } }
+  },
+  "personsPage1": {
+    "success": true,
+    "data": [
+      {
+        "id": 501,
+        "name": "Esi Boateng",
+        "org_id": { "name": "Northwind Minerals", "value": 101 },
+        "job_title": "Chief Financial Officer",
+        "email": [
+          { "label": "work", "value": "esi.old@example.test", "primary": false },
+          { "label": "work", "value": "esi@example.test", "primary": true }
+        ],
+        "phone": [{ "label": "mobile", "value": "+233 20 000 0001", "primary": true }]
+      },
+      {
+        "id": 502,
+        "name": "Tunde Bakare",
+        "org_id": { "name": "Blue Harbour Energy", "value": 102 },
+        "job_title": null,
+        "email": [{ "label": "work", "value": "", "primary": true }, { "label": "other", "value": "tunde@example.test", "primary": false }],
+        "phone": []
+      }
+    ],
+    "additional_data": { "pagination": { "start": 0, "limit": 2, "more_items_in_collection": true, "next_start": 2 } }
+  },
+  "personsPage2": {
+    "success": true,
+    "data": [
+      {
+        "id": 503,
+        "name": "Lone Freelancer",
+        "org_id": null,
+        "email": [{ "value": "lone@example.test", "primary": true }],
+        "phone": []
+      },
+      {
+        "id": 504,
+        "name": "Wanjiru Kamau",
+        "org_id": 104,
+        "email": [],
+        "phone": []
+      },
+      {
+        "id": 505,
+        "name": "Daniel Asare",
+        "org_id": 103,
+        "job_title": "Partner",
+        "email": [{ "value": "daniel@example.test", "primary": true }],
+        "phone": [{ "value": "+44 20 0000 0005", "primary": true }]
+      }
+    ],
+    "additional_data": { "pagination": { "start": 2, "limit": 2, "more_items_in_collection": false } }
+  }
+}

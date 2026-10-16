@@ -684,6 +684,13 @@ export function createPostgresRunDispatchAdapter(
         finishedAt: input.now,
         error: input.reason,
         errorCode: input.errorCode,
+        // A scheduled retry is cancelled before adapter dispatch. Without this
+        // evidence the stranded-work sweep holds the issue for execution
+        // reconciliation and every later wake parks for good (GRE-1444).
+        resultJson: sql`coalesce(${heartbeatRuns.resultJson}, '{}'::jsonb) || ${JSON.stringify({
+          executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
+          stopReason: input.errorCode,
+        })}::jsonb`,
         updatedAt: input.now,
       })
       .where(

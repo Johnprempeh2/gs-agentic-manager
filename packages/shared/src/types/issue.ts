@@ -1,3 +1,5 @@
+import type { DraftDiffSegment } from "../draft-diff.js";
+import type { AskType } from "../ask-types.js";
 import type { ExecutionProjection, ExecutionBlocker } from "./execution-projection.js";
 import type {
   IssueCommentAuthorType,
@@ -19,6 +21,7 @@ import type {
   IssueOriginKind,
   IssuePriority,
   IssueReviewPolicy,
+  IssueUnblockWaitingOn,
   IssueRecoveryActionKind,
   IssueRecoveryActionOutcome,
   IssueRecoveryActionOwnerType,
@@ -113,12 +116,47 @@ export interface IssueDocumentSummary {
   lockedByAgentId: string | null;
   lockedByUserId: string | null;
   sourceTrust?: SourceTrustMetadata | null;
+  /** One extra agent allowed to write this document besides the task's assignee. */
+  makerAgentId?: string | null;
+  /** The revision marked as the current approved one, if any. */
+  approvedRevisionId?: string | null;
+  approvedRevisionNumber?: number | null;
+  approvedAt?: Date | null;
+  approvedByAgentId?: string | null;
+  approvedByUserId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface IssueDocument extends IssueDocumentSummary {
   body: string;
+}
+
+/**
+ * A task's link to a document owned by another task in the same company. The
+ * linking task reads the one live document instead of keeping a copy.
+ */
+export interface IssueDocumentLink {
+  id: string;
+  companyId: string;
+  issueId: string;
+  sourceIssueId: string;
+  sourceIssueIdentifier: string | null;
+  sourceIssueTitle: string;
+  sourceIssueAssigneeAgentId: string | null;
+  documentId: string;
+  key: string;
+  title: string | null;
+  latestRevisionId: string | null;
+  latestRevisionNumber: number;
+  makerAgentId: string | null;
+  approvedRevisionId: string | null;
+  approvedRevisionNumber: number | null;
+  approvedAt: Date | null;
+  documentUpdatedAt: Date;
+  createdByAgentId: string | null;
+  createdByUserId: string | null;
+  createdAt: Date;
 }
 
 export interface DocumentRevision {
@@ -537,6 +575,15 @@ export type IssueUnblockOwner = { agentId: string } | { userId: string } | "boar
 export interface IssueUnblockDescriptor {
   owner: IssueUnblockOwner;
   action: string;
+  /** Who the task is waiting on: a client, the board, or someone outside the company. */
+  waitingOn?: IssueUnblockWaitingOn;
+  /** The calendar day (YYYY-MM-DD, UTC) the task expects to hear back by. */
+  expectedBy?: string;
+  /**
+   * Set by the server only: the `expectedBy` day the assignee was already woken
+   * for, so the "date passed" wake fires once per date.
+   */
+  expectedByWokenFor?: string;
 }
 
 export interface IssueRecoveryAction {
@@ -934,6 +981,7 @@ export type CompactIssue = Pick<
   | "cancelledAt"
   | "createdAt"
   | "updatedAt"
+  | "dueDate"
 > & {
   labelIds?: string[];
   labels?: IssueLabel[];
@@ -1436,6 +1484,8 @@ export interface RequestConfirmationPayload {
   connectionAuthorization?: RequestConfirmationConnectionAuthorizationPayload;
   /** Needs the board user at the computer (GRE-450). */
   atDesk?: InteractionAtDesk | null;
+  /** What the agent needs the person to do; names the ask in Decisions and always wakes the agent. */
+  askType?: AskType | null;
 }
 
 export interface RequestCheckboxConfirmationOption {
@@ -1484,6 +1534,41 @@ export interface RequestItemVerdictsPayload {
   allowBulkApprove?: boolean;
   supersedeOnUserComment?: boolean;
   target?: RequestConfirmationTarget | null;
+}
+
+/**
+ * An agent's draft for a person to edit, approve or send back (an email, a
+ * client message, a post, a document section). Resolved through accept
+ * (approve as is, or send edits) and reject (ask for a redraft).
+ */
+export interface RequestDraftReviewPayload {
+  version: 1;
+  /** What the draft is for, e.g. "Email to Indago". */
+  purpose: string;
+  body: string;
+  subject?: string | null;
+  recipients?: string[];
+  /** Where it will go: email, linkedin, chat, document and so on. */
+  channel?: string | null;
+  detailsMarkdown?: string | null;
+  supersedeOnUserComment?: boolean;
+  target?: RequestConfirmationTarget | null;
+}
+
+export interface RequestDraftReviewResultDraft {
+  originalBody: string;
+  finalBody: string;
+  edited: boolean;
+  changeCount: number;
+  diff: DraftDiffSegment[];
+  /** Factual one-line summary of the edit (counts only). */
+  editSummary: string;
+  /** The person allowed the agent to keep a note of these edits. */
+  learnFromEdits: boolean;
+}
+
+export interface RequestDraftReviewResult extends RequestConfirmationResult {
+  draft?: RequestDraftReviewResultDraft | null;
 }
 
 export interface RequestConfirmationResult {
@@ -1539,6 +1624,19 @@ export interface RequestItemVerdictsResult {
   items: RequestItemVerdictsResultItem[];
   commentId?: string | null;
   staleTarget?: RequestConfirmationTarget | null;
+}
+
+/** An agent asks another agent in the same company a question on its own task. */
+export interface AskAgentPayload {
+  version: 1;
+  question: string;
+}
+
+export interface AskAgentResult {
+  version: 1;
+  outcome: "answered" | "withdrawn" | "issue_closed" | "addressee_deleted" | "skipped";
+  answer?: string | null;
+  reason?: string | null;
 }
 
 export interface IssueThreadInteractionBase extends IssueThreadInteractionActorFields {
@@ -1602,35 +1700,53 @@ export interface RequestItemVerdictsInteraction extends IssueThreadInteractionBa
   result?: RequestItemVerdictsResult | null;
 }
 
+export interface RequestDraftReviewInteraction extends IssueThreadInteractionBase {
+  kind: "request_draft_review";
+  payload: RequestDraftReviewPayload;
+  result?: RequestDraftReviewResult | null;
+}
+
 export interface ConnectionIntentInteraction extends IssueThreadInteractionBase {
   kind: "connection_intent";
   payload: ConnectionIntentPayload;
   result?: ConnectionIntentResult | null;
 }
 
+export interface AskAgentInteraction extends IssueThreadInteractionBase {
+  kind: "ask_agent";
+  payload: AskAgentPayload;
+  result?: AskAgentResult | null;
+}
+
 export type IssueThreadInteraction =
+  | AskAgentInteraction
   | SuggestTasksInteraction
   | AskUserQuestionsInteraction
   | RequestConfirmationInteraction
   | RequestCheckboxConfirmationInteraction
   | RequestItemVerdictsInteraction
-  | ConnectionIntentInteraction;
+  | ConnectionIntentInteraction
+  | RequestDraftReviewInteraction;
 
 export type IssueThreadInteractionPayload =
+  | AskAgentPayload
   | SuggestTasksPayload
   | AskUserQuestionsPayload
   | RequestConfirmationPayload
   | RequestCheckboxConfirmationPayload
   | RequestItemVerdictsPayload
-  | ConnectionIntentPayload;
+  | ConnectionIntentPayload
+  | RequestDraftReviewPayload;
 
 export type IssueThreadInteractionResult =
+  | AskAgentResult
   | SuggestTasksResult
   | AskUserQuestionsResult
   | RequestConfirmationResult
   | RequestCheckboxConfirmationResult
   | RequestItemVerdictsResult
-  | ConnectionIntentResult;
+  | ConnectionIntentResult
+  | RequestDraftReviewResult;
 
 export interface IssueAttachment {
   id: string;

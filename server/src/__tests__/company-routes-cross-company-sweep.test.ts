@@ -7,13 +7,15 @@ import request from "supertest";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
-  companyMemberships, companySecretProviderConfigs, companySecrets, decisions, decisionTrainingExamples,
-  environmentLeases, environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns,
+  companyMemberships, companySecretProviderConfigs, companySecrets, crmSyncBindings, crmSyncConflicts,
+  decisions, decisionTrainingExamples, intelligenceRecommendations, workflowTemplates,
+  environmentLeases, environments, executionWorkspaces, generatedImages, feedbackExports, feedbackVotes, goals, heartbeatRuns,
   invites, issueAttachments, issues, goalWhyRequests, strategyBoardPacks,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
   toolMcpGateways, toolMcpGatewayTokens, toolProfileEntries, toolProfiles, toolRuntimeSlots, workspaceOperations,
 } from "@greatstone/db";
+import { TEAM_CHAT_ORIGIN_KIND } from "@greatstone/shared";
 import { eq } from "drizzle-orm";
 import { createApp } from "../app.js";
 import { environmentService } from "../services/environments.js";
@@ -87,6 +89,7 @@ const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
 // they are checked instead.
 const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/invites/:token": "Public invite link, the token is the credential.",
+  "/api/client-acceptance/:token": "Public client acceptance link, the 256-bit token is the credential and reaches one client's pack only.",
   "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
   "/api/join-requests/:requestId": "Only POST .../claim-api-key, which a joining agent calls before it has a key; "
     + "the claim secret in the body is the credential, not a session. Company join-request routes are swept above.",
@@ -105,6 +108,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/chat-webhooks/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
   "/api/chat-webhooks/agentmail/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
   "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
+  "/api/inbound/tasks/:publicId": "Inbound task webhook; authenticated by the hook's own token, not a session.",
+  "/api/calendar-feeds/:file": "Subscribed calendar feed; the secret token in the URL is the credential, not a session.",
   "/api/companies/import/": "Import jobs and transfers belong to the user who started them, before a company exists.",
   "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
   "/api/environment-custom-image-setup-sessions/:sessionId": "Instance-admin only: every handler calls "
@@ -113,6 +118,10 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
     + "Swept by the tool-gateway test below: company B sends its own companyId with company A's ids.",
   "/api/plugins/:pluginId": "Plugins are instance-wide (no company column). Company data sits under "
     + "/plugins/:pluginId/companies/:companyId, which is swept, or in the request body, which this sweep does not fill.",
+  "/api/fleet/instances/:id": "Fleet hub only: the /fleet router answers 404 unless the hub is enabled, then calls "
+    + "assertInstanceAdmin. Fleet instances are client installs registered with the hub, not company records.",
+  "/api/instance/client-support/attachments/:attachmentId": "Instance-admin only: the handler calls assertInstanceAdmin "
+    + "before reading the attachment, so a company owner is refused before any lookup. The operator relays every company's outbox.",
 };
 
 // Id routes that answer 200 with an empty body for both "missing" and "another
@@ -276,7 +285,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       enablePipelines: true, enableCases: true, enableDeepDive: true, enableAgentChat: true,
       enableConferenceRoomChat: true, enableIssuePlanDecompositions: true, enableExternalObjects: true,
       enableSmokeLab: true, enableBuiltInAgents: true, enableBetaSkills: true, enableSummaries: true,
-      enableStatusCards: true, enableStrategyBoard: true,
+      enableStatusCards: true, enableStrategyBoard: true, enableIntelligence: true, enableTeamChat: true,
     });
 
     await ctx.db.insert(companies).values([
@@ -323,6 +332,8 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const profileEntryId = id(), intentId = id(), voteId = id(), traceId = id(), trainingId = id();
     const inviteId = id(), decisionId = id();
     const boardPackId = id(), whyRequestId = id();
+    const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
+    const teamChatId = id(), generatedImageId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -414,6 +425,29 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       snapshot: {}, body: "Company A pack",
     });
     await ctx.db.insert(goalWhyRequests).values({ ...A, id: whyRequestId, goalId, question: "Why?", askedByUserId: ownerAId });
+    // Intelligence recommendations, CRM sync bindings and conflicts, workflow templates.
+    await ctx.db.insert(intelligenceRecommendations).values({
+      ...A, id: recommendationId, kind: "tool", title: "Company A recommendation", why: "Company A", effort: "low",
+    });
+    await ctx.db.insert(crmSyncBindings).values({
+      ...A, id: bindingId, connectionId, pipelineId, providerKey: "hubspot", containerKind: "crm_pipeline",
+      externalContainerId: "a-pipeline",
+    });
+    await ctx.db.insert(crmSyncConflicts).values({
+      ...A, id: conflictId, bindingId, entityKind: "case", entityId: caseId, externalId: "a-deal",
+      gsamField: "title", externalField: "dealname", crmValue: { value: "A" }, gsamValue: { value: "A" },
+    });
+    // The id routes check the company before they read the definition.
+    await ctx.db.insert(workflowTemplates).values({ ...A, id: workflowTemplateId, key: "a-template", name: "Company A template", definition: {} });
+
+    await ctx.db.insert(generatedImages).values({
+      ...A, id: generatedImageId, prompt: "Company A image", aspectRatio: "1:1", provider: "mock", model: "practice",
+    });
+
+    // Team chats are issues with the team_chat origin kind.
+    await ctx.db.insert(issues).values({
+      ...A, id: teamChatId, title: "Company A chat", originKind: TEAM_CHAT_ORIGIN_KIND,
+    });
 
     const byPrefix: Record<string, string> = {
       "/api/issues/:id": issueId, "/api/issues/:issueId": issueId,
@@ -438,6 +472,11 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/feedback-traces/:traceId": traceId, "/api/decision-training/:id": trainingId,
       "/api/invites/:inviteId": inviteId, "/api/decisions/:id": decisionId,
       "/api/strategy-board/packs/:id": boardPackId, "/api/why-requests/:id": whyRequestId,
+      "/api/intelligence/recommendations/:id": recommendationId,
+      "/api/crm-sync/bindings/:bindingId": bindingId, "/api/crm-sync/conflicts/:conflictId": conflictId,
+      "/api/workflow-templates/:id": workflowTemplateId,
+      "/api/team-chats/:id": teamChatId,
+      "/api/generated-images/:id": generatedImageId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),

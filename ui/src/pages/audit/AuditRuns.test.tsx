@@ -11,6 +11,7 @@ import { AuditRuns } from "./AuditRuns";
 const listAgentsMock = vi.hoisted(() => vi.fn());
 const listRunsMock = vi.hoisted(() => vi.fn());
 const listRoutineRunsMock = vi.hoisted(() => vi.fn());
+const getIssueMock = vi.hoisted(() => vi.fn());
 const setSearchParamsMock = vi.hoisted(() => vi.fn());
 let currentSearch = "";
 
@@ -23,6 +24,10 @@ vi.mock("@/api/heartbeats", () => ({
     list: (companyId: string, agentId?: string, limit?: number, options?: unknown) =>
       listRunsMock(companyId, agentId, limit, options),
   },
+}));
+
+vi.mock("@/api/issues", () => ({
+  issuesApi: { get: (id: string) => getIssueMock(id) },
 }));
 
 vi.mock("@/api/routines", () => ({
@@ -131,6 +136,17 @@ describe("AuditRuns", () => {
     expect(list).toBeTruthy();
     expect(list?.closest('[data-slot="card"]')).toBeFalsy();
     expect(container.querySelector('a[href="/agents/agent-1/runs/run-12345678"]')).toBeTruthy();
+  });
+
+  it("names the task each run worked on", async () => {
+    listRunsMock.mockResolvedValue([run({ contextSnapshot: { issueId: "issue-9" } })]);
+    getIssueMock.mockResolvedValue({ id: "issue-9", identifier: "TES-9", title: "Send the signed NDA" });
+    await render();
+
+    expect(getIssueMock).toHaveBeenCalledWith("issue-9");
+    expect(container.textContent).toContain("Worked on TES-9 Send the signed NDA");
+    expect(container.textContent).toContain("Reviewed the release checklist");
+    expect(container.textContent).not.toContain("run-1234");
   });
 
   it("uses the agent deep-link filter for both the query key and request", async () => {

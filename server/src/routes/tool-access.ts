@@ -1519,6 +1519,13 @@ function connectorEnrollmentPrincipal(req: Request): string {
     res.json(await svc.listAppsNeedingAttention(companyId));
   });
 
+  router.get("/companies/:companyId/tools/agent-access", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await svc.listAgentAccess(companyId));
+  });
+
   router.get("/companies/:companyId/tools/action-requests", async (req, res) => {
     assertBoard(req);
     const companyId = req.params.companyId as string;
@@ -2183,6 +2190,29 @@ function connectorEnrollmentPrincipal(req: Request): string {
     const result = await svc.checkHealth(existing.id, getActorInfo(req));
     await resumeTasksWaitingOn(req, existing.companyId, existing.id);
     res.json(result);
+  });
+
+  // GRE-1364: turn back on one connection a company pause turned off. It runs a
+  // health check first and stays off if the check fails.
+  router.post("/tool-connections/:connectionId/reenable-after-pause", async (req, res) => {
+    const existing = await getAccessibleResource(req, res, svc.getConnection(req.params.connectionId as string), "Tool connection not found");
+    if (!existing) return;
+    await assertToolConnectionConfigureAccess(req, existing);
+    const actor = getActorInfo(req);
+    const connection = await svc.reenableConnectionAfterPause(existing.id, actor);
+    await logActivity(db, {
+      companyId: connection.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "tool_connection.pause_reenabled",
+      entityType: "tool_connection",
+      entityId: connection.id,
+      details: { enabled: connection.enabled, healthStatus: connection.healthStatus },
+    });
+    await resumeTasksWaitingOn(req, existing.companyId, existing.id);
+    res.json(connection);
   });
 
   router.post(

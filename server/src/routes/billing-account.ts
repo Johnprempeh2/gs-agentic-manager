@@ -2,17 +2,24 @@ import { Router, type Request, type RequestHandler } from "express";
 import type { Db } from "@greatstone/db";
 import { SETTINGS_OPERATOR_MANAGED_ERROR_CODE } from "@greatstone/shared";
 import {
+  type BillingAccount,
   cancelBillingAccountSchema,
+  clientBillingAccount,
+  clientBillingAccountView,
+  type OperatorBillingAccountView,
   recordBillingInvoiceSchema,
   resumeBillingRenewalSchema,
   upsertBillingAccountSchema,
 } from "@greatstone/shared/billing-account";
 import { forbidden, notFound } from "../errors.js";
 import { validate } from "../middleware/validate.js";
-import { billingAccountService } from "../services/billing-account.js";
+import { billingAccountService, noteBillingUsageWarning } from "../services/billing-account.js";
 import { logActivity } from "../services/activity-log.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { assertBoard, assertBoardOrgAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
+
+/** Fields of the record that only the operator sees (GRE-1395). */
+const OPERATOR_ONLY_FIELDS = ["allowanceMonthlyCents", "usageFxRate", "usageFxRateSetOn"] as const satisfies readonly (keyof BillingAccount)[];
 
 /**
  * Billing account of this instance (GRE-1369, B2 on GRE-1357). Every board
@@ -75,20 +82,33 @@ export function billingAccountRoutes(db: Db, opts: { now?: () => Date } = {}) {
     );
   }
 
+  /**
+   * GRE-1395: the client sees the included allowance as a percent only; the
+   * allowance, the US amounts and the exchange rate are the operator's.
+   */
+  function viewFor(req: Request, view: OperatorBillingAccountView) {
+    return isHostingOperator(req) ? view : clientBillingAccountView(view);
+  }
+
   router.get("/instance/billing-account", async (req, res) => {
     assertBoardOrgAccess(req);
-    res.json(await svc.view(now()));
+    res.json(viewFor(req, await svc.view(now())));
   });
 
   router.put("/instance/billing-account", operatorOnly, validate(upsertBillingAccountSchema), async (req, res) => {
     const { reason, ...input } = req.body;
     const at = now();
     const { before, account } = await svc.upsert(input, req.actor.userId ?? null, at);
+    // Company members can read the activity log, so it holds the client's view
+    // of the record and only the names of operator fields that changed (GRE-1395).
     await audit(req, "billing.account_updated", account.id, {
-      oldValue: before,
-      newValue: account,
+      oldValue: before ? clientBillingAccount(before) : null,
+      newValue: clientBillingAccount(account),
+      operatorFieldsChanged: OPERATOR_ONLY_FIELDS.filter((field) => before?.[field] !== account[field]),
       reason: reason ?? null,
     });
+    // A lower allowance can put this month's usage over the warn level.
+    await noteBillingUsageWarning(db, at);
     res.json(await svc.view(at));
   });
 
@@ -118,7 +138,7 @@ export function billingAccountRoutes(db: Db, opts: { now?: () => Date } = {}) {
         reason: req.body.reason ?? null,
       });
     }
-    res.json(await svc.view(at));
+    res.json(viewFor(req, await svc.view(at)));
   });
 
   router.post(

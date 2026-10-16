@@ -3,11 +3,11 @@
 // temp folder; nothing under ~/GSAM is read or written.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { changeKind, cutCandidate, noteLine, tagMessage, titleProblem } from "./greatstone-candidate.mjs";
+import { changeKind, cutCandidate, noteLine, tagMessage, takeLock, titleProblem } from "./greatstone-candidate.mjs";
 
 const scriptsDir = new URL(".", import.meta.url).pathname.replace(/\/$/, "");
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -81,6 +81,38 @@ test("--json prints the changes for the live server and --print makes no tag", (
   assert.equal(spawnSync("git", ["rev-parse", "--verify", "--quiet", "refs/tags/rc-2026-09-02.1"], { cwd: dir }).status, 1);
 });
 
+// The cut runs the release test gate on the new tag; the release refuses an rc
+// tag whose commit has no pass marker. The fake repo's lanes are one command.
+test("cutting a candidate runs the test gate on it; --no-test-gate only cuts", (t) => {
+  const dir = fakeRepo();
+  const root = mkdtempSync(join(tmpdir(), "gs-candidate-root-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  mkdirSync(join(dir, "scripts"));
+  writeFileSync(join(dir, "scripts", "greatstone-test-gate.lanes"), "unit: true\n");
+  git(dir, "add", "scripts");
+  git(dir, "commit", "--quiet", "-m", "Merge pull request #42 from owner/GRE-80-gate", "-m", "feat: test gate (GRE-80)");
+  const cut = (...extra) => spawnSync("node", [join(scriptsDir, "greatstone-candidate.mjs"), ...extra, "--title", "Next", "--ref", "main"], {
+    cwd: dir, encoding: "utf8", env: { ...process.env, GSAM_ROOT: root },
+  });
+
+  const skipped = cut("rc-2026-09-02.1", "--no-test-gate");
+  assert.equal(skipped.status, 0, skipped.stderr);
+  assert.match(skipped.stdout, /No test gate run \(--no-test-gate\)\. Before the release: scripts\/greatstone-test-gate\.sh rc-2026-09-02\.1/);
+  assert.equal(existsSync(join(root, "test-gate")), false);
+
+  const gated = cut("rc-2026-09-02.2");
+  assert.equal(gated.status, 0, gated.stderr);
+  assert.match(gated.stdout, /^PASSED: all 1 lanes on rc-2026-09-02\.2/m);
+  assert.ok(existsSync(join(root, "test-gate", "passed", git(dir, "rev-parse", "rc-2026-09-02.2^{commit}"))));
+
+  writeFileSync(join(dir, "scripts", "greatstone-test-gate.lanes"), "unit: false\n");
+  git(dir, "commit", "--quiet", "-am", "Merge pull request #43 from owner/GRE-81-red", "-m", "feat: red (GRE-81)");
+  const red = cut("rc-2026-09-02.3");
+  assert.equal(red.status, 1);
+  assert.match(red.stdout, /^FAILED: 1 of 1 lanes failed on rc-2026-09-02\.3/m);
+});
+
 test("refuses a candidate without a title or without changes", (t) => {
   const dir = fakeRepo();
   t.after(() => rmSync(dir, { recursive: true, force: true }));
@@ -122,4 +154,42 @@ test("the release refuses an rc tag with no title", (t) => {
   const titled = release(dir, "rc-2026-09-02.3");
   assert.equal(titled.status, 1);
   assert.match(titled.stderr, /release: no live checkout at/);
+});
+
+// The candidate lock: one cut (and its test gate) at a time, as the preview.
+test("takeLock refuses a second holder, takes over a dead one's lock, and frees it", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gs-candidate-lock-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const lock = join(root, "locks", "candidate.lock");
+  const free = takeLock(root, "candidate", "greatstone-candidate.mjs rc-1");
+  assert.match(readFileSync(join(lock, "owner"), "utf8"), new RegExp(`^pid=${process.pid}\ncommand=greatstone-candidate.mjs rc-1\n`));
+  assert.throws(() => takeLock(root, "candidate", "x"), new RegExp(`another candidate step runs \\(pid=${process.pid} command=greatstone-candidate.mjs rc-1 `));
+  free();
+  assert.equal(existsSync(lock), false);
+
+  const dead = Number(execFileSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }));
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "owner"), `pid=${dead}\n`);
+  takeLock(root, "candidate", "rc-2")();
+  assert.equal(existsSync(lock), false);
+});
+
+test("the candidate refuses to cut while another candidate holds the lock, and frees its own", (t) => {
+  const dir = fakeRepo();
+  const root = mkdtempSync(join(tmpdir(), "gs-candidate-lock-"));
+  t.after(() => { rmSync(dir, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); });
+  const cut = (tag) => spawnSync(process.execPath, [join(scriptsDir, "greatstone-candidate.mjs"), tag, "--title", "Focus mode", "--ref", "main", "--no-test-gate"], {
+    cwd: dir, encoding: "utf8", env: { ...process.env, GSAM_ROOT: root },
+  });
+  const free = takeLock(root, "candidate", "greatstone-candidate.mjs rc-2026-09-02.1");
+  const refused = cut("rc-2026-09-02.2");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /^candidate: another candidate step runs \(pid=\d+ command=greatstone-candidate\.mjs rc-2026-09-02\.1 /);
+  assert.equal(git(dir, "tag", "-l", "rc-*"), "");
+  free();
+
+  const ok = cut("rc-2026-09-02.2");
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(git(dir, "tag", "-l", "rc-*"), "rc-2026-09-02.2");
+  assert.equal(existsSync(join(root, "locks", "candidate.lock")), false, "the cut frees its lock");
 });

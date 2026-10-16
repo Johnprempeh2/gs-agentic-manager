@@ -680,21 +680,8 @@ describe("agent routes adapter validation", () => {
     expect(res.status, JSON.stringify(res.body)).toBe(201);
   });
 
-  it("rejects a new paperclip_runner selection while the rollout flag is off", async () => {
-    const app = await createApp();
-    const res = await requestApp(app, (baseUrl) =>
-      request(baseUrl)
-        .post("/api/companies/company-1/agents")
-        .send({ name: "Native Codex", adapterType: "paperclip_runner" }),
-    );
-
-    expect(res.status, JSON.stringify(res.body)).toBe(422);
-    expect(res.body.details).toMatchObject({ code: "paperclip_runner_rollout_disabled" });
-    expect(mockAgentService.create).not.toHaveBeenCalled();
-  });
-
-  it("allows a new paperclip_runner selection while the rollout flag is on", async () => {
-    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableNativeRunner: true });
+  it("allows a new paperclip_runner selection with no rollout gate (GRE-1436)", async () => {
+    // beforeEach stores the old flag as off; Runner graduated, so it no longer gates selection.
     const app = await createApp();
     const res = await requestApp(app, (baseUrl) =>
       request(baseUrl)

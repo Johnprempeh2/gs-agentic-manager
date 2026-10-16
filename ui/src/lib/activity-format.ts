@@ -83,6 +83,8 @@ const ACTIVITY_ROW_VERBS: Record<string, string> = {
   "issue.thread_interaction_accepted": "accepted the request on",
   "issue.thread_interaction_rejected": "rejected the request on",
   "issue.thread_interaction_answered": "answered the request on",
+  "issue.agent_question_asked": "asked another agent a question on",
+  "issue.agent_question_answered": "answered another agent's question on",
   "issue.thread_interaction_withdrawn": "withdrew the request on",
   "issue.thread_interaction_cancelled": "cancelled the request on",
   "issue.thread_interaction_skipped": "skipped the request on",
@@ -177,6 +179,8 @@ const ISSUE_ACTIVITY_LABELS: Record<string, string> = {
   "issue.thread_interaction_accepted": "accepted the request",
   "issue.thread_interaction_rejected": "rejected the request",
   "issue.thread_interaction_answered": "answered the request",
+  "issue.agent_question_asked": "asked another agent a question",
+  "issue.agent_question_answered": "answered another agent's question",
   "issue.thread_interaction_withdrawn": "withdrew the request",
   "issue.thread_interaction_cancelled": "cancelled the request",
   "issue.thread_interaction_skipped": "skipped the request",
@@ -208,6 +212,7 @@ const INTERACTION_ACCEPTED_LABELS: Record<string, string> = {
   request_checkbox_confirmation: "approved the request",
   suggest_tasks: "accepted the task suggestions",
   ask_user_questions: "accepted the answers",
+  request_draft_review: "approved the draft",
 };
 
 const INTERACTION_REJECTED_LABELS: Record<string, string> = {
@@ -215,6 +220,7 @@ const INTERACTION_REJECTED_LABELS: Record<string, string> = {
   request_checkbox_confirmation: "rejected the request",
   suggest_tasks: "declined the task suggestions",
   ask_user_questions: "declined the questions",
+  request_draft_review: "asked for a redraft",
 };
 
 /**

@@ -1,7 +1,7 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { SetupWizardSidebarOutlet } from "./SetupWizard";
 import { ChatSetupSidebarProvider } from "@/context/ChatSetupSidebarContext";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -15,22 +15,27 @@ import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
-import { NewIssueDialog } from "./NewIssueDialog";
-import { NewProjectDialog } from "./NewProjectDialog";
-import { NewGoalDialog } from "./NewGoalDialog";
-import { NewAgentDialog } from "./NewAgentDialog";
-import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
+import { AskEverestPanel } from "./AskEverestPanel";
+import { OnDemandCreateDialogs } from "./OnDemandDialogs";
+import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
+import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "../lib/keyboardShortcuts";
 import { ToastViewport } from "./ToastViewport";
+import { TeamChatAlerts } from "./team-chat/TeamChatAlerts";
 import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { AddToHomeScreen } from "./AddToHomeScreen";
+import { PageSkeleton } from "./PageSkeleton";
 import { PullToRefresh } from "./PullToRefresh";
 import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
 import { startVisualViewportSync } from "../lib/ios-keyboard";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
+import { ConnectionNotice } from "./ConnectionNotice";
+import { NeedsYouAlert } from "./NeedsYouAlert";
+import { OfflineSnapshotSaver } from "./OfflineSnapshotSaver";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
@@ -43,7 +48,6 @@ import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi, healthPollInterval } from "../api/health";
 import { resolveArchivedCompanyBounce, shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
@@ -67,23 +71,11 @@ import { cn } from "../lib/utils";
 import { routeSectionKey, useRouteEnterMotion } from "../hooks/useRouteEnterMotion";
 import { NotFoundPage } from "../pages/NotFound";
 import { PluginSlotMount, resolveRouteSidebarSlot, usePluginSlots } from "../plugins/slots";
+import { getAppDetailConnectionId } from "../lib/app-detail-route";
 
 function getCompanyRouteSegment(pathname: string, companyPrefix: string | undefined): string | null {
   return getCompanyPathSegments(pathname, companyPrefix)[0]?.toLowerCase() ?? null;
 }
-
-const RESERVED_APP_SUBPATHS = new Set([
-  "browse",
-  "connections",
-  "connect",
-  "chat",
-  "vercel-connect",
-  "review",
-  "attention",
-  "gateways",
-  "advanced",
-  "app",
-]);
 
 export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   const {
@@ -94,7 +86,6 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     peeking,
     setPeeking,
     isMobile,
-    setForceCollapsed,
   } = useSidebar();
   const { openNewIssue, openOnboarding } = useDialogActions();
   const { togglePanelVisible } = usePanel();
@@ -126,19 +117,15 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   mobileBackHref.current = isMobile ? mobileBackFallback(breadcrumbs) : null;
   const location = useLocation();
   const navigationType = useNavigationType();
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const shellRoute = classifyShellRoute(location.pathname, companyPrefix);
   const isCompanySettingsRoute = shellRoute.builtInContextualSurface === "settings";
   const companyPathSegments = shellRoute.companySegments;
   const isTaskDetailRoute = shellRoute.isTaskDetail;
   const isMobileChatRoute = shellRoute.isMobileChat;
-  const useStreamlinedTaskDetailShell = streamlinedUiEnabled && isTaskDetailRoute;
+  const useStreamlinedTaskDetailShell = isTaskDetailRoute;
   const isToolsRoute = companyPathSegments[0]?.toLowerCase() === "tools";
   const isAppsRoute = companyPathSegments[0]?.toLowerCase() === "apps";
-  const appDetailConnectionId =
-    isAppsRoute && companyPathSegments[1] && !RESERVED_APP_SUBPATHS.has(companyPathSegments[1].toLowerCase())
-      ? companyPathSegments[1]
-      : null;
+  const appDetailConnectionId = getAppDetailConnectionId(companyPathSegments);
   const appDetailApplicationId =
     isAppsRoute && companyPathSegments[1]?.toLowerCase() === "app" && companyPathSegments[2]
       ? companyPathSegments[2]
@@ -190,12 +177,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   );
   // Most contextual routes replace the global navigation inside the same
   // sidebar shell. Skills, Apps, Agent details, and Routine details are the
-  // exceptions in Streamlined UI: their local navigation is a second rail
+  // exceptions: their local navigation is a second rail
   // beside the persistent company nav.
   const sharedSecondarySidebar = isCompanySettingsRoute ? (
     <CompanySettingsSidebar />
-  ) : !streamlinedUiEnabled && shellRoute.builtInContextualSurface === "skills" ? (
-    <SkillsContextualSidebar />
   ) : appDetailConnectionId ? (
     <AppDetailSidebar kind="connection" connectionId={appDetailConnectionId} />
   ) : appDetailApplicationId ? (
@@ -203,45 +188,36 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
   ) : isAppsRoute || isToolsRoute ? (
     <AppsSidebar />
   ) : routeSidebarSlot ? (
-    streamlinedUiEnabled ? (
-      <ContextualSidebarFrame
-        surface={`plugin:${routeSidebarSlot.id}`}
-        title={routeSidebarSlot.displayName}
-      >
-        <PluginSlotMount
-          slot={routeSidebarSlot}
-          context={sidebarContext}
-          className="min-h-0 flex-1"
-          missingBehavior="placeholder"
-        />
-      </ContextualSidebarFrame>
-    ) : (
+    <ContextualSidebarFrame
+      surface={`plugin:${routeSidebarSlot.id}`}
+      title={routeSidebarSlot.displayName}
+    >
       <PluginSlotMount
         slot={routeSidebarSlot}
         context={sidebarContext}
-        className="h-full w-full"
+        className="min-h-0 flex-1"
         missingBehavior="placeholder"
       />
-    )
+    </ContextualSidebarFrame>
   ) : null;
   const secondarySidebar = shellRoute.builtInContextualSurface === "agent" && agentId ? (
     <AgentContextualSidebar agentRef={agentId} />
-  ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "routine" && routineId ? (
+  ) : shellRoute.builtInContextualSurface === "routine" && routineId ? (
     <SetupWizardSidebarOutlet><RoutineContextualSidebar routineId={routineId} /></SetupWizardSidebarOutlet>
-  ) : streamlinedUiEnabled && shellRoute.builtInContextualSurface === "skills" ? (
+  ) : shellRoute.builtInContextualSurface === "skills" ? (
     <SkillsContextualSidebar />
   ) : sharedSecondarySidebar;
   const hasSecondarySidebar = secondarySidebar != null;
-  const keepsPrimarySidebar = streamlinedUiEnabled && hasSecondarySidebar && (
+  const keepsPrimarySidebar = hasSecondarySidebar && (
     shellRoute.builtInContextualSurface === "skills"
     || shellRoute.builtInContextualSurface === "agent"
     || shellRoute.builtInContextualSurface === "routine"
     || isAppsRoute
     || isToolsRoute
   );
-  const replacesPrimarySidebar = streamlinedUiEnabled && hasSecondarySidebar && !keepsPrimarySidebar;
-  const showsAdjacentSecondarySidebar = hasSecondarySidebar && (!streamlinedUiEnabled || keepsPrimarySidebar);
-  const contextualSurface: ContextualSidebarSurface | null = !streamlinedUiEnabled || !hasSecondarySidebar
+  const replacesPrimarySidebar = hasSecondarySidebar && !keepsPrimarySidebar;
+  const showsAdjacentSecondarySidebar = keepsPrimarySidebar;
+  const contextualSurface: ContextualSidebarSurface | null = !hasSecondarySidebar
     ? null
     : routeSidebarSlot && !shellRoute.builtInContextualSurface
       ? `plugin:${routeSidebarSlot.id}`
@@ -258,11 +234,6 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     refetchIntervalInBackground: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;
-
-  useLayoutEffect(() => {
-    setForceCollapsed(!streamlinedUiEnabled && hasSecondarySidebar);
-    return () => setForceCollapsed(false);
-  }, [hasSecondarySidebar, setForceCollapsed, streamlinedUiEnabled]);
 
   useEffect(() => {
     const previous = previousShellRoute.current;
@@ -475,6 +446,27 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     onGoToInbox: () => navigate("/inbox"),
   });
 
+  // "?" opens the shortcuts sheet even when single-key shortcuts are off,
+  // so everyone can find Cmd/Ctrl+K and Cmd/Ctrl+J.
+  useEffect(() => {
+    function openSheet() {
+      setShortcutsOpen(true);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (keyboardShortcutsEnabled) return;
+      if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      if (isKeyboardShortcutTextInputTarget(event.target) || hasBlockingShortcutDialog()) return;
+      event.preventDefault();
+      openSheet();
+    }
+    window.addEventListener(OPEN_SHORTCUTS_EVENT, openSheet);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener(OPEN_SHORTCUTS_EVENT, openSheet);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [keyboardShortcutsEnabled]);
+
   useEffect(() => {
     if (!isMobile) {
       setMobileNavVisible(true);
@@ -652,6 +644,8 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         // computed as visible, so native body scroll + the sticky breadcrumb keep
         // working.
         isMobile ? "min-h-dvh overflow-x-clip" : "flex h-dvh flex-col overflow-clip",
+        // Print the page, not the app: one flowing column, no fixed viewport.
+        "print:block print:h-auto print:min-h-0 print:overflow-visible print:pt-0",
       )}
       >
       <a
@@ -662,7 +656,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       </a>
       <WorktreeBanner />
       <DevRestartBanner devServer={health?.devServer} />
-      <div className={cn("min-h-0 flex-1", isMobile ? "w-full" : "flex overflow-clip")}>
+      <ConnectionNotice />
+      <NeedsYouAlert />
+      <OfflineSnapshotSaver />
+      <div className={cn("min-h-0 flex-1 print:block print:overflow-visible", isMobile ? "w-full" : "flex overflow-clip")}>
         {isMobile && sidebarOpen && (
           <button
             type="button"
@@ -675,7 +672,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         {isMobile ? (
           <div
             className={cn(
-              "fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
+              "gs-rail dark fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out print:hidden",
               sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           >
@@ -695,6 +692,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </div>
         ) : (
           <SidebarShell
+            className="gs-rail dark print:hidden"
             open={sidebarOpen}
             collapsed={replacesPrimarySidebar ? false : collapsed}
             peeking={replacesPrimarySidebar ? false : peeking}
@@ -724,9 +722,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </SecondarySidebar>
         ) : null}
 
-        <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "h-full flex-1")}>
+        <div className={cn("flex min-w-0 flex-col print:block print:h-auto", isMobile ? "w-full" : "h-full flex-1")}>
           <div
             className={cn(
+              "print:hidden",
               !isMobile && useStreamlinedTaskDetailShell && "hidden",
               isMobile && "sticky top-0 z-sticky gs-glass-bar pt-(--sz-safe-top) translate-y-(--vv-offset-top)",
             )}
@@ -741,7 +740,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
             ) : null}
           </div>
           <div className={cn(
-            isMobile ? "block" : "flex flex-1 min-h-0",
+            isMobile ? "block" : "flex flex-1 min-h-0 print:block",
             !isMobile && useStreamlinedTaskDetailShell && "streamlined-task-detail-surface",
           )}>
             {!isMobile && keepsPrimarySidebar ? (
@@ -775,7 +774,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                   : undefined
               }
               className={cn(
-                "flex-1 p-4 outline-none md:p-6",
+                "flex-1 p-4 outline-none md:p-6 print:overflow-visible print:p-0",
                 // The task thread owns its scrollable top spacing. Leaving the
                 // page shell's top padding in place creates a stationary dark
                 // strip below the breadcrumb while messages scroll behind it.
@@ -797,24 +796,29 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 />
               ) : (
                 <RouteErrorBoundary>
-                  <Outlet />
+                  {isMobile && !isMobileChatRoute ? <AddToHomeScreen /> : null}
+                  {/* Pages load when opened; keep the shell up while one arrives. */}
+                  <Suspense fallback={<PageSkeleton variant="detail" />}>
+                    <Outlet />
+                  </Suspense>
                 </RouteErrorBoundary>
               )}
               </main>
             </div>
-            <PropertiesPanel taskDetailLayout={!isMobile && useStreamlinedTaskDetailShell} />
+            <div className="contents print:hidden">
+              <PropertiesPanel taskDetailLayout={!isMobile && useStreamlinedTaskDetailShell} />
+            </div>
           </div>
         </div>
       </div>
       {isMobile && <MobileBottomNav visible={showMobileNav} />}
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
-      <NewIssueDialog />
-      <NewProjectDialog />
-      <NewGoalDialog />
-      <NewAgentDialog />
-      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <AskEverestPanel />
+      <OnDemandCreateDialogs />
+      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />
       <ToastViewport />
+      <TeamChatAlerts />
       <BlockedDependentsDialogHost />
       <AnnouncementWell health={health} />
       <PluginAppShellOverlays localTrusted={health?.deploymentMode === "local_trusted"} />

@@ -45,8 +45,8 @@ export function formatCents(cents: number): string {
   return `$${(cents / 100).toLocaleString("en-GB", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-export function formatNumber(n: number): string {
-  return n.toLocaleString("en-GB");
+export function formatNumber(n: number, options: { maximumFractionDigits?: number } = {}): string {
+  return n.toLocaleString("en-GB", options);
 }
 
 /**
@@ -99,6 +99,16 @@ export function formatCalendarDay(day: string, options: { includeYear?: boolean 
     ...(options.includeYear ? { year: "numeric" as const } : {}),
     timeZone: "UTC",
   });
+}
+
+/** 24-hour clock time without seconds, e.g. `13:02`. */
+export function formatClockTime(date: Date | string): string {
+  return new Date(date).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+}
+
+/** Short weekday and date, e.g. `Mon 13 Oct`. */
+export function formatWeekdayShortDate(date: Date | string): string {
+  return new Date(date).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
 
 /** 24-hour clock time with seconds, e.g. `13:02:54`. */

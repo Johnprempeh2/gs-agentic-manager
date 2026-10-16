@@ -935,6 +935,8 @@ function buildActivityToast(
   ) {
     return null;
   }
+  // Team chat messages alert their members only (TeamChatAlerts).
+  if (details?.teamChat === true) return null;
 
   const issue = resolveIssueToastContext(
     queryClient,
@@ -1353,6 +1355,10 @@ function invalidateActivityQueries(
         queryClient.invalidateQueries({ queryKey: queryKeys.issues.activity(ref), ...invalidationOptions });
         if (action === "issue.comment_added" || action === "issue.conversation_session_started") {
           queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref), ...invalidationOptions });
+        }
+        // Team chat unread counts (only refetches while the chats list is shown).
+        if (action === "issue.comment_added") {
+          queryClient.invalidateQueries({ queryKey: queryKeys.teamChats.all });
         }
         if (action?.startsWith("issue.attachment_") || action?.startsWith("issue.work_product_")) {
           // These cards are durable API objects, not streamed text. Refresh the

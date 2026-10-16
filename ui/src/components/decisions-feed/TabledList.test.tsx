@@ -82,4 +82,12 @@ describe("Task page banner", () => {
     await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
     expect(api.post).toHaveBeenCalledWith("/issues/issue-5/bring-back", {});
   });
+
+  it("in an agent chat, says the next message brings it back and offers Bring back", async () => {
+    render(<TabledBanner issue={tabledIssue("issue-7", "GRE-7", "Chat with Everest", null)} chat />);
+    expect(container.textContent).toContain("This chat is set aside (Not now).");
+    expect(container.textContent).toContain("Your next message brings it back.");
+    await act(async () => (container.querySelector("button") as HTMLButtonElement).click());
+    expect(api.post).toHaveBeenCalledWith("/issues/issue-7/bring-back", {});
+  });
 });

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import type { Project } from "@greatstone/shared";
-import { ArrowUpDown, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
+import { groupDeliverableDocuments, type DeliverableAudience, type Project } from "@greatstone/shared";
+import { ArrowUpDown, Briefcase, Check, ChevronDown, FileCheck2, Layers, Search, X } from "lucide-react";
 import {
   deliverablesApi,
   type Deliverable,
+  type DeliverableConfidentiality,
   type DeliverableKind,
   type DeliverableSort,
 } from "../api/deliverables";
@@ -21,6 +22,7 @@ import {
   DeliverableCard,
   deliverableShareUrl,
 } from "../components/deliverables/DeliverableCard";
+import { CONFIDENTIALITY_LABELS } from "../components/deliverables/DeliverableBadges";
 import { DeliverableQuickLook } from "../components/deliverables/DeliverableQuickLook";
 import { LivePreviewCard, workspaceHasPreview } from "../components/LivePreviewCard";
 import { projectsApi } from "../api/projects";
@@ -46,6 +48,8 @@ export const DELIVERABLE_SORT_OPTIONS: { value: DeliverableSort; label: string }
 ];
 
 type GroupBy = "none" | "project" | "month";
+/** Grouped by project unless the person picks otherwise (GRE-1471). */
+const DEFAULT_GROUP: GroupBy = "project";
 
 /** Projects whose primary workspace serves a preview, for the cards above the list. */
 export function projectsWithPreview(projects: Project[] | undefined, projectId: string | null) {
@@ -72,6 +76,20 @@ const DATE_OPTIONS: { value: DateRange; label: string }[] = [
   { value: "month", label: "This month" },
 ];
 
+const CONFIDENTIALITY_OPTIONS = (Object.keys(CONFIDENTIALITY_LABELS) as DeliverableConfidentiality[]).map((value) => ({
+  value,
+  label: CONFIDENTIALITY_LABELS[value],
+}));
+
+/** Ben's first question of a document: can the client see it? (13 Oct). */
+export const AUDIENCE_OPTIONS: { value: DeliverableAudience | null; label: string; hint: string }[] = [
+  { value: null, label: "Everything", hint: "Client-facing and internal" },
+  { value: "client_facing", label: "Client-facing", hint: "Labelled client or public" },
+  { value: "internal", label: "Internal", hint: "Never shown to the client" },
+];
+
+const LINK_HEALTH_OPTIONS: { value: "broken"; label: string }[] = [{ value: "broken", label: "Broken" }];
+
 const KIND_OPTIONS = (Object.keys(DELIVERABLE_KIND_LABELS) as DeliverableKind[]).map((value) => ({
   value,
   label: DELIVERABLE_KIND_LABELS[value],
@@ -97,21 +115,64 @@ export function dateRangeStart(range: DateRange, now = new Date()): string | und
   return start.toISOString();
 }
 
-export function groupDeliverables(items: Deliverable[], groupBy: GroupBy) {
-  if (groupBy === "none") return [{ key: "all", label: null as string | null, items }];
-  const groups = new Map<string, { key: string; label: string | null; items: Deliverable[] }>();
+export const NO_PROJECT_LABEL = "No project";
+export const NO_CLIENT_CASE_LABEL = "No client case";
+
+interface DeliverableSection {
+  key: string;
+  label: string | null;
+  items: Deliverable[];
+}
+
+interface DeliverableGroup extends DeliverableSection {
+  /** Client-case sections inside a project group; one unlabelled section when no deliverable has a case. */
+  cases: DeliverableSection[];
+}
+
+/** Splits items by key in list order, with the "none" section moved last. */
+function splitBy(
+  items: Deliverable[],
+  keyOf: (item: Deliverable) => string,
+  labelOf: (item: Deliverable) => string | null,
+): DeliverableSection[] {
+  const sections = new Map<string, DeliverableSection>();
   for (const item of items) {
-    const key = groupBy === "project"
-      ? item.project?.id ?? "none"
-      : item.createdAt.slice(0, 7);
-    const label = groupBy === "project"
-      ? item.project?.name ?? "No project"
-      : new Date(item.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
-    const group = groups.get(key) ?? { key, label, items: [] };
-    group.items.push(item);
-    groups.set(key, group);
+    const key = keyOf(item);
+    const section = sections.get(key) ?? { key, label: labelOf(item), items: [] };
+    section.items.push(item);
+    sections.set(key, section);
   }
-  return [...groups.values()];
+  const result = [...sections.values()];
+  return [...result.filter((section) => section.key !== "none"), ...result.filter((section) => section.key === "none")];
+}
+
+/**
+ * Splits the list into sections in list order. By project (the default,
+ * GRE-1471), deliverables with no project share one "No project" group,
+ * always shown last. Inside a project, deliverables linked to a client case
+ * are split by case, with "No client case" last.
+ */
+export function groupDeliverables(items: Deliverable[], groupBy: GroupBy): DeliverableGroup[] {
+  if (groupBy === "none") return [{ key: "all", label: null, items, cases: [{ key: "all", label: null, items }] }];
+  if (groupBy === "month") {
+    const months = new Map<string, DeliverableGroup>();
+    for (const item of items) {
+      const key = item.createdAt.slice(0, 7);
+      const label = new Date(item.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+      const group = months.get(key) ?? { key, label, items: [], cases: [] };
+      group.items.push(item);
+      months.set(key, group);
+    }
+    return [...months.values()].map((group) => ({ ...group, cases: [{ key: "all", label: null, items: group.items }] }));
+  }
+  return splitBy(items, (item) => item.project?.id ?? "none", (item) => item.project?.name ?? NO_PROJECT_LABEL)
+    .map((project) => {
+      const cases = project.items.some((item) => item.clientCase)
+        ? splitBy(project.items, (item) => item.clientCase?.id ?? "none", (item) => item.clientCase?.name ?? NO_CLIENT_CASE_LABEL)
+        : [{ key: "all", label: null, items: project.items }];
+      // Cards (and Quick Look) follow the case order shown on screen.
+      return { ...project, items: cases.flatMap((section) => section.items), cases };
+    });
 }
 
 function isTypingTarget(target: EventTarget | null) {
@@ -184,9 +245,16 @@ export function Deliverables() {
   const projectId = searchParams.get("projectId");
   const agentId = searchParams.get("agentId");
   const brand = searchParams.get("brand");
+  const confidentialityParam = searchParams.get("label");
+  const confidentiality = CONFIDENTIALITY_OPTIONS.some((option) => option.value === confidentialityParam)
+    ? confidentialityParam as DeliverableConfidentiality
+    : null;
+  const audienceParam = searchParams.get("audience");
+  const audience = AUDIENCE_OPTIONS.find((option) => option.value === audienceParam)?.value ?? null;
+  const linkHealth = searchParams.get("links") === "broken" ? "broken" as const : null;
   const dateRange = parseOption(searchParams.get("date"), DATE_OPTIONS, "all");
   const sort = parseOption(searchParams.get("sort"), DELIVERABLE_SORT_OPTIONS, "newest");
-  const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, "none");
+  const groupBy = parseOption(searchParams.get("group"), GROUP_OPTIONS, DEFAULT_GROUP);
   const openId = searchParams.get("open");
 
   const [draftQuery, setDraftQuery] = useState(query);
@@ -259,6 +327,9 @@ export function Deliverables() {
     projectId: projectId ?? undefined,
     agentId: agentId ?? undefined,
     brand: brand ?? undefined,
+    confidentiality: confidentiality ?? undefined,
+    audience: audience ?? undefined,
+    linkHealth: linkHealth ?? undefined,
     from,
     sort,
   };
@@ -294,12 +365,23 @@ export function Deliverables() {
   const deliverables = useMemo(() => data?.pages.flatMap((page) => page.deliverables) ?? [], [data]);
   const facets = data?.pages[0]?.facets ?? { brands: [], agents: [], projects: [] };
   const total = data?.pages[0]?.total ?? 0;
-  const groups = useMemo(() => groupDeliverables(deliverables, groupBy), [deliverables, groupBy]);
+  // One card per document (Ben, 13 Oct): versions registered under another
+  // key or on another task fold under their newest entry.
+  const documents = useMemo(() => groupDeliverableDocuments(deliverables), [deliverables]);
+  const olderById = useMemo(
+    () => new Map(documents.map((document) => [document.latest.id, document.older])),
+    [documents],
+  );
+  const foldedCount = deliverables.length - documents.length;
+  const groups = useMemo(
+    () => groupDeliverables(documents.map((document) => document.latest), groupBy),
+    [documents, groupBy],
+  );
   // Quick Look moves through cards in the order they are shown.
   const ordered = useMemo(() => groups.flatMap((group) => group.items), [groups]);
   const openIndex = openId ? ordered.findIndex((item) => item.id === openId) : -1;
 
-  const filtered = !!(query || kind || projectId || agentId || brand || dateRange !== "all");
+  const filtered = !!(query || kind || projectId || agentId || brand || confidentiality || audience || linkHealth || dateRange !== "all");
 
   const copyLink = useCallback(async (id: string) => {
     try {
@@ -338,7 +420,7 @@ export function Deliverables() {
     <div className="w-full max-w-7xl space-y-6">
       <header className="space-y-1">
         <h1 className="text-xl font-bold">Deliverables</h1>
-        <p className="text-sm text-muted-foreground">Finished documents your agents made for you.</p>
+        <p className="text-sm text-muted-foreground">Finished documents and sites your agents made for you.</p>
       </header>
 
       <div className="space-y-3">
@@ -355,7 +437,7 @@ export function Deliverables() {
               }
             }}
             type="search"
-            placeholder="Search titles, tasks, agents and document text"
+            placeholder="Search titles, projects, clients, sites and document text"
             aria-label="Search deliverables"
             className="h-12 w-full rounded-lg border border-input bg-background pl-12 pr-16 text-base shadow-xs outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-search-cancel-button]:hidden"
           />
@@ -373,6 +455,31 @@ export function Deliverables() {
               /
             </kbd>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2" data-testid="deliverable-audience">
+          <span id="deliverable-audience-label" className="text-sm font-medium text-foreground">Who it is for</span>
+          <div role="radiogroup" aria-labelledby="deliverable-audience-label" className="inline-flex rounded-full border border-border p-0.5">
+            {AUDIENCE_OPTIONS.map((option) => {
+              const active = audience === option.value;
+              return (
+                <button
+                  key={option.label}
+                  type="button"
+                  role="radio"
+                  aria-checked={active}
+                  title={option.hint}
+                  onClick={() => setParam("audience", option.value)}
+                  className={cn(
+                    "inline-flex h-8 items-center rounded-full px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -423,6 +530,22 @@ export function Deliverables() {
             testId="deliverable-filter-brand"
           />
           <FilterMenu
+            label="Label"
+            allLabel="All labels"
+            value={confidentiality}
+            options={CONFIDENTIALITY_OPTIONS}
+            onChange={(value) => setParam("label", value)}
+            testId="deliverable-filter-label"
+          />
+          <FilterMenu
+            label="Links"
+            allLabel="All links"
+            value={linkHealth}
+            options={LINK_HEALTH_OPTIONS}
+            onChange={(value) => setParam("links", value)}
+            testId="deliverable-filter-links"
+          />
+          <FilterMenu
             label="Date"
             allLabel="All time"
             value={dateRange === "all" ? null : dateRange}
@@ -457,7 +580,7 @@ export function Deliverables() {
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="sm" data-testid="deliverable-group">
                   <Layers />
-                  {groupBy === "none" ? "Group" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
+                  {groupBy === "none" ? "No grouping" : `By ${GROUP_OPTIONS.find((option) => option.value === groupBy)?.label.toLowerCase()}`}
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
@@ -465,7 +588,7 @@ export function Deliverables() {
                 {GROUP_OPTIONS.map((option) => (
                   <DropdownMenuItem
                     key={option.value}
-                    onSelect={() => setParam("group", option.value === "none" ? null : option.value)}
+                    onSelect={() => setParam("group", option.value === DEFAULT_GROUP ? null : option.value)}
                     className="justify-between"
                   >
                     {option.label}
@@ -490,7 +613,7 @@ export function Deliverables() {
 
       {isLoading ? (
         <PageSkeleton variant="list" />
-      ) : deliverables.length === 0 ? (
+      ) : error && !data ? null : deliverables.length === 0 ? (
         filtered ? (
           <EmptyState
             icon={Search}
@@ -514,6 +637,9 @@ export function Deliverables() {
         <div className="space-y-8">
           <p className="text-xs text-muted-foreground" aria-live="polite">
             {total} {total === 1 ? "deliverable" : "deliverables"}
+            {foldedCount > 0
+              ? ` · ${foldedCount} older ${foldedCount === 1 ? "version" : "versions"} grouped under the latest`
+              : null}
           </p>
           {groups.map((group) => (
             <section key={group.key} className="space-y-3" aria-label={group.label ?? "Deliverables"}>
@@ -522,16 +648,36 @@ export function Deliverables() {
                   {group.label} <span className="font-normal">· {group.items.length}</span>
                 </h2>
               ) : null}
-              <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-                {group.items.map((deliverable) => (
-                  <DeliverableCard
-                    key={deliverable.id}
-                    deliverable={deliverable}
-                    onPreview={() => setParam("open", deliverable.id)}
-                    onCopyLink={() => void copyLink(deliverable.id)}
-                  />
-                ))}
-              </div>
+              {group.cases.map((section) => (
+                <div
+                  key={section.key}
+                  className="space-y-3"
+                  {...(section.label ? { role: "group", "aria-label": `Client case: ${section.label}` } : {})}
+                >
+                  {section.label ? (
+                    <h3
+                      data-testid="deliverable-case-heading"
+                      className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground"
+                    >
+                      <Briefcase className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                      <span className="truncate">{section.label}</span>
+                      <span className="shrink-0 font-normal">· {section.items.length}</span>
+                    </h3>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                    {section.items.map((deliverable) => (
+                      <DeliverableCard
+                        key={deliverable.id}
+                        deliverable={deliverable}
+                        olderVersions={olderById.get(deliverable.id) ?? []}
+                        onPreview={() => setParam("open", deliverable.id)}
+                        onOpenVersion={(id) => setParam("open", id)}
+                        onCopyLink={() => void copyLink(deliverable.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
             </section>
           ))}
           <div ref={loadMoreRef} className="flex min-h-10 items-center justify-center text-xs text-muted-foreground">

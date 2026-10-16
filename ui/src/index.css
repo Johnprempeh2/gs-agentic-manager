@@ -155,6 +155,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-field: var(--field);
   --color-ring: var(--ring);
   --color-field-halo: var(--gs-field-halo);
   --color-chart-1: var(--chart-1);
@@ -163,6 +164,9 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-brand-emerald: var(--brand-emerald);
+  /* Brand lime as a fill under ink, in both themes (greatstone-glass.css). */
+  --color-highlight: var(--gs-highlight);
+  --color-highlight-foreground: var(--gs-highlight-foreground);
   --color-status-success: var(--status-success);
   --color-status-success-foreground: var(--status-success-foreground);
   --color-status-success-soft: var(--status-success-soft);
@@ -214,36 +218,41 @@
 }
 
 :root {
-  /* Greatstone light: paper #f7f8f4, ink #121512, emerald #1b5039 as the
-     readable primary (lime fails as text on paper). Contrast audited: every
-     text pair AA; focus ring #0b2a1c clears 3:1 at the /50 outline. */
+  /* Greatstone daylight: a sage-stone canvas #f2f4ee under white cards, ink
+     #121512, emerald #1b5039 as the readable primary (lime fails as text on
+     paper, so lime only ever appears as a fill under ink, see --gs-highlight).
+     Depth comes from the canvas/card step, the sage sidebar and layered
+     shadows rather than from extra borders. Contrast audited: every text pair
+     AA on canvas, card, muted and sidebar (muted-foreground 6.0:1 at worst,
+     subtle-foreground 4.8:1); focus ring #0b2a1c clears 3:1 at the /50 outline. */
   --brand-mark: #1b5039;              /* stone mark on paper: emerald (lime is 1.15:1 here) */
   --brand-build-cycle: 2.4s;          /* BrandLoading: one build-and-clear loop */
   --brand-build-stagger: 160ms;       /* delay between successive slabs */
   --brand-thinking-cycle: 1.2s;       /* BrandThinkingIcon pulse loop */
   color-scheme: light;
   --radius: 0.625rem;
-  --background: #f7f8f4;
+  --background: #e9ede3; /* warm stone: tinted so white cards lift off it */
   --foreground: #121512;
-  --card: #f7f8f4;
+  --card: #ffffff;
   --card-foreground: #121512;
   --popover: #ffffff;
   --popover-foreground: #121512;
   --primary: #1b5039;
   --primary-foreground: #f5f7f2;
-  --secondary: #eceee8;
+  --secondary: #e4e8de;
   --secondary-foreground: #1b2a21;
-  --muted: #eceee8;
+  --muted: #e4e8de;
   --muted-foreground: #4f5750;
   --subtle-foreground: #5d655e; /* third text tier: de-emphasis as a colour step, never alpha (AA on every light surface) */
-  --accent: color-mix(in oklab, #1b5039 9%, #f7f8f4);
+  --accent: color-mix(in oklab, #1b5039 8%, #ffffff);
   --accent-foreground: #121512;
-  --destructive: oklch(0.55 0.235 27.325); /* darkened from 0.577 so it clears AA on paper (was 4.47:1) */
-  --destructive-foreground: oklch(0.55 0.235 27.325);
-  --border: #dfe3da;
-  --input: #d3d9ce;
+  --destructive: #b9262c; /* daylight: a deep brick rather than signal red, so Reject sits beside Approve without shouting; 6.2:1 on card, 5.2:1 on muted */
+  --destructive-foreground: #b9262c;
+  --border: #dadfd3;
+  --input: #cbd3c5;
+  --field: #ffffff; /* daylight: text fields are white wells, so they read as fillable on the sage canvas and on cards */
   --ring: #0b2a1c;
-  --scrollbar-thumb: #bcc3b9;
+  --scrollbar-thumb: #b8c0b4;
   --scrollbar-thumb-hover: #9aa396;
   --scrollbar-size: 8px;
   --scrollbar-radius: 999px;
@@ -254,13 +263,13 @@
   --chart-5: #6f8f00;
   --brand-emerald: var(--chart-1); /* Greatstone emerald in BOTH modes (--primary turns lime on the void): run-chart success and skill tiles. */
   --brand-emerald-soft: color-mix(in oklab, var(--brand-emerald) 60%, var(--background)); /* runs that succeeded on retry; 3.3:1 on paper */
-  --sidebar: #eff1eb;
+  --sidebar: #e8ece3;
   --sidebar-foreground: #121512;
   --sidebar-primary: #1b5039;
   --sidebar-primary-foreground: #f5f7f2;
-  --sidebar-accent: color-mix(in oklab, #1b5039 10%, #eff1eb);
+  --sidebar-accent: #ffffff; /* daylight: the active and hovered row is a white pill raised off the sage rail */
   --sidebar-accent-foreground: #121512;
-  --sidebar-border: #dfe3da;
+  --sidebar-border: #d6dccf;
   --sidebar-ring: #0b2a1c;
   --chip-match-title-bg: oklch(0.97 0.02 265);
   --chip-match-title-fg: oklch(0.4 0.13 265);
@@ -330,7 +339,7 @@
   --status-agent-error: var(--color-red-600);
   /* Dashboard agent card: translucent running treatment from the Paper design. */
   --dashboard-run-accent: #1b5039; /* Greatstone: a live run glows emerald on paper, lime on the void */
-  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
+  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 5%, var(--card)); /* daylight: a white card with an emerald wash, not a grey film over the canvas */
   --dashboard-run-border: color-mix(in oklab, var(--dashboard-run-accent) 25%, transparent);
   --dashboard-list-leading-width: calc(var(--spacing) * 6);
   --dashboard-list-id-width: calc(var(--spacing) * 20);
@@ -377,7 +386,7 @@
      alert); neutral rides --subtle-foreground. Contrast (WCAG 2.1, GRE-304):
      strong on paper/void and foreground on soft are all ≥ 4.5:1. */
   --status-success: var(--color-green-700);
-  --status-success-foreground: var(--color-green-700);
+  --status-success-foreground: var(--color-green-800); /* 800, not 700: the retuned green-700 is 4.49:1 on the daylight canvas */
   --status-success-soft: var(--color-green-100);
   --status-warning: var(--color-amber-700);
   --status-warning-foreground: var(--color-amber-700);
@@ -579,12 +588,13 @@
      from the brand ramp. Contrast audited: every text pair AA. */
   --brand-mark: #c8ff00;
   --dashboard-run-accent: #c8ff00;
+  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
   --background: #121212;
   --foreground: #f5f5f5;
   --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
   --side-panel-fg: #f5f5f5;
   --streamlined-task-detail-bg: transparent; /* let the atmosphere reach the task thread */
-  --card: #121212;
+  --card: #161816; /* one step above the void so cards read as raised, as in daylight */
   --card-foreground: #f5f5f5;
   --popover: #1a1c1a;
   --popover-foreground: #f5f5f5;
@@ -602,6 +612,7 @@
   --destructive-foreground: oklch(0.985 0 0);
   --border: rgb(255 255 255 / 8%);
   --input: rgb(255 255 255 / 14%);
+  --field: transparent; /* the void keeps its dark:bg-input/30 wells */
   --ring: #c8ff00;
   --scrollbar-thumb: #343a34;
   --scrollbar-thumb-hover: #474e47;
@@ -704,6 +715,35 @@
   transition-property: background-color;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-ease-standard);
+}
+
+/* Sidebar sections fold smoothly (Radix sets the measured height). */
+.gs-sidebar-collapsible {
+  overflow: hidden;
+}
+
+.gs-sidebar-collapsible[data-state="open"] {
+  animation: gs-sidebar-section-open var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+.gs-sidebar-collapsible[data-state="closed"] {
+  animation: gs-sidebar-section-close var(--motion-duration-fast) var(--motion-ease-standard);
+}
+
+@keyframes gs-sidebar-section-open {
+  from { height: 0; }
+  to { height: var(--radix-collapsible-content-height); }
+}
+
+@keyframes gs-sidebar-section-close {
+  from { height: var(--radix-collapsible-content-height); }
+  to { height: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-sidebar-collapsible[data-state] {
+    animation: none;
+  }
 }
 
 .paperclip-doc-annotation-highlight[data-focused="true"]:not([data-anchor-state="stale"]):not([data-status="resolved"])::before,
@@ -820,6 +860,32 @@
      single line of text and push it too high (notably on mobile Safari). */
   textarea[data-autosize-title] {
     min-height: 0;
+  }
+
+  /* Those small widgets keep their drawn size, but a thumb still needs a
+     bigger target. An invisible layer grows the tap area around them: the
+     toggle to 44px tall, the task status icon to 28px square. */
+  [data-slot="toggle"]::before,
+  [data-status-icon-trigger]::before,
+  [data-hint-trigger]::before {
+    content: "";
+    position: absolute;
+  }
+  [data-slot="toggle"]::before {
+    inset: calc(var(--spacing) * -3) calc(var(--spacing) * -1);
+  }
+  [data-status-icon-trigger] {
+    position: relative;
+  }
+  [data-status-icon-trigger]::before {
+    inset: calc(var(--spacing) * -1.5);
+  }
+  /* The 12px help icon beside a field label: 32px wide to tap. */
+  [data-hint-trigger] {
+    position: relative;
+  }
+  [data-hint-trigger]::before {
+    inset: 0 calc(var(--spacing) * -2.5);
   }
 }
 
@@ -1268,6 +1334,19 @@
   --sidebar-action-rest-surface: var(--sidebar);
   background-color: var(--sidebar-action-rest-surface);
   box-shadow: inset -1px 0 0 var(--glass-card-border);
+}
+/* Charcoal rail: the navigation rail is always night-side. Layout puts
+   `gs-rail dark` on the rail wrappers, so the rail reads the dark token set in
+   both themes; in daylight the rail sits on brand charcoal (#252525, the
+   brand's deeper charcoal so lime status text on the active row clears AA) instead
+   of the near-black night rail, so it reads as Greatstone next to the light
+   workspace rather than as a hole in the page. Popovers portal out and stay
+   in the page theme. */
+:root:not(.dark) .gs-rail {
+  --sidebar: #252525;
+  --sidebar-accent: color-mix(in oklab, #c8ff00 8%, #252525);
+  --sidebar-border: rgb(255 255 255 / 8%);
+  --glass-card-border: rgb(255 255 255 / 8%);
 }
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));
@@ -2534,7 +2613,11 @@ a.paperclip-mention-chip[data-mention-kind="agent"]::before {
   }
 }
 
-.paperclip-markdown th {
+.paperclip-markdown th,
+.paperclip-markdown.prose th {
+  /* Pinned like the headings: prose's own th colour is a fixed near-black
+     that vanishes on dark surfaces when prose-invert is not applied. */
+  color: var(--foreground);
   font-weight: 600;
   text-align: left;
 }
@@ -2650,6 +2733,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   z-index: var(--z-index-popover) !important;
 }
 
+/* Mobile chat composer dock (task chat and team chat). Sits above the mobile
+   nav (--tc-composer-bottom, which Layout raises on the shell) and above the
+   part of the page the iPhone keyboard hides (--vv-bottom-inset). A class, not
+   a :root token, so it reads --tc-composer-bottom from the element's own scope. */
+.tc-composer-dock-bottom {
+  bottom: max(var(--tc-composer-bottom), calc(var(--vv-bottom-inset) + 0.25rem));
+}
+
 /* Status chip/fill helpers.
    Each consumer sets a local `--sc` to the status' base hue (e.g.
    `--sc: var(--status-task-in_progress)`); these rules derive the rendered
@@ -2667,7 +2758,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 }
 .dark .status-chip {
   background-color: color-mix(in srgb, var(--sc) 22%, transparent);
-  color: color-mix(in srgb, var(--sc) 80%, white);
+  /* 65% (was 80%): the live and error chips measured 4.2 to 4.3:1 on the dark
+     canvas at 80%; 65% lifts every status past AA and keeps its hue. */
+  color: color-mix(in srgb, var(--sc) 65%, white);
   border-color: color-mix(in srgb, var(--sc) 48%, transparent);
 }
 .status-fill {
@@ -2924,6 +3017,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --mobile-ptr-top: calc(var(--sz-safe-top) + var(--sz-60px)); /* phone pull-to-refresh sits just under the sticky header */
   --sz-calc-16: min(calc(100dvh - 2rem),46rem); /* Extracted from ui/src/components/NewAgentDialog.tsx (max-h-[min(calc(100dvh-2rem),46rem)]). */
   --sz-24rem: 24rem; /* Extracted from ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
+  --sz-90vh: 90vh; /* Tall dialogs: Organisations, strategy board and KPI draft dialogs (max-h-[90vh]). */
   --sz-50vh: 50vh; /* Extracted from ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
   --sz-8_5rem: 8.5rem; /* Extracted from ui/src/components/NewIssueDialog.tsx (min-w-[8.5rem]). */
   --sz-160px: 160px; /* Extracted from ui/src/components/NewProjectDialog.tsx (max-w-[160px]). */
@@ -3133,6 +3227,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtc-68: 1fr 1.3fr; /* Goal scoreboard hero. */
   --gtc-69: repeat(auto-fill,minmax(13rem,1fr)); /* Goal scoreboard tiles. */
   --gtc-70: repeat(auto-fill,minmax(20rem,1fr)); /* Goal scoreboard cards. */
+  --gtc-71: 6.5rem 1fr; /* Fleet instance detail list. */
+  --gtc-72: minmax(0,1fr) 11rem 5rem 6rem 7.5rem; /* Pipelines desktop row. */
   --gtc-runner-inspector-stage: 1.25rem minmax(0,1fr);
   --gtc-runner-inspector-filters: minmax(14rem,1fr) repeat(5,minmax(8rem,auto));
   --gtc-runner-inspector-pipeline: 21rem minmax(0,1fr);
@@ -3142,6 +3238,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtr-1: auto auto; /* Extracted from ui/src/components/ui/card.tsx (grid-rows-[auto_auto]). */
   --gtr-2: 1fr; /* Extracted from ui/src/pages/CompanySkills.tsx (grid-rows-[1fr]). */
   --gtr-3: 0fr; /* Extracted from ui/src/pages/CompanySkills.tsx (grid-rows-[0fr]). */
+  --gtr-4: auto minmax(0,1fr); /* Header plus scrolling body, strategy board dialogs. */
+  --flex-kpi-title: 1 1 10rem; /* Strategy board KPI title: grows, wraps below 10rem. */
   --tp-background-color-border-color: background-color,border-color; /* Extracted from ui/src/components/ActivityFeed.tsx (transition-[background-color,border-color]). */
   --tp-width-background-color: width,background-color; /* Extracted from ui/src/components/BudgetPolicyCard.tsx (transition-[width,background-color]). */
   --tp-width: width; /* Extracted from ui/src/components/ClaudeSubscriptionPanel.tsx (transition-[width]). */
@@ -3239,7 +3337,6 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    * allow ui/src/components/NewIssueDialog.test.tsx — mock label color fixtures
    * allow ui/src/components/ProjectTile.test.tsx — mock project color prop
    * allow ui/src/components/RoutineRunVariablesDialog.test.tsx — mock label color fixture
-   * allow ui/src/components/SidebarProjects.test.tsx — mock project color fixture
    * allow ui/src/components/SidebarStarredProjects.test.tsx — mock project color fixture
    * allow ui/src/pages/CompanyEnvironments.test.tsx — xterm.js theme-mock assertion values (mirrors the allowlisted xterm.js config in the CompanyEnvironments.tsx source above)
    * allow ui/src/pages/ExecutionWorkspaceDetail.test.tsx — mock project color fixture
@@ -3249,6 +3346,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    * allow ui/src/pages/ProjectWorkspaceDetail.test.tsx — mock project color fixture
    * allow ui/src/pages/Projects.test.tsx — mock project color fixture
    * allow ui/src/pages/Routines.test.tsx — mock routine/label color fixtures
+   * allow ui/src/components/AgentTeamsDialog.test.tsx — mock team color fixtures
+   * allow ui/src/components/BrandLockup.test.tsx — mock partner brand colours (persisted brand settings data)
+   * allow ui/src/components/Sidebar.test.tsx — "#NNN" pull-request reference in a test name, not a color literal
+   * allow ui/src/components/decisions-feed/DecisionFeedCard.test.tsx — "#NNN" pull-request reference in fixture text, not a color literal
+   * allow ui/src/pages/Agents.test.tsx — mock team color fixture
+   * allow ui/src/pages/OrgChart.test.tsx — mock team color fixtures
+   * allow ui/src/components/ui/dialog.test.tsx — asserts the grid-rows class that the allowlisted dialog.tsx renders
+   * allow ui/src/components/EmailHtmlPreview.tsx — base style of the sandboxed email iframe document (srcdoc), which mimics a mail client's white page; app tokens do not exist inside that document
    ── end allowlist ── */
 
 /* Agent settings composition, shared with Storybook. */
@@ -3276,7 +3381,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   > :nth-child(n + 3) {
   @apply sm:col-span-2;
 }
-.agent-settings-overview section,
+.agent-settings-overview section.border,
 .agent-settings-permissions .rounded-lg,
 .agent-settings-api-keys .rounded-lg,
 .agent-settings-revisions .rounded-md {
@@ -3541,4 +3646,57 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 [data-tour-active] {
   outline: 2px solid var(--ring);
   outline-offset: 4px;
+}
+
+/* Print (browser print and "Save as PDF"). Paper is always daylight: a dark
+   screen theme would waste toner and print grey on grey, so the core surface
+   and text tokens take their light values whatever theme is on screen.
+   Layout.tsx hides the app chrome with print: utilities; pages mark actions
+   print:hidden and blocks print:break-inside-avoid. */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #121512;
+    --card: #ffffff;
+    --card-foreground: #121512;
+    --popover: #ffffff;
+    --popover-foreground: #121512;
+    --muted: #f2f4ee;
+    --muted-foreground: #4f5750;
+    --subtle-foreground: #5d655e;
+    --accent: #f2f4ee;
+    --accent-foreground: #121512;
+    --border: #cbd3c5;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: var(--foreground);
+  }
+
+  /* No glass, glow or scrollbars on paper. */
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  [data-secondary-sidebar] {
+    display: none !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
 }

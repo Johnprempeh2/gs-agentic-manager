@@ -27,12 +27,12 @@ describe("applyCloudCatalogDefaults", () => {
     const guarded = Object.entries(INSTANCE_FEATURE_CATALOG)
       .filter(([, entry]) => entry.selfHostedDefault === true && entry.cloudDefault === false)
       .map(([key]) => key);
-    expect(guarded).toContain("enableNativeRunner");
+    expect(guarded).toContain("enableStrategy");
   });
 
   it("leaves self-hosted instances on the schema default", () => {
     const experimental = applyCloudCatalogDefaults(normalizeExperimentalSettings({}), {}, null);
-    expect(experimental.enableNativeRunner).toBe(true);
+    expect(experimental.enableStrategy).toBe(true);
   });
 
   it("re-asserts the Cloud default when the tenant row and the overlay omit the flag", () => {
@@ -41,7 +41,9 @@ describe("applyCloudCatalogDefaults", () => {
       {},
       managedConfig(),
     );
-    expect(experimental.enableNativeRunner).toBe(false);
+    expect(experimental.enableStrategy).toBe(false);
+    // Runner graduated (GRE-1436): always on, Cloud included.
+    expect(experimental.enableNativeRunner).toBe(true);
     // Decisions is on by default for self-hosted only (GRE-64).
     expect(experimental.enableDecisions).toBe(false);
     // Flags with matching defaults are untouched.
@@ -49,22 +51,32 @@ describe("applyCloudCatalogDefaults", () => {
   });
 
   it("keeps an explicit tenant value", () => {
-    const raw = { enableNativeRunner: true };
+    const raw = { enableStrategy: true };
     const experimental = applyCloudCatalogDefaults(
       normalizeExperimentalSettings(raw),
       raw,
       managedConfig(),
     );
-    expect(experimental.enableNativeRunner).toBe(true);
+    expect(experimental.enableStrategy).toBe(true);
   });
 
   it("lets a managed feature value win through the overlay", () => {
-    const config = managedConfig({ enableNativeRunner: true });
+    const config = managedConfig({ enableStrategy: true });
     const { experimental } = applyManagedExperimentalOverlay(
       applyCloudCatalogDefaults(normalizeExperimentalSettings({}), {}, config),
       config,
     );
+    expect(experimental.enableStrategy).toBe(true);
+  });
+
+  it("keeps the graduated Runner on even when a managed config turns it off (GRE-1436)", () => {
+    const config = managedConfig({ enableNativeRunner: false });
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+      applyCloudCatalogDefaults(normalizeExperimentalSettings({ enableNativeRunner: false }), {}, config),
+      config,
+    );
     expect(experimental.enableNativeRunner).toBe(true);
+    expect(managedKeys.enableNativeRunner).toBeUndefined();
   });
 
   it("does not touch flags whose Cloud default is the enabled one", () => {
@@ -102,35 +114,35 @@ describe("stripCloudCatalogDefaultEchoes", () => {
     const config = managedConfig();
     const stored = persisted({}, { enablePipelines: true }, config);
     expect(stored.enablePipelines).toBe(true);
-    expect("enableNativeRunner" in stored).toBe(false);
+    expect("enableStrategy" in stored).toBe(false);
     // The Cloud default still applies on the next read.
-    expect(readBack(stored, config).enableNativeRunner).toBe(false);
+    expect(readBack(stored, config).enableStrategy).toBe(false);
   });
 
   it("treats a full-GET echo of the Cloud default as no choice", () => {
     const config = managedConfig();
-    const stored = persisted({}, { enableNativeRunner: false, enablePipelines: true }, config);
-    expect("enableNativeRunner" in stored).toBe(false);
-    expect(readBack(stored, config).enableNativeRunner).toBe(false);
+    const stored = persisted({}, { enableStrategy: false, enablePipelines: true }, config);
+    expect("enableStrategy" in stored).toBe(false);
+    expect(readBack(stored, config).enableStrategy).toBe(false);
   });
 
   it("persists an explicit Cloud opt-in", () => {
     const config = managedConfig();
-    const stored = persisted({}, { enableNativeRunner: true }, config);
-    expect(stored.enableNativeRunner).toBe(true);
-    expect(readBack(stored, config).enableNativeRunner).toBe(true);
+    const stored = persisted({}, { enableStrategy: true }, config);
+    expect(stored.enableStrategy).toBe(true);
+    expect(readBack(stored, config).enableStrategy).toBe(true);
   });
 
   it("keeps a stored tenant value across unrelated writes", () => {
     const config = managedConfig();
-    const stored = persisted({ enableNativeRunner: true }, { enablePipelines: true }, config);
-    expect(stored.enableNativeRunner).toBe(true);
-    expect(readBack(stored, config).enableNativeRunner).toBe(true);
+    const stored = persisted({ enableStrategy: true }, { enablePipelines: true }, config);
+    expect(stored.enableStrategy).toBe(true);
+    expect(readBack(stored, config).enableStrategy).toBe(true);
   });
 
   it("leaves the whole normalized object in place for self-hosted rows", () => {
     const stored = persisted({}, { enablePipelines: true }, null);
-    expect(stored.enableNativeRunner).toBe(true);
+    expect(stored.enableStrategy).toBe(true);
     expect(stored).toEqual(applyExperimentalSettingsPatch({}, { enablePipelines: true }));
   });
 });

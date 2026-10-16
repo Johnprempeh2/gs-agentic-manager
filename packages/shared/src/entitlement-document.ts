@@ -35,12 +35,16 @@ export const ENTITLEMENT_FEATURE_KEYS = [
   "enableDeepDive",
   "enableEnvironments",
   "enableExternalObjects",
+  "enableIntelligence",
   "enableIssuePlanDecompositions",
   "enableMemoryConnectors",
   "enablePipelines",
   "enableStatusCards",
+  "enableStrategy",
   "enableStrategyBoard",
   "enableSummaries",
+  "enableTeamChat",
+  "enableWebsiteView",
 ] as const satisfies readonly InstanceFeatureKey[];
 
 export type EntitlementFeatureKey = (typeof ENTITLEMENT_FEATURE_KEYS)[number];

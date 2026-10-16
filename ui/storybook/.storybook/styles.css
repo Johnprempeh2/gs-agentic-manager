@@ -6,11 +6,11 @@ body,
 
 body {
   overflow: auto;
-  background: var(--background);
+  background-color: var(--background);
 }
 
 .sb-show-main {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
 }
 

@@ -18,7 +18,7 @@ interface ThemeContextValue {
 
 const THEME_STORAGE_KEY = "paperclip.theme";
 const DARK_THEME_COLOR = "#121212";
-const LIGHT_THEME_COLOR = "#f7f8f4";
+const LIGHT_THEME_COLOR = "#f2f4ee";
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
 function resolveThemeFromDocument(): Theme {
@@ -87,6 +87,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     media.addEventListener("change", handleChange);
     return () => media.removeEventListener("change", handleChange);
   }, [hasExplicitChoice]);
+
+  // Paper is always daylight: drop the dark class while the browser prints,
+  // so every token (glass, status, brand) takes its light value, then restore.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleBeforePrint = () => applyTheme("light");
+    const handleAfterPrint = () => applyTheme(theme);
+    window.addEventListener("beforeprint", handleBeforePrint);
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => {
+      window.removeEventListener("beforeprint", handleBeforePrint);
+      window.removeEventListener("afterprint", handleAfterPrint);
+    };
+  }, [theme]);
 
   const value = useMemo(
     () => ({

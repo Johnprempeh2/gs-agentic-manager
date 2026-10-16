@@ -76,9 +76,10 @@ const MESSAGES = [
 
 /** In-memory IMAP double. It accepts one password and records what it saw. */
 function fakeImap() {
-  const seen: { accounts: MailboxAccount[]; searches: MailboxSearchInput[] } = {
+  const seen: { accounts: MailboxAccount[]; searches: MailboxSearchInput[]; drafts: string[] } = {
     accounts: [],
     searches: [],
+    drafts: [],
   };
   let acceptedPassword = PASSWORD;
   const factory: MailboxClientFactory = (account) => {
@@ -114,6 +115,11 @@ function fakeImap() {
       async source(_folder, uid) {
         signIn();
         return uid === 7 ? RAW : null;
+      },
+      async appendDraft(raw) {
+        signIn();
+        seen.drafts.push(raw.toString("utf8"));
+        return { folder: "Drafts" };
       },
     };
   };
@@ -353,6 +359,59 @@ describe("mailbox connections (GRE-1343)", () => {
     expect(stored.createdByAgentId).toBe(f.agentId);
   });
 
+  it("saves an agent's email draft only after a person turns drafts on, and never sends", async () => {
+    const f = await fixture();
+    const { body: mailbox } = await f.connect();
+    expect(mailbox.allowDrafts).toBe(false);
+    const draft = {
+      to: ["ama@client.example"],
+      subject: "Re: Q3 contract draft – thanks",
+      text: "Hi Ama,\nThanks, we will review the draft this week.\nJohn",
+      inReplyTo: "<q3@client.example>",
+    };
+    const path_ = `/api/companies/${f.companyId}/mailboxes/${mailbox.id}/draft`;
+
+    f.asAgent();
+    const off = await request(f.app).post(path_).send(draft);
+    expect(off.status).toBe(403);
+    expect(off.body.details?.code).toBe("mailbox_drafts_off");
+    expect(f.imap.seen.drafts).toHaveLength(0);
+    // Agents cannot turn drafts on themselves.
+    const selfServe = await request(f.app)
+      .put(`/api/companies/${f.companyId}/mailboxes/${mailbox.id}/drafts`)
+      .send({ allowDrafts: true });
+    expect(selfServe.status).toBe(403);
+
+    f.asBoard();
+    const on = await request(f.app)
+      .put(`/api/companies/${f.companyId}/mailboxes/${mailbox.id}/drafts`)
+      .send({ allowDrafts: true });
+    expect(on.status).toBe(200);
+    expect(on.body.allowDrafts).toBe(true);
+
+    f.asAgent();
+    const injected = await request(f.app).post(path_).send({ ...draft, subject: "Hi\r\nBcc: evil@example.test" });
+    expect(injected.status).toBe(400);
+    const saved = await request(f.app).post(path_).send(draft);
+    expect(saved.status, JSON.stringify(saved.body)).toBe(201);
+    expect(saved.body).toMatchObject({ folder: "Drafts", to: ["ama@client.example"] });
+    expect(f.imap.seen.drafts).toHaveLength(1);
+    const raw = f.imap.seen.drafts[0]!;
+    expect(raw).toContain("From: john@greatstone.example\r\n");
+    expect(raw).toContain("To: ama@client.example\r\n");
+    expect(raw).toContain("In-Reply-To: <q3@client.example>\r\n");
+    expect(raw).toMatch(/Subject: =\?UTF-8\?B\?/);
+    const body = raw.split("\r\n\r\n")[1]!.replace(/\r\n/g, "");
+    expect(Buffer.from(body, "base64").toString("utf8")).toContain("we will review the draft");
+
+    // Another agent the mailbox is not assigned to cannot use it.
+    f.asAgent(f.otherAgentId);
+    expect((await request(f.app).post(path_).send(draft)).status).toBe(404);
+
+    const activity = await db.select().from(activityLog).where(eq(activityLog.companyId, f.companyId));
+    expect(activity.map((a) => a.action)).toEqual(expect.arrayContaining(["mailbox.drafts_updated", "mailbox.draft_saved"]));
+  });
+
   it("gives native runners the mailbox tools, bound to the current task", async () => {
     const f = await fixture();
     const { body: mailbox } = await f.connect();
@@ -365,6 +424,7 @@ describe("mailbox connections (GRE-1343)", () => {
       "mailbox_search",
       "mailbox_read",
       "mailbox_save_to_task",
+      "mailbox_save_draft",
     ]);
     const listed = await executeConnectorTool(db, binding, "mailbox_list", {});
     expect((listed as Array<{ id: string }>)[0].id).toBe(mailbox.id);

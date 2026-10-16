@@ -1,6 +1,10 @@
 import { Router, type Request, type Response } from "express";
 import type { Db } from "@greatstone/db";
-import { upsertSidebarOrderPreferenceSchema, upsertSidebarSectionOrderSchema } from "@greatstone/shared";
+import {
+  upsertSidebarLayoutSchema,
+  upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
+} from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logActivity, sidebarPreferenceService } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -41,6 +45,19 @@ export function sidebarPreferenceRoutes(db: Db) {
     const userId = requireBoardUserId(req, res);
     if (!userId) return;
     res.json(await svc.upsertSectionOrder(userId, req.body.orderedIds));
+  });
+
+  // Item layout (order, hidden, pinned, folded sections): personal, like section order.
+  router.get("/sidebar-preferences/me/layout", async (req, res) => {
+    const userId = requireBoardUserId(req, res);
+    if (!userId) return;
+    res.json(await svc.getLayout(userId));
+  });
+
+  router.put("/sidebar-preferences/me/layout", validate(upsertSidebarLayoutSchema), async (req, res) => {
+    const userId = requireBoardUserId(req, res);
+    if (!userId) return;
+    res.json(await svc.upsertLayout(userId, req.body.layout));
   });
 
   router.get("/companies/:companyId/sidebar-preferences/me", async (req, res) => {

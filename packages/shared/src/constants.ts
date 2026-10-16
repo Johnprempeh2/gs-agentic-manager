@@ -88,8 +88,21 @@ export const ADAPTER_AGNOSTIC_KEYS = [
   "graceSec",
   "bootstrapPromptTemplate",
   "paperclipSkillSync",
+  "requiredCapabilities",
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
+
+// Top-level `access.<ALIAS>` adapterConfig keys are the agent's API-only secret
+// grants. They belong to the agent, not one adapter, so they survive adapter swaps.
+export const AGENT_ACCESS_CONFIG_PATH_PREFIX = "access.";
+
+export function pickAgentAccessGrants(adapterConfig: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(adapterConfig).filter(
+      ([key, value]) => key.startsWith(AGENT_ACCESS_CONFIG_PATH_PREFIX) && value !== undefined,
+    ),
+  );
+}
 
 export const AGENT_ICON_NAMES = [
   "bot",
@@ -211,6 +224,10 @@ export const ISSUE_PRIORITIES = ["critical", "high", "medium", "low"] as const;
 export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
 export const ISSUE_REVIEW_POLICIES = ["anyone", "not_creator", "human_only"] as const;
 export type IssueReviewPolicy = (typeof ISSUE_REVIEW_POLICIES)[number];
+
+/** Who a blocked task is waiting on, beyond its unblock owner. */
+export const ISSUE_UNBLOCK_WAITING_ON = ["client", "board", "outside"] as const;
+export type IssueUnblockWaitingOn = (typeof ISSUE_UNBLOCK_WAITING_ON)[number];
 export const ISSUE_WORK_MODES = ["standard", "ask", "planning", "skill_test"] as const;
 export type IssueWorkMode = (typeof ISSUE_WORK_MODES)[number];
 export const ISSUE_HARNESS_KINDS = ["skill_test"] as const;
@@ -263,8 +280,13 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_checkbox_confirmation",
   "request_item_verdicts",
   "connection_intent",
+  "request_draft_review",
+  "ask_agent",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
+
+/** Most questions one task may have waiting on other agents at once. */
+export const AGENT_QUESTION_MAX_OPEN_PER_ISSUE = 3;
 
 export const ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES = [
   "anyone",
@@ -372,6 +394,10 @@ export const ISSUE_ORIGIN_KINDS = [
   "strategy_board_why_request",
   // A board member's questions-only chat with an agent set for them (GRE-1186).
   "strategy_board_question",
+  // A direct message or group chat of people and agents (enableTeamChat).
+  "team_chat",
+  // The lead agent's standing "Daily digest" task. originId: the company id.
+  "agent_daily_digest",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -711,7 +737,7 @@ export type EnvironmentCustomImageSetupConnectionType =
 export const ROUTINE_STATUSES = ["active", "paused", "archived"] as const;
 export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
 
-export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active"] as const;
+export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"] as const;
 export type RoutineConcurrencyPolicy = (typeof ROUTINE_CONCURRENCY_POLICIES)[number];
 
 export const ROUTINE_CATCH_UP_POLICIES = ["skip_missed", "enqueue_missed_with_cap"] as const;
@@ -737,6 +763,7 @@ export const ROUTINE_RUN_STATUSES = [
   "coalesced",
   "skipped",
   "issue_created",
+  "issue_reopened",
   "completed",
   "failed",
  ] as const;
@@ -963,6 +990,9 @@ export type BudgetMetric = (typeof BUDGET_METRICS)[number];
 export const BUDGET_WINDOW_KINDS = ["calendar_month_utc", "lifetime"] as const;
 export type BudgetWindowKind = (typeof BUDGET_WINDOW_KINDS)[number];
 
+/** Warn level of a budget policy that sets none, in percent of the amount. The policy's own value wins. */
+export const DEFAULT_BUDGET_WARN_PERCENT = 80;
+
 export const BUDGET_THRESHOLD_TYPES = ["soft", "hard"] as const;
 export type BudgetThresholdType = (typeof BUDGET_THRESHOLD_TYPES)[number];
 
@@ -1126,6 +1156,8 @@ export const PERMISSION_KEYS = [
   // or change settings. The chair also gets the slippage alerts.
   "strategy:board_member",
   "strategy:board_chair",
+  // Intelligence page: write daily reports, board snapshots and recommendations.
+  "intelligence:write",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

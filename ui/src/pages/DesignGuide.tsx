@@ -3,6 +3,8 @@ import { useOptionalToastActions } from "@/context/ToastContext";
 import { DispositionRecoveryNotice } from "../components/DispositionRecoveryNotice";
 import { SetupPrompt } from "./apps/chat/SetupPrompt";
 import { MediaArtifactCard } from "@/components/artifacts/MediaArtifactCard";
+import { ConfidentialityBadge, LinkStatusBadges, SiteThumbnail } from "@/components/deliverables/DeliverableBadges";
+import { ExpectedList } from "@/components/ClientJourneyStages";
 import { WebhookUrlWarning } from "@/components/routine-triggers/WebhookUrlWarning";
 import { SetupWizardNavigation, SetupWizardFooter } from "../components/SetupWizard";
 import { RemoteMcpDesignExample } from "@/features/connections/remote-mcp/RemoteMcpDesignExample";
@@ -13,6 +15,7 @@ import { announcementPreview, announcementAnimationPreview, announcementAnimatio
 import { TaskDetailTasksPanel } from "@/components/task-detail/TaskDetailTasksPanel";
 import { AiConnectionDesignExamples } from "@/components/ai-connections/AiConnectionDesignExamples";
 import { StrategyBoardDesignExamples } from "@/components/strategy-board/StrategyBoardDesignExamples";
+import { IntelligenceDesignExamples } from "@/components/intelligence/IntelligenceDesignExamples";
 import { SavedProviderKeySelect } from "../components/onboarding/SavedProviderKeySelect";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { AgentCharacter } from "@/components/AgentCharacter";
@@ -2470,12 +2473,51 @@ export function DesignGuide() {
         </div>
       </Section>
 
+      <Section title="Deliverable labels and live sites">
+        <SubSection title="Confidentiality badge">
+          <div className="flex flex-wrap items-center gap-2">
+            <ConfidentialityBadge value="internal" />
+            <ConfidentialityBadge value="client" />
+            <ConfidentialityBadge value="public" />
+          </div>
+        </SubSection>
+        <SubSection title="Link status badges">
+          <div className="flex flex-wrap items-center gap-2">
+            <LinkStatusBadges deliverable={{ external: true, restricted: false, linkCheck: { lastCheckedAt: "2026-10-13T09:00:00.000Z", httpStatus: 404, ok: false } }} />
+            <LinkStatusBadges deliverable={{ external: true, restricted: true, linkCheck: { lastCheckedAt: "2026-10-13T09:00:00.000Z", httpStatus: 401, ok: true } }} />
+          </div>
+        </SubSection>
+        <SubSection title="Site thumbnail (placeholder while no screenshot is stored)">
+          <div className="aspect-video w-full max-w-xs overflow-hidden rounded-lg border border-border">
+            <SiteThumbnail source={{ url: "https://greatstone-moengt-deck.netlify.app", title: "MoEnGT deck", screenshotPath: null }} />
+          </div>
+        </SubSection>
+        <SubSection title="Expected deliverables for a stage">
+          <div className="max-w-md">
+            <ExpectedList
+              met={1}
+              stage={{
+                name: "Executive Discovery",
+                expected: [
+                  { key: "north-star", title: "North Star summary", kind: "report", deliverableId: "d-1" },
+                  { key: "pre-read", title: "Pre-read deck", kind: "deck", deliverableId: null },
+                ],
+              }}
+            />
+          </div>
+        </SubSection>
+      </Section>
+
       <Section title="AI Connections">
         <AiConnectionDesignExamples />
       </Section>
 
       <Section title="Board control panel">
         <StrategyBoardDesignExamples />
+      </Section>
+
+      <Section title="Intelligence cards">
+        <IntelligenceDesignExamples />
       </Section>
 
       <Section title="Built-in Agent Lifecycle Chips">

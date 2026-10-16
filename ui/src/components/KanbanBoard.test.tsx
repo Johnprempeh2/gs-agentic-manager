@@ -222,6 +222,16 @@ describe("KanbanBoard", () => {
     expect(container.textContent).toContain("Live");
   });
 
+  it("shows a chosen cover picture on full cards only", () => {
+    const issue = createIssue(1, "todo");
+    const cover = { contentPath: "/api/assets/cover-1/content", altText: "Rocket" };
+    const full = renderBoard({ issues: [issue], issueCovers: { [issue.id]: cover } });
+    expect(full.container.querySelector('[data-testid="card-cover"]')?.getAttribute("src")).toBe(cover.contentPath);
+
+    const compact = renderBoard({ issues: [issue], issueCovers: { [issue.id]: cover }, compactCards: true });
+    expect(compact.container.querySelector('[data-testid="card-cover"]')).toBeNull();
+  });
+
   it("renders only the chosen lanes, without task keys, read-only when no updater is given", () => {
     const { container } = renderBoard({
       issues: [createIssue(1, "todo"), createIssue(2, "done")],

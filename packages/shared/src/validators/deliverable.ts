@@ -35,6 +35,29 @@ export const HTML_ATTACHMENT_CSP = [
 export const deliverableKindSchema = z.enum(["report", "brief", "plan", "deck", "other"]);
 export const deliverableStatusSchema = z.enum(["draft", "final"]);
 export const deliverableSortSchema = z.enum(["newest", "recently_opened", "title"]);
+/**
+ * Who may see a deliverable. Internal never leaves the team; client items may
+ * reach the client portal once the case has an accepted NDA; public items may
+ * reach it without one. Deliverables without a label are internal.
+ */
+export const deliverableConfidentialitySchema = z.enum(["internal", "client", "public"]);
+export const DEFAULT_DELIVERABLE_CONFIDENTIALITY = "internal" as const;
+
+/** Who a deliverable is for, as the Deliverables filter asks it: client-facing (client or public) or internal. */
+export const deliverableAudienceSchema = z.enum(["client_facing", "internal"]);
+export type DeliverableAudience = z.infer<typeof deliverableAudienceSchema>;
+export const DELIVERABLE_AUDIENCE_CONFIDENTIALITY: Record<DeliverableAudience, Array<z.infer<typeof deliverableConfidentialitySchema>>> = {
+  client_facing: ["client", "public"],
+  internal: ["internal"],
+};
+
+/** A link deliverable points at a live site: https only, so the server never fetches plain http. */
+export const deliverableUrlSchema = z
+  .string()
+  .trim()
+  .max(2000)
+  .url()
+  .refine((value) => /^https:\/\//i.test(value), "url must start with https://");
 
 /** Lowercase slug used as the version key when the caller does not send one. */
 export function deliverableKeyFromTitle(title: string): string {
@@ -64,12 +87,30 @@ const deliverableFieldsSchema = z.object({
   kind: deliverableKindSchema.optional(),
   brand: z.string().trim().min(1).max(80).optional(),
   status: deliverableStatusSchema.optional(),
+  confidentiality: deliverableConfidentialitySchema.optional(),
+  /** Mark a link deliverable as password protected or unlisted. */
+  restricted: z.boolean().optional(),
 });
 
-/** POST /api/issues/:issueId/deliverables — register a new deliverable (or its next version). */
+/**
+ * POST /api/issues/:issueId/deliverables — register a new deliverable (or its
+ * next version). Send exactly one of `attachmentId` (a stored file on the
+ * issue) or `url` (a live https site, shown as a screenshot with "Open site").
+ */
 export const createDeliverableSchema = deliverableFieldsSchema.extend({
-  attachmentId: z.string().guid(),
+  attachmentId: z.string().guid().optional(),
+  url: deliverableUrlSchema.optional(),
+}).superRefine((value, ctx) => {
+  if (!value.attachmentId === !value.url) {
+    ctx.addIssue({ code: "custom", path: ["url"], message: "Send exactly one of attachmentId or url" });
+  }
 });
+
+/** PATCH /api/companies/:companyId/deliverables/:id — relabel every version of a deliverable. */
+export const updateDeliverableSchema = z.object({
+  confidentiality: deliverableConfidentialitySchema.optional(),
+  restricted: z.boolean().optional(),
+}).refine((value) => value.confidentiality !== undefined || value.restricted !== undefined, "Nothing to update");
 
 /**
  * POST /api/companies/:companyId/deliverables/mark — promote an artifact
@@ -95,6 +136,11 @@ export const deliverablesQuerySchema = z.object({
   projectId: z.string().guid().optional(),
   agentId: z.string().guid().optional(),
   brand: z.string().trim().min(1).max(80).optional(),
+  confidentiality: deliverableConfidentialitySchema.optional(),
+  /** "client_facing": client and public items; "internal": internal only. */
+  audience: deliverableAudienceSchema.optional(),
+  /** "broken": only link deliverables whose last check failed. */
+  linkHealth: z.enum(["broken"]).optional(),
   from: optionalDate,
   to: optionalDate,
   sort: deliverableSortSchema.optional().default("newest"),
@@ -104,6 +150,7 @@ export const deliverablesQuerySchema = z.object({
 
 export type CreateDeliverable = z.infer<typeof createDeliverableSchema>;
 export type MarkDeliverable = z.infer<typeof markDeliverableSchema>;
+export type UpdateDeliverable = z.infer<typeof updateDeliverableSchema>;
 export type DeliverablesQuery = z.infer<typeof deliverablesQuerySchema>;
 
 export const DELIVERABLE_COMMENT_QUOTE_MAX = 1_000;

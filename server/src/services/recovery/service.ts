@@ -40,6 +40,7 @@ import {
   requiresExecutionReconciliation,
   type IssueCommentMetadata,
   type IssueCommentPresentation,
+  utcCalendarDay,
 } from "@greatstone/shared";
 import {
   agents,
@@ -148,6 +149,11 @@ import {
   needsHumanWaitRecheckWake,
 } from "./human-wait-deadline.js";
 import {
+  WAITING_DATE_PASSED_WAKE_REASON,
+  buildWaitingDatePassedIdempotencyKey,
+  needsWaitingDatePassedWake,
+} from "./waiting-date.js";
+import {
   REVIEW_WAIT_ACTIVITY_SOURCE,
   REVIEW_WAIT_MONITOR_SERVICE_NAME,
   decideReviewWait,
@@ -199,6 +205,7 @@ const DISPOSITION_REPAIR_IDEMPOTENCY_INDEX =
   "agent_wakeup_requests_disposition_repair_idempotency_uq";
 const RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT = 500;
 const HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT = 200;
+const WAITING_DATE_PASSED_CANDIDATE_LIMIT = 200;
 
 // GGU-809: when a stranded `in_progress` issue would otherwise hit the
 // `isRepeatedProductiveContinuationRecovery` escalation path, exempt the
@@ -4956,6 +4963,18 @@ export function recoveryService(
         issue.status === "in_review"
           ? participantLatestRunForRecovery
           : latestRun;
+      // GRE-1444: a dependency-gate cancel is a wait, not a failure. While a
+      // blocker is open the blockers-resolved wake owns the next step; a
+      // failure retry here is cancelled at the gate again and only burns budget.
+      if (
+        executionRecoverySource?.status === "cancelled" &&
+        executionRecoverySource.errorCode === "issue_dependencies_blocked" &&
+        (await issuesSvc.listDependencyReadiness(issue.companyId, [issue.id]))
+          .get(issue.id)?.isDependencyReady === false
+      ) {
+        result.skipped += 1;
+        continue;
+      }
       if (
         executionRecoverySource?.agentId === agentId &&
         (
@@ -6534,6 +6553,158 @@ export function recoveryService(
     return result;
   }
 
+  // A blocked task waiting on a client, the board or someone outside, with a
+  // date it expected to hear back by. Once that day is over, wake the assignee
+  // once to chase or set a new date. The claim is a guarded update that writes
+  // `expectedByWokenFor` into the descriptor for this exact date, so two
+  // sweeps cannot both wake and a new date gets its own wake.
+  async function reconcileWaitingDatesPassed(opts?: { companyId?: string | null; now?: Date }) {
+    const result = {
+      checked: 0,
+      woken: 0,
+      pauseHoldSkipped: 0,
+      claimLost: 0,
+      deferred: 0,
+      enqueueFailed: 0,
+      issueIds: [] as string[],
+    };
+    const now = opts?.now ?? new Date();
+    const today = utcCalendarDay(now);
+    const filters = [
+      eq(issues.status, "blocked"),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      sql`${issues.unblockDescriptor}->>'expectedBy' < ${today}`,
+      sql`${issues.unblockDescriptor}->>'expectedByWokenFor' is distinct from ${issues.unblockDescriptor}->>'expectedBy'`,
+    ];
+    if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        status: issues.status,
+        hiddenAt: issues.hiddenAt,
+        assigneeAgentId: issues.assigneeAgentId,
+        unblockDescriptor: issues.unblockDescriptor,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.updatedAt))
+      .limit(WAITING_DATE_PASSED_CANDIDATE_LIMIT);
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      const descriptor = candidate.unblockDescriptor;
+      const expectedBy = descriptor?.expectedBy;
+      if (!agentId || !descriptor || !expectedBy || !needsWaitingDatePassedWake(candidate, now)) continue;
+      result.checked += 1;
+
+      if (
+        await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          candidate.companyId,
+          candidate.id,
+          treeControlSvc,
+        )
+      ) {
+        result.pauseHoldSkipped += 1;
+        continue;
+      }
+
+      const claimed = await db
+        .update(issues)
+        .set({
+          unblockDescriptor: sql`jsonb_set(${issues.unblockDescriptor}, '{expectedByWokenFor}', to_jsonb(${expectedBy}::text))`,
+        })
+        .where(and(
+          eq(issues.id, candidate.id),
+          eq(issues.companyId, candidate.companyId),
+          eq(issues.status, "blocked"),
+          eq(issues.assigneeAgentId, agentId),
+          sql`${issues.unblockDescriptor}->>'expectedBy' = ${expectedBy}`,
+          sql`${issues.unblockDescriptor}->>'expectedByWokenFor' is distinct from ${expectedBy}`,
+        ))
+        .returning({ id: issues.id });
+      if (claimed.length === 0) {
+        result.claimLost += 1;
+        continue;
+      }
+
+      const waitingOn = descriptor.waitingOn ?? null;
+      const idempotencyKey = buildWaitingDatePassedIdempotencyKey(candidate.id, expectedBy);
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: WAITING_DATE_PASSED_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            expectedBy,
+            waitingOn,
+            unblockOwner: descriptor.owner ?? null,
+            unblockAction: descriptor.action ?? null,
+            instruction:
+              `This task expected to hear back by ${expectedBy}, and that date has passed. ` +
+              "Chase the person it is waiting on, or set a new expected date, and say what you did in a comment.",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "waiting_date",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: WAITING_DATE_PASSED_WAKE_REASON,
+            expectedBy,
+            waitingOn,
+          },
+          issueStateGuard: { statuses: ["blocked"], assigneeAgentId: agentId },
+        });
+        // A null wake is a normal deferral. The one attempt for this date is
+        // spent either way; the date still shows as passed on the task.
+        if (wake) {
+          result.woken += 1;
+        } else {
+          result.deferred += 1;
+        }
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId: candidate.companyId,
+          actorType: "system",
+          actorId: "waiting_date",
+          agentId,
+          action: "issue.waiting_date_passed_woken",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            expectedBy,
+            waitingOn,
+            wakeupRunId: wake?.id ?? null,
+            deferred: !wake,
+            idempotencyKey,
+          },
+        });
+      } catch (err) {
+        // Release the claim so the next sweep can retry this date.
+        result.enqueueFailed += 1;
+        await db
+          .update(issues)
+          .set({ unblockDescriptor: sql`${issues.unblockDescriptor} - 'expectedByWokenFor'` })
+          .where(and(
+            eq(issues.id, candidate.id),
+            sql`${issues.unblockDescriptor}->>'expectedByWokenFor' = ${expectedBy}`,
+          ))
+          .catch(() => undefined);
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue waiting-date-passed wake",
+        );
+      }
+    }
+
+    return result;
+  }
+
   function readRecoveryTimerIntervalMs(raw: unknown, fallback: number) {
     return Math.max(1, Math.floor(asNumber(raw, fallback)));
   }
@@ -6980,6 +7151,7 @@ export function recoveryService(
     sweepStaleIssueLocks,
     reconcileResolvedDependencyWakeBackstop,
     reconcileOverdueHumanWaits,
+    reconcileWaitingDatesPassed,
     readRecoveryTimerIntervalMs,
   };
 }

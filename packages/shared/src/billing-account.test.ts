@@ -7,8 +7,13 @@ import {
   billingModuleProblems,
   billingPeriodOn,
   billingStatusOn,
+  billingExtraUsage,
+  billingUsageOn,
+  billingUsageWarning,
+  clientBillingAccountView,
   recordBillingInvoiceSchema,
   upsertBillingAccountSchema,
+  type BillingAccount,
   type BillingModuleSelection,
 } from "./billing-account.js";
 import { INSTANCE_FEATURE_KEYS } from "./feature-catalog.js";
@@ -166,5 +171,116 @@ describe("term dates (UTC days)", () => {
       hasAccess: false,
       renewsOn: "2026-10-01",
     });
+  });
+});
+
+describe("billing usage (GRE-1389, GRE-1395)", () => {
+  // The allowance is API-equivalent US cents on every account; the currency is the account's.
+  const usd = { allowanceMonthlyCents: 25_000, estimateMonthlyCents: null, currency: "USD", usageFxRate: null, usageFxRateSetOn: null };
+  const gbp = { ...usd, currency: "GBP", usageFxRate: 0.75, usageFxRateSetOn: "2026-10-01" };
+  const base = { usedCents: 0, apiEquivalentCents: 0, warnPercent: 80, pausedSince: null, account: usd };
+
+  it("the window is the UTC calendar month, today included", () => {
+    expect(billingUsageOn(new Date("2028-02-29T23:59:59Z"), base)).toMatchObject({
+      windowStart: "2028-02-01",
+      windowEnd: "2028-02-29",
+      daysElapsed: 29,
+      daysInWindow: 29,
+    });
+    expect(billingUsageOn(new Date("2026-10-01T00:00:00Z"), base)).toMatchObject({ daysElapsed: 1, daysInWindow: 31 });
+  });
+
+  it("warns at the warn level exactly, never with no allowance", () => {
+    expect(billingUsageWarning(19_999, 25_000, 80)).toBe(false);
+    expect(billingUsageWarning(20_000, 25_000, 80)).toBe(true);
+    expect(billingUsageWarning(1, 0, 80)).toBe(false);
+    expect(
+      billingUsageOn(new Date("2026-10-10T00:00:00Z"), { ...base, usedCents: 5, account: { ...usd, allowanceMonthlyCents: 0 } }),
+    ).toMatchObject({ usedPercent: 0, remainingCents: 0, warning: false });
+  });
+
+  it("forecasts on a straight line, as cents and as a percent, and floors remaining at zero", () => {
+    const usage = billingUsageOn(new Date("2026-10-10T12:00:00Z"), { ...base, usedCents: 30_000 });
+    expect(usage).toMatchObject({ forecastCents: 93_000, forecastPercent: 372, remainingCents: 0, usedPercent: 120, warning: true });
+  });
+
+  it("measures metered and subscription-included usage together against the allowance", () => {
+    const usage = billingUsageOn(new Date("2026-10-10T12:00:00Z"), { ...base, usedCents: 5_000, apiEquivalentCents: 15_000 });
+    expect(usage).toMatchObject({ consumedCents: 20_000, usedPercent: 80, warning: true, remainingCents: 5_000 });
+  });
+
+  it("a GBP account with a USD allowance: the percent and the warning are USD against USD, not off by the rate", () => {
+    const now = new Date("2026-10-10T12:00:00Z");
+    // US$190 used of a US$250 allowance is 76%: under the warn level. Converting
+    // usage to GBP first (x 0.75) or the allowance to USD would give a wrong percent.
+    const under = billingUsageOn(now, { ...base, usedCents: 19_000, account: gbp });
+    expect(under).toMatchObject({ usedPercent: 76, warning: false, allowanceCents: 25_000 });
+    expect(under.extraUsage).toMatchObject({ state: "none", amountCents: 0, currency: "GBP" });
+    // US$200 of US$250 is 80%: at the warn level, the same as for a USD account.
+    const at = billingUsageOn(now, { ...base, usedCents: 20_000, account: gbp });
+    expect(at).toMatchObject({ usedPercent: 80, warning: true });
+    expect(billingUsageOn(now, { ...base, usedCents: 20_000, account: usd })).toMatchObject({ usedPercent: 80, warning: true });
+  });
+
+  it("extra usage past 100% converts to the account currency with the account's rate", () => {
+    const usage = billingUsageOn(new Date("2026-10-10T12:00:00Z"), { ...base, usedCents: 29_000, account: gbp });
+    expect(usage.usedPercent).toBe(116);
+    // US$40 over the allowance at 0.75 GBP per USD is GBP 30.
+    expect(usage.extraUsage).toEqual({ state: "priced", amountCents: 3_000, currency: "GBP", usdCents: 4_000, rate: 0.75, rateSetOn: "2026-10-01" });
+  });
+
+  it("a USD account converts at 1 and needs no rate", () => {
+    expect(billingExtraUsage(4_000, usd)).toEqual({ state: "priced", amountCents: 4_000, currency: "USD", usdCents: 4_000, rate: 1, rateSetOn: null });
+    // A rate left on a USD record is not used.
+    expect(billingExtraUsage(4_000, { ...usd, usageFxRate: 0.5, usageFxRateSetOn: "2026-10-01" })).toMatchObject({ amountCents: 4_000, rate: 1 });
+  });
+
+  it("extra usage with no rate on a non-USD account shows no amount: rate missing", () => {
+    expect(billingExtraUsage(4_000, { ...gbp, usageFxRate: null, usageFxRateSetOn: null })).toEqual({
+      state: "rate_missing",
+      amountCents: null,
+      currency: "GBP",
+      usdCents: 4_000,
+      rate: null,
+      rateSetOn: null,
+    });
+    // Within the allowance there is nothing to price, so a missing rate does not matter.
+    expect(billingExtraUsage(0, { ...gbp, usageFxRate: null })).toMatchObject({ state: "none", amountCents: 0 });
+  });
+
+  it("the client view has no money for the included allowance and no rate", () => {
+    const account: BillingAccount = {
+      id: "acc-1",
+      planKind: "modules",
+      planName: null,
+      catalogueVersion: "v",
+      currency: "GBP",
+      serviceFeeCents: 100_000,
+      modules: [],
+      allowanceMonthlyCents: 25_000,
+      estimateMonthlyCents: 15_000,
+      usageFxRate: 0.75,
+      usageFxRateSetOn: "2026-10-01",
+      termKind: "monthly",
+      termStartsOn: "2026-10-01",
+      autoRenew: true,
+      endAction: null,
+      accessEndsOn: null,
+      cancelRequestedAt: null,
+      cancelRequestedByUserId: null,
+      cancelReason: null,
+      updatedByUserId: null,
+      createdAt: "2026-10-01T00:00:00.000Z",
+      updatedAt: "2026-10-01T00:00:00.000Z",
+    };
+    const usage = billingUsageOn(new Date("2026-10-10T12:00:00Z"), { ...base, usedCents: 29_000, account });
+    const view = clientBillingAccountView({ audience: "operator", account, status: null, usage, invoices: [] });
+    expect(view.audience).toBe("client");
+    for (const key of ["allowanceMonthlyCents", "usageFxRate", "usageFxRateSetOn"]) expect(view.account).not.toHaveProperty(key);
+    for (const key of ["usedCents", "apiEquivalentCents", "consumedCents", "allowanceCents", "remainingCents", "forecastCents"]) {
+      expect(view.usage).not.toHaveProperty(key);
+    }
+    expect(view.usage!.extraUsage).toEqual({ state: "priced", amountCents: 3_000, currency: "GBP" });
+    expect(view.usage).toMatchObject({ usedPercent: 116, forecastPercent: 359.6, warnPercent: 80, warning: true, estimateCents: 15_000 });
   });
 });

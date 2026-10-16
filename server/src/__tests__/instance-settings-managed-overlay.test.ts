@@ -111,6 +111,28 @@ describe("instanceSettingsService managed overlay", () => {
     expect(await service.updateExperimental({ enableMcpAggregators: false })).toMatchObject({ experimental: { enableMcpAggregators: true, enableChatConnectors: true } });
   });
 
+  it("keeps workspace branch reconcile forward on when stored and managed values say off (GRE-1438)", async () => {
+    const { db } = stubDb(settingsRow({ enableWorkspaceBranchReconcileForward: false }));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: { enableWorkspaceBranchReconcileForward: false }, plugins: { autoInstall: [] },
+    })) });
+    expect(await service.getExperimental()).toMatchObject({ enableWorkspaceBranchReconcileForward: true, managedKeys: {} });
+    expect(await service.updateExperimental({ enableWorkspaceBranchReconcileForward: false })).toMatchObject({
+      experimental: { enableWorkspaceBranchReconcileForward: true },
+    });
+  });
+
+  it("keeps workspace dirty quarantine repair on when stored and managed values say off (GRE-1439)", async () => {
+    const { db } = stubDb(settingsRow({ enableWorkspaceDirtyQuarantineRepair: false }));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: { enableWorkspaceDirtyQuarantineRepair: false }, plugins: { autoInstall: [] },
+    })) });
+    expect(await service.getExperimental()).toMatchObject({ enableWorkspaceDirtyQuarantineRepair: true, managedKeys: {} });
+    expect(await service.updateExperimental({ enableWorkspaceDirtyQuarantineRepair: false })).toMatchObject({
+      experimental: { enableWorkspaceDirtyQuarantineRepair: true },
+    });
+  });
+
   it("persists chat connector opt-in and reads it back after service reconstruction", async () => {
     const row = settingsRow({});
     const { db, persistedSets } = stubDb(row);
@@ -153,6 +175,27 @@ describe("instanceSettingsService managed overlay", () => {
     expect(experimental.managedKeys).toEqual({
       enablePipelines: { managed: true, managedBy: "paperclip-cloud" },
     });
+  });
+
+  it("reads Board as off while Strategy is off, from a managed config or the stored row (GRE-1382)", async () => {
+    const boardWithoutStrategy = JSON.stringify({
+      v: 1,
+      mode: "cloud",
+      catalogVersion: "2026.1011.0",
+      features: { enableStrategy: false, enableStrategyBoard: true },
+      plugins: { autoInstall: [] },
+    });
+    const managed = instanceSettingsService(stubDb(settingsRow({})).db, { runtimeEnv: managedEnv(boardWithoutStrategy) });
+    expect(await managed.getExperimental()).toMatchObject({ enableStrategy: false, enableStrategyBoard: false });
+
+    const stored = instanceSettingsService(
+      stubDb(settingsRow({ enableStrategy: false, enableStrategyBoard: true })).db,
+      { runtimeEnv: {} },
+    );
+    expect(await stored.getExperimental()).toMatchObject({ enableStrategy: false, enableStrategyBoard: false });
+
+    const bothOn = instanceSettingsService(stubDb(settingsRow({ enableStrategyBoard: true })).db, { runtimeEnv: {} });
+    expect(await bothOn.getExperimental()).toMatchObject({ enableStrategy: true, enableStrategyBoard: true });
   });
 
   it("overlays managed values on get()", async () => {

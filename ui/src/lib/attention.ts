@@ -245,6 +245,10 @@ export function attentionDetailLine(item: AttentionItem): string | null {
     }
     case "budget":
       return `${Math.round(detail.observedPercent)}% of budget used ($${detail.amountObserved} / $${detail.amountLimit})`;
+    case "review": {
+      const q = quote(detail.lastUpdate?.excerpt);
+      return q ? `Ready for your review: ${q}` : null;
+    }
     case "generic":
       return quote(detail.summaryExcerpt);
     default:

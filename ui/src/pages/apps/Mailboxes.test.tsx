@@ -12,6 +12,7 @@ const pushToastMock = vi.hoisted(() => vi.fn());
 const oauthAppsMock = vi.hoisted(() => vi.fn());
 const saveOAuthAppMock = vi.hoisted(() => vi.fn());
 const startOAuthMock = vi.hoisted(() => vi.fn());
+const setDraftsMock = vi.hoisted(() => vi.fn());
 const searchParams = vi.hoisted(() => ({ value: new URLSearchParams() }));
 const setSearchParamsMock = vi.hoisted(() => vi.fn());
 
@@ -20,6 +21,7 @@ vi.mock("@/api/mailboxes", () => ({
     list: listMock,
     connect: connectMock,
     setAgents: vi.fn(),
+    setDrafts: setDraftsMock,
     test: vi.fn(),
     remove: vi.fn(),
     oauthApps: oauthAppsMock,
@@ -102,6 +104,7 @@ const mailbox = {
   healthCheckedAt: null,
   allAgents: false,
   agentIds: ["11111111-1111-4111-8111-111111111111"],
+  allowDrafts: false,
   createdAt: "2026-10-11T00:00:00.000Z",
 };
 
@@ -186,6 +189,19 @@ describe("Mailboxes page", () => {
     );
     expect(document.getElementById("mailbox-password")).toBeNull();
     expect(pushToastMock).toHaveBeenCalledWith(expect.objectContaining({ title: "john@gmail.com is connected" }));
+  });
+
+  it("keeps agent drafts off until a person turns them on", async () => {
+    listMock.mockResolvedValue([mailbox]);
+    setDraftsMock.mockResolvedValue({ ...mailbox, allowDrafts: true });
+    await render();
+    await flush();
+    const toggle = document.querySelector('[aria-label^="Let agents save email drafts"]') as HTMLButtonElement;
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).toContain("Agents never send mail.");
+    await act(() => toggle.click());
+    await flush();
+    expect(setDraftsMock).toHaveBeenCalledWith("company-1", mailbox.id, true);
   });
 
   it("keeps the form open and shows why when sign-in fails", async () => {

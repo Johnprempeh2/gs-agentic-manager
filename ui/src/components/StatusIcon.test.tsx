@@ -63,6 +63,13 @@ describe("StatusIcon", () => {
     })).toBe("Blocked · GRE-73 needs attention");
   });
 
+  it("does not report zero blockers when a task was marked blocked by hand", () => {
+    expect(blockedAttentionLabel({
+      state: "needs_attention", reason: "attention_required", unresolvedBlockerCount: 0, coveredBlockerCount: 0,
+      stalledBlockerCount: 0, attentionBlockerCount: 0, sampleBlockerIdentifier: null, sampleStalledBlockerIdentifier: null,
+    })).toBe("Blocked · no reason given");
+  });
+
   it("surfaces attention-required blocked copy and keeps the blocked glyph", () => {
     const html = renderToStaticMarkup(
       <StatusIcon

@@ -21,7 +21,9 @@ import type {
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
 } from "@greatstone/shared";
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { openAskEverest } from "../lib/ask-everest-events";
+import { pipelineItemAskContext } from "../lib/ask-everest";
 import {
   DndContext,
   DragOverlay,
@@ -37,6 +39,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ClientMemoryPanel } from "../components/memory/ClientMemoryPanel";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -107,6 +110,7 @@ import {
 import { IssueChatThread } from "../components/IssueChatThread";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { PipelineHealthBar } from "../components/PipelineHealthWarnings";
 import { PipelineItemBodyDocument } from "../components/PipelineItemBodyDocument";
 import { PipelineLivenessBanner } from "../components/PipelineLivenessBanner";
@@ -148,6 +152,9 @@ import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
+import { CardCover, useImageCovers } from "@/components/ImageCoverControls";
+import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
+import { OrganisationPicker } from "@/components/OrganisationPicker";
 
 type PipelineConversationActionableInteraction =
   | SuggestTasksInteraction
@@ -164,6 +171,7 @@ interface DraftRow {
   id: string;
   expanded: boolean;
   values: Record<string, string>;
+  organisationId?: string | null;
   serverError?: string | null;
 }
 
@@ -194,7 +202,14 @@ function isBlank(value: string | undefined) {
   return !value || value.trim().length === 0;
 }
 
-export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[]): RowErrors {
+/** Error key for the organisation picker; never a field key. */
+export const ORGANISATION_ERROR_KEY = "__organisation";
+
+export function validateDraftRows(
+  rows: DraftRow[],
+  fields: PipelineIntakeField[],
+  options: { requiresOrganisation?: boolean } = {},
+): RowErrors {
   const errors: RowErrors = {};
   for (const row of rows) {
     const rowErrors: FieldErrors = {};
@@ -202,6 +217,9 @@ export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[
       if (field.required && isBlank(row.values[field.key])) {
         rowErrors[field.key] = `${field.label} is required.`;
       }
+    }
+    if (options.requiresOrganisation && !row.organisationId) {
+      rowErrors[ORGANISATION_ERROR_KEY] = "Pick or create an organisation.";
     }
     if (Object.keys(rowErrors).length > 0) {
       errors[row.id] = rowErrors;
@@ -221,7 +239,9 @@ export function buildBatchPayload(rows: DraftRow[], fields: PipelineIntakeField[
         itemFields[field.key] = value.trim();
       }
     }
-    return { title, fields: itemFields };
+    return row.organisationId
+      ? { title, fields: itemFields, organisationId: row.organisationId }
+      : { title, fields: itemFields };
   });
 }
 
@@ -238,6 +258,15 @@ export function plainBatchError(result: Extract<PipelineBatchIngestResult, { ok:
   }
   if (details.code === "blocker_cycle") {
     return "This item waits on another row that also waits on it.";
+  }
+  if (details.code === "organisation_required") {
+    return "Pick or create an organisation for this item.";
+  }
+  if (details.code === "organisation_archived") {
+    return "This organisation is archived. Pick another one.";
+  }
+  if (details.code === "organisation_not_found") {
+    return "This organisation no longer exists. Pick another one.";
   }
   if (typeof result.error?.message === "string" && result.error.message.trim()) {
     return result.error.message.replace(/^Pipeline\s+/i, "");
@@ -663,7 +692,7 @@ export function PipelineStageDistribution({ pipeline }: { pipeline: Pick<Pipelin
   );
 }
 
-const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-[minmax(0,1fr)_11rem_5rem_6rem_7.5rem] lg:items-start lg:gap-x-6";
+const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-(--gtc-72) lg:items-start lg:gap-x-6";
 
 interface PipelinesIndexTableProps {
   pipelines: PipelineListItem[];
@@ -1106,6 +1135,7 @@ function PipelinesIndex() {
         <EmptyState
           icon={Hexagon}
           message="No pipelines yet."
+          description="A pipeline tracks clients or deals stage by stage, from first contact to signed work."
           action={canCreatePipelines ? "New pipeline" : undefined}
           onAction={canCreatePipelines ? () => setNewPipelineOpen(true) : undefined}
         />
@@ -1361,6 +1391,8 @@ function PipelineCaseCard({
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
   const { owner, nextAction } = readCardSummary(caseItem.fields);
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
+  const covers = useImageCovers(caseItem.companyId);
+  const cover = caseItem.organisationId ? covers.data?.organisations[caseItem.organisationId] : undefined;
   const {
     attributes,
     listeners,
@@ -1393,6 +1425,7 @@ function PipelineCaseCard({
         }}
         className="block text-inherit no-underline"
       >
+        <CardCover cover={cover} />
         <p className="font-medium leading-snug text-foreground">{title}</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {isWorking ? (
@@ -1867,6 +1900,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   }, [pipelineId]);
 
   if (pipelineQuery.isLoading || casesQuery.isLoading) return <PageSkeleton />;
+  // A failed load says so, rather than an empty board or "not found".
+  if (pipelineQuery.error && !pipeline) {
+    return <ErrorState error={pipelineQuery.error} title="Could not load this pipeline" onRetry={() => void pipelineQuery.refetch()} />;
+  }
+  if (casesQuery.error && !casesQuery.data) {
+    return <ErrorState error={casesQuery.error} title="Could not load the items" onRetry={() => void casesQuery.refetch()} />;
+  }
   if (!pipeline) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }
@@ -2905,6 +2945,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   });
 
   if (pipeline.isLoading || item.isLoading) return <PageSkeleton />;
+  if (pipeline.error && !pipeline.data) {
+    return <ErrorState error={pipeline.error} title="Could not load this pipeline" onRetry={() => void pipeline.refetch()} />;
+  }
+  if (item.error && !detail) {
+    return <ErrorState error={item.error} title="Could not load this item" onRetry={() => void item.refetch()} />;
+  }
   if (!detail || !pipeline.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Item not found.</div>;
   }
@@ -2994,6 +3040,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               Stage: <span className="font-medium text-foreground">{detail.stage.name}</span>
             </div>
           </div>
+          {detail.case.organisationId && (detail.case.companyId ?? selectedCompanyId) ? (
+            <CaseOrganisationLink
+              companyId={(detail.case.companyId ?? selectedCompanyId)!}
+              organisationId={detail.case.organisationId}
+            />
+          ) : null}
           {detail.parentCase ? (
             <p className="mt-2 text-sm text-muted-foreground">
               Built for{" "}
@@ -3027,6 +3079,21 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         <div className="flex w-full flex-col gap-5">
           <div className="flex items-center gap-2 lg:justify-end">
             {isClientCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
+            <Button
+              variant="outline"
+              title={`Ask Everest a question about ${detail.case.title}`}
+              data-testid="pipeline-item-ask"
+              onClick={() => openAskEverest(undefined, pipelineItemAskContext({
+                title: detail.case.title,
+                pipelineName: pipeline.data.name,
+                stageName: detail.stage.name,
+                statusLabel,
+                isClient: isClientCase,
+              }))}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Ask Everest
+            </Button>
             {primaryAction}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -3563,6 +3630,10 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
         <aside className="min-w-0 space-y-8">
           {reviewPanel}
+
+          {isClientCase && (item.data?.case.companyId ?? selectedCompanyId) ? (
+            <ClientMemoryPanel companyId={(item.data?.case.companyId ?? selectedCompanyId)!} clientName={detail.case.title} />
+          ) : null}
 
           {/* Client cases show Projects inside the overview on narrow screens. */}
           <div className={isClientCase ? "hidden lg:block" : undefined} data-tour="client-projects">
@@ -4410,7 +4481,11 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   }, [pipeline.data?.name, pipelineId, setBreadcrumbs]);
 
   const fields = intake.data?.fields ?? [];
-  const errors = useMemo(() => validateDraftRows(rows, fields), [fields, rows]);
+  const requiresOrganisation = Boolean(pipeline.data?.requiresOrganisation);
+  const errors = useMemo(
+    () => validateDraftRows(rows, fields, { requiresOrganisation }),
+    [fields, requiresOrganisation, rows],
+  );
   const invalid = rows.length === 0 || Object.keys(errors).length > 0;
 
   const submit = useMutation({
@@ -4440,6 +4515,12 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   });
 
   if (pipeline.isLoading || intake.isLoading) return <PageSkeleton />;
+  if (pipeline.error && !pipeline.data) {
+    return <ErrorState error={pipeline.error} title="Could not load this pipeline" onRetry={() => void pipeline.refetch()} />;
+  }
+  if (intake.error && !intake.data) {
+    return <ErrorState error={intake.error} title="Could not load the intake form" onRetry={() => void intake.refetch()} />;
+  }
   if (!pipeline.data || !intake.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }
@@ -4473,6 +4554,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
             index={index}
             fields={fields}
             intake={intake.data}
+            organisationCompanyId={requiresOrganisation ? pipeline.data.companyId : null}
             errors={errors[row.id] ?? {}}
             onToggle={() =>
               setRows((current) => current.map((candidate) => candidate.id === row.id ? { ...candidate, expanded: !candidate.expanded } : candidate))
@@ -4484,6 +4566,13 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
                   candidate.id === row.id
                     ? { ...candidate, values: { ...candidate.values, [fieldKey]: value }, serverError: null }
                     : candidate,
+                ),
+              )
+            }
+            onOrganisationChange={(organisationId) =>
+              setRows((current) =>
+                current.map((candidate) =>
+                  candidate.id === row.id ? { ...candidate, organisationId, serverError: null } : candidate,
                 ),
               )
             }
@@ -4522,19 +4611,24 @@ function DraftItemRow({
   index,
   fields,
   intake,
+  organisationCompanyId,
   errors,
   onToggle,
   onRemove,
   onChange,
+  onOrganisationChange,
 }: {
   row: DraftRow;
   index: number;
   fields: PipelineIntakeField[];
   intake: PipelineIntakeForm;
+  /** Set when the pipeline requires an organisation on every case. */
+  organisationCompanyId: string | null;
   errors: FieldErrors;
   onToggle: () => void;
   onRemove: () => void;
   onChange: (fieldKey: string, value: string) => void;
+  onOrganisationChange: (organisationId: string) => void;
 }) {
   const title = row.values.title?.trim() || `Item ${index + 1}`;
   const preview = fields
@@ -4566,6 +4660,16 @@ function DraftItemRow({
       {row.expanded ? (
         <div className="grid gap-5 border-t border-border px-4 py-4 lg:grid-cols-(--gtc-50)">
           <div className="grid gap-4 md:grid-cols-2">
+            {organisationCompanyId ? (
+              <div className="md:col-span-2">
+                <OrganisationPicker
+                  companyId={organisationCompanyId}
+                  value={row.organisationId ?? null}
+                  onChange={onOrganisationChange}
+                  error={errors[ORGANISATION_ERROR_KEY]}
+                />
+              </div>
+            ) : null}
             {fields.map((field) => (
               <GeneratedField
                 key={field.key}

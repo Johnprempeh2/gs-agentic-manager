@@ -106,8 +106,9 @@ export interface InstanceSystemMemory {
 export interface InstanceExperimentalSettings {
   enableEnvironments: boolean;
   /**
-   * Exposes the experimental GS Agentic Manager Runner adapter for new selections.
-   * Existing native runs ignore later flag changes so they remain recoverable.
+   * @deprecated Compatibility-only (GRE-1436). The GS Agentic Manager Runner
+   * is always enabled; this always reads as true and stored or managed values
+   * are ignored.
    */
   enableNativeRunner: boolean;
   /**
@@ -115,12 +116,12 @@ export interface InstanceExperimentalSettings {
    * sandbox environment. Run selection refuses local while this is on.
    */
   enableManagedSandboxOnly: boolean;
+  /** Compatibility key (GRE-1437): isolated workspaces are always on; reads as true. */
   enableIsolatedWorkspaces: boolean;
   /**
    * Move the execution workspace default for a project that carries no policy
    * of its own from the shared project checkout to an isolated per-task
-   * worktree. Inert unless `enableIsolatedWorkspaces` is also on, and never
-   * overrides a project that stores its own policy.
+   * worktree. Never overrides a project that stores its own policy.
    */
   enableIsolatedWorkspacesByDefault: boolean;
   enableStreamlinedLeftNavigation: boolean;
@@ -129,6 +130,7 @@ export interface InstanceExperimentalSettings {
    * Missing legacy values default on; the retired left-navigation preference
    * remains separate so an old opt-out cannot disable the broader UI.
    */
+  /** Compatibility key (GRE-1441): the streamlined UI is always on; the app ignores the value. */
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;
@@ -142,7 +144,9 @@ export interface InstanceExperimentalSettings {
   enableCases: boolean;
   /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
   enableDeepDive: boolean;
-  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). */
+  /** Greatstone: the Strategy module, the KPI cascade and KPI readings (GRE-1382). */
+  enableStrategy: boolean;
+  /** Greatstone: the board control panel, slippage alerts and board packs (GRE-1135). Requires `enableStrategy`. */
   enableStrategyBoard: boolean;
   /**
    * Greatstone: the board secretary agent (GRE-1200), one per instance. It may
@@ -151,7 +155,11 @@ export interface InstanceExperimentalSettings {
   strategyBoardSecretaryAgentId: string | null;
   /** Greatstone: the read-only Website view (GA4 and Search Console). Off = `403 not_entitled`. */
   enableWebsiteView: boolean;
+  /** Greatstone: the Intelligence page (Daily Pulse and AI hub). Off = `403 not_entitled`. */
+  enableIntelligence: boolean;
   enableAgentChat: boolean;
+  /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
+  enableTeamChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
   enableIssuePlanDecompositions: boolean;

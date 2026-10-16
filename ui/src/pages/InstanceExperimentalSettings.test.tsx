@@ -23,6 +23,9 @@ vi.mock("@/api/instanceSettings", () => ({
   instanceSettingsApi: mockInstanceSettingsApi,
 }));
 
+// The secretary picker reads the company context; the Board tests only need the toggles.
+vi.mock("@/components/strategy-board/BoardSecretarySetting", () => ({ BoardSecretarySetting: () => null }));
+
 vi.mock("../context/BreadcrumbContext", () => ({
   useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }),
 }));
@@ -45,8 +48,6 @@ async function flushReact() {
 
 const CONFERENCE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle conference room chat experimental setting"]';
-const STREAMLINED_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle Streamlined UI experimental setting"]';
 const TASK_WATCHDOGS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle task watchdogs experimental setting"]';
 const CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR =
@@ -71,6 +72,8 @@ const CASES_TOGGLE_SELECTOR =
   'button[aria-label="Toggle cases experimental setting"]';
 const DEEP_DIVE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle deep dive experimental setting"]';
+const STRATEGY_TOGGLE_SELECTOR = 'button[aria-label="Toggle strategy setting"]';
+const BOARD_TOGGLE_SELECTOR = 'button[aria-label="Toggle board control panel experimental setting"]';
 const GSAM_RUNNER_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager Runner experimental setting"]';
 
@@ -90,9 +93,12 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enablePipelines: false,
     enableCases: false,
     enableDeepDive: false,
+    enableStrategy: false,
     enableStrategyBoard: false,
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
+    enableIntelligence: false,
+    enableTeamChat: false,
     enableAgentChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
@@ -330,30 +336,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("renders and patches the Streamlined UI experimental toggle on and off", async () => {
+  it("no longer shows a Streamlined UI toggle (graduated, GRE-1441)", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Streamlined UI");
-    expect(container.textContent).toContain(
-      "Use the simplified main sidebar, shared Tasks and Inbox presentation, focused task detail layout, and contextual navigation across Agents, Routines, Skills, and Settings.",
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(STREAMLINED_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-
-    await act(() => toggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-      enableStreamlinedUi: false,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(() => toggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-      enableStreamlinedUi: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).not.toContain("Streamlined UI");
+    expect(
+      container.querySelector('button[aria-label="Toggle Streamlined UI experimental setting"]'),
+    ).toBeNull();
   });
 
   it("does not render a Task Watchdogs toggle because watchdogs are always enabled", async () => {
@@ -373,25 +362,12 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     )).toBeNull();
   });
 
-  it("keeps GS Agentic Manager Runner default-off and exposes an explicit opt-in", async () => {
+  it("no longer shows a GS Agentic Manager Runner toggle (graduated, GRE-1436)", async () => {
+    // The default fixture still stores the old flag as off; no card may appear.
     await renderPage();
 
-    expect(container.textContent).toContain("GS Agentic Manager Runner");
-    expect(container.textContent).toContain("Onboarding continues to use legacy adapters");
-    const toggle = container.querySelector<HTMLButtonElement>(
-      GSAM_RUNNER_TOGGLE_SELECTOR,
-    );
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableNativeRunner: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.querySelector(GSAM_RUNNER_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.textContent).not.toContain("GS Agentic Manager Runner");
   });
 
   it("hides the 4 retired switches even when their stored flags are on (GRE-196)", async () => {
@@ -433,6 +409,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Goals Sidebar Link");
   });
 
+  it("no longer shows a Streamlined Left Navigation toggle (graduated, GRE-1440)", async () => {
+    await renderPage();
+
+    expect(container.textContent).not.toContain("Streamlined Left Navigation");
+    expect(container.textContent).not.toContain("Use the streamlined main sidebar navigation layout.");
+  });
+
   it("shows no card for any graduated switch in the shared list (GRE-848)", async () => {
     await renderPage();
 
@@ -443,30 +426,26 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("hides the isolated-workspaces-by-default toggle while isolated workspaces are off", async () => {
+  it("no longer shows an Isolated Workspaces toggle (graduated, GRE-1437)", async () => {
     await renderPage();
 
-    expect(container.querySelector(ISOLATED_WORKSPACES_TOGGLE_SELECTOR)).not.toBeNull();
-    expect(
-      container.querySelector(ISOLATED_WORKSPACES_BY_DEFAULT_TOGGLE_SELECTOR),
-    ).toBeNull();
-    expect(container.textContent).not.toContain("Use Isolated Workspaces By Default");
+    expect(container.querySelector(ISOLATED_WORKSPACES_TOGGLE_SELECTOR)).toBeNull();
+    expect(container.textContent).not.toContain("Enable Isolated Workspaces");
   });
 
-  it("keeps the dependent toggle hidden even when its stored flag is already on", async () => {
-    // The operator default is inert without isolated workspaces, so the server
-    // ignores a stored `true`. The control must not imply otherwise.
+  it("shows the isolated-workspaces-by-default toggle without the graduated switch (GRE-1437)", async () => {
+    // Isolated workspaces are always on, so the operator default is no longer
+    // a dependent toggle, even for an old row that stored the switch as off.
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
       enableIsolatedWorkspaces: false,
-      enableIsolatedWorkspacesByDefault: true,
     };
     await renderPage();
 
     expect(
       container.querySelector(ISOLATED_WORKSPACES_BY_DEFAULT_TOGGLE_SELECTOR),
-    ).toBeNull();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+    ).not.toBeNull();
+    expect(container.textContent).toContain("Use Isolated Workspaces By Default");
   });
 
   it("renders and patches the isolated-workspaces-by-default toggle on and off", async () => {
@@ -517,6 +496,20 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
       ISOLATED_WORKSPACES_BY_DEFAULT_TOGGLE_SELECTOR,
     );
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("no longer shows a Workspace Branch Reconcile Forward toggle (graduated, GRE-1438)", async () => {
+    await renderPage();
+
+    expect(container.textContent).not.toContain("Workspace Branch Reconcile Forward");
+    expect(container.textContent).not.toContain("reconcile a diverged recorded branch forward");
+  });
+
+  it("no longer shows a Workspace Dirty Quarantine Repair toggle (graduated, GRE-1439)", async () => {
+    await renderPage();
+
+    expect(container.textContent).not.toContain("Workspace Dirty Quarantine Repair");
+    expect(container.textContent).not.toContain("quarantine and repair dirty execution workspaces");
   });
 
   it("hides the worktree run-execution toggle when not running in a worktree", async () => {
@@ -783,6 +776,29 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(
       container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
     ).toBe("true");
+  });
+
+  it("turns Strategy on with the Board, and the Board off with Strategy (GRE-1382)", async () => {
+    await renderPage();
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
+      enableStrategy: true,
+      enableStrategyBoard: true,
+    });
+    expect(container.querySelector<HTMLButtonElement>(STRATEGY_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>(STRATEGY_TOGGLE_SELECTOR)?.click();
+    });
+    await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
+      enableStrategy: false,
+      enableStrategyBoard: false,
+    });
+    expect(container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
   });
 
   it("renders and patches the Server Info Debug View experimental toggle", async () => {

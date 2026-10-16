@@ -22,6 +22,7 @@ import {
   type FleetLifecycle,
   type FleetPublicKey,
 } from "../../packages/shared/src/fleet.js";
+import type { FleetSupportAttachment, FleetSupportSync } from "../../packages/shared/src/fleet-support.js";
 import { aiConnectionNeedsAttention, type AiConnectionView, type WatchSignal } from "./watch.js";
 
 export interface FleetKey {
@@ -38,6 +39,9 @@ export interface FleetRegistration {
   /** The last `seq` sent; the next message must be higher. */
   lastSeq: number;
   lastCheckIn?: { at: string; ok: boolean; detail: string };
+  /** GRE-1084: the hub's `at` from the last support answer the app kept; the next sync asks for changes since then. */
+  supportSince?: string | null;
+  lastSupportSync?: { at: string; ok: boolean; detail: string };
 }
 
 export function generateFleetKey(): FleetKey {
@@ -71,7 +75,7 @@ export function registrationSubject(registrationCode: string): string {
 
 export function signFleetMessage(
   privateJwk: JsonWebKey,
-  input: { act: FleetAction; sub: string; seq: number; checkIn?: FleetCheckIn },
+  input: { act: FleetAction; sub: string; seq: number; checkIn?: FleetCheckIn; support?: FleetSupportSync; attachment?: FleetSupportAttachment },
   now = Date.now(),
 ): string {
   const iat = Math.floor(now / 1000);
@@ -85,6 +89,8 @@ export function signFleetMessage(
     exp: iat + FLEET_MAX_MESSAGE_LIFETIME_SECONDS,
     seq: input.seq,
     ...(input.checkIn ? { checkIn: input.checkIn } : {}),
+    ...(input.support ? { support: input.support } : {}),
+    ...(input.attachment ? { attachment: input.attachment } : {}),
   };
   const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
   const signingInput = `${encode(header)}.${encode(claims)}`;

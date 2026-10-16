@@ -1,5 +1,15 @@
 import type {
   ChangeMemoryGrant,
+  CreateMemoryConnection,
+  CreateMemoryScope,
+  CreatedMemoryConnection,
+  MemoryConnection,
+  MemoryConnectionActivity,
+  CheckMemoryImport,
+  ImportMemory,
+  MemoryImportCheckResult,
+  MemoryImportResult,
+  MemoryScope,
   MemoryActivityCounts,
   MemoryActivityFeed,
   MemoryGraph,
@@ -37,6 +47,8 @@ export interface MemoryActivityFilters {
   from?: string;
   to?: string;
   cursor?: string;
+  /** Entries per page, at most 200. */
+  limit?: string;
 }
 
 function toQuery(params: object) {
@@ -58,6 +70,24 @@ export const memoryGraphApi = {
       `/companies/${companyId}/memory/grants`,
       body,
     ),
+  /** Scopes the caller may read; the import picker offers these. */
+  scopes: (companyId: string) => api.get<MemoryScope[]>(`/companies/${companyId}/memory/scopes`),
+  /** Owner or admin only; others get 403. */
+  createScope: (companyId: string, body: CreateMemoryScope) => api.post<MemoryScope>(`/companies/${companyId}/memory/scopes`, body),
+  /** Adds picked Claude or ChatGPT entries as unreviewed contributions. */
+  importEntries: (companyId: string, body: ImportMemory) =>
+    api.post<MemoryImportResult>(`/companies/${companyId}/memory/import`, body),
+  /** Which of these entries are already in memory, or look like an existing entry. Writes nothing. */
+  checkImport: (companyId: string, body: CheckMemoryImport) =>
+    api.post<MemoryImportCheckResult>(`/companies/${companyId}/memory/import/check`, body),
+  /** Live links from Claude, Codex and other MCP apps. Owner or admin only. */
+  connections: (companyId: string) => api.get<MemoryConnection[]>(`/companies/${companyId}/memory/connections`),
+  createConnection: (companyId: string, body: CreateMemoryConnection) =>
+    api.post<CreatedMemoryConnection>(`/companies/${companyId}/memory/connections`, body),
+  connectionActivity: (companyId: string, agentId: string) =>
+    api.get<MemoryConnectionActivity>(`/companies/${companyId}/memory/connections/${encodeURIComponent(agentId)}/activity`),
+  revokeConnection: (companyId: string, agentId: string) =>
+    api.delete<{ ok: true }>(`/companies/${companyId}/memory/connections/${encodeURIComponent(agentId)}`),
   /** `limit` caps the nodes returned (server default 200). */
   graph: (companyId: string, filters: MemoryGraphFilters & { limit?: number } = {}) =>
     api.get<MemoryGraph>(`/companies/${companyId}/memory/graph${toQuery(filters)}`),

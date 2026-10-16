@@ -61,10 +61,12 @@ export function projectHumanInteractionResponse(row: {
       const answer = object(value);
       return { questionId: answer.questionId, optionIds: answer.optionIds, otherText: answer.otherText };
     }) };
-  } else if (["request_confirmation", "request_checkbox_confirmation"].includes(row.kind)
+  } else if (["request_confirmation", "request_checkbox_confirmation", "request_draft_review"].includes(row.kind)
     && ["accepted", "rejected"].includes(row.status) && result.outcome === row.status) {
+    const draft = object(result.draft);
     response = { outcome: result.outcome, reason: result.reason,
-      ...(Array.isArray(result.selectedOptionIds) ? { selectedOptionIds: result.selectedOptionIds } : {}) };
+      ...(Array.isArray(result.selectedOptionIds) ? { selectedOptionIds: result.selectedOptionIds } : {}),
+      ...(typeof draft.finalBody === "string" ? { finalBody: draft.finalBody, edited: draft.edited === true } : {}) };
   } else return null;
   return { id: row.id, kind: row.kind, status: row.status, resolvedByUserId: row.resolvedByUserId,
     resolvedAt: row.resolvedAt.toISOString(), result: response };

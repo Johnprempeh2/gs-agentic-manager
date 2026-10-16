@@ -15,6 +15,8 @@ const listUserDirectoryMock = vi.hoisted(() => vi.fn());
 const archiveConnectionMock = vi.hoisted(() => vi.fn());
 const updateConnectionMock = vi.hoisted(() => vi.fn());
 const checkConnectionHealthMock = vi.hoisted(() => vi.fn());
+const reenableConnectionAfterPauseMock = vi.hoisted(() => vi.fn());
+const companyState = vi.hoisted(() => ({ status: "active" }));
 const startOAuthMock = vi.hoisted(() => vi.fn());
 const navigateTopLevelMock = vi.hoisted(() => vi.fn());
 const pushToastMock = vi.hoisted(() => vi.fn());
@@ -37,6 +39,7 @@ vi.mock("@/api/tools", () => ({
     updateConnection: (connectionId: string, input: unknown) =>
       updateConnectionMock(connectionId, input),
     checkConnectionHealth: (connectionId: string) => checkConnectionHealthMock(connectionId),
+    reenableConnectionAfterPause: (connectionId: string) => reenableConnectionAfterPauseMock(connectionId),
     startOAuth: (connectionId: string, input?: unknown) => startOAuthMock(connectionId, input),
   },
 }));
@@ -66,7 +69,7 @@ vi.mock("@/lib/router", () => ({
 vi.mock("@/context/CompanyContext", () => ({
   useCompany: () => ({
     selectedCompanyId: "company-1",
-    selectedCompany: { id: "company-1", name: "Greatstone" },
+    selectedCompany: { id: "company-1", name: "Greatstone", status: companyState.status },
   }),
 }));
 
@@ -198,6 +201,7 @@ describe("Connectors landing page", () => {
   });
 
   afterEach(() => {
+    companyState.status = "active";
     act(() => root?.unmount());
     container.remove();
     document.body.innerHTML = "";
@@ -624,6 +628,61 @@ describe("Connectors landing page", () => {
     expect(pushToastMock).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Connection resumed", tone: "success" }),
     );
+  });
+
+  describe("connections turned off by a company pause (GRE-1380)", () => {
+    function pauseSuspended() {
+      listApplicationsMock.mockResolvedValue({ applications: [application()] });
+      listConnectionsMock.mockResolvedValue({
+        connections: [
+          connection({ id: "conn-suspended", enabled: false, pauseSuspendedAt: "2026-10-10T09:00:00Z" }),
+        ],
+      });
+    }
+
+    it("labels the connection and re-enables it through the health-checked action", async () => {
+      pauseSuspended();
+      reenableConnectionAfterPauseMock.mockResolvedValue(connection({ id: "conn-suspended" }));
+      await renderBrowse();
+
+      const connected = container.querySelector('[aria-label="Connected"]')!;
+      expect(connected.textContent).toContain("Turned off by company pause.");
+      expect(buttonByTextIn(connected as HTMLElement, "Resume")).toBeUndefined();
+      const reenable = buttonByTextIn(connected as HTMLElement, "Re-enable")!;
+      expect(reenable.disabled).toBe(false);
+
+      await act(() => reenable.click());
+      await flushReact();
+
+      expect(reenableConnectionAfterPauseMock).toHaveBeenCalledWith("conn-suspended");
+      expect(updateConnectionMock).not.toHaveBeenCalled();
+      expect(pushToastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Connection re-enabled", tone: "success" }),
+      );
+    });
+
+    it("shows the health check error on the row and leaves the connection off", async () => {
+      pauseSuspended();
+      reenableConnectionAfterPauseMock.mockRejectedValue(new Error("The server did not answer the health check."));
+      await renderBrowse();
+
+      await act(() => buttonByText("Re-enable")!.click());
+      await flushReact();
+
+      const alert = container.querySelector('[role="alert"]');
+      expect(alert?.textContent).toBe("Still off: The server did not answer the health check.");
+      expect(buttonByText("Re-enable")).toBeDefined();
+      expect(pushToastMock).not.toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
+    });
+
+    it("keeps Re-enable off until the organization is resumed", async () => {
+      companyState.status = "paused";
+      pauseSuspended();
+      await renderBrowse();
+
+      expect(container.textContent).toContain("Resume the organization before you re-enable it.");
+      expect(buttonByText("Re-enable")?.disabled).toBe(true);
+    });
   });
 
   it("puts unfinished setups in their own group, away from working connections", async () => {

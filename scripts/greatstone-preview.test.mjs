@@ -2,11 +2,13 @@
 // server. Only the variable setup is run: no preview is started, and nothing
 // under ~/GSAM is read or written.
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { join } from "node:path";
+import http from "node:http";
 import test from "node:test";
+import { promisify } from "node:util";
 
 const scriptsDir = new URL(".", import.meta.url).pathname.replace(/\/$/, "");
 
@@ -387,6 +389,168 @@ test("evidence takes a tag when no preview runs, and refuses a bad one (GRE-700)
     const bad = runPreview(["evidence", "../x"], root);
     assert.equal(bad.code, 1);
     assert.match(bad.out, /the tag may use only letters/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// The preview lock (15 Oct 2026): Flint's preview starts ran during John's, each
+// removed the seed and data copy the other was restoring, and the preview of
+// rc-2026-10-15.3 never came up.
+function writePreviewLock(root, pid, extra = "") {
+  const dir = join(root, "locks", "preview.lock");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "owner"), `pid=${pid}\ncommand=greatstone-preview.sh start rc-2026-10-15.3\nrun_id=run-9\n${extra}`);
+  return dir;
+}
+
+test("start, switch-tests and stop refuse while another preview step holds the lock", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+  try {
+    const lock = writePreviewLock(root, holder.pid);
+    for (const args of [["start", "rc-other"], ["switch-tests"], ["stop"]]) {
+      const { code, out } = runPreview(args, root);
+      assert.equal(code, 1, args[0]);
+      assert.match(out, new RegExp(`^preview: another preview step runs \\(pid=${holder.pid} command=greatstone-preview\\.sh start rc-2026-10-15\\.3 run_id=run-9\\); wait for it to end\\.`, "m"), args[0]);
+      assert.equal(readFileSync(join(lock, "owner"), "utf8").includes(`pid=${holder.pid}`), true, `${args[0]} left the holder's lock alone`);
+    }
+  } finally {
+    holder.kill("SIGKILL");
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a lock left by a killed preview step is taken over, and freed on exit", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    // The pid of a process that has ended.
+    const pid = Number(execFileSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }));
+    const lock = writePreviewLock(root, pid);
+    mkdirSync(join(root, "preview"), { recursive: true });
+    const run = spawnSync("bash", [join(scriptsDir, "greatstone-preview.sh"), "stop"], {
+      encoding: "utf8", env: { PATH: process.env.PATH, HOME: root, GSAM_ROOT: root, GSAM_PREVIEW_PORT: "1" },
+    });
+    const out = `${run.stdout}${run.stderr}`;
+    assert.equal(run.status, 0, out);
+    assert.match(out, new RegExp(`Took over the preview lock from pid ${pid}, which no longer runs\\.`));
+    assert.match(out, /No preview is running\./);
+    assert.equal(existsSync(lock), false, "the lock is freed when stop ends");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a lock folder with no owner yet counts as held for a minute", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    mkdirSync(join(root, "locks", "preview.lock"), { recursive: true });
+    const { code, out } = runPreview(["stop"], root);
+    assert.equal(code, 1);
+    assert.match(out, /another preview step runs/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// preview_check: what greatstone-release.sh asks before a release by hand.
+function fakePreviewHealth(commit) {
+  const server = http.createServer((req, res) => {
+    res.writeHead(req.url === "/api/health" ? 200 : 404, { "content-type": "application/json" });
+    res.end(JSON.stringify(req.url === "/api/health" ? { status: "ok", commit } : {}));
+  });
+  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
+}
+
+// withFakePreview for an async check: the fake preview lives until it ends.
+async function withFakePreviewAsync(fn) {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  const dataDir = join(root, "preview", "data");
+  mkdirSync(dataDir, { recursive: true });
+  const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)", dataDir], { stdio: "ignore" });
+  try {
+    writeFileSync(join(root, "preview", "preview.state"), `tag=rc-test\ncommit=abc\npid=${child.pid}\nport=3200\n`);
+    return await fn(root);
+  } finally {
+    child.kill("SIGKILL");
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+async function previewCheck(root, port, commit = "abc") {
+  try {
+    const { stdout } = await promisify(execFile)("bash", ["-c", `source "${scriptsDir}/greatstone-common.sh"; preview_check "$1" rc-test`, "_", commit], {
+      encoding: "utf8",
+      env: { PATH: process.env.PATH, GSAM_ROOT: root, GSAM_PREVIEW_PORT: String(port), GSAM_LIVE_BOARD_KEY_FILE: join(root, "no-key") },
+    });
+    return { code: 0, out: stdout };
+  } catch (error) {
+    return { code: error.code, out: error.stdout };
+  }
+}
+
+test("preview_check fails when no preview runs, so a release by hand cannot skip the preview silently", async () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    const { code, out } = await previewCheck(root, 9);
+    assert.equal(code, 1);
+    assert.match(out, /^no preview of rc-test is running, so it was not checked on a copy of the live data\. Start it: scripts\/greatstone-preview\.sh start rc-test\. Only in an emergency: greatstone-release\.sh --skip-preview "<reason>" rc-test/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("preview_check fails for a preview of another commit, or one that does not answer", async () => {
+  await withFakePreviewAsync(async (root) => {
+    const other = await previewCheck(root, 9, "def");
+    assert.equal(other.code, 1);
+    assert.match(other.out, /^the preview runs rc-test \(abc\), not rc-test\./);
+    // The state names the commit, but nothing answers on the preview port (15 Oct 2026: "preview 000").
+    const down = await previewCheck(root, 9);
+    assert.equal(down.code, 1);
+    assert.match(down.out, /^the preview of rc-test does not answer on http:\/\/localhost:9\/api\/health/);
+  });
+});
+
+test("preview_check passes when the preview runs the commit and answers", async (t) => {
+  const server = await fakePreviewHealth("abc");
+  t.after(() => server.close());
+  await withFakePreviewAsync(async (root) => {
+    const { code, out } = await previewCheck(root, server.address().port);
+    assert.equal(code, 0, out);
+    assert.match(out, /^the preview runs rc-test \(abc\) and answers on http:\/\/localhost:\d+/);
+    const wrong = await fakePreviewHealth("old");
+    try {
+      const stale = await previewCheck(root, wrong.address().port);
+      assert.equal(stale.code, 1, "a server on the port that runs other code is not the preview of the tag");
+    } finally {
+      wrong.close();
+    }
+  });
+});
+
+test("script runs from the preview code folder, never from live, and removes its copy", () => {
+  withFakePreview({}, (root) => {
+    const scripts = join(root, "preview", "code", "scripts");
+    mkdirSync(scripts, { recursive: true });
+    const file = join(root, "walk.mjs");
+    writeFileSync(file, "console.log(`at ${new URL(import.meta.url).pathname} cwd ${process.cwd()} args ${process.argv.slice(2)}`);\n");
+    const { code, out } = runPreview(["script", file, "a", "b"], root);
+    assert.equal(code, 0, out);
+    assert.match(out, new RegExp(`^at ${scripts}/_agent-\\d+-walk\\.mjs cwd ${join(root, "preview", "code")} args a,b$`, "m"));
+    assert.deepEqual(readdirSync(scripts), [], "the copy is removed");
+    assert.equal(existsSync(join(root, "live")), false);
+  });
+});
+
+test("script refuses with no preview running", () => {
+  const root = mkdtempSync(join(tmpdir(), "gs-preview-root-"));
+  try {
+    const file = join(root, "walk.mjs");
+    writeFileSync(file, "\n");
+    const { code, out } = runPreview(["script", file], root);
+    assert.equal(code, 1);
+    assert.match(out, /preview: no preview is running/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

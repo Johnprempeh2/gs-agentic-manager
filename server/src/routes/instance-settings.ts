@@ -2,13 +2,15 @@ import { Router, type Request } from "express";
 import { companies, type Db } from "@greatstone/db";
 import {
   AI_ROUTE_CHANGE_APPROVAL_TYPE,
+  INSTANCE_FEATURE_CATALOG,
+  featureDependencyViolations,
   requestAiRouteChangeSchema,
   patchInstanceSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   startTaskDrainRequestSchema,
 } from "@greatstone/shared";
-import { conflict, forbidden } from "../errors.js";
+import { conflict, forbidden, unprocessable } from "../errors.js";
 import { effectiveEntitlements, getEntitlementRuntime } from "../services/entitlement-runtime.js";
 import { notEntitled } from "../services/entitlements.js";
 import {
@@ -81,6 +83,22 @@ async function assertNoHiddenSettingChanges(
     throw forbidden(`${key} is managed by the hosting operator on this instance`, {
       code: "settings_operator_managed",
     });
+  }
+}
+
+/**
+ * GRE-1382: refuse a write that would leave a dependent switch on without the
+ * switch it needs (Board on, Strategy off). Writes that touch neither key pass,
+ * so an unrelated toggle never fails on a managed or entitled value.
+ */
+async function assertFeatureDependencies(body: Record<string, unknown>, getCurrent: () => Promise<object>) {
+  const next = { ...((await getCurrent()) as Record<string, unknown>), ...body };
+  for (const { feature, requires } of featureDependencyViolations(next)) {
+    if (!(feature in body) && !(requires in body)) continue;
+    throw unprocessable(
+      `${INSTANCE_FEATURE_CATALOG[feature].title} needs ${INSTANCE_FEATURE_CATALOG[requires].title}: turn ${INSTANCE_FEATURE_CATALOG[requires].title} on first, or turn both off`,
+      { code: "feature_requires", feature, requires },
+    );
   }
 }
 
@@ -382,6 +400,7 @@ export function instanceSettingsRoutes(db: Db) {
           }
         }
       }
+      await assertFeatureDependencies(req.body, () => svc.getExperimental());
       const updated = await svc.updateExperimental(req.body);
       const actor = getActorInfo(req);
       const companyIds = await svc.listCompanyIds();

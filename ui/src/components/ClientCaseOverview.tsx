@@ -18,7 +18,9 @@ import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
-import { PipelineCaseDeliverables, PipelineCaseEvidence } from "./PipelineCaseFiles";
+import { ClientJourneyOverview } from "./ClientJourneyOverview";
+import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
+import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -118,8 +120,9 @@ function RecordRow({ label, tour, children }: { label: string; tour?: string; ch
 
 /**
  * One page for a client (GRE-1048): where the client is in the journey, who
- * owns it, what happens next, who to call, the client's files and our
- * deliverables (GRE-1311), and the open work.
+ * owns it, what happens next, who to call, the client's files (GRE-1311), our
+ * deliverables by journey stage and what the client sees on its portal
+ * (GRE-1473), and the open work.
  */
 export function ClientCaseOverview({
   detail,
@@ -148,6 +151,17 @@ export function ClientCaseOverview({
     <div className="space-y-8">
       <StageStrip stages={stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
 
+      <OverviewSection title="Where things stand" tour="client-status">
+        <ClientJourneyOverview
+          caseId={detail.case.id}
+          ownerName={record.owner}
+          companyId={detail.case.companyId ?? null}
+          clientName={detail.case.title}
+          stageEnteredAt={detail.stageEnteredAt}
+          nextAction={record.nextAction}
+        />
+      </OverviewSection>
+
       <OverviewSection title="Client record">
         <dl className="divide-y divide-border">
           <RecordRow label="Country">{record.country ?? <span className="text-muted-foreground">Not set</span>}</RecordRow>
@@ -169,7 +183,7 @@ export function ClientCaseOverview({
       <PipelineCaseCrmSync
         caseId={detail.case.id}
         companyId={detail.case.companyId}
-        wrap={(children) => <OverviewSection title="CRM sync">{children}</OverviewSection>}
+        wrap={(children) => <OverviewSection title="Sync with your CRM">{children}</OverviewSection>}
       />
 
       <OverviewSection title="Contacts" tour="client-contacts">
@@ -177,11 +191,15 @@ export function ClientCaseOverview({
       </OverviewSection>
 
       <OverviewSection title="Evidence" tour="client-evidence">
-        <PipelineCaseEvidence caseId={detail.case.id} />
+        <PipelineCaseEvidence caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
 
-      <OverviewSection title="Deliverables" tour="client-deliverables">
-        <PipelineCaseDeliverables caseId={detail.case.id} />
+      <OverviewSection title="Journey by stage" tour="client-deliverables">
+        <ClientJourneyStages caseId={detail.case.id} organisationId={detail.case.organisationId} />
+      </OverviewSection>
+
+      <OverviewSection title="What the client sees on the portal" tour="client-portal">
+        <ClientPortalPreview caseId={detail.case.id} />
       </OverviewSection>
 
       <OverviewSection title="Open tasks">

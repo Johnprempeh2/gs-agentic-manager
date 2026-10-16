@@ -102,7 +102,6 @@ import {
 import { TaskChatQueuedMessages } from "@/components/task-chat/TaskChatQueuedMessages";
 import { TaskChatWindowScroll } from "@/components/task-chat/useWindowAutoFollow";
 import { useSidebar } from "@/context/SidebarContext";
-import { useStreamlinedUiEnabled } from "@/hooks/useStreamlinedUiEnabled";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -448,6 +447,9 @@ function durableInputLabel(
     return interaction.title ?? "Review items";
   if (interaction.kind === "connection_intent")
     return interaction.title ?? "Connect service";
+  if (interaction.kind === "request_draft_review")
+    return interaction.title ?? "Review draft";
+  if (interaction.kind === "ask_agent") return "Question for an agent";
   if (
     interaction.payload.target?.type === "issue_document" &&
     interaction.payload.target.key === "plan"
@@ -484,7 +486,6 @@ function durableInputLabel(
  * folded row. flag-OFF remains byte-for-byte IssueChatThread.
  */
 export function TaskChatThread(props: TaskChatThreadProps) {
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const {
     initialHistoryPending = false,
     initialCommentsPending = initialHistoryPending,
@@ -1577,7 +1578,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             item: {
               id, kind: "marker", variant: "interrupted", tone: "neutral",
               label: "Waiting to resume",
-              detail: "The previous execution needs to be checked before work can continue. See the task’s execution hold for the next action. Individual checks remain in the run history.",
+              detail: "The last run stopped part way and needs a check before work carries on. The note at the top of the task says what to do next.",
             },
           });
         }
@@ -1731,10 +1732,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         settledRunIds.add(source.id);
         const code = meta?.errorCode ?? "native_runner_process_exited";
         const retryDetail = meta?.scheduledRetryAt
-          ? "Retry scheduled automatically."
+          ? "It will try again by itself shortly."
           : canRetryFailedRun
             ? "You can retry this message now."
-            : "Your message is preserved.";
+            : "Your message is saved.";
         const restoreFailed = hasWorkspaceRestoreFailure(meta?.resultJson);
         const savedPlan = Boolean(planDocument && (meta?.resultJson?.savedPlanRevisionId === planDocument.latestRevisionId || interactions?.some((interaction) =>
           interaction.sourceRunId === source.id && interactionTargetsPlanRevision(interaction, planDocument),
@@ -1748,13 +1749,13 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             : "This run stopped because its AI account was unavailable."
           : source.status === "cancelled"
             ? code === "execution_reconciliation_required"
-              ? "The previous execution must be checked before this task can continue. Your message is preserved. View the stopped run for details."
-              : "Execution was stopped."
+              ? "The agent stopped part way. Open the stopped run to check what it did before this task carries on. Your message is saved."
+              : "The work was stopped."
             : code === "provider_frame_too_large"
-            ? `Provider output exceeded the safe limit. ${retryDetail}`
+            ? `The agent's reply was too large to show safely. ${retryDetail}`
             : code.startsWith("workspace_git_scan_")
-            ? `Workspace setup failed before the agent started. ${retryDetail}`
-            : `The run failed (${code}). ${retryDetail}`;
+            ? `The agent's workspace could not be set up, so it did not start. ${retryDetail}`
+            : `Something went wrong and the agent stopped (${code}). ${retryDetail}`;
         const id = `${source.id}:failure`;
         entriesWithFailures.push({
           ms: toMs(meta?.finishedAt ?? meta?.startedAt ?? meta?.createdAt),
@@ -2294,8 +2295,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
     ? `${tailPlanItem.id}:${tailPlanItem.document.body.length}`
     : "";
   const threadContentKey = `${taskChatContentKey(items)}:${tailContentKey}:${tailPlanContentKey}:${blockerContentKey}`;
-  const repeatBlockersAtBottom =
-    !streamlinedUiEnabled || shouldRepeatTaskChatBlockers(items);
+  const repeatBlockersAtBottom = shouldRepeatTaskChatBlockers(items);
   const bottomBlockerLinks = repeatBlockersAtBottom ? (
     liveWorkLinks ? (
       <TaskChatLiveWorkLinks liveWork={liveWorkLinks} placement="bottom" />
@@ -2478,6 +2478,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         (interaction) =>
           interaction.status === "pending" &&
           interaction.kind !== "connection_intent" &&
+          interaction.kind !== "ask_agent" &&
           !shouldHideInteractionCard(interaction),
       )
       .sort((left, right) => toMs(right.createdAt) - toMs(left.createdAt));
@@ -2900,9 +2901,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
           contentKey={isMobile ? autoFollowContentKey : 0}
           enabled={isMobile && historyRevealed}
         />
-        <TaskChatPresentationProvider
-          mode={streamlinedUiEnabled ? "streamlined" : "production"}
-        >
+        <TaskChatPresentationProvider mode="streamlined">
           <div
             className={cn(
               "flex flex-col",
@@ -2964,9 +2963,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                     {threadHeaderWithBlockers ? (
                       <div
                         className={cn(
-                          "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-6 px-4",
+                          "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-6 px-4 md:px-0",
                           isMobile ? "pt-4" : "pt-3",
-                          streamlinedUiEnabled && "md:px-0",
                         )}
                         data-testid="task-chat-thread-header"
                       >
@@ -2977,12 +2975,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                       {emptyMessage}
                     </div>
                     {bottomBlockerLinks ? (
-                      <div
-                        className={cn(
-                          "mx-auto w-full max-w-(--tc-shell-max-w) px-4 pb-4",
-                          streamlinedUiEnabled && "md:px-0",
-                        )}
-                      >
+                      <div className="mx-auto w-full max-w-(--tc-shell-max-w) px-4 pb-4 md:px-0">
                         {bottomBlockerLinks}
                       </div>
                     ) : null}
@@ -3133,11 +3126,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                   // iOS often stops panning short of the page's bottom edge, so the
                   // dock also clears --vv-bottom-inset (lib/ios-keyboard.ts).
                   isMobile
-                    ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] z-sticky transition-[bottom] duration-200 ease-out"
+                    ? "tc-composer-dock-bottom z-sticky transition-[bottom] duration-200 ease-out"
                     : "bottom-0 z-raised",
-                  "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-4 md:pb-2",
-                  streamlinedUiEnabled && "md:px-0 md:pb-0",
-                  (!streamlinedUiEnabled || isMobile) &&
+                  "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-0 md:pb-0",
+                  isMobile &&
                     "bg-background/80 pt-1 backdrop-blur supports-[backdrop-filter]:bg-background/60 dark:bg-transparent dark:backdrop-blur-none dark:supports-[backdrop-filter]:bg-transparent",
                 )}
               >

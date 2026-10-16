@@ -3,6 +3,8 @@ import type {
   CreateDeliverableCommentInput,
   DeliverableComment,
   DeliverableCommentsResponse,
+  DeliverableAudience,
+  DeliverableConfidentiality,
   DeliverableDetail,
   DeliverableKind,
   DeliverableSort,
@@ -18,6 +20,7 @@ export type {
   DeliverableCommentLocator,
   SendDeliverableCommentsResponse,
   Deliverable,
+  DeliverableConfidentiality,
   DeliverableDetail,
   DeliverableFacets,
   DeliverableKind,
@@ -35,6 +38,9 @@ export interface ListDeliverablesParams {
   projectId?: string;
   agentId?: string;
   brand?: string;
+  confidentiality?: DeliverableConfidentiality;
+  audience?: DeliverableAudience;
+  linkHealth?: "broken";
   from?: string;
   sort?: DeliverableSort;
   limit?: number;
@@ -66,6 +72,10 @@ export const deliverablesApi = {
     api.get<DeliverableDetail>(`/companies/${companyId}/deliverables/${id}`),
   markOpened: (companyId: string, id: string) =>
     api.post<{ ok: true }>(`/companies/${companyId}/deliverables/${id}/opened`, {}),
+  update: (companyId: string, id: string, input: { confidentiality?: DeliverableConfidentiality; restricted?: boolean }) =>
+    api.patch<DeliverableDetail>(`/companies/${companyId}/deliverables/${id}`, input),
+  refreshScreenshot: (companyId: string, id: string) =>
+    api.post<{ deliverable: DeliverableDetail; captured: boolean }>(`/companies/${companyId}/deliverables/${id}/screenshot`, {}),
   mark: (companyId: string, input: MarkDeliverableInput) =>
     api.post<DeliverableDetail>(`/companies/${companyId}/deliverables/mark`, input),
 

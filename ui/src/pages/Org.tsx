@@ -120,7 +120,8 @@ export function Org() {
       {data && data.length === 0 && (
         <EmptyState
           icon={GitBranch}
-          message="No agents in the organization. Create agents to build your org chart."
+          message="No agents yet."
+          description="Hire your first agent and it appears here with who it reports to."
           action="New agent"
           onAction={openNewAgent}
         />

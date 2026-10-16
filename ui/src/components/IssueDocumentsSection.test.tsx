@@ -20,6 +20,9 @@ const mockIssuesApi = vi.hoisted(() => ({
   unlockDocument: vi.fn(),
   deleteDocument: vi.fn(),
   getDocument: vi.fn(),
+  listDocumentLinks: vi.fn(async (): Promise<unknown[]> => []),
+  deleteDocumentLink: vi.fn(),
+  setDocumentApprovedRevision: vi.fn(),
 }));
 
 const markdownEditorMockState = vi.hoisted(() => ({
@@ -59,6 +62,9 @@ vi.mock("../hooks/useAutosaveIndicator", () => ({
 
 vi.mock("@/lib/router", () => ({
   useLocation: () => ({ hash: "" }),
+  Link: ({ to, children, ...props }: { to: string; children?: React.ReactNode }) => (
+    <a href={to} {...props}>{children}</a>
+  ),
 }));
 
 vi.mock("./MarkdownBody", () => ({
@@ -1086,6 +1092,82 @@ describe("IssueDocumentsSection", () => {
 
     expect(setDocumentLock).toHaveBeenCalledWith("body", true);
     expect(container.querySelector('button[title="Unlock document"]')).toBeTruthy();
+
+    await act(async () => {
+      root.unmount();
+    });
+    queryClient.clear();
+  });
+
+  it("shows the approved version and documents shared from other tasks in plain words", async () => {
+    const issue = createIssue();
+    const root = createRoot(container);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    mockIssuesApi.listDocuments.mockResolvedValue([
+      createIssueDocument({
+        key: "plan",
+        body: "# Plan",
+        approvedRevisionId: "revision-3",
+        approvedRevisionNumber: 3,
+      }),
+    ]);
+    mockIssuesApi.listDocumentLinks.mockResolvedValue([
+      {
+        id: "link-1",
+        companyId: "company-1",
+        issueId: issue.id,
+        sourceIssueId: "issue-source",
+        sourceIssueIdentifier: "PAP-7",
+        sourceIssueTitle: "Write the pack",
+        sourceIssueAssigneeAgentId: null,
+        documentId: "document-shared",
+        key: "pack",
+        title: "Client pack",
+        latestRevisionId: "revision-14",
+        latestRevisionNumber: 14,
+        makerAgentId: null,
+        approvedRevisionId: "revision-12",
+        approvedRevisionNumber: 12,
+        approvedAt: new Date("2026-03-31T12:00:00.000Z"),
+        documentUpdatedAt: new Date("2026-03-31T12:00:00.000Z"),
+        createdByAgentId: null,
+        createdByUserId: "user-1",
+        createdAt: new Date("2026-03-31T12:00:00.000Z"),
+      },
+    ]);
+    mockIssuesApi.setDocumentApprovedRevision.mockResolvedValue(
+      createIssueDocument({ approvedRevisionId: "revision-4", approvedRevisionNumber: 4 }),
+    );
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDocumentsSection issue={issue} canDeleteDocuments={false} canManageDocumentLocks />
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
+    await flush();
+
+    expect(container.textContent).toContain("Approved version: 3");
+    expect(container.textContent).toContain("Shared from other tasks");
+    expect(container.textContent).toContain("Client pack");
+    expect(container.textContent).toContain("from PAP-7");
+    expect(container.textContent).toContain("Version 14, approved version is 12");
+    const sharedLink = container.querySelector('a[href="/issues/PAP-7#document-pack"]');
+    expect(sharedLink).not.toBeNull();
+
+    const approveButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Mark this version as approved"),
+    );
+    expect(approveButton).toBeDefined();
+    await act(async () => {
+      approveButton!.click();
+    });
+    await flush();
+    expect(mockIssuesApi.setDocumentApprovedRevision).toHaveBeenCalledWith(issue.id, "plan", "revision-4");
 
     await act(async () => {
       root.unmount();

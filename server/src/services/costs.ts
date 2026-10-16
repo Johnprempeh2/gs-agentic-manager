@@ -19,6 +19,8 @@ import type { Db } from "@greatstone/db";
 import { activityLog, agents, companies, companySubscriptions, costEvents, heartbeatRuns, issues, projects } from "@greatstone/db";
 import { notFound, unprocessable } from "../errors.js";
 import { budgetService, type BudgetServiceHooks } from "./budgets.js";
+import { noteBillingUsageWarning } from "./billing-account.js";
+import { logger } from "../middleware/logger.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 
 export interface CostDateRange {
@@ -144,6 +146,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .where(eq(companies.id, companyId));
 
       await budgets.evaluateCostEvent(event);
+      // The event is stored; a failed warn check must not make the caller send it again.
+      await noteBillingUsageWarning(db, event.occurredAt).catch((err) => {
+        logger.warn({ err, companyId }, "billing usage warning not checked");
+      });
 
       return event;
     },

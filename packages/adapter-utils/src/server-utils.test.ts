@@ -2015,6 +2015,74 @@ describe("renderPaperclipWakePrompt", () => {
     );
   });
 
+  it("tells the agent to chase or set a new date when the expected date has passed", () => {
+    const prompt = renderPaperclipWakePrompt({
+      reason: "waiting_date_passed",
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-2001",
+        title: "Waiting on the client's sign-off",
+        status: "blocked",
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    });
+
+    expect(prompt).toContain("- reason: waiting_date_passed");
+    expect(prompt).toContain(
+      "The date this task expected to hear back by has passed. Chase the person it is waiting on, or set a new expected date",
+    );
+    expect(prompt).toContain("say what you did in a comment.");
+  });
+
+  it("tells an agent asked a question how to answer it", () => {
+    const prompt = renderPaperclipWakePrompt({
+      reason: "agent_question",
+      issue: { id: "issue-1", identifier: "PAP-2002", title: "Prepare the NDA pack", status: "in_progress" },
+      interactionId: "interaction-1",
+      interactionKind: "ask_agent",
+      agentQuestion: {
+        interactionId: "interaction-1",
+        status: "pending",
+        askedByAgentName: "Ada",
+        question: "Which client contact signed the NDA?",
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    });
+
+    expect(prompt).toContain("- reason: agent_question");
+    expect(prompt).toContain("Ada asked you a question on their task.");
+    expect(prompt).toContain("POST /api/issues/issue-1/agent-questions/interaction-1/answer");
+    expect(prompt).toContain("Which client contact signed the NDA?");
+    expect(prompt).toContain("Do not check out, comment on or change their task.");
+  });
+
+  it("gives the asking agent the answer to its question", () => {
+    const prompt = renderPaperclipWakePrompt({
+      reason: "agent_question_answered",
+      issue: { id: "issue-1", identifier: "PAP-2002", title: "Prepare the NDA pack", status: "in_progress" },
+      interactionId: "interaction-1",
+      interactionKind: "ask_agent",
+      interactionStatus: "answered",
+      agentQuestion: {
+        interactionId: "interaction-1",
+        status: "answered",
+        question: "Which client contact signed the NDA?",
+        answer: "Jane Smith, on 3 March.",
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    });
+
+    expect(prompt).toContain("## Answer To Your Question");
+    expect(prompt).toContain("Jane Smith, on 3 March.");
+    expect(prompt).toContain("Carry on with the task using it.");
+  });
+
   it("keeps exactly one execution contract in a composed fresh heartbeat prompt", () => {
     const wakePrompt = renderPaperclipWakePrompt({
       reason: "issue_assigned",

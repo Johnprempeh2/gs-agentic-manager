@@ -45,7 +45,6 @@ export type UseThreadHandlersInput = {
   isMobile: boolean;
   isFromInbox: boolean;
   setMobileToolbar: (node: ReactNode | null) => void;
-  streamlinedUiEnabled: boolean;
   preferInboxHistoryBack: boolean;
   attachmentsLoading: boolean;
   fetchOlderComments: (options?: FetchNextPageOptions) => Promise<InfiniteQueryObserverResult<InfiniteData<IssueComment[], unknown>, Error>>;
@@ -85,7 +84,6 @@ export function useThreadHandlers({
   isMobile,
   isFromInbox,
   setMobileToolbar,
-  streamlinedUiEnabled,
   preferInboxHistoryBack,
   attachmentsLoading,
   fetchOlderComments,
@@ -196,7 +194,7 @@ export function useThreadHandlers({
     setMobileToolbar(
       <InboxMobileToolbar
         backHref={backHref}
-        preferHistoryBack={streamlinedUiEnabled ? preferInboxHistoryBack : true}
+        preferHistoryBack={preferInboxHistoryBack}
         issueId={issue?.id}
         issueHidden={issueHidden}
         archivePending={archivePending}
@@ -212,8 +210,7 @@ export function useThreadHandlers({
     showInboxToolbar,
     backHref,
     preferInboxHistoryBack,
-    streamlinedUiEnabled,
-    issue?.id,
+      issue?.id,
     issueHidden,
     archivePending,
     setMobileToolbar,

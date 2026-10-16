@@ -127,6 +127,9 @@ import {
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { pushNotificationService } from "./services/push-notifications.js";
+import { morningSummaryService } from "./services/morning-summary.js";
+import { weeklyReportService } from "./services/weekly-report.js";
+import { agentDailyDigestService } from "./services/agent-daily-digest.js";
 import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
@@ -135,6 +138,7 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { supportQueueService } from "./services/support-queue.js";
+import { deliverableService } from "./services/deliverables.js";
 import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
 import {
   LEFTOVER_PROCESS_SWEEP_INTERVAL_MS,
@@ -1498,6 +1502,22 @@ async function startServerWithDatabaseTeardown(
       workspaceReaperCooldownDays: config.workspaceReaperCooldownDays,
     });
     const supportQueue = supportQueueService(db as any, { wakeup: heartbeat.wakeup });
+    // Daily check of link deliverables (live sites): a few per tick, never-checked first.
+    const deliverableLinks = deliverableService(db as any);
+    let deliverableLinkCheckInFlight = false;
+    const scheduleDeliverableLinkCheck = () => {
+      if (heartbeatSchedulerStopped || deliverableLinkCheckInFlight) return;
+      deliverableLinkCheckInFlight = true;
+      trackHeartbeatSchedulerWork(deliverableLinks
+        .checkDueLinks()
+        .then((result) => {
+          if (result.broken > 0) logger.info(result, "deliverable link check found broken links");
+        })
+        .catch((err) => {
+          logger.error({ err }, "deliverable link check failed");
+        })
+        .finally(() => { deliverableLinkCheckInFlight = false; }));
+    };
     const scheduleSupportClockSweep = () => {
       if (heartbeatSchedulerStopped) return;
       trackHeartbeatSchedulerWork(supportQueue
@@ -1923,6 +1943,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
         scheduleSupportClockSweep();
+        scheduleDeliverableLinkCheck();
         scheduleUnrecordedWorktreeSweep();
         scheduleRunProcessSweep();
         scheduleAdapterLoginReaperSweep();
@@ -2108,6 +2129,12 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
+              const reconciled = await heartbeat.reconcileWaitingDatesPassed();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic waiting-date sweep woke assignees whose expected date passed");
+              }
+            })
+            .then(async () => {
               const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
               if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
@@ -2147,6 +2174,8 @@ async function startServerWithDatabaseTeardown(
   // users who turned notifications on, so it costs nothing until someone does.
   // A self-rescheduling timer: a slow round never overlaps the next.
   const decisionPushes = pushNotificationService(db as any);
+  const morningSummaries = morningSummaryService(db as any);
+  const weeklyReports = weeklyReportService(db as any);
   let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
   let decisionPushStopped = false;
   const scheduleDecisionPushRound = () => {
@@ -2155,11 +2184,42 @@ async function startServerWithDatabaseTeardown(
       void decisionPushes
         .notifyNewDecisions()
         .catch((err) => logger.warn({ err }, "decision push round failed"))
+        // The morning summary rides the same round: each person's chosen hour, once a day.
+        .then(() => morningSummaries.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "morning summary round failed"))
+        // The weekly report goes on Monday at the same hour, for people who chose it.
+        .then(() => weeklyReports.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "weekly report round failed"))
         .finally(scheduleDecisionPushRound);
     }, DECISION_PUSH_INTERVAL_MS);
     decisionPushTimer.unref?.();
   };
   scheduleDecisionPushRound();
+
+  /** How often the nightly digest checks whether yesterday (UTC) still needs one. */
+  const AGENT_DAILY_DIGEST_INTERVAL_MS = 10 * 60_000;
+  // The nightly digest of what each agent did, with cost, for the lead agent.
+  // Each round stores yesterday's digest for every company that has none yet,
+  // so it goes out shortly after midnight UTC, once: the stored row per company
+  // and day is the marker, so a restart never sends it twice. It writes a
+  // document and wakes no one.
+  const agentDailyDigests = agentDailyDigestService(db as any);
+  let agentDailyDigestTimer: ReturnType<typeof setTimeout> | null = null;
+  let agentDailyDigestStopped = false;
+  const scheduleAgentDailyDigestRound = (delayMs = AGENT_DAILY_DIGEST_INTERVAL_MS) => {
+    if (agentDailyDigestStopped) return;
+    agentDailyDigestTimer = setTimeout(() => {
+      void agentDailyDigests
+        .runDue()
+        .then((result) => {
+          if (result.delivered > 0 || result.skipped > 0) logger.info(result, "nightly agent digests stored");
+        })
+        .catch((err) => logger.warn({ err }, "nightly agent digest round failed"))
+        .finally(() => scheduleAgentDailyDigestRound());
+    }, delayMs);
+    agentDailyDigestTimer.unref?.();
+  };
+  scheduleAgentDailyDigestRound(60_000);
 
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
@@ -2258,6 +2318,8 @@ async function startServerWithDatabaseTeardown(
     entitlementRuntime?.stop();
     decisionPushStopped = true;
     if (decisionPushTimer) clearTimeout(decisionPushTimer);
+    agentDailyDigestStopped = true;
+    if (agentDailyDigestTimer) clearTimeout(agentDailyDigestTimer);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;

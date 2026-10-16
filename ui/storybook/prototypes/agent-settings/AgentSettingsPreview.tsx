@@ -55,6 +55,7 @@ const descriptions: Record<AgentLocalDetailView, string> = {
   channels: "Manage the external chat connections dedicated to this agent.",
   permissions: "Set the agent’s trust level, authority, and boundaries.",
   "api-keys": "Manage the keys this agent uses to authenticate with GS Agentic Manager.",
+  access: "See what this agent can reach and what needs attention.",
   revisions:
     "Review past configuration changes and restore an earlier version.",
 };

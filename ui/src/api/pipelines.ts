@@ -1,7 +1,16 @@
 import type {
+  CreateClientAcceptanceLinkResponse,
   ClientEvidenceCandidatesResponse,
   ClientEvidenceItem,
   ClientFilesResponse,
+  ClientJourneyResponse,
+  ClientEngagement,
+  ClientNda,
+  EngagementStatus,
+  NdaStatus,
+  ClientPortalJourneyResponse,
+  CreateClientJourneyDeliverableInput,
+  UpdateClientJourneyDeliverable,
   CreateClientEvidence,
   CreateCrmSyncSuggestion,
   CrmSyncBinding,
@@ -62,6 +71,8 @@ export interface PipelineListItem {
   description: string | null;
   projectId: string | null;
   enforceTransitions: boolean;
+  /** CRM pipelines (GRE-1478): every case must name an organisation record. */
+  requiresOrganisation?: boolean;
   archivedAt: Date | string | null;
   stageCount: number;
   stages?: PipelineStage[];
@@ -149,6 +160,7 @@ export interface PipelineCase {
   caseKey?: string | null;
   title: string;
   summary?: string | null;
+  organisationId?: string | null;
   fields?: Record<string, unknown> | null;
   workspaceRef?: Record<string, unknown> | null;
   parentCaseId?: string | null;
@@ -550,7 +562,13 @@ export const pipelinesApi = {
   getHealth: (pipelineId: string) => api.get<PipelineHealthReport>(`/pipelines/${pipelineId}/health`),
   update: (
     pipelineId: string,
-    data: { name?: string; description?: string | null; enforceTransitions?: boolean; archived?: boolean },
+    data: {
+      name?: string;
+      description?: string | null;
+      enforceTransitions?: boolean;
+      requiresOrganisation?: boolean;
+      archived?: boolean;
+    },
   ) => api.patch<PipelineListItem>(`/pipelines/${pipelineId}`, data),
   listFields: (pipelineId: string, options?: { includeArchived?: boolean }) =>
     api.get<PipelineFieldDefinition[]>(
@@ -700,8 +718,63 @@ export const pipelinesApi = {
     api.get<ClientEvidenceCandidatesResponse>(`/cases/${caseId}/evidence/candidates`),
   addCaseEvidence: (caseId: string, input: CreateClientEvidence) =>
     api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
+  /** Upload a file straight onto the client, optionally filed under a journey stage. */
+  uploadCaseEvidence: (
+    caseId: string,
+    file: File,
+    input: { title?: string; note?: string; stageId?: string | null; requestId?: string | null } = {},
+  ) => {
+    const form = new FormData();
+    if (input.title) form.append("title", input.title);
+    if (input.note) form.append("note", input.note);
+    if (input.stageId) form.append("stageId", input.stageId);
+    if (input.requestId) form.append("requestId", input.requestId);
+    // The file goes last so the text fields are parsed before it.
+    form.append("file", file);
+    return api.postForm<ClientEvidenceItem>(`/cases/${caseId}/evidence/upload`, form);
+  },
+  /** Ask the client for documents at a stage; titles already asked for are skipped. */
+  requestCaseDocuments: (caseId: string, input: { stageId: string; titles: string[]; note?: string | null }) =>
+    api.post<{ created: number }>(`/cases/${caseId}/document-requests`, input),
+  addStandardCaseDocumentRequests: (caseId: string, stageId: string) =>
+    api.post<{ created: number }>(`/cases/${caseId}/document-requests/standard`, { stageId }),
+  removeCaseDocumentRequest: (caseId: string, requestId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/document-requests/${requestId}`),
   removeCaseEvidence: (caseId: string, evidenceId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
+  getCaseJourney: (caseId: string) =>
+    api.get<ClientJourneyResponse>(`/cases/${caseId}/journey`),
+  getCasePortal: (caseId: string) =>
+    api.get<ClientPortalJourneyResponse>(`/cases/${caseId}/portal`),
+  fileCaseJourneyDeliverable: (caseId: string, input: CreateClientJourneyDeliverableInput) =>
+    api.post<{ id: string }>(`/cases/${caseId}/journey/deliverables`, input),
+  updateCaseJourneyDeliverable: (caseId: string, linkId: string, input: UpdateClientJourneyDeliverable) =>
+    api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
+  removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
+  setCaseEngagement: (caseId: string, status: EngagementStatus) =>
+    api.put<{ engagement: ClientEngagement }>(`/cases/${caseId}/engagement`, { status }),
+  /** Make the client's online acceptance link (revokes any older one). The link is returned only here. */
+  createEngagementLink: (caseId: string) =>
+    api.post<CreateClientAcceptanceLinkResponse>(`/cases/${caseId}/engagement/online-link`, {}),
+  revokeEngagementLink: (caseId: string) => api.delete<void>(`/cases/${caseId}/engagement/online-link`),
+  /** Upload the engagement pack (marks it sent) or the client's signed acceptance (marks it accepted). */
+  uploadEngagementFile: (caseId: string, step: "pack" | "acceptance", file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<{ engagement: ClientEngagement; evidence: ClientEvidenceItem }>(
+      `/cases/${caseId}/engagement/${step}`,
+      form,
+    );
+  },
+  /** Upload the client's signed NDA; it is filed in their evidence and the NDA is marked accepted. */
+  uploadSignedNda: (caseId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<{ nda: ClientNda; evidence: ClientEvidenceItem }>(`/cases/${caseId}/nda/signed`, form);
+  },
+  setCaseNda: (caseId: string, input: { status: NdaStatus; reason?: string | null }) =>
+    api.put<{ ndaAcceptedAt: string | null; nda: ClientNda }>(`/cases/${caseId}/nda`, input),
   createIssueLink: (
     caseId: string,
     data:
@@ -773,6 +846,7 @@ export const pipelinesApi = {
       stageKey?: string | null;
       parentCaseId?: string | null;
       requestKey?: string | null;
+      organisationId?: string | null;
       blockedByCaseIds?: string[];
       blockedByCaseKeys?: string[];
     }>;

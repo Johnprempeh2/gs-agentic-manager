@@ -31,7 +31,12 @@ import {
   upsertPipelineDocumentSchema,
   upsertPipelineCaseDocumentSchema,
 } from "./pipelines-schemas.js";
-import { Router, type Request } from "express";
+import { memoryCallerFromRequest } from "./memory.js";
+import { memoryGatewayService } from "../services/memory-gateway/service.js";
+import type { MemoryEngine } from "../services/memory-gateway/engine.js";
+import { CASE_DOCUMENT_TEXT_LIMIT, isReadableText, rememberCaseDocument } from "../services/memory-gateway/case-documents.js";
+import { Router, type Request, type Response } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -62,6 +67,16 @@ import {
   routines,
 } from "@greatstone/db";
 import { validate } from "../middleware/validate.js";
+import type { StorageService } from "../storage/types.js";
+import {
+  contentDispositionHeader,
+  formatAttachmentSize,
+  isAllowedContentType,
+  isInlineAttachmentContentType,
+  MAX_ATTACHMENT_BYTES,
+  normalizeUploadAttachmentContentType,
+  SVG_CONTENT_TYPE,
+} from "../attachment-types.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
 import {
@@ -98,9 +113,22 @@ import { assertCompanyAccess } from "./authz.js";
 import {
   clientFilesQuerySchema,
   clientFilesSearchSchema,
+  uploadClientEvidenceFieldsSchema,
+  createClientDocumentRequestsSchema,
+  addStandardClientDocumentRequestsSchema,
   computePipelineHealth,
   createClientEvidenceSchema,
+  createClientJourneyDeliverableSchema,
+  resolveSetCaseNda,
+  setCaseNdaSchema,
+  setCaseEngagementSchema,
+  type SetCaseEngagement,
+  type CreateClientAcceptanceLinkResponse,
+  type SetCaseNda,
+  updateClientJourneyDeliverableSchema,
   type CreateClientEvidence,
+  type CreateClientJourneyDeliverable,
+  type UpdateClientJourneyDeliverable,
   createPipelineFieldSchema,
   deriveCaseType,
   envConfigSchema,
@@ -119,6 +147,7 @@ import {
 } from "@greatstone/shared";
 import { documentAnnotationService } from "../services/document-annotations.js";
 import { logActivity } from "../services/activity-log.js";
+import { clientAcceptanceService } from "../services/client-acceptance.js";
 import { pipelineAccessRoutes } from "./pipeline-access.js";
 import {
   createPipelineFieldDefinition,
@@ -136,6 +165,8 @@ import {
   summarizePipelineCaseOutputsForContext,
 } from "../services/pipeline-case-outputs.js";
 import { pipelineCaseFilesService, type ClientEvidenceSourceIssue } from "../services/pipeline-case-files.js";
+import { pipelineCaseJourneyService } from "../services/pipeline-case-journey.js";
+import { pipelineCaseDocumentRequestsService } from "../services/pipeline-case-document-requests.js";
 
 /** Per-stage instructions document keys look like `stage-instructions:{stageId}`. */
 const STAGE_INSTRUCTIONS_PREFIX = "stage-instructions:";
@@ -585,6 +616,7 @@ type PipelineAuditRow = {
   description?: string | null;
   projectId?: string | null;
   enforceTransitions?: boolean;
+  requiresOrganisation?: boolean;
   archivedAt?: Date | null;
 };
 type StageAuditRow = { id: string; key: string; name: string; kind: string; position: number; config?: unknown };
@@ -597,6 +629,7 @@ function pipelineAuditSnapshot(row: PipelineAuditRow | null | undefined) {
     description: row.description ?? null,
     projectId: row.projectId ?? null,
     enforceTransitions: row.enforceTransitions ?? null,
+    requiresOrganisation: row.requiresOrganisation ?? null,
     archived: Boolean(row.archivedAt),
   };
 }
@@ -740,6 +773,12 @@ async function assertCaseWorkAccess(
 async function getStagesByKey(db: Db, pipelineId: string) {
   const rows = await db.select().from(pipelineStages).where(eq(pipelineStages.pipelineId, pipelineId));
   return new Map(rows.map((stage) => [stage.key, stage]));
+}
+
+function requestActorOf(actor: PipelineActor) {
+  return actor.type === "agent"
+    ? { type: "agent" as const, agentId: actor.agentId }
+    : { type: "user" as const, userId: actor.type === "user" ? actor.userId : "board" };
 }
 
 async function writeRouteEvent(
@@ -919,11 +958,37 @@ export const PIPELINE_ROUTE_PREFIXES = [
   "/companies/:companyId/client-files",
 ];
 
-export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineService>[1] = {}) {
+function singleEvidenceUpload(req: Request, res: Response) {
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
+  }).single("file");
+  return new Promise<void>((resolve, reject) => {
+    upload(req, res, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+export function pipelineRoutes(
+  db: Db,
+  options: Parameters<typeof pipelineService>[1] & {
+    storage?: StorageService;
+    memoryEngine?: MemoryEngine;
+    /** The server's public address, for the client acceptance link. */
+    publicBaseUrl?: string;
+  } = {},
+) {
   const router = Router();
-  const svc = pipelineService(db, options);
+  const { storage, memoryEngine, publicBaseUrl, ...serviceOptions } = options;
+  const svc = pipelineService(db, serviceOptions);
+  const memorySvc = memoryGatewayService(db, { engine: memoryEngine });
   const outputsSvc = pipelineCaseOutputsService(db);
   const filesSvc = pipelineCaseFilesService(db);
+  const journeySvc = pipelineCaseJourneyService(db);
+  const acceptanceSvc = clientAcceptanceService(db);
+  const requestsSvc = pipelineCaseDocumentRequestsService(db);
   const access = accessService(db);
   const issuesSvc = issueService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
@@ -1037,6 +1102,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
         description: req.body.description,
         projectId: req.body.projectId,
         enforceTransitions: req.body.enforceTransitions,
+        requiresOrganisation: req.body.requiresOrganisation,
         stages: req.body.stages?.map((stage: {
           key: string;
           name: string;
@@ -1328,6 +1394,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     if (req.body.name !== undefined) patch.name = req.body.name;
     if (req.body.description !== undefined) patch.description = req.body.description;
     if (req.body.enforceTransitions !== undefined) patch.enforceTransitions = req.body.enforceTransitions;
+    if (req.body.requiresOrganisation !== undefined) patch.requiresOrganisation = req.body.requiresOrganisation;
     if (req.body.archived !== undefined) patch.archivedAt = req.body.archived ? new Date() : null;
     const [updated] = await db
       .update(pipelines)
@@ -2737,6 +2804,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const caseId = req.params.caseId as string;
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
     const body = req.body as CreateClientEvidence;
+    if (body.stageId) await filesSvc.assertStageOnCase(companyId, caseId, body.stageId);
     const source = await filesSvc.resolveSource(companyId, body);
     // Only someone who can read the source task may file its content here.
     if (source.sourceIssue) await assertIssueReadable(req, access, source.sourceIssue);
@@ -2759,6 +2827,143 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.status(201).json(item);
   });
 
+  // Upload a file straight onto the client (Ben, 12 and 13 Oct): one
+  // multipart `file`, with optional title, note and stageId fields. The file
+  // is stored under the case and only served back through the case's own
+  // access-checked content route below.
+  /**
+   * Read one multipart `file` (with optional title, note and stageId fields),
+   * check it, and put it in storage under the case. Callers record it.
+   */
+  async function receiveCaseUpload(req: Request, res: Response, companyId: string, caseId: string) {
+    if (!storage) throw new HttpError(503, "File storage is not available");
+    try {
+      await singleEvidenceUpload(req, res);
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          throw unprocessable(`File is larger than the ${formatAttachmentSize(MAX_ATTACHMENT_BYTES)} limit`);
+        }
+        throw badRequest(err.message);
+      }
+      throw err;
+    }
+    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    if (!file) throw badRequest("Missing file field 'file'");
+    if (file.buffer.length <= 0) throw unprocessable("The file is empty");
+    const fields = uploadClientEvidenceFieldsSchema.safeParse(req.body ?? {});
+    if (!fields.success) throw badRequest("Invalid upload fields", fields.error.flatten());
+    const contentType = normalizeUploadAttachmentContentType({
+      contentType: file.mimetype,
+      originalFilename: file.originalname,
+      isAllowedContentType,
+    });
+    if (!isAllowedContentType(contentType)) {
+      throw unprocessable(`Files of type ${contentType} cannot be uploaded here`);
+    }
+    if (fields.data.requestId) {
+      const request = await requestsSvc.get(companyId, caseId, fields.data.requestId);
+      if (!request) throw notFound("Document request not found");
+      fields.data.stageId = fields.data.stageId ?? request.stageId;
+    }
+    if (fields.data.stageId) await filesSvc.assertStageOnCase(companyId, caseId, fields.data.stageId);
+    const stored = await storage.putFile({
+      companyId,
+      namespace: `pipeline-cases/${caseId}`,
+      originalFilename: file.originalname || null,
+      contentType,
+      body: file.buffer,
+    });
+    const text = isReadableText(contentType) ? file.buffer.subarray(0, CASE_DOCUMENT_TEXT_LIMIT * 4).toString("utf8") : null;
+    return { stored, fields: fields.data, text };
+  }
+
+  /** A file added to a client also goes into memory, waiting for review. Never fails the upload. */
+  async function rememberUpload(
+    req: Request,
+    companyId: string,
+    caseId: string,
+    item: { id: string; title: string; note?: string | null },
+    stored: { originalFilename: string | null },
+    text: string | null,
+  ) {
+    const caseRow = await db
+      .select({ title: pipelineCases.title })
+      .from(pipelineCases)
+      .where(and(eq(pipelineCases.id, caseId), eq(pipelineCases.companyId, companyId)))
+      .then((rows) => rows[0]);
+    if (!caseRow?.title) return;
+    await rememberCaseDocument(memorySvc, memoryCallerFromRequest(req, companyId), {
+      caseId,
+      evidenceId: item.id,
+      clientName: caseRow.title,
+      title: item.title,
+      originalFilename: stored.originalFilename,
+      note: item.note ?? null,
+      text,
+    });
+  }
+
+  // Upload a file straight onto the client (Ben, 12 and 13 Oct): one
+  // multipart `file`, with optional title, note and stageId fields. The file
+  // is stored under the case and only served back through the case's own
+  // access-checked content route below.
+  router.post("/cases/:caseId/evidence/upload", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const { stored, fields, text } = await receiveCaseUpload(req, res, companyId, caseId);
+    const item = await filesSvc.addUpload(
+      companyId,
+      caseId,
+      stored,
+      fields,
+      requestActorOf(actor),
+    );
+    if (fields.requestId) await requestsSvc.markReceived(companyId, caseId, fields.requestId, item.id);
+    await rememberUpload(req, companyId, caseId, item, stored, text);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: {
+        action: "evidence_added",
+        evidenceId: item.id,
+        kind: item.kind,
+        ...(item.stageId ? { stageId: item.stageId } : {}),
+        ...(fields.requestId ? { requestId: fields.requestId } : {}),
+      },
+    });
+    res.status(201).json(item);
+  });
+
+  router.get("/cases/:caseId/evidence/:evidenceId/content", async (req, res, next) => {
+    const caseId = req.params.caseId as string;
+    const parsedId = z.string().guid().safeParse(req.params.evidenceId);
+    if (!parsedId.success) throw notFound("File not found");
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (!storage) throw new HttpError(503, "File storage is not available");
+    const upload = await filesSvc.getUpload(companyId, caseId, parsedId.data);
+    if (!upload) throw notFound("File not found");
+
+    const object = await storage.getObject(upload.companyId, upload.objectKey);
+    const contentType = upload.contentType || object.contentType || "application/octet-stream";
+    const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    const inlineSafe = mediaType !== SVG_CONTENT_TYPE && isInlineAttachmentContentType(mediaType);
+    const wantsDownload = req.query.download === "1";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", String(upload.byteSize || object.contentLength || 0));
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    if (!inlineSafe) res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+    res.setHeader(
+      "Content-Disposition",
+      contentDispositionHeader(inlineSafe && !wantsDownload ? "inline" : "attachment", upload.originalFilename ?? "file"),
+    );
+    object.stream.on("error", (err) => next(err));
+    object.stream.pipe(res);
+  });
+
   router.delete("/cases/:caseId/evidence/:evidenceId", async (req, res) => {
     const caseId = req.params.caseId as string;
     const parsedId = z.string().guid().safeParse(req.params.evidenceId);
@@ -2766,12 +2971,305 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
     const removed = await filesSvc.removeEvidence(companyId, caseId, parsedId.data);
     if (!removed) throw notFound("Evidence not found");
+    if (removed.removedObjectKey && storage) {
+      // The row is gone either way; a stored object left behind is harmless.
+      await storage.deleteObject(companyId, removed.removedObjectKey).catch(() => undefined);
+    }
     await writeRouteEvent(db, {
       companyId,
       caseId,
       type: "updated",
       actor,
       payload: { action: "evidence_removed", evidenceId: removed.id },
+    });
+    res.json({ deleted: true });
+  });
+
+  // Documents to collect from the client at a stage (Ben, 12 Oct). Each
+  // request is met by an upload sent with its requestId; the journey lists
+  // them per stage with what has arrived.
+  router.post("/cases/:caseId/document-requests", validate(createClientDocumentRequestsSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as z.infer<typeof createClientDocumentRequestsSchema>;
+    const created = await requestsSvc.create(
+      companyId,
+      caseId,
+      { stageId: body.stageId, items: body.titles.map((title) => ({ title, note: body.note ?? null })) },
+      requestActorOf(actor),
+    );
+    if (created.length > 0) {
+      await writeRouteEvent(db, {
+        companyId,
+        caseId,
+        type: "updated",
+        actor,
+        payload: { action: "documents_requested", stageId: body.stageId, titles: created.map((row) => row.title) },
+      });
+    }
+    res.status(201).json({ created: created.length });
+  });
+
+  router.post(
+    "/cases/:caseId/document-requests/standard",
+    validate(addStandardClientDocumentRequestsSchema),
+    async (req, res) => {
+      const caseId = req.params.caseId as string;
+      const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+      const { stageId } = req.body as z.infer<typeof addStandardClientDocumentRequestsSchema>;
+      const created = await requestsSvc.addStandard(companyId, caseId, stageId, requestActorOf(actor));
+      if (created.length > 0) {
+        await writeRouteEvent(db, {
+          companyId,
+          caseId,
+          type: "updated",
+          actor,
+          payload: { action: "documents_requested", stageId, titles: created.map((row) => row.title) },
+        });
+      }
+      res.status(201).json({ created: created.length });
+    },
+  );
+
+  router.delete("/cases/:caseId/document-requests/:requestId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const parsedId = z.string().guid().safeParse(req.params.requestId);
+    if (!parsedId.success) throw notFound("Document request not found");
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const removed = await requestsSvc.remove(companyId, caseId, parsedId.data);
+    if (!removed) throw notFound("Document request not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "document_request_removed", requestId: removed.id, title: removed.title },
+    });
+    res.json({ deleted: true });
+  });
+
+  // Client journey by stage (GRE-1473): each stage lists its templates and the
+  // deliverables filed under it. Reads need case access; filing, moving,
+  // flagging or removing a deliverable also needs Work cases, like evidence.
+  // The portal view returns only what the client may see: client-facing,
+  // final deliverables of completed stages, with outcome fields only.
+  function parseJourneyLinkId(value: unknown) {
+    const parsed = z.string().guid().safeParse(value);
+    if (!parsed.success) throw notFound("Stage deliverable not found");
+    return parsed.data;
+  }
+
+  router.get("/cases/:caseId/journey", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    res.json(await journeySvc.journey(companyId, caseId));
+  });
+
+  router.get("/cases/:caseId/portal", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    res.json(await journeySvc.portal(companyId, caseId));
+  });
+
+  // The client's NDA (board only): required, accepted or suspended with a
+  // reason. Client-labelled deliverables reach the portal once it is accepted
+  // or suspended; public ones do not need it. The older { accepted } body
+  // still works.
+  router.put("/cases/:caseId/nda", validate(setCaseNdaSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's NDA");
+    const input = resolveSetCaseNda(req.body as SetCaseNda);
+    const result = await journeySvc.setNda(companyId, caseId, input, req.actor.userId ?? null);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: {
+        action: input.status === "accepted" ? "nda_accepted" : input.status === "suspended" ? "nda_suspended" : "nda_cleared",
+        ...(input.reason ? { reason: input.reason } : {}),
+      },
+    });
+    res.json(result);
+  });
+
+  // The signed NDA (Ben, 8 Oct): the client signs the PDF and sends it back.
+  // Uploading it files it in the client's evidence and marks the NDA
+  // accepted in one step. Board only, like the status itself.
+  router.post("/cases/:caseId/nda/signed", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's NDA");
+    const { stored, fields, text } = await receiveCaseUpload(req, res, companyId, caseId);
+    const item = await filesSvc.addUpload(
+      companyId,
+      caseId,
+      stored,
+      { ...fields, title: fields.title ?? `Signed NDA (${stored.originalFilename ?? "file"})` },
+      { type: "user", userId: req.actor.userId ?? "board" },
+    );
+    await rememberUpload(req, companyId, caseId, item, stored, text);
+    const result = await journeySvc.setNda(
+      companyId,
+      caseId,
+      { status: "accepted", reason: null, signedEvidenceId: item.id },
+      req.actor.userId ?? null,
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "nda_accepted", evidenceId: item.id, signedDocument: true },
+    });
+    res.status(201).json({ ...result, evidence: item });
+  });
+
+  // The engagement pack (Ben, 8 and 12 Oct): it goes out after the NDA is
+  // accepted or suspended, and the client accepts it. Board only, like the
+  // NDA. Uploading the pack marks it sent; uploading the client's signed
+  // acceptance marks it accepted.
+  router.put("/cases/:caseId/engagement", validate(setCaseEngagementSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's engagement pack");
+    const { status } = req.body as SetCaseEngagement;
+    const result = await journeySvc.setEngagement(companyId, caseId, { status }, req.actor.userId ?? null);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: `engagement_${status}` },
+    });
+    res.json(result);
+  });
+
+  async function receiveEngagementFile(req: Request, res: Response, step: "pack" | "acceptance") {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's engagement pack");
+    // Refuse before the file is stored, so a blocked upload leaves nothing behind.
+    await journeySvc.assertNdaCleared(companyId, caseId);
+    const { stored, fields, text } = await receiveCaseUpload(req, res, companyId, caseId);
+    const label = step === "pack" ? "Engagement pack" : "Signed engagement acceptance";
+    const item = await filesSvc.addUpload(
+      companyId,
+      caseId,
+      stored,
+      { ...fields, title: fields.title ?? `${label} (${stored.originalFilename ?? "file"})` },
+      { type: "user", userId: req.actor.userId ?? "board" },
+    );
+    await rememberUpload(req, companyId, caseId, item, stored, text);
+    const result = await journeySvc.setEngagement(
+      companyId,
+      caseId,
+      step === "pack"
+        ? { status: "sent", packEvidenceId: item.id }
+        : { status: "accepted", acceptanceEvidenceId: item.id },
+      req.actor.userId ?? null,
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: step === "pack" ? "engagement_sent" : "engagement_accepted", evidenceId: item.id },
+    });
+    res.status(201).json({ ...result, evidence: item });
+  }
+
+  router.post("/cases/:caseId/engagement/pack", (req, res) => receiveEngagementFile(req, res, "pack"));
+  router.post("/cases/:caseId/engagement/acceptance", (req, res) => receiveEngagementFile(req, res, "acceptance"));
+
+  // The online acceptance link (John's yes, 16 Oct): a page the client opens
+  // without signing in to read the pack and accept it. Board only. The link is
+  // returned once; a new one revokes the old.
+  router.post("/cases/:caseId/engagement/online-link", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can share a client's engagement pack");
+    const created = await acceptanceSvc.create(companyId, caseId, req.actor.userId ?? null);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: "engagement_online_link_created", linkId: created.link.id },
+    });
+    const base = (publicBaseUrl?.trim() || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+    const body: CreateClientAcceptanceLinkResponse = { url: `${base}${created.path}`, path: created.path, link: created.link };
+    res.status(201).json(body);
+  });
+
+  router.delete("/cases/:caseId/engagement/online-link", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can share a client's engagement pack");
+    const revoked = await acceptanceSvc.revoke(companyId, caseId);
+    if (!revoked) throw notFound("No open link for this client");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: "engagement_online_link_revoked" },
+    });
+    res.status(204).end();
+  });
+
+  router.post("/cases/:caseId/journey/deliverables", validate(createClientJourneyDeliverableSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as CreateClientJourneyDeliverable;
+    const link = await journeySvc.fileDeliverable(
+      companyId,
+      caseId,
+      body,
+      actor.type === "agent"
+        ? { type: "agent", agentId: actor.agentId }
+        : { type: "user", userId: actor.type === "user" ? actor.userId : "board" },
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "stage_deliverable_filed", linkId: link.id, stageId: link.stageId, clientFacing: link.clientFacing },
+    });
+    res.status(201).json(link);
+  });
+
+  router.patch("/cases/:caseId/journey/deliverables/:linkId", validate(updateClientJourneyDeliverableSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const linkId = parseJourneyLinkId(req.params.linkId);
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as UpdateClientJourneyDeliverable;
+    const link = await journeySvc.updateLink(companyId, caseId, linkId, body);
+    if (!link) throw notFound("Stage deliverable not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "stage_deliverable_updated", linkId, stageId: link.stageId, clientFacing: link.clientFacing },
+    });
+    res.json(link);
+  });
+
+  router.delete("/cases/:caseId/journey/deliverables/:linkId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const linkId = parseJourneyLinkId(req.params.linkId);
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const removed = await journeySvc.removeLink(companyId, caseId, linkId);
+    if (!removed) throw notFound("Stage deliverable not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "stage_deliverable_removed", linkId },
     });
     res.json({ deleted: true });
   });

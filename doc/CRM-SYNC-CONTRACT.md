@@ -180,6 +180,41 @@ Notes:
   cannot take (an unknown choice label, a read-only field) is not retried until the value
   changes. A 429 or refused credential stops the pass as for reads.
 
+## Full read-only import (Organisations > Import from Pipedrive)
+
+Separate from sync: it never writes to Pipedrive and needs no binding. After organisations and
+people it reads `/v1/pipelines`, `/v1/stages`, `/v1/users`, `/v1/dealFields` and every deal that
+is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/pipedrive-deal-import.ts`.
+
+- Each Pipedrive pipeline becomes a GSAM pipeline keyed `pipedrive-<id>` with Pipedrive's stages
+  (`pd_<stageId>`, working) in Pipedrive's order, then `won` (done) and `lost` (cancelled).
+- Each deal becomes a case keyed `pipedrive-<dealId>` in its pipeline: open deals in their stage,
+  won deals in Won, lost deals in Lost. It links to the imported organisation.
+- Pipedrive's own deal fields (status, value, currency, owner, contact, expected close, probability,
+  lost reason, labels, source, the dates) and every custom deal field become typed pipeline fields.
+  Custom fields are keyed `pd_<pipedrive key>` and labelled with the Pipedrive name. A choice
+  Pipedrive no longer lists is added to the field rather than dropped.
+- Organisations and people keep every Pipedrive field that has a value and no GSAM column, in
+  `crm_fields` (`[{ key, label, value }]`, migration `0356_crm_record_fields`), driven by
+  `/v1/organizationFields` and `/v1/personFields`, so custom fields, labels, the full address and
+  every email and phone come across under Pipedrive's names. The organisation page shows them
+  under "From Pipedrive". A Pipedrive website fills an empty website. Code:
+  `server/src/services/pipedrive-record-fields.ts`.
+- Activities (`/v1/activities?user_id=0`, every user), notes (`/v1/notes`) and call logs
+  (`/v1/callLogs`) land in `crm_timeline_entries` (migration `0357_crm_timeline_entries`), keyed
+  on source, kind and Pipedrive id, linked to the GSAM organisation, contact and deal case. The
+  organisation page lists them under "Activities and notes", newest first, with the ones linked
+  to its people and cases. A done activity, a note or a past call counts as last contact. An
+  account that cannot read call logs still imports everything else. Code:
+  `server/src/services/pipedrive-timeline-import.ts`.
+- Each imported deal's history (`/v1/deals/{id}/flow`, one read per deal) adds its emails
+  (subject, snippet, from, to, cc) and its stage, pipeline and status changes to the same
+  timeline, linked to the deal case (migration `0358_crm_timeline_email_history`). Other field
+  changes, and activities and notes already read above, are not added twice.
+- A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
+  status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
+  is, with its fields updated, and is listed in the import's error samples.
+
 ## Not in this slice
 
 - Stage write-back. A stage moved in Pipedrive still moves the case; a stage moved in GSAM is not

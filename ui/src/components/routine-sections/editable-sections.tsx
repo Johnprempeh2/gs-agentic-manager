@@ -49,6 +49,11 @@ const concurrencyPolicyOptions = [
     title: "Skip if active",
     description: "Drop overlapping trigger occurrences while the routine is already active.",
   },
+  {
+    value: "reuse_standing_task",
+    title: "Keep one standing task",
+    description: "Open the same task again each time instead of creating a new one, so its history stays in one place.",
+  },
 ];
 
 const catchUpPolicyOptions = [

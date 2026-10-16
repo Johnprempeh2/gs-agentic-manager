@@ -1,4 +1,5 @@
 export type {
+  AskAgentInteraction,
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
   AskUserQuestionsPayload,
@@ -26,6 +27,9 @@ export type {
   RequestConfirmationTarget,
   RequestConfirmationToolActionPayload,
   RequestConfirmationToolActionResult,
+  RequestDraftReviewInteraction,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
   RequestItemVerdictsInteraction,
   RequestItemVerdictsItem,
   RequestItemVerdictsPayload,
@@ -39,6 +43,7 @@ export type {
   SuggestTasksResult,
   SuggestTasksResultCreatedTask,
 } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import type {
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
@@ -73,6 +78,7 @@ export function interactionReplacesComposerSkip(
 ): boolean {
   return interaction.kind === "request_confirmation"
     || interaction.kind === "request_checkbox_confirmation"
+    || interaction.kind === "request_draft_review"
     || interaction.kind === "suggest_tasks";
 }
 
@@ -91,6 +97,8 @@ export function isIssueThreadInteraction(
       || candidate.kind === "request_checkbox_confirmation"
       || candidate.kind === "request_item_verdicts"
       || candidate.kind === "connection_intent"
+      || candidate.kind === "request_draft_review"
+      || candidate.kind === "ask_agent"
     );
 }
 
@@ -203,7 +211,7 @@ export function buildIssueThreadInteractionSummary(
     : null;
   if (administrativeOutcome === "skipped") return "Skipped interaction";
   if (administrativeOutcome === "withdrawn") return "Withdrawn interaction";
-  if (administrativeOutcome === "issue_closed") return "Expired when issue closed";
+  if (administrativeOutcome === "issue_closed") return "Expired when the task was closed";
   if (administrativeOutcome === "addressee_deleted") return "Cancelled when addressee was deleted";
   if (interaction.kind === "suggest_tasks") {
     const count = interaction.payload.tasks.length;
@@ -222,11 +230,17 @@ export function buildIssueThreadInteractionSummary(
   }
 
   if (interaction.kind === "request_confirmation") {
-    if (interaction.status === "accepted") return "Confirmed request";
+    const askType = readAskType(interaction.payload);
+    const askCopy = askType ? ASK_TYPE_COPY[askType] : null;
+    if (interaction.status === "accepted") {
+      const acceptLabel = interaction.payload.acceptLabel?.trim() || askCopy?.acceptLabel;
+      return acceptLabel ? `Answered “${acceptLabel}”` : "Confirmed request";
+    }
     if (interaction.status === "rejected") {
-      const rejectLabel = interaction.payload.rejectLabel?.trim();
+      const rejectLabel = interaction.payload.rejectLabel?.trim() || askCopy?.rejectLabel;
       return rejectLabel ? `Selected “${rejectLabel}”` : "Declined request";
     }
+    if (askCopy && interaction.status === "pending") return askCopy.label;
     if (interaction.status === "expired") {
       const outcome = interaction.result?.outcome;
       if (outcome === "superseded_by_comment") return "Confirmation expired after comment";
@@ -261,6 +275,16 @@ export function buildIssueThreadInteractionSummary(
     return buildItemVerdictsSummary(interaction);
   }
 
+  if (interaction.kind === "request_draft_review") {
+    const purpose = interaction.payload.purpose;
+    if (interaction.status === "accepted") {
+      return interaction.result?.draft?.edited ? `Edited and sent back: ${purpose}` : `Approved draft: ${purpose}`;
+    }
+    if (interaction.status === "rejected") return `Asked for a redraft: ${purpose}`;
+    if (interaction.status === "expired") return `Draft expired: ${purpose}`;
+    return `Draft to review: ${purpose}`;
+  }
+
   if (interaction.kind === "connection_intent") {
     if (interaction.status === "accepted") return `${interaction.payload.serviceName} connected`;
     if (interaction.status === "rejected") return `${interaction.payload.serviceName} declined`;
@@ -270,6 +294,12 @@ export function buildIssueThreadInteractionSummary(
         : `${interaction.payload.serviceName} request expired`;
     }
     return `Connect ${interaction.payload.serviceName}`;
+  }
+
+  if (interaction.kind === "ask_agent") {
+    if (interaction.status === "answered") return "Question answered by another agent";
+    if (interaction.status === "pending") return "Question waiting for another agent";
+    return "Question closed without an answer";
   }
 
   const count = interaction.payload.questions.length;

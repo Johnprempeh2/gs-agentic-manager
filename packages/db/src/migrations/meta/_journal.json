@@ -2266,8 +2266,246 @@
     {
       "idx": 325,
       "version": "7",
-      "when": 1791743663377,
-      "tag": "0325_budget_spending_authority",
+      "when": 1791743361323,
+      "tag": "0325_company_pause_suspension",
+      "breakpoints": true
+    },
+    {
+      "idx": 326,
+      "version": "7",
+      "when": 1791744653598,
+      "tag": "0326_billing_usage_warning",
+      "breakpoints": true
+    },
+    {
+      "idx": 327,
+      "version": "7",
+      "when": 1791744956553,
+      "tag": "0327_billing_usage_fx_rate",
+      "breakpoints": true
+    },
+    {
+      "idx": 328,
+      "version": "7",
+      "when": 1791785203168,
+      "tag": "0328_fleet_support_bridge",
+      "breakpoints": true
+    },
+    {
+      "idx": 329,
+      "version": "7",
+      "when": 1791785676284,
+      "tag": "0329_restore_missing_check_constraints",
+      "breakpoints": true
+    },
+    {
+      "idx": 330,
+      "version": "7",
+      "when": 1791823454616,
+      "tag": "0330_pipeline_case_stage_deliverables",
+      "breakpoints": true
+    },
+    {
+      "idx": 331,
+      "version": "7",
+      "when": 1791825756431,
+      "tag": "0331_crm_organisations",
+      "breakpoints": true
+    },
+    {
+      "idx": 332,
+      "version": "7",
+      "when": 1791830000000,
+      "tag": "0332_pipeline_case_organisation",
+      "breakpoints": true
+    },
+    {
+      "idx": 333,
+      "version": "7",
+      "when": 1791835000000,
+      "tag": "0333_intelligence",
+      "breakpoints": true
+    },
+    {
+      "idx": 334,
+      "version": "7",
+      "when": 1791888309461,
+      "tag": "0334_pipeline_case_nda",
+      "breakpoints": true
+    },
+    {
+      "idx": 335,
+      "version": "7",
+      "when": 1791904853193,
+      "tag": "0335_pipeline_case_nda_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 336,
+      "version": "7",
+      "when": 1791984125730,
+      "tag": "0336_issue_participants",
+      "breakpoints": true
+    },
+    {
+      "idx": 337,
+      "version": "7",
+      "when": 1792034631277,
+      "tag": "0337_sidebar_layout",
+      "breakpoints": true
+    },
+    {
+      "idx": 338,
+      "version": "7",
+      "when": 1792058633869,
+      "tag": "0338_issue_participants_muted_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 339,
+      "version": "7",
+      "when": 1792108166974,
+      "tag": "0339_pipeline_case_evidence_uploads",
+      "breakpoints": true
+    },
+    {
+      "idx": 340,
+      "version": "7",
+      "when": 1792109906046,
+      "tag": "0340_pipeline_case_nda_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 341,
+      "version": "7",
+      "when": 1792112172418,
+      "tag": "0341_notification_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 342,
+      "version": "7",
+      "when": 1792113317239,
+      "tag": "0342_client_document_requests_and_engagement_pack",
+      "breakpoints": true
+    },
+    {
+      "idx": 343,
+      "version": "7",
+      "when": 1792115797395,
+      "tag": "0343_organisation_country_owner_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 344,
+      "version": "7",
+      "when": 1792115857395,
+      "tag": "0344_generated_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 345,
+      "version": "7",
+      "when": 1792119139275,
+      "tag": "0345_weekly_report_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 346,
+      "version": "7",
+      "when": 1792120356745,
+      "tag": "0346_organisation_source_hubspot",
+      "breakpoints": true
+    },
+    {
+      "idx": 347,
+      "version": "7",
+      "when": 1792120511812,
+      "tag": "0347_inbound_task_hooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 348,
+      "version": "7",
+      "when": 1792120538532,
+      "tag": "0348_calendar_feeds",
+      "breakpoints": true
+    },
+    {
+      "idx": 349,
+      "version": "7",
+      "when": 1792124441358,
+      "tag": "0349_outbound_webhooks",
+      "breakpoints": true
+    },
+    {
+      "idx": 350,
+      "version": "7",
+      "when": 1792125170721,
+      "tag": "0350_organisation_source_notion",
+      "breakpoints": true
+    },
+    {
+      "idx": 351,
+      "version": "7",
+      "when": 1792126948463,
+      "tag": "0351_shared_issue_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 352,
+      "version": "7",
+      "when": 1792127008463,
+      "tag": "0352_generated_image_style_and_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 353,
+      "version": "7",
+      "when": 1792127068463,
+      "tag": "0353_generated_image_covers",
+      "breakpoints": true
+    },
+    {
+      "idx": 354,
+      "version": "7",
+      "when": 1792131160100,
+      "tag": "0354_agent_daily_digests",
+      "breakpoints": true
+    },
+    {
+      "idx": 355,
+      "version": "7",
+      "when": 1792137642975,
+      "tag": "0355_client_acceptance_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1792143487005,
+      "tag": "0356_crm_record_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 357,
+      "version": "7",
+      "when": 1792144268387,
+      "tag": "0357_crm_timeline_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 358,
+      "version": "7",
+      "when": 1792145672583,
+      "tag": "0358_crm_timeline_email_history",
+      "breakpoints": true
+    },
+    {
+      "idx": 359,
+      "version": "7",
+      "when": 1792148676076,
+      "tag": "0359_budget_spending_authority",
       "breakpoints": true
     }
   ]

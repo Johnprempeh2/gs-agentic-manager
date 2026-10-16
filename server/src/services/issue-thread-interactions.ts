@@ -36,6 +36,7 @@ import {
 } from "@greatstone/shared/telemetry";
 import type {
   AcceptIssueThreadInteraction,
+  AskAgentInteraction,
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
   CancelIssueThreadInteraction,
@@ -52,6 +53,7 @@ import type {
   RequestCheckboxConfirmationInteraction,
   RequestConfirmationInteraction,
   RequestConfirmationTarget,
+  RequestDraftReviewInteraction,
   RequestItemVerdictsInteraction,
   RequestItemVerdictsResult,
   RequestItemVerdictsResultItem,
@@ -64,7 +66,10 @@ import type {
   WithdrawIssueThreadInteraction,
 } from "@greatstone/shared";
 import {
+  AGENT_QUESTION_MAX_OPEN_PER_ISSUE,
   acceptIssueThreadInteractionSchema,
+  askAgentPayloadSchema,
+  askAgentResultSchema,
   askUserQuestionsPayloadSchema,
   askUserQuestionsResultSchema,
   cancelIssueThreadInteractionSchema,
@@ -78,6 +83,8 @@ import {
   requestCheckboxConfirmationResultSchema,
   requestConfirmationPayloadSchema,
   requestConfirmationResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultSchema,
   skipIssueThreadInteractionSchema,
@@ -85,6 +92,8 @@ import {
   suggestTasksResultSchema,
   submitIssueThreadInteractionVerdictsSchema,
   withdrawIssueThreadInteractionSchema,
+  describeDraftEdit,
+  diffDraftWords,
 } from "@greatstone/shared";
 import { z } from "zod";
 import { conflict, forbidden, notFound, unprocessable } from "../errors.js";
@@ -160,10 +169,11 @@ type InteractionWakeup = (
   options: {
     source: "automation";
     triggerDetail: "system";
-    reason: "issue_commented";
+    reason: "issue_commented" | "pull_request_merged";
     payload: Record<string, unknown>;
     idempotencyKey: string;
     allowRunCoalescing?: boolean;
+    issueStateGuard?: { statuses: string[]; assigneeAgentId: string };
     requestedByActorType: "system";
     requestedByActorId: string;
     contextSnapshot: Record<string, unknown>;
@@ -375,6 +385,10 @@ export const DEFAULT_RESOLVER_POLICY_BY_KIND: Record<
   request_checkbox_confirmation: "anyone",
   request_item_verdicts: "anyone",
   connection_intent: "human_only",
+  // A person edits or approves a draft; the drafting agent never signs off its own.
+  request_draft_review: "human_only",
+  // Only the agent the question was asked of answers it, through its own route.
+  ask_agent: "not_creator",
 };
 
 const RESOLVER_POLICY_RESTRICTION_RANK: Record<
@@ -406,7 +420,7 @@ export function resolveInteractionPolicy(args: {
   let effectiveResolverPolicy = requestedResolverPolicy;
   let effectiveResolverPolicySource: IssueThreadInteractionEffectiveResolverPolicySource =
     "requested";
-  if (args.hasToolAction || args.hasSecretProposal) {
+  if (args.hasToolAction || args.hasSecretProposal || args.kind === "request_draft_review") {
     effectiveResolverPolicy = "human_only";
     effectiveResolverPolicySource = "governed_action";
   } else if (kindGovernance?.cap) {
@@ -523,11 +537,14 @@ async function assertRequestConfirmationResolutionAllowedUnderLock(
 const REQUEST_CONFIRMATION_INTERACTION_KINDS = [
   "request_confirmation",
   "request_checkbox_confirmation",
+  "request_draft_review",
 ] as const;
 type RequestConfirmationLikeKind =
   (typeof REQUEST_CONFIRMATION_INTERACTION_KINDS)[number];
 type RequestConfirmationLikeInteraction =
-  RequestConfirmationInteraction | RequestCheckboxConfirmationInteraction;
+  | RequestConfirmationInteraction
+  | RequestCheckboxConfirmationInteraction
+  | RequestDraftReviewInteraction;
 
 const TARGET_BOUND_INTERACTION_KINDS = [
   ...REQUEST_CONFIRMATION_INTERACTION_KINDS,
@@ -682,6 +699,17 @@ function hydrateInteraction(
   };
 
   switch (row.kind) {
+    case "ask_agent":
+      return {
+        ...base,
+        kind: "ask_agent",
+        payload: askAgentPayloadSchema.parse(row.payload),
+        result: parseStoredInteractionResult(
+          askAgentResultSchema,
+          row.result,
+          row,
+        ),
+      } satisfies AskAgentInteraction;
     case "suggest_tasks":
       return {
         ...base,
@@ -737,6 +765,17 @@ function hydrateInteraction(
           row,
         ),
       } satisfies RequestItemVerdictsInteraction;
+    case "request_draft_review":
+      return {
+        ...base,
+        kind: "request_draft_review",
+        payload: requestDraftReviewPayloadSchema.parse(row.payload),
+        result: parseStoredInteractionResult(
+          requestDraftReviewResultSchema,
+          row.result,
+          row,
+        ),
+      } satisfies RequestDraftReviewInteraction;
     case "connection_intent":
       return {
         ...base,
@@ -832,6 +871,24 @@ function shouldReturnAcceptedConfirmationToCreatorAgent(args: {
   return Boolean(args.issue.assigneeUserId);
 }
 
+function buildDraftReviewResult(
+  interaction: RequestDraftReviewInteraction,
+  input: AcceptIssueThreadInteraction,
+) {
+  const originalBody = interaction.payload.body;
+  const finalBody = input.editedBody ?? originalBody;
+  const diff = diffDraftWords(originalBody, finalBody);
+  return {
+    originalBody,
+    finalBody,
+    edited: diff.changeCount > 0,
+    changeCount: diff.changeCount,
+    diff: diff.segments,
+    editSummary: describeDraftEdit(diff),
+    learnFromEdits: input.learnFromEdits !== false,
+  };
+}
+
 function shouldSupersedeInteractionOnUserComment(interaction: UserCommentSupersedableInteraction) {
   if (interaction.kind === "connection_intent") return false;
   if (interaction.kind === "request_confirmation" && interaction.payload.toolAction) return false;
@@ -854,8 +911,10 @@ function normalizeCreateInteractionInput(
       return {
         ...input,
         // "Done" on an at-your-desk card wakes the agent to check (GRE-450).
+        // A typed ask (access, file, signature...) always wakes its agent:
+        // the person acted, so the agent must carry on.
         continuationPolicy:
-          input.payload.atDesk && input.continuationPolicy === "none"
+          (input.payload.atDesk || input.payload.askType) && input.continuationPolicy === "none"
             ? "wake_assignee"
             : input.continuationPolicy,
         payload: {
@@ -877,6 +936,16 @@ function normalizeCreateInteractionInput(
         payload: {
           ...input.payload,
           supersedeOnUserComment: input.payload.supersedeOnUserComment ?? true,
+        },
+      };
+    case "request_draft_review":
+      // A comment in the thread should not throw away a draft the person may
+      // still be editing; the agent posts a newer card to replace it.
+      return {
+        ...input,
+        payload: {
+          ...input.payload,
+          supersedeOnUserComment: input.payload.supersedeOnUserComment ?? false,
         },
       };
     default:
@@ -1383,7 +1452,11 @@ async function emitInteractionResolvedTelemetry(
 
     trackInteractionResolved(telemetryClient, {
       interactionKind:
-        interaction.kind === "connection_intent" ? "other" : interaction.kind,
+        interaction.kind === "connection_intent" ||
+        interaction.kind === "request_draft_review" ||
+        interaction.kind === "ask_agent"
+          ? "other"
+          : interaction.kind,
       status: interaction.status,
       resolvedByKind: resolveActorKind(interaction),
       resolutionReason: deriveResolutionReason(interaction),
@@ -1416,7 +1489,9 @@ function emitInteractionCreatedTelemetry(args: {
     trackInteractionCreated(telemetryClient, {
       ...args,
       interactionKind:
-        args.interactionKind === "connection_intent"
+        args.interactionKind === "connection_intent" ||
+        args.interactionKind === "request_draft_review" ||
+        args.interactionKind === "ask_agent"
           ? "other"
           : args.interactionKind,
     });
@@ -2183,6 +2258,10 @@ export function issueThreadInteractionService(
               selectedOptionIds: args.input.selectedOptionIds,
             })
           : undefined;
+      const draft =
+        interaction.kind === "request_draft_review"
+          ? buildDraftReviewResult(interaction, args.input)
+          : undefined;
 
       const [updated] = await tx
         .update(issueThreadInteractions)
@@ -2192,6 +2271,7 @@ export function issueThreadInteractionService(
             version: 1,
             outcome: "accepted",
             ...(selectedOptionIds ? { selectedOptionIds } : {}),
+            ...(draft ? { draft } : {}),
           },
           resolvedByAgentId: args.actor.agentId ?? null,
           resolvedByRunId: args.actor.runId ?? null,
@@ -2388,6 +2468,7 @@ export function issueThreadInteractionService(
     ) as RequestConfirmationLikeInteraction;
     const reason = args.input.reason?.trim() ?? "";
     if (
+      interaction.kind !== "request_draft_review" &&
       interaction.payload.rejectRequiresReason === true &&
       reason.length === 0
     ) {
@@ -2821,7 +2902,13 @@ export function issueThreadInteractionService(
         return references.length > 0 ? [{ ...row, references }] : [];
       });
       if (candidates.length === 0) {
-        return { checked: rows.length, candidates: 0, accepted: 0, woken: 0 };
+        return {
+          checked: rows.length,
+          candidates: 0,
+          accepted: 0,
+          woken: 0,
+          acceptedIssueIds: [] as string[],
+        };
       }
 
       const candidateIds = candidates.map(({ interaction }) => interaction.id);
@@ -2880,6 +2967,9 @@ export function issueThreadInteractionService(
 
       let accepted = 0;
       let woken = 0;
+      // Tasks whose merge confirmation this sweep accepted. The webhook path
+      // uses this to avoid waking the same task twice for one merge.
+      const acceptedIssueIds = new Set<string>();
       for (const candidate of eligible) {
         const allMerged = candidate.references.every((reference) => {
           const key = `${candidate.issue.companyId}:${reference.owner.toLowerCase()}/${reference.repo.toLowerCase()}#${reference.number}`;
@@ -2918,6 +3008,8 @@ export function issueThreadInteractionService(
         accepted += 1;
 
         const wakeIssue = resolved.continuationIssue ?? candidate.issue;
+        acceptedIssueIds.add(candidate.issue.id);
+        acceptedIssueIds.add(wakeIssue.id);
         const shouldWake =
           resolved.interaction.continuationPolicy === "wake_assignee" ||
           resolved.interaction.continuationPolicy === "wake_assignee_on_accept";
@@ -2968,6 +3060,7 @@ export function issueThreadInteractionService(
         candidates: eligible.length,
         accepted,
         woken,
+        acceptedIssueIds: [...acceptedIssueIds],
       };
     },
     listForIssue: async (issueId: string) => {
@@ -3306,6 +3399,162 @@ export function issueThreadInteractionService(
         await emitResolvedInteractionsTelemetry(db, expired);
       }
       return { expired: expired.length };
+    },
+
+    /**
+     * An agent asks another agent in the same company a question on its own
+     * task. The answer lands on this interaction; callers wake both agents.
+     */
+    askAgent: async (
+      issue: { id: string; companyId: string },
+      input: { targetAgentId: string; question: string },
+      actor: InteractionActor,
+    ) => {
+      if (!actor.agentId) {
+        throw forbidden("Only agents can ask another agent a question");
+      }
+      if (input.targetAgentId === actor.agentId) {
+        throw unprocessable("An agent cannot ask itself a question", {
+          code: "agent_question_self",
+        });
+      }
+      const target = await db
+        .select({ id: agents.id, name: agents.name, status: agents.status })
+        .from(agents)
+        .where(
+          and(
+            eq(agents.id, input.targetAgentId),
+            eq(agents.companyId, issue.companyId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!target) throw notFound("Agent not found");
+      if (target.status === "terminated") {
+        throw unprocessable(
+          "This agent has been removed and cannot answer questions",
+          { code: "agent_question_target_terminated" },
+        );
+      }
+      const question = input.question.trim();
+      const row = await db.transaction(async (tx) => {
+        await assertInteractionRunWriteAllowed(tx as unknown as Db, issue, actor);
+        const [issueRow] = await tx
+          .select({ status: issues.status })
+          .from(issues)
+          .where(
+            and(
+              eq(issues.id, issue.id),
+              eq(issues.companyId, issue.companyId),
+            ),
+          )
+          .for("update");
+        if (!issueRow || isTerminalIssueStatus(issueRow.status)) {
+          throw conflict("Cannot ask a question on a closed task");
+        }
+        const openQuestions = await tx
+          .select({ id: issueThreadInteractions.id })
+          .from(issueThreadInteractions)
+          .where(
+            and(
+              eq(issueThreadInteractions.companyId, issue.companyId),
+              eq(issueThreadInteractions.issueId, issue.id),
+              eq(issueThreadInteractions.kind, "ask_agent"),
+              eq(issueThreadInteractions.status, "pending"),
+            ),
+          );
+        if (openQuestions.length >= AGENT_QUESTION_MAX_OPEN_PER_ISSUE) {
+          throw conflict(
+            `This task already has ${AGENT_QUESTION_MAX_OPEN_PER_ISSUE} questions waiting for an answer. Wait for one to be answered first.`,
+            { code: "agent_question_limit_reached" },
+          );
+        }
+        const [inserted] = await tx
+          .insert(issueThreadInteractions)
+          .values({
+            companyId: issue.companyId,
+            issueId: issue.id,
+            kind: "ask_agent",
+            status: "pending",
+            continuationPolicy: "none",
+            requestedResolverPolicy: "not_creator",
+            effectiveResolverPolicy: "not_creator",
+            resolverPolicyProvenance: "inherited",
+            effectiveResolverPolicySource: "requested",
+            sourceRunId: actor.runId ?? null,
+            createdByAgentId: actor.agentId,
+            addresseeAgentId: target.id,
+            payload: { version: 1, question },
+          })
+          .returning();
+        return inserted;
+      });
+      await touchIssue(db, issue.id);
+      emitInteractionCreatedTelemetry({
+        interactionKind: "ask_agent",
+        usedDeprecatedResolverPolicyAlias: false,
+      });
+      return {
+        interaction: hydrateInteraction(row) as AskAgentInteraction,
+        targetAgent: { id: target.id, name: target.name },
+      };
+    },
+
+    /** The agent a question was asked of answers it, once. */
+    answerAgentQuestion: async (
+      issue: { id: string; companyId: string; status?: string },
+      interactionId: string,
+      input: { answer: string },
+      actor: InteractionActor,
+    ) => {
+      const current = await db
+        .select()
+        .from(issueThreadInteractions)
+        .where(eq(issueThreadInteractions.id, interactionId))
+        .then((rows) => rows[0] ?? null);
+      if (
+        !current ||
+        current.companyId !== issue.companyId ||
+        current.issueId !== issue.id ||
+        current.kind !== "ask_agent"
+      ) {
+        throw interactionNotFoundError();
+      }
+      if (!actor.agentId || current.addresseeAgentId !== actor.agentId) {
+        throw forbidden(
+          "Only the agent this question was asked of can answer it",
+          { code: "agent_question_not_addressee" },
+        );
+      }
+      if (current.status !== "pending") throw interactionTerminalError(current);
+      assertIssueOpenForInteractionResolution(issue);
+      const answer = input.answer.trim();
+      const updated = await db.transaction(async (tx) => {
+        await assertInteractionRunWriteAllowed(tx as unknown as Db, issue, actor);
+        const resolvedAt = new Date();
+        const [row] = await tx
+          .update(issueThreadInteractions)
+          .set({
+            status: "answered",
+            result: { version: 1, outcome: "answered", answer },
+            resolvedByAgentId: actor.agentId ?? null,
+            resolvedByRunId: actor.runId ?? null,
+            resolvedAt,
+            updatedAt: resolvedAt,
+          })
+          .where(
+            and(
+              eq(issueThreadInteractions.id, interactionId),
+              eq(issueThreadInteractions.status, "pending"),
+            ),
+          )
+          .returning();
+        if (!row) throw interactionAlreadyResolvedError();
+        return row;
+      });
+      await touchIssue(db, issue.id);
+      const answered = hydrateInteraction(updated) as AskAgentInteraction;
+      await emitInteractionResolvedTelemetry(db, answered);
+      return answered;
     },
 
     create: async (
@@ -3705,6 +3954,7 @@ export function issueThreadInteractionService(
             createdIssues: [],
           };
         }
+        case "request_draft_review":
         case "request_checkbox_confirmation": {
           await assertIssueWorkspaceFinalizedForAccept({
             db,
@@ -3957,6 +4207,7 @@ export function issueThreadInteractionService(
           );
         case "request_confirmation":
         case "request_checkbox_confirmation":
+        case "request_draft_review":
           return rejectRequestConfirmation({
             issue,
             current,

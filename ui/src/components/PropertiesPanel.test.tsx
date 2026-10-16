@@ -220,32 +220,4 @@ describe("PropertiesPanel", () => {
     });
   });
 
-  describe("Streamlined UI off", () => {
-    beforeEach(() => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-        enableStreamlinedUi: false,
-        enableClassicTaskInterface: false,
-      });
-    });
-
-    it("restores master's default resizable panel rather than the classic panel", async () => {
-      await renderPanel({ taskDetailLayout: true });
-      const aside = container.querySelector("aside");
-      expect(aside).not.toBeNull();
-      expect(aside!.style.width).toBe("322px");
-      expect(aside!.querySelector('[role="separator"][aria-label="Resize panel"]')).not.toBeNull();
-      expect(container.querySelector('[aria-label="Maximize side panel"]')).not.toBeNull();
-    });
-
-    it("still honors the independent Classic Task Interface preference", async () => {
-      mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-        enableStreamlinedUi: false,
-        enableClassicTaskInterface: true,
-      });
-      await renderPanel({ taskDetailLayout: true });
-      const aside = container.querySelector("aside");
-      expect(aside!.style.width).toBe("320px");
-      expect(aside!.querySelector('[role="separator"]')).toBeNull();
-    });
-  });
 });

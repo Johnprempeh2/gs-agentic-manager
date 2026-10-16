@@ -23,6 +23,8 @@ import {
   feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
   hidesCompanyPage,
+  pauseCompanySchema,
+  resumeCompanySchema,
   updateCompanyBrandingSchema,
   updateCompanySchema,
 } from "@greatstone/shared";
@@ -1295,6 +1297,14 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
       }
     }
 
+    // GRE-1364: pause and resume have their own actions, so a settings patch
+    // cannot pause without suspending connections or resume without a reason.
+    // svc.update refuses any move to active (from paused or archived) while an
+    // operator pause holds (GRE-1385).
+    if (body.status === "paused" && existingCompany.status !== "paused") {
+      throw conflict("Use the company pause action to pause a company", { code: "use_pause_action" });
+    }
+
     const transitionsToArchived =
       body.status === "archived" && existingCompany.status !== "archived";
     const transitionsArchivedToActive =
@@ -1368,6 +1378,32 @@ export function companyRoutes(db: Db, storage?: StorageService, options?: Compan
     const companyId = req.params.companyId as string;
     assertCompanyOwnerOrAdmin(req, companyId);
     const company = await svc.archive(companyId, getActorInfo(req));
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(company);
+  });
+
+  // GRE-1364: pause stops runs, wakes, routines and every connection; resume is
+  // a named act with a reason and turns no connection back on by itself.
+  router.post("/:companyId/pause", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyOwnerOrAdmin(req, companyId);
+    const body = pauseCompanySchema.parse(req.body ?? {});
+    const company = await svc.pause(companyId, getActorInfo(req), body);
+    if (!company) {
+      res.status(404).json({ error: "Company not found" });
+      return;
+    }
+    res.json(company);
+  });
+
+  router.post("/:companyId/resume", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyOwnerOrAdmin(req, companyId);
+    const body = resumeCompanySchema.parse(req.body);
+    const company = await svc.resume(companyId, getActorInfo(req), body);
     if (!company) {
       res.status(404).json({ error: "Company not found" });
       return;

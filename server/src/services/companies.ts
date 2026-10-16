@@ -1,5 +1,6 @@
 import { and, count, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
+import type { PauseReason } from "@greatstone/shared";
 import {
   companies,
   companyLogos,
@@ -33,8 +34,9 @@ import {
   routineTriggers,
   routineRevisions,
   routines,
+  toolConnections,
 } from "@greatstone/db";
-import { notFound, unprocessable } from "../errors.js";
+import { conflict, notFound, unprocessable } from "../errors.js";
 import { isCloudManagedInstance } from "./cloud-instance.js";
 import { notifyCloudOfPrimaryCompanyLifecycleChange } from "./cloud-lifecycle-sync.js";
 import {
@@ -47,6 +49,8 @@ import {
 } from "./issue-prefix.js";
 import { environmentService } from "./environments.js";
 import { heartbeatService } from "./heartbeat.js";
+import { nextCronTickInTimeZone } from "./routines.js";
+import { toolAccessService } from "./tool-access.js";
 import { logActivity } from "./activity-log.js";
 import { builtInAgentService } from "./built-in-agents.js";
 
@@ -58,6 +62,9 @@ export interface CompanyActivityActor {
   agentId?: string | null;
   runId?: string | null;
 }
+
+/** pauseReason for a company paused by an operator (GRE-1364); only resume() lifts it. */
+export const COMPANY_PAUSE_REASON_MANUAL = "manual" satisfies PauseReason;
 
 const SYSTEM_COMPANY_ACTOR: CompanyActivityActor = {
   actorType: "system",
@@ -114,6 +121,15 @@ export function companyService(db: Db) {
     return { agentsPaused: pausedAgentRows.length, activeRunIds };
   }
 
+  async function getCompanyAfterLifecycleChange(id: string) {
+    const row = await getCompanyQuery(db)
+      .where(eq(companies.id, id))
+      .then((rows) => rows[0] ?? null);
+    if (!row) return null;
+    const [hydrated] = await hydrateCompanySpend([row], db);
+    return enrichCompany(hydrated);
+  }
+
   async function finalizeArchive(
     id: string,
     actor: CompanyActivityActor,
@@ -144,6 +160,8 @@ export function companyService(db: Db) {
     name: companies.name,
     description: companies.description,
     status: companies.status,
+    pauseReason: companies.pauseReason,
+    pausedAt: companies.pausedAt,
     issuePrefix: companies.issuePrefix,
     issueCounter: companies.issueCounter,
     budgetMonthlyCents: companies.budgetMonthlyCents,
@@ -343,6 +361,20 @@ export function companyService(db: Db) {
         const willReactivate = existing.status !== "active" && companyPatch.status === "active";
         const willArchive = existing.status !== "archived" && companyPatch.status === "archived";
 
+        // GRE-1385: an operator pause is lifted only by resume(), which needs an
+        // operator and a reason and rebases schedules. Archiving keeps the pause,
+        // so unarchiving to active is refused here too.
+        if (willReactivate) {
+          const [pause] = await tx
+            .select({ pauseReason: companies.pauseReason })
+            .from(companies)
+            .where(eq(companies.id, id))
+            .for("update");
+          if (pause?.pauseReason === COMPANY_PAUSE_REASON_MANUAL) {
+            throw conflict("Use the company resume action, with an operator and a reason", { code: "use_resume_action" });
+          }
+        }
+
         if (logoAssetId !== undefined && logoAssetId !== null) {
           const nextLogoAsset = await tx
             .select({ id: assets.id, companyId: assets.companyId })
@@ -534,6 +566,173 @@ export function companyService(db: Db) {
       }
 
       return result.company;
+    },
+
+    /**
+     * GRE-1364: pause a company. New wakes, timers and routines stop because the
+     * company is not active; this also cancels live runs and queued wakes and
+     * suspends every connection and grant. Running it twice is safe.
+     */
+    pause: async (
+      id: string,
+      actor: CompanyActivityActor,
+      input: { reason?: string | null } = {},
+    ) => {
+      const existing = await db
+        .select({ status: companies.status, pauseReason: companies.pauseReason })
+        .from(companies)
+        .where(eq(companies.id, id))
+        .then((rows) => rows[0] ?? null);
+      if (!existing) return null;
+      if (existing.status === "archived") throw conflict("An archived company cannot be paused");
+
+      const now = new Date();
+      await db
+        .update(companies)
+        .set({
+          status: "paused",
+          pauseReason: COMPANY_PAUSE_REASON_MANUAL,
+          pausedAt: existing.status === "paused" ? undefined : now,
+          updatedAt: now,
+        })
+        .where(eq(companies.id, id));
+
+      const work = await heartbeat.cancelCompanyPauseWork(id, "Cancelled because the company was paused");
+      const suspended = await toolAccessService(db).suspendCompanyForPause(id, {
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+      });
+
+      await logActivity(db, {
+        companyId: id,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId ?? null,
+        runId: actor.runId ?? null,
+        action: "company.paused",
+        entityType: "company",
+        entityId: id,
+        details: {
+          reason: input.reason ?? null,
+          previousStatus: existing.status,
+          previousPauseReason: existing.pauseReason ?? null,
+          ...work,
+          ...suspended,
+        },
+      });
+      return getCompanyAfterLifecycleChange(id);
+    },
+
+    /**
+     * GRE-1364: resume a paused company. It needs a named operator and a reason.
+     * Schedules restart at their next tick (no catch-up), and connections stay off
+     * until each one is re-enabled and passes a health check.
+     *
+     * GRE-1385: a paused company that was then archived is resumed here too, and
+     * gets the unarchive steps (agents the archive paused come back).
+     */
+    resume: async (
+      id: string,
+      actor: CompanyActivityActor,
+      input: { operator: string; reason: string },
+    ) => {
+      const now = new Date();
+      const result = await db.transaction(async (tx) => {
+        const [existing] = await tx
+          .select({ status: companies.status, pauseReason: companies.pauseReason })
+          .from(companies)
+          .where(eq(companies.id, id))
+          .for("update");
+        const resumable = existing?.status === "paused" ||
+          (existing?.status === "archived" && existing.pauseReason === COMPANY_PAUSE_REASON_MANUAL);
+        if (!existing || !resumable) return null;
+
+        await tx
+          .update(companies)
+          .set({ status: "active", pauseReason: null, pausedAt: null, updatedAt: now })
+          .where(eq(companies.id, id));
+
+        const restoredAgents = await tx
+          .update(agents)
+          .set({ status: "idle", pauseReason: null, pausedAt: null, updatedAt: now })
+          .where(and(
+            eq(agents.companyId, id),
+            eq(agents.status, "paused"),
+            eq(agents.pauseReason, "company_archived"),
+          ))
+          .returning({ id: agents.id });
+
+        // Missed ticks are not replayed: every schedule restarts at its next tick.
+        const triggers = await tx
+          .select({
+            id: routineTriggers.id,
+            cronExpression: routineTriggers.cronExpression,
+            timezone: routineTriggers.timezone,
+          })
+          .from(routineTriggers)
+          .where(and(
+            eq(routineTriggers.companyId, id),
+            eq(routineTriggers.kind, "schedule"),
+            sql`${routineTriggers.nextRunAt} is not null`,
+          ));
+        for (const trigger of triggers) {
+          if (!trigger.cronExpression || !trigger.timezone) continue;
+          await tx
+            .update(routineTriggers)
+            .set({
+              nextRunAt: nextCronTickInTimeZone(trigger.cronExpression, trigger.timezone, now),
+              updatedAt: now,
+            })
+            .where(eq(routineTriggers.id, trigger.id));
+        }
+
+        const [awaiting] = await tx
+          .select({ value: count() })
+          .from(toolConnections)
+          .where(and(
+            eq(toolConnections.companyId, id),
+            sql`${toolConnections.pauseSuspendedAt} is not null`,
+          ));
+        return {
+          previousStatus: existing.status,
+          agentsRestored: restoredAgents.length,
+          schedulesRestarted: triggers.length,
+          connectionsAwaitingReenable: Number(awaiting?.value ?? 0),
+        };
+      });
+      if (!result) {
+        const exists = await db
+          .select({ status: companies.status })
+          .from(companies)
+          .where(eq(companies.id, id))
+          .then((rows) => rows[0] ?? null);
+        if (!exists) return null;
+        throw conflict("Company is not paused", { status: exists.status });
+      }
+      // Same doorbell rule as update(): the company left archived, so ring Cloud.
+      if (result.previousStatus === "archived") {
+        void notifyCloudOfPrimaryCompanyLifecycleChange(id);
+      }
+
+      await logActivity(db, {
+        companyId: id,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId ?? null,
+        runId: actor.runId ?? null,
+        action: "company.resumed",
+        entityType: "company",
+        entityId: id,
+        details: {
+          operator: input.operator,
+          reason: input.reason,
+          previousStatus: result.previousStatus,
+          agentsRestored: result.agentsRestored,
+          schedulesRestarted: result.schedulesRestarted,
+          connectionsAwaitingReenable: result.connectionsAwaitingReenable,
+        },
+      });
+      return getCompanyAfterLifecycleChange(id);
     },
 
     remove: (id: string) =>

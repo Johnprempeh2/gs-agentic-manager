@@ -55,6 +55,26 @@ export function formatTargetDate(targetDate: string | null): string | null {
   return target.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+/** Within this many days the target date also says how many days are left. */
+const TARGET_COUNTDOWN_DAYS = 14;
+
+/**
+ * The target date with how far away it is, so nobody has to count days:
+ * "Target 31 Dec", "Target 20 Oct, 4 days to go", "Target today",
+ * "Target 6 Oct, 10 days late". A done goal shows the date only.
+ */
+export function targetDateLabel(targetDate: string | null, done: boolean, now: Date = new Date()): string | null {
+  const date = formatTargetDate(targetDate);
+  const days = daysToTarget(targetDate, now);
+  if (!date || days == null) return null;
+  if (done) return `Target ${date}`;
+  if (days === 0) return "Target today";
+  const plural = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+  if (days < 0) return `Target ${date}, ${plural(-days)} late`;
+  if (days <= TARGET_COUNTDOWN_DAYS) return `Target ${date}, ${plural(days)} to go`;
+  return `Target ${date}`;
+}
+
 type HealthInput = Pick<GoalWithProgress, "status" | "progress" | "blockers" | "targetDate" | "createdAt">;
 
 export function goalHealth(goal: HealthInput, now: Date = new Date()): GoalHealth {
@@ -294,6 +314,23 @@ export function buildScoreboard<G extends GoalWithProgress>(
       subGoals: descendants(goal.id).map((sub) => ({ goal: sub, health: goalHealth(sub, now) })),
     }))
     .sort((a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || byAge(a.goal, b.goal));
+}
+
+const ATTENTION_HEALTH: ReadonlySet<GoalHealth> = new Set(["blocked", "at_risk"]);
+
+/**
+ * Only the goals that need someone to act: blocked or at risk (late goals
+ * count as at risk). A top-level goal stays when any of its sub-goals needs
+ * attention, and then keeps only those sub-goals.
+ */
+export function needsAttention<G extends GoalWithProgress>(
+  entries: readonly ScoreboardEntry<G>[],
+): ScoreboardEntry<G>[] {
+  return entries.flatMap((entry) => {
+    const subGoals = entry.subGoals.filter((sub) => ATTENTION_HEALTH.has(sub.health));
+    if (!ATTENTION_HEALTH.has(entry.health) && subGoals.length === 0) return [];
+    return [{ ...entry, subGoals }];
+  });
 }
 
 /** Mirrors the server: the oldest live agent that reports to no one. */

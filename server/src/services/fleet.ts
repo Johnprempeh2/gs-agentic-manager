@@ -18,6 +18,7 @@ import {
   type FleetInstanceStatus,
   type FleetLifecycle,
   type FleetPublicKey,
+  type FleetReceivedCheckIn,
 } from "@greatstone/shared/fleet";
 
 // Hub side of the fleet channel (GRE-1082). Same shape as the Cloud control
@@ -52,7 +53,9 @@ export type FleetRejection =
   | "fleet_bad_registration_code"
   | "fleet_not_registered"
   | "fleet_key_revoked"
-  | "fleet_replay";
+  | "fleet_replay"
+  | "fleet_support_unknown_ticket"
+  | "fleet_support_bad_file";
 
 export class FleetMessageError extends Error {
   constructor(
@@ -108,6 +111,8 @@ function verifyMessage(compactJws: string, key: KeyObject, expected: { act: Flee
   const claims = parsed.data;
   if (claims.aud !== FLEET_AUDIENCE || claims.act !== expected.act || claims.sub !== expected.sub) reject("fleet_bad_message", 400);
   if ((claims.act === "check-in") !== Boolean(claims.checkIn)) reject("fleet_bad_message", 400);
+  if ((claims.act === "support-sync") !== Boolean(claims.support)) reject("fleet_bad_message", 400);
+  if ((claims.act === "support-attachment") !== Boolean(claims.attachment)) reject("fleet_bad_message", 400);
   const nowSeconds = Math.floor(now.getTime() / 1000);
   if (
     claims.exp <= claims.iat
@@ -147,6 +152,8 @@ function view(row: FleetInstanceRow, now = new Date()) {
     revokedAt: row.revokedAt,
     revokedBy: row.revokedBy,
     registrationCodeExpiresAt: row.status === "pending" ? row.registrationCodeExpiresAt : null,
+    /** GRE-1084: where this instance's "Get help" tickets land; null refuses them. */
+    supportQueueId: row.supportQueueId,
     createdAt: row.createdAt,
   };
 }
@@ -160,52 +167,70 @@ function newRegistrationCode(now: Date) {
   };
 }
 
-export function fleetService(db: Db) {
-  async function signedSender(compactJws: string, act: Exclude<FleetAction, "register">, now: Date) {
-    const { header, payload } = splitMessage(compactJws);
-    const id = typeof payload.sub === "string" && UUID_PATTERN.test(payload.sub) ? payload.sub : null;
-    if (!id || header.kid !== id) return reject("fleet_bad_message", 400);
-    const row = await db.select().from(fleetInstances).where(eq(fleetInstances.id, id)).then((rows) => rows[0] ?? null);
-    // The public key stays after a revoke so a revoked spoke still gets a clear answer.
-    if (!row?.publicKeyX) return reject("fleet_bad_signature");
-    const claims = verifyMessage(compactJws, publicKeyFromX(row.publicKeyX), { act, sub: row.id }, now);
-    if (row.status === "revoked") reject("fleet_key_revoked");
-    if (row.status !== "active") reject("fleet_not_registered");
-    return { signer: { id: row.id, publicKeyX: row.publicKeyX }, claims };
-  }
+export async function signedSender(db: Db, compactJws: string, act: Exclude<FleetAction, "register">, now: Date) {
+  const { header, payload } = splitMessage(compactJws);
+  const id = typeof payload.sub === "string" && UUID_PATTERN.test(payload.sub) ? payload.sub : null;
+  if (!id || header.kid !== id) return reject("fleet_bad_message", 400);
+  const row = await db.select().from(fleetInstances).where(eq(fleetInstances.id, id)).then((rows) => rows[0] ?? null);
+  // The public key stays after a revoke so a revoked spoke still gets a clear answer.
+  if (!row?.publicKeyX) return reject("fleet_bad_signature");
+  const claims = verifyMessage(compactJws, publicKeyFromX(row.publicKeyX), { act, sub: row.id }, now);
+  if (row.status === "revoked") reject("fleet_key_revoked");
+  if (row.status !== "active") reject("fleet_not_registered");
+  return { signer: { id: row.id, publicKeyX: row.publicKeyX }, claims };
+}
 
-  /**
-   * Move the replay fence; false when `seq` is not new, the row is no longer
-   * active, or the key that signed the message is no longer the stored key.
-   * The key check closes the gap between verify and write: a revoke and
-   * re-register in that gap must not let a message from the old key land.
-   */
-  async function advanceSeq(
-    tx: Pick<Db, "update">,
-    signer: { id: string; publicKeyX: string },
-    seq: number,
-    now: Date,
-    fields: PgUpdateSetSource<typeof fleetInstances> = {},
-  ) {
-    const rows = await tx
-      .update(fleetInstances)
-      .set({ lastSeq: seq, updatedAt: now, ...fields })
-      .where(
-        and(
-          eq(fleetInstances.id, signer.id),
-          eq(fleetInstances.status, "active"),
-          eq(fleetInstances.publicKeyX, signer.publicKeyX),
-          or(isNull(fleetInstances.lastSeq), lt(fleetInstances.lastSeq, seq)),
-        ),
-      )
-      .returning({ id: fleetInstances.id });
-    return rows.length > 0;
-  }
+/**
+ * Move the replay fence; false when `seq` is not new, the row is no longer
+ * active, or the key that signed the message is no longer the stored key.
+ * The key check closes the gap between verify and write: a revoke and
+ * re-register in that gap must not let a message from the old key land.
+ */
+export async function advanceSeq(
+  tx: Pick<Db, "update">,
+  signer: { id: string; publicKeyX: string },
+  seq: number,
+  now: Date,
+  fields: PgUpdateSetSource<typeof fleetInstances> = {},
+) {
+  const rows = await tx
+    .update(fleetInstances)
+    .set({ lastSeq: seq, updatedAt: now, ...fields })
+    .where(
+      and(
+        eq(fleetInstances.id, signer.id),
+        eq(fleetInstances.status, "active"),
+        eq(fleetInstances.publicKeyX, signer.publicKeyX),
+        or(isNull(fleetInstances.lastSeq), lt(fleetInstances.lastSeq, seq)),
+      ),
+    )
+    .returning({ id: fleetInstances.id });
+  return rows.length > 0;
+}
+
+export function fleetService(db: Db) {
+  const signedSenderFor = (compactJws: string, act: Exclude<FleetAction, "register">, now: Date) => signedSender(db, compactJws, act, now);
 
   return {
+    /** Every instance with its newest stored check-in (F2 fleet page, GRE-1083). Null when none is kept. */
     async list(now = new Date()) {
       const rows = await db.select().from(fleetInstances).orderBy(fleetInstances.code);
-      return rows.map((row) => view(row, now));
+      const latest = await db
+        .selectDistinctOn([fleetCheckIns.fleetInstanceId], {
+          fleetInstanceId: fleetCheckIns.fleetInstanceId,
+          receivedAt: fleetCheckIns.receivedAt,
+          checkIn: fleetCheckIns.payload,
+        })
+        .from(fleetCheckIns)
+        .orderBy(fleetCheckIns.fleetInstanceId, desc(fleetCheckIns.receivedAt));
+      const latestById = new Map(latest.map((entry) => [entry.fleetInstanceId, entry]));
+      return rows.map((row) => {
+        const entry = latestById.get(row.id);
+        return {
+          ...view(row, now),
+          latestCheckIn: entry ? { receivedAt: entry.receivedAt, checkIn: entry.checkIn as FleetReceivedCheckIn } : null,
+        };
+      });
     },
 
     async get(id: string) {
@@ -303,7 +328,7 @@ export function fleetService(db: Db) {
 
     /** Spoke: one signed check-in. Stored as parsed by the closed schema, nothing else. */
     async checkIn(compactJws: string, now = new Date()) {
-      const { signer, claims } = await signedSender(compactJws, "check-in", now);
+      const { signer, claims } = await signedSenderFor(compactJws, "check-in", now);
       const checkIn = claims.checkIn!;
       // A v1 check-in says nothing about lifecycle, so the stored one stays.
       const lifecycle = checkIn.schema === FLEET_CHECK_IN_SCHEMA ? checkIn.lifecycle : null;
@@ -321,9 +346,40 @@ export function fleetService(db: Db) {
       return { receivedAt: now.toISOString() };
     },
 
+    /** Hub admin: remove the record and its check-ins (B9 delete, when the spoke cannot ask). Null when not found. */
+    async remove(id: string) {
+      if (!UUID_PATTERN.test(id)) return null;
+      const [row] = await db.delete(fleetInstances).where(eq(fleetInstances.id, id)).returning({ id: fleetInstances.id, code: fleetInstances.code });
+      return row ?? null;
+    },
+
+    /**
+     * Spoke: remove its own record and check-ins (B9 `delete`, AT-4.8). Same
+     * fence as advanceSeq: the row must be active, signed by the stored key,
+     * with a new seq. Check-ins go with the row (on delete cascade).
+     */
+    async deleteFromSpoke(compactJws: string, now = new Date()) {
+      const { signer, claims } = await signedSenderFor(compactJws, "delete", now);
+      await db.transaction(async (tx) => {
+        const rows = await tx
+          .delete(fleetInstances)
+          .where(
+            and(
+              eq(fleetInstances.id, signer.id),
+              eq(fleetInstances.status, "active"),
+              eq(fleetInstances.publicKeyX, signer.publicKeyX),
+              or(isNull(fleetInstances.lastSeq), lt(fleetInstances.lastSeq, claims.seq)),
+            ),
+          )
+          .returning({ id: fleetInstances.id });
+        if (rows.length === 0) reject("fleet_replay", 409);
+      });
+      return { deletedAt: now.toISOString() };
+    },
+
     /** Spoke: revoke its own key. After this the hub refuses every message signed by it. */
     async revokeFromSpoke(compactJws: string, now = new Date()) {
-      const { signer, claims } = await signedSender(compactJws, "revoke", now);
+      const { signer, claims } = await signedSenderFor(compactJws, "revoke", now);
       await db.transaction(async (tx) => {
         if (!(await advanceSeq(tx, signer, claims.seq, now, { status: "revoked", revokedAt: now, revokedBy: "spoke" }))) reject("fleet_replay", 409);
       });

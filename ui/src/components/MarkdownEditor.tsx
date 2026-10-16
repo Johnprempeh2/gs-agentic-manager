@@ -98,6 +98,8 @@ interface MarkdownEditorProps {
   actionCommands?: SlashCommandOption[];
   /** Called on Cmd/Ctrl+Enter */
   onSubmit?: () => void;
+  /** Messenger keys: plain Enter also calls onSubmit; Shift+Enter starts a new line. */
+  submitOnEnter?: boolean;
   /** Render the rich editor without allowing edits. */
   readOnly?: boolean;
 }
@@ -716,6 +718,7 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   mentions,
   actionCommands = [],
   onSubmit,
+  submitOnEnter = false,
   readOnly = false,
 }: MarkdownEditorProps, forwardedRef) {
   const editorValue = useMemo(() => prepareMarkdownForEditor(value), [value]);
@@ -1343,7 +1346,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           }}
           onBlur={() => onBlur?.()}
           onKeyDown={(event) => {
-            if (onSubmit && event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            if (
+              onSubmit && event.key === "Enter"
+              && (event.metaKey || event.ctrlKey || (submitOnEnter && !event.shiftKey && !event.nativeEvent.isComposing))
+            ) {
               event.preventDefault();
               onSubmit();
             }
@@ -1422,6 +1428,15 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
               return;
             }
           }
+        }
+
+        if (
+          submitOnEnter && onSubmit && e.key === "Enter"
+          && !e.shiftKey && !e.altKey && !e.nativeEvent.isComposing
+        ) {
+          e.preventDefault();
+          e.stopPropagation();
+          onSubmit();
         }
       }}
       onDragEnter={(evt) => {

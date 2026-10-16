@@ -1829,6 +1829,16 @@ export function createToolGatewayService(
     }
   }
 
+  /** GRE-1364: no gateway token or session works while its company is paused or archived. */
+  async function isCompanyActive(companyId: string) {
+    const [company] = await db
+      .select({ status: companies.status })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+    return company?.status === "active";
+  }
+
   async function getActiveSession(
     sessionToken: string,
     namedGatewayProtocol?: {
@@ -1897,6 +1907,15 @@ export function createToolGatewayService(
         401,
         "Tool gateway session is expired or invalid",
         "session_expired",
+      );
+    }
+
+    if (!(await isCompanyActive(row.companyId))) {
+      await writeSessionAuthFailure(row, "company_paused");
+      throw new ToolGatewayHttpError(
+        403,
+        "The company is paused, so its tools are off",
+        "company_paused",
       );
     }
 
@@ -3914,7 +3933,7 @@ export function createToolGatewayService(
       if (tracked)
         await recordGitHubDelegationUse(db, {
           companyId: session.companyId, grant, agentId: session.agentId,
-          responsibleUserId: session.responsibleUserId, heartbeatRunId: session.runId,
+          responsibleUserId: githubScopeForSession(session).responsibleUserId, heartbeatRunId: session.runId,
           issueId: session.issueId, consumer: "tool_gateway",
         });
       if (tracked)
@@ -7031,6 +7050,15 @@ export function createToolGatewayService(
         gatewayPublicId: input.gatewayPublicId,
         bearerToken,
         reasonCode: "gateway_token_expired",
+        clientMetadata,
+      });
+    }
+    if (!(await isCompanyActive(row.gateway.companyId))) {
+      await recordNamedGatewayAuthFailure({
+        gatewayId: input.gatewayId,
+        gatewayPublicId: input.gatewayPublicId,
+        bearerToken,
+        reasonCode: "company_paused",
         clientMetadata,
       });
     }

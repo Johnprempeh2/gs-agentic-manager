@@ -388,7 +388,13 @@ describeEmbeddedPostgres("native question bridge", () => {
       expect(runInsideTransaction?.status).toBe("running");
     });
 
-    expect(postCommitActions).toHaveLength(1);
+    // The system closed the task under the agent's own card, so besides the
+    // run cancel the close also queues a wake for the card's maker (#571).
+    expect(postCommitActions).toHaveLength(2);
+    expect(postCommitActions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "cancel_native_question_run", runId, issueId, issueStatus: "done" }),
+      expect.objectContaining({ type: "wake_closed_card_maker", agentId, issueId, closerAgentId: null }),
+    ]));
     await executeIssuePostCommitActions(db, postCommitActions);
     const [persistedRun] = await db.select({ status: heartbeatRuns.status })
       .from(heartbeatRuns)

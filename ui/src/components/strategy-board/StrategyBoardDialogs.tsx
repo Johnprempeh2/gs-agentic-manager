@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDate } from "@/lib/utils";
 
 function invalidateBoard(queryClient: ReturnType<typeof useQueryClient>, companyId: string) {
   void queryClient.invalidateQueries({ queryKey: ["strategy-board", companyId] });
@@ -182,11 +183,11 @@ export function BoardPackViewer({
   return (
     <Dialog open={packId != null} onOpenChange={(open) => (!open ? onClose() : undefined)}>
       {/* The body scrolls, not the dialog: the glass rim of a scrolling dialog moves with the text. */}
-      <DialogContent className="max-h-[90vh] grid-rows-[auto_minmax(0,1fr)] sm:max-w-5xl">
+      <DialogContent className="max-h-(--sz-90vh) grid-rows-(--gtr-4) sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{pack?.title ?? "Board pack"}</DialogTitle>
           <DialogDescription>
-            {pack ? `${pack.periodStart} to ${pack.periodEnd} · made ${new Date(pack.createdAt).toLocaleDateString()}` : "Loading…"}
+            {pack ? `${pack.periodStart} to ${pack.periodEnd} · made ${formatDate(pack.createdAt)}` : "Loading…"}
           </DialogDescription>
         </DialogHeader>
         <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6" data-testid="board-pack-body">

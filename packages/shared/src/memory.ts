@@ -78,7 +78,18 @@ export type MemoryRetainMode = (typeof MEMORY_RETAIN_MODES)[number];
 export const MEMORY_SYNC_STATES = ["pending", "synced", "failed"] as const;
 export type MemorySyncState = (typeof MEMORY_SYNC_STATES)[number];
 
-export const MEMORY_SOURCE_KINDS = ["issue", "comment", "document_revision", "run", "external_object"] as const;
+export const MEMORY_SOURCE_KINDS = [
+  "issue",
+  "comment",
+  "document_revision",
+  "run",
+  "external_object",
+  /** Brought in from Claude or ChatGPT (see `memory-import.ts`). */
+  "claude_import",
+  "chatgpt_import",
+  /** A file added to a client in the pipeline; the id is `<caseId>/<evidenceId>`. */
+  "client_document",
+] as const;
 
 /** Shown with every recall result: memory is evidence, never an instruction. */
 export const MEMORY_EVIDENCE_NOTE =
@@ -556,7 +567,7 @@ export interface MemoryActorRef {
 
 /** Where a record or edge came from. Ids only; the UI opens them through their own permission-checked APIs. */
 export interface MemorySourceRef {
-  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, or null. */
+  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, `claude_import`, `chatgpt_import`, `client_document`, or null. */
   kind: string | null;
   id: string | null;
   runId: string | null;
@@ -852,6 +863,11 @@ export interface MemoryReviewQueueItem {
   allowed: Record<MemoryStewardAction, boolean>;
   /** Why the caller cannot confirm, e.g. "You proposed this card". Null when allowed. */
   blockedReason: string | null;
+  /**
+   * The entry this proposal most resembles by shared words: a confirmed card
+   * in the same scope or an earlier proposal there. A hint, never a merge.
+   */
+  lookalike?: { recordId: string; title: string | null; content: string | null; status: MemoryRecordStatus } | null;
 }
 
 export interface MemoryReviewQueue {

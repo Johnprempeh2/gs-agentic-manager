@@ -30,6 +30,8 @@ import {
   getRecentTouchedIssues,
   getUnreadTouchedIssues,
   groupInboxWorkItems,
+  activeSnoozedInboxIssueIds,
+  inboxSnoozeUntilTomorrow,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadInboxFilterPreferences,
@@ -1225,6 +1227,8 @@ describe("inbox helpers", () => {
         projects: ["project-1"],
         workspaces: ["workspace-1"],
         teams: [],
+        work: null,
+        due: null,
         liveOnly: true,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,
@@ -1242,6 +1246,8 @@ describe("inbox helpers", () => {
         projects: [],
         workspaces: [],
         teams: [],
+        work: null,
+        due: null,
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: true,
@@ -1278,6 +1284,8 @@ describe("inbox helpers", () => {
         projects: ["project-1"],
         workspaces: ["workspace-1"],
         teams: [],
+        work: null,
+        due: null,
         liveOnly: false,
         externalObjectStatuses: [],
         hideRoutineExecutions: false,
@@ -1678,5 +1686,29 @@ describe("inbox helpers", () => {
     expect(shouldResetInboxWorkspaceGrouping("workspace", false, true)).toBe(true);
     expect(shouldResetInboxWorkspaceGrouping("workspace", true, true)).toBe(false);
     expect(shouldResetInboxWorkspaceGrouping("none", false, true)).toBe(false);
+  });
+});
+
+describe("putting Inbox tasks away for later", () => {
+  it("brings a task back at 08:00 the next morning", () => {
+    const until = inboxSnoozeUntilTomorrow(new Date(2026, 9, 16, 23, 30));
+    expect([until.getFullYear(), until.getMonth(), until.getDate(), until.getHours(), until.getMinutes()]).toEqual([
+      2026, 9, 17, 8, 0,
+    ]);
+  });
+
+  it("hides only tasks whose snooze has not ended", () => {
+    const now = Date.UTC(2026, 9, 16, 12);
+    const base = { companyId: "c", userId: "u", dismissedAt: new Date(now), createdAt: new Date(now), updatedAt: new Date(now) };
+    const ids = activeSnoozedInboxIssueIds(
+      [
+        { ...base, id: "1", itemKey: "issue:later", kind: "snooze", snoozedUntil: new Date(now + 60_000) },
+        { ...base, id: "2", itemKey: "issue:back", kind: "snooze", snoozedUntil: new Date(now - 60_000) },
+        { ...base, id: "3", itemKey: "issue:gone", kind: "dismiss", snoozedUntil: null },
+        { ...base, id: "4", itemKey: "approval:a", kind: "snooze", snoozedUntil: new Date(now + 60_000) },
+      ],
+      now,
+    );
+    expect([...ids]).toEqual(["later"]);
   });
 });

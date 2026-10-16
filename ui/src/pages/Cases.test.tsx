@@ -185,6 +185,19 @@ describe("Cases list", () => {
     act(() => root.unmount());
   });
 
+  it("says the cases failed to load instead of showing the first-run hero", async () => {
+    mockCasesApi.list.mockRejectedValue(new Error("Server unavailable"));
+    const root = renderPage(container);
+
+    await waitForAssertion(() => {
+      expect(container.querySelector("[role='alert']")?.textContent).toContain("Server unavailable");
+    });
+    expect(container.textContent).toContain("Could not load cases");
+    expect(container.textContent).not.toContain("No cases yet");
+
+    act(() => root.unmount());
+  });
+
   it("shows default columns in id, title, status, updated order grouped by type without keys", async () => {
     mockCasesApi.list.mockResolvedValue([
       createCase({ id: "a", identifier: "PAP-C1", key: "launch/post-one", title: "Post one", caseType: "blog_post" }),

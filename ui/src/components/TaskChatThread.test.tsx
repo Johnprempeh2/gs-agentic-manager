@@ -42,7 +42,6 @@ const DIRECT_ADAPTER_TYPES = [
   "http",
   "custom_plugin",
 ] as const;
-const streamlinedState = vi.hoisted(() => ({ enabled: true }));
 
 vi.mock("@/components/transcript/useLiveRunTranscripts", () => ({
   useLiveRunTranscripts: ({ runs }: { runs: unknown[] }) => {
@@ -69,12 +68,6 @@ vi.mock("@/context/SidebarContext", () => ({
 }));
 vi.mock("@/hooks/useIssuePlanDocument", () => ({
   useIssuePlanDocument: () => planState,
-}));
-vi.mock("@/hooks/useStreamlinedUiEnabled", () => ({
-  useStreamlinedUiEnabled: () => ({
-    enabled: streamlinedState.enabled,
-    loaded: true,
-  }),
 }));
 vi.mock("@/lib/router", () => ({
   Link: ({
@@ -119,7 +112,6 @@ beforeEach(() => {
   transcriptHookRuns.native.length = 0;
   sidebarState.isMobile = false;
   planState.data = null;
-  streamlinedState.enabled = true;
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -785,7 +777,7 @@ describe("TaskChatThread runtime transcript selection", () => {
       agentId: "agent-1", agentName: "Runner", adapterType: "grok_local",
       createdAt: "2026-08-25T18:00:00.000Z", startedAt: null, finishedAt: "2026-08-25T18:00:02.000Z",
     }]} />);
-    expect(container.textContent).toContain("The run failed");
+    expect(container.textContent).toContain("Something went wrong and the agent stopped");
     expect(container.textContent).not.toContain("before returning an answer");
     expect(container.textContent).not.toContain("Workspace restore failed");
   });
@@ -2426,7 +2418,7 @@ describe("TaskChatThread runtime transcript selection", () => {
         />,
       );
       renderRun(true);
-      expect(container.textContent).toContain("Your message is preserved.");
+      expect(container.textContent).toContain("Your message is saved.");
       expect(container.textContent).not.toContain("You can retry this message now.");
       expect(container.querySelector('[data-testid="task-chat-run-failed-try-again"]')).toBeNull();
       renderRun(false);
@@ -2682,29 +2674,6 @@ describe("TaskChatThread composer alignment", () => {
     expect(dock?.className).toContain("w-full");
     expect(dock?.className).toContain("max-w-(--tc-shell-max-w)");
     expect(dock?.className).not.toContain("md:w-(--pct-80)");
-  });
-
-  it("uses master's production composer and gutters when Streamlined UI is off", () => {
-    streamlinedState.enabled = false;
-    render(<TaskChatThread comments={[]} onAdd={async () => {}} />);
-
-    const dock = container.querySelector(
-      '[data-testid="task-chat-composer-dock"]',
-    );
-    const composer = container.querySelector(".paperclip-task-chat-composer");
-    const send = container.querySelector(
-      '[data-testid="task-chat-composer-send"]',
-    );
-
-    expect(dock?.classList).not.toContain("md:px-0");
-    expect(dock?.classList).not.toContain("md:pb-4");
-    expect(dock?.classList).toContain("bg-background/80");
-    expect(dock?.classList).toContain("pt-1");
-    expect(dock?.classList).not.toContain("-mt-(--radius-task-composer)");
-    expect(composer?.classList).not.toContain("border");
-    expect(composer?.classList).toContain("bg-card");
-    expect(send?.classList).toContain("rounded-full");
-    expect(send?.classList).not.toContain("rounded-md");
   });
 });
 
@@ -3457,8 +3426,9 @@ describe("TaskChatThread mobile composer dock (PAP-495)", () => {
     // height while the nav is on screen) — NOT the raw safe-area dock, which is
     // what let the nav occlude the action row before PAP-495. It also clears
     // the part of the page the iPhone keyboard hides.
-    expect(dock?.className).toContain("var(--tc-composer-bottom)");
-    expect(dock?.className).toContain("var(--vv-bottom-inset)");
+    // .tc-composer-dock-bottom (index.css) is max(--tc-composer-bottom,
+    // --vv-bottom-inset + 0.25rem).
+    expect(dock?.className).toContain("tc-composer-dock-bottom");
     expect(dock?.className).not.toContain("bottom-(--sz-calc-8)");
   });
 });
@@ -3682,7 +3652,7 @@ describe("TaskChatThread live transcript", () => {
     render(<TaskChatThread comments={[]} onAdd={async () => {}} issueStatus="in_progress" linkedRuns={[
       { ...run, runId: run.id, status: "failed", errorCode: "workspace_git_scan_timeout", finishedAt: "2026-09-15T10:00:10Z" },
     ]} />);
-    expect(container.textContent).toContain("Workspace setup failed before the agent started.");
+    expect(container.textContent).toContain("The agent's workspace could not be set up, so it did not start.");
     expect(container.textContent).not.toContain("Review the task’s connection");
   });
 

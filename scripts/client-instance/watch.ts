@@ -6,6 +6,7 @@
 // send, so keep keys stable.
 
 import { isAiAuthRequiredErrorCode } from "../../packages/shared/src/ai-connections.js";
+import type { BillingUsage } from "../../packages/shared/src/billing-account.js";
 
 export interface WatchSignal {
   key: string;
@@ -105,6 +106,23 @@ export function aiSignals(companyId: string, connections: AiConnectionView[], ru
       : "no run refused for auth in the last hour",
   };
   return [connectionSignal, runSignal];
+}
+
+/**
+ * AT-1.4 (GRE-1389): AI usage of the month at or over the warn level of the
+ * allowance. The app computes `warning` (GET /api/instance/billing-account),
+ * so the watch, the Billing page and the Inbox card share one rule. The fleet
+ * key is `budget-warn`: the check-in allows only a-z and "-" in a key.
+ */
+export function billingUsageSignal(
+  usage: Pick<BillingUsage, "warning" | "usedPercent" | "warnPercent" | "windowStart"> | null,
+): WatchSignal {
+  if (!usage) return { key: "budget-warn", ok: true, detail: "no billing account" };
+  return {
+    key: "budget-warn",
+    ok: !usage.warning,
+    detail: `${usage.usedPercent}% of the AI allowance used since ${usage.windowStart} (warn at ${usage.warnPercent}%)`,
+  };
 }
 
 /**

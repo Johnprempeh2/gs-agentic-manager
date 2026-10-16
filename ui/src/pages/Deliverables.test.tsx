@@ -104,6 +104,14 @@ function sample(overrides: Partial<Deliverable> = {}): Deliverable {
     kind: "report",
     brand: "Greatstone",
     status: "final",
+    confidentiality: "internal",
+    external: false,
+    url: null,
+    screenshotPath: null,
+    screenshotCapturedAt: null,
+    linkCheck: null,
+    restricted: false,
+    appPath: `/GRE/deliverables?open=${id}`,
     attachmentId: `att-${id}`,
     contentType: "text/html",
     byteSize: 100,
@@ -113,6 +121,7 @@ function sample(overrides: Partial<Deliverable> = {}): Deliverable {
     downloadPath: `/api/attachments/att-${id}/content?download=1`,
     issue: { id: "issue-1", identifier: "GRE-1", title: "Quarterly pack" },
     project: { id: "project-1", name: "Board" },
+    clientCase: null,
     createdByAgent: { id: "agent-1", name: "Everest" },
     createdAt: "2026-09-30T10:00:00.000Z",
     updatedAt: "2026-09-30T10:00:00.000Z",
@@ -208,6 +217,96 @@ describe("Deliverables page", () => {
     const frame = container.querySelector<HTMLIFrameElement>("[data-testid='deliverable-thumbnail-frame']");
     expect(frame?.getAttribute("src")).toBe("/api/attachments/att-d-1/content");
     expect(frame?.getAttribute("sandbox")).toBe(DELIVERABLE_IFRAME_SANDBOX);
+  });
+
+  it("shows a live site as a placeholder or stored screenshot with Open site, never a frame", async () => {
+    const site = (id: string, screenshotPath: string | null) => sample({
+      id,
+      title: `MoEnGT deck ${id === "s-1" ? "site" : "mirror"}`,
+      external: true,
+      url: "https://greatstone-moengt-deck.netlify.app",
+      attachmentId: null,
+      contentType: "text/uri-list",
+      openPath: "https://greatstone-moengt-deck.netlify.app",
+      screenshotPath,
+      confidentiality: "client",
+      linkCheck: { lastCheckedAt: "2026-10-13T09:00:00.000Z", httpStatus: 404, ok: false },
+    });
+    deliverablesApiMock.list.mockResolvedValue(response([site("s-1", null), site("s-2", "/api/attachments/shot/content")]));
+    render();
+    await flush();
+
+    expect(container.querySelector("[data-testid='deliverable-thumbnail-frame']")).toBeNull();
+    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("GM");
+    expect(container.querySelector("[data-testid='deliverable-site-placeholder']")?.textContent).toContain("greatstone-moengt-deck.netlify.app");
+    expect(container.querySelector("[data-testid='deliverable-site-screenshot']")?.getAttribute("src")).toBe("/api/attachments/shot/content");
+    const open = container.querySelector<HTMLAnchorElement>("a[aria-label='Open site']");
+    expect(open?.getAttribute("href")).toBe("https://greatstone-moengt-deck.netlify.app");
+    expect(open?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(container.querySelector("a[aria-label='Download']")).toBeNull();
+    expect(container.querySelector("[data-testid='deliverable-link-broken']")?.textContent).toContain("Link broken");
+    expect(container.querySelector("[data-testid='deliverable-confidentiality']")?.textContent).toBe("Client");
+  });
+
+  it("groups by project by default, shows the project on each card, and puts no-project last (GRE-1471)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "a", title: "Loose note", project: null }),
+      sample({ id: "b", title: "Board pack", project: { id: "p1", name: "Board" } }),
+      sample({ id: "c", title: "Site brief", project: { id: "p2", name: "Website" } }),
+      sample({ id: "d", title: "Board minutes", project: { id: "p1", name: "Board" } }),
+    ]));
+    render();
+    await flush();
+
+    const sections = [...container.querySelectorAll<HTMLElement>("section[aria-label]")]
+      .filter((section) => section.querySelector("[data-testid='deliverable-card']"));
+    expect(sections.map((section) => section.getAttribute("aria-label"))).toEqual(["Board", "Website", "No project"]);
+    const titlesIn = (section: HTMLElement) =>
+      [...section.querySelectorAll("[data-testid='deliverable-card'] h3")].map((title) => title.textContent);
+    expect(titlesIn(sections[0]!)).toEqual(["Board pack", "Board minutes"]);
+    expect(titlesIn(sections[2]!)).toEqual(["Loose note"]);
+
+    const projectLabels = [...container.querySelectorAll("[data-testid='deliverable-card-project']")]
+      .map((label) => label.textContent);
+    expect(projectLabels).toEqual(["Project: Board", "Project: Board", "Project: Website", "Project: No project"]);
+  });
+
+  it("splits a project by client case, with no-case last, and shows the case on the card (GRE-1471)", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "a", title: "Internal note", project: { id: "p1", name: "Board" } }),
+      sample({ id: "b", title: "Acme brief", project: { id: "p1", name: "Board" }, clientCase: { id: "c1", name: "Acme" } }),
+      sample({ id: "c", title: "Site brief", project: { id: "p2", name: "Website" } }),
+      sample({ id: "d", title: "Loose Acme note", project: null, clientCase: { id: "c1", name: "Acme" } }),
+    ]));
+    render();
+    await flush();
+
+    const caseHeadings = [...container.querySelectorAll("[data-testid='deliverable-case-heading']")]
+      .map((heading) => heading.textContent);
+    // Board has a case so it splits; Website has none so it stays flat.
+    expect(caseHeadings).toEqual(["Acme· 1", "No client case· 1", "Acme· 1"]);
+    const board = container.querySelector<HTMLElement>("section[aria-label='Board']")!;
+    expect([...board.querySelectorAll("[data-testid='deliverable-card'] h3")].map((title) => title.textContent))
+      .toEqual(["Acme brief", "Internal note"]);
+    expect(container.querySelector("section[aria-label='Website'] [data-testid='deliverable-case-heading']")).toBeNull();
+    expect(container.querySelector("section[aria-label='No project'] [role='group'][aria-label='Client case: Acme']")).not.toBeNull();
+
+    const caseLabels = [...container.querySelectorAll("[data-testid='deliverable-card-case']")]
+      .map((label) => label.textContent);
+    expect(caseLabels).toEqual(["Client case: Acme", "Client case: Acme"]);
+  });
+
+  it("can turn grouping off and keeps the choice in the link", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "a", project: null }),
+      sample({ id: "b", project: { id: "p1", name: "Board" } }),
+    ]));
+    render("/deliverables?group=none");
+    await flush();
+
+    expect(container.querySelector("section[aria-label='Deliverables']")).not.toBeNull();
+    expect(container.querySelectorAll("[data-testid='deliverable-card']")).toHaveLength(2);
+    expect(container.querySelector("[data-testid='deliverable-group']")?.textContent).toContain("No grouping");
   });
 
   it("uses the same sandbox as HTML attachments and never grants app access", () => {
@@ -355,6 +454,61 @@ describe("Deliverables page", () => {
     expect(container.querySelectorAll("[data-testid='deliverable-card']")).toHaveLength(1);
   });
 
+  // Ben, 13 Oct: the same document showed as three cards.
+  it("shows one card per document, with its versions one click away", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([
+      sample({ id: "brief-3", key: "brief-v3", title: "Ghana Airport Taxi discovery prep brief v3", createdAt: "2026-10-12T10:00:00.000Z" }),
+      sample({ id: "toolkit", key: "toolkit", title: "The Greatstone Method Toolkit", createdAt: "2026-10-11T10:00:00.000Z" }),
+      sample({ id: "brief-2", key: "brief-draft", title: "Ghana airport taxi discovery prep brief (draft)", createdAt: "2026-10-10T10:00:00.000Z", issue: { id: "issue-2", identifier: "GRE-2", title: "Prep" } }),
+      sample({ id: "brief-1", key: "brief", title: "Ghana Airport Taxi discovery prep brief", createdAt: "2026-10-01T10:00:00.000Z", versionCount: 2, version: 2 }),
+    ]));
+    render();
+    await flush();
+
+    const cards = [...container.querySelectorAll("[data-testid='deliverable-card']")];
+    expect(cards.map((card) => card.querySelector("h3")?.textContent)).toEqual([
+      "Ghana Airport Taxi discovery prep brief v3",
+      "The Greatstone Method Toolkit",
+    ]);
+    const versions = cards[0]!.querySelector<HTMLButtonElement>("[data-testid='deliverable-versions']");
+    // Three entries, one of which has two versions of its own.
+    expect(versions?.textContent).toContain("4 versions");
+    expect(cards[1]!.querySelector("[data-testid='deliverable-versions']")).toBeNull();
+    expect(container.textContent).toContain("2 older versions grouped under the latest");
+
+    await act(async () => {
+      versions!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    });
+    await flush(2);
+    const older = [...document.querySelectorAll("[role='menuitem']")].find((item) => item.textContent?.includes("(draft)"));
+    expect(older?.textContent).toContain("GRE-2");
+    await act(async () => {
+      (older as HTMLElement).click();
+    });
+    await flush();
+    expect(currentLocation()).toContain("open=brief-2");
+  });
+
+  it("filters by who a deliverable is for, first and in words", async () => {
+    deliverablesApiMock.list.mockResolvedValue(response([sample()]));
+    render();
+    await flush();
+
+    const audience = container.querySelector("[data-testid='deliverable-audience']");
+    const options = [...(audience?.querySelectorAll("[role='radio']") ?? [])] as HTMLButtonElement[];
+    expect(options.map((option) => option.textContent)).toEqual(["Everything", "Client-facing", "Internal"]);
+    expect(options[0]!.getAttribute("aria-checked")).toBe("true");
+
+    await act(async () => {
+      options[1]!.click();
+    });
+    await flush();
+    expect(currentLocation()).toContain("audience=client_facing");
+    expect(deliverablesApiMock.list.mock.calls.at(-1)?.[1]).toMatchObject({ audience: "client_facing" });
+    const checked = container.querySelector("[data-testid='deliverable-audience'] [aria-checked='true']");
+    expect(checked?.textContent).toBe("Client-facing");
+  });
+
   it("explains the page and shows an example prompt when there is nothing yet", async () => {
     deliverablesApiMock.list.mockResolvedValue(response([]));
     render();
@@ -413,17 +567,36 @@ describe("projectsWithPreview", () => {
 });
 
 describe("deliverable helpers", () => {
-  it("groups by project and by month, keeping list order", () => {
+  it("groups by project and by month, keeping list order, with no project last", () => {
     const items = [
       sample({ id: "a", project: { id: "p1", name: "Board" }, createdAt: "2026-09-02T00:00:00.000Z" }),
       sample({ id: "b", project: null, createdAt: "2026-08-15T00:00:00.000Z" }),
       sample({ id: "c", project: { id: "p1", name: "Board" }, createdAt: "2026-08-01T00:00:00.000Z" }),
+      sample({ id: "e", project: { id: "p2", name: "Website" }, createdAt: "2026-07-01T00:00:00.000Z" }),
     ];
     expect(groupDeliverables(items, "project").map((group) => [group.label, group.items.map((item) => item.id)]))
-      .toEqual([["Board", ["a", "c"]], ["No project", ["b"]]]);
+      .toEqual([["Board", ["a", "c"]], ["Website", ["e"]], ["No project", ["b"]]]);
     expect(groupDeliverables(items, "month").map((group) => group.items.map((item) => item.id)))
-      .toEqual([["a"], ["b", "c"]]);
-    expect(groupDeliverables(items, "none")).toEqual([{ key: "all", label: null, items }]);
+      .toEqual([["a"], ["b", "c"], ["e"]]);
+    expect(groupDeliverables(items, "none").map((group) => [group.label, group.items])).toEqual([[null, items]]);
+  });
+
+  it("splits a project by client case in list order, with no case last and items in shown order", () => {
+    const items = [
+      sample({ id: "a", project: { id: "p1", name: "Board" } }),
+      sample({ id: "b", project: { id: "p1", name: "Board" }, clientCase: { id: "c2", name: "Beta" } }),
+      sample({ id: "c", project: { id: "p1", name: "Board" }, clientCase: { id: "c1", name: "Acme" } }),
+      sample({ id: "d", project: { id: "p1", name: "Board" }, clientCase: { id: "c2", name: "Beta" } }),
+      sample({ id: "e", project: null }),
+    ];
+    const [board, none] = groupDeliverables(items, "project");
+    expect(board!.cases.map((section) => [section.label, section.items.map((item) => item.id)]))
+      .toEqual([["Beta", ["b", "d"]], ["Acme", ["c"]], ["No client case", ["a"]]]);
+    expect(board!.items.map((item) => item.id)).toEqual(["b", "d", "c", "a"]);
+    // No case anywhere in the group: one unlabelled section.
+    expect(none!.cases).toEqual([{ key: "all", label: null, items: [items[4]] }]);
+    // Month grouping never splits by case.
+    expect(groupDeliverables(items, "month").every((group) => group.cases.length === 1 && group.cases[0]!.label === null)).toBe(true);
   });
 
   it("starts weeks on Monday and months on the 1st", () => {

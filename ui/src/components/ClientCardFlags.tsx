@@ -19,7 +19,7 @@ export function ClientCardFlags({ caseItem, now }: { caseItem: ClientCardFlagInp
         <Badge
           variant="outline"
           title={`No contact logged for ${NO_CONTACT_FLAG_DAYS} days or more`}
-          className="border-rose-400/40 bg-rose-50 text-(length:--text-nano) text-rose-700 dark:border-rose-300/30 dark:bg-rose-900/25 dark:text-rose-300"
+          className="border-status-danger/40 bg-status-danger-soft text-(length:--text-nano) text-status-danger-foreground"
         >
           No contact {formatDays(noContactDays)}
         </Badge>
@@ -28,7 +28,7 @@ export function ClientCardFlags({ caseItem, now }: { caseItem: ClientCardFlagInp
         <Badge
           variant="outline"
           title={`No stage move for ${STUCK_STAGE_FLAG_DAYS} days or more`}
-          className="border-amber-400/40 bg-amber-50 text-(length:--text-nano) text-amber-700 dark:border-amber-300/30 dark:bg-amber-900/25 dark:text-amber-300"
+          className="border-status-warning/40 bg-status-warning-soft text-(length:--text-nano) text-status-warning-foreground"
         >
           Same stage {formatDays(stuckStageDays)}
         </Badge>

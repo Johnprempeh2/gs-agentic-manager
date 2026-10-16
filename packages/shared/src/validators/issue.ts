@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ASK_TYPES } from "../ask-types.js";
 import {
   ISSUE_EXECUTION_DECISION_OUTCOMES,
   ISSUE_EXECUTION_MONITOR_CLEAR_REASONS,
@@ -21,6 +22,7 @@ import {
   ISSUE_RECOVERY_ACTION_OWNER_TYPES,
   ISSUE_RECOVERY_ACTION_STATUSES,
   ISSUE_REVIEW_POLICIES,
+  ISSUE_UNBLOCK_WAITING_ON,
   ISSUE_WORK_MODES,
   clampIssueRequestDepth,
   ISSUE_STATUSES,
@@ -702,6 +704,11 @@ const createIssueBaseSchema = z.object({
         z.literal("board"),
       ]),
       action: multilineTextSchema.pipe(z.string().trim().min(1).max(2_000)),
+      waitingOn: z.enum(ISSUE_UNBLOCK_WAITING_ON).optional(),
+      expectedBy: issueDueDateSchema.optional(),
+      // Server-owned marker. Accepted so a descriptor read back from the API
+      // can be sent again, but the server ignores the value sent.
+      expectedByWokenFor: issueDueDateSchema.optional(),
     })
     .strict()
     .optional()
@@ -1093,6 +1100,37 @@ export const issueThreadInteractionEffectiveResolverPolicySourceSchema = z.enum(
 export const issueThreadInteractionContinuationPolicySchema = z.enum(
   ISSUE_THREAD_INTERACTION_CONTINUATION_POLICIES,
 );
+
+export const askAgentPayloadSchema = z
+  .object({
+    version: z.literal(1),
+    question: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+
+export const askAgentResultSchema = z
+  .object({
+    version: z.literal(1),
+    outcome: z.enum(["answered", "withdrawn", "issue_closed", "addressee_deleted", "skipped"]),
+    answer: z.string().max(10000).nullable().optional(),
+    reason: z.string().max(4000).nullable().optional(),
+  })
+  .passthrough();
+
+export const createAgentQuestionSchema = z
+  .object({
+    targetAgentId: z.string().guid(),
+    question: z.string().trim().min(1).max(4000),
+  })
+  .strict();
+export type CreateAgentQuestion = z.infer<typeof createAgentQuestionSchema>;
+
+export const answerAgentQuestionSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(10000),
+  })
+  .strict();
+export type AnswerAgentQuestion = z.infer<typeof answerAgentQuestionSchema>;
 
 export const connectionIntentPhaseSchema = z.enum([
   "requested",
@@ -1567,6 +1605,7 @@ export const requestConfirmationPayloadSchema = z.object({
   toolAction: requestConfirmationToolActionPayloadSchema.optional(),
   secretProposal: requestConfirmationSecretProposalPayloadSchema.optional(),
   atDesk: interactionAtDeskSchema.nullable().optional(),
+  askType: z.enum(ASK_TYPES).nullable().optional(),
 });
 
 export const requestCheckboxConfirmationOptionSchema = z.object({
@@ -1756,6 +1795,38 @@ export const requestCheckboxConfirmationResultSchema =
         seenOptionIds.add(optionId);
       }
     });
+
+export const requestDraftReviewPayloadSchema = z.object({
+  version: z.literal(1),
+  purpose: z.string().trim().min(1).max(240),
+  body: multilineTextSchema.pipe(z.string().min(1).max(50000)),
+  subject: z.string().trim().max(500).nullable().optional(),
+  recipients: z.array(z.string().trim().min(1).max(320)).max(50).optional(),
+  channel: z.string().trim().max(80).nullable().optional(),
+  detailsMarkdown: z.string().max(20000).nullable().optional(),
+  supersedeOnUserComment: z.boolean().optional(),
+  target: requestConfirmationTargetSchema.nullable().optional(),
+});
+
+export const requestDraftReviewResultSchema = requestConfirmationResultSchema.extend({
+  draft: z
+    .object({
+      originalBody: z.string(),
+      finalBody: z.string(),
+      edited: z.boolean(),
+      changeCount: z.number().int().min(0),
+      diff: z.array(
+        z.object({
+          type: z.enum(["same", "added", "removed"]),
+          text: z.string(),
+        }),
+      ),
+      editSummary: z.string(),
+      learnFromEdits: z.boolean(),
+    })
+    .nullable()
+    .optional(),
+});
 
 export const requestItemVerdictValueSchema = z.enum([
   "approve",
@@ -2023,6 +2094,19 @@ export const createIssueThreadInteractionSchema = z.discriminatedUnion("kind", [
       .default("wake_assignee"),
     payload: requestItemVerdictsPayloadSchema,
   }),
+  z.object({
+    ...createIssueThreadInteractionCommon,
+    kind: z.literal("request_draft_review"),
+    idempotencyKey: z.string().trim().max(255).nullable().optional(),
+    sourceCommentId: z.string().guid().nullable().optional(),
+    sourceRunId: z.string().guid().nullable().optional(),
+    title: z.string().trim().max(240).nullable().optional(),
+    summary: z.string().trim().max(1000).nullable().optional(),
+    continuationPolicy: issueThreadInteractionContinuationPolicySchema
+      .optional()
+      .default("wake_assignee"),
+    payload: requestDraftReviewPayloadSchema,
+  }),
 ]);
 
 export type CreateIssueThreadInteraction = z.infer<
@@ -2041,6 +2125,10 @@ export const acceptIssueThreadInteractionSchema = z
       .array(z.string().trim().min(1).max(120))
       .max(REQUEST_CHECKBOX_CONFIRMATION_OPTION_LIMIT)
       .optional(),
+    /** request_draft_review: the person's edited text ("Send edits"). */
+    editedBody: multilineTextSchema.pipe(z.string().min(1).max(50000)).optional(),
+    /** request_draft_review: false stops the agent noting these edits. */
+    learnFromEdits: z.boolean().optional(),
   })
   .superRefine((value, ctx) => {
     const seenClientKeys = new Set<string>();
@@ -2171,6 +2259,28 @@ export const upsertIssueDocumentSchema = z.object({
 });
 
 export const restoreIssueDocumentRevisionSchema = z.object({});
+
+/** Link a document owned by another task in the same company to this task. */
+export const createIssueDocumentLinkSchema = z.object({
+  sourceIssueId: z.string().guid(),
+  key: issueDocumentKeySchema,
+});
+
+/** Name one extra agent allowed to write a document, or null to clear it. */
+export const setIssueDocumentMakerSchema = z.object({
+  makerAgentId: z.string().guid().nullable(),
+});
+
+/** Mark one revision as the current approved one, or null to clear it. */
+export const setIssueDocumentApprovedRevisionSchema = z.object({
+  revisionId: z.string().guid().nullable(),
+});
+
+export type CreateIssueDocumentLink = z.infer<typeof createIssueDocumentLinkSchema>;
+export type SetIssueDocumentMaker = z.infer<typeof setIssueDocumentMakerSchema>;
+export type SetIssueDocumentApprovedRevision = z.infer<
+  typeof setIssueDocumentApprovedRevisionSchema
+>;
 
 export type IssueDocumentFormat = z.infer<typeof issueDocumentFormatSchema>;
 export type UpsertIssueDocument = z.infer<typeof upsertIssueDocumentSchema>;

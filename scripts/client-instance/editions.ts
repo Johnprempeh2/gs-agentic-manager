@@ -9,6 +9,7 @@
 import {
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  featureDependencyViolations,
   type InstanceFeatureKey,
 } from "../../packages/shared/src/feature-catalog.js";
 import { parseHiddenSettingsList } from "../../packages/shared/src/settings-visibility.js";
@@ -20,8 +21,6 @@ export type Edition = (typeof EDITIONS)[number];
 export const MANAGED_FEATURES_ON = [
   "enableStreamlinedUi",
   "enableStreamlinedLeftNavigation",
-  "enableWorkspaceBranchReconcileForward",
-  "enableWorkspaceDirtyQuarantineRepair",
   "enableIsolatedWorkspaces",
   "enableIsolatedWorkspacesByDefault",
 ] as const satisfies readonly InstanceFeatureKey[];
@@ -38,7 +37,10 @@ export const MANAGED_FEATURES_OFF = [
   "enableDeepDive",
   // GRE-1087: Website view; which edition gets it is Harbor and John's call.
   "enableWebsiteView",
+  // Intelligence page (Daily Pulse and AI hub): Greatstone internal for now.
+  "enableIntelligence",
   "enableAgentChat",
+  "enableTeamChat",
   "enableConferenceRoomChat",
   "enableSummaries",
   "enableStatusCards",
@@ -54,8 +56,12 @@ export const MANAGED_FEATURES_OFF = [
   "enableOwnerInstanceAdmin",
   // GRE-575: beta history view on task pages; off by default, now pinned off.
   "enableIssuePlanDecompositions",
+  // GRE-1382: Strategy module (KPI cascade and readings). Off in Managed; it is
+  // sold apart from basic goals (D2 rule 2 on GRE-1354).
+  "enableStrategy",
   // GRE-1135: board control panel. Off in Managed; the strategy edition passes
-  // it on Managed plus (Harbor's edition doc on GRE-1136, section 5).
+  // it on Managed plus (Harbor's edition doc on GRE-1136, section 5). Needs
+  // enableStrategy (D2 rule 1 on GRE-1354).
   "enableStrategyBoard",
 ] as const satisfies readonly InstanceFeatureKey[];
 
@@ -72,6 +78,10 @@ export const CLIENT_DEFAULT_OK = {
   enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
   enableClassicTaskInterface: "Off by default; clients use the chat task page.",
   enableGoalsSidebarLink: "Compatibility key; Goals graduated (GRE-191), is always in the sidebar and the app ignores the value.",
+  enableWorkspaceBranchReconcileForward:
+    "Compatibility key; branch reconcile forward graduated (GRE-1438), is always on and the app ignores the value.",
+  enableWorkspaceDirtyQuarantineRepair:
+    "Compatibility key; dirty quarantine repair graduated (GRE-1439), is always on and the app ignores the value.",
   enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
   enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",
@@ -170,6 +180,10 @@ export function buildEditionValues(input: EditionInput): EditionValues {
   }
 
   const on = new Set<InstanceFeatureKey>([...MANAGED_FEATURES_ON, ...(passed as InstanceFeatureKey[])]);
+  // GRE-1382: the app would read the dependent switch as off, so refuse it here.
+  for (const { feature, requires } of featureDependencyViolations(Object.fromEntries([...on].map((key) => [key, true])))) {
+    throw new Error(`"${feature}" needs "${requires}"; pass both or neither`);
+  }
 
   // GSAM_MANAGED_CONFIG accepts only tier "managed" keys. Pin exactly the
   // section 5 keys; CLIENT_DEFAULT_OK keys keep the app default.

@@ -20,6 +20,7 @@ import {
   Plug,
   Search,
   X,
+  PenLine,
 } from "lucide-react";
 import type { IssueDocument } from "@greatstone/shared";
 import type {
@@ -28,7 +29,10 @@ import type {
 } from "@greatstone/adapter-utils";
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
+import { DraftReviewCard } from "@/components/DraftReviewCard";
+import { AgentQuestionCard } from "@/components/AgentQuestionCard";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
 import {
   InteractionGuideSheet,
   InteractionGuideText,
@@ -121,6 +125,16 @@ const KIND_COPY = {
     fallbackTitle: "Connect service",
     label: "Connection",
     icon: Plug,
+  },
+  request_draft_review: {
+    fallbackTitle: "Review draft",
+    label: "Draft",
+    icon: PenLine,
+  },
+  ask_agent: {
+    fallbackTitle: "Question for an agent",
+    label: "Question",
+    icon: CircleHelp,
   },
 } as const;
 
@@ -257,13 +271,21 @@ function Details({ children }: { children?: ReactNode }) {
 function ActionRow({
   children,
   hint,
+  leading,
 }: {
   children: ReactNode;
   hint?: string | null;
+  /** Secondary action shown on the left, apart from the decision buttons. */
+  leading?: ReactNode;
 }) {
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      {hint ? (
+      {leading ? (
+        <div className="mr-auto flex items-center gap-2">
+          {leading}
+          {hint ? <span className="text-xs text-muted-foreground">{hint}</span> : null}
+        </div>
+      ) : hint ? (
         <span className="mr-auto text-xs text-muted-foreground">{hint}</span>
       ) : (
         <span className="mr-auto" />
@@ -524,6 +546,18 @@ function ReceiptDisclosure({
         {interaction.payload.requestingAgentName} requested access to{" "}
         {interaction.payload.serviceName}.
       </p>
+    );
+  } else if (interaction.kind === "request_draft_review") {
+    request = (
+      <p className="whitespace-pre-wrap break-words text-sm text-foreground">
+        {interaction.result?.draft?.finalBody ?? interaction.payload.body}
+      </p>
+    );
+  } else if (interaction.kind === "ask_agent") {
+    request = (
+      <MarkdownBody className="text-sm text-foreground">
+        {interaction.payload.question}
+      </MarkdownBody>
     );
   } else {
     request = (
@@ -929,7 +963,11 @@ function ConfirmationCard({
         </div>
       ) : null}
       <InteractionActionError message={actionError} />
-      <ActionRow>
+      <ActionRow
+        leading={!isPlanConfirmation && !rejecting ? (
+          <CopyMarkdownButton markdown={details ? `${prompt}\n\n${details}` : prompt} />
+        ) : null}
+      >
         {rejecting ? (
           <>
             <Button
@@ -1993,6 +2031,29 @@ export function TaskChatCompactInteractionCard({
     interaction.payload.target?.type === "issue_document" &&
     interaction.payload.target.key === "plan";
 
+  if (interaction.kind === "request_draft_review") {
+    return (
+      <InteractionShell
+        interaction={interaction}
+        audienceLabel={audienceLabel}
+        presentation={presentation}
+      >
+        <DraftReviewCard
+          interaction={interaction}
+          drafterLabel={creatorLabel ?? "the agent"}
+          resolvedByLabel={
+            interaction.resolvedByUserId
+              ? interaction.resolvedByUserId === currentUserId
+                ? "you"
+                : (userLabelMap?.get(interaction.resolvedByUserId) ?? null)
+              : null
+          }
+          errorMessage={errorMessage}
+        />
+      </InteractionShell>
+    );
+  }
+
   if (interaction.kind === "connection_intent") {
     return (
       <InteractionShell
@@ -2082,6 +2143,8 @@ export function TaskChatCompactInteractionCard({
           errorMessage={errorMessage}
           draftKey={draftKey}
         />
+      ) : interaction.kind === "ask_agent" ? (
+        <AgentQuestionCard interaction={interaction} agentMap={agentMap} />
       ) : (
         <ItemVerdictsCard
           interaction={interaction}

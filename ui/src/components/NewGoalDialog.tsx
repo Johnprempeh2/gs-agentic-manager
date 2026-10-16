@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { GOAL_STATUSES, GOAL_LEVELS, GOAL_KINDS, GOAL_KIND_LABELS, type GoalKind } from "@greatstone/shared";
 import { useDialog } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
+import { useStrategyEnabled } from "../hooks/useStrategyEnabled";
 import { goalsApi } from "../api/goals";
 import { assetsApi } from "../api/assets";
 import { queryKeys } from "../lib/queryKeys";
@@ -52,6 +53,8 @@ export function NewGoalDialog() {
   const [levelOpen, setLevelOpen] = useState(false);
   const [kindOpen, setKindOpen] = useState(false);
   const [parentOpen, setParentOpen] = useState(false);
+  // GRE-1382: strategy layers are the Strategy module; plain goals need nothing.
+  const { enabled: strategyOn } = useStrategyEnabled();
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
 
   // Apply defaults when dialog opens
@@ -98,7 +101,7 @@ export function NewGoalDialog() {
       description: description.trim() || undefined,
       status,
       // A kind picks its own level on the server.
-      ...(kind ? { kind } : { level }),
+      ...(kind && strategyOn ? { kind } : { level }),
       ...(appliedParentId ? { parentId: appliedParentId } : {}),
     });
   }
@@ -249,37 +252,39 @@ export function NewGoalDialog() {
           </Popover>
 
           {/* Strategy layer */}
-          <Popover open={kindOpen} onOpenChange={setKindOpen}>
-            <PopoverTrigger asChild>
-              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
-                <Network className="h-3 w-3 text-muted-foreground" />
-                {kind ? GOAL_KIND_LABELS[kind] : "Kind"}
-              </button>
-            </PopoverTrigger>
-            <PopoverContent className="w-52 p-1" align="start">
-              <button
-                className={cn(
-                  "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                  !kind && "bg-accent"
-                )}
-                onClick={() => { setKind(""); setKindOpen(false); }}
-              >
-                Plain goal
-              </button>
-              {GOAL_KINDS.map((k) => (
+          {strategyOn ? (
+            <Popover open={kindOpen} onOpenChange={setKindOpen}>
+              <PopoverTrigger asChild>
+                <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                  <Network className="h-3 w-3 text-muted-foreground" />
+                  {kind ? GOAL_KIND_LABELS[kind] : "Kind"}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-52 p-1" align="start">
                 <button
-                  key={k}
                   className={cn(
                     "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
-                    k === kind && "bg-accent"
+                    !kind && "bg-accent"
                   )}
-                  onClick={() => { setKind(k); setKindOpen(false); }}
+                  onClick={() => { setKind(""); setKindOpen(false); }}
                 >
-                  {GOAL_KIND_LABELS[k]}
+                  Plain goal
                 </button>
-              ))}
-            </PopoverContent>
-          </Popover>
+                {GOAL_KINDS.map((k) => (
+                  <button
+                    key={k}
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      k === kind && "bg-accent"
+                    )}
+                    onClick={() => { setKind(k); setKindOpen(false); }}
+                  >
+                    {GOAL_KIND_LABELS[k]}
+                  </button>
+                ))}
+              </PopoverContent>
+            </Popover>
+          ) : null}
 
           {/* Parent goal */}
           <Popover open={parentOpen} onOpenChange={setParentOpen}>

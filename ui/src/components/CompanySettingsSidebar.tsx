@@ -5,8 +5,11 @@ import {
   Download,
   FlaskConical,
   KeyRound,
+  LifeBuoy,
   MonitorCog,
+  Plug,
   Puzzle,
+  Server,
   Shield,
   ShieldCheck,
   SlidersHorizontal,
@@ -26,6 +29,8 @@ import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useCompany } from "@/context/CompanyContext";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useIsFleetHub } from "@/hooks/useFleetInstances";
+import { useShowGetHelp } from "@/hooks/useShowGetHelp";
 import { usePluginSlots } from "@/plugins/slots";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { ContextualSidebarFrame } from "./ContextualSidebarFrame";
@@ -48,6 +53,10 @@ export function CompanySettingsSidebar() {
   const { hidden: hiddenSettings } = useHiddenSettings();
   const showPage = (pageKey: string) => !hiddenSettings.has(pageKey);
   const showPlugins = showPage("instance.plugins");
+  // Fleet (GRE-1083): only on the Greatstone hub, to its instance admins.
+  const showFleet = useIsFleetHub();
+  // Get help (GRE-1425): board users of a client instance.
+  const showGetHelp = useShowGetHelp();
   // Import is floored server-side on cloud-managed instances (403 cloud_managed), so the
   // nav entry is hidden rather than dead-ending. Export stays available.
   const isCloud = Boolean(useCloudInstance());
@@ -138,6 +147,7 @@ export function CompanySettingsSidebar() {
                 end
               />
             ))}
+          <SidebarNavItem to="/company/settings/integrations" label="Integrations" icon={Plug} end />
           {showPage("company.secrets") && (
             <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
           )}
@@ -159,6 +169,17 @@ export function CompanySettingsSidebar() {
               icon={Shield}
               end
             />
+          )}
+          {showFleet && (
+            <SidebarNavItem
+              to={`${INSTANCE_SETTINGS_PATH_PREFIX}/fleet`}
+              label="Fleet"
+              icon={Server}
+              end
+            />
+          )}
+          {showGetHelp && (
+            <SidebarNavItem to="/company/settings/get-help" label="Get help" icon={LifeBuoy} end />
           )}
           {showPage("company.export") && (
             <SidebarNavItem to="/company/export" label="Export" icon={Download} />

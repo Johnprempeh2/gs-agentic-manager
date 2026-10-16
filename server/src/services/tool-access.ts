@@ -30,6 +30,7 @@ import {
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  chatEndpoints,
   connectionGrantMembers,
   connectionGrantDelegations,
   connectionGrants,
@@ -110,6 +111,7 @@ import type {
   ToolCredentialSecretRef,
   ToolOAuthStartResult,
   ToolAppsAttentionResponse,
+  AgentAccessSummary,
   ToolAppMetadataPreflightResult,
   ToolActionRequest,
   ToolActionRequestListItem,
@@ -222,6 +224,12 @@ import { generateRailwaySshKey, RAILWAY_SSH_SECRET_PATH, validateRailwayKnownHos
 import { createRailwayClient, discoverRailwayWorkspace, isRailwayConnection, isRailwayEndpoint, isRailwayToolBlocked, normalizeRailwayToolName, RAILWAY_TOOLS, RAILWAY_TOOL_PREFIX, railwayRisk, RailwayError } from "./railway.js";
 import { toolAccessPolicyService } from "./tool-access-policy.js";
 import {
+  createPipedriveClient,
+  PipedriveAuthError,
+  PipedriveRateLimitError,
+  resolvePipedriveBaseUrl,
+} from "./crm-sync-pipedrive.js";
+import {
   readSignedToolArgumentsPayload,
   TOOL_ACTION_REQUEST_SIGNING_GRACE_MS,
 } from "./tool-content-guards.js";
@@ -240,6 +248,7 @@ import {
   ToolRuntimeSupervisorError,
 } from "./tool-runtime-supervisor.js";
 import { listConnectionLifecycleEvents } from "./tool-connection-activity.js";
+import { deriveAgentAccess } from "./agent-access.js";
 import { isRetiredComposioConnection, RETIRED_COMPOSIO_MESSAGE } from "@greatstone/shared";
 import {
   appWithPaperclipCloudConnectorAvailability,
@@ -1619,6 +1628,7 @@ function toConnection(row: typeof toolConnections.$inferSelect): ToolConnection 
     lastHealthAt: row.lastHealthAt,
     lastCatalogRefreshAt: row.lastCatalogRefreshAt,
     lastError: row.lastError,
+    pauseSuspendedAt: row.pauseSuspendedAt ?? null,
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt,
@@ -2838,7 +2848,7 @@ function healthFailureHttpStatus(failure: {
   if (failure.code === "user_authorization_required") return 422;
   if (failure.code === "composio_broker_retired") return 422;
   if (failure.code === "tool_connection_transport_unsupported") return 422;
-  if (failure.code === "cognee_access_unverified" || failure.code === "memory_api_key_rejected") return 422;
+  if (failure.code === "cognee_access_unverified" || failure.code === "memory_api_key_rejected" || failure.code === "pipedrive_auth_failed") return 422;
   if (failure.code.endsWith("_endpoint_rejected")) return 422;
   return 502;
 }
@@ -2857,7 +2867,7 @@ function sanitizeHttpFailure(error: unknown): {
 } {
   if (error instanceof HttpError) {
     const code = asRecord(error.details).code;
-    if (code === "cognee_access_unverified" || code === "memory_api_key_rejected") {
+    if (code === "cognee_access_unverified" || code === "memory_api_key_rejected" || code === "pipedrive_auth_failed" || code === "pipedrive_rate_limited") {
       return { status: "error", message: error.message, code };
     }
     if (code === "slack_mcp_access_disabled") {
@@ -3161,6 +3171,8 @@ export function toolAccessService(
             eq(connectionGrants.id, grant.id),
             eq(connectionGrants.companyId, connection.companyId),
             eq(connectionGrants.connectionId, connection.id),
+            // GRE-1364: a token fetch racing a company pause must not lift the suspension.
+            ne(connectionGrants.status, "suspended"),
           ),
         );
       return {
@@ -7095,6 +7107,58 @@ export function toolAccessService(
     await agentmailStep("checkKey", () => agentmailApi(key).whoami());
   }
 
+  /** Pipedrive from Apps (pipedrive.json): a REST API token the CRM import reads; it has no agent tools. */
+  function isPipedriveConnection(connection: typeof toolConnections.$inferSelect) {
+    return connection.transport === "rest_api" && connection.config.sourceTemplateKey === "pipedrive";
+  }
+
+  async function validatePipedriveConnection(
+    connection: typeof toolConnections.$inferSelect,
+  ) {
+    const configPath = "credentials.api_token";
+    const ref = connection.credentialSecretRefs.find(
+      (candidate) => candidate.configPath === configPath,
+    );
+    if (!ref) {
+      throw unprocessable("Reconnect Pipedrive to restore its API token", {
+        code: "missing_secret",
+      });
+    }
+    const token = await secrets.resolveSecretValue(
+      connection.companyId,
+      ref.secretId,
+      ref.versionSelector ?? "latest",
+      {
+        consumerType: "tool_connection",
+        consumerId: connection.id,
+        configPath,
+        actorType: "system",
+        actorId: null,
+      },
+    );
+    try {
+      await createPipedriveClient({
+        token,
+        authKind: connection.authKind,
+        baseUrl: resolvePipedriveBaseUrl(connection.config),
+        maxRetries: 0,
+      }).getCurrentUser();
+    } catch (error) {
+      if (error instanceof PipedriveAuthError) {
+        throw unprocessable(
+          "Pipedrive refused the API token. Copy it again from Settings > Personal preferences > API in Pipedrive.",
+          { code: "pipedrive_auth_failed" },
+        );
+      }
+      if (error instanceof PipedriveRateLimitError) {
+        throw unprocessable("Pipedrive rate limit reached. Try again in a minute.", {
+          code: "pipedrive_rate_limited",
+        });
+      }
+      throw error;
+    }
+  }
+
   function assertSupportedConnection(connection: typeof toolConnections.$inferSelect) {
     if (isRetiredComposioConnection(connection)) {
       throw unprocessable(RETIRED_COMPOSIO_MESSAGE, { code: "composio_broker_retired" });
@@ -7110,6 +7174,10 @@ export function toolAccessService(
     if (connection.connectionPurpose === "ai") throw unprocessable("AI connections provide runtime authentication, not tool actions");
     if (isAgentMailConnection(connection)) {
       await validateAgentMailConnection(connection);
+      return [];
+    }
+    if (isPipedriveConnection(connection)) {
+      await validatePipedriveConnection(connection);
       return [];
     }
     if (connection.transport === "mcp_remote")
@@ -7275,6 +7343,8 @@ export function toolAccessService(
           await refreshManagedGitHubGrantAccess(connection, grant, actor);
       } else if (isAgentMailConnection(connection)) {
         await validateAgentMailConnection(connection);
+      } else if (isPipedriveConnection(connection)) {
+        await validatePipedriveConnection(connection);
       } else if (connection.transport === "mcp_remote") {
         const canProbeWithoutAuthorization =
           options.allowUnauthenticatedProbe === true &&
@@ -7327,6 +7397,8 @@ export function toolAccessService(
           ? "GitHub account, installation, and repository access are available."
           : isAgentMailConnection(connection)
             ? "AgentMail API key is connected."
+            : isPipedriveConnection(connection)
+              ? "Pipedrive API token is connected."
             : connection.transport === "local_stdio"
               ? "Approved stdio template is ready."
               : "Remote MCP server responded to tools/list.",
@@ -7607,7 +7679,9 @@ export function toolAccessService(
         healthStatus: "ok",
         healthMessage: isAgentMailConnection(connection)
           ? "AgentMail API key is connected."
-          : "Tool catalog refreshed.",
+          : isPipedriveConnection(connection)
+            ? "Pipedrive API token is connected."
+            : "Tool catalog refreshed.",
         healthCheckedAt: refreshedAt,
         lastHealthAt: refreshedAt,
         lastCatalogRefreshAt: refreshedAt,
@@ -7666,6 +7740,164 @@ export function toolAccessService(
       discoveredCount: descriptors.length,
       quarantinedCount,
     };
+  }
+
+  /**
+   * Read-only summary of what each agent can reach and what is missing,
+   * failing or expiring soon. A fixed number of bulk queries; the state rules
+   * live in `deriveAgentAccess` so they can be tested without a database.
+   */
+  async function listAgentAccess(companyId: string): Promise<AgentAccessSummary> {
+    const [
+      agentRows,
+      connectionRows,
+      installRows,
+      grantRows,
+      delegatedRows,
+      tokenRows,
+      secretRows,
+      channelRows,
+    ] = await Promise.all([
+      db
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")))
+        .orderBy(asc(agents.name)),
+      db
+        .select({
+          id: toolConnections.id,
+          name: toolConnections.name,
+          healthStatus: toolConnections.healthStatus,
+          credentialPolicy: toolConnections.credentialPolicy,
+          credentialSecretRefs: toolConnections.credentialSecretRefs,
+        })
+        .from(toolConnections)
+        .where(and(eq(toolConnections.companyId, companyId), ne(toolConnections.status, "archived"))),
+      db
+        .select({
+          connectionId: toolConnectionInstalls.connectionId,
+          targetType: toolConnectionInstalls.targetType,
+          targetId: toolConnectionInstalls.targetId,
+        })
+        .from(toolConnectionInstalls)
+        .where(eq(toolConnectionInstalls.companyId, companyId)),
+      db
+        .select()
+        .from(connectionGrants)
+        .where(
+          and(
+            eq(connectionGrants.companyId, companyId),
+            inArray(connectionGrants.kind, ["agent", "organization"]),
+          ),
+        ),
+      db
+        .select({ agentId: connectionGrantDelegations.agentId, grant: connectionGrants })
+        .from(connectionGrantDelegations)
+        .innerJoin(
+          connectionGrants,
+          and(
+            eq(connectionGrants.id, connectionGrantDelegations.grantId),
+            eq(connectionGrants.companyId, connectionGrantDelegations.companyId),
+          ),
+        )
+        .where(eq(connectionGrantDelegations.companyId, companyId)),
+      db
+        .select({
+          id: toolMcpGatewayTokens.id,
+          name: toolMcpGatewayTokens.name,
+          subjectId: toolMcpGatewayTokens.subjectId,
+          expiresAt: toolMcpGatewayTokens.expiresAt,
+          lastUsedAt: toolMcpGatewayTokens.lastUsedAt,
+        })
+        .from(toolMcpGatewayTokens)
+        .where(
+          and(
+            eq(toolMcpGatewayTokens.companyId, companyId),
+            eq(toolMcpGatewayTokens.subjectType, "agent"),
+            isNull(toolMcpGatewayTokens.revokedAt),
+          ),
+        ),
+      db
+        .select({
+          id: companySecretBindings.id,
+          agentId: companySecretBindings.targetId,
+          configPath: companySecretBindings.configPath,
+          label: companySecretBindings.label,
+          required: companySecretBindings.required,
+          secretName: companySecrets.name,
+          secretStatus: companySecrets.status,
+          secretDeletedAt: companySecrets.deletedAt,
+          secretLastResolvedAt: companySecrets.lastResolvedAt,
+        })
+        .from(companySecretBindings)
+        .leftJoin(
+          companySecrets,
+          and(
+            eq(companySecrets.id, companySecretBindings.secretId),
+            eq(companySecrets.companyId, companySecretBindings.companyId),
+          ),
+        )
+        .where(
+          and(
+            eq(companySecretBindings.companyId, companyId),
+            eq(companySecretBindings.targetType, "agent"),
+          ),
+        ),
+      db
+        .select({
+          id: chatEndpoints.id,
+          connectionId: chatEndpoints.connectionId,
+          provider: chatEndpoints.provider,
+          assignedAgentId: chatEndpoints.assignedAgentId,
+          status: chatEndpoints.status,
+          botDisplayName: chatEndpoints.botDisplayName,
+          providerAccountLabel: chatEndpoints.providerAccountLabel,
+          lastEventAt: chatEndpoints.lastEventAt,
+        })
+        .from(chatEndpoints)
+        .where(
+          and(
+            eq(chatEndpoints.companyId, companyId),
+            isNull(chatEndpoints.archivedAt),
+            ne(chatEndpoints.status, "archived"),
+          ),
+        ),
+    ]);
+
+    const grantById = new Map<string, typeof connectionGrants.$inferSelect>();
+    for (const grant of grantRows) grantById.set(grant.id, grant);
+    for (const row of delegatedRows) grantById.set(row.grant.id, row.grant);
+
+    return deriveAgentAccess({
+      now: now(),
+      agents: agentRows,
+      connections: connectionRows,
+      installs: installRows,
+      grants: [...grantById.values()].map((grant) => ({
+        id: grant.id,
+        connectionId: grant.connectionId,
+        kind: grant.kind,
+        subjectAgentId: grant.subjectAgentId,
+        status: grant.status,
+        isDefault: grant.isDefault,
+        lastUsedAt: grant.lastUsedAt,
+        refreshTokenExpiresAt: grant.providerTenant?.oauth?.refreshTokenExpiresAt ?? null,
+        webhookHealth: grant.providerTenant?.github?.webhookHealth ?? null,
+        credentialSecretRefs: grant.credentialSecretRefs.map((ref) => ({ expiresAt: ref.expiresAt ?? null })),
+      })),
+      delegations: delegatedRows.map((row) => ({ grantId: row.grant.id, agentId: row.agentId })),
+      mcpTokens: tokenRows,
+      secretBindings: secretRows,
+      channels: channelRows.map((channel) => ({
+        id: channel.id,
+        connectionId: channel.connectionId,
+        provider: channel.provider,
+        assignedAgentId: channel.assignedAgentId,
+        status: channel.status,
+        label: channel.botDisplayName ?? channel.providerAccountLabel ?? null,
+        lastEventAt: channel.lastEventAt,
+      })),
+    });
   }
 
   async function listAppsNeedingAttention(
@@ -11750,6 +11982,12 @@ export function toolAccessService(
         .limit(1);
       if (!currentGrant || currentGrant.status === "revoked")
         throw notFound("GitHub authorization not found");
+      // GRE-1364: a company pause can suspend the grant while the provider
+      // requests are in flight. A refresh must never write it back to active.
+      if (currentGrant.status === "suspended")
+        throw conflict("This GitHub authorization is suspended while the company is paused.", {
+          code: "grant_suspended",
+        });
       const previousGitHub = currentGrant.providerTenant?.github;
       const initialGitHub = grant.providerTenant?.github;
       // No lock is held during provider requests. Reject a snapshot if another
@@ -18465,6 +18703,20 @@ export function toolAccessService(
       input: UpdateToolConnection,
     ): Promise<ToolConnection> => {
       const existing = await getConnectionRow(connectionId);
+      if (input.enabled === true && !existing.enabled) {
+        // GRE-1364: a paused company turns nothing on, and a connection the pause
+        // turned off comes back only through the health-checked re-enable.
+        if (existing.pauseSuspendedAt) {
+          throw conflict("Re-enable this connection from the company pause screen; it must pass a health check.", { code: "pause_suspended" });
+        }
+        const [company] = await db
+          .select({ status: companies.status })
+          .from(companies)
+          .where(eq(companies.id, existing.companyId));
+        if (company?.status !== "active") {
+          throw conflict("The company is not active, so its connections stay off.", { code: "company_not_active" });
+        }
+      }
       if (existing.connectionPurpose === "ai" && (input.config || input.transportConfig || input.credentialRefs || input.credentialSecretRefs || (input.credentialPolicy && input.credentialPolicy !== existing.credentialPolicy))) throw badRequest("Use AI account reconnect to change credentials. Provider, sign-in method, and ownership cannot be changed.");
       const config = normalizeGoogleSheetsConnectionConfig(
         input.config ?? input.transportConfig ?? existing.config,
@@ -18503,6 +18755,14 @@ export function toolAccessService(
         })
         .where(eq(toolConnections.id, connectionId))
         .returning();
+      if (row.enabled && !existing.enabled) {
+        // A connection that was already off when the company paused has its grants
+        // held too; turning it on after resume is the deliberate act that frees them.
+        await db
+          .update(connectionGrants)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(and(eq(connectionGrants.connectionId, row.id), eq(connectionGrants.status, "suspended")));
+      }
       await syncCredentialBindings(row);
       await ensureRuntimeSlot(row);
       emitConnectionUpdated(row, existing, "api");
@@ -18512,6 +18772,124 @@ export function toolAccessService(
     archiveConnection: removeConnection,
 
     checkHealth: checkConnectionHealth,
+
+    /**
+     * GRE-1364: a company pause turns off every enabled connection and suspends
+     * every active grant, with one audit row each. Running it twice changes nothing.
+     */
+    suspendCompanyForPause: async (companyId: string, actor?: ActorInfo) => {
+      const now = new Date();
+      const connections = await db
+        .update(toolConnections)
+        .set({ enabled: false, pauseSuspendedAt: now, updatedAt: now })
+        .where(and(
+          eq(toolConnections.companyId, companyId),
+          eq(toolConnections.enabled, true),
+          isNull(toolConnections.pauseSuspendedAt),
+        ))
+        .returning();
+      const grants = await db
+        .update(connectionGrants)
+        .set({ status: "suspended", updatedAt: now })
+        .where(and(eq(connectionGrants.companyId, companyId), eq(connectionGrants.status, "active")))
+        .returning({ id: connectionGrants.id, connectionId: connectionGrants.connectionId, kind: connectionGrants.kind });
+      for (const connection of connections) {
+        emitConnectionUpdated(connection, { status: connection.status, enabled: true }, "api");
+        await audit({
+          companyId,
+          connectionId: connection.id,
+          action: "tool_connection.pause_suspended",
+          outcome: "success",
+          reasonCode: "company_paused",
+          actor,
+          details: { connectionPurpose: connection.connectionPurpose, transport: connection.transport },
+        });
+      }
+      for (const grant of grants) {
+        await audit({
+          companyId,
+          connectionId: grant.connectionId,
+          action: "connection_grant.pause_suspended",
+          outcome: "success",
+          reasonCode: "company_paused",
+          actor,
+          details: { grantId: grant.id, kind: grant.kind },
+        });
+      }
+      return { connectionsSuspended: connections.length, grantsSuspended: grants.length };
+    },
+
+    /**
+     * GRE-1364: after a company resume, a connection the pause turned off comes
+     * back only through this call, and only if it passes a health check. Its
+     * suspended grants are restored for the check and put back if it fails.
+     */
+    reenableConnectionAfterPause: async (connectionId: string, actor?: ActorInfo): Promise<ToolConnection> => {
+      const connection = await getConnectionRow(connectionId);
+      if (!connection.pauseSuspendedAt) {
+        throw conflict("This connection was not turned off by a company pause.", { code: "not_pause_suspended" });
+      }
+      const [company] = await db
+        .select({ status: companies.status })
+        .from(companies)
+        .where(eq(companies.id, connection.companyId));
+      if (company?.status !== "active") {
+        throw conflict("Resume the company before you re-enable its connections.", { code: "company_not_active" });
+      }
+      assertLocalStdioCanBeEnabled(connection.transport, true, connection.config);
+      const restoredGrants = await db
+        .update(connectionGrants)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(and(eq(connectionGrants.connectionId, connection.id), eq(connectionGrants.status, "suspended")))
+        .returning({ id: connectionGrants.id });
+      try {
+        if (connection.connectionPurpose === "ai") {
+          // AI connections have no live probe; their health is set when the credential is saved or rejected.
+          if (connection.healthStatus !== "ok") {
+            throw unprocessable("Reconnect this AI account before you re-enable it.", { code: "ai_connection_unhealthy" });
+          }
+        } else {
+          await checkConnectionHealth(connection.id, actor);
+        }
+      } catch (error) {
+        if (restoredGrants.length > 0) {
+          await db
+            .update(connectionGrants)
+            .set({ status: "suspended", updatedAt: new Date() })
+            .where(and(
+              inArray(connectionGrants.id, restoredGrants.map((grant) => grant.id)),
+              eq(connectionGrants.status, "active"),
+            ));
+        }
+        await audit({
+          companyId: connection.companyId,
+          connectionId: connection.id,
+          action: "tool_connection.pause_reenabled",
+          outcome: "failure",
+          reasonCode: error instanceof HttpError ? String(asRecord(error.details).code ?? "health_check_failed") : "health_check_failed",
+          actor,
+        });
+        throw error;
+      }
+      const [row] = await db
+        .update(toolConnections)
+        .set({ enabled: true, pauseSuspendedAt: null, updatedAt: new Date() })
+        .where(and(eq(toolConnections.id, connection.id), isNotNull(toolConnections.pauseSuspendedAt)))
+        .returning();
+      if (!row) throw conflict("This connection was already re-enabled.", { code: "not_pause_suspended" });
+      await syncCredentialBindings(row);
+      await ensureRuntimeSlot(row);
+      emitConnectionUpdated(row, connection, "api");
+      await audit({
+        companyId: connection.companyId,
+        connectionId: connection.id,
+        action: "tool_connection.pause_reenabled",
+        outcome: "success",
+        actor,
+        details: { grantsRestored: restoredGrants.length },
+      });
+      return toConnection(row);
+    },
 
     refreshCatalog,
 
@@ -18552,6 +18930,8 @@ export function toolAccessService(
     },
 
     listAppsNeedingAttention,
+
+    listAgentAccess,
 
     sweepConnectionHealth,
 

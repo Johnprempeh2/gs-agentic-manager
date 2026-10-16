@@ -31,6 +31,7 @@ import {
 import {
   INSTANCE_FEATURE_CATALOG,
   RETIRED_INSTANCE_FEATURE_KEYS,
+  applyFeatureDependencies,
   applyOperatorGeneralDefaults,
   isRetiredInstanceFeatureKey,
   stripOperatorGeneralEchoes,
@@ -252,9 +253,13 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
   if (parsed.success) {
     return {
       enableEnvironments: parsed.data.enableEnvironments ?? false,
-      enableNativeRunner: parsed.data.enableNativeRunner ?? true,
+      // Greatstone (GRE-1436): Runner graduated from Experimental. Ignore
+      // stored off values but keep accepting the compatibility key.
+      enableNativeRunner: true,
       enableManagedSandboxOnly: parsed.data.enableManagedSandboxOnly ?? false,
-      enableIsolatedWorkspaces: parsed.data.enableIsolatedWorkspaces ?? false,
+      // Greatstone (GRE-1437): Isolated Workspaces graduated from Experimental.
+      // Ignore stored off values but keep accepting the compatibility key.
+      enableIsolatedWorkspaces: true,
       enableIsolatedWorkspacesByDefault: parsed.data.enableIsolatedWorkspacesByDefault ?? false,
       enableStreamlinedLeftNavigation: parsed.data.enableStreamlinedLeftNavigation ?? true,
       enableStreamlinedUi: parsed.data.enableStreamlinedUi ?? true,
@@ -267,10 +272,13 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enablePipelines: parsed.data.enablePipelines ?? false,
       enableCases: parsed.data.enableCases ?? false,
       enableDeepDive: parsed.data.enableDeepDive ?? false,
+      enableStrategy: parsed.data.enableStrategy ?? true,
       enableStrategyBoard: parsed.data.enableStrategyBoard ?? false,
       strategyBoardSecretaryAgentId: parsed.data.strategyBoardSecretaryAgentId ?? null,
       enableWebsiteView: parsed.data.enableWebsiteView ?? false,
+      enableIntelligence: parsed.data.enableIntelligence ?? false,
       enableAgentChat: parsed.data.enableAgentChat ?? false,
+      enableTeamChat: parsed.data.enableTeamChat ?? false,
       enableConferenceRoomChat: parsed.data.enableConferenceRoomChat ?? false,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
       enableIssuePlanDecompositions: parsed.data.enableIssuePlanDecompositions ?? false,
@@ -288,8 +296,10 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableSimplifiedEnglishInteractions: parsed.data.enableSimplifiedEnglishInteractions ?? false,
       enableFirstTaskPlanProposal: parsed.data.enableFirstTaskPlanProposal ?? false,
       autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
-      enableWorkspaceBranchReconcileForward: parsed.data.enableWorkspaceBranchReconcileForward ?? true,
-      enableWorkspaceDirtyQuarantineRepair: parsed.data.enableWorkspaceDirtyQuarantineRepair ?? true,
+      // Greatstone (GRE-1438): graduated; a stored off value is ignored.
+      enableWorkspaceBranchReconcileForward: true,
+      // Greatstone (GRE-1439): graduated; a stored off value is ignored.
+      enableWorkspaceDirtyQuarantineRepair: true,
       enableOwnerInstanceAdmin: parsed.data.enableOwnerInstanceAdmin ?? false,
       enableSandboxDuplexBridge: parsed.data.enableSandboxDuplexBridge ?? false,
       enableRunnerPreviewIngress: parsed.data.enableRunnerPreviewIngress ?? false,
@@ -303,7 +313,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableEnvironments: false,
     enableNativeRunner: true,
     enableManagedSandboxOnly: false,
-    enableIsolatedWorkspaces: false,
+    enableIsolatedWorkspaces: true,
     enableIsolatedWorkspacesByDefault: false,
     enableStreamlinedLeftNavigation: true,
     enableStreamlinedUi: true,
@@ -314,10 +324,13 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enablePipelines: false,
     enableCases: false,
     enableDeepDive: false,
+    enableStrategy: true,
     enableStrategyBoard: false,
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
+    enableIntelligence: false,
     enableAgentChat: false,
+    enableTeamChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: false,
@@ -373,6 +386,14 @@ export function applyManagedExperimentalOverlay(
     // Existing Cloud stack configs may still carry retired flags. Accept the
     // document during rollout, but never let retired flags disable Apps or MCP aggregators.
     if (key === "enableApps" || key === "enableMcpAggregators") continue;
+    // Greatstone (GRE-1438): graduated; a managed config cannot turn it off.
+    if (key === "enableWorkspaceBranchReconcileForward") continue;
+    // Greatstone (GRE-1439): graduated; a managed config cannot turn it off.
+    if (key === "enableWorkspaceDirtyQuarantineRepair") continue;
+    // Greatstone (GRE-1436): Runner is always on; a managed "off" is ignored.
+    if (key === "enableNativeRunner") continue;
+    // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.
+    if (key === "enableIsolatedWorkspaces") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;
@@ -418,7 +439,7 @@ export function applyCloudCatalogDefaults(
  * `updateExperimental` persists the whole normalized object, and the schema
  * normalizes an omitted flag to its self-hosted default. Without this step an
  * unrelated experimental write (say, turning on pipelines) would store
- * `enableNativeRunner: true` on a managed instance whose tenant row had never
+ * `enableStrategy: true` on a managed instance whose tenant row had never
  * mentioned the flag; every later read would then treat the stored boolean as
  * an explicit tenant choice and stop re-asserting the Cloud default.
  *
@@ -479,7 +500,9 @@ export function instanceSettingsService(db: Db, options: InstanceSettingsService
     const managedKeys = overlaid.managedKeys;
     // GRE-1078: the signed entitlement document narrows managed product
     // features last, so neither a stored nor a managed "on" passes it.
-    const experimental = applyEntitlementsToExperimental(overlaid.experimental);
+    // GRE-1382: a dependent switch (Board on Strategy) reads off without what
+    // it needs, whichever layer turned that off.
+    const experimental = applyFeatureDependencies(applyEntitlementsToExperimental(overlaid.experimental));
     // Self-hosted responses stay byte-identical: no managedKeys field at all.
     return managedConfig ? { ...experimental, managedKeys } : experimental;
   }

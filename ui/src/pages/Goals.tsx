@@ -8,19 +8,25 @@ import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
+import { useStrategyEnabled } from "../hooks/useStrategyEnabled";
 import { queryKeys } from "../lib/queryKeys";
-import { buildScoreboard } from "../lib/goal-journey";
+import { buildScoreboard, needsAttention } from "../lib/goal-journey";
 import { buildStrategyCascade, hasStrategyGoals } from "../lib/goal-cascade";
 import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { relativeTime } from "../lib/utils";
+import { goalsCsvFileName, goalsToCsv, goalsUpdateText } from "../lib/goals-text";
+import { downloadTextFile } from "../lib/issues-csv";
+import { localToday } from "../lib/calendar";
+import { useCopyAction } from "../lib/use-copy-action";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { GoalHealthLegend } from "../components/goals/GoalHealth";
 import { GoalScoreboardView, GoalsEmptyState, type AgentsById } from "../components/goals/GoalScoreboard";
 import { StrategyCascadeView } from "../components/goals/StrategyCascade";
 import { Button } from "@/components/ui/button";
-import { Target, Plus, Network } from "lucide-react";
+import { Target, Plus, Network, Check, ClipboardList, Download } from "lucide-react";
 import { ErrorState } from "../components/ErrorState";
+import { HelpTerm } from "../components/HelpTerm";
 
 /** "3 active goals · Everest checked in 2h ago" */
 export function scoreboardLede(goals: readonly GoalWithProgress[], shown: number, agentsById: AgentsById): string {
@@ -38,18 +44,21 @@ export function scoreboardLede(goals: readonly GoalWithProgress[], shown: number
 }
 
 export function Goals() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewGoal } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const [showAchieved, setShowAchieved] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
+  const goalsCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Goals" }]);
   }, [setBreadcrumbs]);
 
-  const { data: goals, isLoading, error, refetch } = useQuery({
+  const { enabled: strategyOn } = useStrategyEnabled();
+  const { data: allGoals, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.goals.list(selectedCompanyId!),
     queryFn: () => goalsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -78,6 +87,13 @@ export function Goals() {
     },
   });
 
+  // GRE-1382: with the Strategy module off, goals with a kind (the KPI
+  // cascade) are hidden; they stay stored and come back when it is on.
+  const goals = useMemo(
+    () => (strategyOn ? allGoals : allGoals?.filter((goal) => goal.kind == null)),
+    [allGoals, strategyOn],
+  );
+
   const agentsById: AgentsById = useMemo(
     () => new Map((agents ?? []).map((agent) => [agent.id, agent])),
     [agents],
@@ -87,11 +103,26 @@ export function Goals() {
   const cascade = useMemo(() => buildStrategyCascade(goals ?? []), [goals]);
   // Goals with a kind live in the strategic plan; the scoreboard keeps plain goals.
   const plainGoals = useMemo(() => (goals ?? []).filter((goal) => goal.kind == null), [goals]);
-  const entries = useMemo(
+  const allEntries = useMemo(
     () => buildScoreboard(plainGoals, { includeAchieved: showAchieved }),
     [plainGoals, showAchieved],
   );
+  const attentionEntries = useMemo(() => needsAttention(allEntries), [allEntries]);
+  // The filter only helps when some goals, but not all, need attention.
+  const canFilterAttention = attentionEntries.length > 0 && attentionEntries.length < allEntries.length;
+  const attentionOn = attentionOnly && canFilterAttention;
+  const entries = attentionOn ? attentionEntries : allEntries;
   const hasAchieved = plainGoals.some((goal) => goal.status === "achieved");
+  const nameLookups = {
+    agentName: (id: string) => agentsById.get(id)?.name,
+    userName: (id: string) => usersById.get(id)?.label,
+  };
+  const copyGoalsUpdate = () => {
+    void goalsCopy.copy(goalsUpdateText(entries, nameLookups, localToday()));
+  };
+  const downloadGoals = () => {
+    downloadTextFile(goalsCsvFileName(selectedCompany?.issuePrefix, localToday()), goalsToCsv(entries, nameLookups));
+  };
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Target} message="Select an organization to view goals." />;
@@ -111,16 +142,16 @@ export function Goals() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0" data-tour="goals-header">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Goals</p>
-          <h1 className="text-xl font-bold">How far we are from each goal</h1>
+          <h1 className="text-xl font-bold">How far we are from each <HelpTerm term="goal" /></h1>
           {goals && goals.length > 0 ? (
             <p className="mt-1 text-sm text-muted-foreground">{scoreboardLede(goals, shownCount, agentsById)}</p>
           ) : null}
         </div>
         {goals ? (
           <div className="flex flex-wrap items-center gap-2">
-            {!hasStrategy ? (
+            {strategyOn && !hasStrategy ? (
               <Button
                 size="sm"
                 variant="outline"
@@ -131,6 +162,17 @@ export function Goals() {
                 {createStrategicPlan.isPending ? "Adding…" : STRATEGIC_PLAN_TEMPLATE_NAME}
               </Button>
             ) : null}
+            {canFilterAttention ? (
+              <Button
+                size="sm"
+                variant="outline"
+                aria-pressed={attentionOn}
+                title="Show only goals that are blocked or at risk. Copy and download follow what is shown."
+                onClick={() => setAttentionOnly(!attentionOn)}
+              >
+                {attentionOn ? "Show every goal" : `Needs attention (${attentionEntries.length})`}
+              </Button>
+            ) : null}
             {hasAchieved ? (
               <Button
                 size="sm"
@@ -139,6 +181,29 @@ export function Goals() {
                 onClick={() => setShowAchieved((value) => !value)}
               >
                 {showAchieved ? "Hide achieved" : "Show achieved"}
+              </Button>
+            ) : null}
+            {entries.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                title="Copy every goal and how it is going, to paste into an email or a board pack"
+                onClick={copyGoalsUpdate}
+              >
+                {goalsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                {goalsCopy.copied ? "Copied" : goalsCopy.failed ? "Could not copy" : "Copy as an update"}
+              </Button>
+            ) : null}
+            {entries.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                title="Download every goal as a spreadsheet that opens in Excel or Google Sheets"
+                onClick={downloadGoals}
+              >
+                <Download className="size-3.5" />
+                <span className="hidden sm:inline">Download as spreadsheet</span>
+                <span className="sr-only sm:hidden">Download as spreadsheet</span>
               </Button>
             ) : null}
             {goals.length > 0 ? (

@@ -26,5 +26,27 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "What needs me",
+      "short_name": "Decisions",
+      "url": "/decisions"
+    },
+    {
+      "name": "My inbox",
+      "short_name": "Inbox",
+      "url": "/inbox/mine"
+    },
+    {
+      "name": "Your morning",
+      "short_name": "Morning",
+      "url": "/morning"
+    },
+    {
+      "name": "New task",
+      "short_name": "New task",
+      "url": "/issues/new"
+    }
   ]
 }

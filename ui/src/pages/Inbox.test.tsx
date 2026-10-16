@@ -127,7 +127,7 @@ vi.mock("../context/GeneralSettingsContext", () => ({
 
 vi.mock("../hooks/useInboxBadge", () => ({
   useDismissedInboxAlerts: () => ({ dismissed: new Set(), dismiss: vi.fn() }),
-  useInboxDismissals: () => ({ dismissedAtByKey: new Map(), dismiss: vi.fn() }),
+  useInboxDismissals: () => ({ dismissals: [], dismissedAtByKey: new Map(), dismiss: vi.fn(), snooze: vi.fn(), restore: vi.fn() }),
   useReadInboxItems: () => ({
     readItems: new Set(),
     markRead: vi.fn(),
@@ -389,25 +389,9 @@ describe("Inbox toolbar", () => {
     container.remove();
   });
 
-  it("restores the legacy toolbar and issue-row presentation when Streamlined UI is off", async () => {
+  it("says the inbox failed to load instead of showing Inbox zero", async () => {
     routerMock.location.pathname = "/inbox/mine";
-    apiMocks.experimentalSettings.mockResolvedValue({
-      enableIsolatedWorkspaces: false,
-      enableStreamlinedUi: false,
-    });
-    apiMocks.issuesList.mockResolvedValue([
-      createIssue({ id: "legacy-row", identifier: "PAP-1904", title: "Legacy inbox task" }),
-    ]);
-    localStorage.setItem(
-      taskCollectionPreferencesStorageKey({ companyId: "company-1", collectionKey: "inbox" }),
-      JSON.stringify({
-        version: 1,
-        companyId: "company-1",
-        collectionKey: "inbox",
-        viewState: {},
-        columns: [],
-      }),
-    );
+    apiMocks.issuesList.mockRejectedValue(new Error("Server unavailable"));
 
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
@@ -421,16 +405,11 @@ describe("Inbox toolbar", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Legacy inbox task"));
-
-    expect(container.querySelector('[data-slot="collection-toolbar"]')).toBeNull();
-    expect(container.querySelector('[role="toolbar"][aria-label="Inbox controls"]')).toBeNull();
-    expect(container.textContent).toContain("Mine");
-    expect(container.querySelector('[data-slot="task-row"]')).toBeNull();
-    const issueLink = container.querySelector('[data-inbox-issue-link]');
-    // Production reads the legacy Inbox column key and must ignore the
-    // Streamlined collection envelope above when the experiment is disabled.
-    expect(issueLink?.parentElement?.textContent).toContain("PAP-1904");
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("The inbox could not load");
+    });
+    expect(container.textContent).toContain("Server unavailable");
+    expect(container.textContent).not.toContain("Inbox zero.");
 
     act(() => root.unmount());
   });
@@ -487,7 +466,7 @@ describe("Inbox toolbar", () => {
       );
     });
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Hire Agent: New teammate");
+      expect(container.textContent).toContain("Hire an agent: New teammate");
       expect(container.textContent).toContain("Failed run");
       expect(container.textContent).toContain("Jordan Example");
     });
@@ -496,7 +475,7 @@ describe("Inbox toolbar", () => {
       [...container.querySelectorAll("[data-inbox-item]")]
         .find((row) => row.textContent?.includes(text));
 
-    for (const text of ["Hire Agent: New teammate", "Failed run", "Jordan Example"]) {
+    for (const text of ["Hire an agent: New teammate", "Failed run", "Jordan Example"]) {
       const row = rowFor(text);
       expect(row, `missing inbox row for ${text}`).toBeDefined();
       expect(row?.querySelector('button[aria-label="Mark as read"]')).not.toBeNull();
@@ -507,7 +486,7 @@ describe("Inbox toolbar", () => {
       expect(row?.querySelector("[data-inbox-row-surface]")).not.toBeNull();
     }
 
-    const approvalRow = rowFor("Hire Agent: New teammate");
+    const approvalRow = rowFor("Hire an agent: New teammate");
     const approvalActions = [...(approvalRow?.querySelectorAll("button") ?? [])]
       .filter((button) => button.textContent === "Approve" || button.textContent === "Reject");
     expect(approvalActions.length).toBeGreaterThanOrEqual(2);

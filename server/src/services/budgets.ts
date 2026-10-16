@@ -9,6 +9,7 @@ import {
   costEvents,
   projects,
 } from "@greatstone/db";
+import { DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
 import type {
   BudgetIncident,
   BudgetIncidentResolutionInput,
@@ -263,6 +264,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       return;
     }
 
+    // An operator pause (GRE-1364) is not overwritten, so a budget resume cannot lift it.
     await db
       .update(companies)
       .set({
@@ -271,7 +273,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         pausedAt: now,
         updatedAt: now,
       })
-      .where(eq(companies.id, policy.scopeId));
+      .where(and(
+        eq(companies.id, policy.scopeId),
+        sql`${companies.pauseReason} is distinct from 'manual'`,
+      ));
   }
 
   async function pauseAndCancelScopeForBudget(policy: PolicyRow) {
@@ -747,7 +752,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
             metric,
             windowKind,
             amount,
-            warnPercent: input.warnPercent ?? 80,
+            warnPercent: input.warnPercent ?? DEFAULT_BUDGET_WARN_PERCENT,
             hardStopEnabled: input.hardStopEnabled ?? true,
             notifyEnabled: input.notifyEnabled ?? true,
             isActive: nextIsActive,

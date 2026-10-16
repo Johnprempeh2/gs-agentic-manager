@@ -89,6 +89,12 @@ vi.mock("@/lib/router", () => ({
 
 vi.mock("@/api/connection-intents", () => ({ connectionIntentsApi: connectionIntentsApiMocks }));
 
+const issuesApiMocks = vi.hoisted(() => ({
+  listDocumentRevisions: vi.fn(),
+  getDocument: vi.fn(),
+}));
+vi.mock("../api/issues", () => ({ issuesApi: issuesApiMocks }));
+
 function renderCard(
   props: Partial<ComponentProps<typeof IssueThreadInteractionCard>> = {},
 ) {
@@ -409,8 +415,8 @@ describe("IssueThreadInteractionCard", () => {
       onCancelInteraction: vi.fn(),
     });
 
-    expect(host.textContent).toContain("Questions expired by comment");
-    expect(host.textContent).toContain("A later board/user comment superseded this question request.");
+    expect(host.textContent).toContain("Questions replaced by a later comment");
+    expect(host.textContent).toContain("A later comment replaced this question.");
     expect(host.textContent).not.toContain("Send answers");
     expect(host.textContent).not.toContain("Cancel question");
 
@@ -434,8 +440,8 @@ describe("IssueThreadInteractionCard", () => {
       },
     });
 
-    expect(host.textContent).toContain("Question expired by comment");
-    expect(host.textContent).not.toContain("Questions expired by comment");
+    expect(host.textContent).toContain("Question replaced by a later comment");
+    expect(host.textContent).not.toContain("Questions replaced by a later comment");
   });
 
   it("renders withdrawn confirmations with the withdraw reason", () => {
@@ -463,8 +469,8 @@ describe("IssueThreadInteractionCard", () => {
       },
     });
 
-    expect(host.textContent).toContain("Expired · issue closed");
-    expect(host.textContent).toContain("This confirmation expired automatically when the issue reached a terminal state.");
+    expect(host.textContent).toContain("Closed with the task");
+    expect(host.textContent).toContain("The task was closed before anyone answered, so this request no longer needs a reply.");
     expect(host.textContent).not.toContain("Expired by target change");
   });
 
@@ -503,9 +509,9 @@ describe("IssueThreadInteractionCard", () => {
       },
     });
 
-    expect(host.textContent).toContain("Questions expired when the issue closed");
-    expect(host.textContent).toContain("This question request expired automatically when the issue reached a terminal state.");
-    expect(host.textContent).not.toContain("expired by comment");
+    expect(host.textContent).toContain("Questions closed with the task");
+    expect(host.textContent).toContain("The task was closed before anyone answered, so this question no longer needs a reply.");
+    expect(host.textContent).not.toContain("replaced by a later comment");
   });
 
   it("makes child tasks explicit in suggested task trees", () => {
@@ -785,18 +791,48 @@ describe("IssueThreadInteractionCard", () => {
     expect(host.textContent).not.toContain("Wakes assignee");
   });
 
-  it("renders request confirmation target links and stale-target expiry", () => {
+  it("renders request confirmation targets as open-document buttons and stale-target expiry", () => {
     const host = renderCard({
       interaction: staleTargetRequestConfirmationInteraction,
     });
 
-    const targetLinks = host.querySelectorAll("a");
+    const targets = [...host.querySelectorAll("[data-testid='confirmation-target-open']")];
     expect(host.textContent).toContain("Expired by target change");
-    expect(host.textContent).toContain("Plan v3");
-    expect(host.textContent).toContain("Plan v4");
-    expect(targetLinks[0]?.getAttribute("href")).toContain("#document-plan");
-    expect(targetLinks[1]?.getAttribute("href")).toContain("#document-plan");
+    expect(targets.map((target) => target.textContent)).toEqual(["Open Plan v3", "Open Plan v4"]);
+    expect(targets.every((target) => target.tagName === "BUTTON")).toBe(true);
     expect(host.textContent).not.toContain("Approve plan");
+  });
+
+  // Ben, 13 Oct: "I can't click on it". The plan link on a decision card opens
+  // the document itself, wide, with a labelled close.
+  it("opens the plan document in a wide reader from the decision card", async () => {
+    issuesApiMocks.listDocumentRevisions.mockResolvedValue([
+      { id: "11111111-1111-4111-8111-111111111111", body: "# Investigation Plan\n\nRevision three body." },
+    ]);
+    const host = renderCard({ interaction: staleTargetRequestConfirmationInteraction });
+    const open = [...host.querySelectorAll<HTMLButtonElement>("[data-testid='confirmation-target-open']")]
+      .find((button) => button.textContent === "Open Plan v3");
+    expect(open).toBeDefined();
+
+    await act(async () => {
+      open!.click();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const sheet = document.querySelector("[data-testid='issue-document-sheet']");
+    expect(sheet).not.toBeNull();
+    expect(sheet?.textContent).toContain("Plan v3");
+    expect(sheet?.textContent).toContain("Revision three body.");
+    expect(sheet?.textContent).toContain("Full width");
+    expect(issuesApiMocks.listDocumentRevisions).toHaveBeenCalledWith(staleTargetRequestConfirmationInteraction.issueId, "plan");
+
+    const close = [...(sheet?.querySelectorAll("button") ?? [])].find((button) => button.textContent?.trim() === "Close");
+    await act(async () => {
+      close!.click();
+    });
+    expect(document.querySelector("[data-testid='issue-document-sheet']")).toBeNull();
   });
 
   it("renders a jump link for confirmations expired by comment", () => {
@@ -1212,14 +1248,14 @@ describe("IssueThreadInteractionCard tool-action card", () => {
     });
 
     // Footer is trimmed to just the audit timestamp — the header status badge
-    // already carries the "Expired · issue closed" label, so the footer must
+    // already carries the "Closed with the task" label, so the footer must
     // not restate it.
     const footer = host.querySelector('[data-testid="interaction-issue-closed-footer"]');
     expect(footer?.textContent).toContain("20 Apr");
     expect(footer?.textContent).not.toContain("Expired when the issue closed");
-    // The "Expired · issue closed" label survives exactly once (the header
+    // The "Closed with the task" label survives exactly once (the header
     // status badge); the duplicate body eyebrow was dropped.
-    const label = "Expired · issue closed";
+    const label = "Closed with the task";
     const occurrences = (host.textContent ?? "").split(label).length - 1;
     expect(occurrences).toBe(1);
   });
@@ -1652,7 +1688,7 @@ describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
     const steps = sheet!.querySelectorAll('[data-testid="interaction-guide-step"]');
     expect(steps).toHaveLength(3);
     expect(steps[0].textContent).toContain("Open a terminal in the project folder.");
-    expect(steps[1].querySelector("pre")?.textContent).toContain("pnpm gsam setup --company demo");
+    expect(steps[1].querySelector("pre")?.textContent).toContain("npx gsam setup --company demo");
     expect(sheet!.textContent).not.toContain("**");
 
     const copy = steps[1].querySelector('button[aria-label="Copy code"]') as HTMLButtonElement;
@@ -1661,7 +1697,7 @@ describe("IssueThreadInteractionCard step-by-step guide (GRE-916)", () => {
     await act(async () => {
       copy.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
-    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("pnpm gsam setup --company demo"));
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining("npx gsam setup --company demo"));
     delete (HTMLElement.prototype as { innerText?: string }).innerText;
 
     // While the guide is open the options live only in the guide.

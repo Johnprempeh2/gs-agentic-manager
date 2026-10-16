@@ -11,6 +11,7 @@
 // here and a review.
 
 import { z } from "zod";
+import { fleetSupportAttachmentSchema, fleetSupportSyncSchema } from "./fleet-support.js";
 
 export const FLEET_JWS_TYPE = "gsam-fleet+jwt";
 export const FLEET_AUDIENCE = "gsam-fleet/v1";
@@ -26,7 +27,11 @@ export const FLEET_MAX_CLOCK_SKEW_SECONDS = 60;
 export const FLEET_REGISTRATION_CODE_TTL_HOURS = 24;
 export const FLEET_REGISTRATION_CODE_PREFIX = "gsamfr_";
 
-export const FLEET_ACTIONS = ["register", "check-in", "revoke"] as const;
+/**
+ * `delete` (B9): the spoke asks the hub to remove its record and check-ins, as the last step of `client-instance.sh delete`.
+ * `support-sync` and `support-attachment` (GRE-1084): the spoke sends its support tickets and client-picked files (fleet-support.ts).
+ */
+export const FLEET_ACTIONS = ["register", "check-in", "revoke", "delete", "support-sync", "support-attachment"] as const;
 export type FleetAction = (typeof FLEET_ACTIONS)[number];
 
 export const FLEET_INSTANCE_STATUSES = ["pending", "active", "revoked"] as const;
@@ -144,6 +149,8 @@ export const fleetClaimsSchema = z
     exp: z.number().int(),
     seq: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
     checkIn: fleetCheckInSchema.optional(),
+    support: fleetSupportSyncSchema.optional(),
+    attachment: fleetSupportAttachmentSchema.optional(),
   })
   .strict();
 export type FleetClaims = z.infer<typeof fleetClaimsSchema>;
@@ -176,6 +183,23 @@ export function fleetInstanceState(
   const ageMinutes = (now.getTime() - input.lastCheckInAt.getTime()) / 60_000;
   if (ageMinutes >= limits.downAfterMinutes || input.lastAppHealth === "down") return "down";
   return ageMinutes >= limits.staleAfterMinutes ? "stale" : "ok";
+}
+
+/** One row of `GET /api/fleet/instances` (F2 fleet page, GRE-1083). Read-only; dates are ISO strings on the wire. */
+export interface FleetInstanceView {
+  id: string;
+  code: string;
+  status: FleetInstanceStatus;
+  state: FleetInstanceState;
+  lifecycle: FleetLifecycle | null;
+  lifecycleChangedAt: string | null;
+  registeredAt: string | null;
+  lastCheckInAt: string | null;
+  revokedAt: string | null;
+  revokedBy: string | null;
+  registrationCodeExpiresAt: string | null;
+  createdAt: string;
+  latestCheckIn: { receivedAt: string; checkIn: FleetReceivedCheckIn } | null;
 }
 
 export const fleetSignedRequestSchema = z.object({ message: z.string().min(1).max(16_384) }).strict();

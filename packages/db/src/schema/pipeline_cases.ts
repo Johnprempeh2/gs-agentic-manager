@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   integer,
@@ -12,10 +13,12 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
+import { assets } from "./assets.js";
 import { companies } from "./companies.js";
 import { documents } from "./documents.js";
 import { issueAttachments } from "./issue_attachments.js";
 import { issues } from "./issues.js";
+import { organisations } from "./organisations.js";
 import { pipelineStages, pipelines } from "./pipelines.js";
 import { projects } from "./projects.js";
 import { routines } from "./routines.js";
@@ -45,6 +48,9 @@ export const pipelineCases = pgTable(
     caseKey: text("case_key").notNull(),
     title: text("title").notNull(),
     summary: text("summary"),
+    // The organisation record this case is about (GRE-1478). Required on
+    // pipelines with requires_organisation; optional elsewhere.
+    organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
     fields: jsonb("fields").$type<Record<string, unknown>>().notNull().default({}),
     workspaceRef: jsonb("workspace_ref").$type<PipelineCaseWorkspaceRef>(),
     parentCaseId: uuid("parent_case_id").references((): AnyPgColumn => pipelineCases.id, { onDelete: "set null" }),
@@ -64,6 +70,30 @@ export const pipelineCases = pgTable(
     retiredByAttemptId: uuid("retired_by_attempt_id"),
     retiredReason: text("retired_reason"),
     hiddenFromBoardAt: timestamp("hidden_from_board_at", { withTimezone: true }),
+    // The client's NDA (0335): required (the default, holds client-labelled
+    // deliverables off the portal), accepted (ndaAcceptedAt is its date) or
+    // suspended (the engagement proceeds; ndaSuspendedReason says why).
+    ndaStatus: text("nda_status").$type<"required" | "accepted" | "suspended">().notNull().default("required"),
+    ndaAcceptedAt: timestamp("nda_accepted_at", { withTimezone: true }),
+    ndaSuspendedReason: text("nda_suspended_reason"),
+    ndaStatusChangedAt: timestamp("nda_status_changed_at", { withTimezone: true }),
+    ndaStatusChangedByUserId: text("nda_status_changed_by_user_id"),
+    // The signed NDA uploaded onto the client (Ben, 8 Oct): the evidence row
+    // that holds the file. Cleared when the NDA goes back to required.
+    ndaEvidenceId: uuid("nda_evidence_id").references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    // The engagement pack (Ben, 8 and 12 Oct): it goes out once the NDA is
+    // accepted or suspended, and the client accepts it. not_sent, sent (with
+    // its date) or accepted (with its date). The pack and the signed
+    // acceptance are evidence rows when they were uploaded.
+    engagementStatus: text("engagement_status").$type<"not_sent" | "sent" | "accepted">().notNull().default("not_sent"),
+    engagementSentAt: timestamp("engagement_sent_at", { withTimezone: true }),
+    engagementAcceptedAt: timestamp("engagement_accepted_at", { withTimezone: true }),
+    engagementChangedAt: timestamp("engagement_changed_at", { withTimezone: true }),
+    engagementChangedByUserId: text("engagement_changed_by_user_id"),
+    engagementPackEvidenceId: uuid("engagement_pack_evidence_id")
+      .references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    engagementAcceptanceEvidenceId: uuid("engagement_acceptance_evidence_id")
+      .references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
     childCount: integer("child_count").notNull().default(0),
     terminalChildCount: integer("terminal_child_count").notNull().default(0),
     createdByUserId: text("created_by_user_id"),
@@ -78,12 +108,14 @@ export const pipelineCases = pgTable(
       .on(table.parentCaseId, table.requestKey)
       .where(sql`${table.requestKey} is not null and ${table.retiredAt} is null`),
     companyIdx: index("pipeline_cases_company_idx").on(table.companyId),
+    companyOrganisationIdx: index("pipeline_cases_company_organisation_idx").on(table.companyId, table.organisationId),
     pipelineStageIdx: index("pipeline_cases_pipeline_stage_idx").on(table.pipelineId, table.stageId),
     parentIdx: index("pipeline_cases_parent_idx").on(table.parentCaseId),
     automationAttemptIdx: index("pipeline_cases_automation_attempt_idx").on(table.automationAttemptId),
     retiredIdx: index("pipeline_cases_retired_idx").on(table.companyId, table.retiredAt),
     leaseExpiresIdx: index("pipeline_cases_lease_expires_idx").on(table.leaseExpiresAt).where(sql`${table.leaseExpiresAt} is not null`),
     terminalKindCheck: check("pipeline_cases_terminal_kind_check", sql`${table.terminalKind} is null or ${table.terminalKind} in ('done', 'cancelled')`),
+    engagementStatusCheck: check("pipeline_cases_engagement_status_check", sql`${table.engagementStatus} in ('not_sent', 'sent', 'accepted')`),
     leaseOwnerTypeCheck: check("pipeline_cases_lease_owner_type_check", sql`${table.leaseOwnerType} is null or ${table.leaseOwnerType} in ('user', 'agent')`),
   }),
 );
@@ -159,6 +191,9 @@ export const pipelineCaseContacts = pgTable(
 // Evidence on a client (or any other case): the client's own material, such
 // as files attached to a task, documents on a task, or links (GRE-1311). Files
 // stay where they were uploaded; a row points at them so they are easy to find.
+// An upload (kind 'upload') is a file put straight onto the client, held as an
+// asset that belongs to this row. stage_id files it under one stage of the
+// client's journey; null means the client as a whole.
 export const pipelineCaseEvidence = pgTable(
   "pipeline_case_evidence",
   {
@@ -171,6 +206,8 @@ export const pipelineCaseEvidence = pgTable(
     attachmentId: uuid("attachment_id").references(() => issueAttachments.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }),
     url: text("url"),
+    assetId: uuid("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => pipelineStages.id, { onDelete: "set null" }),
     sourceIssueId: uuid("source_issue_id").references(() => issues.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
@@ -179,6 +216,10 @@ export const pipelineCaseEvidence = pgTable(
   },
   (table) => ({
     companyCaseIdx: index("pipeline_case_evidence_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_evidence_stage_idx").on(table.stageId),
+    assetUq: uniqueIndex("pipeline_case_evidence_asset_uq")
+      .on(table.assetId)
+      .where(sql`${table.assetId} is not null`),
     caseAttachmentUq: uniqueIndex("pipeline_case_evidence_case_attachment_uq")
       .on(table.caseId, table.attachmentId)
       .where(sql`${table.attachmentId} is not null`),
@@ -192,8 +233,68 @@ export const pipelineCaseEvidence = pgTable(
       "pipeline_case_evidence_kind_check",
       sql`(${table.kind} = 'attachment' and ${table.attachmentId} is not null)
         or (${table.kind} = 'document' and ${table.documentId} is not null)
-        or (${table.kind} = 'link' and ${table.url} is not null)`,
+        or (${table.kind} = 'link' and ${table.url} is not null)
+        or (${table.kind} = 'upload' and ${table.assetId} is not null)`,
     ),
+  }),
+);
+
+// A document we ask the client for at one stage of their journey (Ben, 12
+// Oct: the deep dive's document request stage collects a set list). It is
+// received when an upload is made against it: evidence_id points at that file.
+export const pipelineCaseDocumentRequests = pgTable(
+  "pipeline_case_document_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").notNull().references(() => pipelineStages.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    note: text("note"),
+    position: integer("position").notNull().default(0),
+    evidenceId: uuid("evidence_id").references(() => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyCaseIdx: index("pipeline_case_document_requests_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_document_requests_stage_idx").on(table.stageId),
+    caseStageTitleUq: uniqueIndex("pipeline_case_document_requests_case_stage_title_uq").on(
+      table.caseId,
+      table.stageId,
+      table.title,
+    ),
+  }),
+);
+
+// A deliverable filed under one stage of a client's journey (GRE-1473). A
+// deliverable is named by its task and key, so the link follows new versions.
+// `client_facing` lets the client portal show it once the stage is complete.
+export const pipelineCaseStageDeliverables = pgTable(
+  "pipeline_case_stage_deliverables",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").notNull().references(() => pipelineStages.id, { onDelete: "cascade" }),
+    deliverableIssueId: uuid("deliverable_issue_id").notNull().references(() => issues.id, { onDelete: "cascade" }),
+    deliverableKey: text("deliverable_key").notNull(),
+    clientFacing: boolean("client_facing").notNull().default(false),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    caseDeliverableUq: uniqueIndex("pipeline_case_stage_deliverables_case_deliverable_uq").on(
+      table.caseId,
+      table.deliverableIssueId,
+      table.deliverableKey,
+    ),
+    companyCaseIdx: index("pipeline_case_stage_deliverables_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_stage_deliverables_stage_idx").on(table.stageId),
   }),
 );
 

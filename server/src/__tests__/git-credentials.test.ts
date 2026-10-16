@@ -213,7 +213,8 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
     providerTenant: {},
     ...overrides,
   });
-  // Selects run in order: connections, installs, grants, then the connection lookup
+  // Selects run in order: connections, installs, grants, Share with agents
+  // delegations (the responsible user has no personal grant), then the connection lookup
   // that decides whether a refresh can fill in GitHub details.
   const buildDb = (rows: unknown[][]) => {
     const select = vi.fn();
@@ -226,7 +227,7 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
   it("refreshes GitHub access once on a github.code grant that lost its GitHub details", async () => {
     toolAccess.refreshManagedGitHubGrantAccess.mockReset()
       .mockResolvedValueOnce(grant({ providerTenant: { github: githubDetails } }));
-    const db = buildDb([[connection("github.code")], [install], [grant()], [connection("github.code")]]);
+    const db = buildDb([[connection("github.code")], [install], [grant()], [], [connection("github.code")]]);
     const secrets = { ...buildSecretsFake({}), resolveSecretValue: vi.fn(async () => "managed-token") };
 
     const result = await resolveManagedGitHubCredential(db, secrets, "company-1", context);
@@ -243,7 +244,7 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
 
   it("skips a grant on a connection that is not github.code and falls back to legacy credentials", async () => {
     toolAccess.refreshManagedGitHubGrantAccess.mockReset();
-    const db = buildDb([[connection()], [install], [grant()]]);
+    const db = buildDb([[connection()], [install], [grant()], []]);
     const secrets = buildSecretsFake({ GITHUB_TOKEN: "legacy-token" });
     const provider = createGitRemoteAuthProvider(db, "company-1", context, { secrets, env: {} });
 
@@ -256,7 +257,7 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
 
   it("names the missing part, grant, connection and connector profile when self-heal fails", async () => {
     toolAccess.refreshManagedGitHubGrantAccess.mockReset().mockRejectedValueOnce(new Error("secret-bearing detail"));
-    const db = buildDb([[connection("github.code")], [install], [grant()], [connection("github.code")]]);
+    const db = buildDb([[connection("github.code")], [install], [grant()], [], [connection("github.code")]]);
     const secrets = buildSecretsFake({});
 
     const result = await resolveManagedGitHubCredential(db, secrets, "company-1", context);
@@ -271,7 +272,7 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
 
   it("skips a grant with no access token reference, matching the token-only fallback", async () => {
     toolAccess.refreshManagedGitHubGrantAccess.mockReset();
-    const db = buildDb([[connection("github.code")], [install], [grant({ credentialSecretRefs: [] })]]);
+    const db = buildDb([[connection("github.code")], [install], [grant({ credentialSecretRefs: [] })], []]);
 
     const result = await resolveManagedGitHubCredential(db, buildSecretsFake({}), "company-1", context);
 
@@ -300,7 +301,8 @@ describe("resolveManagedGitHubCredential with missing GitHub details", () => {
     expect(selection.grant).toBeUndefined();
     expect(selection.error).toBe(
       "No managed GitHub identity is available for this run "
-        + "(no GitHub grant for agent agent-1 or responsible user user-1 on connection conn-1). Connect your own GitHub in Apps (Connect as me).",
+        + "(no GitHub grant for agent agent-1 or responsible user user-1, and no GitHub login shared with this agent, on connection conn-1)."
+        + " Connect your own GitHub in Apps (Connect as me), or ask the GitHub owner to share access with this agent (Apps, GitHub, Share with agents).",
     );
   });
 });
@@ -345,6 +347,15 @@ describe("buildGitAuthInvocation", () => {
 });
 
 describe("credential helper execution (real git, no network)", () => {
+  // An agent run puts its managed git launcher first on PATH. The launcher
+  // swaps in the live run's credential, so the test must reach the real git.
+  // Match the launcher by its folder too: a clean env (`env -i HOME PATH`, as
+  // the release test gate runs) keeps PATH but drops GSAM_GITHUB_LAUNCHER_DIR.
+  function isGitHubLauncherDir(entry: string) {
+    return entry === process.env.GSAM_GITHUB_LAUNCHER_DIR
+      || path.basename(path.dirname(entry)) === "paperclip-github-runtime";
+  }
+
   async function runCredentialFill(description: string) {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-git-cred-fill-"));
     try {
@@ -361,7 +372,7 @@ describe("credential helper execution (real git, no network)", () => {
             // would replace it with the live run's credential before Git sees it.
             env: {
               PATH: (process.env.PATH ?? "").split(path.delimiter)
-                .filter((entry) => entry !== process.env.GSAM_GITHUB_LAUNCHER_DIR)
+                .filter((entry) => !isGitHubLauncherDir(entry))
                 .join(path.delimiter),
               SystemRoot: process.env.SystemRoot,
               GIT_CONFIG_GLOBAL: os.devNull,

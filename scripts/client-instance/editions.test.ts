@@ -182,3 +182,18 @@ test("rejects features without a place in section 5", () => {
   );
   assert.throws(() => buildEditionValues({ edition: "self-run" as never, catalogVersion }), /Unknown edition/);
 });
+
+test("Board needs Strategy on Managed plus (GRE-1382, D2 rule 1)", () => {
+  assert.throws(
+    () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableStrategyBoard"], catalogVersion }),
+    /needs "enableStrategy"/,
+  );
+  const values = buildEditionValues({
+    edition: "managed-plus",
+    passedBetaFeatures: ["enableStrategy", "enableStrategyBoard"],
+    catalogVersion,
+  });
+  assert.ok(values.expectOn.includes("enableStrategy"));
+  assert.ok(values.expectOn.includes("enableStrategyBoard"));
+  assert.ok(buildEditionValues({ edition: "managed", catalogVersion }).expectOff.includes("enableStrategy"));
+});

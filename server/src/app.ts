@@ -5,6 +5,9 @@ import { projectToolRoutes } from "./routes/project-tools.js";
 import { emailChannelService } from "./services/email-channels.js";
 import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
 import { mailboxRoutes } from "./routes/mailboxes.js";
+import { inboundTaskHookRoutes } from "./routes/inbound-task-hooks.js";
+import { outboundWebhookRoutes } from "./routes/outbound-webhooks.js";
+import { integrationKeyRoutes } from "./routes/integration-keys.js";
 import { toolActionDeliveryService } from "./services/tool-action-delivery.js";
 import { registerAssignedMcpGateway } from "./services/native-runtime/assigned-mcp-tools.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -66,6 +69,8 @@ import { releasesFloorRoutes } from "./routes/releases-floor.js";
 import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
 import { websiteRoutes } from "./routes/website.js";
+import { intelligenceRoutes } from "./routes/intelligence.js";
+import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import type { SetupTokenSessionService } from "./services/setup-token-session.js";
@@ -87,7 +92,9 @@ import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
+import { clientAcceptancePublicRoutes } from "./routes/client-acceptance-public.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
+import { organisationRoutes } from "./routes/organisations.js";
 import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -97,6 +104,7 @@ import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
+import { memoryConnectionRoutes } from "./routes/memory-connections.js";
 import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
@@ -115,7 +123,14 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
 import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
+import { blockedWorkRoutes } from "./routes/blocked-work.js";
+import { calendarRoutes } from "./routes/calendar.js";
+import { teamScorecardRoutes } from "./routes/team-scorecard.js";
+import { weeklyReportRoutes } from "./routes/weekly-report.js";
+import { agentDailyDigestRoutes } from "./routes/agent-daily-digests.js";
+import { recoveryHoldRoutes } from "./routes/recovery-holds.js";
 import { supportRoutes } from "./routes/support.js";
+import { clientSupportRoutes } from "./routes/client-support.js";
 import { pushRoutes } from "./routes/push.js";
 import { decisionTrainingRoutes } from "./routes/decision-training.js";
 import { decisionRoutes } from "./routes/decisions.js";
@@ -132,7 +147,6 @@ import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
 import { billingAccountRoutes } from "./routes/billing-account.js";
 import { runAdmissionRecommendationRoutes } from "./routes/run-admission-recommendation.js";
-import { instanceSettingsService } from "./services/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
 import {
   instanceDatabaseBackupRoutes,
@@ -142,6 +156,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { authRoutes } from "./routes/auth.js";
 import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
+import { generatedImageRoutes } from "./routes/generated-images.js";
 import { accessRoutes } from "./routes/access.js";
 import { legacyBoardRoutes } from "./routes/legacy-board.js";
 import { memberHandoverRoutes } from "./routes/member-handover.js";
@@ -201,7 +216,8 @@ import {
   flushPluginLogBuffer,
 } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
-import { setPluginEventBus } from "./services/activity-log.js";
+import { addActivityListener, setPluginEventBus } from "./services/activity-log.js";
+import { startOutboundWebhookDispatch } from "./services/outbound-webhooks.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
@@ -649,7 +665,7 @@ export async function createApp(
   const emailChannels = emailChannelService(db, { heartbeat: connectionIntentHeartbeat, storage: opts.storageService, publicBaseUrl: opts.chatWebhookPublicBaseUrl ?? opts.authPublicBaseUrl });
   app.use(emailWebhookRoutes(emailChannels));
   // Fleet spokes sign each message with their own key (GRE-1082); no session.
-  app.use(fleetSpokeRoutes(db));
+  app.use(fleetSpokeRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   app.use(chatWebhookRoutes(chatChannels));
   // The instance validates single-use registration state and its trusted
   // current origin. This exact GET is the only public setup return.
@@ -726,6 +742,8 @@ export async function createApp(
   api.use(clientVersionRoutes());
   api.use(statusCardRoutes(db));
   api.use(websiteRoutes(db));
+  api.use(intelligenceRoutes(db));
+  api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
   // The setup-token login session service. The router builds it and hands it
   // back through the callback below, so the shutdown hook can cancel every live
@@ -811,7 +829,8 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
-  api.use(deliverableRoutes(db, opts.storageService));
+  api.use(generatedImageRoutes(db, opts.storageService));
+  api.use(deliverableRoutes(db, opts.storageService, { publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
@@ -819,8 +838,11 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db));
+  const memoryEngine = memoryEngineFromGatewayConfig();
+  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(clientAcceptancePublicRoutes(db, opts.storageService));
   api.use(crmSyncRoutes(db));
+  api.use(organisationRoutes(db));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,
@@ -835,16 +857,20 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
   api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(inboundTaskHookRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
+  api.use(outboundWebhookRoutes(db, { publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(integrationKeyRoutes(db));
+  startOutboundWebhookDispatch(db, addActivityListener, { publicBaseUrl: opts.authPublicBaseUrl });
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
-  const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
+  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode, storage: opts.storageService }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));
   api.use(managedAgentProfileRoutes(db));
@@ -867,7 +893,14 @@ export async function createApp(
   api.use(attentionRoutes(db));
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(agentWorkDigestRoutes(db));
+  api.use(blockedWorkRoutes(db));
+  api.use(calendarRoutes(db));
+  api.use(teamScorecardRoutes(db));
+  api.use(weeklyReportRoutes(db));
+  api.use(agentDailyDigestRoutes(db));
+  api.use(recoveryHoldRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
+  api.use(clientSupportRoutes(db, { storage: opts.storageService }));
   api.use(pushRoutes(db));
   api.use(decisionTrainingRoutes(db));
   api.use(decisionRoutes(db, opts.decisionServiceOptions));
@@ -1020,13 +1053,7 @@ export async function createApp(
       { toolGateway },
     ),
   );
-  api.use(
-    adapterRoutes({
-      getNativeRunnerEnabled: async () =>
-        (await instanceSettingsService(db).getExperimental())
-          .enableNativeRunner === true,
-    }),
-  );
+  api.use(adapterRoutes());
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,

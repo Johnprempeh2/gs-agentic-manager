@@ -59,8 +59,14 @@ describe("AgentStatusBadge", () => {
     }
   });
 
-  it('renders "active" as the idle label', () => {
-    expect(renderToStaticMarkup(<AgentStatusBadge status="active" />)).toContain("idle");
+  it('renders "active" as the Idle label', () => {
+    expect(renderToStaticMarkup(<AgentStatusBadge status="active" />)).toContain(">Idle<");
+  });
+
+  it("explains each status in plain words", () => {
+    const html = renderToStaticMarkup(<AgentStatusBadge status="pending_approval" />);
+    expect(html).toContain(">Pending approval<");
+    expect(html).toContain('title="Waiting for you to approve it before it can start."');
   });
 });
 

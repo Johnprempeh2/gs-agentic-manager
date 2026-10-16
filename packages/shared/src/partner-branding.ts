@@ -12,7 +12,7 @@ export const BRAND_PRIMARY_COLOR_ENV_KEY = "GSAM_BRAND_PRIMARY_COLOR";
 export const PARTNER_BRAND_NAME_MAX_LENGTH = 60;
 
 /** Page backgrounds of the default theme (`--background` in ui/src/index.css). */
-export const THEME_BACKGROUNDS = { light: "#f7f8f4", dark: "#121212" } as const;
+export const THEME_BACKGROUNDS = { light: "#f2f4ee", dark: "#121212" } as const;
 /** The two text colours a primary button may use (`--primary-foreground`). */
 const PRIMARY_FOREGROUNDS = { light: "#f5f7f2", dark: "#0e1611" } as const;
 

@@ -149,6 +149,9 @@ describe("AgentToolsTab", () => {
     await flushReact();
   }
 
+  // The first test pays the cold import of AgentToolsTab: about 1s alone, over
+  // 5s when the whole suite runs in parallel lanes (the release test gate).
+  // It passes alone; the longer timeout is for load, not logic.
   it("preserves checkbox changes made after the last saved install state", async () => {
     const { mergeInstallDraft } = await import("./AgentToolsTab");
 
@@ -162,7 +165,7 @@ describe("AgentToolsTab", () => {
       draft: { "conn-1": true, "conn-2": true },
       hasPendingChanges: true,
     });
-  });
+  }, 30_000);
 
   it("renders effective access, access profiles, governing policy, and unavailable tools", async () => {
     const allowed = makeCatalogEntry({ id: "cat-allow", toolName: "github.read_repo" });

@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, relativeTime } from "@/lib/utils";
 import {
-  formatTargetDate,
   remainingLabel,
+  targetDateLabel,
   type GoalHealth,
   type ScoreboardEntry,
 } from "@/lib/goal-journey";
@@ -45,12 +45,12 @@ function SubGoalTile({
   usersById?: UsersById;
 }) {
   const left = remainingLabel(goal);
-  const target = formatTargetDate(goal.targetDate);
+  const target = targetDateLabel(goal.targetDate, health === "done");
   const detail = [
     goal.progress.percent == null ? null : `${goal.progress.percent}%`,
     goalOwnerName(goal, agentsById, usersById),
     left,
-    target ? `target ${target}` : null,
+    target ? target.charAt(0).toLowerCase() + target.slice(1) : null,
   ].filter(Boolean);
   return (
     <Link
@@ -81,7 +81,7 @@ export function GoalScoreCard({
   const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
   const ownerName = goalOwnerName(goal, agentsById, usersById);
   const left = remainingLabel(goal);
-  const target = formatTargetDate(goal.targetDate);
+  const target = targetDateLabel(goal.targetDate, health === "done");
   const wide = subGoals.length > 0;
 
   const summary = (
@@ -145,7 +145,7 @@ export function GoalScoreCard({
       )}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-subtle-foreground">
-        <span>{target ? `Target ${target}` : "No target date"}</span>
+        <span>{target ?? "No target date"}</span>
         <span>
           {goal.latestCheckIn ? `Last check-in ${relativeTime(goal.latestCheckIn.createdAt)}` : "No check-ins yet"}
         </span>

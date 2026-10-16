@@ -71,7 +71,8 @@ export function readClientRecord(fields: Record<string, unknown> | null | undefi
   const source = fields ?? {};
   return {
     country: readFirst(source, ["country"]),
-    owner: readFirst(source, ["ownerPerson", "owner", "owners"]),
+    // "dealOwner" is the deal owner a Pipedrive or HubSpot export import brings in.
+    owner: readFirst(source, ["ownerPerson", "owner", "owners", "dealOwner"]),
     leadAgent: readFirst(source, ["leadAgent"]),
     nextAction: readFirst(source, ["nextAction"]),
     nextActionOwner: readFirst(source, ["nextActionOwner"]),
@@ -87,6 +88,7 @@ export const CLIENT_RECORD_FIELD_KEYS = new Set([
   "ownerPerson",
   "owner",
   "owners",
+  "dealOwner",
   "leadAgent",
   "nextAction",
   "nextActionOwner",

@@ -125,7 +125,7 @@ type ConnectionRemovalTarget = {
 
 type ResumeTarget =
   | { kind: "chat"; id: string }
-  | { kind: "tool"; id: string; status?: ToolConnection["status"] };
+  | { kind: "tool"; id: string; status?: ToolConnection["status"]; pauseSuspended?: boolean };
 
 /** Which part of the page a card renders in; it shows only that part's accounts. */
 type CardSection = "connected" | "unfinished" | "available";
@@ -186,9 +186,20 @@ function additionalConnectionHref(
   return `${path}?${params.toString()}`;
 }
 
-function connectionState(connection: ToolConnection): ConnectionState {
+function connectionState(connection: ToolConnection, companyPaused = false): ConnectionState {
   if (isRetiredComposioConnection(connection)) {
     return { kind: "attention", label: "Retired", message: RETIRED_COMPOSIO_MESSAGE };
+  }
+  // GRE-1364: a company pause turns connections off; each comes back only
+  // through a health-checked re-enable, never a plain enable.
+  if (connection.pauseSuspendedAt) {
+    return {
+      kind: "paused",
+      label: "Turned off",
+      message: companyPaused
+        ? "Turned off by company pause. Resume the organization before you re-enable it."
+        : "Turned off by company pause. Re-enable runs a health check first.",
+    };
   }
   if (connection.status === "draft") {
     return {
@@ -364,6 +375,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   const queryClient = useQueryClient();
   const { pushToast } = useToast();
   const { selectedCompanyId } = useCompany();
+  const [resumeErrors, setResumeErrors] = useState<Record<string, string>>({});
   const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
   const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -424,11 +436,14 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       queryKey: queryKeys.apps.attention(selectedCompanyId!),
     });
   };
-  // Same calls the connection detail pages use to resume: no new endpoint.
+  // Same calls the connection detail pages use to resume. A connection a
+  // company pause turned off uses the health-checked re-enable (GRE-1364).
   const resumeConnection = useMutation({
     mutationFn: async (target: ResumeTarget) => {
       if (target.kind === "chat") {
         await chatEndpointsApi.setup(target.id, { action: "resume" });
+      } else if (target.pauseSuspended) {
+        await toolsApi.reenableConnectionAfterPause(target.id);
       } else {
         await toolsApi.updateConnection(
           target.id,
@@ -436,16 +451,35 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         );
       }
     },
-    onSuccess: () => {
-      invalidateConnectors();
-      pushToast({ title: "Connection resumed", tone: "success" });
+    onMutate: (target) => {
+      setResumeErrors((current) => {
+        if (!(target.id in current)) return current;
+        const next = { ...current };
+        delete next[target.id];
+        return next;
+      });
     },
-    onError: (error) =>
+    onSuccess: (_result, target) => {
+      invalidateConnectors();
+      pushToast({
+        title: target.kind === "tool" && target.pauseSuspended ? "Connection re-enabled" : "Connection resumed",
+        tone: "success",
+      });
+    },
+    onError: (error, target) => {
+      const message = error instanceof Error && error.message ? error.message : "Please try again.";
+      if (target.kind === "tool" && target.pauseSuspended) {
+        // The health check failed, so the connection stays off: say why on the row.
+        setResumeErrors((current) => ({ ...current, [target.id]: message }));
+        invalidateConnectors();
+        return;
+      }
       pushToast({
         title: "Couldn't resume the connection",
-        body: error instanceof Error ? error.message : "Please try again.",
+        body: message,
         tone: "error",
-      }),
+      });
+    },
   });
   // A test or reconnect that works resumes every task waiting on the connection (GRE-335).
   const testConnection = useMutation({
@@ -885,6 +919,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
                     onRequestRemove={setConnectionToRemove}
                     onResume={resumeConnection.mutate}
                     resumingId={resumeConnection.isPending ? (resumeConnection.variables?.id ?? null) : null}
+                    resumeErrors={resumeErrors}
                     onTest={testConnection.mutate}
                     testingId={testConnection.isPending ? (testConnection.variables?.id ?? null) : null}
                     onReconnectOAuth={reconnectOAuth.mutate}
@@ -996,6 +1031,7 @@ export function ConnectorCard({
   onRequestRemove,
   onResume,
   resumingId = null,
+  resumeErrors,
   onTest,
   testingId = null,
   onReconnectOAuth,
@@ -1011,6 +1047,7 @@ export function ConnectorCard({
   onRequestRemove: (target: ConnectionRemovalTarget) => void;
   onResume?: (target: ResumeTarget) => void;
   resumingId?: string | null;
+  resumeErrors?: Readonly<Record<string, string>>;
   onTest?: (connection: ToolConnection) => void;
   testingId?: string | null;
   onReconnectOAuth?: (connection: ToolConnection) => void;
@@ -1088,13 +1125,19 @@ export function ConnectorCard({
               owner={connectionOwnerProfile(connection, userProfileById)}
               onNavigate={onNavigate}
               resuming={resumingId === connection.id}
+              resumeError={resumeErrors?.[connection.id]}
               onTest={onTest ? () => onTest(connection) : undefined}
               testing={testingId === connection.id}
               onReconnectOAuth={onReconnectOAuth ? () => onReconnectOAuth(connection) : undefined}
               reconnecting={reconnectingId === connection.id}
               onResume={
                 onResume
-                  ? () => onResume({ kind: "tool", id: connection.id, status: connection.status })
+                  ? () => onResume({
+                      kind: "tool",
+                      id: connection.id,
+                      status: connection.status,
+                      pauseSuspended: Boolean(connection.pauseSuspendedAt),
+                    })
                   : undefined
               }
               onRemove={() => {
@@ -1221,6 +1264,7 @@ function ConnectionAccountRow({
   onRemove,
   onResume,
   resuming,
+  resumeError,
   onTest,
   testing = false,
   onReconnectOAuth,
@@ -1234,12 +1278,16 @@ function ConnectionAccountRow({
   onRemove: () => void;
   onResume?: () => void;
   resuming: boolean;
+  resumeError?: string;
   onTest?: () => void;
   testing?: boolean;
   onReconnectOAuth?: () => void;
   reconnecting?: boolean;
 }) {
-  const state = connectionState(connection);
+  const { selectedCompany } = useCompany();
+  const companyPaused = selectedCompany?.status === "paused";
+  const pauseSuspended = Boolean(connection.pauseSuspendedAt);
+  const state = connectionState(connection, companyPaused);
   const actionHref = accountActionHref(row, connection);
   const reconnectHref = aiReconnectHref(connection);
   const oauthReconnect = onReconnectOAuth && reconnectsWithOAuth(connection) ? onReconnectOAuth : null;
@@ -1278,6 +1326,11 @@ function ConnectionAccountRow({
           ) : null}
           {details}
           <ConnectionStateMessage state={state} warning={health?.status === "warning"} />
+          {resumeError ? (
+            <div role="alert" className="line-clamp-2 break-words text-xs text-destructive">
+              Still off: {resumeError}
+            </div>
+          ) : null}
           {lastError && lastError !== state.message ? (
             <div title={lastError} className="line-clamp-2 break-words text-xs text-muted-foreground">
               Last error: {lastError}
@@ -1341,10 +1394,12 @@ function ConnectionAccountRow({
             type="button"
             size="sm"
             variant="outline"
-            disabled={resuming}
+            disabled={resuming || (pauseSuspended && companyPaused)}
+            title={pauseSuspended && companyPaused ? "Resume the organization first" : undefined}
             onClick={onResume}
           >
-            Resume
+            {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : null}
+            {pauseSuspended ? (resuming ? "Checking…" : "Re-enable") : "Resume"}
           </Button>
         ) : null}
         <DropdownMenu>

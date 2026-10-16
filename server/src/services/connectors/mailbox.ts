@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { Db } from "@greatstone/db";
 import {
+  mailboxDraftSchema,
   mailboxReadSchema,
   mailboxSaveSchema,
   mailboxSearchSchema,
@@ -25,7 +26,9 @@ const uid = {
   description: "Message uid from mailbox_search, within the same folder.",
 } as const;
 
-// Connector-owned, read-only definitions. Nothing here sends, moves or deletes mail.
+// Connector-owned definitions. Nothing here sends, moves or deletes mail. The
+// one write, mailbox_save_draft, only saves a draft, and only when a person
+// turned drafts on for that mailbox.
 export const MAILBOX_TOOLS = [
   {
     name: "mailbox_list",
@@ -99,6 +102,25 @@ export const MAILBOX_TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "mailbox_save_draft",
+    action: "draft",
+    description:
+      "Save an email draft in the mailbox's Drafts folder for the owner to check and send. Nothing is sent. Works only when drafts are turned on for the mailbox. Pass inReplyTo (the messageId from mailbox_search) to keep a reply in its conversation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        mailboxId,
+        to: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 20 },
+        cc: { type: "array", items: { type: "string" }, maxItems: 20 },
+        subject: { type: "string" },
+        text: { type: "string", description: "Plain text body." },
+        inReplyTo: { type: "string" },
+      },
+      required: ["mailboxId", "to", "subject", "text"],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 const withMailbox = z.object({ mailboxId: z.string().uuid() }).passthrough();
@@ -135,5 +157,7 @@ export async function executeMailboxTool(
       mailboxSaveSchema.parse({ ...rest, issueId: binding.issueId }),
       reader,
     );
+  if (action === "draft")
+    return service.saveDraft(binding.companyId, mailboxId, mailboxDraftSchema.parse(rest), reader);
   throw forbidden("Unknown mailbox tool");
 }

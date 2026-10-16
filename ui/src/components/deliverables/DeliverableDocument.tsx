@@ -4,6 +4,7 @@ import { HTML_ATTACHMENT_SANDBOX_TOKENS } from "@greatstone/shared";
 import type { Deliverable } from "@/api/deliverables";
 import { getOutputFileGlyph } from "@/lib/issue-output";
 import { cn } from "@/lib/utils";
+import { SiteThumbnail } from "./DeliverableBadges";
 
 /**
  * The iframe sandbox for agent-made HTML. It uses the same tokens the server
@@ -16,7 +17,8 @@ export const DELIVERABLE_IFRAME_SANDBOX = HTML_ATTACHMENT_SANDBOX_TOKENS.join(" 
 /** Virtual viewport the thumbnail renders before it is scaled into the card. */
 const THUMBNAIL_VIEWPORT = { width: 1280, height: 720 };
 
-type DocumentSource = Pick<Deliverable, "contentType" | "contentPath" | "title" | "originalFilename">;
+type DocumentSource = Pick<Deliverable, "contentType" | "contentPath" | "title" | "originalFilename">
+  & Partial<Pick<Deliverable, "external" | "url" | "screenshotPath">>;
 
 function normalizedType(contentType: string) {
   return contentType.toLowerCase().split(";")[0]!.trim();
@@ -73,7 +75,9 @@ export function DeliverableThumbnail({ source, className }: { source: DocumentSo
       ref={boxRef}
       className={cn("relative aspect-video w-full overflow-hidden border-b border-border bg-background", className)}
     >
-      {isHtmlDeliverable(source) ? (
+      {source.external ? (
+        <SiteThumbnail source={{ url: source.url ?? null, title: source.title, screenshotPath: source.screenshotPath ?? null }} />
+      ) : isHtmlDeliverable(source) ? (
         <iframe
           title={`${source.title} thumbnail`}
           src={source.contentPath}
@@ -101,6 +105,16 @@ export function DeliverableThumbnail({ source, className }: { source: DocumentSo
 
 /** The document at full size, for Quick Look. */
 export function DeliverableDocumentView({ source }: { source: DocumentSource }) {
+  // A live site is never framed here (GRE-405): its stored screenshot stands in, with "Open site" beside it.
+  if (source.external) {
+    return (
+      <div className="flex h-full w-full items-center justify-center overflow-auto bg-muted/40 p-6">
+        <div className="aspect-video w-full max-w-5xl overflow-hidden rounded-lg border border-border bg-background shadow-sm">
+          <SiteThumbnail large source={{ url: source.url ?? null, title: source.title, screenshotPath: source.screenshotPath ?? null }} />
+        </div>
+      </div>
+    );
+  }
   if (isHtmlDeliverable(source)) {
     return (
       <iframe

@@ -1267,6 +1267,15 @@ export function routineService(
     return map;
   }
 
+  async function getCompanyStatus(companyId: string) {
+    const row = await db
+      .select({ status: companies.status })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .then((rows) => rows[0] ?? null);
+    return row?.status ?? "missing";
+  }
+
   async function updateRoutineTouchedState(input: {
     routineId: string;
     triggerId?: string | null;
@@ -1502,7 +1511,9 @@ export function routineService(
           ? "skipped_paused"
           : input.reason === "no_external_activity"
             ? "skipped_no_activity"
-            : "skipped_worktree_execution_cutoff",
+            : input.reason.startsWith("company_")
+              ? `Skipped because the company is ${input.reason.slice("company_".length)}`
+              : "skipped_worktree_execution_cutoff",
         nextRunAt: input.nextRunAt,
       }, txDb);
       return createdRun;
@@ -1540,6 +1551,35 @@ export function routineService(
       eq(issues.originFingerprint, dispatchFingerprint),
       eq(issues.originFingerprint, "default"),
     );
+  }
+
+  /**
+   * The routine's most recent task, open or done, for routines that keep one
+   * standing task instead of opening a new one each run.
+   */
+  async function findLatestStandingIssue(
+    routine: typeof routines.$inferSelect,
+    executor: Db,
+    dispatchFingerprint: string | null | undefined,
+    origin: { kind: string; id: string | null },
+  ) {
+    const fingerprintCondition = routineExecutionFingerprintCondition(dispatchFingerprint);
+    return executor
+      .select()
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, routine.companyId),
+          eq(issues.originKind, origin.kind),
+          eq(issues.originId, origin.id ?? routine.id),
+          inArray(issues.status, [...OPEN_ISSUE_STATUSES, "done"]),
+          visibleIssueCondition(),
+          ...(fingerprintCondition ? [fingerprintCondition] : []),
+        ),
+      )
+      .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
   }
 
   async function findLiveExecutionIssue(
@@ -1938,6 +1978,53 @@ export function routineService(
             nextRunAt,
           }, txDb);
           return updated ?? createdRun;
+        }
+
+        if (input.routine.concurrencyPolicy === "reuse_standing_task") {
+          const standing = await findLatestStandingIssue(input.routine, txDb, dispatchFingerprint, {
+            kind: issueOriginKind,
+            id: issueOriginId,
+          });
+          // A finished standing task is opened again; an open one gets the new run.
+          // Either way no new task is created.
+          if (standing) {
+            const wasDone = standing.status === "done";
+            // Reopen outside the dispatch transaction: the wakeup links the run to
+            // this existing row from its own connection and would wait on our row lock.
+            const reopened = wasDone
+              ? await issueSvc.update(
+                standing.id,
+                { status: "todo", companyGuard: input.routine.companyId },
+                db,
+              )
+              : standing;
+            if (reopened) {
+              await queueIssueAssignmentWakeup({
+                heartbeat,
+                issue: reopened,
+                reason: "routine_standing_task_reopened",
+                mutation: "update",
+                contextSource: "routine.dispatch",
+                requestedByActorType: input.source === "schedule" ? "system" : undefined,
+                rethrowOnError: true,
+              });
+              const standingStatus = wasDone ? "issue_reopened" : "coalesced";
+              const updated = await finalizeRun(createdRun.id, {
+                status: standingStatus,
+                linkedIssueId: reopened.id,
+                completedAt: triggeredAt,
+              }, txDb);
+              await updateRoutineTouchedState({
+                routineId: input.routine.id,
+                triggerId: input.trigger?.id ?? null,
+                triggeredAt,
+                status: standingStatus,
+                issueId: reopened.id,
+                nextRunAt,
+              }, txDb);
+              return updated ?? createdRun;
+            }
+          }
         }
 
         try {
@@ -2898,6 +2985,8 @@ export function routineService(
       const routine = await getRoutineById(id);
       if (!routine) throw notFound("Routine not found");
       if (routine.status === "archived") throw conflict("Routine is archived");
+      const companyStatus = await getCompanyStatus(routine.companyId);
+      if (companyStatus !== "active") throw conflict(`Company is ${companyStatus}`, { status: companyStatus });
       await assertProject(routine.companyId, input.projectId ?? null);
       const assigneeAgentId = input.assigneeAgentId ?? routine.assigneeAgentId ?? null;
       await assertAssignableAgent(db, routine.companyId, assigneeAgentId, { kind: "routine" });
@@ -3096,6 +3185,18 @@ export function routineService(
       if (accepted.testReceived) return { status: "test_received" as const, test: true, routineStarted: false, linkedIssueId: null };
       const { routine, trigger, hmacReplayKey, deliveryKey, payload } = accepted;
 
+      const companyStatus = await getCompanyStatus(routine.companyId);
+      if (companyStatus !== "active") {
+        return recordSuppressedAutomaticRun({
+          routine,
+          trigger,
+          source: "webhook",
+          reason: `company_${companyStatus}`,
+          idempotencyKey: deliveryKey,
+          rejectIdempotencyReplay: hmacReplayKey !== null,
+        });
+      }
+
       const eligibility = await getAutomaticRoutineDispatchEligibility(routine);
       if (!eligibility.eligible) {
         return recordSuppressedAutomaticRun({
@@ -3228,9 +3329,11 @@ export function routineService(
           trigger: routineTriggers,
           routine: routines,
           projectPausedAt: projects.pausedAt,
+          companyStatus: companies.status,
         })
         .from(routineTriggers)
         .innerJoin(routines, eq(routineTriggers.routineId, routines.id))
+        .innerJoin(companies, eq(routines.companyId, companies.id))
         .leftJoin(projects, eq(routines.projectId, projects.id))
         .where(
           and(
@@ -3247,6 +3350,26 @@ export function routineService(
       let triggered = 0;
       for (const row of due) {
         if (!row.trigger.nextRunAt || !row.trigger.cronExpression || !row.trigger.timezone) continue;
+
+        // A paused or archived company fires nothing (GRE-1364, AT-4.1). Advance the
+        // trigger by one cron tick so nothing piles up for a catch-up burst on resume,
+        // and record no run: only the trigger's last result says why.
+        if (row.companyStatus !== "active") {
+          await db
+            .update(routineTriggers)
+            .set({
+              nextRunAt: nextCronTickInTimeZone(row.trigger.cronExpression, row.trigger.timezone, now),
+              lastResult: `Skipped because the company is ${row.companyStatus}`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(routineTriggers.id, row.trigger.id),
+                eq(routineTriggers.nextRunAt, row.trigger.nextRunAt),
+              ),
+            );
+          continue;
+        }
 
         // Suppress scheduled firings while the routine's project is paused. The tick is still
         // claimed and advanced to the next single cron tick (no backfill), so resume continues

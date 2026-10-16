@@ -64,6 +64,7 @@ const additionalSerializedServerTests = new Set([
   "server/src/__tests__/routines-e2e.test.ts",
 ]);
 let invocationIndex = 0;
+const failedInvocations = [];
 const serializedModeName = "serialized";
 const generalModeName = "general";
 const allModeName = "all";
@@ -108,6 +109,13 @@ const serializedServerVitestArgs = [
   "--maxWorkers=1",
 ];
 const sourceOnlyVitestArgs = ["--exclude", "**/dist/**"];
+// The release test gate (scripts/greatstone-test-gate.sh) runs every lane at
+// once on one machine, where a test that passes alone can run past its
+// project's default timeout (cold module transforms; 13 Oct 2026: 10 suites).
+// GSAM_VITEST_TIMEOUT_MS raises the default test and hook timeout of every
+// project. A test's own explicit timeout still applies, so a hang still fails.
+const gateTimeoutMs = Number(process.env.GSAM_VITEST_TIMEOUT_MS) || 0;
+const gateTimeoutArgs = gateTimeoutMs > 0 ? [`--testTimeout=${gateTimeoutMs}`, `--hookTimeout=${gateTimeoutMs}`] : [];
 
 function walk(dir) {
   const entries = readdirSync(dir);
@@ -342,7 +350,7 @@ function runVitest(args, label, testShard = null) {
     console.log(`[test:run] chat shard ${testShard.index + 1}/${testShard.count}: ${selected.tests.length}/${collected.length} tests, ${selected.lines.length} source lines; exact filter coverage verified`);
     args.push("--allowOnly=false");
   }
-  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...args], {
+  const result = spawnSync("pnpm", ["exec", "vitest", "run", ...sourceOnlyVitestArgs, ...gateTimeoutArgs, ...args], {
     cwd: repoRoot,
     env,
     stdio: "inherit",
@@ -351,9 +359,9 @@ function runVitest(args, label, testShard = null) {
     console.error(`[test:run] Failed to start Vitest: ${result.error.message}`);
     process.exit(1);
   }
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1);
-  }
+  // Keep going: a lane that stops at its first failing invocation hides every
+  // later failure (the serialized lanes run one suite per invocation).
+  if (result.status !== 0) failedInvocations.push(label);
 }
 
 function runGeneralSuites(routeTests) {
@@ -560,4 +568,9 @@ if (options.mode === generalModeName || options.mode === allModeName) {
 
 if (options.mode === serializedModeName || options.mode === allModeName) {
   runSerializedSuites(routeTests, options.shardIndex ?? 0, options.shardCount ?? 1);
+}
+
+if (failedInvocations.length > 0) {
+  console.error(`\n[test:run] ${failedInvocations.length} vitest invocation(s) failed:\n${failedInvocations.map((l) => `  - ${l}`).join("\n")}`);
+  process.exit(1);
 }

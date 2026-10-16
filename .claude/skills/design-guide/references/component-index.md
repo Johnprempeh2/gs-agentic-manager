@@ -213,6 +213,29 @@ Use in property rows, comment headers, assignee displays, and anywhere a user/ag
 
 For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under it (`ragRollup`); `GoalHealthPill` (task progress) only when there are no KPIs. `StrategyCascade`'s `CascadeStatus` follows this rule.
 
+### Intelligence cards (VerdictCard, RatingStars, MovementChip, SourceLink, IntelligenceSection)
+
+**File:** `intelligence/IntelligenceCards.tsx`
+**Usage:** The Intelligence page (`/intelligence`), shown with sample data in the design guide's "Intelligence cards" section.
+
+- `VerdictCard` (`title`, `href?`, `eyebrow?`, `verdict?`, `points?`, `action?`, `meta?`, `analysis?`, `footer?`): the two-layer card. The card shows one verdict sentence, at most three points and one "Do this" line; `analysis` goes behind a "Full analysis" sheet. Never put a paragraph on the card.
+- `RatingStars` (`value` 1 to 5, `label`): stars with the value spoken to screen readers.
+- `MovementChip` (`movement`): rank movement on a leaderboard (up, down, no change, new), coloured with status tokens and labelled in words.
+- `SourceLink` (`href`): an external source, opened in a new tab. Every news, tool or signal item carries one.
+- `IntelligenceSection` (`title`, `count?`, `action?`): section heading over a card grid that is one column on a phone.
+- `VerdictCard` also takes `leading?` (a logo beside the eyebrow), `media?` (a full-bleed image on top) and `hero?` (the lead story's larger type).
+
+**File:** `intelligence/IntelligenceMedia.tsx`
+
+- `BrandLogo` (`name`, `domain?`, `url?`, `size?` sm, md, lg, xl): a brand logo on a light chip, fetched by domain through our own server (Logo.dev behind `GSAM_LOGODEV_PUBLISHABLE_KEY`). With no key, no match or no domain it is the name's initials on a soft status-token chip, never a broken image.
+- `ArticleImage` (`url`, `imageUrl?`, `fallback?`): the article's og:image through our server, lazy, in a fixed 16:9 box; `fallback` fills the same box when there is none. The browser never loads a remote host (GRE-405).
+- `TagChip`: compact category chip, foreground on muted.
+
+### Deliverable labels and live sites (ConfidentialityBadge, LinkStatusBadges, SiteThumbnail, ExpectedList)
+
+**Files:** `ui/src/components/deliverables/DeliverableBadges.tsx`, `ExpectedList` in `ui/src/components/ClientJourneyStages.tsx`
+**Usage:** `ConfidentialityBadge` shows internal, client or public on a deliverable. `LinkStatusBadges` marks a link deliverable whose daily check failed ("Link broken") or that is password protected or unlisted. `SiteThumbnail` shows a live site's stored screenshot, or a placeholder with its initials and domain; it never frames the live site (GRE-405). `ExpectedList` shows what a stage expects against what is filed, with "Missing" in muted text rather than red.
+
 ### CompanySwitcher
 
 **File:** `CompanySwitcher.tsx`

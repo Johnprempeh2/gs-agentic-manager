@@ -107,6 +107,16 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "post", path: `${COMPANY}/chats/agent` },
     ],
   },
+  enableTeamChat: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/team-chats` },
+      { method: "post", path: `${COMPANY}/team-chats` },
+      { method: "post", path: `${COMPANY}/team-chats/direct` },
+      { method: "post", path: `/team-chats/${ID}/members` },
+      { method: "delete", path: `/team-chats/${ID}/members/user/x` },
+    ],
+  },
   enableMemoryConnectors: {
     kind: "api",
     probes: [{ method: "get", path: `${COMPANY}/tools/apps/mem0/preflight` }],
@@ -124,6 +134,20 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
   enableIssuePlanDecompositions: {
     kind: "api",
     probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
+  },
+  enableStrategy: {
+    kind: "api",
+    // Plain goals stay open (Foundation). Goal reads and deletes stay open too,
+    // so a client keeps its data; the KPI routes and every write that makes or
+    // edits a goal with a kind are refused (GRE-1382).
+    probes: [
+      { method: "get", path: `/goals/${ID}/readings` },
+      { method: "post", path: `/goals/${ID}/readings` },
+      { method: "post", path: `/goals/${ID}/kpi-drafts` },
+      { method: "post", path: `${COMPANY}/goals/strategic-plan` },
+      { method: "post", path: `${COMPANY}/goals`, body: { title: "Grow revenue", kind: "objective" } },
+      { method: "patch", path: `/goals/${ID}`, body: { kind: "kpi" } },
+    ],
   },
   enableStrategyBoard: {
     kind: "api",
@@ -171,6 +195,20 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
       { method: "get", path: "/website/google/callback?code=x&state=x" },
     ],
   },
+  enableIntelligence: {
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/intelligence/reports` },
+      { method: "get", path: `${COMPANY}/intelligence/reports/latest` },
+      { method: "put", path: `${COMPANY}/intelligence/reports/2026-10-13` },
+      { method: "get", path: `${COMPANY}/intelligence/boards` },
+      { method: "put", path: `${COMPANY}/intelligence/boards/ai_systems/snapshots/2026-10-13` },
+      { method: "get", path: `${COMPANY}/intelligence/recommendations` },
+      { method: "post", path: `${COMPANY}/intelligence/recommendations` },
+      { method: "patch", path: `/intelligence/recommendations/${ID}` },
+      { method: "post", path: `/intelligence/recommendations/${ID}/task` },
+    ],
+  },
   enableSmokeLab: {
     kind: "runtime",
     reason: "Retired: always reads off. The smoke-lab service refuses every call through assertEntitled.",
@@ -181,8 +219,14 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
   enableIsolatedWorkspacesByDefault: { kind: "runtime", reason: "Workspace policy resolution reads it per run." },
   enableApps: { kind: "runtime", reason: "Graduated: always on; stored and managed values are ignored." },
   enableMcpAggregators: { kind: "runtime", reason: "Graduated: always on; stored and managed values are ignored." },
-  enableWorkspaceBranchReconcileForward: { kind: "runtime", reason: "Workspace realization reads it." },
-  enableWorkspaceDirtyQuarantineRepair: { kind: "runtime", reason: "Workspace recovery reads it." },
+  enableWorkspaceBranchReconcileForward: {
+    kind: "runtime",
+    reason: "Graduated (GRE-1438): always on; stored and managed values are ignored.",
+  },
+  enableWorkspaceDirtyQuarantineRepair: {
+    kind: "runtime",
+    reason: "Graduated (GRE-1439): always on; stored and managed values are ignored.",
+  },
   enableOwnerInstanceAdmin: { kind: "runtime", reason: "Read at the trusted-header auth boundary." },
   enableSandboxDuplexBridge: { kind: "runtime", reason: "Read per run before the sandbox transport is chosen." },
   enableRunnerPreviewIngress: { kind: "runtime", reason: "Deprecated: runner ingress follows enableNativeRunner." },

@@ -15,7 +15,6 @@ import { EmptyState } from "../components/EmptyState";
 import { IssuesList } from "../components/IssuesList";
 import { CircleDot } from "lucide-react";
 import type { Issue, IssueWorkFilter } from "@greatstone/shared";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import { issueQuickFilterPresets } from "../lib/issue-filters";
 
 const WORKSPACE_FILTER_ISSUE_LIMIT = 1000;
@@ -29,12 +28,6 @@ export const ISSUES_DEFAULT_STATUSES = issueQuickFilterPresets.find((preset) => 
 /** One stable server filter per status set, or none for "All". */
 export function issuesStatusQueryParam(statuses: readonly string[]): string | undefined {
   return statuses.length > 0 ? [...statuses].sort().join(",") : undefined;
-}
-
-export function resolveIssuesPresentation(streamlinedUiEnabled: boolean) {
-  return streamlinedUiEnabled
-    ? { rowPresentation: ISSUES_ROW_PRESENTATION, toolbarPresentation: ISSUES_TOOLBAR_PRESENTATION }
-    : { rowPresentation: "legacy" as const, toolbarPresentation: "legacy" as const };
 }
 
 export function getNextIssuesPageOffset(
@@ -75,8 +68,6 @@ export function buildIssuesSearchUrl(currentHref: string, search: string): strin
 }
 
 export function Issues() {
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  const issuesPresentation = resolveIssuesPresentation(streamlinedUiEnabled);
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const location = useLocation();
@@ -149,7 +140,7 @@ export function Issues() {
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
-        "Agent tasks",
+        "Tasks",
         `${location.pathname}${location.search}${location.hash}`,
         "issues",
       ),
@@ -157,7 +148,7 @@ export function Issues() {
   );
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Agent tasks" }]);
+    setBreadcrumbs([{ label: "Tasks" }]);
   }, [setBreadcrumbs]);
 
   const issuePageSize = workspaceIdFilter ? WORKSPACE_FILTER_ISSUE_LIMIT : ISSUES_PAGE_SIZE;
@@ -227,9 +218,7 @@ export function Issues() {
     return (
       <EmptyState
         icon={CircleDot}
-        message={streamlinedUiEnabled
-          ? "Select an organization to view tasks."
-          : "Select a company to view tasks."}
+        message="Select an organization to view tasks."
       />
     );
   }
@@ -244,8 +233,8 @@ export function Issues() {
       projects={projects}
       liveIssueIds={liveIssueIds}
       viewStateKey="paperclip:issues-view"
-      rowPresentation={issuesPresentation.rowPresentation}
-      toolbarPresentation={issuesPresentation.toolbarPresentation}
+      rowPresentation={ISSUES_ROW_PRESENTATION}
+      toolbarPresentation={ISSUES_TOOLBAR_PRESENTATION}
       issueLinkState={issueLinkState}
       initialAssignees={searchParams.get("assignee") ? [searchParams.get("assignee")!] : undefined}
       initialWorkspaces={initialWorkspaces.length > 0 ? initialWorkspaces : undefined}

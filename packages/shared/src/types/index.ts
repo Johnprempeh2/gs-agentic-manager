@@ -38,6 +38,8 @@ export type {
 export type {
   AttentionDecisionVerb,
   AttentionDetailDeliverable,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -86,6 +88,18 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./team-scorecard.js";
+export type {
+  BlockedWorkIssueRef,
+  BlockedWorkItem,
+  BlockedWorkOverview,
+  BlockedWorkOwner,
+  BlockedWorkOwnerType,
+  BlockedWorkRootCause,
+  BlockedWorkTidyReason,
+} from "./blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -518,6 +532,11 @@ export type {
   ToolAppAttentionItem,
   ToolAppAttentionReason,
   ToolAppsAttentionResponse,
+  AgentAccessAgentSummary,
+  AgentAccessItem,
+  AgentAccessItemKind,
+  AgentAccessItemState,
+  AgentAccessSummary,
   ToolActionRequestListItem,
   ToolActionRequestsResponse,
   ToolConnectionActivityResponse,
@@ -789,6 +808,8 @@ export type {
   RequestConfirmationConnectionAuthorizationPayload,
   ConnectionIntentPhase,
   ConnectionIntentPayload,
+  AskAgentPayload,
+  AskAgentResult,
   ConnectionIntentResult,
   RequestConfirmationSecretProposalPayload,
   RequestConfirmationSecretProposalResult,
@@ -812,12 +833,18 @@ export type {
   RequestConfirmationInteraction,
   RequestCheckboxConfirmationInteraction,
   RequestItemVerdictsInteraction,
+  RequestDraftReviewInteraction,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
+  RequestDraftReviewResultDraft,
   ConnectionIntentInteraction,
+  AskAgentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
   IssueThreadInteractionResult,
   IssueDocument,
   IssueDocumentSummary,
+  IssueDocumentLink,
   DocumentRevision,
   DocumentFormat,
   LegacyPlanDocument,
@@ -1009,7 +1036,7 @@ export type {
   UserProfileWindowStats,
 } from "./user-profile.js";
 export type { SidebarBadges } from "./sidebar-badges.js";
-export type { SidebarOrderPreference } from "./sidebar-preferences.js";
+export type { SidebarOrderPreference, SidebarLayoutPreference } from "./sidebar-preferences.js";
 export type {
   ResourceMembershipResourceType,
   ResourceMembershipState,
