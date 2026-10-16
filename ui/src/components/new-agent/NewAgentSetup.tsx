@@ -77,7 +77,7 @@ export function NewAgentSetup() {
   if (!selectedCompanyId)
     return (
       <p className="text-sm text-muted-foreground">
-        Select an organization to create an agent.
+        Choose an organisation to create an agent.
       </p>
     );
   return (

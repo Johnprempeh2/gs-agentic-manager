@@ -256,7 +256,7 @@ export function CompanySettings() {
   if (!selectedCompany) {
     return (
       <div className="text-sm text-muted-foreground">
-        No organization selected. Select an organization from the switcher above.
+        No organization selected. Choose an organisation from the switcher above.
       </div>
     );
   }

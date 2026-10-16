@@ -486,7 +486,7 @@ export function AppDetail({ renderActions, onReconnect }: {
   }
 
   if (!selectedCompanyId) {
-    return <div className="p-6 text-sm text-muted-foreground">Select an organization to manage apps.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Choose an organisation to manage apps.</div>;
   }
   if (connectionQuery.isLoading) {
     return (

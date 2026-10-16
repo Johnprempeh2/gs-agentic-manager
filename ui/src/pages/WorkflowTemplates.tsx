@@ -325,7 +325,7 @@ export function WorkflowTemplates() {
     onError: (err: Error) => pushToast({ title: "Could not add the template", body: err.message, tone: "error" }),
   });
 
-  if (!selectedCompanyId) return <EmptyState icon={Workflow} message="Select an organization to view workflows." />;
+  if (!selectedCompanyId) return <EmptyState icon={Workflow} message="Choose an organisation to view workflows." />;
   if (isLoading) return <PageSkeleton variant="list" />;
   if (error && !templates) return <ErrorState error={error} onRetry={() => void refetch()} />;
 

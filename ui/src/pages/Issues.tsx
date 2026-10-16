@@ -218,7 +218,7 @@ export function Issues() {
     return (
       <EmptyState
         icon={CircleDot}
-        message="Select an organization to view tasks."
+        message="Choose an organisation to view tasks."
       />
     );
   }

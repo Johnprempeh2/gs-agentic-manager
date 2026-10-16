@@ -2394,7 +2394,7 @@ export function Inbox() {
   }, [selectedIndex]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={InboxIcon} message="Select an organization to view inbox." />;
+    return <EmptyState icon={InboxIcon} message="Choose an organisation to view inbox." />;
   }
 
   const hasRunFailures = failedRuns.length > 0;

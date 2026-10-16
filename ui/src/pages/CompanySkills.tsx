@@ -1142,7 +1142,7 @@ export function DiscoveryGrid({
   const installedView = tab === "installed";
   const viewTitle = installedView ? "Installed skills" : "Discover skills";
   const viewDescription = installedView
-    ? "Skills available to this organization."
+    ? "Skills available to this organisation."
     : "Browse skills from every available source.";
   const searchLabel = installedView ? "Search installed skills" : "Search discoverable skills";
   // Source filter (github / skills.sh / local / …) lives in the grid so it
@@ -1690,7 +1690,7 @@ function NewSkillWizard({
                 >
                   <span className="block font-medium">{scope === "company" ? "Organization" : "Private"}</span>
                   <span className="mt-1 block text-xs text-muted-foreground">
-                    {scope === "company" ? "Visible inside this organization." : "Only visible in your library."}
+                    {scope === "company" ? "Visible inside this organisation." : "Only visible in your library."}
                   </span>
                 </button>
               ))}
@@ -1931,7 +1931,7 @@ function CatalogDetailPane({
     cta = (
       <Button onClick={onInstall} disabled={loadingPrimaryAction}>
         {skill.trustLevel === "scripts_executables" ? <AlertTriangle className="mr-1.5 h-3.5 w-3.5" /> : <Download className="mr-1.5 h-3.5 w-3.5" />}
-        {loadingPrimaryAction ? "Preparing..." : "Install skill in this organization"}
+        {loadingPrimaryAction ? "Preparing..." : "Install skill in this organisation"}
       </Button>
     );
   } else if (hashOutOfSync) {
@@ -2212,7 +2212,7 @@ export function InstallPreviewDialog({
                   setSelectedAgentIds(next);
                 }}
                 showSelectionPreview={false}
-                emptyMessage="No agents in this organization support skills yet."
+                emptyMessage="No agents in this organisation support skills yet."
                 isAgentDisabled={(agent) => {
                   const option = agent as AttachAgentOption;
                   return option.required || !option.supportsSkills;
@@ -2342,7 +2342,7 @@ function AttachAgentsPopover({
           </select>
         </div>
       ) : null}
-      emptyMessage={eligible.length === 0 ? "No agents in this organization support skills yet." : "No agents yet."}
+      emptyMessage={eligible.length === 0 ? "No agents in this organisation support skills yet." : "No agents yet."}
       isAgentDisabled={(agent) => {
         const option = agent as AttachAgentOption;
         return option.required || !option.supportsSkills;
@@ -3389,7 +3389,7 @@ export function SkillDetailPage({
                     <span className="hidden sm:inline">{detail.attachedAgentCount === 1 ? "install" : "installs"}</span>
                   </span>
                 </TooltipTrigger>
-                <TooltipContent>Agents in this organization that currently have this skill installed.</TooltipContent>
+                <TooltipContent>Agents in this organisation that currently have this skill installed.</TooltipContent>
               </Tooltip>
               <button
                 type="button"
@@ -5060,7 +5060,7 @@ export function CompanySkills() {
   );
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Boxes} message="Select an organization to manage skills." />;
+    return <EmptyState icon={Boxes} message="Choose an organisation to manage skills." />;
   }
 
   function handleAddSkillSource() {
@@ -5228,7 +5228,7 @@ export function CompanySkills() {
           <DialogHeader>
             <DialogTitle>Import a skill</DialogTitle>
             <DialogDescription>
-              Paste a local path, GitHub URL, or `skills.sh` command to import a skill into this organization.
+              Paste a local path, GitHub URL, or `skills.sh` command to import a skill into this organisation.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">

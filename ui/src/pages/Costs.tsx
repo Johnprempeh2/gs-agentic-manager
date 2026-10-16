@@ -570,7 +570,7 @@ export function Costs({
   }), [budgetPolicies]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={DollarSign} message="Select an organization to view costs." />;
+    return <EmptyState icon={DollarSign} message="Choose an organisation to view costs." />;
   }
 
   const showCustomPrompt = preset === "custom" && !customReady;

@@ -55,7 +55,7 @@ export function SinceLastVisit() {
   }, [digest, recordVisit]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={History} message="Select an organization to see agent work." />;
+    return <EmptyState icon={History} message="Choose an organisation to see agent work." />;
   }
   if (isLoading) return <PageSkeleton variant="list" />;
   if (error && !digest) return <ErrorState error={error} onRetry={() => void refetch()} />;
