@@ -40,6 +40,7 @@ import {
   UserRound,
   ExternalLink,
   ChevronRight,
+  MessageCircle,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -55,6 +56,8 @@ import {
   plainTaskStatus,
 } from "../lib/global-search";
 import { GlobalSearchSources } from "./search/GlobalSearchSources";
+import { openAskEverest } from "../lib/ask-everest-events";
+import { resolveLeadAgent } from "./MobileEverestButton";
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
@@ -156,6 +159,8 @@ export function CommandPalette() {
     queryFn: () => agentsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId && open,
   });
+
+  const leadAgent = useMemo(() => resolveLeadAgent(agents), [agents]);
 
   const { data: allProjects = [] } = useQuery({
     queryKey: queryKeys.projects.list(selectedCompanyId!),
@@ -354,6 +359,21 @@ export function CommandPalette() {
                 <kbd className="rounded border border-border bg-background px-1 py-0.5 text-(length:--text-nano)">↵</kbd>
               </span>
             </CommandItem>
+            {leadAgent ? (
+              <CommandItem
+                value={`__ask-everest ${searchQuery}`}
+                onSelect={() => {
+                  setOpen(false);
+                  openAskEverest(searchQuery);
+                }}
+                data-testid="command-ask-everest"
+              >
+                <MessageCircle className="mr-2 h-4 w-4" />
+                <span className="flex-1 truncate">
+                  Ask {leadAgent.name}: <span className="font-semibold">&ldquo;{searchQuery}&rdquo;</span>
+                </span>
+              </CommandItem>
+            ) : null}
           </CommandGroup>
         ) : null}
 
