@@ -230,6 +230,70 @@ describe("SwipeToArchive", () => {
     expect(onArchive).not.toHaveBeenCalled();
   });
 
+  it("snoozes on a right swipe when snoozing is offered, and archives on a left swipe", () => {
+    const onArchive = vi.fn();
+    const onSnooze = vi.fn();
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <SwipeToArchive onArchive={onArchive} onSnooze={onSnooze}>
+          <button type="button">Open issue</button>
+        </SwipeToArchive>,
+      );
+    });
+
+    const wrapper = container.firstElementChild as HTMLDivElement;
+    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
+    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    expect(container.textContent).toContain("Later");
+
+    act(() => {
+      dispatchTouchEvent(wrapper, "touchstart", { x: 20, y: 20 });
+      dispatchTouchEvent(wrapper, "touchmove", { x: 120, y: 22 });
+      dispatchTouchEvent(wrapper, "touchend", { x: 120, y: 22 });
+      vi.advanceTimersByTime(140);
+    });
+
+    expect(onSnooze).toHaveBeenCalledTimes(1);
+    expect(onArchive).not.toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("ignores a right swipe when snoozing is not offered", () => {
+    const onArchive = vi.fn();
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <SwipeToArchive onArchive={onArchive}>
+          <button type="button">Open issue</button>
+        </SwipeToArchive>,
+      );
+    });
+
+    const wrapper = container.firstElementChild as HTMLDivElement;
+    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
+    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    expect(container.textContent).not.toContain("Later");
+
+    act(() => {
+      dispatchTouchEvent(wrapper, "touchstart", { x: 20, y: 20 });
+      dispatchTouchEvent(wrapper, "touchmove", { x: 120, y: 22 });
+      dispatchTouchEvent(wrapper, "touchend", { x: 120, y: 22 });
+      vi.advanceTimersByTime(140);
+    });
+
+    expect(onArchive).not.toHaveBeenCalled();
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("renders the selected inbox treatment on the swipe surface", () => {
     const root = createRoot(container);
 

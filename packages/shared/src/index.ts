@@ -65,6 +65,14 @@ export * from "./team-chat.js";
 export * from "./unblock-waiting.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
+  REQUIRED_CAPABILITIES_CONFIG_KEY,
+  RUN_CAPABILITY_KEYS,
+  RUN_CAPABILITY_LABELS,
+  isRunCapabilityKey,
+  readRequiredRunCapabilities,
+  type RunCapabilityKey,
+} from "./run-capabilities.js";
+export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
   CONNECTION_REQUEST_TOOL_DESCRIPTION,
   CONNECTION_RUNTIME_TOOL_NAMES,

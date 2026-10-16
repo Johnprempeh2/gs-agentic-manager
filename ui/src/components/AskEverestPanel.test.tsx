@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AskEverestPanel, findLeadReply } from "./AskEverestPanel";
 import { openAskEverest } from "../lib/ask-everest-events";
+import { fireFiles } from "../fixtures/fileEvents";
 import type { IssueComment } from "@greatstone/shared";
 
 const mocks = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   listComments: vi.fn(),
   ensureChat: vi.fn(),
   experimental: vi.fn(),
+  uploadAttachment: vi.fn(),
 }));
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
@@ -25,7 +27,7 @@ vi.mock("../api/agents", () => ({ agentsApi: { list: mocks.agentsList } }));
 vi.mock("../api/decisionsFeed", () => ({ decisionsFeedApi: { needsMe: mocks.needsMe } }));
 vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecard } }));
 vi.mock("../api/issues", () => ({
-  issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments },
+  issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
@@ -140,6 +142,46 @@ describe("AskEverestPanel", () => {
     });
     expect(mocks.ensureChat).toHaveBeenCalledWith("company-1", "everest");
     expect(mocks.addComment).toHaveBeenCalledWith("chat-1", "What do I need to decide?", true, undefined, undefined, expect.any(String));
+  });
+
+  it("takes files by paste and drop, and sends them to Everest with the question", async () => {
+    mocks.ensureChat.mockResolvedValue({ id: "chat-1" });
+    mocks.uploadAttachment.mockImplementation(async (_companyId: string, _issueId: string, file: File) => ({ id: `att-${file.name}` }));
+    mocks.addComment.mockResolvedValue({ id: "c1", createdAt: "2026-10-16T09:00:00Z" });
+    mocks.listComments.mockResolvedValue([]);
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", metaKey: true, bubbles: true }));
+    });
+    await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-form"]')).not.toBeNull());
+    const form = container.querySelector('[data-testid="ask-everest-form"]')!;
+    const screenshot = new File(["png"], "image.png", { type: "image/png" });
+    const brief = new File(["pdf"], "brief.pdf", { type: "application/pdf" });
+    fireFiles(form, "paste", [screenshot]);
+    fireFiles(form, "drop", [brief]);
+    await waitFor(() => {
+      const chips = container.querySelector('[data-testid="ask-everest-files"]')!;
+      expect(chips.textContent).toContain("Pasted image");
+      expect(chips.textContent).toContain("brief.pdf");
+    });
+
+    act(() => {
+      (container.querySelector('button[aria-label="Ask"]') as HTMLButtonElement).click();
+    });
+    await waitFor(() => expect(container.textContent).toContain("Please take a look at these files."));
+    expect(container.querySelector('[data-testid="ask-everest-files"]')).toBeNull();
+    expect(container.querySelector('[data-testid="ask-everest-question-files"]')?.textContent).toContain("brief.pdf");
+    await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-live"]')?.textContent).toContain("Send to Everest with the 2 files"));
+
+    act(() => {
+      (container.querySelector('[data-testid="ask-everest-live"]') as HTMLButtonElement).click();
+    });
+    await waitFor(() => expect(mocks.addComment).toHaveBeenCalled());
+    expect(mocks.uploadAttachment).toHaveBeenCalledTimes(2);
+    expect(mocks.uploadAttachment).toHaveBeenCalledWith("company-1", "chat-1", brief);
+    const [, body, , , attachmentIds] = mocks.addComment.mock.calls[0]!;
+    expect(body).toBe("Please take a look at these files.");
+    expect(attachmentIds).toHaveLength(2);
+    expect(attachmentIds).toContain("att-brief.pdf");
   });
 
   it("puts spoken words into the question box", async () => {

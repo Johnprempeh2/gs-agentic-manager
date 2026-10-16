@@ -1208,7 +1208,10 @@ export function Routines() {
             <div className="py-12">
               <EmptyState
                 icon={Repeat}
-                message="No active routines. Use Create routine to define the first recurring workflow."
+                message="No routines yet."
+                description="A routine runs the same task on a schedule, like a weekly report."
+                action="Create routine"
+                onAction={openCreateRoutine}
               />
             </div>
           ) : sortedRoutines.length === 0 ? (

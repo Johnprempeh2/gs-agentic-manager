@@ -19,7 +19,7 @@ import type {
   EnvSecretRefBinding,
   Environment,
 } from "@greatstone/shared";
-import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS, supportedEnvironmentDriversForAdapter, isValidBrowserCode, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@greatstone/shared";
+import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS, supportedEnvironmentDriversForAdapter, isValidBrowserCode, ADAPTER_AUTH_MISSING_CHECK_CODE, RUN_CAPABILITY_KEYS, RUN_CAPABILITY_LABELS, readRequiredRunCapabilities } from "@greatstone/shared";
 import type { AdapterModel } from "../api/agents";
 import { agentsApi } from "../api/agents";
 import { ApiError } from "../api/client";
@@ -2022,6 +2022,28 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     />
                   </Field>
                   )}
+                  <Field label="Required on this machine" hint={help.requiredCapabilities}>
+                    <div className="space-y-2">
+                      {RUN_CAPABILITY_KEYS.map((capability) => {
+                        const selected = readRequiredRunCapabilities({
+                          requiredCapabilities: eff("adapterConfig", "requiredCapabilities", config.requiredCapabilities),
+                        });
+                        return (
+                          <ToggleField
+                            key={capability}
+                            label={RUN_CAPABILITY_LABELS[capability]}
+                            checked={selected.includes(capability)}
+                            onChange={(checked) => {
+                              const next = checked
+                                ? [...selected, capability]
+                                : selected.filter((entry) => entry !== capability);
+                              mark("adapterConfig", "requiredCapabilities", next.length > 0 ? next : undefined);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </Field>
                 </>
               )}
               </>)}

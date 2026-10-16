@@ -8010,7 +8010,7 @@ registry.registerPath({
           .trim()
           .min(1)
           .regex(
-            /^(approval|join|run|attention):.+$/,
+            /^(approval|join|run|attention|issue):.+$/,
             "Unsupported inbox item key",
           ),
         kind: z.enum(["dismiss", "snooze"]).optional(),

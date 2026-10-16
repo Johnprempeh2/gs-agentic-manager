@@ -147,6 +147,8 @@ import {
   getLatestFailedRunsByAgent,
   matchesInboxIssueSearch,
   getRecentTouchedIssues,
+  activeSnoozedInboxIssueIds,
+  inboxSnoozeUntilTomorrow,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadCollapsedInboxGroupKeys,
@@ -827,7 +829,13 @@ export function Inbox() {
     () => loadInboxCollectionPreferences(selectedCompanyId).columns,
   );
   const { dismissed: dismissedAlerts, dismiss: dismissAlert } = useDismissedInboxAlerts();
-  const { dismissedAtByKey, dismiss: dismissInboxItem } = useInboxDismissals(selectedCompanyId);
+  const {
+    dismissals: inboxDismissals,
+    dismissedAtByKey,
+    dismiss: dismissInboxItem,
+    snooze: snoozeInboxItem,
+    restore: restoreInboxItem,
+  } = useInboxDismissals(selectedCompanyId);
   const { readItems, markRead: markItemRead, markUnread: markItemUnread } = useReadInboxItems();
   const { allCategoryFilter, allApprovalFilter, issueFilters } = filterPreferences;
 
@@ -1068,13 +1076,22 @@ export function Inbox() {
   const [undoableArchiveIssueIds, setUndoableArchiveIssueIds] = useState<string[]>([]);
   const [unarchivingIssueIds, setUnarchivingIssueIds] = useState<Set<string>>(new Set());
   const guardedArchiveIssueIds = useLocalInboxArchiveIssueIds(selectedCompanyId);
+  // Swipe right puts a task away until tomorrow morning. The local set hides it
+  // straight away; the server copy keeps it hidden on every device.
+  const [laterIssueIds, setLaterIssueIds] = useState<Set<string>>(new Set());
+  const snoozedIssueIds = useMemo(() => {
+    const issueIds = activeSnoozedInboxIssueIds(inboxDismissals);
+    for (const issueId of laterIssueIds) issueIds.add(issueId);
+    return issueIds;
+  }, [inboxDismissals, laterIssueIds]);
   const locallyArchivedIssueIds = useMemo(() => {
     const issueIds = new Set(guardedArchiveIssueIds);
+    for (const issueId of snoozedIssueIds) issueIds.add(issueId);
     for (const issueId of undoableArchiveIssueIds) issueIds.add(issueId);
     for (const issueId of archivingIssueIds) issueIds.add(issueId);
     for (const issueId of unarchivingIssueIds) issueIds.delete(issueId);
     return issueIds;
-  }, [archivingIssueIds, guardedArchiveIssueIds, undoableArchiveIssueIds, unarchivingIssueIds]);
+  }, [archivingIssueIds, guardedArchiveIssueIds, snoozedIssueIds, undoableArchiveIssueIds, unarchivingIssueIds]);
 
   const companyUserLabelMap = useMemo(
     () => buildCompanyUserLabelMap(companyMembers?.users),
@@ -1844,6 +1861,32 @@ export function Inbox() {
       });
     },
   });
+
+  const putIssueAwayForLater = useCallback(
+    (issue: Issue) => {
+      const itemKey = `issue:${issue.id}`;
+      setLaterIssueIds((prev) => new Set(prev).add(issue.id));
+      snoozeInboxItem(itemKey, inboxSnoozeUntilTomorrow().toISOString());
+      pushToast({
+        id: `inbox-later-${issue.id}`,
+        title: "Back tomorrow at 08:00",
+        body: issue.title,
+        tone: "info",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            setLaterIssueIds((prev) => {
+              const next = new Set(prev);
+              next.delete(issue.id);
+              return next;
+            });
+            restoreInboxItem(itemKey);
+          },
+        },
+      });
+    },
+    [pushToast, restoreInboxItem, snoozeInboxItem],
+  );
 
   const [fadingOutIssues, setFadingOutIssues] = useState<Set<string>>(new Set());
   const [showMarkAllReadConfirm, setShowMarkAllReadConfirm] = useState(false);
@@ -3198,6 +3241,7 @@ export function Inbox() {
                                 selected={isChildSelected}
                                 disabled={isChildArchiving}
                                 onArchive={() => archiveIssueMutation.mutate(child.id)}
+                                onSnooze={() => putIssueAwayForLater(child)}
                               >
                                 {childRow}
                               </SwipeToArchive>
@@ -3226,6 +3270,7 @@ export function Inbox() {
                         selected={isSelected}
                         disabled={archivingIssueIds.has(issue.id)}
                         onArchive={() => archiveIssueMutation.mutate(issue.id)}
+                        onSnooze={() => putIssueAwayForLater(issue)}
                       >
                         {parentRow}
                       </SwipeToArchive>

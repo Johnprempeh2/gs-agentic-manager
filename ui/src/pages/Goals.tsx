@@ -14,13 +14,16 @@ import { buildScoreboard } from "../lib/goal-journey";
 import { buildStrategyCascade, hasStrategyGoals } from "../lib/goal-cascade";
 import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { relativeTime } from "../lib/utils";
+import { goalsUpdateText } from "../lib/goals-text";
+import { localToday } from "../lib/calendar";
+import { useCopyAction } from "../lib/use-copy-action";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { GoalHealthLegend } from "../components/goals/GoalHealth";
 import { GoalScoreboardView, GoalsEmptyState, type AgentsById } from "../components/goals/GoalScoreboard";
 import { StrategyCascadeView } from "../components/goals/StrategyCascade";
 import { Button } from "@/components/ui/button";
-import { Target, Plus, Network } from "lucide-react";
+import { Target, Plus, Network, Check, ClipboardList } from "lucide-react";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
 
@@ -46,6 +49,7 @@ export function Goals() {
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const [showAchieved, setShowAchieved] = useState(false);
+  const goalsCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Goals" }]);
@@ -102,6 +106,18 @@ export function Goals() {
     [plainGoals, showAchieved],
   );
   const hasAchieved = plainGoals.some((goal) => goal.status === "achieved");
+  const copyGoalsUpdate = () => {
+    void goalsCopy.copy(
+      goalsUpdateText(
+        entries,
+        {
+          agentName: (id) => agentsById.get(id)?.name,
+          userName: (id) => usersById.get(id)?.label,
+        },
+        localToday(),
+      ),
+    );
+  };
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Target} message="Select an organization to view goals." />;
@@ -149,6 +165,17 @@ export function Goals() {
                 onClick={() => setShowAchieved((value) => !value)}
               >
                 {showAchieved ? "Hide achieved" : "Show achieved"}
+              </Button>
+            ) : null}
+            {entries.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                title="Copy every goal and how it is going, to paste into an email or a board pack"
+                onClick={copyGoalsUpdate}
+              >
+                {goalsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                {goalsCopy.copied ? "Copied" : goalsCopy.failed ? "Could not copy" : "Copy as an update"}
               </Button>
             ) : null}
             {goals.length > 0 ? (

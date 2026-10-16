@@ -56,6 +56,7 @@ export const help: Record<string, string> = {
   skipTimerWhenNothingChanged: "Saves money. The timer only runs this agent when one of its tasks changed or someone commented on it since its last run. It still checks in once a day, and new tasks, comments and answers wake it straight away.",
   timeoutSec: "Maximum seconds a run can take before being terminated. 0 means no timeout.",
   graceSec: "Seconds to wait after sending interrupt before force-killing the process.",
+  requiredCapabilities: "Tools this agent needs on the machine that runs it. Each run on this machine checks them first and stops early, with a plain reason, if one is missing. Leave all off to skip the check.",
   wakeOnDemand: "Allow this agent to be woken by assignments, API calls, UI actions, or automated systems.",
   cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
   maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",

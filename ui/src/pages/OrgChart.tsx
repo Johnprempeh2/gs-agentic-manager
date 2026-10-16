@@ -649,7 +649,8 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
   if (orgTree && orgTree.length === 0) {
     return (
-      <EmptyState icon={Network} message="No organizational hierarchy defined." action="New agent" onAction={() => navigate("/agents/new")} />
+      <EmptyState icon={Network} message="No agents yet."
+        description="Hire your first agent and the chart shows who reports to whom." action="New agent" onAction={() => navigate("/agents/new")} />
     );
   }
 

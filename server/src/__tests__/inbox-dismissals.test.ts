@@ -133,6 +133,20 @@ describeEmbeddedPostgres("inbox dismissals", () => {
       .delete(`/api/companies/${companyId}/inbox-dismissals/${encodeURIComponent("attention:approval:approval-1")}`)
       .expect(204);
 
+    // Inbox tasks can be put away for later with a swipe.
+    await request(app)
+      .post(`/api/companies/${companyId}/inbox-dismissals`)
+      .send({ itemKey: "issue:issue-1", kind: "snooze", snoozedUntil })
+      .expect(201);
+    await request(app)
+      .delete(`/api/companies/${companyId}/inbox-dismissals/${encodeURIComponent("issue:issue-1")}`)
+      .expect(204);
+
+    await request(app)
+      .post(`/api/companies/${companyId}/inbox-dismissals`)
+      .send({ itemKey: "project:p-1", kind: "snooze", snoozedUntil })
+      .expect(400);
+
     await expect(dismissalsSvc.list(companyId, userId)).resolves.toEqual([]);
   });
 

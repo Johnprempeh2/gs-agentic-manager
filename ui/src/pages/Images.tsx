@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  GENERATED_IMAGE_PROMPT_MAX_LENGTH,
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
-  IMAGE_SHAPE_OPTIONS,
   imageShapeLabel,
   type GeneratedImage,
   type ImageAspectRatio,
@@ -14,7 +12,6 @@ import {
   ImageIcon,
   Loader2,
   RotateCcw,
-  Sparkles,
   Trash2,
   Wand2,
 } from "lucide-react";
@@ -30,7 +27,6 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -39,44 +35,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn, relativeTime } from "@/lib/utils";
+import { relativeTime } from "@/lib/utils";
+import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImagePromptFields } from "../components/ImagePromptFields";
 
-/** Ready-made descriptions a first-time user can start from and edit. */
-export const IMAGE_IDEA_STARTERS: ReadonlyArray<{ label: string; prompt: string; aspectRatio: ImageAspectRatio }> = [
-  {
-    label: "Social post",
-    prompt: "Bright, friendly photo-style image of a small team celebrating a win in a modern office, natural light, no text",
-    aspectRatio: "1:1",
-  },
-  {
-    label: "Slide background",
-    prompt: "Calm abstract background in deep navy and soft gold, gentle gradients and subtle shapes, plenty of empty space, no text",
-    aspectRatio: "16:9",
-  },
-  {
-    label: "Product shot",
-    prompt: "Clean studio product photo of a sleek water bottle on a white surface, soft shadows, premium feel",
-    aspectRatio: "4:3",
-  },
-  {
-    label: "Illustration",
-    prompt: "Flat vector illustration of a lighthouse guiding ships at dawn, warm colours, simple shapes, no text",
-    aspectRatio: "16:9",
-  },
-  {
-    label: "Event poster",
-    prompt: "Bold poster artwork for an evening networking event in London, city skyline at dusk, elegant and modern, no text",
-    aspectRatio: "3:4",
-  },
-];
+export { IMAGE_IDEA_STARTERS };
 
-const ASPECT_STYLE: Record<ImageAspectRatio, string> = {
-  "1:1": "1 / 1",
-  "16:9": "16 / 9",
-  "9:16": "9 / 16",
-  "4:3": "4 / 3",
-  "3:4": "3 / 4",
-};
+const ASPECT_STYLE = IMAGE_ASPECT_STYLE;
 
 function errorMessage(error: unknown) {
   if (error instanceof ApiError) {
@@ -241,13 +205,6 @@ export function Images() {
     create.mutate({ prompt: trimmed, aspectRatio }, { onSuccess: () => setPrompt("") });
   };
 
-  const onPromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      submit();
-    }
-  };
-
   const reuse = (image: GeneratedImage) => {
     setPrompt(image.prompt);
     setAspectRatio(image.aspectRatio);
@@ -288,76 +245,16 @@ export function Images() {
 
         {!configured ? <NotSetUp provider={statusQuery.data?.provider} /> : null}
 
-        <div className="space-y-2">
-          <label htmlFor="image-prompt" className="text-sm font-medium">
-            What should the image show?
-          </label>
-          <Textarea
-            id="image-prompt"
-            ref={promptRef}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            onKeyDown={onPromptKeyDown}
-            placeholder="For example: a watercolour of a busy London street market at dusk, soft warm light, no text"
-            maxLength={GENERATED_IMAGE_PROMPT_MAX_LENGTH}
-            rows={3}
-            disabled={!configured}
-            data-testid="image-prompt"
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-              Need an idea?
-            </span>
-            {IMAGE_IDEA_STARTERS.map((starter) => (
-              <button
-                key={starter.label}
-                type="button"
-                disabled={!configured}
-                onClick={() => {
-                  setPrompt(starter.prompt);
-                  setAspectRatio(starter.aspectRatio);
-                  promptRef.current?.focus();
-                }}
-                className="rounded-full border border-border px-3 py-1 text-xs text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {starter.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <fieldset className="space-y-2" disabled={!configured}>
-          <legend className="text-sm font-medium">Shape</legend>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5" role="radiogroup" aria-label="Shape">
-            {IMAGE_SHAPE_OPTIONS.map((option) => {
-              const selected = option.value === aspectRatio;
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => setAspectRatio(option.value)}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                    selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-accent/40",
-                  )}
-                >
-                  <span
-                    aria-hidden="true"
-                    className={cn("block w-6 shrink-0 rounded-sm border-2", selected ? "border-primary" : "border-muted-foreground/50")}
-                    style={{ aspectRatio: ASPECT_STYLE[option.value] }}
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm font-medium">{option.label}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{option.hint}</span>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </fieldset>
+        <ImagePromptFields
+          ref={promptRef}
+          idPrefix="image"
+          prompt={prompt}
+          onPromptChange={setPrompt}
+          aspectRatio={aspectRatio}
+          onAspectRatioChange={setAspectRatio}
+          onSubmitShortcut={submit}
+          disabled={!configured}
+        />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">

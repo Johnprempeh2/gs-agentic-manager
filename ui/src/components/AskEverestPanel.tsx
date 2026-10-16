@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Loader2, MessageCircle, Mic, MicOff, Send, Sparkles } from "lucide-react";
+import { ArrowRight, FileText, Loader2, MessageCircle, Mic, MicOff, PaperclipIcon, Send, Sparkles, X } from "lucide-react";
 import type { Agent, IssueComment } from "@greatstone/shared";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
+import { cn } from "../lib/utils";
 import { useCompany } from "../context/CompanyContext";
 import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
@@ -15,6 +16,7 @@ import { agentChatsApi } from "../api/agentChats";
 import { queryKeys } from "../lib/queryKeys";
 import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useDictation } from "../hooks/useDictation";
+import { useFileIntake } from "../hooks/useFileIntake";
 import {
   SUGGESTED_QUESTIONS,
   answerAgent,
@@ -45,6 +47,8 @@ export function AskEverestPanel() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [question, setQuestion] = useState<string | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [questionFiles, setQuestionFiles] = useState<File[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -60,6 +64,7 @@ export function AskEverestPanel() {
       if (preset) {
         setDraft("");
         setQuestion(preset);
+        setQuestionFiles([]);
       }
     }
     document.addEventListener("keydown", handleKey);
@@ -86,11 +91,19 @@ export function AskEverestPanel() {
             draft={draft}
             setDraft={setDraft}
             question={question}
+            files={files}
+            setFiles={setFiles}
+            questionFiles={questionFiles}
             onAsk={(text) => {
               setQuestion(text);
+              setQuestionFiles(files);
+              setFiles([]);
               setDraft("");
             }}
-            onReset={() => setQuestion(null)}
+            onReset={() => {
+              setQuestion(null);
+              setQuestionFiles([]);
+            }}
             onNavigate={() => setOpen(false)}
             inputRef={inputRef}
           />
@@ -103,6 +116,9 @@ export function AskEverestPanel() {
 function AskEverestBody({
   draft,
   setDraft,
+  files,
+  setFiles,
+  questionFiles,
   question,
   onAsk,
   onReset,
@@ -111,6 +127,11 @@ function AskEverestBody({
 }: {
   draft: string;
   setDraft: (value: string) => void;
+  /** Files waiting to go with the next question. */
+  files: File[];
+  setFiles: (files: File[]) => void;
+  /** Files sent with the current question. */
+  questionFiles: File[];
   question: string | null;
   onAsk: (question: string) => void;
   onReset: () => void;
@@ -142,10 +163,16 @@ function AskEverestBody({
     },
   });
 
+  // Files come in by the paperclip, a drop on the box, or a paste (a screenshot).
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const addFiles = (incoming: File[]) => setFiles([...files, ...incoming].slice(0, MAX_ASK_FILES));
+  const intake = useFileIntake(addFiles);
+  const { tabIndex: _focusable, ...dropProps } = intake.targetProps;
+
   function submit(event: FormEvent) {
     event.preventDefault();
     if (dictation.listening) dictation.stop();
-    const text = draft.trim();
+    const text = draft.trim() || (files.length > 0 ? filesOnlyQuestion(files.length) : "");
     if (text) onAsk(text);
   }
 
@@ -167,6 +194,7 @@ function AskEverestBody({
             key={question}
             companyId={selectedCompanyId}
             question={question}
+            files={questionFiles}
             agents={agents}
             lead={lead}
             onNavigate={onNavigate}
@@ -190,39 +218,79 @@ function AskEverestBody({
         )}
       </div>
 
-      <form onSubmit={submit} className="flex items-center gap-2 border-t border-border px-4 py-3">
-        <input
-          ref={inputRef}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={dictation.listening
-            ? (dictation.interim || "Listening…")
-            : question ? "Ask something else" : "What is stuck on the Indago work?"}
-          aria-label={`Ask ${leadName} a question`}
-          className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
-        />
-        {dictation.available ? (
+      <form
+        onSubmit={submit}
+        {...dropProps}
+        data-testid="ask-everest-form"
+        data-dragging={intake.dragging || undefined}
+        className={cn("space-y-2 border-t border-border px-4 py-3 transition-colors", intake.dragging && "bg-accent")}
+      >
+        {files.length > 0 ? (
+          <ul className="flex flex-wrap gap-2" data-testid="ask-everest-files" aria-label="Files to send">
+            {files.map((file, index) => (
+              <FileChip key={`${file.name}-${index}`} file={file} onRemove={() => setFiles(files.filter((_, at) => at !== index))} />
+            ))}
+          </ul>
+        ) : intake.dragging ? (
+          <p className="text-xs text-muted-foreground">Drop to send with your question</p>
+        ) : null}
+        <div className="flex items-center gap-2">
           <Button
             type="button"
-            variant={dictation.listening ? "default" : "ghost"}
+            variant="ghost"
             size="sm"
-            onClick={dictation.toggle}
-            aria-pressed={dictation.listening}
-            aria-label={dictation.listening ? "Stop listening" : "Speak your question"}
-            title={dictation.listening ? "Stop listening" : "Speak your question"}
-            data-testid="ask-everest-mic"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={files.length >= MAX_ASK_FILES}
+            aria-label="Add a file"
+            title="Add a file. You can also drop one here or paste a screenshot."
+            data-testid="ask-everest-attach"
           >
-            {dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            <PaperclipIcon className="h-4 w-4" />
           </Button>
-        ) : null}
-        <Button type="submit" size="sm" disabled={!draft.trim()} aria-label="Ask">
-          <Send className="h-4 w-4" />
-        </Button>
-        {question ? (
-          <Button type="button" variant="ghost" size="sm" onClick={onReset}>
-            Clear
+          <input
+            ref={inputRef}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder={dictation.listening
+              ? (dictation.interim || "Listening…")
+              : question ? "Ask something else" : "What is stuck on the Indago work?"}
+            aria-label={`Ask ${leadName} a question`}
+            className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+          />
+          {dictation.available ? (
+            <Button
+              type="button"
+              variant={dictation.listening ? "default" : "ghost"}
+              size="sm"
+              onClick={dictation.toggle}
+              aria-pressed={dictation.listening}
+              aria-label={dictation.listening ? "Stop listening" : "Speak your question"}
+              title={dictation.listening ? "Stop listening" : "Speak your question"}
+              data-testid="ask-everest-mic"
+            >
+              {dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+            </Button>
+          ) : null}
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            data-testid="ask-everest-file-input"
+            onChange={(event) => {
+              addFiles(Array.from(event.target.files ?? []));
+              event.target.value = "";
+            }}
+          />
+          <Button type="submit" size="sm" disabled={!draft.trim() && files.length === 0} aria-label="Ask">
+            <Send className="h-4 w-4" />
           </Button>
-        ) : null}
+          {question ? (
+            <Button type="button" variant="ghost" size="sm" onClick={onReset}>
+              Clear
+            </Button>
+          ) : null}
+        </div>
       </form>
     </div>
   );
@@ -230,15 +298,55 @@ function AskEverestBody({
 
 type PanelAgent = Agent;
 
+/** At most this many files go with one question. */
+export const MAX_ASK_FILES = 5;
+
+/** What is asked when someone sends files with no words. */
+export function filesOnlyQuestion(count: number) {
+  return count === 1 ? "Please take a look at this file." : "Please take a look at these files.";
+}
+
+/** One waiting file: a small preview for an image, a name and a remove button. */
+function FileChip({ file, onRemove }: { file: File; onRemove: () => void }) {
+  const isImage = file.type.startsWith("image/");
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!isImage || typeof URL.createObjectURL !== "function") return;
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImage]);
+  return (
+    <li className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-muted/40 py-1 pl-1 pr-2 text-xs">
+      {preview ? (
+        <img src={preview} alt="" className="h-8 w-8 rounded object-cover" />
+      ) : (
+        <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+      )}
+      <span className="min-w-0 max-w-(--sz-160px) truncate">{file.name}</span>
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Remove ${file.name}`}
+        className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </li>
+  );
+}
+
 function AskConversation({
   companyId,
   question,
+  files,
   agents,
   lead,
   onNavigate,
 }: {
   companyId: string;
   question: string;
+  files: File[];
   agents: readonly PanelAgent[];
   lead: PanelAgent | null;
   onNavigate: () => void;
@@ -249,6 +357,11 @@ function AskConversation({
     <div className="space-y-4">
       <div className="ml-auto w-fit max-w-full rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
         {question}
+        {files.length > 0 ? (
+          <span className="mt-1 block text-xs opacity-80" data-testid="ask-everest-question-files">
+            {files.map((file) => file.name).join(", ")}
+          </span>
+        ) : null}
       </div>
       <section aria-live="polite" className="space-y-3" data-testid="ask-everest-answer">
         {answer.loading ? (
@@ -261,7 +374,7 @@ function AskConversation({
           <AnswerCard answer={answer.value} onNavigate={onNavigate} />
         ) : null}
       </section>
-      {lead ? <LiveAsk companyId={companyId} question={question} lead={lead} onNavigate={onNavigate} /> : null}
+      {lead ? <LiveAsk companyId={companyId} question={question} files={files} lead={lead} onNavigate={onNavigate} /> : null}
     </div>
   );
 }
@@ -387,11 +500,13 @@ export function findLeadReply(
 function LiveAsk({
   companyId,
   question,
+  files,
   lead,
   onNavigate,
 }: {
   companyId: string;
   question: string;
+  files: File[];
   lead: PanelAgent;
   onNavigate: () => void;
 }) {
@@ -399,7 +514,11 @@ function LiveAsk({
   const send = useMutation({
     mutationFn: async () => {
       const chat = await agentChatsApi.ensure(companyId, lead.id);
-      const comment = await issuesApi.addComment(chat.id, question, true, undefined, undefined, crypto.randomUUID());
+      // Files go up to the chat first, then ride on the question so the agent sees them with it.
+      const attachments = [];
+      for (const file of files) attachments.push(await issuesApi.uploadAttachment(companyId, chat.id, file));
+      const attachmentIds = attachments.map((attachment) => attachment.id);
+      const comment = await issuesApi.addComment(chat.id, question, true, undefined, attachmentIds.length ? attachmentIds : undefined, crypto.randomUUID());
       return { chatId: chat.id, askedAt: comment.createdAt ? String(comment.createdAt) : new Date().toISOString() };
     },
   });
@@ -422,7 +541,9 @@ function LiveAsk({
     return (
       <div className="rounded-xl border border-dashed border-border p-4">
         <p className="text-sm text-muted-foreground">
-          Want {lead.name} to check properly? They read the tasks, chats and memory and reply in a minute or two.
+          {files.length > 0
+            ? `${lead.name} needs to read your ${files.length === 1 ? "file" : `${files.length} files`} to answer. They reply in a minute or two.`
+            : `Want ${lead.name} to check properly? They read the tasks, chats and memory and reply in a minute or two.`}
         </p>
         <Button
           type="button"
@@ -433,7 +554,7 @@ function LiveAsk({
           data-testid="ask-everest-live"
         >
           {send.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <MessageCircle className="h-4 w-4" aria-hidden="true" />}
-          Ask {lead.name} to look into it
+          {files.length > 0 ? `Send to ${lead.name} with ${files.length === 1 ? "the file" : `the ${files.length} files`}` : `Ask ${lead.name} to look into it`}
         </Button>
         {send.error ? (
           <p className="mt-2 text-sm text-destructive">
