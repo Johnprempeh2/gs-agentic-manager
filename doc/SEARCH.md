@@ -126,7 +126,10 @@ The `records` scope (also in `all`) finds business records outside tasks:
 organisations, people (organisation contacts, by name, email, role or phone),
 clients (pipeline items, which include imported Pipedrive deals and leads), CRM
 products (linked to the latest deal that carries them) and completed generated
-images (by prompt and style). Archived organisations and people, retired or
+images (by prompt and style), plus imported CRM notes, calls, meetings and
+emails (by subject, text, type or owner; deal stage changes are left out), which
+open on their deal, or on their organisation when they have no deal. Archived
+organisations and people, retired or
 hidden pipeline items, items in archived pipelines and inactive products are
 left out. Every search word must appear in the record. Cmd/Ctrl+K shows these
 under "Clients, people and records".

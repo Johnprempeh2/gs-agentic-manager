@@ -223,6 +223,7 @@ const RECORD_KIND_WORDS: Record<string, string> = {
   client: "Client",
   product: "Product",
   image: "Image",
+  activity: "Note or activity",
 };
 
 /** Clients, organisations, people and products that match, as answer lines. */

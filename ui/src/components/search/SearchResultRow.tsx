@@ -1,7 +1,7 @@
 import { AgentAvatar } from "../AgentAvatar";
 import { AgentIdentity } from "../AgentIdentity";
 import { memo, type ComponentType, type SVGProps } from "react";
-import { Bot, Briefcase, Building2, FileSearch, FileText, Hexagon, Image as ImageIcon, MessageSquare, Package, PaperclipIcon, Quote, User } from "lucide-react";
+import { Bot, Briefcase, Building2, CalendarClock, FileSearch, FileText, Hexagon, Image as ImageIcon, MessageSquare, Package, PaperclipIcon, Quote, User } from "lucide-react";
 import type { Agent, CompanySearchResult } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -30,6 +30,7 @@ export const RECORD_ICONS = {
   client: Briefcase,
   product: Package,
   image: ImageIcon,
+  activity: CalendarClock,
 } as const;
 
 export const RECORD_KIND_LABELS = {
@@ -38,6 +39,7 @@ export const RECORD_KIND_LABELS = {
   client: "Client",
   product: "Product",
   image: "Image",
+  activity: "Note or activity",
 } as const;
 
 function snippetStyle(field: string, fallbackLabel: string): SnippetStyle {

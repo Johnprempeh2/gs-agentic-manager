@@ -106,6 +106,7 @@ describe("GlobalSearchSources", () => {
           { id: "organisation:o1", type: "record", title: "Acme Ltd", href: "/PAP/organisations/o1", snippets: [], record: { kind: "organisation", subtitle: "Finance, UK" } },
           { id: "person:p1", type: "record", title: "Ada Lovelace", href: "/PAP/organisations/o1", snippets: [], record: { kind: "person", subtitle: "CFO at Acme Ltd" } },
           { id: "client:c1", type: "record", title: "Acme renewal", href: "/PAP/pipelines/p1/items/c1", snippets: [], record: { kind: "client", subtitle: "Proposal in Sales" } },
+          { id: "activity:a1", type: "record", title: "Pricing call", href: "/PAP/pipelines/p1/items/c1", snippets: [], record: { kind: "activity", subtitle: "Call, Acme renewal, 12 Oct 2026" } },
         ],
       };
     });
@@ -134,6 +135,7 @@ describe("GlobalSearchSources", () => {
     const people = container.querySelectorAll('[data-testid="global-search-record"]');
     expect(people[0]?.textContent).toContain("Organisation: Finance, UK");
     expect(people[1]?.textContent).toContain("Person: CFO at Acme Ltd");
+    expect(people[2]?.textContent).toContain("Note or activity: Call, Acme renewal, 12 Oct 2026");
     const clientRow = container.querySelector('[data-testid="global-search-client"]') as HTMLElement;
     expect(clientRow.textContent).toContain("Client: Proposal in Sales");
     await act(async () => {

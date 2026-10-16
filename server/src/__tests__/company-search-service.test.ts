@@ -10,6 +10,7 @@ import {
   crmDealProducts,
   crmFiles,
   crmProducts,
+  crmTimelineEntries,
   generatedImages,
   organisationContacts,
   organisations,
@@ -97,6 +98,7 @@ describeEmbeddedPostgres("companySearchService", () => {
 
   afterEach(async () => {
     await db.delete(crmFiles);
+    await db.delete(crmTimelineEntries);
     await db.delete(crmDealProducts);
     await db.delete(crmProducts);
     await db.delete(generatedImages);
@@ -327,6 +329,30 @@ describeEmbeddedPostgres("companySearchService", () => {
 
     const people = await svc.search(companyId, companySearchQuerySchema.parse({ q: "ada@example.com" }));
     expect(people.results.filter((row) => row.type === "record").map((row) => row.title)).toEqual(["Ada Kestrel"]);
+  });
+
+  it("finds imported notes, calls and meetings under their deal or organisation", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Merlin Ltd" });
+    const pipelineId = randomUUID();
+    const stageId = randomUUID();
+    const caseId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 });
+    await db.insert(pipelineCases).values({ id: caseId, companyId, pipelineId, stageId, caseKey: "pipedrive-deal-2", title: "Merlin rollout" });
+    await db.insert(crmTimelineEntries).values([
+      { companyId, source: "pipedrive", externalId: "a1", kind: "activity", activityType: "call", subject: "Pricing call", body: "Talked through the falcon tier", occurredAt: new Date("2026-10-12T10:00:00Z"), organisationId: orgId, caseId },
+      { companyId, source: "pipedrive", externalId: "n1", kind: "note", body: "Falcon budget signed off by the board", organisationId: orgId },
+      { companyId, source: "pipedrive", externalId: "s1", kind: "stage_change", subject: "Falcon moved stage", caseId },
+    ]);
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "falcon", scope: "records" }));
+
+    const byTitle = new Map(result.results.map((row) => [row.title, row]));
+    expect([...byTitle.keys()].sort()).toEqual(["Falcon budget signed off by the board", "Pricing call"]);
+    expect(byTitle.get("Pricing call")).toMatchObject({ href: expect.stringContaining(`/pipelines/${pipelineId}/items/${caseId}`), record: { kind: "activity", subtitle: "Call, Merlin rollout, 12 Oct 2026" } });
+    expect(byTitle.get("Falcon budget signed off by the board")).toMatchObject({ href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)), record: { kind: "activity", subtitle: "Note, Merlin Ltd" } });
   });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
