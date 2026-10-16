@@ -280,6 +280,16 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
       ["Lone Freelancer", null],
       ["Wanjiru Kamau", null],
     ]);
+    // The people search finds anyone by name, email or organisation, with their organisation's name.
+    const byOrg = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=northwind`);
+    expect(byOrg.status).toBe(200);
+    expect(byOrg.body.map((person: { name: string }) => person.name)).toContain("Esi Boateng");
+    expect(byOrg.body.every((person: { organisationName: string | null }) => person.organisationName?.startsWith("Northwind"))).toBe(true);
+    const byEmail = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=esi@example`);
+    expect(byEmail.body.map((person: { name: string }) => person.name)).toEqual(["Esi Boateng"]);
+    const lone = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=lone`);
+    expect(lone.body).toEqual([expect.objectContaining({ name: "Lone Freelancer", organisationName: null })]);
+    expect((await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts?q=e`)).status).toBe(400);
 
     // Read only: every call to Pipedrive is a GET.
     expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
@@ -310,6 +320,16 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
 
     const audit = await db.select().from(activityLog).where(eq(activityLog.action, "organisation.import_completed"));
     expect(audit).toHaveLength(3);
+    // Each run logs every count it made, so Integrations can say what a re-import changed.
+    const latest = audit.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!;
+    expect(latest.details).toMatchObject({
+      source: "pipedrive",
+      organisations: expect.objectContaining({ skipped: expect.any(Number) }),
+      contacts: expect.objectContaining({ created: expect.any(Number) }),
+      errorCount: expect.any(Number),
+    });
+    expect(latest.details).not.toHaveProperty("errorSamples");
+    expect(latest.details).not.toHaveProperty("startedAt");
   });
 
   it("links each organisation's Pipedrive owner to the GSAM member with the same email", async () => {

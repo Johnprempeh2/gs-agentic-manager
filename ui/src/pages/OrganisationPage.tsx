@@ -394,6 +394,22 @@ function HistoryCase({ item }: { item: OrganisationHistoryCase }) {
         </p>
       ) : null}
 
+      {item.people?.length ? (
+        <p className="mt-0.5 text-xs text-muted-foreground" data-testid="organisation-case-people">
+          People: {item.people.map((person) => (person.role ? `${person.name} (${person.role})` : person.name)).join(", ")}
+        </p>
+      ) : null}
+      {item.details?.length ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            Details ({item.details.length})
+          </summary>
+          <div className="mt-2">
+            <CrmFieldList fields={item.details} />
+          </div>
+        </details>
+      ) : null}
+
       {item.stageChanges.length > 0 ? (
         <div className="mt-2">
           <h3 className="text-xs font-medium text-muted-foreground">Stage changes</h3>

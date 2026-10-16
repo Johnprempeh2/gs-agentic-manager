@@ -81,6 +81,11 @@ function history(overrides: Partial<OrganisationHistory> = {}): OrganisationHist
         terminalKind: "done",
         ndaStatus: "accepted",
         engagementStatus: "sent",
+        details: [
+          { key: "dealValue", label: "Value", value: 45000 },
+          { key: "dealOwner", label: "Owner", value: "Ama Owusu" },
+        ],
+        people: [{ name: "Esi Boateng", role: "Main contact" }, { name: "Tunde Bakare", role: null }],
         createdAt: "2026-09-30T09:00:00Z",
         updatedAt: "2026-10-05T09:00:00Z",
         stageChanges: [
@@ -172,6 +177,11 @@ describe("Organisation company page", () => {
     const engagement = container.querySelector('section[aria-label="Engagement history"]')!;
     expect(engagement.querySelector('a[href="/pipelines/pipe-1/items/case-1"]')?.textContent).toBe("Acme drill rig");
     expect(engagement.textContent).toContain("Sales · Stage: Won");
+    expect(engagement.querySelector("[data-testid='organisation-case-people']")?.textContent).toBe(
+      "People: Esi Boateng (Main contact), Tunde Bakare",
+    );
+    expect(engagement.querySelector("details summary")?.textContent).toBe("Details (2)");
+    expect(engagement.textContent).toContain("Ama Owusu");
     expect(engagement.querySelector("[data-testid='organisation-case-agreements']")?.textContent).toBe(
       "NDA: accepted · Engagement pack: sent",
     );

@@ -172,6 +172,24 @@ describe("Integrations", () => {
     expect(describeImport({ createdAt: new Date(), details: {} }, "today")).toBe("Last import today: nothing new.");
   });
 
+  it("says what a Pipedrive re-import changed and how much it left as it was", () => {
+    const event = {
+      createdAt: new Date(),
+      details: {
+        source: "pipedrive",
+        organisations: { created: 0, updated: 1, skipped: 40, errors: 0 },
+        contacts: { created: 0, updated: 0, skipped: 90, errors: 0 },
+        products: { created: 1, updated: 0, skipped: 5, errors: 0 },
+        leads: { created: 2, updated: 0, skipped: 0, errors: 0 },
+        participants: { created: 0, updated: 3, skipped: 10, errors: 0 },
+        errorCount: 0,
+      },
+    };
+    expect(describeImport(event, "just now")).toBe(
+      "Last import just now: 1 product and 2 leads added; 1 organisation and 3 people on deals updated; 145 unchanged.",
+    );
+  });
+
   it("shows the incoming webhook with what came in", async () => {
     mocks.listConnections.mockResolvedValue({ connections: [] });
     mocks.listMailboxes.mockResolvedValue([]);

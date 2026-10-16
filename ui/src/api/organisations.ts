@@ -1,5 +1,6 @@
 import type {
   CreateOrganisation,
+  CrmProduct,
   CreateOrganisationContact,
   ImportHubspotExport,
   ImportNotion,
@@ -12,6 +13,7 @@ import type {
   OrganisationHistory,
   OrganisationImportResult,
   OrganisationListItem,
+  OrganisationPerson,
   OrganisationStatus,
   UpdateOrganisation,
   UpdateOrganisationContact,
@@ -33,9 +35,14 @@ export const organisationsApi = {
   },
   get: (companyId: string, organisationId: string) =>
     api.get<OrganisationDetail>(`${base(companyId)}/${encodeURIComponent(organisationId)}`),
+  /** People across every organisation, by name, role, email, phone or organisation (two characters or more). */
+  searchPeople: (companyId: string, q: string) =>
+    api.get<OrganisationPerson[]>(`/companies/${encodeURIComponent(companyId)}/organisation-contacts?q=${encodeURIComponent(q)}`),
   /** People with no organisation, such as Pipedrive people held on their own. */
   unassignedContacts: (companyId: string) =>
     api.get<OrganisationContact[]>(`/companies/${encodeURIComponent(companyId)}/organisation-contacts/unassigned`),
+  /** The product catalogue a CRM import brought, with the deals each product is on. */
+  products: (companyId: string) => api.get<CrmProduct[]>(`/companies/${encodeURIComponent(companyId)}/crm-products`),
   history: (companyId: string, organisationId: string) =>
     api.get<OrganisationHistory>(`${base(companyId)}/${encodeURIComponent(organisationId)}/history`),
   create: (companyId: string, body: CreateOrganisation) => api.post<Organisation>(base(companyId), body),

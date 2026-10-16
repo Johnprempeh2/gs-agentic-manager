@@ -14393,9 +14393,25 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts",
+  tags: ["organisations"],
+  summary: "Search people across every organisation (q, two characters or more)",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/companies/{companyId}/organisation-contacts/unassigned",
   tags: ["organisations"],
   summary: "List people with no organisation (CRM imports)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-products",
+  tags: ["organisations"],
+  summary: "List the CRM product catalogue with the deals each product is on",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 

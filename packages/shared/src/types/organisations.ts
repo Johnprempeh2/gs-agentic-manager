@@ -49,6 +49,11 @@ export interface Organisation {
   updatedAt: string;
 }
 
+/** A person found by the people search, with the name of their organisation (null when they have none). */
+export interface OrganisationPerson extends OrganisationContact {
+  organisationName: string | null;
+}
+
 /** One row on the Organisations list: the organisation and its key contacts. */
 export interface OrganisationListItem extends Organisation {
   keyContacts: Pick<OrganisationContact, "id" | "name" | "role" | "email" | "phone">[];
@@ -130,6 +135,10 @@ export interface OrganisationHistoryCase {
   /** The client's NDA and engagement pack, as on the journey (Ben, 12 Oct). */
   ndaStatus?: "required" | "accepted" | "suspended";
   engagementStatus?: "not_sent" | "sent" | "accepted";
+  /** The case's filled-in fields under the pipeline's labels, such as a Pipedrive deal's value, owner and products. */
+  details?: CrmRecordField[];
+  /** The people on the case, main contact first. */
+  people?: Array<{ name: string; role: string | null }>;
   createdAt: string;
   updatedAt: string;
   /** Oldest first. */
@@ -205,4 +214,38 @@ export interface CrmTimelineEntry {
   caseTitle: string | null;
   /** Location, participants, outcome and anything else the CRM held. */
   details: Record<string, unknown>;
+}
+
+/** One price of a CRM product in one currency. */
+export interface CrmProductPriceView {
+  currency: string;
+  price: number | null;
+  cost: number | null;
+  overheadCost: number | null;
+}
+
+/** A deal that includes a product, with what was sold on it. */
+export interface CrmProductDeal {
+  caseId: string;
+  pipelineId: string;
+  title: string;
+  quantity: number | null;
+  sum: number | null;
+  currency: string | null;
+}
+
+/** A product from the CRM's catalogue, with the deals it is on (Pipedrive import). */
+export interface CrmProduct {
+  id: string;
+  source: string;
+  name: string;
+  code: string | null;
+  unit: string | null;
+  description: string | null;
+  tax: number | null;
+  active: boolean;
+  ownerName: string | null;
+  prices: CrmProductPriceView[];
+  fields: CrmRecordField[];
+  deals: CrmProductDeal[];
 }

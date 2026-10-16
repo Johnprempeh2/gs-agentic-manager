@@ -475,6 +475,8 @@ export const queryKeys = {
     history: (companyId: string, organisationId: string) =>
       ["organisations", companyId, "history", organisationId] as const,
     unassignedContacts: (companyId: string) => ["organisations", companyId, "unassigned-contacts"] as const,
+    products: (companyId: string) => ["organisations", companyId, "products"] as const,
+    people: (companyId: string, q: string) => ["organisations", companyId, "people", q] as const,
   },
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
