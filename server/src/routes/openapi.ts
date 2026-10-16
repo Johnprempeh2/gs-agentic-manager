@@ -7160,6 +7160,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/agent-daily-digests",
+  tags: ["inbox"],
+  summary: "The nightly digests of what each agent did, with spend, for a range of UTC days (default: the last seven)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/notification-preferences",
   tags: ["inbox"],
   summary: "The caller's notification choices in this company (defaults when never set)",

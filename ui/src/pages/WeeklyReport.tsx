@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { WeeklyReport as WeeklyReportData, WeeklyReportTask } from "@greatstone/shared";
-import { AlertTriangle, Check, CircleCheck, ClipboardCopy, Coins, Download, GitBranch, Hand, Newspaper, Sparkles } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, CircleCheck, ClipboardCopy, Coins, Download, GitBranch, Hand, Newspaper, Sparkles } from "lucide-react";
+import { agentDailyDigestsApi } from "../api/agentDailyDigests";
 import { weeklyReportApi } from "../api/weeklyReport";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -12,6 +13,8 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
+  dailyDigestAgentLine,
+  dailyDigestLine,
   moveLabel,
   pipelineSummary,
   stuckForLabel,
@@ -92,6 +95,65 @@ function More({ shown, total, to }: { shown: number; total: number; to: string }
     <Link to={to} className="text-sm text-muted-foreground hover:text-foreground hover:underline print:no-underline">
       and {total - shown} more
     </Link>
+  );
+}
+
+/** The nightly digests for the week, one line a day; open a day to see each agent. */
+function DayByDay({ report }: { report: WeeklyReportData }) {
+  const { selectedCompanyId } = useCompany();
+  const days = report.daily ?? [];
+  const from = days[0]?.date ?? "";
+  const to = days[days.length - 1]?.date ?? "";
+  const { data, error } = useQuery({
+    queryKey: queryKeys.agentDailyDigests(selectedCompanyId ?? "", from, to),
+    queryFn: () => agentDailyDigestsApi.list(selectedCompanyId!, { from, to }),
+    enabled: !!selectedCompanyId && days.length > 0,
+  });
+  const byDate = new Map((data?.digests ?? []).map((digest) => [digest.date, digest]));
+  const task = data?.digests.find((digest) => digest.deliveredIssueIdentifier)?.deliveredIssueIdentifier ?? null;
+
+  return (
+    <Section icon={CalendarDays} title="Day by day" testId="weekly-report-daily">
+      {days.length === 0 ? (
+        <Quiet>The first nightly digest is written just after midnight (UTC). Each day then shows here.</Quiet>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {days.map((day) => {
+            const agents = byDate.get(day.date)?.payload.agents ?? [];
+            return (
+              <li key={day.date}>
+                {agents.length === 0 ? (
+                  <span>{dailyDigestLine(day)}</span>
+                ) : (
+                  <details>
+                    <summary className="cursor-pointer">{dailyDigestLine(day)}</summary>
+                    <ul className="space-y-0.5 pl-4 pt-1 text-muted-foreground">
+                      {agents.map((agent) => (
+                        <li key={agent.agentId}>{dailyDigestAgentLine(agent)}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error ? (
+        <p className="text-sm text-destructive">
+          Could not load each agent's part of the digests: {error instanceof Error ? error.message : "unknown error"}
+        </p>
+      ) : null}
+      {task ? (
+        <Quiet>
+          Each digest also goes to the lead agent on{" "}
+          <Link to={`/issues/${task}`} className="underline underline-offset-2 hover:text-foreground">
+            {task}
+          </Link>
+          .
+        </Quiet>
+      ) : null}
+    </Section>
   );
 }
 
@@ -202,6 +264,8 @@ export function WeeklyReportView({ report }: { report: WeeklyReportData }) {
           </Link>
         </Quiet>
       </Section>
+
+      <DayByDay report={report} />
     </div>
   );
 }

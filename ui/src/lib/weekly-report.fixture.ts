@@ -32,4 +32,5 @@ export const WEEKLY_REPORT_FIXTURE: WeeklyReport = {
   },
   needsYou: { count: 6, items: [{ id: "t6", identifier: "GRE-6", title: "Approve the brief" }] },
   costs: { totalCents: 1300, agents: [{ agentId: "a2", name: "Nova", cents: 900 }, { agentId: "a1", name: "Ridge", cents: 400 }] },
+  daily: [],
 };

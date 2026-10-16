@@ -48,6 +48,15 @@ describe("weekly report wording", () => {
     ]);
     expect(sections[4]!.lines).toEqual(["Nova: $9.00", "Ridge: $4.00", "Total: $13.00"]);
   });
+
+  it("adds the stored nightly digests, one line a day", () => {
+    const day = { date: "2026-10-15", tasksCompleted: 1, tasksMoved: 0, comments: 1, runs: 1, failures: 0, spendCents: 120, busiestAgent: "Nova" };
+    const sections = weeklyReportSections({ ...report, daily: [day] });
+    expect(sections.at(-1)).toEqual({
+      title: "Day by day",
+      lines: ["15 Oct: 1 finished, 0 moved, 1 comment, 1 run, $1.20. Busiest: Nova."],
+    });
+  });
 });
 
 describe("weekly report PDF", () => {

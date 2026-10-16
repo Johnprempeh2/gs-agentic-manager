@@ -1,4 +1,4 @@
-import type { WeeklyReport, WeeklyReportPipelineMove, WeeklyReportTask } from "@greatstone/shared";
+import type { AgentDailyDigestAgent, WeeklyReport, WeeklyReportDay, WeeklyReportPipelineMove, WeeklyReportTask } from "@greatstone/shared";
 import { buildPdf, type PdfLine } from "./simple-pdf";
 import { formatCents, formatShortDate } from "./utils";
 
@@ -69,6 +69,24 @@ export function weeklyHeadline(report: WeeklyReport): string {
   return sentences.join(" ");
 }
 
+/** "15 Oct: 4 finished, 2 moved, 7 comments, 12 runs (1 failed), $3.20. Busiest: Ada." */
+export function dailyDigestLine(day: WeeklyReportDay): string {
+  const runs = day.failures > 0
+    ? `${plural(day.runs, "run", "runs")} (${day.failures} failed)`
+    : plural(day.runs, "run", "runs");
+  const busiest = day.busiestAgent ? ` Busiest: ${day.busiestAgent}.` : "";
+  return `${formatShortDate(`${day.date}T12:00:00Z`)}: ${day.tasksCompleted} finished, ${day.tasksMoved} moved, ${plural(day.comments, "comment", "comments")}, ${runs}, ${formatCents(day.spendCents)}.${busiest}`;
+}
+
+/** "Ada: 2 finished, 1 moved, 3 comments, 5 runs (1 failed), $2.50." */
+export function dailyDigestAgentLine(agent: AgentDailyDigestAgent): string {
+  const { counts } = agent;
+  const runs = counts.failures > 0
+    ? `${plural(counts.runs, "run", "runs")} (${counts.failures} failed)`
+    : plural(counts.runs, "run", "runs");
+  return `${agent.name}: ${counts.tasksCompleted} finished, ${counts.tasksMoved} moved, ${plural(counts.comments, "comment", "comments")}, ${runs}, ${formatCents(counts.spendCents)}.`;
+}
+
 export interface WeeklyReportSection {
   title: string;
   lines: string[];
@@ -77,6 +95,9 @@ export interface WeeklyReportSection {
 /** The report as titled sections of plain lines: the PDF and the copied text use this. */
 export function weeklyReportSections(report: WeeklyReport): WeeklyReportSection[] {
   const more = (shown: number, total: number) => (total > shown ? [`and ${total - shown} more`] : []);
+  const days: WeeklyReportSection[] = (report.daily ?? []).length > 0
+    ? [{ title: "Day by day", lines: report.daily.map(dailyDigestLine) }]
+    : [];
   return [
     {
       title: "Needs you",
@@ -117,6 +138,7 @@ export function weeklyReportSections(report: WeeklyReport): WeeklyReportSection[
             `Total: ${formatCents(report.costs.totalCents)}`,
           ],
     },
+    ...days,
   ];
 }
 
