@@ -70,9 +70,17 @@ say "Test gate for $TAG ($COMMIT): code $CODE_DIR, logs $LOG_DIR"
 # The lane environment: the account home (agent runs set HOME to a temp
 # folder), the PATH that has node and pnpm, plus ~/.cargo/bin (a non-login
 # shell such as ssh or an agent run does not have it, and the native runner
-# suite builds with cargo), and CI=true as on GitHub.
+# suite builds with cargo), and CI=true as on GitHub. An agent run puts its
+# managed git and gh launchers (<tmp>/paperclip-github-runtime/<run>) first on
+# PATH; they stay out, or every test that runs git gets the launcher instead
+# of git (GRE-1605: git-credentials, github-launcher, git-workspace-sync).
 LANE_HOME="${GS_USER_HOME:-$HOME}"
-LANE_PATH="$PATH"
+LANE_PATH=""
+IFS=: read -r -a PATH_ENTRIES <<<"$PATH"
+for entry in "${PATH_ENTRIES[@]}"; do
+  case "$entry" in */paperclip-github-runtime/*) continue ;; esac
+  LANE_PATH="${LANE_PATH:+$LANE_PATH:}$entry"
+done
 [ ! -d "$LANE_HOME/.cargo/bin" ] || LANE_PATH="$LANE_HOME/.cargo/bin:$LANE_PATH"
 LANE_ENV=(
   HOME="$LANE_HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" SHELL=/bin/bash LANG="${LANG:-en_US.UTF-8}"

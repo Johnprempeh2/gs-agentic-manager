@@ -72,6 +72,21 @@ test("a candidate whose lanes all pass gets a pass marker for its exact commit",
   assert.match(check.stdout, /^the full test suite passed on rc-2026-10-13\.1/);
 });
 
+test("an agent run's managed git launcher stays off the lanes' PATH", (t) => {
+  // GRE-1605: the launcher came first on PATH, so tests that run git got it.
+  const box = sandbox(t);
+  const launcher = join(box.root, "tmp", "paperclip-github-runtime", "run-1");
+  mkdirSync(launcher, { recursive: true });
+  writeFileSync(join(launcher, "git"), "#!/bin/sh\necho launcher\n", { mode: 0o755 });
+  box.candidate("rc-2026-10-13.1", [
+    "real-git: case \":$PATH:\" in *paperclip-github-runtime*) exit 1 ;; esac; git --version | grep -q '^git version'",
+    "",
+  ].join("\n"));
+
+  const run = box.gate(["rc-2026-10-13.1"], { PATH: `${launcher}:${process.env.PATH}`, GSAM_TEST_GATE_RETRY: "0" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+});
+
 test("a failing lane names the lane and its failing tests and writes no marker", (t) => {
   const box = sandbox(t);
   const commit = box.candidate("rc-2026-10-13.1", [
