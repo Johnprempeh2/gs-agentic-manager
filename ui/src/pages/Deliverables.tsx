@@ -416,7 +416,7 @@ export function Deliverables() {
   const previewProjects = projectsWithPreview(projects, projectId);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={FileCheck2} message="Select an organization to view deliverables." />;
+    return <EmptyState icon={FileCheck2} message="Choose an organisation to view deliverables." />;
   }
 
   return (

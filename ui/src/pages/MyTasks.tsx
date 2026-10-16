@@ -509,7 +509,7 @@ export function MyTasks() {
   };
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={CircleDot} message="Select an organization to view your tasks." />;
+    return <EmptyState icon={CircleDot} message="Choose an organisation to view your tasks." />;
   }
   if (isLoading || attentionLoading) {
     return <PageSkeleton variant="list" />;

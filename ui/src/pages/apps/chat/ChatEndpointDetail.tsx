@@ -635,7 +635,7 @@ function Access({
               </div>
             </li>
             <li>Open the private link from the bot, sign into {CLIENT_BRAND_NAME}, and confirm their Slack account. The link expires in 15 minutes and works once.</li>
-            <li>If they aren’t a member of this organization, choose <strong>Request access</strong>. An admin must approve their request before they can link their account.</li>
+            <li>If they aren’t a member of this organisation, choose <strong>Request access</strong>. An admin must approve their request before they can link their account.</li>
           </ol>
           <p className="text-sm text-muted-foreground">Each person links their own account and uses their own {CLIENT_BRAND_NAME} permissions. They don’t need to create another Slack app or share credentials.</p>
         </div>

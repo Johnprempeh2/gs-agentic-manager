@@ -380,7 +380,7 @@ export function Dashboard() {
       return (
         <EmptyState
           icon={BrandStoneIcon}
-          message="Welcome to GS Agentic Manager. Set up your first organization and agent to get started."
+          message="Welcome to GS Agentic Manager. Set up your first organisation and agent to get started."
           action="Get Started"
           onAction={openOnboarding}
         />

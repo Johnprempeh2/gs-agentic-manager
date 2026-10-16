@@ -216,7 +216,7 @@ describe("Memory contributions view", () => {
 
     memoryApiMock.activity.mockRejectedValue(new ApiError("Forbidden", 403, null));
     await renderAt("/memory/activity");
-    expect(text()).toContain("You do not have access to memory in this organization.");
+    expect(text()).toContain("You do not have access to memory in this organisation.");
   });
 });
 

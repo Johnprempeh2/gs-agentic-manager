@@ -736,7 +736,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         name: application.name,
         description:
           application.description ??
-          "A custom connector configured for this organization.",
+          "A custom connector configured for this organisation.",
         brandKey: applicationSlug ?? application.name,
         entry: null,
         applications: [application],
@@ -838,7 +838,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   if (!selectedCompanyId) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
-        Select an organization to manage connectors.
+        Choose an organisation to manage connectors.
       </div>
     );
   }

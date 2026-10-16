@@ -425,6 +425,11 @@ export function Images() {
               icon={ImageIcon}
               title="No images yet"
               message="Images you and your agents make will appear here, ready to download or reuse."
+              action="Make your first image"
+              onAction={() => {
+                promptRef.current?.focus();
+                promptRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+              }}
             />
           )
         ) : (

@@ -893,7 +893,7 @@ export function ProjectDetail() {
       {activeTab === "workspaces" ? (
         workspaceTabDecisionLoaded ? (
           workspaceTabError ? (
-            <p className="text-sm text-destructive">{workspaceTabError.message}</p>
+            <p className="text-sm text-destructive">This tab did not load. Refresh the page to try again. ({workspaceTabError.message})</p>
           ) : (
             <ProjectWorkspacesContent
               companyId={resolvedCompanyId!}

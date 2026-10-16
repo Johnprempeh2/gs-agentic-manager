@@ -366,7 +366,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   }, [builtInAgentsEnabled, instanceSettings, navigate, requestedTab, selectedCompanyId]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Bot} message="Select an organization to view agents." />;
+    return <EmptyState icon={Bot} message="Choose an organisation to view agents." />;
   }
 
   if (isLoading) {
@@ -655,9 +655,20 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
       )}
 
       {view === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          {teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}
-        </p>
+        <div className="space-y-2 py-8 text-center text-sm text-muted-foreground">
+          <p>{teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setTeamFilter(null);
+              navigate("/agents/all");
+            }}
+          >
+            Show all agents
+          </Button>
+        </div>
       )}
 
       {/* Org chart view */}

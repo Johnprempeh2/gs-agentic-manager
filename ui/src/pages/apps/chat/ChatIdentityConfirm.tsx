@@ -122,7 +122,7 @@ export function ChatIdentityConfirm() {
       </dl>
       <p className="text-sm text-muted-foreground">
         Confirm only if this is your {providerNames[identity.provider]}{" "}
-        identity. {CLIENT_BRAND_NAME} will check your current organization membership on
+        identity. {CLIENT_BRAND_NAME} will check your current organisation membership on
         every action.
       </p>
       {confirm.isError && (

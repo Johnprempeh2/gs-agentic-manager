@@ -476,7 +476,7 @@ export function GoalDetail() {
             ) : null}
           </div>
           {childGoals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sub-goals.</p>
+            <p className="text-sm text-muted-foreground">This goal has no smaller goals yet.</p>
           ) : (
             <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
           )}
@@ -484,7 +484,7 @@ export function GoalDetail() {
 
         <TabsContent value="projects" className="mt-4">
           {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
+            <p className="text-sm text-muted-foreground">No projects are linked to this goal yet.</p>
           ) : (
             <div className="border border-border">
               {linkedProjects.map((project) => (

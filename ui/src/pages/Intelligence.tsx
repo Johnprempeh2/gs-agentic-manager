@@ -759,7 +759,7 @@ export function Intelligence() {
     [historyQuery.data],
   );
 
-  if (!selectedCompanyId) return <EmptyState icon={Radar} message="Select an organization to see its intelligence." />;
+  if (!selectedCompanyId) return <EmptyState icon={Radar} message="Choose an organisation to see its intelligence." />;
   if (settingsQuery.isLoading) return <PageSkeleton variant="dashboard" />;
   if (!on) {
     return (

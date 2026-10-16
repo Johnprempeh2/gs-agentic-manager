@@ -703,7 +703,7 @@ export function BoardChat() {
         <div className="text-center max-w-sm">
           <h2 className="text-lg font-semibold">No organization selected</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            Select an organization to start chatting with your board concierge.
+            Choose an organisation to start chatting with your board concierge.
           </p>
         </div>
       </div>

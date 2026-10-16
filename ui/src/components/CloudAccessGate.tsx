@@ -16,7 +16,7 @@ function NoBoardAccessPage() {
       <Card className="block p-6">
         <h1 className="text-xl font-semibold">No organization access</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          This account is signed in, but it does not have an active organization membership or instance-admin access on
+          This account is signed in, but it does not have an active organisation membership or instance-admin access on
           this GS Agentic Manager instance.
         </p>
         <p className="mt-2 text-sm text-muted-foreground">

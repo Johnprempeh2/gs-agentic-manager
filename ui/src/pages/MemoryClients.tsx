@@ -58,7 +58,7 @@ function MemoryStates({ error, header }: { error: unknown; header: ReactNode }) 
     return (
       <div className="space-y-4">
         {header}
-        <EmptyState icon={PowerOff} message="Memory is turned off for this organization." description="A board admin can turn it on in organization settings." />
+        <EmptyState icon={PowerOff} message="Memory is turned off for this organisation." description="A board admin can turn it on in organisation settings." />
       </div>
     );
   }
@@ -95,7 +95,7 @@ export function MemoryClients() {
     },
   });
 
-  if (!selectedCompanyId) return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+  if (!selectedCompanyId) return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   const header = <MemoryPageHeader tab="clients" />;
   const refused = <MemoryStates error={scopes.error} header={header} />;
   if (scopes.error && (scopes.error instanceof ApiError && scopes.error.status === 403 || isMemoryDisabled(scopes.error))) return refused;
@@ -204,7 +204,7 @@ export function MemoryClientDetail() {
   });
   const groups = useMemo(() => groupClientMemory(graph.data?.nodes ?? [], filter), [graph.data, filter]);
 
-  if (!selectedCompanyId) return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+  if (!selectedCompanyId) return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   const header = <MemoryPageHeader tab="clients" />;
   const error = scopes.error ?? graph.error;
   if (error && (error instanceof ApiError && error.status === 403 || isMemoryDisabled(error))) {

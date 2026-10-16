@@ -1696,7 +1696,7 @@ describe("AppDetail", () => {
     expect(container.textContent).not.toContain("selected repositories");
   });
 
-  it("persists an empty audience as all organization members", async () => {
+  it("persists an empty audience as all organisation members", async () => {
     mockParams.tab = "permissions";
     getConnectionMock.mockResolvedValue(connection({ createdByUserId: "user-1" }));
     replaceConnectionGrantMembersMock.mockResolvedValue(organizationGrant({ members: [] }));
@@ -1724,7 +1724,7 @@ describe("AppDetail", () => {
 
     await act(async () => {
       Array.from(document.body.querySelectorAll('[role="radio"]'))
-        .find((option) => option.textContent?.includes("All organization members"))
+        .find((option) => option.textContent?.includes("All organisation members"))
         ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flushReact();
