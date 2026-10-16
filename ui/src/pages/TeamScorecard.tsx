@@ -264,7 +264,7 @@ export function TeamScorecard() {
             What each agent finished, and what they are working on now. Agents with stuck work come first.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2" data-tour="scorecard-actions">
           {stuckToAsk.length > 1 ? (
             <Button
               size="sm"
@@ -298,7 +298,7 @@ export function TeamScorecard() {
             {copyState === "copied" ? <Check className="size-4" /> : <ClipboardCopy className="size-4" />}
             {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy as an update"}
           </Button>
-          <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period">
+          <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period" data-tour="scorecard-period">
             {PERIODS.map((period) => (
               <button
                 key={period.days}
@@ -323,7 +323,7 @@ export function TeamScorecard() {
         <ErrorState error={error} onRetry={() => void refetch()} />
       ) : data ? (
         <>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5" data-tour="scorecard-totals">
             <Stat
               icon={CircleCheck}
               value={data.totals.finished}
@@ -339,7 +339,7 @@ export function TeamScorecard() {
           {data.agents.length === 0 ? (
             <EmptyState icon={Trophy} message="No agents yet. Hire one from the Agents page and their work shows here." />
           ) : (
-            <ul className="space-y-3">
+            <ul className="space-y-3" data-tour="scorecard-agents">
               {data.agents.map((agent) => (
                 <AgentCard
                   key={agent.agentId}

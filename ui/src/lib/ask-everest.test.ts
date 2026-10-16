@@ -6,6 +6,7 @@ import {
   answerDecide,
   answerStuck,
   answerSubject,
+  organisationAskContext,
   answerFollowUp,
   classifyQuestion,
   followUpRefinement,
@@ -127,6 +128,20 @@ describe("answers", () => {
     expect(answer.headline).toBe("3 tasks about indago: 2 open, 1 stuck, 1 done.");
     expect(answer.lines[0]?.text).toBe("Kick-off pack");
   });
+
+  it("puts matching clients and people first, and answers with them when there are no tasks", () => {
+    const records = [
+      { id: "organisation:o1", type: "record", title: "Indago Ltd", href: "/PAP/organisations/o1", record: { kind: "organisation", subtitle: "Finance, UK" } },
+      { id: "person:p1", type: "record", title: "Ada Indago", href: "/PAP/organisations/o1", record: { kind: "person", subtitle: "CFO at Indago Ltd" } },
+      { id: "issue:x", type: "issue", title: "Not a record", href: "/PAP/issues/X-1" },
+    ] as unknown as Parameters<typeof answerSubject>[2];
+    const withTasks = answerSubject("indago", [issue({ id: "a", title: "Draft proposal", status: "in_progress" })], records);
+    expect(withTasks.lines.map((line) => line.text)).toEqual(["Indago Ltd", "Ada Indago", "Draft proposal"]);
+    expect(withTasks.lines[0]).toEqual({ text: "Indago Ltd", detail: "Organisation: Finance, UK", href: "/PAP/organisations/o1" });
+    const noTasks = answerSubject("indago", [], records);
+    expect(noTasks.headline).toBe("I found Indago Ltd and 1 more record, but no tasks about indago yet.");
+    expect(noTasks.lines[1]?.detail).toBe("Person: CFO at Indago Ltd");
+  });
 });
 
 describe("since you were away", () => {
@@ -235,5 +250,41 @@ describe("asking about a page", () => {
       'and which are late? (Following up on: "What is stuck?")',
     );
     expect(liveQuestionText("What next?", { context })).toBe(`What next?\n\nAsked from Acme Ltd:\n${context.summary}`);
+  });
+});
+
+describe("organisationAskContext", () => {
+  it("sums up the organisation, its people and its deals", () => {
+    const context = organisationAskContext({
+      name: "Acme Ltd",
+      industry: "Mining",
+      country: "Ghana",
+      statusLabel: "Client",
+      contacts: [{ name: "Kofi Mensah", role: "CFO" }, { name: "Ama", role: null }],
+      deals: [{ title: "Drill rig", pipelineName: "Sales", stageName: "Won" }],
+    });
+    expect(context.label).toBe("Acme Ltd");
+    expect(context.subject).toBe("Acme Ltd");
+    expect(context.summary).toBe('The organisation "Acme Ltd" (Mining, Ghana). Status: Client.\nPeople: Kofi Mensah (CFO); Ama.\nDeals: Drill rig: Won in Sales.');
+    expect(context.suggestions?.[0]).toBe("What is happening with Acme Ltd?");
+  });
+
+  it("adds the latest imported notes and calls, without stage changes", () => {
+    const context = organisationAskContext({
+      name: "Acme Ltd",
+      industry: null,
+      country: null,
+      statusLabel: "Client",
+      contacts: [],
+      deals: [],
+      history: [
+        { kind: "stage_change", activityType: null, subject: "Moved to Won", body: null, occurredAt: "2026-10-14T09:00:00Z" },
+        { kind: "activity", activityType: "call", subject: "Pricing call", body: "<p>Agreed the <b>gold</b> tier</p>", occurredAt: "2026-10-12T10:00:00Z" },
+        { kind: "note", activityType: null, subject: null, body: "Budget signed off", occurredAt: null },
+      ],
+    });
+    expect(context.summary).toContain("Latest history: 2026-10-12, call: Pricing call (Agreed the gold tier); note: Budget signed off.");
+    expect(context.summary).not.toContain("Moved to Won");
+    expect(context.suggestions).toContain("What did we last discuss with Acme Ltd?");
   });
 });

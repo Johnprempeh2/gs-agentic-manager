@@ -1,10 +1,10 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, ne, or, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import { companies, issues, pipelineCaseEvents, pipelineCases, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { needsMeService } from "./needs-me.js";
-import { isQuietHour, mayNotify, notificationPreferencesService } from "./notification-preferences.js";
+import { isHeld, mayNotify, notificationPreferencesService } from "./notification-preferences.js";
 import { loadOrCreateVapidKeys } from "./push-keys.js";
 import { sendWebPush, type PushSendResult, type PushTarget, type VapidKeys } from "./web-push.js";
 
@@ -36,11 +36,83 @@ type FeedBuilder = (
   companyId: string,
   userId: string,
 ) => Promise<Pick<DecisionsFeed, "cards" | "count"> & { assignedTasks?: Array<Pick<NeedsMeTask, "id" | "title">> }>;
+/** A task the user asked for that someone else finished. */
+export interface FinishedTask {
+  id: string;
+  identifier: string | null;
+  title: string;
+}
+type FinishedReader = (companyId: string, userId: string, since: Date) => Promise<FinishedTask[]>;
+/** A deal (pipeline case) that someone else just closed as won or lost. */
+export interface ClosedDeal {
+  id: string;
+  pipelineId: string;
+  title: string;
+  terminalKind: string;
+}
+type ClosedDealReader = (companyId: string, userId: string, since: Date) => Promise<ClosedDeal[]>;
 type PreferencesReader = (companyId: string, userId: string) => Promise<NotificationPreferences>;
 type Sender = (target: PushTarget, message: DecisionPushMessage) => Promise<PushSendResult>;
 
 /** Remembered-card id for a task given to the user, kept apart from decision card ids (`task:...`). */
 export const assignedTaskCardId = (issueId: string) => `assigned:${issueId}`;
+
+/** Remembered-card id for a finished task the user was told about. */
+export const finishedTaskCardId = (issueId: string) => `finished:${issueId}`;
+
+/** Remembered-card id for a closed deal the user was told about. */
+export const closedDealCardId = (caseId: string) => `deal:${caseId}`;
+
+/**
+ * Only tasks finished this recently are announced: turning this on, or a
+ * new server, never sends a backlog. The morning summary lists the rest.
+ */
+export const FINISHED_WINDOW_MS = 30 * 60 * 1000;
+
+/** One notification for tasks the user asked for that were just finished. */
+export function finishedTaskPushMessage(fresh: FinishedTask[], count: number, prefix: string): DecisionPushMessage {
+  const first = fresh[0]!;
+  if (fresh.length === 1) {
+    return {
+      title: "Done: a task you asked for",
+      body: first.title,
+      url: `/${prefix}/issues/${first.identifier ?? first.id}`,
+      tag: finishedTaskCardId(first.id),
+      badge: count,
+    };
+  }
+  return {
+    title: `${fresh.length} tasks you asked for are done`,
+    body: `${first.title} and ${fresh.length - 1} more`,
+    url: `/${prefix}/today`,
+    tag: "finished-tasks",
+    badge: count,
+  };
+}
+
+/** One notification for deals just won or lost. Done stages count as won, cancelled ones as lost. */
+export function closedDealPushMessage(fresh: ClosedDeal[], count: number, prefix: string): DecisionPushMessage {
+  const first = fresh[0]!;
+  if (fresh.length === 1) {
+    return {
+      title: first.terminalKind === "done" ? "Deal won" : "Deal lost",
+      body: first.title,
+      url: `/${prefix}/pipelines/${first.pipelineId}/cases/${first.id}`,
+      tag: closedDealCardId(first.id),
+      badge: count,
+    };
+  }
+  const won = fresh.filter((deal) => deal.terminalKind === "done").length;
+  const lost = fresh.length - won;
+  const parts = [won > 0 ? `${won} won` : null, lost > 0 ? `${lost} lost` : null].filter(Boolean).join(", ");
+  return {
+    title: `${fresh.length} deals closed: ${parts}`,
+    body: `${first.title} and ${fresh.length - 1} more`,
+    url: `/${prefix}/pipelines/${first.pipelineId}`,
+    tag: "closed-deals",
+    badge: count,
+  };
+}
 
 /** One notification for tasks newly given to the user. */
 export function assignedTaskPushMessage(fresh: Array<Pick<NeedsMeTask, "id" | "title">>, count: number, prefix: string): DecisionPushMessage {
@@ -79,7 +151,15 @@ export function decisionPushMessage(fresh: DecisionCard[], count: number, prefix
 
 export function pushNotificationService(
   db: Db,
-  options: { keys?: () => VapidKeys; buildFeed?: FeedBuilder; send?: Sender; preferences?: PreferencesReader; now?: () => Date } = {},
+  options: {
+    keys?: () => VapidKeys;
+    buildFeed?: FeedBuilder;
+    finished?: FinishedReader;
+    closedDeals?: ClosedDealReader;
+    send?: Sender;
+    preferences?: PreferencesReader;
+    now?: () => Date;
+  } = {},
 ) {
   const keys = options.keys ?? (() => loadOrCreateVapidKeys());
   const needsMe = needsMeService(db);
@@ -87,6 +167,33 @@ export function pushNotificationService(
     const built = await needsMe.build(companyId, { userId });
     return { cards: built.decisions, count: built.decisionCount, assignedTasks: built.assignedTasks };
   });
+  // Tasks this person created that someone else (an agent or a teammate) finished.
+  const readFinished: FinishedReader = options.finished ?? ((companyId, userId, since) =>
+    db
+      .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
+      .from(issues)
+      .where(and(
+        eq(issues.companyId, companyId),
+        eq(issues.createdByUserId, userId),
+        eq(issues.status, "done"),
+        isNotNull(issues.completedAt),
+        gte(issues.completedAt, since),
+        or(isNull(issues.assigneeUserId), ne(issues.assigneeUserId, userId)),
+      ))
+      .limit(50));
+  // Deals closed as won or lost, except ones this person closed themselves.
+  const readClosedDeals: ClosedDealReader = options.closedDeals ?? ((companyId, userId, since) =>
+    db
+      .select({ id: pipelineCases.id, pipelineId: pipelineCases.pipelineId, title: pipelineCases.title, terminalKind: pipelineCases.terminalKind })
+      .from(pipelineCases)
+      .where(and(
+        eq(pipelineCases.companyId, companyId),
+        isNotNull(pipelineCases.terminalKind),
+        isNotNull(pipelineCases.terminalAt),
+        gte(pipelineCases.terminalAt, since),
+        sql`not exists (select 1 from ${pipelineCaseEvents} where ${pipelineCaseEvents.caseId} = ${pipelineCases.id} and ${pipelineCaseEvents.actorUserId} = ${userId} and ${pipelineCaseEvents.createdAt} >= ${since.toISOString()})`,
+      ))
+      .limit(50) as Promise<ClosedDeal[]>);
   const prefsService = notificationPreferencesService(db);
   const readPreferences: PreferencesReader = options.preferences ?? ((companyId, userId) => prefsService.get(companyId, userId));
   const now = options.now ?? (() => new Date());
@@ -150,9 +257,14 @@ export function pushNotificationService(
         })
         .returning();
       const feed = await buildFeed(companyId, userId);
+      const since = new Date(now.getTime() - FINISHED_WINDOW_MS);
+      const finished = await readFinished(companyId, userId, since);
+      const closed = await readClosedDeals(companyId, userId, since);
       await rememberCards(companyId, userId, [
         ...feed.cards.map((card) => card.id),
         ...(feed.assignedTasks ?? []).map((task) => assignedTaskCardId(task.id)),
+        ...finished.map((task) => finishedTaskCardId(task.id)),
+        ...closed.map((deal) => closedDealCardId(deal.id)),
       ]);
       return row!;
     },
@@ -212,9 +324,9 @@ export function pushNotificationService(
         try {
           const built = await buildFeed(companyId, userId);
           const prefs = await readPreferences(companyId, userId);
-          // During quiet hours nothing is sent or remembered: what arrived
-          // overnight goes out in the first round after they end.
-          if (isQuietHour(prefs, now())) continue;
+          // During quiet hours or a pause nothing is sent or remembered: what
+          // arrived meanwhile goes out in the first round after they end.
+          if (isHeld(prefs, now())) continue;
           // "At your desk" cards never go to the phone (GRE-450).
           const feed = { ...built, cards: built.cards.filter((card) => !card.atDesk) };
           const assigned = built.assignedTasks ?? [];
@@ -225,7 +337,15 @@ export function pushNotificationService(
               .where(and(eq(pushNotifiedDecisions.companyId, companyId), eq(pushNotifiedDecisions.userId, userId))))
               .map((row) => row.cardId),
           );
-          const current = new Set([...feed.cards.map((card) => card.id), ...assigned.map((task) => assignedTaskCardId(task.id))]);
+          const since = new Date(now().getTime() - FINISHED_WINDOW_MS);
+          const finished = await readFinished(companyId, userId, since);
+          const closed = await readClosedDeals(companyId, userId, since);
+          const current = new Set([
+            ...feed.cards.map((card) => card.id),
+            ...assigned.map((task) => assignedTaskCardId(task.id)),
+            ...finished.map((task) => finishedTaskCardId(task.id)),
+            ...closed.map((deal) => closedDealCardId(deal.id)),
+          ]);
           const gone = [...known].filter((cardId) => !current.has(cardId));
           if (gone.length > 0) {
             await db.delete(pushNotifiedDecisions).where(and(
@@ -250,11 +370,18 @@ export function pushNotificationService(
             }
           }
           const freshTasks = assigned.filter((task) => !known.has(assignedTaskCardId(task.id)));
-          if (fresh.length === 0 && freshTasks.length === 0) continue;
+          const freshFinished = finished.filter((task) => !known.has(finishedTaskCardId(task.id)));
+          const freshClosed = closed.filter((deal) => !known.has(closedDealCardId(deal.id)));
+          if (fresh.length === 0 && freshTasks.length === 0 && freshFinished.length === 0 && freshClosed.length === 0) continue;
           // Remember first: a slow or failing push service never repeats a
           // card. A topic switched off is remembered too, so switching it back
           // on never floods the phone with the backlog.
-          await rememberCards(companyId, userId, [...fresh.map((card) => card.id), ...freshTasks.map((task) => assignedTaskCardId(task.id))]);
+          await rememberCards(companyId, userId, [
+            ...fresh.map((card) => card.id),
+            ...freshTasks.map((task) => assignedTaskCardId(task.id)),
+            ...freshFinished.map((task) => finishedTaskCardId(task.id)),
+            ...freshClosed.map((deal) => closedDealCardId(deal.id)),
+          ]);
           // An outage notice is about GSAM itself, so it ignores the decisions switch.
           const sendCards = prefs.decisions ? fresh : fresh.filter((card) => card.kind === "outage");
           if (sendCards.length > 0) {
@@ -263,6 +390,14 @@ export function pushNotificationService(
           }
           if (prefs.assignedTasks && freshTasks.length > 0) {
             const { delivered } = await deliver(companyId, userId, assignedTaskPushMessage(freshTasks, feed.count, prefix));
+            sent += delivered;
+          }
+          if (prefs.finishedWork && freshFinished.length > 0) {
+            const { delivered } = await deliver(companyId, userId, finishedTaskPushMessage(freshFinished, feed.count, prefix));
+            sent += delivered;
+          }
+          if (prefs.finishedWork && freshClosed.length > 0) {
+            const { delivered } = await deliver(companyId, userId, closedDealPushMessage(freshClosed, feed.count, prefix));
             sent += delivered;
           }
         } catch (error) {

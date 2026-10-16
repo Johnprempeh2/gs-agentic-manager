@@ -65,10 +65,28 @@ describe("NotificationSettings", () => {
   it("shows each choice in plain words, all on by default", async () => {
     await render();
     expect(container.textContent).toContain("Notifications are off for this computer.");
-    for (const label of ["A decision needs me", "A task is given to me", "Someone messages a team chat I am in"]) {
+    for (const label of ["A decision needs me", "A task is given to me", "A task I asked for is done, or a deal closes", "Someone messages a team chat I am in"]) {
       expect(toggle(label).getAttribute("aria-checked")).toBe("true");
     }
     expect(toggle("Use quiet hours").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("pauses notifications for an hour and resumes them", async () => {
+    await render();
+    const button = (text: string) => [...container.querySelectorAll("button")].find((b) => b.textContent === text)!;
+    const before = Date.now();
+    await act(async () => { button("1 hour").click(); });
+    await flush();
+    const until = Date.parse(String(server.patches[0]?.pausedUntil));
+    expect(until - before).toBeGreaterThanOrEqual(59 * 60 * 1000);
+    expect(until - before).toBeLessThanOrEqual(61 * 60 * 1000);
+    expect(container.textContent).toContain("Notifications paused until");
+
+    await act(async () => { button("Resume now").click(); });
+    await flush();
+    expect(server.patches[1]).toEqual({ pausedUntil: null });
+    expect(container.textContent).not.toContain("Notifications paused until");
+    expect(button("Until tomorrow morning")).toBeTruthy();
   });
 
   it("saves a switch straight away", async () => {

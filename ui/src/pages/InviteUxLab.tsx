@@ -28,7 +28,7 @@ const inviteRoleOptions = [
     value: "viewer",
     label: "Viewer",
     description: "Can view organization work and follow along.",
-    gets: "View-only organization membership.",
+    gets: "View-only organisation membership.",
   },
   {
     value: "operator",
@@ -680,7 +680,7 @@ function CompanyInvitesPreview() {
             <div className="rounded-2xl border border-border p-4">
               <div className="text-sm font-medium">Empty history state</div>
               <div className="mt-2 text-sm text-muted-foreground">
-                No invites have been created for this organization yet.
+                No invites have been created for this organisation yet.
               </div>
             </div>
             <div className="rounded-2xl border border-rose-400/40 bg-rose-500/[0.07] p-4">

@@ -1,16 +1,20 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MorningSummaryTask } from "@greatstone/shared";
-import { AlertTriangle, CalendarClock, CircleCheck, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { PauseNotifications } from "../components/PauseNotifications";
 import { queryKeys } from "../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
+import { morningSummaryText } from "@/lib/morning-summary-text";
+import { useCopyAction } from "@/lib/use-copy-action";
+import { Button } from "@/components/ui/button";
 
 /** "Good morning", "Good afternoon" or "Good evening" by the person's own clock. */
 export function greeting(now: Date) {
@@ -51,7 +55,10 @@ function Section({
   today?: string;
 }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-card p-4">
+    <section
+      className="space-y-2 rounded-lg border border-border bg-card p-4"
+      data-tour={`morning-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+    >
       <div className="flex items-center gap-2">
         <Icon
           className={cn(
@@ -93,13 +100,14 @@ function Section({
 
 /**
  * Today (also the morning summary): what needs you, what is due today, what
- * the agents finished since yesterday, and what is stuck. It is the landing
- * page on a phone and the morning notification opens here, so it reads well
+ * the agents are working on now, what they finished since yesterday, and what
+ * is stuck. It is the landing page on a phone and the morning notification opens here, so it reads well
  * on a phone first.
  */
 export function MorningSummary() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const dayCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Today" }]);
@@ -122,13 +130,26 @@ export function MorningSummary() {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold">{greeting(now)}</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">{greeting(now)}</h1>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Copy today as text, ready to paste into a message"
+            onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
+          >
+            {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+            {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground">
           {data.needsYou.count === 0
             ? "Nothing needs you right now. Here is what the team did since yesterday."
             : "Start with what needs you. Then see what the team did since yesterday."}
         </p>
       </header>
+
+      <PauseNotifications companyId={selectedCompanyId} compact />
 
       <Section
         icon={UserCheck}
@@ -149,6 +170,17 @@ export function MorningSummary() {
         tone="danger"
         today={localToday(now)}
       />
+      {data.workingNow ? (
+        <Section
+          icon={Activity}
+          title="Working now"
+          count={data.workingNow.count}
+          empty="No agent is working on a task right now."
+          items={data.workingNow.items}
+          more={{ label: "See all tasks", to: "/issues" }}
+          tone="success"
+        />
+      ) : null}
       <Section
         icon={CircleCheck}
         title="Finished since yesterday"

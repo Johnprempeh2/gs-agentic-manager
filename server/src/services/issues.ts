@@ -1,5 +1,6 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
-import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion } from "./closed-card-wake.js";
+import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion, wakeMakersOfExpiredCards } from "./closed-card-wake.js";
+import type { IssueThreadInteraction } from "@greatstone/shared";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
@@ -359,6 +360,43 @@ async function wakeClosedCardMaker(
       { err, interactionId: action.interactionId, agentId: action.agentId },
       "failed to wake the maker of a card expired by a task close",
     );
+  }
+}
+
+// Cards a person's comment expired inside an addComment transaction, keyed by
+// that transaction, so the makers can be woken once it commits.
+const cardsExpiredByCommentInTx = new WeakMap<object, IssueThreadInteraction[]>();
+
+async function wakeMakersOfCardsExpiredByComment(
+  db: Db,
+  issueId: string,
+  expiredCards: IssueThreadInteraction[],
+): Promise<void> {
+  if (expiredCards.length === 0) return;
+  try {
+    const issue = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        identifier: issues.identifier,
+        title: issues.title,
+        status: issues.status,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
+      .from(issues)
+      .where(eq(issues.id, issueId))
+      .then((rows) => rows[0] ?? null);
+    if (!issue) return;
+    const { heartbeatService } = await import("./heartbeat.js");
+    await wakeMakersOfExpiredCards(heartbeatService(db), {
+      issue,
+      interactions: expiredCards,
+      source: "issue.comment",
+      logger,
+    });
+  } catch (err) {
+    // The cards are already expired and logged; a lost wake must not fail the comment.
+    logger.warn({ err, issueId }, "failed to wake the makers of cards expired by a comment");
   }
 }
 
@@ -12549,8 +12587,10 @@ export function issueService(db: Db) {
       dbOrTx: any = db,
     ): Promise<IssueComment> {
       if (dbOrTx === db && (actor.runId || actor.userId)) {
-        const append = () =>
-          db.transaction(async (tx) => {
+        const append = async () => {
+          const expiredCards: IssueThreadInteraction[] = [];
+          const saved = await db.transaction(async (tx) => {
+            cardsExpiredByCommentInTx.set(tx, expiredCards);
             // Serialize run-authored comments on the issue so a provider retry
             // cannot publish the same visible result twice. This needs no schema
             // change: the issue row is the transaction fence, and the recursive
@@ -12564,6 +12604,10 @@ export function issueService(db: Db) {
               .for(REFERENCED_ROW_LOCK);
             return addComment(issueId, body, actor, options, tx);
           });
+          // After commit: a person's comment expired cards, so tell their makers.
+          await wakeMakersOfCardsExpiredByComment(db, issueId, expiredCards);
+          return saved;
+        };
         return options?.authorizationReason ===
           CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON
           ? retryNativeChatReviewPresentation(append)
@@ -13145,6 +13189,7 @@ export function issueService(db: Db) {
           comment,
           { agentId: actor.agentId, userId: actor.userId },
         );
+        cardsExpiredByCommentInTx.get(dbOrTx)?.push(...expiredInteractions);
         for (const interaction of expiredInteractions) {
           await logActivity(dbOrTx, {
             companyId: issue.companyId,

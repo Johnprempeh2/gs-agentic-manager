@@ -155,7 +155,7 @@ function DayList({
         {date === today ? <span className="ml-2 text-xs font-normal text-muted-foreground">Today</span> : null}
       </h2>
       {items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing on this day.</p>
+        <p className="text-sm text-muted-foreground">Nothing is due on this day.</p>
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border bg-card">
           {items.map((item) => {
@@ -226,24 +226,37 @@ export function Calendar() {
 
   const calendarKey = queryKeys.calendar(selectedCompanyId ?? "", from, to);
   const reschedule = useMutation({
-    mutationFn: ({ id, date }: { id: string; date: string }) => issuesApi.update(id, { dueDate: date }),
+    mutationFn: ({ id, date }: { id: string; date: string; undo?: boolean }) => issuesApi.update(id, { dueDate: date }),
     onMutate: async ({ id, date }) => {
       await queryClient.cancelQueries({ queryKey: calendarKey });
       const previous = queryClient.getQueryData<CompanyCalendar>(calendarKey);
+      const fromDate = previous?.items.find((item) => item.kind === "task" && item.id === id)?.date ?? null;
       if (previous) {
         queryClient.setQueryData<CompanyCalendar>(calendarKey, {
           ...previous,
           items: previous.items.map((item) => (item.kind === "task" && item.id === id ? { ...item, date } : item)),
         });
       }
-      return { previous };
+      return { previous, fromDate };
     },
-    onError: (err, _vars, context) => {
+    onError: (_err, _vars, context) => {
       if (context?.previous) queryClient.setQueryData(calendarKey, context.previous);
-      pushToast({ title: "Could not change the due date", body: err instanceof Error ? err.message : undefined, tone: "error" });
+      pushToast({ title: "Could not change the due date", body: "Nothing has changed. Try again in a moment.", tone: "error" });
     },
-    onSuccess: (_issue, { date }) => {
-      pushToast({ title: `Due date moved to ${dayTitle(date)}`, tone: "success" });
+    onSuccess: (_issue, { id, date, undo }, context) => {
+      if (undo) {
+        pushToast({ title: "Due date put back", tone: "success" });
+        return;
+      }
+      const fromDate = context?.fromDate;
+      pushToast({
+        title: `Due date moved to ${dayTitle(date)}`,
+        tone: "success",
+        ttlMs: 10_000,
+        action: fromDate && fromDate !== date
+          ? { label: "Undo", onClick: () => reschedule.mutate({ id, date: fromDate, undo: true }) }
+          : undefined,
+      });
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["calendar", selectedCompanyId ?? ""] });
@@ -317,8 +330,8 @@ export function Calendar() {
             },
           });
         },
-        onError: (err) =>
-          pushToast({ title: "Could not change the due dates", body: err instanceof Error ? err.message : undefined, tone: "error" }),
+        onError: () =>
+          pushToast({ title: "Could not change the due dates", body: "Nothing has changed. Try again in a moment.", tone: "error" }),
       },
     );
   }
@@ -415,7 +428,7 @@ export function Calendar() {
             aria-label={weekCopy.copied ? "Copied" : "Copy the week ahead"}
             onClick={() =>
               void copyWeekAhead().catch((err) =>
-                pushToast({ title: "Could not load the week ahead", body: err instanceof Error ? err.message : undefined, tone: "error" }),
+                pushToast({ title: "Could not load the week ahead", body: err instanceof Error ? `Try again in a moment. (${err.message})` : "Try again in a moment.", tone: "error" }),
               )
             }
           >
@@ -605,7 +618,11 @@ export function Calendar() {
               <DayList key={date} date={date} items={items} today={today} onMove={moveTask} />
             ))}
             {monthItemCount === 0 ? (
-              <EmptyState icon={CalendarDays} message={`Nothing is scheduled for ${monthTitle(month)}.`} />
+              <EmptyState
+                icon={CalendarDays}
+                message={`Nothing is scheduled for ${monthTitle(month)}.`}
+                description="Give a task a due date and it shows here."
+              />
             ) : null}
           </div>
 

@@ -2425,7 +2425,7 @@ export function TeamCatalog() {
   if (!selectedCompanyId) {
     return (
       <div className="p-8">
-        <EmptyState icon={Users2} message="Select an organization to browse the team catalog." />
+        <EmptyState icon={Users2} message="Choose an organisation to browse the team catalog." />
       </div>
     );
   }

@@ -14,7 +14,9 @@ import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
+import { CrmProductCatalogue } from "@/components/CrmProductCatalogue";
 import { ClientsExportButton } from "@/components/DataExport";
+import { PeopleSearch } from "@/components/PeopleSearch";
 import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -103,7 +105,7 @@ export function Organisations() {
             Every company you work with: targets, prospects, clients and former clients.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2" data-tour="organisations-import">
           {selectedCompanyId ? <PipedriveImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <HubspotImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <NotionImport companyId={selectedCompanyId} /> : null}
@@ -115,7 +117,7 @@ export function Organisations() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row" data-tour="organisations-search">
         <Input
           aria-label="Search organisations"
           placeholder="Search name, industry, country or contact"
@@ -145,6 +147,15 @@ export function Organisations() {
           icon={Building2}
           message={filtered ? "No organisations match this search." : "No organisations yet."}
           description={filtered ? undefined : "Add the companies you work with, or import them from your CRM later."}
+          action={filtered ? "Clear search" : "Add organisation"}
+          onAction={() => {
+            if (filtered) {
+              setSearch("");
+              setStatus("");
+            } else {
+              setEditing("new");
+            }
+          }}
         />
       ) : isPhone ? (
         <ul className="space-y-3" aria-label="Organisations">
@@ -213,7 +224,9 @@ export function Organisations() {
         </div>
       )}
 
+      {selectedCompanyId ? <PeopleSearch companyId={selectedCompanyId} /> : null}
       {selectedCompanyId ? <UnassignedPeople companyId={selectedCompanyId} /> : null}
+      {selectedCompanyId ? <CrmProductCatalogue companyId={selectedCompanyId} /> : null}
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         {editing !== null && selectedCompanyId ? (

@@ -97,7 +97,7 @@ export function ProfileSettings() {
   const uploadAvatarMutation = useMutation({
     mutationFn: async (file: File) => {
       if (!selectedCompanyId) {
-        throw new Error("Select an organization before uploading a profile avatar.");
+        throw new Error("Choose an organisation before uploading a profile avatar.");
       }
 
       const asset = await assetsApi.uploadImage(
@@ -147,7 +147,7 @@ export function ProfileSettings() {
   const isSavingProfile = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
   const uploadHint = selectedCompany
     ? `Stored in GS Agentic Manager file storage for ${selectedCompany.name}.`
-    : "Select an organization to upload an avatar into GS Agentic Manager storage.";
+    : "Choose an organisation to upload an avatar into GS Agentic Manager storage.";
 
   return (
     <div className="max-w-6xl space-y-6">

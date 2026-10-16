@@ -200,7 +200,7 @@ describe("chat connector UI contract", () => {
     expect(setup).toContain("Client secret value");
     expect(setup).toContain("Microsoft portal field map");
     expect(setup).toContain(
-      "Accounts in this organizational directory only (Single tenant)",
+      "Accounts in this organisational directory only (Single tenant)",
     );
     expect(setup).toContain("Use existing app registration");
     expect(setup).toContain("Settings · Configuration");

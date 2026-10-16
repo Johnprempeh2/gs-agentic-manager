@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { createDb, companies, issues, notificationPreferences, pushSubscriptions } from "@greatstone/db";
+import { agents, createDb, companies, heartbeatRuns, issues, notificationPreferences, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type MorningSummary, type NeedsMe } from "@greatstone/shared";
 import { morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems } from "../services/morning-summary.js";
@@ -100,6 +100,18 @@ describe("morning summary service", () => {
       { companyId, title: "Due tomorrow", status: "todo", dueDate: "2026-10-17" },
       { companyId, title: "Done today", status: "done", dueDate: "2026-10-16" },
     ]);
+    const [agent] = await db.insert(agents).values({ companyId, name: "Writer" }).returning();
+    const [running, finished] = await db
+      .insert(heartbeatRuns)
+      .values([
+        { companyId, agentId: agent!.id, status: "running" },
+        { companyId, agentId: agent!.id, status: "succeeded" },
+      ])
+      .returning();
+    await db.insert(issues).values([
+      { companyId, title: "Drafting the deck", status: "in_progress", executionRunId: running!.id },
+      { companyId, title: "Run already ended", status: "in_progress", executionRunId: finished!.id },
+    ]);
   }, 90000);
   afterAll(async () => { await database?.cleanup(); vi.unstubAllEnvs(); if (home) await rm(home, { recursive: true, force: true }); });
   beforeEach(async () => {
@@ -116,6 +128,11 @@ describe("morning summary service", () => {
     expect(built.stuck.count).toBe(1);
     expect(built.stuck.items.map((item) => item.title)).toEqual(["Import contacts"]);
     expect(built.needsYou.count).toBe(2);
+  });
+
+  it("lists the tasks an agent is working on right now", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.workingNow).toEqual({ count: 1, items: [expect.objectContaining({ title: "Drafting the deck" })] });
   });
 
   it("lists open tasks due today by the person's own date, late ones first", async () => {

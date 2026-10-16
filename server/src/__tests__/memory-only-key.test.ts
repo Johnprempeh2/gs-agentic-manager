@@ -5,10 +5,10 @@ import { join } from "node:path";
 import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   agentApiKeys, agents, agentWakeupRequests, authUsers, companies, companyMemberships, heartbeatRuns, memorySettings,
-  principalPermissionGrants,
+  principalPermissionGrants, projects,
 } from "@greatstone/db";
 import { createApp } from "../app.js";
 import { isMemoryPath } from "../middleware/memory-only-key-guard.js";
@@ -120,12 +120,15 @@ describeEmbeddedPostgres("memory_only agent keys (GRE-958)", () => {
   const ownerId = `user-${randomUUID()}`;
   const operatorId = `user-${randomUUID()}`;
   const claudeId = randomUUID();
+  const sharedId = randomUUID();
   const workerId = randomUUID();
   const memoryToken = `pcp_memonly_${randomBytes(24).toString("hex")}`;
+  const sharedToken = `pcp_shared_${randomBytes(24).toString("hex")}`;
   const workerToken = `pcp_worker_${randomBytes(24).toString("hex")}`;
   const SESSION_HEADER = "x-test-session";
 
   const asMemoryKey = { Authorization: `Bearer ${memoryToken}` };
+  const asSharedKey = { Authorization: `Bearer ${sharedToken}` };
   const asWorker = { Authorization: `Bearer ${workerToken}` };
   const asOwner = { [SESSION_HEADER]: ownerId, Origin: "http://127.0.0.1" };
   const asOperator = { [SESSION_HEADER]: operatorId, Origin: "http://127.0.0.1" };
@@ -183,6 +186,13 @@ describeEmbeddedPostgres("memory_only agent keys (GRE-958)", () => {
       {
         id: claudeId, companyId, name: "John's Claude", role: "general", adapterType: "process",
         adapterConfig: {}, runtimeConfig: { heartbeat: { enabled: false } }, permissions: {}, status: "paused",
+        // John's own app link (GRE-1081): a memory key belongs to one person.
+        metadata: { memoryConnection: { app: "claude", createdByUserId: ownerId } },
+      },
+      {
+        // The old shared memory key: a paused agent tied to nobody.
+        id: sharedId, companyId, name: "Shared memory key", role: "general", adapterType: "process",
+        adapterConfig: {}, runtimeConfig: { heartbeat: { enabled: false } }, permissions: {}, status: "paused",
       },
       {
         id: workerId, companyId, name: "Worker", role: "ceo", adapterType: "process",
@@ -193,6 +203,10 @@ describeEmbeddedPostgres("memory_only agent keys (GRE-958)", () => {
       {
         agentId: claudeId, companyId, name: "claude-memory", responsibleUserId: ownerId,
         keyHash: createHash("sha256").update(memoryToken).digest("hex"), scopeConfig: { kind: "memory_only" },
+      },
+      {
+        agentId: sharedId, companyId, name: "shared-memory", responsibleUserId: ownerId,
+        keyHash: createHash("sha256").update(sharedToken).digest("hex"), scopeConfig: { kind: "memory_only" },
       },
       {
         agentId: workerId, companyId, name: "worker", responsibleUserId: ownerId,
@@ -281,6 +295,9 @@ describeEmbeddedPostgres("memory_only agent keys (GRE-958)", () => {
 
     const forActiveAgent = await call(asOwner, "POST", `/api/agents/${workerId}/keys`, body);
     expect(forActiveAgent.status).toBe(409);
+    // GRE-1081: no new shared key on an agent that is not one person's app link.
+    const forSharedAgent = await call(asOwner, "POST", `/api/agents/${sharedId}/keys`, body);
+    expect(forSharedAgent.status).toBe(409);
 
     const created = await call(asOwner, "POST", `/api/agents/${claudeId}/keys`, body);
     expect(created.status).toBe(201);
@@ -300,5 +317,133 @@ describeEmbeddedPostgres("memory_only agent keys (GRE-958)", () => {
     expect(revoked.status).toBe(200);
     const afterRevoke = await call({ Authorization: `Bearer ${created.body.token}` }, "GET", `/api/companies/${companyId}/memory/settings`);
     expect(afterRevoke.status).toBe(401);
+  });
+
+  // Shared memory M2 (GRE-1081, deck v7 slide 22).
+
+  const mcp = (headers: Record<string, string>, method: string, params?: Record<string, unknown>) =>
+    call(headers, "POST", "/api/mcp/memory-tools", { jsonrpc: "2.0", id: 1, method, ...(params ? { params } : {}) });
+  const tool = (headers: Record<string, string>, name: string, args: Record<string, unknown>) =>
+    mcp(headers, "tools/call", { name, arguments: args });
+
+  it("refuses the old shared key: a memory key must belong to one person", async () => {
+    for (const res of [
+      await call(asSharedKey, "GET", `/api/companies/${companyId}/memory/settings`),
+      await mcp(asSharedKey, "tools/list"),
+    ]) {
+      expect(res.status).toBe(403);
+      expect(res.body.details?.code).toBe("MEMORY_KEY_NOT_LINKED");
+    }
+  });
+
+  it("gives each person their own key; revoking one, or removing the person, cuts that app off on its next call", async () => {
+    const connections = `/api/companies/${companyId}/memory/connections`;
+    const owners = await call(asOwner, "POST", connections, { app: "claude_code" });
+    const operators = await call(asOperator, "POST", connections, { app: "claude_code" });
+    expect(owners.status).toBe(201);
+    expect(operators.status).toBe(201);
+    expect(operators.body.connection.agentId).not.toBe(owners.body.connection.agentId);
+    const asOwnersApp = { Authorization: `Bearer ${owners.body.token}` };
+    const asOperatorsApp = { Authorization: `Bearer ${operators.body.token}` };
+    const settings = `/api/companies/${companyId}/memory/settings`;
+    expect((await call(asOwnersApp, "GET", settings)).status).toBe(200);
+    expect((await call(asOperatorsApp, "GET", settings)).status).toBe(200);
+
+    // The operator cuts off their own app; the owner's app keeps working.
+    expect((await call(asOperator, "DELETE", `${connections}/${operators.body.connection.agentId}`)).status).toBe(200);
+    expect((await call(asOperatorsApp, "GET", settings)).status).toBe(401);
+    expect((await call(asOwnersApp, "GET", settings)).status).toBe(200);
+
+    // A person who leaves the company takes their apps with them.
+    const codex = await call(asOperator, "POST", connections, { app: "codex" });
+    const asCodex = { Authorization: `Bearer ${codex.body.token}` };
+    expect((await call(asCodex, "GET", settings)).status).toBe(200);
+    const operatorMembership = and(eq(companyMemberships.companyId, companyId), eq(companyMemberships.principalId, operatorId));
+    await ctx.db.update(companyMemberships).set({ status: "suspended" }).where(operatorMembership);
+    try {
+      const cut = await call(asCodex, "GET", settings);
+      expect(cut.status).toBe(403);
+      expect(cut.body.details?.code).toBe("MEMORY_KEY_NOT_LINKED");
+    } finally {
+      await ctx.db.update(companyMemberships).set({ status: "active" }).where(operatorMembership);
+    }
+  });
+
+  it("an app reads and proposes only, and every versioned write at a stale version is refused", async () => {
+    const tools = await mcp(asMemoryKey, "tools/list");
+    const names = tools.body.result.tools.map((t: { name: string }) => t.name);
+    expect(names).toEqual(expect.arrayContaining(["memory_recall", "memory_contribute", "memory_get", "memory_history", "memory_revise"]));
+    for (const reviewerTool of ["memory_confirm", "memory_dispute", "memory_retire"]) expect(names).not.toContain(reviewerTool);
+
+    await ctx.db.insert(principalPermissionGrants).values({
+      companyId, principalType: "agent", principalId: claudeId, permissionKey: "memory:contribute", grantedByUserId: ownerId,
+    }).onConflictDoNothing();
+    const proposed = await tool(asMemoryKey, "memory_contribute", { scope: "organization", content: "Invoices go out on the 1st." });
+    expect(proposed.body.result.isError).toBeUndefined();
+    const card = proposed.body.result.structuredContent.record as { id: string; version: number; status: string };
+    expect(card).toMatchObject({ status: "unreviewed", version: 1 });
+
+    // Calling the reviewer tools anyway is refused by the gateway, and nothing changes.
+    for (const name of ["memory_confirm", "memory_dispute", "memory_retire"]) {
+      const res = await tool(asMemoryKey, name, { recordId: card.id, expectedVersion: 1, reason: "From my app" });
+      expect(res.body.result.isError).toBe(true);
+      expect(res.body.result.content[0].text).toMatch(/read and propose only/);
+    }
+    const records = `/api/companies/${companyId}/memory/records/${card.id}`;
+    expect((await call(asOwner, "GET", records)).body).toMatchObject({ status: "unreviewed", version: 1 });
+
+    // The person confirms in GSAM; the confirmed card moves to version 2.
+    const approved = await call(asOwner, "POST", `${records}/review`, { action: "approve", reason: "Checked", expectedVersion: 1 });
+    expect(approved.status).toBe(200);
+    expect(approved.body).toMatchObject({ status: "approved", version: 2 });
+
+    // The app revises from what it read before the confirm: refused, nothing saved.
+    const stale = await tool(asMemoryKey, "memory_revise", { recordId: card.id, expectedVersion: 1, content: "Invoices go out on the 2nd.", reason: "Moved" });
+    expect(stale.body.result).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/changed since you read it/) }] });
+
+    // At the current version the revision is a proposal; the confirmed card stays in force.
+    const revised = await tool(asMemoryKey, "memory_revise", { recordId: card.id, expectedVersion: 2, content: "Invoices go out on the 2nd.", reason: "Moved" });
+    expect(revised.body.result.isError).toBeUndefined();
+    expect(revised.body.result.structuredContent).toMatchObject({
+      record: { id: card.id, status: "approved", version: 2 },
+      newRecord: { status: "unreviewed", version: 3 },
+    });
+
+    // Retire and dispute in GSAM check the version too.
+    expect((await call(asOwner, "POST", `${records}/retire`, { expectedVersion: 1, reason: "Old" })).status).toBe(409);
+    expect((await call(asOwner, "POST", `${records}/review`, { action: "dispute", reason: "Old", expectedVersion: 1 })).status).toBe(409);
+
+    // John confirms the revision his own app proposed; it replaces the card.
+    const revision = `/api/companies/${companyId}/memory/records/${revised.body.result.structuredContent.newRecord.id}`;
+    const confirmed = await call(asOwner, "POST", `${revision}/steward-action`, { action: "confirm", expectedVersion: 3, reason: "Checked" });
+    expect(confirmed.status).toBe(200);
+    const current = (await call(asOwner, "GET", revision)).body as { status: string; version: number };
+    expect(current.status).toBe("approved");
+    // The confirm moved the version on for good: a call made at the version seen before it is refused.
+    expect(current.version).toBeGreaterThan(3);
+    expect((await call(asOwner, "POST", `${revision}/review`, { action: "dispute", reason: "Stale", expectedVersion: 3 })).status).toBe(409);
+    expect((await call(asOwner, "GET", records)).body).toMatchObject({ status: "superseded" });
+
+    const retired = await call(asOwner, "POST", `${revision}/retire`, { expectedVersion: current.version, reason: "No longer true" });
+    expect(retired.status).toBe(200);
+    expect(retired.body).toMatchObject({ status: "retired", version: current.version + 1 });
+  });
+
+  it("keeps client and restricted scopes off for an app, even when its person can read them", async () => {
+    const scopes = `/api/companies/${companyId}/memory/scopes`;
+    const [project] = await ctx.db.insert(projects).values({ companyId, name: "Kestrel bid", leadAgentId: workerId }).returning();
+    for (const kind of ["client", "restricted_project"] as const) {
+      const scope = await call(asOwner, "POST", scopes, { kind, name: `Kestrel ${kind}`, ...(kind === "restricted_project" ? { projectId: project!.id } : {}) });
+      expect(scope.status).toBe(201);
+      const added = await call(asOwner, "POST", `/api/companies/${companyId}/memory/records`, { scopeId: scope.body.id, content: `Kestrel terms (${kind}).`, topics: ["kestrel terms"] });
+      expect(added.status).toBe(201);
+      const recordId = added.body.record.id as string;
+      expect((await call(asOwner, "GET", `/api/companies/${companyId}/memory/records/${recordId}`)).status).toBe(200);
+
+      const got = await tool(asMemoryKey, "memory_get", { recordId });
+      expect(got.body.result.isError).toBe(true);
+      const write = await tool(asMemoryKey, "memory_contribute", { scope: scope.body.id, content: "From my app.", topics: ["kestrel terms"] });
+      expect(write.body.result.isError).toBe(true);
+    }
   });
 });

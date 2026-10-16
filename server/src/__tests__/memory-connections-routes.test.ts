@@ -117,9 +117,28 @@ describeEmbeddedPostgres("memory connections for Claude, Codex and other MCP app
     expect(actions).toContain("memory.connection_revoked");
   });
 
-  it("is for owners and admins only, and only while memory is on", async () => {
-    const { operator, base } = await setup("Operator");
-    expect((await request(operator).post(base).send({ app: "codex" })).status).toBe(403);
+  it("gives each person their own link; a person sees and cuts off only their own (GRE-1081)", async () => {
+    const { board, operator, base } = await setup("Operator");
+    const mine = await request(operator).post(base).send({ app: "codex", canContribute: true });
+    expect(mine.status).toBe(201);
+    expect(mine.body.connection).toMatchObject({ app: "codex", createdByUserId: "user-operator", canContribute: true });
+    const owners = await request(board).post(base).send({ app: "codex" });
+    expect(owners.status).toBe(201);
+    // Same app, different person: a separate link agent and a separate key.
+    expect(owners.body.connection.agentId).not.toBe(mine.body.connection.agentId);
+    expect(owners.body.token).not.toBe(mine.body.token);
+
+    expect((await request(operator).get(base)).body.map((c: { agentId: string }) => c.agentId)).toEqual([mine.body.connection.agentId]);
+    expect((await request(board).get(base)).body).toHaveLength(2);
+    // Someone else's link answers like a missing one.
+    expect((await request(operator).get(`${base}/${owners.body.connection.agentId}/activity`)).status).toBe(404);
+    expect((await request(operator).delete(`${base}/${owners.body.connection.agentId}`)).status).toBe(404);
+    // An owner or admin may cut off anyone's link.
+    expect((await request(board).delete(`${base}/${mine.body.connection.agentId}`)).status).toBe(200);
+    expect((await request(operator).get(base)).body).toEqual([]);
+  });
+
+  it("is only while memory is on", async () => {
     const off = await setup("Off", false);
     expect((await request(off.board).post(off.base).send({ app: "codex" })).status).toBe(404);
   });

@@ -1,7 +1,7 @@
 import { resolveHeartbeatGitHubAccess } from "../services/heartbeat-github-access.js";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { spawnSync } from "node:child_process";
@@ -1280,14 +1280,14 @@ const support = await getEmbeddedPostgresTestSupport();
       const remote=createServer((_req,res)=>{res.writeHead(401,{"www-authenticate":'Basic realm="synthetic"'});res.end();});
       await new Promise<void>(resolve=>remote.listen(0,"127.0.0.1",resolve));
       const broker = await createNativeGitHubAccess({
-        scope: input, target: null, cwd: process.cwd(), env: { PATH: "/usr/bin:/bin" },
+        scope: input, target: null, cwd: process.cwd(), env: { PATH: `${dirname(process.execPath)}:/usr/bin:/bin` },
         resolveCredentials: (binding) => resolveGitHubOperationCredentials(db, binding),
       });
       broker.activate(input);
       try{
         const port=(remote.address() as { port: number }).port;
         const result=await promisify(execFile)(`${broker.env.GSAM_GITHUB_LAUNCHER_DIR}/git`,["ls-remote",`http://127.0.0.1:${port}/synthetic.git`],{
-          env:{PATH:"/usr/bin:/bin",GIT_CONFIG_GLOBAL:"/dev/null",GIT_CONFIG_SYSTEM:"/dev/null",GIT_TERMINAL_PROMPT:"0",...broker.env}
+          env:{PATH:`${dirname(process.execPath)}:/usr/bin:/bin`,GIT_CONFIG_GLOBAL:"/dev/null",GIT_CONFIG_SYSTEM:"/dev/null",GIT_TERMINAL_PROMPT:"0",...broker.env}
         }).then(r=>({stderr:r.stderr,code:0}),e=>({stderr:e.stderr,code:e.code}));
         expect(result.code).not.toBe(0);
         expect(result.stderr).toContain("cannot supply git credentials");

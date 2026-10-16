@@ -26,7 +26,7 @@ export function AppsReview() {
   }, [setBreadcrumbs]);
 
   if (!selectedCompanyId) {
-    return <div className="p-6 text-sm text-muted-foreground">Select an organization to review approvals.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Choose an organisation to review approvals.</div>;
   }
 
   return (

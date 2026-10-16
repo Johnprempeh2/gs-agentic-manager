@@ -25,6 +25,7 @@ import { Label } from "@/components/ui/label";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useCopyToast } from "@/lib/use-copy-action";
 import { relativeTime } from "@/lib/utils";
+import { useConfirm } from "@/context/ConfirmContext";
 
 export const outboundWebhooksKey = (companyId: string) => ["outbound-webhooks", companyId] as const;
 const deliveriesKey = (companyId: string, id: string) => ["outbound-webhooks", companyId, id, "deliveries"] as const;
@@ -86,10 +87,13 @@ function SecretReveal({ webhook, onDone }: { webhook: OutboundWebhookWithSecret;
             Copy
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Each request carries `X-GSAM-Signature: sha256=…`, an HMAC of the `X-GSAM-Timestamp` value, a dot and the body.
-          Slack and Teams ignore it.
-        </p>
+        <p className="text-xs text-muted-foreground">Slack and Teams do not need this. You can press Done.</p>
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Technical details for whoever sets up the receiving tool</summary>
+          <p className="pt-1">
+            Each request carries `X-GSAM-Signature: sha256=…`, an HMAC of the `X-GSAM-Timestamp` value, a dot and the body.
+          </p>
+        </details>
       </div>
       <DialogFooter>
         <Button type="button" onClick={onDone}>Done</Button>
@@ -103,6 +107,7 @@ function SecretReveal({ webhook, onDone }: { webhook: OutboundWebhookWithSecret;
  * when chosen events happen. None exist until a person adds one.
  */
 export function OutboundWebhooksDialog({ companyId, open, onOpenChange }: { companyId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const webhooks = useQuery({
     queryKey: outboundWebhooksKey(companyId),
@@ -200,7 +205,15 @@ export function OutboundWebhooksDialog({ companyId, open, onOpenChange }: { comp
                         <ScrollText />
                         Delivery log
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate(webhook.id)} aria-label={`Delete ${webhook.name}`}>
+                      <Button type="button" size="sm" variant="ghost" disabled={remove.isPending} onClick={async () => {
+                        const ok = await confirm({
+                          title: `Delete ${webhook.name}?`,
+                          description: "Updates stop going to this channel. This cannot be undone.",
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        });
+                        if (ok) remove.mutate(webhook.id);
+                      }} aria-label={`Delete ${webhook.name}`}>
                         <Trash2 />
                         Delete
                       </Button>
@@ -210,7 +223,7 @@ export function OutboundWebhooksDialog({ companyId, open, onOpenChange }: { comp
                 ))}
               </ul>
             ) : webhooks.isLoading ? null : (
-              <p className="text-muted-foreground">No addresses yet.</p>
+              <p className="text-muted-foreground">No addresses yet. Add one below to post updates to a Slack or Teams channel.</p>
             )}
 
             <form
@@ -233,7 +246,7 @@ export function OutboundWebhooksDialog({ companyId, open, onOpenChange }: { comp
                   placeholder="https://hooks.slack.com/services/…"
                   onChange={(event) => setUrl(event.target.value)}
                 />
-                <p className="text-xs text-muted-foreground">In Slack or Teams, add an incoming webhook to a channel and copy its address.</p>
+                <p className="text-xs text-muted-foreground">In Slack or Teams, open the channel settings, add the Incoming Webhooks app and copy the address it gives you.</p>
               </div>
               <fieldset className="space-y-1">
                 <legend className="text-sm font-medium">Send when</legend>
@@ -252,7 +265,7 @@ export function OutboundWebhooksDialog({ companyId, open, onOpenChange }: { comp
             </form>
           </div>
         )}
-        {error ? <p className="text-sm text-destructive" role="alert">{(error as Error).message}</p> : null}
+        {error ? <p className="text-sm text-destructive" role="alert">That did not work. Please try again in a moment. ({(error as Error).message})</p> : null}
       </DialogContent>
     </Dialog>
   );

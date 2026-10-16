@@ -3,14 +3,28 @@ import { sql } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   agents,
+  assets,
+  assetTexts,
   companies,
   createDb,
+  crmDealProducts,
+  crmFiles,
+  crmProducts,
+  crmTimelineEntries,
+  generatedImages,
+  organisationContacts,
+  organisations,
   documents,
+  issueAttachments,
   issueComments,
   issueDocuments,
   issueLabels,
   issues,
   labels,
+  pipelineCaseEvidence,
+  pipelineCases,
+  pipelineStages,
+  pipelines,
   projects,
 } from "@greatstone/db";
 import { companySearchQuerySchema, COMPANY_SEARCH_MAX_QUERY_LENGTH } from "@greatstone/shared";
@@ -83,6 +97,20 @@ describeEmbeddedPostgres("companySearchService", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(crmFiles);
+    await db.delete(crmTimelineEntries);
+    await db.delete(crmDealProducts);
+    await db.delete(crmProducts);
+    await db.delete(generatedImages);
+    await db.delete(organisationContacts);
+    await db.delete(pipelineCaseEvidence);
+    await db.delete(pipelineCases);
+    await db.delete(pipelineStages);
+    await db.delete(pipelines);
+    await db.delete(organisations);
+    await db.delete(assetTexts);
+    await db.delete(issueAttachments);
+    await db.delete(assets);
     await db.delete(issueDocuments);
     await db.delete(documents);
     await db.delete(issueComments);
@@ -162,6 +190,170 @@ describeEmbeddedPostgres("companySearchService", () => {
     });
     return id;
   }
+
+  async function createAsset(companyId: string, filename: string, contentType: string, text: string | null) {
+    const id = randomUUID();
+    await db.insert(assets).values({
+      id,
+      companyId,
+      provider: "local_disk",
+      objectKey: `${companyId}/${id}`,
+      contentType,
+      byteSize: 10,
+      sha256: id,
+      originalFilename: filename,
+    });
+    if (text !== null) await db.insert(assetTexts).values({ assetId: id, companyId, status: "indexed", text });
+    return id;
+  }
+
+  it("finds words inside uploaded files and shows the matching line", async () => {
+    const companyId = await createCompany();
+    const issueId = await createIssue(companyId, { identifier: "TST-5", title: "Board chat" });
+    const chatAsset = await createAsset(companyId, "terms.pdf", "application/pdf", "Engagement terms\nThe retainer is 4,000 a month\nSigned by both parties");
+    const [attachment] = await db.insert(issueAttachments).values({ companyId, issueId, assetId: chatAsset }).returning();
+
+    const pipelineId = randomUUID();
+    const stageId = randomUUID();
+    const caseId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "clients", name: "Clients" });
+    await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "lead", name: "Lead", kind: "working", position: 0 });
+    await db.insert(pipelineCases).values({ id: caseId, companyId, pipelineId, stageId, caseKey: "acme", title: "Acme Ltd" });
+    const ndaAsset = await createAsset(companyId, "nda.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "Mutual NDA\nThe retainer terms stay confidential for two years");
+    await db.insert(pipelineCaseEvidence).values({ companyId, caseId, kind: "upload", title: "NDA", assetId: ndaAsset });
+    // A file nobody can open from a task or client is never shown.
+    await createAsset(companyId, "orphan.txt", "text/plain", "retainer orphan");
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "retainer", scope: "files" }));
+
+    expect(result.countsByType.file).toBe(2);
+    const byName = new Map(result.results.map((row) => [row.title, row]));
+    expect(byName.get("terms.pdf")).toMatchObject({
+      type: "file",
+      href: expect.stringContaining(`/issues/TST-5`),
+      snippet: "The retainer is 4,000 a month",
+      file: expect.objectContaining({ owner: expect.objectContaining({ kind: "task" }), contentPath: `/api/attachments/${attachment!.id}/content` }),
+    });
+    expect(byName.get("nda.docx")).toMatchObject({
+      href: expect.stringContaining(`/pipelines/${pipelineId}/items/${caseId}`),
+      snippet: "The retainer terms stay confidential for two years",
+      file: expect.objectContaining({ owner: { kind: "client", label: "Acme Ltd", href: expect.any(String) } }),
+    });
+    expect(byName.has("orphan.txt")).toBe(false);
+
+    const all = await svc.search(companyId, companySearchQuerySchema.parse({ q: "retainer confidential" }));
+    expect(all.results.filter((row) => row.type === "file").map((row) => row.title)).toEqual(["nda.docx"]);
+  });
+
+  it("finds words in files imported from the CRM, under their organisation", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Osprey plc" });
+    const assetId = await createAsset(companyId, null as unknown as string, "application/pdf", "Board minutes\nOsprey agreed the warranty terms");
+    await db.insert(crmFiles).values({ companyId, source: "pipedrive", externalId: "f1", name: "minutes.pdf", assetId, organisationId: orgId });
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "warranty", scope: "files" }));
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      title: "minutes.pdf",
+      href: expect.stringContaining(`/organisations/${orgId}`),
+      snippet: "Osprey agreed the warranty terms",
+      file: expect.objectContaining({ owner: expect.objectContaining({ kind: "organisation", label: "Osprey plc" }) }),
+    });
+  });
+
+  it("finds images by their alt text, and hides files on hidden tasks", async () => {
+    const companyId = await createCompany();
+    const issueId = await createIssue(companyId, { identifier: "TST-6", title: "Brand review" });
+    const imageAsset = await createAsset(companyId, "logo.png", "image/png", null);
+    const [image] = await db.insert(issueAttachments).values({ companyId, issueId, assetId: imageAsset }).returning();
+    await db.insert(issueComments).values({
+      companyId,
+      issueId,
+      body: `Here it is ![Blue mountain logo on white](/api/attachments/${image!.id}/content) and more`,
+    });
+    const hiddenIssueId = await createIssue(companyId, { identifier: "TST-7", title: "Hidden", hiddenAt: new Date() });
+    const hiddenAsset = await createAsset(companyId, "hidden.txt", "text/plain", "mountain secrets");
+    await db.insert(issueAttachments).values({ companyId, issueId: hiddenIssueId, assetId: hiddenAsset });
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "mountain logo", scope: "files" }));
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      type: "file",
+      title: "logo.png",
+      snippet: "Blue mountain logo on white",
+      previewImageUrl: `/api/attachments/${image!.id}/content`,
+      file: expect.objectContaining({ mediaKind: "image", matchedAltText: true }),
+    });
+
+    const hidden = await svc.search(companyId, companySearchQuerySchema.parse({ q: "mountain secrets", scope: "files" }));
+    expect(hidden.results).toHaveLength(0);
+  });
+
+  it("finds organisations, people, clients, products and images", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values([
+      { id: orgId, companyId, name: "Kestrel Holdings", industry: "Finance", country: "UK" },
+      { companyId, name: "Kestrel Archive", archivedAt: new Date() },
+    ]);
+    await db.insert(organisationContacts).values({ companyId, organisationId: orgId, name: "Ada Kestrel", role: "CFO", email: "ada@example.com" });
+    const pipelineId = randomUUID();
+    const stageId = randomUUID();
+    const caseId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 });
+    await db.insert(pipelineCases).values([
+      { id: caseId, companyId, pipelineId, stageId, caseKey: "pipedrive-deal-1", title: "Kestrel renewal" },
+      { companyId, pipelineId, stageId, caseKey: "old", title: "Kestrel retired deal", retiredAt: new Date() },
+    ]);
+    const productId = randomUUID();
+    await db.insert(crmProducts).values({ id: productId, companyId, source: "pipedrive", externalId: "9", name: "Kestrel licence", code: "KL-1" });
+    await db.insert(crmDealProducts).values({ companyId, source: "pipedrive", externalId: "line-1", caseId, productId, name: "Kestrel licence" });
+    const assetId = randomUUID();
+    await db.insert(assets).values({ id: assetId, companyId, provider: "local_disk", objectKey: "k", contentType: "image/png", byteSize: 1, sha256: "x" });
+    await db.insert(generatedImages).values({ companyId, prompt: "A kestrel over hills", aspectRatio: "1:1", provider: "higgsfield", model: "m", status: "completed", assetId });
+    const otherCompany = await createCompany("Other");
+    await db.insert(organisations).values({ companyId: otherCompany, name: "Kestrel Elsewhere" });
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "kestrel", scope: "records" }));
+
+    const byTitle = new Map(result.results.map((row) => [row.title, row]));
+    expect([...byTitle.keys()].sort()).toEqual(["A kestrel over hills", "Ada Kestrel", "Kestrel Holdings", "Kestrel licence", "Kestrel renewal"]);
+    expect(result.countsByType.record).toBe(5);
+    expect(byTitle.get("Kestrel Holdings")).toMatchObject({ type: "record", href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)), record: { kind: "organisation", subtitle: "Finance, UK" } });
+    expect(byTitle.get("Ada Kestrel")?.record).toEqual({ kind: "person", subtitle: "CFO at Kestrel Holdings" });
+    expect(byTitle.get("Kestrel renewal")).toMatchObject({ href: expect.stringContaining(`/pipelines/${pipelineId}/items/${caseId}`), record: { kind: "client", subtitle: "Proposal in Sales" } });
+    expect(byTitle.get("Kestrel licence")).toMatchObject({ href: expect.stringContaining(`/items/${caseId}`), record: { kind: "product", subtitle: "KL-1, on Kestrel renewal" } });
+    expect(byTitle.get("A kestrel over hills")).toMatchObject({ previewImageUrl: `/api/assets/${assetId}/content`, record: { kind: "image" } });
+
+    const people = await svc.search(companyId, companySearchQuerySchema.parse({ q: "ada@example.com" }));
+    expect(people.results.filter((row) => row.type === "record").map((row) => row.title)).toEqual(["Ada Kestrel"]);
+  });
+
+  it("finds imported notes, calls and meetings under their deal or organisation", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Merlin Ltd" });
+    const pipelineId = randomUUID();
+    const stageId = randomUUID();
+    const caseId = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 });
+    await db.insert(pipelineCases).values({ id: caseId, companyId, pipelineId, stageId, caseKey: "pipedrive-deal-2", title: "Merlin rollout" });
+    await db.insert(crmTimelineEntries).values([
+      { companyId, source: "pipedrive", externalId: "a1", kind: "activity", activityType: "call", subject: "Pricing call", body: "Talked through the falcon tier", occurredAt: new Date("2026-10-12T10:00:00Z"), organisationId: orgId, caseId },
+      { companyId, source: "pipedrive", externalId: "n1", kind: "note", body: "Falcon budget signed off by the board", organisationId: orgId },
+      { companyId, source: "pipedrive", externalId: "s1", kind: "stage_change", subject: "Falcon moved stage", caseId },
+    ]);
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "falcon", scope: "records" }));
+
+    const byTitle = new Map(result.results.map((row) => [row.title, row]));
+    expect([...byTitle.keys()].sort()).toEqual(["Falcon budget signed off by the board", "Pricing call"]);
+    expect(byTitle.get("Pricing call")).toMatchObject({ href: expect.stringContaining(`/pipelines/${pipelineId}/items/${caseId}`), record: { kind: "activity", subtitle: "Call, Merlin rollout, 12 Oct 2026" } });
+    expect(byTitle.get("Falcon budget signed off by the board")).toMatchObject({ href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)), record: { kind: "activity", subtitle: "Note, Merlin Ltd" } });
+  });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
     const companyId = await createCompany();
@@ -313,7 +505,7 @@ describeEmbeddedPostgres("companySearchService", () => {
       }),
     });
     expect(result.results[0]?.snippet).toMatch(/comet tail/i);
-    expect(result.countsByType).toEqual({ issue: 0, comment: 0, document: 0, artifact: 1, agent: 0, project: 0 });
+    expect(result.countsByType).toEqual({ issue: 0, comment: 0, document: 0, artifact: 1, file: 0, record: 0, agent: 0, project: 0 });
   });
 
   it("does not pass high-offset search fetch windows through to artifact query validation", async () => {
@@ -673,7 +865,7 @@ describeEmbeddedPostgres("companySearchService", () => {
     const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "needle", limit: "2", offset: "2" }));
 
     expect(result.results.map((row) => row.id)).toEqual([agentIds[2], projectIds[0]]);
-    expect(result.countsByType).toEqual({ issue: 0, comment: 0, document: 0, artifact: 0, agent: 3, project: 3 });
+    expect(result.countsByType).toEqual({ issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 3, project: 3 });
     expect(result.hasMore).toBe(true);
   });
 

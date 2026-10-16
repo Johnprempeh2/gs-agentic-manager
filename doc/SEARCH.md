@@ -101,6 +101,39 @@ new extension in this change.
 PostgreSQL documents the existing index support in
 [pg_trgm](https://www.postgresql.org/docs/17/pgtrgm.html).
 
+## Inside uploaded files
+
+Search also finds words inside uploaded files: PDF, Word (`.docx`), PowerPoint
+(`.pptx`), Excel (`.xlsx`), HTML and plain text such as CSV, JSON and Markdown.
+A background round every minute reads up to 10 unread files, newest first, and
+stores their words in `asset_texts` (`server/src/services/asset-text-index.ts`,
+reader in `server/src/services/file-text.ts`). It runs inside the server with no
+outside service. Files over 25MB and other kinds (images, video) are not read.
+
+A file shows only when it belongs to a visible task (a chat or comment
+attachment) or to a client in a pipeline that is not retired. The result opens
+that task or client and shows the line of the file that holds the most search
+words. Images are found by the alt text written for them in a comment or task
+description (`![Blue logo](/api/attachments/<id>/content)`).
+
+The `files` scope returns only these results; `all` includes them, and
+Cmd/Ctrl+K shows them under "Inside files". Issue-only filters (status,
+assignee and so on) leave files out.
+
+## Clients and records
+
+The `records` scope (also in `all`) finds business records outside tasks:
+organisations, people (organisation contacts, by name, email, role or phone),
+clients (pipeline items, which include imported Pipedrive deals and leads), CRM
+products (linked to the latest deal that carries them) and completed generated
+images (by prompt and style), plus imported CRM notes, calls, meetings and
+emails (by subject, text, type or owner; deal stage changes are left out), which
+open on their deal, or on their organisation when they have no deal. Archived
+organisations and people, retired or
+hidden pipeline items, items in archived pipelines and inactive products are
+left out. Every search word must appear in the record. Cmd/Ctrl+K shows these
+under "Clients, people and records".
+
 ## Reproduce the evaluation
 
 ```sh

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { History } from "lucide-react";
+import { Check, ClipboardList, History } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
 import { agentWorkDigestApi } from "../api/agentWorkDigest";
 import { DigestAgentSection, digestCountsSentence, digestSinceLabel } from "../components/AgentWorkDigest";
@@ -10,6 +11,8 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
+import { digestText } from "../lib/digest-text";
+import { useCopyAction } from "../lib/use-copy-action";
 
 /**
  * "Since you were last here" (GRE-357): agent work since the last visit,
@@ -20,6 +23,7 @@ export function SinceLastVisit() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
+  const digestCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Since you were last here" }]);
@@ -51,7 +55,7 @@ export function SinceLastVisit() {
   }, [digest, recordVisit]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={History} message="Select an organization to see agent work." />;
+    return <EmptyState icon={History} message="Choose an organisation to see agent work." />;
   }
   if (isLoading) return <PageSkeleton variant="list" />;
   if (error && !digest) return <ErrorState error={error} onRetry={() => void refetch()} />;
@@ -60,7 +64,24 @@ export function SinceLastVisit() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold">Since you were last here</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">Since you were last here</h1>
+          {digest.agents.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              title="Copy what the agents did as text, ready to paste into a message"
+              onClick={() =>
+                void digestCopy.copy(
+                  digestText(digest, `${digestSinceLabel(digest)}: ${digestCountsSentence(digest.counts).toLowerCase()}.`),
+                )
+              }
+            >
+              {digestCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              {digestCopy.copied ? "Copied" : digestCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          ) : null}
+        </div>
         <p className="text-sm text-muted-foreground">
           {digestSinceLabel(digest)}: {digestCountsSentence(digest.counts).toLowerCase()}.
         </p>
@@ -69,7 +90,7 @@ export function SinceLastVisit() {
       {digest.agents.length === 0 ? (
         <EmptyState icon={History} message="Nothing new since your last visit." description="When agents finish or update work, a summary shows here." />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6" data-tour="since-last-visit-agents">
           {digest.agents.map((agent) => (
             <DigestAgentSection key={agent.agentId} agent={agent} />
           ))}

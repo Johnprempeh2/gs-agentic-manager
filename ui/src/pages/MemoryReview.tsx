@@ -463,7 +463,7 @@ export function MemoryReview() {
     });
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   }
 
   const header = <MemoryPageHeader tab="review" />;
@@ -480,7 +480,7 @@ export function MemoryReview() {
     return (
       <div className="space-y-4">
         {header}
-        <EmptyState icon={PowerOff} message="Memory is turned off for this organization." description="A board admin can turn it on in organization settings." />
+        <EmptyState icon={PowerOff} message="Memory is turned off for this organisation." description="A board admin can turn it on in organisation settings." />
       </div>
     );
   }

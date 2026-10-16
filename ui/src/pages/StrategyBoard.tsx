@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { StrategyBoardKpi } from "@greatstone/shared";
-import { AlertTriangle, FileText, MessageSquare, Network } from "lucide-react";
+import { AlertTriangle, Check, ClipboardList, FileText, MessageSquare, Network } from "lucide-react";
 import { strategyBoardApi } from "@/api/strategyBoard";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { Link, useNavigate, useSearchParams } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
-import { boardAssurance, meetingPackId } from "@/lib/strategy-board";
+import { boardAssurance, boardUpdateText, meetingPackId } from "@/lib/strategy-board";
+import { useCopyAction } from "@/lib/use-copy-action";
 import { ErrorState } from "@/components/ErrorState";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
@@ -102,6 +103,7 @@ export function StrategyBoard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [makingPack, setMakingPack] = useState(false);
   const [openPackId, setOpenPackId] = useState<string | null>(null);
+  const updateCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Board" }]);
@@ -153,6 +155,15 @@ export function StrategyBoard() {
         <div className="flex flex-wrap gap-2">
           <FeatureTour tour={STRATEGY_BOARD_TOUR} />
           <AskBoardAgentButton companyId={selectedCompanyId!} />
+          <Button
+            size="sm"
+            variant="outline"
+            title="Copy the headline, what needs the board and overdue actions, ready to paste into an email"
+            onClick={() => void updateCopy.copy(boardUpdateText(board, boardLede(board.counts, board.kpis)))}
+          >
+            {updateCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+            {updateCopy.copied ? "Copied" : updateCopy.failed ? "Could not copy" : "Copy as an update"}
+          </Button>
           <Button size="sm" variant="outline" asChild>
             <Link to="/goals">
               <Network className="size-3.5" />

@@ -29,6 +29,7 @@ import {
   type PipedriveFetch,
 } from "../services/crm-sync-pipedrive.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { crmProductService } from "../services/crm-products.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
 import { notionImportService } from "../services/organisation-import-notion.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
@@ -79,10 +80,13 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const hubspotImporter = hubspotExportImportService(db);
   const notionImporter = notionImportService(db);
   const history = organisationHistoryService(db);
+  const products = crmProductService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
   router.use("/companies/:companyId/crm-files", requireEntitlement(db, "enablePipelines"));
+  router.use("/companies/:companyId/crm-products", requireEntitlement(db, "enablePipelines"));
+  router.use("/companies/:companyId/organisation-contacts", requireEntitlement(db, "enablePipelines"));
 
   async function assertCrmWriter(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -228,15 +232,11 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
           details: {
             source: "pipedrive",
             connectionId: connection.id,
-            organisations: result.organisations,
-            contacts: result.contacts,
-            ...(result.pipelines ? { pipelines: result.pipelines } : {}),
-            ...(result.deals ? { deals: result.deals } : {}),
-            ...(result.activities ? { activities: result.activities } : {}),
-            ...(result.notes ? { notes: result.notes } : {}),
-            ...(result.calls ? { calls: result.calls } : {}),
-            ...(result.emails ? { emails: result.emails } : {}),
-            ...(result.stageChanges ? { stageChanges: result.stageChanges } : {}),
+            // Every count the run made, so Integrations can say what a re-import changed.
+            ...Object.fromEntries(Object.entries(result).filter(([, value]) => (
+              Boolean(value) && typeof value === "object" && !Array.isArray(value) && "created" in value
+            ))),
+            errorCount: result.errorSamples.length,
           },
         });
         res.json(result);
@@ -393,10 +393,25 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   );
 
   /** People with no organisation, such as Pipedrive people held on their own. Reads need company access only. */
+  /** People across every organisation, found by name, role, email, phone or organisation. */
+  router.get("/companies/:companyId/organisation-contacts", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 2) throw badRequest("Type at least two characters to search people");
+    res.json(await svc.searchContacts(companyId, q.slice(0, 200)));
+  });
   router.get("/companies/:companyId/organisation-contacts/unassigned", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     res.json(await svc.listUnassignedContacts(companyId));
+  });
+
+  /** The CRM product catalogue with the deals each product is on. Reads need company access only. */
+  router.get("/companies/:companyId/crm-products", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await products.list(companyId));
   });
 
   // A file copied from a CRM import, served like a case upload: inline only when safe.

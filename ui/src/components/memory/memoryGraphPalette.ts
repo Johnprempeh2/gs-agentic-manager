@@ -12,6 +12,7 @@ export const STATUS_TOKEN: Record<MemoryRecordStatus, string> = {
   approved: "--status-success",
   disputed: "--status-alert",
   superseded: "--muted-foreground",
+  retired: "--muted-foreground",
   deleted: "--muted-foreground",
 };
 

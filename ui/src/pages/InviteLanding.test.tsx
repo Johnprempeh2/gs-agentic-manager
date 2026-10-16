@@ -967,7 +967,7 @@ describe("InviteLandingPage", () => {
       await flushReact();
 
       expect(listCompaniesMock).toHaveBeenCalled();
-      expect(container.textContent).not.toContain("Already in this organization");
+      expect(container.textContent).not.toContain("Already in this organisation");
       expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
       expect(container.textContent).toContain("Request to join Acme Robotics");
 
@@ -1032,7 +1032,7 @@ describe("InviteLandingPage", () => {
       await flushReact();
       await flushReact();
 
-      expect(container.textContent).toContain("Already in this organization");
+      expect(container.textContent).toContain("Already in this organisation");
       expect(acceptInviteMock).not.toHaveBeenCalled();
 
       await act(async () => {
@@ -1073,7 +1073,7 @@ describe("InviteLandingPage", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Join Acme Robotics");
-    expect(container.textContent).toContain("Already in this organization");
+    expect(container.textContent).toContain("Already in this organisation");
     expect(container.textContent).toContain("This account already belongs to Acme Robotics.");
     expect(acceptInviteMock).not.toHaveBeenCalled();
 

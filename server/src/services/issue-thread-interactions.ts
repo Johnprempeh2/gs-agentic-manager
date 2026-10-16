@@ -555,6 +555,10 @@ type TargetBoundInteractionKind =
 type TargetBoundInteraction =
   RequestConfirmationLikeInteraction | RequestItemVerdictsInteraction;
 
+// The board assistant stores its replies under this sentinel user id
+// (routes/board-chat.ts). Its replies are not a person answering a card.
+const BOARD_CONCIERGE_USER_ID = "board-concierge";
+
 const USER_COMMENT_SUPERSEDABLE_INTERACTION_KINDS = [
   ...TARGET_BOUND_INTERACTION_KINDS,
   "ask_user_questions",
@@ -4420,6 +4424,8 @@ export function issueThreadInteractionService(
       // Local-CLI adapters post under user auth, so authorUserId can't tell a human from a
       // machine; createdByRunId can. Only genuine human comments (no run context) supersede.
       if (comment.createdByRunId) return [];
+      // The board assistant replies under a sentinel user; it is not a person.
+      if (comment.authorUserId === BOARD_CONCIERGE_USER_ID) return [];
 
       const rows = await db
         .select()
@@ -4523,6 +4529,8 @@ export function issueThreadInteractionService(
               isNotNull(issueComments.authorUserId),
               // Only genuine human comments supersede; machine-originated ones carry createdByRunId.
               isNull(issueComments.createdByRunId),
+              // The board assistant replies under a sentinel user; it is not a person.
+              ne(issueComments.authorUserId, BOARD_CONCIERGE_USER_ID),
             ),
           )
           .orderBy(asc(issueComments.createdAt)),

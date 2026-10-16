@@ -17,6 +17,10 @@ import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import {
   BLOCKED_GROUP_OPTIONS,
+  loadBlockedInboxGroupBy,
+  loadBlockedInboxSortBy,
+  saveBlockedInboxGroupBy,
+  saveBlockedInboxSortBy,
   BLOCKED_SORT_OPTIONS,
   type BlockedInboxGroupBy,
   type BlockedInboxSort,
@@ -149,6 +153,7 @@ import {
   getRecentTouchedIssues,
   activeSnoozedInboxIssueIds,
   inboxSnoozeUntilTomorrow,
+  inboxSnoozeUntilNextWeek,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadCollapsedInboxGroupKeys,
@@ -823,8 +828,8 @@ export function Inbox() {
     () => loadInboxCollectionPreferences(selectedCompanyId).viewState,
   );
   const [groupBy, setGroupBy] = useState<InboxWorkItemGroupBy>(() => loadInboxWorkItemGroupBy());
-  const [blockedGroupBy, setBlockedGroupBy] = useState<BlockedInboxGroupBy>("none");
-  const [blockedSortBy, setBlockedSortBy] = useState<BlockedInboxSort>("most_recent");
+  const [blockedGroupBy, setBlockedGroupBy] = useState<BlockedInboxGroupBy>(() => loadBlockedInboxGroupBy());
+  const [blockedSortBy, setBlockedSortBy] = useState<BlockedInboxSort>(() => loadBlockedInboxSortBy());
   const [visibleIssueColumns, setVisibleIssueColumns] = useState<InboxIssueColumn[]>(
     () => loadInboxCollectionPreferences(selectedCompanyId).columns,
   );
@@ -1872,6 +1877,29 @@ export function Inbox() {
         title: "Back tomorrow at 08:00",
         body: issue.title,
         tone: "info",
+        secondaryAction: {
+          label: "Next week",
+          onClick: () => {
+            snoozeInboxItem(itemKey, inboxSnoozeUntilNextWeek().toISOString());
+            pushToast({
+              id: `inbox-later-week-${issue.id}`,
+              title: "Back Monday at 08:00",
+              body: issue.title,
+              tone: "info",
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  setLaterIssueIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(issue.id);
+                    return next;
+                  });
+                  restoreInboxItem(itemKey);
+                },
+              },
+            });
+          },
+        },
         action: {
           label: "Undo",
           onClick: () => {
@@ -2394,7 +2422,7 @@ export function Inbox() {
   }, [selectedIndex]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={InboxIcon} message="Select an organization to view inbox." />;
+    return <EmptyState icon={InboxIcon} message="Choose an organisation to view inbox." />;
   }
 
   const hasRunFailures = failedRuns.length > 0;
@@ -2557,7 +2585,10 @@ export function Inbox() {
                           "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
                           blockedGroupBy === value ? "bg-accent/50 text-foreground" : "text-muted-foreground hover:bg-accent/50",
                         )}
-                        onClick={() => setBlockedGroupBy(value)}
+                        onClick={() => {
+                          setBlockedGroupBy(value);
+                          saveBlockedInboxGroupBy(value);
+                        }}
                       >
                         <span>{label}</span>
                         {blockedGroupBy === value ? <Check className="h-3.5 w-3.5" /> : null}
@@ -2603,7 +2634,10 @@ export function Inbox() {
                           "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
                           blockedSortBy === value ? "bg-accent/50 text-foreground" : "text-muted-foreground hover:bg-accent/50",
                         )}
-                        onClick={() => setBlockedSortBy(value)}
+                        onClick={() => {
+                          setBlockedSortBy(value);
+                          saveBlockedInboxSortBy(value);
+                        }}
                       >
                         <span>{label}</span>
                         {blockedSortBy === value ? <Check className="h-3.5 w-3.5" /> : null}

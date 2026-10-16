@@ -214,20 +214,20 @@ export function CompanyAccess() {
   }, [editingMember]);
 
   if (!selectedCompanyId) {
-    return <div className="text-sm text-muted-foreground">Select an organization to manage access.</div>;
+    return <div className="text-sm text-muted-foreground">Choose an organisation to manage access.</div>;
   }
 
   if (membersQuery.isLoading) {
-    return <div className="text-sm text-muted-foreground">Loading organization access…</div>;
+    return <div className="text-sm text-muted-foreground">Loading organisation access…</div>;
   }
 
   if (membersQuery.error) {
     const message =
       membersQuery.error instanceof ApiError && membersQuery.error.status === 403
-        ? "You do not have permission to manage organization members."
+        ? "You do not have permission to manage organisation members."
         : membersQuery.error instanceof Error
           ? membersQuery.error.message
-          : "Failed to load organization members.";
+          : "Failed to load organisation members.";
     return <div className="text-sm text-destructive">{message}</div>;
   }
 
@@ -276,7 +276,7 @@ export function CompanyAccess() {
 
       {access && !access.currentUserRole && (
         <div className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
-          This account can manage access here through instance-admin privileges, but it does not currently hold an active organization membership.
+          This account can manage access here through instance-admin privileges, but it does not currently hold an active organisation membership.
         </div>
       )}
 
@@ -287,7 +287,7 @@ export function CompanyAccess() {
               <div>
                 <h3 className="text-sm font-semibold">Pending human joins</h3>
                 <p className="text-sm text-muted-foreground">
-                  Review pending join requests before they become active organization members.
+                  Review pending join requests before they become active organisation members.
                 </p>
               </div>
               <Badge variant="outline">{pendingHumanJoinRequests.length} pending</Badge>
@@ -340,7 +340,7 @@ export function CompanyAccess() {
               {members.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-3 py-8 text-muted-foreground">
-                    No user memberships found for this organization yet.
+                    No user memberships found for this organisation yet.
                   </td>
                 </tr>
               ) : members.map((member) => {
@@ -559,7 +559,7 @@ export function CompanyAccessLegacyRoute() {
           <h1 className="text-lg font-semibold">Advanced Permissions</h1>
         </div>
         <p className="text-sm text-muted-foreground">
-          Advanced access, scoped assignment, and explicit grant controls are provided by installed organization settings extensions.
+          Advanced access, scoped assignment, and explicit grant controls are provided by installed organisation settings extensions.
         </p>
       </div>
 

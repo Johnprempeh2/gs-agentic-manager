@@ -277,6 +277,39 @@ describe("BlockedInboxView", () => {
     act(() => root.unmount());
   });
 
+  it("groups tasks by the root task they are all waiting on", async () => {
+    const root1463 = {
+      id: "leaf-1463",
+      identifier: "GRE-1463",
+      title: "Fix login",
+      status: "in_progress" as const,
+      priority: "medium" as const,
+      assigneeAgentId: null,
+      assigneeUserId: null,
+    };
+    mockIssuesApi.list.mockResolvedValue([
+      makeIssue("issue-a", "PAP-1", "First waiting task", attention({ leafIssue: root1463 })),
+      makeIssue("issue-b", "PAP-2", "Second waiting task", attention({ leafIssue: root1463 })),
+      makeIssue("issue-c", "PAP-3", "Needs a decision", attention({ reason: "pending_board_decision" })),
+    ]);
+
+    const { root } = renderWithClient(
+      <BlockedInboxView {...blockedViewProps} groupBy="root_blocker" />,
+      container,
+    );
+    await waitFor(() => container.querySelectorAll("a").length === 3);
+
+    const groups = Array.from(container.querySelectorAll('[data-testid^="blocked-inbox-group-"]'));
+    expect(groups.map((g) => g.getAttribute("data-testid"))).toEqual([
+      "blocked-inbox-group-root-leaf-1463",
+      "blocked-inbox-group-root-none",
+    ]);
+    expect(groups[0]!.textContent).toContain("Waiting on GRE-1463 Fix login · 2");
+    expect(groups[1]!.textContent).toContain("No single blocker · 1");
+
+    act(() => root.unmount());
+  });
+
   it("places blocker reason chips with the title before owner and timestamp metadata", async () => {
     mockIssuesApi.list.mockResolvedValue([
       makeIssue(

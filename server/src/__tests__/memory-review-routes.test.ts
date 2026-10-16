@@ -350,7 +350,8 @@ describeEmbeddedPostgres("organization memory review workflow (GRE-886)", () => 
     const done = await request(board).post(`${base}/records/${v1.record.id}/supersede`).send({ replacementRecordId: v2.record.id, reason: "Release day moved" });
     expect(done.status).toBe(200);
     expect(done.body.superseded).toMatchObject({ status: "superseded", supersededById: v2.record.id });
-    expect(done.body.replacement).toMatchObject({ status: "approved", supersedesId: v1.record.id, version: 2 });
+    // v1 moved to version 2 when it was approved (GRE-1081), so its replacement is version 3.
+    expect(done.body.replacement).toMatchObject({ status: "approved", supersedesId: v1.record.id, version: 3 });
 
     const history = await request(agent).get(`${base}/records/${v2.record.id}/history`);
     expect(history.status).toBe(200);

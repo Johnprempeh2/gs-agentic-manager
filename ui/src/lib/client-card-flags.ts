@@ -16,6 +16,8 @@ const LAST_CONTACT_FIELD_KEYS = [
   "lastContactDate",
   "last_contact_date",
   "Last contact",
+  // A deal imported from Pipedrive (DevTools clients, 16 Oct).
+  "lastActivityDate",
 ] as const;
 
 export interface ClientCardFlagInput {
@@ -66,4 +68,20 @@ export function getClientCardFlags(input: ClientCardFlagInput, now: Date = new D
     noContactDays: contactDays != null && contactDays >= NO_CONTACT_FLAG_DAYS ? contactDays : null,
     stuckStageDays: stageDays != null && stageDays >= STUCK_STAGE_FLAG_DAYS ? stageDays : null,
   };
+}
+
+// Next-step flag for a deal imported from Pipedrive (DevTools clients, 16 Oct).
+// Pipedrive shows every open deal without a scheduled activity in red; GSAM
+// does the same on the board: no next step, or a next step that is overdue.
+export type DealNextStepFlag = { kind: "none" } | { kind: "overdue"; days: number };
+
+export function getDealNextStepFlag(input: ClientCardFlagInput, now: Date = new Date()): DealNextStepFlag | null {
+  const fields = input.fields;
+  if (input.terminalKind || !fields || !("dealStatus" in fields)) return null;
+  const status = typeof fields.dealStatus === "string" ? fields.dealStatus.trim().toLowerCase() : "";
+  if (status && status !== "open") return null;
+  const next = toDate(fields.nextActivityDate);
+  if (!next) return { kind: "none" };
+  const days = daysInStage(next, now) ?? 0;
+  return days >= 1 ? { kind: "overdue", days } : null;
 }

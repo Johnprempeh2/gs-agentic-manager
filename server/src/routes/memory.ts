@@ -29,7 +29,9 @@ import {
   memoryStewardActionSchema,
   recallMemorySchema,
   resolveMemoryConflictSchema,
+  retireMemoryRecordSchema,
   reviewMemoryRecordSchema,
+  reviseMemoryRecordSchema,
   runMemoryRetentionSchema,
   setMemoryScopeStewardSchema,
   supersedeMemoryRecordSchema,
@@ -39,6 +41,7 @@ import {
 import { isMemoryOnlyActor } from "../middleware/memory-only-key-guard.js";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/index.js";
+import { memoryCardService } from "../services/memory-gateway/card-writes.js";
 import type { EngineCallSlots, MemoryEngine } from "../services/memory-gateway/engine.js";
 import { getDailyPlanUsage } from "../services/memory-gateway/ingest-outbox.js";
 import { createDbMemoryIngestStore } from "../services/memory-gateway/ingest-outbox-db.js";
@@ -118,6 +121,7 @@ export function memoryRoutes(
   const grants = memoryGrantService(db, svc);
   const links = memoryLinkService(db, svc);
   const stewards = memoryStewardService(db, svc, reviews);
+  const cards = memoryCardService(db, svc, reviews, stewards);
   const operations = memoryOperationsReadService(db);
 
   // Runs before body validation so a company with memory off learns nothing
@@ -440,6 +444,21 @@ export function memoryRoutes(
     const caller = await callerFor(req, companyId, "supersede");
     const recordId = recordIdOr404(req, res);
     if (recordId) res.json(await reviews.supersede(caller, recordId, req.body));
+  });
+
+  // REST twins of memory_revise and memory_retire (GRE-1081), with the same checks.
+  router.post("/companies/:companyId/memory/records/:recordId/revise", requireEnabled, validate(reviseMemoryRecordSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "revise");
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.status(201).json(await cards.revise(caller, recordId, req.body));
+  });
+
+  router.post("/companies/:companyId/memory/records/:recordId/retire", requireEnabled, validate(retireMemoryRecordSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "retire");
+    const recordId = recordIdOr404(req, res);
+    if (recordId) res.json(await cards.retire(caller, recordId, req.body));
   });
 
   router.post("/companies/:companyId/memory/records/:recordId/delete", requireEnabled, validate(deleteMemoryRecordSchema), async (req, res) => {

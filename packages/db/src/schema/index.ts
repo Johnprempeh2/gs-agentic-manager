@@ -21,6 +21,7 @@ export { invites } from "./invites.js";
 export { joinRequests } from "./join_requests.js";
 export { budgetPolicies } from "./budget_policies.js";
 export { budgetIncidents } from "./budget_incidents.js";
+export { budgetAuthorities } from "./budget_authorities.js";
 export { agentConfigRevisions } from "./agent_config_revisions.js";
 export { agentApiKeys } from "./agent_api_keys.js";
 export { agentRuntimeState } from "./agent_runtime_state.js";
@@ -146,6 +147,7 @@ export {
 export { feedbackExports } from "./feedback_exports.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
+export { assetTexts } from "./asset_texts.js";
 export { generatedImages } from "./generated_images.js";
 export { issueAttachments } from "./issue_attachments.js";
 export { documents } from "./documents.js";

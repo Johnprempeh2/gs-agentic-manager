@@ -80,6 +80,7 @@ import {
   backfillPrincipalAccessCompatibility,
   backfillLegacyToolOAuthTokens,
   bootstrapExecutionPolicyFromEnv,
+  budgetService,
   environmentCustomImageService,
   decisionService,
   decisionRetentionService,
@@ -134,6 +135,7 @@ import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runt
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
+import { assetTextIndexService } from "./services/asset-text-index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { supportQueueService } from "./services/support-queue.js";
@@ -1313,6 +1315,15 @@ async function startServerWithDatabaseTeardown(
   // GRE-1187: board emails are only queued here; the app's email service
   // (started in app.ts) delivers them on its own tick.
   const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
+  const budgets = budgetService(db, heartbeat
+    ? {
+        cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
+        noticeHardStop: heartbeat.noticeBudgetHardStop,
+        // A dated raise (GRE-1363) releases held work (GRE-1365) when it applies.
+        releaseHeldWorkForScope: (scope: { companyId: string }) =>
+          heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
+      }
+    : {});
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
@@ -1322,6 +1333,8 @@ async function startServerWithDatabaseTeardown(
     ["status_delivery", () => deliverExecutionStatuses(db)],
     ["automatic_disposition", () => settleUnrecoverableExecutions(db)],
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
+    // GRE-1363: a dated budget change takes effect on its date, with no restart.
+    ["budget_scheduled_changes", () => budgets.applyDueChanges(new Date())],
     // GRE-933: Everest's renew reminder 3 days before a live steward grant ends.
     ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
     // Memory linking: the link check, at most every 6 hours per company with memory on.
@@ -2231,6 +2244,21 @@ async function startServerWithDatabaseTeardown(
     decisionPushTimer.unref?.();
   };
   scheduleDecisionPushRound();
+
+  /** How often newly uploaded files are read so search can find their words. */
+  const FILE_TEXT_INTERVAL_MS = 60_000;
+  // Reads a few unread files per round (PDF, Word, text); no outside service.
+  const fileTexts = assetTextIndexService(db as any, storageService);
+  const scheduleFileTextRound = () => {
+    const timer = setTimeout(() => {
+      void fileTexts
+        .sweep()
+        .catch((err) => logger.warn({ err }, "file text round failed"))
+        .finally(scheduleFileTextRound);
+    }, FILE_TEXT_INTERVAL_MS);
+    timer.unref?.();
+  };
+  scheduleFileTextRound();
 
   /** How often the nightly digest checks whether yesterday (UTC) still needs one. */
   const AGENT_DAILY_DIGEST_INTERVAL_MS = 10 * 60_000;

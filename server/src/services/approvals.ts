@@ -1,4 +1,4 @@
-import { agentAppearanceSchema } from "@greatstone/shared";
+import { AI_ROUTE_CHANGE_APPROVAL_TYPE, agentAppearanceSchema } from "@greatstone/shared";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { approvalComments, approvals } from "@greatstone/db";
@@ -7,6 +7,7 @@ import { redactCurrentUserText } from "../log-redaction.js";
 import { agentService } from "./agents.js";
 import { budgetService } from "./budgets.js";
 import { notifyHireApproved } from "./hire-hook.js";
+import { applyAiRouteChange, requestedAiRoute } from "./ai-route-change.js";
 import { instanceSettingsService } from "./instance-settings.js";
 
 export function approvalService(db: Db) {
@@ -206,6 +207,21 @@ export function approvalService(db: Db) {
             sourceId: id,
             approvedAt: now,
           }).catch(() => {});
+        }
+      }
+
+      if (applied && updated.type === AI_ROUTE_CHANGE_APPROVAL_TYPE) {
+        // The route checked the payload and that the decider is the operator.
+        const payload = updated.payload as Record<string, unknown>;
+        const route = requestedAiRoute(payload);
+        if (route !== undefined) {
+          await applyAiRouteChange(db, {
+            route,
+            actorType: "user",
+            actorId: decidedByUserId,
+            reason: typeof payload.reason === "string" ? payload.reason : null,
+            approvalId: updated.id,
+          });
         }
       }
 

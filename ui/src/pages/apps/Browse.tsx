@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardPaste,
   Clock3,
+  KeyRound,
   Link2,
   Loader2,
   Mail,
@@ -359,6 +360,23 @@ function MailboxesCard({
   );
 }
 
+function AgentAccessLinkCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+      <KeyRound className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-foreground">Agent access</h2>
+        <p className="text-xs text-muted-foreground">
+          See what every agent can reach, and what is missing or expiring.
+        </p>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+        Check access
+      </Button>
+    </section>
+  );
+}
+
 export function Browse({ renderAccountDetails = (connection) => connection.connectionPurpose === "ai" ? <ManagedAiConnectionRow connection={connection} /> : null }: { renderAccountDetails?: (connection: ToolConnection) => ReactNode } = {}) {
   const navigate = useNavigate();
   const preselectedChatAgentId =
@@ -693,7 +711,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         name: application.name,
         description:
           application.description ??
-          "A custom connector configured for this organization.",
+          "A custom connector configured for this organisation.",
         brandKey: applicationSlug ?? application.name,
         entry: null,
         applications: [application],
@@ -792,7 +810,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   if (!selectedCompanyId) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
-        Select an organization to manage connectors.
+        Choose an organisation to manage connectors.
       </div>
     );
   }
@@ -833,6 +851,8 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         needsAttention={(mailboxesQuery.data ?? []).filter((m) => m.healthStatus !== "ok").length}
         onOpen={() => navigate("/apps/mailboxes")}
       />
+
+      <AgentAccessLinkCard onOpen={() => navigate("/apps/access")} />
 
       {loadFailed ? (
         <div

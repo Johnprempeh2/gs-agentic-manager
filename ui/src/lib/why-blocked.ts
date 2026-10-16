@@ -386,12 +386,12 @@ function describeBlockedBy(input: WhyBlockedInput): WhyBlocked | null {
 // Repairs
 
 const REPAIR_CAUSE: Record<IssueRecoveryActionKind, string> = {
-  missing_disposition: "The last run ended without saying what happens next.",
+  missing_disposition: "The agent finished without saying what should happen next.",
   deliberate_wait_without_target: "It was set to wait without saying what for.",
   stranded_assigned_issue: "It stopped moving with nobody working on it.",
-  workspace_validation: "The task's code folder failed its safety check.",
+  workspace_validation: "The task's files did not pass a safety check.",
   configuration_validation: "The agent's settings are not complete.",
-  active_run_watchdog: "A run went quiet for too long.",
+  active_run_watchdog: "The agent stopped responding for too long.",
   issue_graph_liveness: "A chain of tasks it depends on has stalled.",
 };
 

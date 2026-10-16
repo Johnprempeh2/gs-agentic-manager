@@ -1022,7 +1022,7 @@ export function CompanyExport() {
   }
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Package} message="Select an organization to export." />;
+    return <EmptyState icon={Package} message="Choose an organisation to export." />;
   }
 
   if (exportPreviewMutation.isPending && !exportData) {

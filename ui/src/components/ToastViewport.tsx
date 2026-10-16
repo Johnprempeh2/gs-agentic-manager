@@ -4,8 +4,37 @@ import { X } from "lucide-react";
 import {
   useToastActions,
   useToastState,
+  type ToastAction,
   type ToastItem,
 } from "../context/ToastContext";
+
+const ACTION_CLASS =
+  "inline-flex min-h-8 items-center text-xs font-medium underline decoration-(--gs-nav-marker) decoration-2 underline-offset-4";
+
+function ToastActionButton({ action, onDone }: { action: ToastAction; onDone: () => void }) {
+  if (action.onClick) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          action.onClick?.();
+          onDone();
+        }}
+        className={ACTION_CLASS}
+      >
+        {action.label}
+      </button>
+    );
+  }
+  if (action.href) {
+    return (
+      <Link to={action.href} onClick={onDone} className={ACTION_CLASS}>
+        {action.label}
+      </Link>
+    );
+  }
+  return null;
+}
 
 // Floating glass for every tone: the tone is carried by the rail, the dot and
 // the lifetime hairline (gs-toast[data-tone]), never by tinting the text.
@@ -31,27 +60,13 @@ function AnimatedToast({
               {toast.body}
             </p>
           )}
-          {toast.action &&
-            (toast.action.onClick ? (
-              <button
-                type="button"
-                onClick={() => {
-                  toast.action?.onClick?.();
-                  onDismiss(toast.id);
-                }}
-                className="mt-2 inline-flex text-xs font-medium underline decoration-(--gs-nav-marker) decoration-2 underline-offset-4"
-              >
-                {toast.action.label}
-              </button>
-            ) : toast.action.href ? (
-              <Link
-                to={toast.action.href}
-                onClick={() => onDismiss(toast.id)}
-                className="mt-2 inline-flex text-xs font-medium underline decoration-(--gs-nav-marker) decoration-2 underline-offset-4"
-              >
-                {toast.action.label}
-              </Link>
-            ) : null)}
+          {toast.action || toast.secondaryAction ? (
+            <div className="mt-1 flex flex-wrap gap-x-4">
+              {[toast.secondaryAction, toast.action].map((action) =>
+                action ? <ToastActionButton key={action.label} action={action} onDone={() => onDismiss(toast.id)} /> : null,
+              )}
+            </div>
+          ) : null}
         </div>
         <button
           type="button"

@@ -18,6 +18,9 @@ const mockPipelinesApi = vi.hoisted(() => ({
   updateCaseContact: vi.fn(),
   deleteCaseContact: vi.fn(),
   getCaseCrmSyncStatus: vi.fn(),
+  getCaseCrmHistory: vi.fn(),
+  transitionCase: vi.fn(),
+  updateCase: vi.fn(),
   getCaseFiles: vi.fn(),
   listCaseEvidenceCandidates: vi.fn(),
   addCaseEvidence: vi.fn(),
@@ -120,6 +123,7 @@ describe("client case page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPipelinesApi.getCaseCrmSyncStatus.mockResolvedValue({ caseId: "case-1", sources: [] });
+    mockPipelinesApi.getCaseCrmHistory.mockResolvedValue({ caseId: "case-1", timeline: [], files: [], truncated: false });
     mockPipelinesApi.getCaseFiles.mockResolvedValue({ clients: [], evidence: [], deliverables: [] });
     mockPipelinesApi.getCaseJourney.mockResolvedValue({ caseId: "case-1", ndaAcceptedAt: null, stages: [], unfiled: [] });
     mockPipelinesApi.getCasePortal.mockResolvedValue({ caseId: "case-1", title: "Client", stages: [] });
@@ -177,6 +181,177 @@ describe("client case page", () => {
 
     const history = [...container.querySelectorAll("section")].find((section) => section.textContent?.startsWith("Stage history"));
     expect(history?.querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("shows the case's Pipedrive history with filters and its files, and hides it when there is none", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    const entry = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+      id, source: "pipedrive", kind, activityType: null, subject: null, body: null, occurredAt: "2026-09-01T10:00:00Z",
+      durationMinutes: null, done: null, ownerName: null, contactId: null, contactName: null, caseId: "case-1",
+      caseTitle: "Client A", details: {}, ...extra,
+    });
+    const timeline = [
+      entry("t1", "email", { subject: "Proposal attached", details: { from: ["ama@example.com"], to: ["john@greatstone.example"] } }),
+      entry("t2", "activity", { activityType: "meeting", subject: "DevTools demo", done: true, ownerName: "John", contactName: "Ama Mensah" }),
+      entry("t3", "note", { body: "Wants the CLI pilot first." }),
+      entry("t4", "stage_change", { subject: "Stage: Qualified → Demo" }),
+      ...Array.from({ length: 30 }, (_, index) => entry(`n${index}`, "note", { body: `Older note ${index}` })),
+    ];
+    mockPipelinesApi.getCaseCrmHistory.mockResolvedValue({
+      caseId: "case-1",
+      timeline,
+      files: [{
+        id: "f1", source: "pipedrive", name: "Signed SOW.pdf", contentType: "application/pdf", byteSize: 2048, description: null,
+        ownerName: "John", addedAt: "2026-09-02T10:00:00Z", contentPath: "/api/companies/co-1/crm-files/f1/content", remoteUrl: null,
+        notCopied: null, contactName: null, caseId: "case-1", caseTitle: "Client A",
+      }],
+      truncated: false,
+    });
+
+    await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);
+
+    const section = container.querySelector('[data-testid="case-crm-history"]')!;
+    expect(section).not.toBeNull();
+    expect(container.textContent).toContain("History from Pipedrive");
+    const list = section.querySelector('ul[aria-label="History from Pipedrive"]')!;
+    expect(list.querySelectorAll("li")).toHaveLength(25);
+    expect(list.textContent).toContain("Proposal attached");
+    expect(list.textContent).toContain("from ama@example.com");
+    expect(list.textContent).toContain("DevTools demo");
+    expect(list.textContent).toContain("with Ama Mensah");
+    expect(list.textContent).toContain("Stage: Qualified → Demo");
+
+    click([...section.querySelectorAll("button")].find((button) => button.textContent === "Show all 34") ?? null);
+    await flushReact();
+    expect(section.querySelectorAll('ul[aria-label="History from Pipedrive"] li')).toHaveLength(34);
+
+    click([...section.querySelectorAll("button")].find((button) => button.textContent?.startsWith("Emails")) ?? null);
+    await flushReact();
+    const emails = section.querySelectorAll('ul[aria-label="History from Pipedrive"] li');
+    expect(emails).toHaveLength(1);
+    expect(emails[0]?.textContent).toContain("Proposal attached");
+
+    const file = section.querySelector('ul[aria-label="Files from Pipedrive"] a');
+    expect(file?.getAttribute("href")).toBe("/api/companies/co-1/crm-files/f1/content");
+    expect(file?.textContent).toBe("Signed SOW.pdf");
+  });
+
+  it("shows a DevTools client's deal without the DX steps", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([contact]);
+    const devtoolsStages: PipelineStage[] = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-2", pipelineId: "pipe-pd", key: "pd_2", name: "Demo", kind: "working", position: 1 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
+      { id: "pd-lost", pipelineId: "pipe-pd", key: "lost", name: "Lost", kind: "cancelled", position: 3 },
+    ] as PipelineStage[];
+
+    await render(
+      <ClientCaseOverview
+        detail={caseDetail({
+          dealStatus: "Open",
+          dealValue: 12500,
+          dealCurrency: "GBP",
+          dealOwner: "John",
+          expectedCloseDate: "2026-11-30",
+          probability: 60,
+          nextActivityDate: "2026-10-20",
+        }, "pd-2")}
+        stages={devtoolsStages}
+        events={[]}
+        issueLinks={[]}
+        journey="devtools"
+      />,
+    );
+
+    expect(container.querySelector('[aria-current="step"]')?.textContent).toContain("Demo");
+    const deal = container.querySelector('dl[aria-label="Deal"]')!;
+    expect(deal.textContent).toContain("Open");
+    expect(deal.textContent).toContain("12,500 GBP");
+    expect(deal.textContent).toContain("John");
+    expect(deal.textContent).toContain("60% likely");
+    expect(container.textContent).toContain("Ama Mensah");
+    expect(container.textContent).not.toContain("Where things stand");
+    expect(container.textContent).not.toContain("Journey by stage");
+    expect(container.textContent).not.toContain("What the client sees on the portal");
+    expect(mockPipelinesApi.getCaseJourney).not.toHaveBeenCalled();
+    expect(mockPipelinesApi.getCasePortal).not.toHaveBeenCalled();
+  });
+
+  it("marks a DevTools deal lost with a reason, moving it to Lost and recording the outcome", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    mockPipelinesApi.transitionCase.mockResolvedValue({});
+    mockPipelinesApi.updateCase.mockResolvedValue({});
+    const devtoolsStages = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
+      { id: "pd-lost", pipelineId: "pipe-pd", key: "lost", name: "Lost", kind: "cancelled", position: 3 },
+    ] as PipelineStage[];
+    const detail = caseDetail({ dealStatus: "Open", dealValue: 500 }, "pd-1");
+    detail.case.version = 4;
+
+    await render(<ClientCaseOverview detail={detail} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
+
+    expect(container.querySelector('[data-testid="deal-next-step-flag"]')?.textContent).toBe("No next step scheduled for this open deal");
+    const outcome = container.querySelector('[data-testid="deal-outcome"]')!;
+    click([...outcome.querySelectorAll("button")].find((button) => button.textContent === "Lost") ?? null);
+    const reason = container.querySelector("#deal-lost-reason") as HTMLTextAreaElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    flushSync(() => {
+      setter.call(reason, "Chose an in-house tool");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click([...container.querySelectorAll('[data-testid="deal-outcome"] button')].find((button) => button.textContent === "Mark lost") ?? null);
+    await flushReact();
+
+    expect(mockPipelinesApi.transitionCase).toHaveBeenCalledWith("case-1", expect.objectContaining({ toStageKey: "lost", expectedVersion: 4, force: true }));
+    expect(mockPipelinesApi.updateCase).toHaveBeenCalledWith("case-1", {
+      fields: expect.objectContaining({ dealStatus: "Lost", dealValue: 500, lostReason: "Chose an in-house tool", lostOn: expect.any(String) }),
+    });
+  });
+
+  it("hides Won and Lost once the deal is closed", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    const devtoolsStages = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
+    ] as PipelineStage[];
+    await render(<ClientCaseOverview detail={caseDetail({ dealStatus: "Won" }, "pd-won")} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
+    expect(container.querySelector('[data-testid="deal-next-step-flag"]')).toBeNull();
+    expect(container.querySelector('[data-testid="deal-outcome"]')).toBeNull();
+  });
+
+  it("shows field changes and kinds it does not know yet without breaking", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    const base = {
+      source: "pipedrive", activityType: null, body: null, occurredAt: "2026-09-01T10:00:00Z", durationMinutes: null,
+      done: null, ownerName: null, contactId: null, contactName: null, caseId: "case-1", caseTitle: "Client A", details: {},
+    };
+    mockPipelinesApi.getCaseCrmHistory.mockResolvedValue({
+      caseId: "case-1",
+      timeline: [
+        { ...base, id: "f1", kind: "field_change", subject: "Value: 10000 → 12000" },
+        { ...base, id: "f2", kind: "field_change", subject: null },
+        { ...base, id: "u1", kind: "something_new", subject: "Brand new kind" },
+        { ...base, id: "n1", kind: "note", subject: null, body: "A note" },
+      ],
+      files: [],
+      truncated: false,
+    });
+
+    await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);
+
+    const section = container.querySelector('[data-testid="case-crm-history"]')!;
+    expect(section.textContent).toContain("Value: 10000 → 12000");
+    expect(section.textContent).toContain("Field change");
+    expect(section.textContent).toContain("Brand new kind");
+    expect([...section.querySelectorAll("button")].some((button) => button.textContent?.startsWith("Field changes (2)"))).toBe(true);
+  });
+
+  it("leaves the CRM history out when the case has none", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);
+    expect(container.querySelector('[data-testid="case-crm-history"]')).toBeNull();
+    expect(container.textContent).not.toContain("History from");
   });
 
   it("shows Paused beside the strip instead of lighting a journey stage", async () => {

@@ -640,7 +640,7 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
   }, []);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Network} message="Select an organization to view the org chart." />;
+    return <EmptyState icon={Network} message="Choose an organisation to view the org chart." />;
   }
 
   if (providedOrgTree === undefined && isLoading) {

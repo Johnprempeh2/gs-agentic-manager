@@ -24,6 +24,7 @@ vi.mock("@/lib/router", () => ({
     <a href={to} {...props}>{children}</a>
   ),
   useLocation: () => ({ pathname: "/my-tasks", search: "", hash: "" }),
+  useActiveCompanyPrefix: () => null,
 }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));

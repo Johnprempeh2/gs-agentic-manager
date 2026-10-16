@@ -16,7 +16,7 @@ const inviteRoleOptions = [
     value: "viewer",
     label: "Viewer",
     description: "Can view organization work and follow along.",
-    gets: "View-only organization membership.",
+    gets: "View-only organisation membership.",
   },
   {
     value: "operator",
@@ -151,7 +151,7 @@ export function InvitesSection() {
   });
 
   if (!selectedCompanyId) {
-    return <div className="text-sm text-muted-foreground">Select an organization to manage invites.</div>;
+    return <div className="text-sm text-muted-foreground">Choose an organisation to manage invites.</div>;
   }
 
   if (invitesQuery.isLoading) {
@@ -171,7 +171,7 @@ export function InvitesSection() {
   return (
     <div className="max-w-6xl space-y-8">
       <p className="max-w-3xl text-sm text-muted-foreground">
-        Invite people to request access to this organization. New invite links are copied to your clipboard when they are
+        Invite people to request access to this organisation. New invite links are copied to your clipboard when they are
         generated.
       </p>
 
@@ -291,7 +291,7 @@ export function InvitesSection() {
 
         {inviteHistory.length === 0 ? (
           <div className="border-t border-border px-5 py-8 text-sm text-muted-foreground">
-            No invites have been created for this organization yet.
+            No invites have been created for this organisation yet.
           </div>
         ) : (
           <div className="border-t border-border">

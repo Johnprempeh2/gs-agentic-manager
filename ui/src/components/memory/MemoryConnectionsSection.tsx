@@ -47,7 +47,8 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 
 /**
  * Live links so Claude, Claude Code or Codex can search and add to memory in
- * the middle of a chat. Owners and admins only; the server says who may.
+ * the middle of a chat. Each person connects their own apps; owners and admins
+ * also see everyone's. The server says who may.
  */
 export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
   const queryClient = useQueryClient();
@@ -97,7 +98,7 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
       </div>
 
       {forbidden ? (
-        <p className="text-sm text-muted-foreground">Only an owner or admin can connect an app. Ask one to set it up for you.</p>
+        <p className="text-sm text-muted-foreground">Only a person signed in to GSAM can connect an app.</p>
       ) : (
         <>
           <RadioCardGroup

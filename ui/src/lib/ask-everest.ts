@@ -4,7 +4,7 @@
  * history). This is the instant answer; the panel can also pass the
  * question to Everest itself, whose reply arrives in its chat.
  */
-import type { AgentWorkDigest, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
 import { timeAgo } from "./timeAgo";
 import { plainTaskStatus } from "./global-search";
 
@@ -217,9 +217,34 @@ export function answerAgent(
   return { headline, lines: lines.slice(0, 8), more: { label: `Open ${agent.name}`, href: `/agents/${agent.id}` } };
 }
 
-export function answerSubject(subject: string, issues: readonly Issue[]): AskAnswer {
+const RECORD_KIND_WORDS: Record<string, string> = {
+  organisation: "Organisation",
+  person: "Person",
+  client: "Client",
+  product: "Product",
+  image: "Image",
+  activity: "Note or activity",
+};
+
+/** Clients, organisations, people and products that match, as answer lines. */
+export function recordLines(records: readonly CompanySearchResult[]): AnswerLine[] {
+  return records
+    .filter((result) => result.type === "record" && result.record)
+    .slice(0, 4)
+    .map((result) => ({
+      text: result.title,
+      detail: [RECORD_KIND_WORDS[result.record!.kind] ?? "Record", result.record!.subtitle].filter(Boolean).join(": "),
+      href: result.href,
+    }));
+}
+
+export function answerSubject(subject: string, issues: readonly Issue[], records: readonly CompanySearchResult[] = []): AskAnswer {
+  const found = recordLines(records);
   if (issues.length === 0) {
-    return { headline: `I could not find any task about ${subject}.`, lines: [], more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` } };
+    const headline = found.length > 0
+      ? `I found ${found[0]!.text}${found.length > 1 ? ` and ${plural(found.length - 1, "more record")}` : ""}, but no tasks about ${subject} yet.`
+      : `I could not find any task about ${subject}.`;
+    return { headline, lines: found, more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` } };
   }
   const open = issues.filter((issue) => issue.status !== "done" && issue.status !== "cancelled");
   const stuck = open.filter((issue) => issue.status === "blocked");
@@ -238,7 +263,7 @@ export function answerSubject(subject: string, issues: readonly Issue[]): AskAns
     .map((issue) => ({ text: issue.title, detail: plainTaskStatus(issue.status), href: taskHref(issue) }));
   return {
     headline: `${plural(issues.length, "task")} about ${subject}: ${parts.join(", ")}.`,
-    lines,
+    lines: [...found, ...lines],
     more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` },
   };
 }
@@ -529,4 +554,53 @@ export function pipelineItemAskContext(item: {
       `What is stuck on ${item.title}?`,
     ],
   };
+}
+
+/** What Ask Everest gets when opened from an organisation page: who they are, the people and the deals. */
+export function organisationAskContext(org: {
+  name: string;
+  industry: string | null;
+  country: string | null;
+  statusLabel: string;
+  contacts: ReadonlyArray<{ name: string; role: string | null }>;
+  deals: ReadonlyArray<{ title: string; pipelineName: string; stageName: string }>;
+  /** Imported CRM history (Pipedrive notes, calls, meetings, emails), newest first. */
+  history?: ReadonlyArray<{ kind: string; activityType: string | null; subject: string | null; body: string | null; occurredAt: string | null }>;
+}): AskContext {
+  const about = [org.industry, org.country].filter(Boolean).join(", ");
+  const history = (org.history ?? [])
+    .filter((entry) => entry.kind !== "stage_change")
+    .slice(0, 5)
+    .map(historyLine)
+    .filter(Boolean);
+  const people = org.contacts.slice(0, 6).map((contact) => (contact.role ? `${contact.name} (${contact.role})` : contact.name));
+  const deals = org.deals.slice(0, 6).map((deal) => `${deal.title}: ${deal.stageName} in ${deal.pipelineName}`);
+  return {
+    label: org.name,
+    subject: org.name,
+    summary: [
+      `The organisation "${org.name}"${about ? ` (${about})` : ""}. Status: ${org.statusLabel}.`,
+      people.length > 0 ? `People: ${people.join("; ")}.` : null,
+      deals.length > 0 ? `Deals: ${deals.join("; ")}.` : null,
+      history.length > 0 ? `Latest history: ${history.join("; ")}.` : null,
+    ].filter(Boolean).join("\n"),
+    suggestions: [
+      `What is happening with ${org.name}?`,
+      ...(history.length > 0 ? [`What did we last discuss with ${org.name}?`] : []),
+      `What is stuck on ${org.name}?`,
+      `What should we do next with ${org.name}?`,
+    ],
+  };
+}
+
+/** One imported CRM entry as a short line: "2026-10-12, call: Pricing call (Talked through the tiers)". */
+function historyLine(entry: { kind: string; activityType: string | null; subject: string | null; body: string | null; occurredAt: string | null }): string {
+  const text = (entry.body ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const short = text.length > 120 ? `${text.slice(0, 119)}…` : text;
+  const what = entry.subject?.trim() || short;
+  if (!what) return "";
+  const when = entry.occurredAt ? `${entry.occurredAt.slice(0, 10)}, ` : "";
+  const kind = (entry.activityType ?? entry.kind).replace(/_/g, " ");
+  const extra = entry.subject?.trim() && short ? ` (${short})` : "";
+  return `${when}${kind}: ${what}${extra}`;
 }

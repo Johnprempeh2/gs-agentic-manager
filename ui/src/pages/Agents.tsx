@@ -25,12 +25,15 @@ import { costsApi } from "../api/costs";
 import { agentTeamsApi } from "../api/agentTeams";
 import { AgentTeamsDialog, TeamColorDot } from "../components/AgentTeamsDialog";
 import { filterAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "../lib/agent-teams";
+import { agentsSheet, agentsUpdateText, budgetUseLabel } from "../lib/agents-export";
+import { useCopyAction } from "../lib/use-copy-action";
+import { downloadBytes, exportFileName, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AgentTeam, ApiEquivalentAgentRow } from "@greatstone/shared";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Bot, Plus, List, Network, Users } from "lucide-react";
+import { AlertTriangle, Bot, Check, ClipboardList, Download, Plus, List, Network, Users } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@greatstone/shared";
 import {
   isStarred,
@@ -198,7 +201,8 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, builtInAgentIds: Set<st
 export type AgentsView = "list" | "org";
 
 export function Agents({ initialView = "list" }: { initialView?: AgentsView } = {}) {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
+  const teamCopy = useCopyAction();
   const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
@@ -348,7 +352,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
 
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Bot} message="Select an organization to view agents." />;
+    return <EmptyState icon={Bot} message="Choose an organisation to view agents." />;
   }
 
   if (isLoading) {
@@ -463,6 +467,17 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                   liveCount={liveRunByAgent.get(agent.id)!.liveCount}
                 />
               )}
+              {(() => {
+                const budgetUse = budgetUseLabel(agent);
+                return budgetUse ? (
+                  <span
+                    className={cn("whitespace-nowrap text-xs font-medium", budgetUse.tone === "danger" ? "text-status-danger" : "text-status-warning")}
+                    title="How much of this month's budget the agent has spent"
+                  >
+                    {budgetUse.text}
+                  </span>
+                ) : null;
+              })()}
               <span className="w-20 flex justify-end">
                 <AgentStatusBadge status={agent.status} />
               </span>
@@ -565,6 +580,33 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
               </SelectContent>
             </Select>
           )}
+          {filtered.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy how each agent on screen is doing, ready to paste"
+              onClick={() => void teamCopy.copy(agentsUpdateText(filtered, (at) => relativeTime(at)))}
+            >
+              {teamCopy.copied ? <Check className="h-3.5 w-3.5 mr-1.5" /> : <ClipboardList className="h-3.5 w-3.5 mr-1.5" />}
+              {teamCopy.copied ? "Copied" : teamCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          )}
+          {filtered.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Download the agents on screen as an Excel file"
+              onClick={() =>
+                downloadBytes(
+                  exportFileName(selectedCompany?.issuePrefix, "agents", localToday(), "xlsx"),
+                  sheetsToXlsx([agentsSheet(filtered, teamsForAgent)]),
+                )
+              }
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Download as spreadsheet
+            </Button>
+          )}
           <Button size="sm" variant="outline" onClick={() => setTeamsDialogOpen(true)}>
             <Users className="h-3.5 w-3.5 mr-1.5" />
             Teams
@@ -599,9 +641,20 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
       )}
 
       {view === "list" && agents && agents.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-muted-foreground text-center py-8">
-          {teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}
-        </p>
+        <div className="space-y-2 py-8 text-center text-sm text-muted-foreground">
+          <p>{teamFilter ? "No agents match the selected status and team." : "No agents match the selected status."}</p>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setTeamFilter(null);
+              navigate("/agents/all");
+            }}
+          >
+            Show all agents
+          </Button>
+        </div>
       )}
 
       {/* Org chart view */}
@@ -853,10 +906,10 @@ function formatWorkValue(cents: number): string {
   return `$${Math.round(cents / 100).toLocaleString("en-GB")}`;
 }
 
-/** "$123 of work · 41 runs this week", or that it did not run. */
+/** "$123 of work · Worked 41 times this week", or that it did no work. */
 export function agentWeekLine(row: ApiEquivalentAgentRow | undefined): string {
-  if (!row || row.runCount === 0) return "No runs this week";
-  const runs = `${row.runCount} ${row.runCount === 1 ? "run" : "runs"} this week`;
+  if (!row || row.runCount === 0) return "No work this week";
+  const runs = `Worked ${row.runCount} ${row.runCount === 1 ? "time" : "times"} this week`;
   return row.apiEquivalentCents > 0 ? `${formatWorkValue(row.apiEquivalentCents)} of work · ${runs}` : runs;
 }
 
@@ -882,7 +935,7 @@ function AgentMetaColumns({
             {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "$0"}
           </div>
           <div className="truncate text-(length:--text-micro) tabular-nums text-subtle-foreground">
-            {week?.runCount ? `${week.runCount} ${week.runCount === 1 ? "run" : "runs"} this week` : "No runs this week"}
+            {week?.runCount ? `Worked ${week.runCount} ${week.runCount === 1 ? "time" : "times"} this week` : "No work this week"}
           </div>
         </div>
       )}

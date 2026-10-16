@@ -955,7 +955,7 @@ function SelectStep({
           </p>
           <p className="mt-1.5 text-sm text-muted-foreground">
             {grant
-              ? "Your account doesn't have permission to add skills to this organization. Ask an owner to grant the skills permission, then try again."
+              ? "Your account doesn't have permission to add skills to this organisation. Ask an owner to grant the skills permission, then try again."
               : readableErrorMessage(scanError)}
           </p>
           {!grant && (
