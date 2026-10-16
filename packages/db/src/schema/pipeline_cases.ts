@@ -81,6 +81,19 @@ export const pipelineCases = pgTable(
     // The signed NDA uploaded onto the client (Ben, 8 Oct): the evidence row
     // that holds the file. Cleared when the NDA goes back to required.
     ndaEvidenceId: uuid("nda_evidence_id").references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    // The engagement pack (Ben, 8 and 12 Oct): it goes out once the NDA is
+    // accepted or suspended, and the client accepts it. not_sent, sent (with
+    // its date) or accepted (with its date). The pack and the signed
+    // acceptance are evidence rows when they were uploaded.
+    engagementStatus: text("engagement_status").$type<"not_sent" | "sent" | "accepted">().notNull().default("not_sent"),
+    engagementSentAt: timestamp("engagement_sent_at", { withTimezone: true }),
+    engagementAcceptedAt: timestamp("engagement_accepted_at", { withTimezone: true }),
+    engagementChangedAt: timestamp("engagement_changed_at", { withTimezone: true }),
+    engagementChangedByUserId: text("engagement_changed_by_user_id"),
+    engagementPackEvidenceId: uuid("engagement_pack_evidence_id")
+      .references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    engagementAcceptanceEvidenceId: uuid("engagement_acceptance_evidence_id")
+      .references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
     childCount: integer("child_count").notNull().default(0),
     terminalChildCount: integer("terminal_child_count").notNull().default(0),
     createdByUserId: text("created_by_user_id"),
@@ -102,6 +115,7 @@ export const pipelineCases = pgTable(
     retiredIdx: index("pipeline_cases_retired_idx").on(table.companyId, table.retiredAt),
     leaseExpiresIdx: index("pipeline_cases_lease_expires_idx").on(table.leaseExpiresAt).where(sql`${table.leaseExpiresAt} is not null`),
     terminalKindCheck: check("pipeline_cases_terminal_kind_check", sql`${table.terminalKind} is null or ${table.terminalKind} in ('done', 'cancelled')`),
+    engagementStatusCheck: check("pipeline_cases_engagement_status_check", sql`${table.engagementStatus} in ('not_sent', 'sent', 'accepted')`),
     leaseOwnerTypeCheck: check("pipeline_cases_lease_owner_type_check", sql`${table.leaseOwnerType} is null or ${table.leaseOwnerType} in ('user', 'agent')`),
   }),
 );
@@ -221,6 +235,36 @@ export const pipelineCaseEvidence = pgTable(
         or (${table.kind} = 'document' and ${table.documentId} is not null)
         or (${table.kind} = 'link' and ${table.url} is not null)
         or (${table.kind} = 'upload' and ${table.assetId} is not null)`,
+    ),
+  }),
+);
+
+// A document we ask the client for at one stage of their journey (Ben, 12
+// Oct: the deep dive's document request stage collects a set list). It is
+// received when an upload is made against it: evidence_id points at that file.
+export const pipelineCaseDocumentRequests = pgTable(
+  "pipeline_case_document_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
+    caseId: uuid("case_id").notNull().references(() => pipelineCases.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").notNull().references(() => pipelineStages.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    note: text("note"),
+    position: integer("position").notNull().default(0),
+    evidenceId: uuid("evidence_id").references(() => pipelineCaseEvidence.id, { onDelete: "set null" }),
+    createdByUserId: text("created_by_user_id"),
+    createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    companyCaseIdx: index("pipeline_case_document_requests_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_document_requests_stage_idx").on(table.stageId),
+    caseStageTitleUq: uniqueIndex("pipeline_case_document_requests_case_stage_title_uq").on(
+      table.caseId,
+      table.stageId,
+      table.title,
     ),
   }),
 );

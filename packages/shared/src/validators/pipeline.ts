@@ -121,10 +121,20 @@ export const pipelineStageExpectedDeliverableSchema = z.object({
   kind: z.enum(["report", "brief", "plan", "deck", "other"]).optional().nullable(),
 });
 
+/**
+ * A document the stage usually asks of the client (Ben, 12 Oct). The client
+ * page offers the list in one click on that stage's checklist.
+ */
+export const pipelineStageRequestedDocumentSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  note: z.string().trim().max(1000).optional().nullable(),
+});
+
 export const pipelineStageConfigSchema = z.object({
   variables: z.array(pipelineStageVariableSchema).default([]),
   templates: z.array(pipelineStageTemplateSchema).max(50).optional(),
   expectedDeliverables: z.array(pipelineStageExpectedDeliverableSchema).max(50).optional(),
+  requestedDocuments: z.array(pipelineStageRequestedDocumentSchema).max(50).optional(),
   disabled: z.boolean().optional(),
   disabledReason: z.string().trim().max(1_000).nullable().optional(),
   requireApproval: z.boolean().optional(),

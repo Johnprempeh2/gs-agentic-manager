@@ -48,6 +48,20 @@ export const uploadClientEvidenceFieldsSchema = z.object({
   title: z.preprocess((value) => (value === "" ? undefined : value), title.optional()),
   note: z.preprocess((value) => (value === "" ? undefined : value), note),
   stageId: z.preprocess((value) => (value === "" ? undefined : value), stageId),
+  /** The document request this upload meets; the stage defaults to the request's. */
+  requestId: z.preprocess((value) => (value === "" ? undefined : value), z.string().guid().optional()),
+});
+
+/** POST /api/cases/:caseId/document-requests: one or more titles on one stage. */
+export const createClientDocumentRequestsSchema = z.object({
+  stageId: z.string().guid(),
+  titles: z.array(z.string().trim().min(1).max(200)).min(1).max(50),
+  note: z.string().trim().max(1000).optional().nullable(),
+});
+
+/** POST /api/cases/:caseId/document-requests/standard: add the stage's standard list. */
+export const addStandardClientDocumentRequestsSchema = z.object({
+  stageId: z.string().guid(),
 });
 
 /** ?q= on the case routes: text search on the item name. */
@@ -66,5 +80,6 @@ export const clientFilesQuerySchema = clientFilesSearchSchema
   });
 
 export type CreateClientEvidence = z.infer<typeof createClientEvidenceSchema>;
+export type CreateClientDocumentRequests = z.infer<typeof createClientDocumentRequestsSchema>;
 export type UploadClientEvidenceFields = z.infer<typeof uploadClientEvidenceFieldsSchema>;
 export type ClientFilesQuery = z.infer<typeof clientFilesQuerySchema>;

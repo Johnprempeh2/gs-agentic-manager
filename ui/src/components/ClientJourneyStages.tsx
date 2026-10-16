@@ -23,6 +23,9 @@ import { Textarea } from "./ui/textarea";
 import { ToggleSwitch } from "./ui/toggle-switch";
 import { ConfidentialityBadge } from "./deliverables/DeliverableBadges";
 import { ClientUploadZone, formatFileSize } from "./PipelineCaseFiles";
+import { ClientDocumentRequests } from "./ClientDocumentRequests";
+import { ClientEngagementRow } from "./ClientEngagementRow";
+import { ErrorState } from "./ErrorState";
 
 // Client journey by stage (GRE-1473): each stage of the client's journey as a
 // section with its standard templates and the deliverables filed under it, and
@@ -187,7 +190,15 @@ function StageSection({
   onUpdate: (linkId: string, patch: UpdateClientJourneyDeliverable) => void;
   onRemove: (linkId: string) => void;
 }) {
-  const empty = stage.templates.length === 0 && stage.deliverables.length === 0 && stage.expected.length === 0 && files.length === 0;
+  // A file that met a document request shows on that request, not twice.
+  const requestFileIds = new Set((stage.requests ?? []).flatMap((request) => request.received ? [request.received.evidenceId] : []));
+  const looseFiles = files.filter((item) => !requestFileIds.has(item.id));
+  const empty = stage.templates.length === 0
+    && stage.deliverables.length === 0
+    && stage.expected.length === 0
+    && files.length === 0
+    && (stage.requests ?? []).length === 0
+    && (stage.suggestedRequests ?? []).length === 0;
   const met = stage.expected.filter((entry) => entry.deliverableId).length;
   return (
     <section aria-labelledby={`journey-stage-${stage.id}`} className="py-3">
@@ -226,6 +237,7 @@ function StageSection({
         </ul>
       ) : null}
       {stage.expected.length > 0 ? <ExpectedList stage={stage} met={met} /> : null}
+      <ClientDocumentRequests caseId={caseId} stage={stage} />
       {stage.deliverables.length > 0 ? (
         <ul className="mt-1 divide-y divide-border" aria-label={`${stage.name} deliverables`}>
           {stage.deliverables.map((row) => (
@@ -240,9 +252,9 @@ function StageSection({
           ))}
         </ul>
       ) : null}
-      {files.length > 0 ? (
+      {looseFiles.length > 0 ? (
         <ul className="mt-1" aria-label={`${stage.name} files`}>
-          {files.map((item) => <StageFileRow key={item.id} item={item} />)}
+          {looseFiles.map((item) => <StageFileRow key={item.id} item={item} />)}
         </ul>
       ) : null}
       {empty ? <p className="mt-1 text-sm text-muted-foreground">Nothing in this stage yet.</p> : null}
@@ -540,7 +552,17 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
   });
 
   if (journey.isLoading) return <p className="py-3 text-sm text-muted-foreground">Loading the journey...</p>;
-  if (journey.error || !journey.data) return <p className="py-3 text-sm text-destructive">Could not load the journey.</p>;
+  if (journey.error || !journey.data) {
+    return (
+      <ErrorState
+        compact
+        error={journey.error}
+        title="Could not load the journey"
+        onRetry={() => void journey.refetch()}
+        retrying={journey.isFetching}
+      />
+    );
+  }
 
   const { stages, unfiled } = journey.data;
   // A server from before 0335 sends only ndaAcceptedAt.
@@ -566,6 +588,7 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
         onChange={(input) => setNda.mutate(input)}
         onUploadSigned={(file) => uploadSignedNda.mutate(file)}
       />
+      <ClientEngagementRow caseId={caseId} engagement={journey.data.engagement} ndaCleared={nda.status !== "required"} />
       {stages.map((stage) => (
         <StageSection
           key={stage.id}

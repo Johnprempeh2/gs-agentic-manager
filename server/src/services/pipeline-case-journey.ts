@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import {
   authUsers,
@@ -21,7 +22,10 @@ import {
   type ClientJourneyStage,
   type ClientJourneyStageState,
   type ClientJourneyStageTemplate,
+  type ClientEngagement,
+  type ClientJourneyFileRef,
   type ClientNda,
+  type EngagementStatus,
   type NdaStatus,
   type ClientPortalJourneyResponse,
   type Deliverable,
@@ -30,6 +34,7 @@ import { isUniqueViolation } from "../db-errors.js";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { deliverableService } from "./deliverables.js";
 import { pipelineCaseFilesService } from "./pipeline-case-files.js";
+import { pipelineCaseDocumentRequestsService, readRequestedDocuments } from "./pipeline-case-document-requests.js";
 
 // Client journey by stage (GRE-1473). Each stage of a client's journey lists
 // its standard templates (from the stage config) and the deliverables filed
@@ -94,6 +99,23 @@ function ndaOf(row: {
   };
 }
 
+const engagementPack = alias(pipelineCaseEvidence, "engagement_pack");
+const engagementAcceptance = alias(pipelineCaseEvidence, "engagement_acceptance");
+const engagementChangedBy = alias(authUsers, "engagement_changed_by");
+
+function fileRef(
+  caseId: string,
+  file: { id: string | null; title: string | null; createdAt: Date | null },
+): ClientJourneyFileRef | null {
+  if (!file.id) return null;
+  return {
+    evidenceId: file.id,
+    title: file.title ?? "File",
+    contentPath: `/api/cases/${caseId}/evidence/${file.id}/content`,
+    uploadedAt: file.createdAt?.toISOString() ?? new Date(0).toISOString(),
+  };
+}
+
 export function pipelineCaseJourneyService(db: Db) {
   const files = pipelineCaseFilesService(db);
 
@@ -123,6 +145,56 @@ export function pipelineCaseJourneyService(db: Db) {
       .then((rows) => rows[0] ?? null);
     if (!row) throw notFound("Pipeline case not found");
     return row;
+  }
+
+  async function assertNdaCleared(companyId: string, caseId: string) {
+    const current = await loadCase(companyId, caseId);
+    if (!ndaClears(ndaOf(current).status)) {
+      throw conflict("The NDA must be accepted or suspended before the engagement pack goes out", {
+        code: "nda_required",
+      });
+    }
+  }
+
+  /** The engagement pack on the client: its status, dates and files. */
+  async function loadEngagement(companyId: string, caseId: string): Promise<ClientEngagement> {
+    const row = await db
+      .select({
+        status: pipelineCases.engagementStatus,
+        sentAt: pipelineCases.engagementSentAt,
+        acceptedAt: pipelineCases.engagementAcceptedAt,
+        changedAt: pipelineCases.engagementChangedAt,
+        changedBy: engagementChangedBy.name,
+        packId: engagementPack.id,
+        packTitle: engagementPack.title,
+        packCreatedAt: engagementPack.createdAt,
+        acceptanceId: engagementAcceptance.id,
+        acceptanceTitle: engagementAcceptance.title,
+        acceptanceCreatedAt: engagementAcceptance.createdAt,
+      })
+      .from(pipelineCases)
+      .leftJoin(engagementChangedBy, eq(engagementChangedBy.id, pipelineCases.engagementChangedByUserId))
+      .leftJoin(engagementPack, and(
+        eq(engagementPack.id, pipelineCases.engagementPackEvidenceId),
+        eq(engagementPack.caseId, pipelineCases.id),
+      ))
+      .leftJoin(engagementAcceptance, and(
+        eq(engagementAcceptance.id, pipelineCases.engagementAcceptanceEvidenceId),
+        eq(engagementAcceptance.caseId, pipelineCases.id),
+      ))
+      .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId), isNull(pipelineCases.retiredAt)))
+      .then((rows) => rows[0] ?? null);
+    if (!row) throw notFound("Pipeline case not found");
+    const status: EngagementStatus = row.status === "sent" || row.status === "accepted" ? row.status : "not_sent";
+    return {
+      status,
+      sentAt: status !== "not_sent" ? row.sentAt?.toISOString() ?? null : null,
+      acceptedAt: status === "accepted" ? row.acceptedAt?.toISOString() ?? null : null,
+      changedBy: row.changedBy,
+      changedAt: row.changedAt?.toISOString() ?? null,
+      pack: fileRef(caseId, { id: row.packId, title: row.packTitle, createdAt: row.packCreatedAt }),
+      acceptance: fileRef(caseId, { id: row.acceptanceId, title: row.acceptanceTitle, createdAt: row.acceptanceCreatedAt }),
+    };
   }
 
   /** The stages the case entered, newest first; the first journey stage among them is where it paused. */
@@ -162,7 +234,7 @@ export function pipelineCaseJourneyService(db: Db) {
     const states = journeyStageStates(stages, caseRow.stageId, pausedFrom);
     const stateById = new Map(states.map((entry) => [entry.id, entry.state]));
 
-    const [deliverables, links] = await Promise.all([
+    const [deliverables, links, requests, engagement] = await Promise.all([
       scopedDeliverables(companyId, caseId),
       db
         .select()
@@ -171,6 +243,8 @@ export function pipelineCaseJourneyService(db: Db) {
           eq(pipelineCaseStageDeliverables.companyId, companyId),
           eq(pipelineCaseStageDeliverables.caseId, caseId),
         )),
+      pipelineCaseDocumentRequestsService(db).list(companyId, caseId),
+      loadEngagement(companyId, caseId),
     ]);
     const deliverableByRef = new Map(deliverables.map((item) => [deliverableRef(item), item]));
     const filed = new Set<string>();
@@ -188,8 +262,11 @@ export function pipelineCaseJourneyService(db: Db) {
         templates: readTemplates(stage.config),
         deliverables: [],
         expected: [],
+        requests: [],
+        suggestedRequests: [],
       });
     }
+    for (const request of requests) sections.get(request.stageId)?.requests?.push(request);
     for (const link of links) {
       const ref = `${link.deliverableIssueId}:${link.deliverableKey}`;
       // A deliverable that left the client's scope (its task was unlinked) is not shown.
@@ -204,6 +281,9 @@ export function pipelineCaseJourneyService(db: Db) {
         readExpected(stageById.get(section.id)?.config),
         section.deliverables.map(({ deliverable }) => deliverable),
       );
+      const asked = new Set((section.requests ?? []).map((request) => request.title.trim().toLowerCase()));
+      section.suggestedRequests = readRequestedDocuments(stageById.get(section.id)?.config)
+        .filter((item) => !asked.has(item.title.trim().toLowerCase()));
     }
 
     return {
@@ -211,6 +291,7 @@ export function pipelineCaseJourneyService(db: Db) {
       title: caseRow.title,
       ndaAcceptedAt: caseRow.ndaStatus === "accepted" ? caseRow.ndaAcceptedAt?.toISOString() ?? null : null,
       nda: ndaOf(caseRow),
+      engagement,
       stages: [...sections.values()],
       unfiled: deliverables.filter((item) => !filed.has(deliverableRef(item))),
       stateById,
@@ -229,8 +310,8 @@ export function pipelineCaseJourneyService(db: Db) {
 
   return {
     journey: async (companyId: string, caseId: string): Promise<ClientJourneyResponse> => {
-      const { caseId: id, ndaAcceptedAt, nda, stages, unfiled } = await getJourney(companyId, caseId);
-      return { caseId: id, ndaAcceptedAt, nda, stages, unfiled };
+      const { caseId: id, ndaAcceptedAt, nda, engagement, stages, unfiled } = await getJourney(companyId, caseId);
+      return { caseId: id, ndaAcceptedAt, nda, engagement, stages, unfiled };
     },
 
     /** What the client sees on its portal: the visibility rule applied, outcome fields only. */
@@ -302,6 +383,46 @@ export function pipelineCaseJourneyService(db: Db) {
         .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)));
       const nda = ndaOf(await loadCase(companyId, caseId));
       return { ndaAcceptedAt: nda.acceptedAt, nda };
+    },
+
+    /**
+     * Move the engagement pack on. It cannot go out while the NDA is still
+     * required (Ben, 8 Oct: the pack link follows the signed NDA). Accepting
+     * keeps the sent date, or sets it now when the pack was never marked sent.
+     */
+    assertNdaCleared,
+
+    setEngagement: async (
+      companyId: string,
+      caseId: string,
+      input: { status: EngagementStatus; packEvidenceId?: string | null; acceptanceEvidenceId?: string | null },
+      userId: string | null,
+    ): Promise<{ engagement: ClientEngagement }> => {
+      if (input.status !== "not_sent") await assertNdaCleared(companyId, caseId);
+      const engagement = await loadEngagement(companyId, caseId);
+      const now = new Date();
+      const sentAt = engagement.sentAt ? new Date(engagement.sentAt) : now;
+      await db
+        .update(pipelineCases)
+        .set({
+          engagementStatus: input.status,
+          engagementSentAt: input.status === "not_sent" ? null : sentAt,
+          engagementAcceptedAt: input.status === "accepted"
+            ? (engagement.acceptedAt ? new Date(engagement.acceptedAt) : now)
+            : null,
+          engagementChangedAt: now,
+          engagementChangedByUserId: userId,
+          ...(input.packEvidenceId ? { engagementPackEvidenceId: input.packEvidenceId } : {}),
+          ...(input.acceptanceEvidenceId
+            ? { engagementAcceptanceEvidenceId: input.acceptanceEvidenceId }
+            : input.status !== "accepted"
+              ? { engagementAcceptanceEvidenceId: null }
+              : {}),
+          ...(input.status === "not_sent" ? { engagementPackEvidenceId: null } : {}),
+          updatedAt: now,
+        })
+        .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)));
+      return { engagement: await loadEngagement(companyId, caseId) };
     },
 
     /** File a deliverable in the client's scope under one of its stages. */
