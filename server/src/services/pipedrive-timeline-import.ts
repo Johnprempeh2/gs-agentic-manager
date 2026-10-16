@@ -13,10 +13,12 @@ const SOURCE = "pipedrive";
 const MAX_ERROR_SAMPLES = 20;
 const MAX_BODY = 50_000;
 
-type EntryKind = "activity" | "note" | "call" | "email" | "stage_change";
+type EntryKind = "activity" | "note" | "call" | "email" | "stage_change" | "field_change";
 
 /** Deal fields whose changes make the deal's stage history. */
 const HISTORY_FIELDS: Record<string, string> = { stage_id: "Stage", pipeline_id: "Pipeline", status: "Status" };
+// Changes Pipedrive logs about its own bookkeeping, not something a person changed.
+const SYSTEM_CHANGE_FIELD = /^(next_activity|last_activity|update_time|stage_change_time|rotten_time|first_won_time|last_incoming_mail_time|last_outgoing_mail_time|.*_count$)/;
 type EntryRow = typeof crmTimelineEntries.$inferSelect;
 type EntryValues = Omit<typeof crmTimelineEntries.$inferInsert, "id" | "companyId" | "source" | "createdAt" | "updatedAt">;
 
@@ -30,6 +32,8 @@ export interface TimelineLinks {
   /** Pipedrive people and organisations with emails, whose own history is read for emails not on a deal. */
   personIdsWithEmail?: string[];
   organisationIdsWithEmail?: string[];
+  /** Pipedrive's name for each deal field, by key, so a field change reads "Value" rather than a hash. */
+  dealFieldLabels?: Map<string, string>;
 }
 
 function str(value: unknown): string | null {
@@ -232,15 +236,17 @@ export function mapPipedriveFlowItem(item: Record<string, unknown>, dealId: stri
   const caseId = map.caseIdByDealId.get(dealId) ?? null;
   if (item.object === "dealChange") {
     const field = str(data.field_key);
-    const label = field ? HISTORY_FIELDS[field] : undefined;
     const externalId = str(data.id);
-    if (!label || !externalId) return null;
+    if (!field || !externalId || SYSTEM_CHANGE_FIELD.test(field)) return null;
+    // Stage, pipeline and status moves are stage changes; any other field a person changed is a field change.
+    const stageLike = HISTORY_FIELDS[field];
+    const label = stageLike ?? map.dealFieldLabels?.get(field) ?? field;
     const extra = (data.additional_data ?? {}) as Record<string, unknown>;
     const from = str(extra.old_value_formatted) ?? str(data.old_value);
     const to = str(extra.new_value_formatted) ?? str(data.new_value);
     return {
       externalId,
-      kind: "stage_change",
+      kind: stageLike ? "stage_change" : "field_change",
       activityType: field,
       subject: `${label}: ${from ?? "none"} → ${to ?? "none"}`,
       body: null,
@@ -345,7 +351,7 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
           count.errors += 1;
           if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
             result.errorSamples.push({
-              kind: kind === "stage_change" ? "deal" : kind,
+              kind: kind === "stage_change" || kind === "field_change" ? "deal" : kind,
               externalId: values.externalId,
               message: error instanceof Error ? error.message : String(error),
             });
@@ -403,11 +409,11 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
             break;
           }
           for (const item of page.items) {
-            const kind = item.object === "mailMessage" ? "email" : item.object === "dealChange" ? "stage_change" : null;
-            if (!kind) continue;
+            if (item.object !== "mailMessage" && item.object !== "dealChange") continue;
             const values = mapPipedriveFlowItem(item, dealId, input.links);
-            // Field changes other than stage, pipeline and status are not history entries.
-            if (!values && kind === "stage_change") continue;
+            // Pipedrive's own bookkeeping changes are not history entries.
+            if (!values && item.object === "dealChange") continue;
+            const kind: EntryKind = values ? values.kind as EntryKind : "email";
             await write(kind, values, kind === "email" ? counts.emails : counts.stageChanges);
             if (kind === "email" && values) seenEmails.add(values.externalId);
           }

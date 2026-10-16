@@ -323,6 +323,8 @@ type DealImportResult = Required<Pick<OrganisationImportResult, "deals" | "pipel
   lineItemsByDealId: Map<string, MappedDealProduct[]>;
   /** The people on each deal whose participants could be read, by Pipedrive deal id. */
   participantsByDealId: Map<string, PipedriveParticipant[]>;
+  /** Pipedrive's name for each deal field, by key, for the deal history. */
+  dealFieldLabels: Map<string, string>;
 };
 
 /**
@@ -342,7 +344,7 @@ export function pipedriveDealImportService(db: Db) {
       result: OrganisationImportResult;
     }): Promise<DealImportResult> {
       const { companyId, client, result } = input;
-      const counts: DealImportResult = { deals: emptyImportCounts(), pipelines: emptyImportCounts(), caseIdByDealId: new Map(), lineItemsByDealId: new Map(), participantsByDealId: new Map() };
+      const counts: DealImportResult = { deals: emptyImportCounts(), pipelines: emptyImportCounts(), caseIdByDealId: new Map(), lineItemsByDealId: new Map(), participantsByDealId: new Map(), dealFieldLabels: new Map() };
       result.deals = counts.deals;
       result.pipelines = counts.pipelines;
       const pushError = (kind: "deal" | "pipeline" | "product" | "participant", externalId: string, error: unknown) => {
@@ -369,6 +371,9 @@ export function pipedriveDealImportService(db: Db) {
       let canReadParticipants = true;
       let canReadFollowers = true;
       const specs = pipedriveDealFieldSpecs(dealFields, lookups);
+      for (const field of dealFields) {
+        if (field.key && field.name?.trim()) counts.dealFieldLabels.set(field.key, field.name.trim());
+      }
 
       // Pipeline and field set-up, one Pipedrive pipeline at a time.
       const gsamPipelineByPdId = new Map<string, string>();

@@ -223,7 +223,7 @@ export function OrganisationPage() {
   );
 }
 
-const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone, email: Mail, stage_change: ArrowRightLeft } as const;
+const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone, email: Mail, stage_change: ArrowRightLeft, field_change: Pencil } as const;
 
 function timelineTitle(entry: CrmTimelineEntry) {
   if (entry.subject) return entry.subject;
@@ -231,6 +231,7 @@ function timelineTitle(entry: CrmTimelineEntry) {
   if (entry.kind === "call") return "Call";
   if (entry.kind === "email") return "Email";
   if (entry.kind === "stage_change") return "Stage change";
+  if (entry.kind === "field_change") return "Field change";
   return entry.activityType ? entry.activityType.charAt(0).toUpperCase() + entry.activityType.slice(1) : "Activity";
 }
 

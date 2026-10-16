@@ -465,9 +465,9 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     // The empty note is skipped, not stored.
     expect(first.body.notes).toEqual({ created: 1, updated: 0, skipped: 1, errors: 0 });
     expect(first.body.calls).toEqual({ created: 1, updated: 0, skipped: 0, errors: 0 });
-    // Deal history: one email, and the stage and status changes (the value change is not history).
+    // Deal history: one email, the stage and status changes, and the value change.
     expect(first.body.emails).toEqual({ created: 1, updated: 0, skipped: 0, errors: 0 });
-    expect(first.body.stageChanges).toEqual({ created: 2, updated: 0, skipped: 0, errors: 0 });
+    expect(first.body.stageChanges).toEqual({ created: 3, updated: 0, skipped: 0, errors: 0 });
     expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
     expect(pipedrive.calls.some((call) => call.url.includes("/v1/activities") && call.url.includes("user_id=0"))).toBe(true);
 
@@ -478,20 +478,27 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(history.status).toBe(200);
     const timeline = history.body.timeline as Array<Record<string, unknown>>;
     // The demo (org, person and deal), the planned check-in (deal only) and the note (org only).
-    expect(timeline.map((entry) => entry.subject ?? entry.kind)).toEqual([
+    expect(timeline.slice(0, 4).map((entry) => entry.subject ?? entry.kind)).toEqual([
       "Trial check-in",
       "Re: CLI trial",
       "DevTools demo",
       "note",
-      "Stage: Signed up → Trial",
     ]);
+    // The stage move and the value change at the same moment, in either order.
+    expect(timeline.slice(4).map((entry) => entry.subject).sort()).toEqual(["Stage: Signed up → Trial", "Value: 10000 → 12000"]);
+    expect(timeline.find((entry) => entry.kind === "field_change")).toMatchObject({
+      activityType: "value",
+      ownerName: "Ama Owusu",
+      caseTitle: "Northwind CLI trial",
+      details: expect.objectContaining({ field: "value", from: "10000", to: "12000" }),
+    });
     expect(timeline[1]).toMatchObject({
       kind: "email",
       body: "Thanks, the team & I loved the demo.",
       caseTitle: "Northwind CLI trial",
       details: { from: ["Esi Boateng <esi@northwind.example>"], to: ["Ama Owusu <ama@greatstone.example>"], threadId: "4401" },
     });
-    expect(timeline[4]).toMatchObject({ kind: "stage_change", ownerName: "Ama Owusu", details: expect.objectContaining({ from: "Signed up", to: "Trial" }) });
+    expect(timeline.find((entry) => entry.kind === "stage_change")).toMatchObject({ kind: "stage_change", ownerName: "Ama Owusu", details: expect.objectContaining({ from: "Signed up", to: "Trial" }) });
     expect(timeline[2]).toMatchObject({
       kind: "activity",
       activityType: "meeting",
@@ -533,8 +540,8 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     const third = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(third.body.activities).toEqual({ created: 0, updated: 1, skipped: 1, errors: 0 });
     expect(rerun.body.emails).toEqual({ created: 0, updated: 0, skipped: 1, errors: 0 });
-    expect(rerun.body.stageChanges).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
-    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(7);
+    expect(rerun.body.stageChanges).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
+    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(8);
   }, 60_000);
 
   it("brings the product catalogue and each deal's products across, and a rerun updates in place", async () => {

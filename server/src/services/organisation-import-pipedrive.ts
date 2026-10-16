@@ -523,6 +523,7 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
           users,
           personIdsWithEmail,
           organisationIdsWithEmail,
+          dealFieldLabels: deals.dealFieldLabels,
         },
       });
 

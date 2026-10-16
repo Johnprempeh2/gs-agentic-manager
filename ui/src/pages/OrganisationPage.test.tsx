@@ -251,12 +251,19 @@ describe("Organisation company page", () => {
           contactId: null, contactName: null, caseId: null, caseTitle: null,
           details: { from: ["Kofi <kofi@acme.example>"], to: ["Ama <ama@greatstone.example>"] },
         },
+        {
+          id: "t4", source: "pipedrive", kind: "field_change", activityType: "value", subject: "Value: 10000 → 12000", body: null,
+          occurredAt: "2026-09-28T08:00:00Z", durationMinutes: null, done: null, ownerName: "Ama Owusu",
+          contactId: null, contactName: null, caseId: "case-1", caseTitle: "Acme DevTools", details: { field: "value" },
+        },
       ],
     }));
     await render();
     const section = container.querySelector('section[aria-label="Activities and notes"]')!;
     const rows = section.querySelectorAll("li");
-    expect(rows).toHaveLength(3);
+    expect(rows).toHaveLength(4);
+    expect(rows[3]!.textContent).toContain("Value: 10000 → 12000");
+    expect(rows[3]!.textContent).toContain("Ama Owusu");
     expect(rows[0]!.textContent).toContain("DevTools demo");
     expect(rows[0]!.textContent).toContain("Done");
     expect(rows[0]!.textContent).toContain("45 min");

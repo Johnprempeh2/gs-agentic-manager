@@ -198,7 +198,7 @@ export interface CrmFile {
 export interface CrmTimelineEntry {
   id: string;
   source: string;
-  kind: "activity" | "note" | "call" | "email" | "stage_change";
+  kind: "activity" | "note" | "call" | "email" | "stage_change" | "field_change";
   /** The CRM's activity type, such as call, meeting, task or email. */
   activityType: string | null;
   subject: string | null;
