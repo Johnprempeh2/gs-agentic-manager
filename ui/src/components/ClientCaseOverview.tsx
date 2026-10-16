@@ -25,6 +25,7 @@ import { ClientJourneyOverview } from "./ClientJourneyOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
+import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 
@@ -191,6 +192,7 @@ export function ClientCaseOverview({
       {devtools ? (
         <OverviewSection title="Deal">
           <DealRecord deal={readDevtoolsDeal(detail.case.fields)} />
+          <DevtoolsDealOutcome detail={detail} stages={stages} />
         </OverviewSection>
       ) : (
       <OverviewSection title="Where things stand" tour="client-status">
