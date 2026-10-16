@@ -1,6 +1,7 @@
 import net from "node:net";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  draftsFolder,
   imapMailboxClient,
   MailboxAuthError,
   MailboxUnavailableError,
@@ -160,5 +161,13 @@ describe("IMAP mailbox client", () => {
       host: "imap.example.com",
       password: "[REDACTED]",
     });
+  });
+});
+
+describe("draftsFolder", () => {
+  it("prefers the special-use flag, then a common name, else none", () => {
+    expect(draftsFolder([{ path: "INBOX" }, { path: "Entwürfe", specialUse: "\\Drafts" }, { path: "Drafts" }])).toBe("Entwürfe");
+    expect(draftsFolder([{ path: "INBOX" }, { path: "[Gmail]/Drafts" }])).toBe("[Gmail]/Drafts");
+    expect(draftsFolder([{ path: "INBOX" }, { path: "Archive" }])).toBeNull();
   });
 });
