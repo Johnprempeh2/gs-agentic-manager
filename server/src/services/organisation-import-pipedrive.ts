@@ -1,4 +1,5 @@
-// Read-only Pipedrive import of organisations and persons (GRE-1479).
+// Read-only Pipedrive import of organisations and persons (GRE-1479), then
+// pipelines, stages and every deal (pipedrive-deal-import.ts).
 // Reads every organisation and person through the Pipedrive client and writes
 // them to `organisations` and `organisation_contacts` with source "pipedrive"
 // and the Pipedrive id as external id, so a rerun updates instead of
@@ -16,6 +17,7 @@ import type {
   PipedrivePerson,
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
+import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
 
 const SOURCE = "pipedrive";
 
@@ -324,6 +326,15 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         }
         start = page.nextStart;
       }
+
+      // Pipelines, stages and every deal, linked to the organisations above.
+      await pipedriveDealImportService(db).run({
+        companyId,
+        client,
+        actor,
+        organisationIdByExternalId: new Map([...writer.orgByExternalId].map(([externalId, row]) => [externalId, row.id])),
+        result,
+      });
 
       result.finishedAt = now().toISOString();
       return result;

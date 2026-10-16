@@ -180,6 +180,24 @@ Notes:
   cannot take (an unknown choice label, a read-only field) is not retried until the value
   changes. A 429 or refused credential stops the pass as for reads.
 
+## Full read-only import (Organisations > Import from Pipedrive)
+
+Separate from sync: it never writes to Pipedrive and needs no binding. After organisations and
+people it reads `/v1/pipelines`, `/v1/stages`, `/v1/users`, `/v1/dealFields` and every deal that
+is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/pipedrive-deal-import.ts`.
+
+- Each Pipedrive pipeline becomes a GSAM pipeline keyed `pipedrive-<id>` with Pipedrive's stages
+  (`pd_<stageId>`, working) in Pipedrive's order, then `won` (done) and `lost` (cancelled).
+- Each deal becomes a case keyed `pipedrive-<dealId>` in its pipeline: open deals in their stage,
+  won deals in Won, lost deals in Lost. It links to the imported organisation.
+- Pipedrive's own deal fields (status, value, currency, owner, contact, expected close, probability,
+  lost reason, labels, source, the dates) and every custom deal field become typed pipeline fields.
+  Custom fields are keyed `pd_<pipedrive key>` and labelled with the Pipedrive name. A choice
+  Pipedrive no longer lists is added to the field rather than dropped.
+- A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
+  status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
+  is, with its fields updated, and is listed in the import's error samples.
+
 ## Not in this slice
 
 - Stage write-back. A stage moved in Pipedrive still moves the case; a stage moved in GSAM is not

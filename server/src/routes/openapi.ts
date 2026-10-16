@@ -14270,7 +14270,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/organisations/import/pipedrive",
   tags: ["organisations"],
-  summary: "Import organisations from a Pipedrive connection (company owners); 409 while an import runs",
+  summary: "Import organisations, people, pipelines and every deal from a Pipedrive connection, read only (company owners); 409 while an import runs",
   body: importOrganisationsFromPipedriveSchema,
   responses: {
     200: r.ok(),

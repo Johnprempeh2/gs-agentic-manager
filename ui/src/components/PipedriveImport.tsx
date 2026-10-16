@@ -48,6 +48,7 @@ const SAMPLE_LABELS: Record<OrganisationImportResult["errorSamples"][number]["ki
   contact: "Person",
   deal: "Deal",
   activity: "Activity",
+  pipeline: "Pipeline",
 };
 
 /** One CRM's export files and where they go, so the upload form serves Pipedrive and HubSpot alike. */
@@ -111,6 +112,7 @@ export function ImportResultSummary({ result }: { result: OrganisationImportResu
       <ul className="space-y-1">
         <li>{countsText("Organisations", result.organisations)}</li>
         <li>{countsText("People", result.contacts)}</li>
+        {result.pipelines ? <li>{countsText("Pipelines", result.pipelines)}</li> : null}
         {result.deals ? <li>{countsText("Deals", result.deals)}</li> : null}
         {result.activities ? <li>{countsText("Activities", result.activities)}</li> : null}
       </ul>
@@ -293,7 +295,8 @@ function ConnectionImport({
         <ImportResultSummary result={result} />
       ) : (
         <p className="text-sm text-muted-foreground">
-          Reads every organisation and person using the connection “{connection.name}”. Deals follow through CRM sync on the pipeline.
+          Reads every organisation, person and deal using the connection “{connection.name}”. Each Pipedrive pipeline
+          becomes a pipeline here with the same stages, plus Won and Lost for closed deals.
         </p>
       )}
 
