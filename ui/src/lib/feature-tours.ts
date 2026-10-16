@@ -109,7 +109,7 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
   title: "Client page",
   description: "Where a client is in their journey, where things stand, the next action and who you deal with.",
-  version: 3,
+  version: 4,
   flag: "enablePipelines",
   label: "this client",
   steps: [
@@ -132,6 +132,16 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-contacts",
       title: "Contacts",
       body: "The people you deal with at this client, so anyone on your team can pick up the relationship.",
+    },
+    {
+      target: "deal-outcome",
+      title: "Won or lost",
+      body: "For a client imported from Pipedrive, press Won when they sign or Lost when they say no. The client moves to that stage and the date is kept. Lost asks for a reason, which is optional.",
+    },
+    {
+      target: "case-crm-history",
+      title: "History from Pipedrive",
+      body: "Every note, email, call and file from Pipedrive, newest first. Use the buttons to show one kind at a time.",
     },
     {
       target: "client-evidence",
@@ -610,7 +620,7 @@ export const INTEGRATIONS_TOUR: TourDefinition = {
   id: "integrations",
   title: "Integrations",
   description: "What each integration is for: bringing work in, sending updates out, spreadsheets and keys.",
-  version: 1,
+  version: 2,
   autoStart: false,
   route: { match: /^\/company\/settings\/integrations\/?$/, path: "/company/settings/integrations" },
   label: "Integrations",
@@ -623,6 +633,11 @@ export const INTEGRATIONS_TOUR: TourDefinition = {
       target: "integrations-apps",
       title: "Your other tools",
       body: "Each card says what it does and when you would want it. Connect lets agents work in that tool. Import copies your clients and notes in once, from a file, with no key.",
+    },
+    {
+      target: "integration-pipedrive",
+      title: "Pipedrive",
+      body: "Connect with your Pipedrive key to bring in organisations, people, deals, activities, notes, emails and files. GSAM only reads from Pipedrive and never changes anything there. No key? Upload a Pipedrive export instead.",
     },
     {
       target: "integrations-builtin",
