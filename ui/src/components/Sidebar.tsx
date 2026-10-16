@@ -80,7 +80,6 @@ import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
 import { SidebarTeamChats } from "./SidebarTeamChats";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
-import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { SidebarRecentTasks } from "./SidebarRecentTasks";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -327,7 +326,6 @@ function CustomiseActionRow({
 export function Sidebar({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const { openNewIssue } = useDialogActions();
-  const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: teamChatEnabled } = useTeamChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { collapsed, peeking } = useSidebar();
@@ -367,7 +365,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
   // Conference Room Chat flag (PAP-136/PAP-137): hidden entirely while the flag is off.
   const conferenceRoomChatEnabled = experimentalSettings?.enableConferenceRoomChat === true;
-  const showAgentChats = agentChatEnabled && !children;
+  const showAgentChats = !children;
   const showTeamChats = teamChatEnabled && !children;
 
   const pluginContext = {

@@ -260,10 +260,6 @@ export function InstanceExperimentalSettings() {
   // experimental opt-out was retired, so it no longer surfaces a toggle here.
   const enableConferenceRoomChat = experimentalQuery.data?.enableConferenceRoomChat === true;
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
-  const enableIssuePlanDecompositions =
-    experimentalQuery.data?.enableIssuePlanDecompositions === true;
-  const enableBuiltInAgents = experimentalQuery.data?.enableBuiltInAgents === true;
-  const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
   const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
   const enableIntelligence = experimentalQuery.data?.enableIntelligence === true;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
@@ -275,8 +271,6 @@ export function InstanceExperimentalSettings() {
   const strategyRequiredByManagedBoard = managedKeys.enableStrategyBoard?.managed === true && enableStrategyBoard;
   const enablePaperclipDeveloperMode =
     experimentalQuery.data?.enablePaperclipDeveloperMode === true;
-  const enableSimplifiedEnglishInteractions =
-    experimentalQuery.data?.enableSimplifiedEnglishInteractions === true;
   const enableFirstTaskPlanProposal =
     experimentalQuery.data?.enableFirstTaskPlanProposal === true;
   const enableSmokeLab = experimentalQuery.data?.enableSmokeLab === true;
@@ -289,7 +283,6 @@ export function InstanceExperimentalSettings() {
     "enableManagedSandboxOnly",
     "enablePaperclipDeveloperMode",
     "enableSmokeLab",
-    "enableIssuePlanDecompositions",
   ] satisfies InstanceFeatureKey[]).some(isVisible);
   const showLegacySection = isVisible("enableClassicTaskInterface") || isVisible("enableGoalsSidebarLink");
   return (
@@ -338,28 +331,7 @@ export function InstanceExperimentalSettings() {
           </p>
         </div>
 
-        <ExperimentalToggleCard
-          title="Agent Chat"
-          description="Talk to each agent in one ongoing conversation. Clarify goals and create tasks for execution."
-          footnote="Turning this off preserves conversations and lets active runs finish, but prevents new messages."
-          checked={experimentalQuery.data?.enableAgentChat ?? false}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableAgentChat: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableAgentChat"
-          managed={managedKeys.enableAgentChat}
-          ariaLabel="Toggle agent chat experimental setting"
-        />
 
-        <ExperimentalToggleCard
-          title="Beta skills"
-          description="Allow agents to pin beta releases of the GS Agentic Manager core skill. Disabling this returns every agent to the default live skill without removing saved pins."
-          checked={enableBetaSkills}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableBetaSkills: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableBetaSkills"
-          managed={managedKeys.enableBetaSkills}
-          ariaLabel="Toggle beta skills experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Board control panel"
@@ -385,16 +357,6 @@ export function InstanceExperimentalSettings() {
           />
         ) : null}
 
-        <ExperimentalToggleCard
-          title="Built-in Agents"
-          description="Show GS Agentic Manager-managed built-in agent surfaces, including built-in roster badges, the Built-in agents tab, and built-in agent setup controls."
-          checked={enableBuiltInAgents}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableBuiltInAgents: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableBuiltInAgents"
-          managed={managedKeys.enableBuiltInAgents}
-          ariaLabel="Toggle built-in agents experimental setting"
-        />
 
 
         {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
@@ -447,18 +409,6 @@ export function InstanceExperimentalSettings() {
         />
 
 
-        <ExperimentalToggleCard
-          title="Simplified English Interactions"
-          description="Instruct agents to write user interactions (plan confirmations, questions, suggested tasks, checkbox prompts) in ASD-STE100 Simplified Technical English, with brief context on what information the decision needs and what happens for each choice."
-          checked={enableSimplifiedEnglishInteractions}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate({ enableSimplifiedEnglishInteractions: checked })
-          }
-          disabled={toggleMutation.isPending}
-          settingKey="enableSimplifiedEnglishInteractions"
-          managed={managedKeys.enableSimplifiedEnglishInteractions}
-          ariaLabel="Toggle simplified english interactions experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Strategy"
@@ -635,18 +585,6 @@ export function InstanceExperimentalSettings() {
             ariaLabel="Toggle smoke lab experimental setting"
           />
 
-          <ExperimentalToggleCard
-            title="Task Plan Decomposition"
-            description="Show accepted-plan decomposition history on task detail pages. Intended for debugging and validating subtask creation behavior while the presentation is still being refined."
-            checked={enableIssuePlanDecompositions}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableIssuePlanDecompositions: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableIssuePlanDecompositions"
-            managed={managedKeys.enableIssuePlanDecompositions}
-            ariaLabel="Toggle task plan decomposition panel experimental setting"
-          />
         </section>
       ) : null}
 

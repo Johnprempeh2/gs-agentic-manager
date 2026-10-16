@@ -27,11 +27,8 @@ const fakeDb = {} as never;
 const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> = {
   enablePipelines: async () => (await import("../routes/pipelines.js")).pipelineRoutes(fakeDb),
   enableCases: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
-  enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
   enableConferenceRoomChat: async () =>
     (await import("../routes/board-chat.js")).boardChatRoutes(fakeDb, { deploymentMode: "local_trusted" }),
-  enableAgentChat: issueRouter,
-  enableIssuePlanDecompositions: issueRouter,
   enableExternalObjects: async () =>
     Router()
       .use(await issueRouter())
@@ -44,10 +41,6 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
   enableIntelligence: async () => (await import("../routes/intelligence.js")).intelligenceRoutes(fakeDb),
   enableTeamChat: async () => (await import("../routes/team-chats.js")).teamChatRoutes(fakeDb, { service: {} as never }),
 };
-
-async function issueRouter() {
-  return (await import("../routes/issues.js")).issueRoutes(fakeDb, {} as never);
-}
 
 const allOff = Object.fromEntries(INSTANCE_FEATURE_KEYS.map((key) => [key, false]));
 const onlyOff = (feature: InstanceFeatureKey) => ({ ...Object.fromEntries(INSTANCE_FEATURE_KEYS.map((key) => [key, true])), [feature]: false });

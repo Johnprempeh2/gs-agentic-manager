@@ -188,11 +188,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableAgentChat: {
-    title: "Agent Chat",
-    description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",
+    title: "Agent Chat (compatibility)",
+    description:
+      "Deprecated compatibility key. Agent Chat is always on (GRE-1621); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableTeamChat: {
     title: "Team Chat",
@@ -219,11 +220,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableIssuePlanDecompositions: {
-    title: "Task Plan Decomposition",
-    description: "Show accepted-plan decomposition history on task detail pages.",
+    title: "Task Plan Decomposition (compatibility)",
+    description:
+      "Deprecated compatibility key. Accepted-plan decomposition history always shows on task detail pages (GRE-1621); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableExperimentalFileViewer: {
     title: "File Viewer (compatibility)",
@@ -258,19 +260,20 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableBuiltInAgents: {
-    title: "Built-in Agents",
+    title: "Built-in Agents (compatibility)",
     description:
-      "Show GS Agentic Manager-managed built-in agent surfaces, including roster badges, the Built-in agents tab, and setup controls.",
+      "Deprecated compatibility key. Built-in agent surfaces are always on (GRE-1621); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableBetaSkills: {
-    title: "Beta skills",
-    description: "Allow agents to pin beta releases of the GS Agentic Manager core skill.",
+    title: "Beta skills (compatibility)",
+    description:
+      "Deprecated compatibility key. Agents can always pin beta releases of the GS Agentic Manager core skill (GRE-1621); stored values are ignored.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableSummaries: {
     title: "Summaries (compatibility)",
@@ -296,12 +299,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableSimplifiedEnglishInteractions: {
-    title: "Simplified English Interactions",
+    title: "Simplified English Interactions (compatibility)",
     description:
-      "Instruct agents to write user interactions (confirmations, questions, suggested tasks) in ASD-STE100 Simplified Technical English with brief decision context.",
+      "Deprecated compatibility key. Agents always write user interactions in ASD-STE100 Simplified Technical English (GRE-1621); stored values are ignored.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableServerInfoDebugView: {
     title: "Server Info Debug View (compatibility)",
@@ -445,7 +448,10 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
  * issue that graduated it. Beta tools report these as `graduated`.
  */
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
+  { key: "enableAgentChat", issue: "GRE-1621" },
   { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableBetaSkills", issue: "GRE-1621" },
+  { key: "enableBuiltInAgents", issue: "GRE-1621" },
   { key: "enableCases", issue: "GRE-1622" },
   { key: "enableChatConnectors", issue: "GRE-1620" },
   { key: "enableEnvironments", issue: "GRE-1623" },
@@ -453,10 +459,12 @@ export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableExternalObjects", issue: "GRE-1622" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
+  { key: "enableIssuePlanDecompositions", issue: "GRE-1621" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
   { key: "enableMemoryConnectors", issue: "GRE-1620" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableServerInfoDebugView", issue: "GRE-1623" },
+  { key: "enableSimplifiedEnglishInteractions", issue: "GRE-1621" },
   { key: "enableStatusCards", issue: "GRE-1622" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
   { key: "enableStreamlinedUi", issue: "GRE-1441" },

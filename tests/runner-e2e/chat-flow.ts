@@ -10,7 +10,7 @@ import { isBlockedUnstartedWake } from "./non-execution-wake.js";
 import { collectRunEvents } from "./run-observations.js";
 import { chatMarker } from "./chat-cases.js";
 import { assertChatRememberedAfterRestart, assertChatStartupStopped, isChatStopReady, runChatHardeningFlow } from "./chat-hardening.js";
-import { enableChatThroughSettings, runChatInterruption, runChatSettingsLifecycle } from "./chat-stories.js";
+import { runChatInterruption } from "./chat-stories.js";
 import { runActiveReassignment, runWorkerCrash, runAnswerQuality } from "./chat-qualification.js";
 import { matchesRunCount, minimumRunCount } from "./run-count.js";
 
@@ -376,9 +376,7 @@ export async function runChatFlow(input: ChatFlowInput) {
   };
   const noTasks = async () => expect(await tasks()).toHaveLength(0);
   try {
-    if (caseId === "enable-disable-resume") await enableChatThroughSettings(input);
-    else await api.patch("/api/instance/settings/experimental", {
-      enableAgentChat: true,
+    await api.patch("/api/instance/settings/experimental", {
       enableClassicTaskInterface: false,
     });
     expect(await api.get(chatPath)).toBeNull();
@@ -395,8 +393,6 @@ export async function runChatFlow(input: ChatFlowInput) {
       if (caseId === "active-reassignment") await runActiveReassignment(context);
       else if (caseId === "worker-crash-retry") await runWorkerCrash(context);
       else await runAnswerQuality(context);
-    } else if (caseId === "enable-disable-resume") {
-      await runChatSettingsLifecycle({ input, marker, issue: () => issue!, idle, allRuns, comments });
     } else if (interruptionCase) {
       await runChatInterruption({ input, marker, issue: () => issue!, idle, allRuns, comments,
         refreshIssue: async () => { issue = await api.get<ChatIssue>(chatPath); input.observe(issue, await allRuns()); } });
@@ -973,7 +969,6 @@ export async function runChatFlow(input: ChatFlowInput) {
     return { issue: issue!, runs };
   } finally {
     await api.patch("/api/instance/settings/experimental", {
-      enableAgentChat: settings.enableAgentChat,
       enableClassicTaskInterface: settings.enableClassicTaskInterface,
     });
   }

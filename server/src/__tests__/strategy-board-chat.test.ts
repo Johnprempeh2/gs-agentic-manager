@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
   activityLog,
+  agentRuntimeState,
   agents,
   agentWakeupRequests,
   authUsers,
@@ -64,11 +65,14 @@ describeEmbeddedPostgres("board agent chat (GRE-1186)", () => {
       await db.delete(goalKpiReadings);
       await db.delete(goalCheckIns);
       await db.delete(issueComments);
+      // Board chats now start real runs (Agent Chat graduated, GRE-1621), so
+      // runs go before the wakeups they point at.
+      await db.delete(heartbeatRuns);
       await db.delete(agentWakeupRequests);
       await db.delete(issues);
-      await db.delete(heartbeatRuns);
       await db.update(goals).set({ parentId: null });
       await db.delete(goals);
+      await db.delete(agentRuntimeState);
       await db.delete(agents);
       await db.delete(principalPermissionGrants);
       await resetCompanyIssueFixtures(db);
@@ -76,7 +80,7 @@ describeEmbeddedPostgres("board agent chat (GRE-1186)", () => {
   });
 
   beforeEach(async () => {
-    await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: true, enableAgentChat: false });
+    await instanceSettingsService(ctx.db).updateExperimental({ enableStrategyBoard: true });
   });
   afterEach(() => {
     delete process.env.GSAM_RESPONSIBLE_USER_AUTHZ_MODE;

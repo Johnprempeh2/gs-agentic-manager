@@ -101,16 +101,16 @@ describe("instance experimental settings validators", () => {
     });
   });
 
-  it("defaults built-in agents off", () => {
+  it("defaults the GRE-1621 graduated compatibility keys on", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
-    expect(settings.enableBuiltInAgents).toBe(false);
-  });
-
-  it("defaults beta skills off", () => {
-    const settings = instanceExperimentalSettingsSchema.parse({});
-
-    expect(settings.enableBetaSkills).toBe(false);
+    expect(settings).toMatchObject({
+      enableAgentChat: true,
+      enableIssuePlanDecompositions: true,
+      enableBuiltInAgents: true,
+      enableBetaSkills: true,
+      enableSimplifiedEnglishInteractions: true,
+    });
   });
 
   it("defaults the retired Apps compatibility key on", () => {

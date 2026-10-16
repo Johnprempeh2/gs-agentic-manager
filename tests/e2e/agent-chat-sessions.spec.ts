@@ -8,8 +8,8 @@ test.use({ trace: "retain-on-failure" });
 test.setTimeout(120_000);
 
 /**
- * Agent chat session lifecycle coverage: first-open semantics, the feature
- * flag, Stop + queued /new resets, and sidebar discovery. Shared fixtures
+ * Agent chat session lifecycle coverage: first-open semantics, Stop + queued
+ * /new resets, and sidebar discovery. Shared fixtures
  * live in ./agent-chat.shared.ts; project, attachment, and history flows run
  * in agent-chat-projects.spec.ts.
  */
@@ -118,41 +118,6 @@ test("chat first open is read-only; concurrent first sends and retries share one
       ),
     ).toHaveLength(count);
     await other.close();
-  } finally {
-    await f.restore();
-  }
-});
-
-test("feature flag blocks new sends and resets while preserving existing history", async ({
-  page,
-  request,
-}) => {
-  const f = await setup(request);
-  try {
-    await page.goto(f.route);
-    await send(page, "Visible history");
-    const issue = await idle(request, f.chatPath);
-    await json(
-      await request.patch("/api/instance/settings/experimental", {
-        data: { enableAgentChat: false },
-      }),
-    );
-    for (const body of ["blocked message", "/new"])
-      expect(
-        (
-          await request.post(`/api/issues/${issue.id}/comments`, {
-            data: { body },
-          })
-        ).status(),
-      ).toBe(404);
-    await page.reload();
-    await expect(page.getByText(/Agent Chat is disabled/)).toBeVisible();
-    expect(
-      (await json(await request.get(`/api/issues/${issue.id}/comments`))).some(
-        (c: any) => c.body.includes("Visible history"),
-      ),
-    ).toBe(true);
-    expect((await request.post(f.chatPath, { data: {} })).status()).toBe(404);
   } finally {
     await f.restore();
   }

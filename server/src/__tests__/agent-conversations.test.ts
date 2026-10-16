@@ -278,22 +278,15 @@ const support = await getEmbeddedPostgresTestSupport();
       expect((await db.select().from(issueTreeHolds).where(eq(issueTreeHolds.id, pause.id)))[0].status).toBe("released");
       const local = await request(appFor()).post(path);
       expect(local.body.conversationUserId).toBe("local-board");
+      // Agent Chat graduated (GRE-1621): an old stored "off" no longer gates chat routes.
       await instanceSettingsService(db).updateExperimental({
         enableAgentChat: false,
       });
-      // GRE-1090: refused with 403 not_entitled (was 404).
       const resolveOff = await request(app).get(path);
-      expect(resolveOff.status).toBe(403);
-      expect(resolveOff.body).toMatchObject({ code: "not_entitled", feature: "enableAgentChat" });
+      expect(resolveOff.status).toBe(200);
+      expect(resolveOff.body.id).toBe(resolved[0].body.id);
       const interruptOff = await request(app).post(`/api/issues/${chatId}/queued-comments/interrupt`).send(queuedInterrupt);
-      expect(interruptOff.status).toBe(403);
-      expect(interruptOff.body).toMatchObject({ code: "not_entitled", feature: "enableAgentChat" });
-      expect(
-        (await request(app).get(`/api/issues/${resolved[0].body.id}`)).status,
-      ).toBe(200);
-      await instanceSettingsService(db).updateExperimental({
-        enableAgentChat: true,
-      });
+      expect(interruptOff.body).not.toMatchObject({ code: "not_entitled" });
     });
     it("deduplicates concurrent message retries and preserves recoverable delivery", async () => {
       const issue = await create();
@@ -592,20 +585,6 @@ const support = await getEmbeddedPostgresTestSupport();
           .where(eq(issues.id, issue.id));
         expect(current.conversationSessionGeneration).toBe(2);
         expect(current.conversationBoundaryCommentId).toBe(commands[2].id);
-        await instanceSettingsService(db).updateExperimental({
-          enableAgentChat: false,
-        });
-        expect(
-          await heartbeat.wakeup(agentId, {
-            contextSnapshot: {
-              issueId: issue.id,
-              wakeCommentId: commands[3].id,
-            },
-          }),
-        ).toBeNull();
-        await instanceSettingsService(db).updateExperimental({
-          enableAgentChat: true,
-        });
       } finally {
         runningProcesses.delete(active.id);
       }
@@ -920,22 +899,6 @@ const support = await getEmbeddedPostgresTestSupport();
           agents: [],
         }),
       ).toEqual([]);
-      await instanceSettingsService(db).updateExperimental({
-        enableAgentChat: false,
-      });
-      await expect(
-        issueService(db).addComment(issue.id, "/new", {
-          userId: "local-board",
-        }),
-      ).rejects.toThrow(/disabled/);
-      expect(
-        isWaitingConversation(
-          (await db.select().from(issues).where(eq(issues.id, issue.id)))[0],
-        ),
-      ).toBe(true);
-      await instanceSettingsService(db).updateExperimental({
-        enableAgentChat: true,
-      });
       const child = await issueService(db).create(companyId, { title: "Execute work", status: "done" });
       await db.update(issues).set({ parentId: issue.id }).where(eq(issues.id, child.id));
       expect(

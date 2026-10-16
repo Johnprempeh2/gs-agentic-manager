@@ -264,7 +264,7 @@ describe("SummarySlotCard", () => {
     expect(mockSummarySlotsApi.get).toHaveBeenCalled();
   });
 
-  it("does not query built-in agents when their feature flag is off", async () => {
+  it("queries built-in agents even when an old stored setting says off (graduated, GRE-1621)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableSummaries: true,
       enableBuiltInAgents: false,
@@ -273,7 +273,7 @@ describe("SummarySlotCard", () => {
     root = renderCard(container);
     await flushQueries();
 
-    expect(mockBuiltInAgentsApi.list).not.toHaveBeenCalled();
+    expect(mockBuiltInAgentsApi.list).toHaveBeenCalled();
   });
 
   it("shows setup CTA when the Summarizer built-in agent needs setup", async () => {

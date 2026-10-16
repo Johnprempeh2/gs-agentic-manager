@@ -80,8 +80,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableBuiltInAgents: {
-    kind: "api",
-    probes: [{ method: "get", path: `${COMPANY}/built-in-agents` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableConferenceRoomChat: {
     kind: "api",
@@ -92,11 +92,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
   },
   enableAgentChat: {
-    kind: "api",
-    probes: [
-      { method: "get", path: `${COMPANY}/chats/agent` },
-      { method: "post", path: `${COMPANY}/chats/agent` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableTeamChat: {
     kind: "api",
@@ -123,8 +120,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableIssuePlanDecompositions: {
-    kind: "api",
-    probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableStrategy: {
     kind: "api",

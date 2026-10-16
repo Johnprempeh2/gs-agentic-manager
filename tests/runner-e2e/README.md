@@ -194,14 +194,11 @@ requires the original comment, task, plan, and single consuming run. This proves
 HTTP request idempotency across restart, not replay safety for an ambiguous
 provider tool response. Existing native tool-receipt tests cover that boundary.
 
-`agent-chat-stories` adds six explicit-only local cells across native Codex and
-Claude. `enable-disable-resume` uses the Experimental settings UI to enable
-Agent Chat, starts a conversation, disables new messages, verifies the public
-write endpoint rejects a send without creating work, and re-enables the same
-conversation with its remembered context. The company, credential, and native
-agent are fixture-provisioned. This qualifies the experimental-settings path,
-not native first-run onboarding: the current production wizard offers legacy
-adapters, and native API tools remain an independent opt-in.
+`agent-chat-stories` adds four explicit-only local cells across native Codex and
+Claude. Agent Chat graduated out of Experimental (GRE-1621), so the former
+`enable-disable-resume` settings story was removed. The company, credential,
+and native agent are fixture-provisioned; native API tools remain an
+independent opt-in.
 
 `followup-while-running` and `revise-while-running` send a second browser message
 while the provider runs a bounded command waiting for a fixture brief file.

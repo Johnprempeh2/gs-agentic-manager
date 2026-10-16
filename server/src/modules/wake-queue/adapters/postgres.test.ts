@@ -307,9 +307,10 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
     expect(seen).toEqual([issueId, issueId, issueId]);
   }, 30_000);
 
-  it.each([false, true])("rechecks disabled chat mode before interrupted queue promotion (conversation=%s)", async (conversation) => {
+  // Agent Chat graduated (GRE-1621): an old stored "off" must not release a
+  // conversation's interrupted queue without a successor run.
+  it.each([false, true])("promotes interrupted queued input even with the old chat setting stored off (conversation=%s)", async (conversation) => {
     const settings = instanceSettingsService(db);
-    const original = (await settings.getExperimental()).enableAgentChat;
     const companyId = await seedCompany();
     const agentId = await seedAgent({ companyId });
     const issueId = await seedIssue({ companyId, assigneeAgentId: agentId });
@@ -331,25 +332,9 @@ describeEmbeddedPostgres("wake-queue postgres adapter", () => {
       issueLock: createPostgresWakeQueueAdapter(db, stubDeps),
       recovery: { escalateStrandedAssignedIssue: async () => {}, escalateStrandedRecoveryIssueInPlace: async () => {}, scheduleReviewWaitMonitor: async () => {} },
     });
-    try {
-      await settings.updateExperimental({ enableAgentChat: false });
-      const result = await release({ companyId, runId, now: new Date() });
-      if (conversation) {
-        expect(result.outcome.kind).toBe("released");
-        expect(result.postCommitEffects).toEqual([]);
-        const [issue] = await db.select().from(issues).where(eq(issues.id, issueId));
-        expect(issue).toMatchObject({ executionRunId: null, checkoutRunId: null });
-        const [pending] = await db.select().from(agentWakeupRequests).where(eq(agentWakeupRequests.id, wakeId));
-        expect(pending).toMatchObject({ status: "deferred_issue_execution", runId: null });
-        expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.companyId, companyId))).toHaveLength(1);
-        await settings.updateExperimental({ enableAgentChat: true });
-        expect((await release({ companyId, runId, now: new Date() })).outcome.kind).toBe("promoted");
-      } else {
-        expect(result.outcome.kind).toBe("promoted");
-      }
-    } finally {
-      await settings.updateExperimental({ enableAgentChat: original });
-    }
+    await settings.updateExperimental({ enableAgentChat: false });
+    const result = await release({ companyId, runId, now: new Date() });
+    expect(result.outcome.kind).toBe("promoted");
   });
 
   // GRE-792: a board comment queued during a run must not reopen the task

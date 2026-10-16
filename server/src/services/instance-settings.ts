@@ -283,19 +283,22 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       strategyBoardSecretaryAgentId: parsed.data.strategyBoardSecretaryAgentId ?? null,
       enableWebsiteView: parsed.data.enableWebsiteView ?? false,
       enableIntelligence: parsed.data.enableIntelligence ?? false,
-      enableAgentChat: parsed.data.enableAgentChat ?? false,
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      enableAgentChat: true,
       enableTeamChat: parsed.data.enableTeamChat ?? false,
       enableConferenceRoomChat: parsed.data.enableConferenceRoomChat ?? false,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
-      enableIssuePlanDecompositions: parsed.data.enableIssuePlanDecompositions ?? false,
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      enableIssuePlanDecompositions: true,
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
       enableExperimentalFileViewer: true,
       // Greatstone (GRE-1622): graduated; a stored off value is ignored. A
       // managed config or the entitlement document can still pin it off.
       enableExternalObjects: true,
       enableSmokeLab: parsed.data.enableSmokeLab ?? false,
-      enableBuiltInAgents: parsed.data.enableBuiltInAgents ?? false,
-      enableBetaSkills: parsed.data.enableBetaSkills ?? false,
+      // Greatstone (GRE-1621): graduated; stored off values are ignored.
+      enableBuiltInAgents: true,
+      enableBetaSkills: true,
       // Greatstone (GRE-1622): Summaries and Status Cards graduated; a stored
       // off value is ignored.
       enableSummaries: true,
@@ -305,7 +308,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
       enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: parsed.data.enablePaperclipDeveloperMode ?? false,
-      enableSimplifiedEnglishInteractions: parsed.data.enableSimplifiedEnglishInteractions ?? false,
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      enableSimplifiedEnglishInteractions: true,
       enableFirstTaskPlanProposal: parsed.data.enableFirstTaskPlanProposal ?? false,
       autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
       // Greatstone (GRE-1438): graduated; a stored off value is ignored.
@@ -341,23 +345,23 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
     enableIntelligence: false,
-    enableAgentChat: false,
+    enableAgentChat: true,
     enableTeamChat: false,
     enableConferenceRoomChat: false,
     enableClassicTaskInterface: false,
-    enableIssuePlanDecompositions: false,
+    enableIssuePlanDecompositions: true,
     enableExperimentalFileViewer: false,
     enableExternalObjects: true,
     enableSmokeLab: false,
-    enableBuiltInAgents: false,
-    enableBetaSkills: false,
+    enableBuiltInAgents: true,
+    enableBetaSkills: true,
     enableSummaries: true,
     enableStatusCards: true,
     enableDecisions: true,
     enableGoalsSidebarLink: false,
     enableServerInfoDebugView: false,
     enablePaperclipDeveloperMode: false,
-    enableSimplifiedEnglishInteractions: false,
+    enableSimplifiedEnglishInteractions: true,
     enableFirstTaskPlanProposal: false,
     autoRestartDevServerWhenIdle: false,
     enableWorkspaceBranchReconcileForward: true,
@@ -412,6 +416,17 @@ export function applyManagedExperimentalOverlay(
     // managed "off" is ignored. Cases and External Objects keep the managed
     // value: client editions pin them off and billing modules sell them.
     if (key === "enableSummaries" || key === "enableStatusCards") continue;
+    // Greatstone (GRE-1621): Agent Chat, Task Plan Decomposition, Built-in
+    // Agents, Beta skills and Simplified English are always on; a managed "off" is ignored.
+    if (
+      key === "enableAgentChat" ||
+      key === "enableIssuePlanDecompositions" ||
+      key === "enableBuiltInAgents" ||
+      key === "enableBetaSkills" ||
+      key === "enableSimplifiedEnglishInteractions"
+    ) {
+      continue;
+    }
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;

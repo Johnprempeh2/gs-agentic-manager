@@ -128,6 +128,27 @@ describe("instanceSettingsService managed overlay", () => {
     expect(await service.updateExperimental({ enableMcpAggregators: false })).toMatchObject({ experimental: { enableMcpAggregators: true, enableChatConnectors: true } });
   });
 
+  it("keeps the GRE-1621 graduated switches on when stored and managed values say off", async () => {
+    const off = {
+      enableAgentChat: false,
+      enableIssuePlanDecompositions: false,
+      enableBuiltInAgents: false,
+    };
+    const { db } = stubDb(settingsRow({ ...off, enableBetaSkills: false, enableSimplifiedEnglishInteractions: false }));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    const on = {
+      enableAgentChat: true,
+      enableIssuePlanDecompositions: true,
+      enableBuiltInAgents: true,
+      enableBetaSkills: true,
+      enableSimplifiedEnglishInteractions: true,
+    };
+    expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
+    expect(await service.updateExperimental({ ...off, enableBetaSkills: false })).toMatchObject({ experimental: on });
+  });
+
   it("keeps workspace branch reconcile forward on when stored and managed values say off (GRE-1438)", async () => {
     const { db } = stubDb(settingsRow({ enableWorkspaceBranchReconcileForward: false }));
     const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({

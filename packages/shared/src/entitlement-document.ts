@@ -27,15 +27,12 @@ export const ENTITLEMENT_RELOAD_INTERVAL_MS = 60_000;
  * server gate registry.
  */
 export const ENTITLEMENT_FEATURE_KEYS = [
-  "enableAgentChat",
-  "enableBuiltInAgents",
   "enableConferenceRoomChat",
   "enableCases",
   "enableDeepDive",
   "enableEnvironments",
   "enableExternalObjects",
   "enableIntelligence",
-  "enableIssuePlanDecompositions",
   "enablePipelines",
   "enableStrategy",
   "enableStrategyBoard",

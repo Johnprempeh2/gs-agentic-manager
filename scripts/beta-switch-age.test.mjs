@@ -213,7 +213,10 @@ test("graduated switches from the real catalog show graduated, whatever their st
   const source = readFileSync(new URL("../packages/shared/src/feature-catalog.ts", import.meta.url), "utf8");
   const graduated = parseGraduatedKeys(source);
   assert.deepEqual(graduated, [
+    "enableAgentChat",
     "enableApps",
+    "enableBetaSkills",
+    "enableBuiltInAgents",
     "enableCases",
     "enableChatConnectors",
     "enableEnvironments",
@@ -221,10 +224,12 @@ test("graduated switches from the real catalog show graduated, whatever their st
     "enableExternalObjects",
     "enableGoalsSidebarLink",
     "enableIsolatedWorkspaces",
+    "enableIssuePlanDecompositions",
     "enableMcpAggregators",
     "enableMemoryConnectors",
     "enableNativeRunner",
     "enableServerInfoDebugView",
+    "enableSimplifiedEnglishInteractions",
     "enableStatusCards",
     "enableStreamlinedLeftNavigation",
     "enableStreamlinedUi",
@@ -234,7 +239,10 @@ test("graduated switches from the real catalog show graduated, whatever their st
   ]);
   const settings = {
     ...SETTINGS,
+    enableAgentChat: false,
     enableApps: true,
+    enableBetaSkills: false,
+    enableBuiltInAgents: false,
     enableCases: false,
     enableChatConnectors: false,
     enableEnvironments: false,
@@ -242,10 +250,12 @@ test("graduated switches from the real catalog show graduated, whatever their st
     enableExternalObjects: false,
     enableGoalsSidebarLink: false,
     enableIsolatedWorkspaces: false,
+    enableIssuePlanDecompositions: false,
     enableMcpAggregators: true,
     enableMemoryConnectors: false,
     enableNativeRunner: false,
     enableServerInfoDebugView: false,
+    enableSimplifiedEnglishInteractions: false,
     enableStatusCards: false,
     enableStreamlinedLeftNavigation: true,
     enableStreamlinedUi: true,

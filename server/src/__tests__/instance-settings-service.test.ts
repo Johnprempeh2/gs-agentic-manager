@@ -54,7 +54,7 @@ describe("instance settings service", () => {
       enableStreamlinedUi: true,
       enableApps: true,
     enableMcpAggregators: true,
-      enableAgentChat: false,
+      enableAgentChat: true,
       enableChatConnectors: true,
       enableMemoryConnectors: true,
       enableConferenceRoomChat: false,
@@ -73,14 +73,14 @@ describe("instance settings service", () => {
       enableIssuePlanDecompositions: true,
       enableExperimentalFileViewer: true,
       enableBuiltInAgents: true,
-      enableBetaSkills: false,
+      enableBetaSkills: true,
       enableSummaries: true,
       enableStatusCards: true,
       enableDecisions: true,
       enableGoalsSidebarLink: true,
       enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: false,
-      enableSimplifiedEnglishInteractions: false,
+      enableSimplifiedEnglishInteractions: true,
       enableFirstTaskPlanProposal: false,
       autoRestartDevServerWhenIdle: false,
       enableWorkspaceBranchReconcileForward: true,
@@ -177,17 +177,19 @@ describe("instance settings service", () => {
     });
   });
 
-  it("defaults enableSimplifiedEnglishInteractions to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableSimplifiedEnglishInteractions).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableSimplifiedEnglishInteractions).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ enableStreamlinedLeftNavigation: true })
-        .enableSimplifiedEnglishInteractions,
-    ).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ enableSimplifiedEnglishInteractions: true })
-        .enableSimplifiedEnglishInteractions,
-    ).toBe(true);
+  it("reads the GRE-1621 graduated switches as on, ignoring stored off values", () => {
+    const keys = [
+      "enableAgentChat",
+      "enableIssuePlanDecompositions",
+      "enableBuiltInAgents",
+      "enableBetaSkills",
+      "enableSimplifiedEnglishInteractions",
+    ] as const;
+    const storedOff = Object.fromEntries(keys.map((key) => [key, false]));
+    for (const stored of [undefined, {}, storedOff]) {
+      const normalized = normalizeExperimentalSettings(stored);
+      for (const key of keys) expect(normalized[key], key).toBe(true);
+    }
   });
 
   it("defaults enableSmokeLab to false for empty and legacy stored settings", () => {
@@ -275,18 +277,6 @@ describe("instance settings service", () => {
     expect(
       normalizeExperimentalSettings({ enableConferenceRoomChat: "yes" }).enableConferenceRoomChat,
     ).toBe(false);
-  });
-
-  it("defaults enableBuiltInAgents to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableBuiltInAgents).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableBuiltInAgents).toBe(false);
-    expect(normalizeExperimentalSettings({ enableExternalObjects: true }).enableBuiltInAgents).toBe(false);
-  });
-
-  it("preserves enableBetaSkills and defaults it off for legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableBetaSkills).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableBetaSkills).toBe(false);
-    expect(normalizeExperimentalSettings({ enableBetaSkills: true }).enableBetaSkills).toBe(true);
   });
 
   it("sets worktree run execution activation fields on a false to true transition", () => {

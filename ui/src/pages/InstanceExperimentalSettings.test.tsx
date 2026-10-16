@@ -48,6 +48,8 @@ async function flushReact() {
 
 const CONFERENCE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle conference room chat experimental setting"]';
+const TEAM_CHAT_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle team chat experimental setting"]';
 const TASK_WATCHDOGS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle task watchdogs experimental setting"]';
 const CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR =
@@ -60,10 +62,6 @@ const GSAM_DEVELOPER_MODE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager developer mode experimental setting"]';
 const INTELLIGENCE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle intelligence experimental setting"]';
-const BUILT_IN_AGENTS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle built-in agents experimental setting"]';
-const BETA_SKILLS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle beta skills experimental setting"]';
 const DEEP_DIVE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle deep dive experimental setting"]';
 const STRATEGY_TOGGLE_SELECTOR = 'button[aria-label="Toggle strategy setting"]';
@@ -228,7 +226,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
         graceEndsAt: "2026-11-15T00:00:00.000Z",
       },
       features: {
-        enableBuiltInAgents: { entitled: false, effective: false, pendingRestart: false },
+        enableIntelligence: { entitled: false, effective: false, pendingRestart: false },
         enableConferenceRoomChat: { entitled: true, effective: false, pendingRestart: true },
       },
       limits: {},
@@ -243,7 +241,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).toContain("Plan v3 for acme");
     expect(container.textContent).toContain("Not in your plan");
     expect(container.textContent).toContain("Pending restart");
-    expect(container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR)?.disabled).toBe(true);
+    expect(container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR)?.disabled).toBe(true);
     expect(container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR)?.disabled).toBe(false);
 
     const syncButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Sync now");
@@ -582,44 +580,21 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).not.toContain("Running tasks created after");
   });
 
-  it("renders and patches the Built-in Agents experimental toggle", async () => {
+  it("no longer shows the switches graduated in GRE-1621", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Built-in Agents");
-    expect(container.textContent).toContain("Show GS Agentic Manager-managed built-in agent surfaces");
-
-    const toggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableBuiltInAgents: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-  });
-
-  it("renders and patches the Beta skills experimental toggle", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("Beta skills");
-    expect(container.textContent).toContain("pin beta releases of the GS Agentic Manager core skill");
-
-    const toggle = container.querySelector<HTMLButtonElement>(BETA_SKILLS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableBetaSkills: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    for (const label of [
+      "agent chat",
+      "beta skills",
+      "built-in agents",
+      "simplified english interactions",
+      "task plan decomposition panel",
+    ]) {
+      expect(container.querySelector(`button[aria-label="Toggle ${label} experimental setting"]`)).toBeNull();
+    }
+    for (const title of ["Agent Chat", "Beta skills", "Built-in Agents", "Simplified English Interactions", "Task Plan Decomposition"]) {
+      expect([...container.querySelectorAll("h3")].map((heading) => heading.textContent)).not.toContain(title);
+    }
   });
 
   it("no longer shows Cases, External Objects, Status Cards or Summaries toggles (graduated, GRE-1622)", async () => {
@@ -745,29 +720,29 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
   it("renders a managed key locked with the badge while unmanaged keys stay editable", async () => {
     await renderPage({
       ...defaultExperimentalSettings(),
-      enableBuiltInAgents: true,
+      enableIntelligence: true,
       managedKeys: {
-        enableBuiltInAgents: { managed: true, managedBy: "paperclip-cloud" },
+        enableIntelligence: { managed: true, managedBy: "paperclip-cloud" },
       },
     });
 
     expect(container.textContent).toContain(MANAGED_BADGE_TEXT);
 
-    const builtInAgentsToggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(builtInAgentsToggle?.getAttribute("aria-checked")).toBe("true");
-    expect(builtInAgentsToggle?.disabled).toBe(true);
-
-    await act(() => builtInAgentsToggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-
     const intelligenceToggle = container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR);
-    expect(intelligenceToggle?.disabled).toBe(false);
+    expect(intelligenceToggle?.getAttribute("aria-checked")).toBe("true");
+    expect(intelligenceToggle?.disabled).toBe(true);
 
     await act(() => intelligenceToggle?.click());
     await flushReact();
+    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
+
+    const teamChatToggle = container.querySelector<HTMLButtonElement>(TEAM_CHAT_TOGGLE_SELECTOR);
+    expect(teamChatToggle?.disabled).toBe(false);
+
+    await act(() => teamChatToggle?.click());
+    await flushReact();
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableIntelligence: true,
+      enableTeamChat: true,
     });
   });
 
@@ -800,12 +775,12 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
 
     expect(container.textContent).not.toContain(MANAGED_BADGE_TEXT);
 
-    const builtInAgentsToggle = container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR);
-    expect(builtInAgentsToggle?.disabled).toBe(false);
+    const intelligenceToggle = container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR);
+    expect(intelligenceToggle?.disabled).toBe(false);
 
-    await act(() => builtInAgentsToggle?.click());
+    await act(() => intelligenceToggle?.click());
     await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableBuiltInAgents: true });
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableIntelligence: true });
   });
 });
 
@@ -869,7 +844,8 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     // Server Info Debug View graduated (GRE-1623).
     expect(sections.at(-1)?.textContent).not.toContain("Server Info Debug View");
     expect(sections.at(-1)?.textContent).not.toContain("Smoke Lab");
-    expect(sections.at(-1)?.textContent).toContain("Task Plan Decomposition");
+    // Task Plan Decomposition graduated (GRE-1621).
+    expect(sections.at(-1)?.textContent).not.toContain("Task Plan Decomposition");
     // Classic Task Interface is retired (GRE-196) and Goals Sidebar Link graduated (GRE-191).
     expect(container.textContent).not.toContain("These features are going to be removed.");
   });
@@ -890,7 +866,8 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     await renderPage(defaultExperimentalSettings());
 
     const cards = [...container.querySelectorAll('[data-slot="card"]')];
-    expect(cards.length).toBeGreaterThan(10);
+    // Fewer cards since the GRE-193 graduations; the check is that none has a background.
+    expect(cards.length).toBeGreaterThan(5);
     expect(cards.every((card) => card.classList.contains("bg-transparent"))).toBe(true);
   });
 
@@ -945,10 +922,10 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   }
 
   it("renders nothing for an operator-hidden toggle and keeps the rest", async () => {
-    await renderPage(["instance.experimental.enableSimplifiedEnglishInteractions"]);
+    await renderPage(["instance.experimental.enableWebsiteView"]);
 
-    expect(container.textContent).not.toContain("Simplified English Interactions");
-    expect(container.textContent).toContain("Beta skills");
+    expect(container.textContent).not.toContain("Website view");
+    expect(container.textContent).toContain("Team Chat");
     expect(container.textContent).not.toContain("Show the Apps navigation");
   });
 
@@ -980,9 +957,9 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   });
 
   it("retains a section when one of its controls is visible", async () => {
-    const visible = new Set(["enableIssuePlanDecompositions"]);
+    const visible = new Set(["enableManagedSandboxOnly"]);
     await renderPage(INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`));
-    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Task Plan Decomposition");
+    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Managed Environment Only");
     // Legacy has no visible cards now that Goals Sidebar Link graduated (GRE-191).
     expect(container.querySelector('[aria-labelledby="legacy-heading"]')).toBeNull();
   });
@@ -990,7 +967,7 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   it("shows every toggle when nothing is hidden", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Simplified English Interactions");
-    expect(container.textContent).toContain("Beta skills");
+    expect(container.textContent).toContain("Team Chat");
+    expect(container.textContent).toContain("Website view");
   });
 });

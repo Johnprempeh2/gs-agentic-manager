@@ -5,7 +5,6 @@ import { AlertCircle, CheckCircle2, ChevronDown, Loader2, Search, Store, X } fro
 import type { Agent, AgentDesiredSkillEntry } from "@greatstone/shared";
 import { agentsApi } from "../../api/agents";
 import { companySkillsApi } from "../../api/companySkills";
-import { instanceSettingsApi } from "../../api/instanceSettings";
 import { queryKeys } from "../../lib/queryKeys";
 import { resolveSkillSummaryText } from "../../lib/company-skill-summary";
 import { adapterLabels } from "../../components/agent-config-primitives";
@@ -37,11 +36,8 @@ const GSAM_CORE_SKILL_KEY = "paperclipai/paperclip/paperclip";
 export function toDesiredSkillPayload(
   keys: string[],
   pins: Record<string, string>,
-  versionPinsEnabled = true,
 ): Array<string | AgentDesiredSkillEntry> {
-  return keys.map((key) => (
-    versionPinsEnabled && pins[key] ? { key, versionId: pins[key]! } : key
-  ));
+  return keys.map((key) => (pins[key] ? { key, versionId: pins[key]! } : key));
 }
 
 /** Extract the skill key from either payload shape (string or entry). */
@@ -86,24 +82,17 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     enabled: Boolean(companyId),
   });
 
-  // Beta skills experimental flag — gates the per-agent release picker entirely.
-  const { data: experimentalSettings } = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
-  const betaSkillsEnabled = experimentalSettings?.enableBetaSkills === true;
-
   const paperclipCoreSkill = useMemo(
     () => (companySkills ?? []).find((skill) => skill.key === GSAM_CORE_SKILL_KEY) ?? null,
     [companySkills, skillSnapshot],
   );
 
   // Seeded releases (release_id IS NOT NULL) for the paperclip core skill. Only
-  // fetched when the flag is on and the skill is present in the library.
+  // fetched when the skill is present in the library.
   const { data: paperclipVersions } = useQuery({
     queryKey: queryKeys.companySkills.versions(companyId ?? "", paperclipCoreSkill?.id ?? ""),
     queryFn: () => companySkillsApi.versions(companyId!, paperclipCoreSkill!.id),
-    enabled: Boolean(companyId && betaSkillsEnabled && paperclipCoreSkill?.id),
+    enabled: Boolean(companyId && paperclipCoreSkill?.id),
   });
   const paperclipReleases = useMemo(
     () => (paperclipVersions ?? []).filter((version) => version.releaseId != null),
@@ -194,17 +183,12 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
           failedDraft: failedSkillDraftRef.current,
         })
       ) {
-        syncSkills.mutate(toDesiredSkillPayload(
-          skillDraft,
-          versionPinsRef.current,
-          betaSkillsEnabled,
-        ));
+        syncSkills.mutate(toDesiredSkillPayload(skillDraft, versionPinsRef.current));
       }
     }, 250);
 
     return () => window.clearTimeout(timeout);
   }, [
-    betaSkillsEnabled,
     skillDraft,
     skillSnapshot,
     syncSkills.isPending,
@@ -340,9 +324,9 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     syncSkills.mutate(toDesiredSkillPayload(skillDraft, nextPins));
   };
 
-  // The release picker only applies to the enabled paperclip core skill while the
-  // beta-skills flag is on and seeded releases exist.
-  const releasePickerActive = betaSkillsEnabled && paperclipReleases.length > 0;
+  // The release picker only applies to the enabled paperclip core skill while
+  // seeded releases exist.
+  const releasePickerActive = paperclipReleases.length > 0;
 
   const renderRow = (row: AgentSkillRowData, variant: "enabled" | "available") => {
     // Historical assignments stay interactive so the user can remove them.

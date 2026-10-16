@@ -165,11 +165,13 @@ export interface InstanceExperimentalSettings {
   enableWebsiteView: boolean;
   /** Greatstone: the Intelligence page (Daily Pulse and AI hub). Off = `403 not_entitled`. */
   enableIntelligence: boolean;
+  /** Compatibility key (GRE-1621): Agent Chat is always on; reads as true. */
   enableAgentChat: boolean;
   /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
   enableTeamChat: boolean;
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
+  /** Compatibility key (GRE-1621): Task Plan Decomposition is always on; reads as true. */
   enableIssuePlanDecompositions: boolean;
   /** Compatibility key (GRE-1623): the task file viewer is always on; reads as true. */
   enableExperimentalFileViewer: boolean;
@@ -179,7 +181,9 @@ export interface InstanceExperimentalSettings {
    */
   enableExternalObjects: boolean;
   enableSmokeLab: boolean;
+  /** Compatibility key (GRE-1621): Built-in Agents are always on; reads as true. */
   enableBuiltInAgents: boolean;
+  /** Compatibility key (GRE-1621): Beta skill pins are always allowed; reads as true. */
   enableBetaSkills: boolean;
   /** Compatibility key (GRE-1622): Summaries are always on; reads as true. */
   enableSummaries: boolean;
@@ -192,10 +196,8 @@ export interface InstanceExperimentalSettings {
   /** Shows internal GS Agentic Manager maintainer tools and observability links. */
   enablePaperclipDeveloperMode: boolean;
   /**
-   * Instructs agents to write user-interaction content (confirmations,
-   * questions, suggested tasks, checkbox prompts) in ASD-STE100 Simplified
-   * Technical English with brief decision context. Prompt-side only; no
-   * behavior change outside interaction wording.
+   * Compatibility key (GRE-1621): agents always write user-interaction content
+   * in ASD-STE100 Simplified Technical English; reads as true.
    */
   enableSimplifiedEnglishInteractions: boolean;
   /**
