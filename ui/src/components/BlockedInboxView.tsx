@@ -18,6 +18,7 @@ import {
   type BlockedInboxIssueRow,
   type BlockedInboxSort,
 } from "../lib/blockedInbox";
+import { explainWhyBlocked, type WhyBlockedAgent } from "../lib/why-blocked";
 import { BlockedReasonChip } from "./BlockedReasonChip";
 import { IssueGroupHeader } from "./IssueGroupHeader";
 import { IssueRow, type IssueRowPresentation } from "./IssueRow";
@@ -26,11 +27,16 @@ import { StatusIcon } from "./StatusIcon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
+type BlockedInboxAgent = import("./AgentAvatar").AvatarAgent & {
+  status?: string | null;
+  pauseReason?: string | null;
+};
+
 interface BlockedInboxViewProps {
   companyId: string;
   searchQuery: string;
   agentNameById: ReadonlyMap<string, string>;
-  agents?: import("./AgentAvatar").AvatarAgent[];
+  agents?: BlockedInboxAgent[];
   userLabelById?: ReadonlyMap<string, string>;
   issueLinkState: unknown;
   groupBy: BlockedInboxGroupBy;
@@ -88,6 +94,20 @@ export function BlockedInboxView({
   });
 
   const allRows = useMemo(() => buildBlockedInboxRows(issues), [issues]);
+  // Names and pause state for the plain "why is this blocked" line on each row.
+  const whyBlockedAgents = useMemo(() => {
+    const map = new Map<string, WhyBlockedAgent>();
+    for (const [id, name] of agentNameById) map.set(id, { name });
+    for (const agent of agents ?? []) {
+      if (!agent.id) continue;
+      map.set(agent.id, {
+        name: agent.name ?? agentNameById.get(agent.id) ?? "an agent",
+        status: agent.status ?? null,
+        pauseReason: agent.pauseReason ?? null,
+      });
+    }
+    return map;
+  }, [agentNameById, agents]);
   const filteredRows = useMemo(
     () => allRows.filter((row) => blockedRowMatchesSearch(row, searchQuery)),
     [allRows, searchQuery],
@@ -222,6 +242,8 @@ export function BlockedInboxView({
               issueLinkState={issueLinkState}
               agentNameById={agentNameById} agents={agents}
               userLabelById={userLabelById}
+              whyBlockedAgents={whyBlockedAgents}
+              currentUserId={currentUserId}
               liveIssueIds={liveIssueIds}
               subtreeLiveCounts={subtreeLiveCounts}
               showStatusColumn={showStatusColumn}
@@ -252,6 +274,8 @@ export function BlockedInboxView({
                         issueLinkState={issueLinkState}
                         agentNameById={agentNameById} agents={agents}
                         userLabelById={userLabelById}
+                        whyBlockedAgents={whyBlockedAgents}
+                        currentUserId={currentUserId}
                         liveIssueIds={liveIssueIds}
                         subtreeLiveCounts={subtreeLiveCounts}
                         showStatusColumn={showStatusColumn}
@@ -275,8 +299,10 @@ interface BlockedInboxRowProps {
   row: BlockedInboxIssueRow;
   issueLinkState: unknown;
   agentNameById: ReadonlyMap<string, string>;
-  agents?: import("./AgentAvatar").AvatarAgent[];
+  agents?: BlockedInboxAgent[];
   userLabelById?: ReadonlyMap<string, string>;
+  whyBlockedAgents: ReadonlyMap<string, WhyBlockedAgent>;
+  currentUserId: string | null;
   liveIssueIds: ReadonlySet<string>;
   subtreeLiveCounts: ReadonlyMap<string, number>;
   showStatusColumn: boolean;
@@ -307,6 +333,8 @@ function BlockedInboxRow({
   agentNameById,
   agents,
   userLabelById,
+  whyBlockedAgents,
+  currentUserId,
   liveIssueIds,
   subtreeLiveCounts,
   showStatusColumn,
@@ -314,6 +342,12 @@ function BlockedInboxRow({
   showUpdatedColumn,
   presentation,
 }: BlockedInboxRowProps) {
+  const whyBlocked = explainWhyBlocked({
+    issue: row.issue,
+    currentUserId,
+    agents: whyBlockedAgents,
+    userLabels: userLabelById,
+  });
   const { label: ownerName, isAgent } = resolveOwnerName(row, agentNameById, userLabelById);
   const stoppedAge = formatStoppedAge(row.attention.stoppedSinceAt);
   const blockerAttention = resolveInboxIssueBlockerAttention(row.issue, {
@@ -370,6 +404,7 @@ function BlockedInboxRow({
       issue={row.issue}
       issueLinkState={issueLinkState}
       presentation={presentation}
+      whyBlocked={whyBlocked}
       showDivider={presentation === "legacy"}
       statusSlot={presentation === "task"
         ? showStatusColumn
