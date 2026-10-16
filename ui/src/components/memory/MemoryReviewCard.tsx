@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { MemoryActorLabel, MemoryRecord, MemoryReviewQueueItem } from "@greatstone/shared";
-import { AlertTriangle, Clock } from "lucide-react";
+import { AlertTriangle, Clock, Copy } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { cn, formatDate } from "@/lib/utils";
 import { ageFlagMeta, ageText, cardTitle, personWithApp } from "../../lib/memory-review";
 import { MemoryStatusBadge } from "./MemoryStatusBadge";
@@ -47,24 +48,45 @@ export function MemoryConflictTag() {
   );
 }
 
-/** One row in the queue. */
+export function MemoryLookalikeTag() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+      <Copy className="h-3 w-3" aria-hidden="true" />
+      Looks like one in memory
+    </span>
+  );
+}
+
+/** One row in the queue. With `ticked`, a box to pick it for a bulk action. */
 export function MemoryReviewRow({
   item,
   selected,
   onSelect,
+  ticked,
+  onTick,
 }: {
   item: MemoryReviewQueueItem;
   selected: boolean;
   onSelect: () => void;
+  ticked?: boolean;
+  onTick?: (on: boolean) => void;
 }) {
   return (
-    <li>
+    <li className="flex items-start">
+      {onTick ? (
+        <Checkbox
+          checked={ticked ?? false}
+          onCheckedChange={(value) => onTick(value === true)}
+          aria-label={`Pick ${cardTitle(item.proposal)}`}
+          className="ml-3 mt-3.5 shrink-0"
+        />
+      ) : null}
       <button
         type="button"
         onClick={onSelect}
         aria-current={selected ? "true" : undefined}
         className={cn(
-          "w-full space-y-1.5 px-3 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          "min-w-0 flex-1 space-y-1.5 px-3 py-3 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
           selected && "bg-accent text-accent-foreground",
           item.ageFlag === "expired" && !selected && "text-muted-foreground",
         )}
@@ -77,6 +99,7 @@ export function MemoryReviewRow({
         <div className="flex flex-wrap items-center gap-1.5">
           <MemoryAgeBadge item={item} />
           {item.conflictIds.length > 0 ? <MemoryConflictTag /> : null}
+          {item.lookalike ? <MemoryLookalikeTag /> : null}
           {item.current ? <span className="text-xs text-muted-foreground">Changes a confirmed card</span> : null}
         </div>
       </button>

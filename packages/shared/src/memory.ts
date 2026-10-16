@@ -861,6 +861,11 @@ export interface MemoryReviewQueueItem {
   allowed: Record<MemoryStewardAction, boolean>;
   /** Why the caller cannot confirm, e.g. "You proposed this card". Null when allowed. */
   blockedReason: string | null;
+  /**
+   * The entry this proposal most resembles by shared words: a confirmed card
+   * in the same scope or an earlier proposal there. A hint, never a merge.
+   */
+  lookalike?: { recordId: string; title: string | null; content: string | null; status: MemoryRecordStatus } | null;
 }
 
 export interface MemoryReviewQueue {
