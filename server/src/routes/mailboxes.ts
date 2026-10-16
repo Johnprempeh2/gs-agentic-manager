@@ -7,6 +7,8 @@ import {
   mailboxOAuthProviderSchema,
   mailboxOAuthStartSchema,
   mailboxReadSchema,
+  mailboxDraftSchema,
+  mailboxDraftsSettingSchema,
   mailboxSaveSchema,
   mailboxSearchSchema,
 } from "@greatstone/shared";
@@ -246,6 +248,18 @@ export function mailboxRoutes(
     },
   );
 
+  router.put(
+    "/companies/:companyId/mailboxes/:mailboxId/drafts",
+    validate(mailboxDraftsSettingSchema),
+    async (req, res) => {
+      const companyId = String(req.params.companyId);
+      const actor = await manager(req, companyId);
+      res.json(
+        await service.setDrafts(companyId, String(req.params.mailboxId), req.body.allowDrafts, actor),
+      );
+    },
+  );
+
   router.delete("/companies/:companyId/mailboxes/:mailboxId", async (req, res) => {
     const companyId = String(req.params.companyId);
     const actor = await manager(req, companyId);
@@ -299,6 +313,18 @@ export function mailboxRoutes(
       res
         .status(201)
         .json(await service.save(companyId, String(req.params.mailboxId), req.body, who));
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/mailboxes/:mailboxId/draft",
+    validate(mailboxDraftSchema),
+    async (req, res) => {
+      const companyId = String(req.params.companyId);
+      const who = await reader(req, companyId);
+      res
+        .status(201)
+        .json(await service.saveDraft(companyId, String(req.params.mailboxId), req.body, who));
     },
   );
 

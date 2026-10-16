@@ -19,6 +19,7 @@ describe("agent detail navigation", () => {
       "channels",
       "permissions",
       "api-keys",
+      "access",
       "revisions",
     ]);
   });
@@ -27,6 +28,7 @@ describe("agent detail navigation", () => {
     expect(parseAgentDetailView("dashboard")).toBe("overview");
     expect(parseAgentDetailView("configuration")).toBe("runtime");
     expect(parseAgentDetailView("prompts")).toBe("instructions");
+    expect(parseAgentDetailView("access")).toBe("access");
     expect(agentDetailHref("codexcoder", "permissions")).toBe("/agents/codexcoder/permissions");
   });
 

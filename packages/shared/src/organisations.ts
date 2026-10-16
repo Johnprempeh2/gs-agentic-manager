@@ -13,7 +13,7 @@ export const ORGANISATION_STATUS_LABELS: Record<OrganisationStatus, string> = {
 };
 
 /** Where a record came from. `manual` is typed in the app; others are imports. */
-export const ORGANISATION_SOURCES = ["manual", "pipedrive", "csv"] as const;
+export const ORGANISATION_SOURCES = ["manual", "pipedrive", "csv", "hubspot", "notion"] as const;
 export type OrganisationSource = (typeof ORGANISATION_SOURCES)[number];
 
 // Global CRM fields (GRE-1539, slice 2 of GRE-1538).

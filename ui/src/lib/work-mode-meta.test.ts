@@ -15,7 +15,8 @@ describe("work mode metadata", () => {
   });
 
   it("uses graduated tooltip copy", () => {
-    expect(titleForPendingWorkMode("standard")).toBe("Auto mode for this submission. Click to change.");
-    expect(titleForPendingWorkMode("planning")).toBe("Plan mode is on for this submission. Click to change.");
+    expect(titleForPendingWorkMode("standard")).toBe("Auto mode: The agent starts the work straight away. Click to change.");
+    expect(titleForPendingWorkMode("planning")).toBe("Plan mode: The agent writes a plan for you to approve before it starts. Click to change.");
+    expect(titleForPendingWorkMode("ask")).toBe("Ask mode: The agent answers your question and changes nothing. Click to change.");
   });
 });

@@ -1,7 +1,7 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { SetupWizardSidebarOutlet } from "./SetupWizard";
 import { ChatSetupSidebarProvider } from "@/context/ChatSetupSidebarContext";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -15,16 +15,18 @@ import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
-import { NewIssueDialog } from "./NewIssueDialog";
-import { NewProjectDialog } from "./NewProjectDialog";
-import { NewGoalDialog } from "./NewGoalDialog";
-import { NewAgentDialog } from "./NewAgentDialog";
-import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
+import { AskEverestPanel } from "./AskEverestPanel";
+import { OnDemandCreateDialogs } from "./OnDemandDialogs";
+import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
+import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "../lib/keyboardShortcuts";
 import { ToastViewport } from "./ToastViewport";
+import { TeamChatAlerts } from "./team-chat/TeamChatAlerts";
 import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { AddToHomeScreen } from "./AddToHomeScreen";
+import { PageSkeleton } from "./PageSkeleton";
 import { PullToRefresh } from "./PullToRefresh";
 import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
@@ -441,6 +443,27 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     onGoToInbox: () => navigate("/inbox"),
   });
 
+  // "?" opens the shortcuts sheet even when single-key shortcuts are off,
+  // so everyone can find Cmd/Ctrl+K and Cmd/Ctrl+J.
+  useEffect(() => {
+    function openSheet() {
+      setShortcutsOpen(true);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (keyboardShortcutsEnabled) return;
+      if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      if (isKeyboardShortcutTextInputTarget(event.target) || hasBlockingShortcutDialog()) return;
+      event.preventDefault();
+      openSheet();
+    }
+    window.addEventListener(OPEN_SHORTCUTS_EVENT, openSheet);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener(OPEN_SHORTCUTS_EVENT, openSheet);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [keyboardShortcutsEnabled]);
+
   useEffect(() => {
     if (!isMobile) {
       setMobileNavVisible(true);
@@ -763,7 +786,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 />
               ) : (
                 <RouteErrorBoundary>
-                  <Outlet />
+                  {isMobile && !isMobileChatRoute ? <AddToHomeScreen /> : null}
+                  {/* Pages load when opened; keep the shell up while one arrives. */}
+                  <Suspense fallback={<PageSkeleton variant="detail" />}>
+                    <Outlet />
+                  </Suspense>
                 </RouteErrorBoundary>
               )}
               </main>
@@ -775,12 +802,11 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       {isMobile && <MobileBottomNav visible={showMobileNav} />}
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
-      <NewIssueDialog />
-      <NewProjectDialog />
-      <NewGoalDialog />
-      <NewAgentDialog />
-      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <AskEverestPanel />
+      <OnDemandCreateDialogs />
+      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />
       <ToastViewport />
+      <TeamChatAlerts />
       <BlockedDependentsDialogHost />
       <AnnouncementWell health={health} />
       <PluginAppShellOverlays localTrusted={health?.deploymentMode === "local_trusted"} />

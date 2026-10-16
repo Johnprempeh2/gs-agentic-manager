@@ -4,6 +4,7 @@ import {
   addTeamChatMembersSchema,
   createDirectMessageSchema,
   createTeamChatSchema,
+  setTeamChatMuteSchema,
 } from "@greatstone/shared";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
@@ -74,6 +75,12 @@ export function teamChatRoutes(db: Db, opts: { service?: TeamChatService } = {})
   router.post("/team-chats/:id/members", validate(addTeamChatMembersSchema), async (req, res) => {
     const { chat, userId } = await loadChat(req);
     await chats.addMembers(chat, userId, req.body);
+    res.json(await chats.summary(chat, userId));
+  });
+
+  router.put("/team-chats/:id/mute", validate(setTeamChatMuteSchema), async (req, res) => {
+    const { chat, userId } = await loadChat(req);
+    await chats.setMuted(chat, userId, req.body.muted);
     res.json(await chats.summary(chat, userId));
   });
 

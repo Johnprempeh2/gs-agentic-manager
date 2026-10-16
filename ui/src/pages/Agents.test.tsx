@@ -458,7 +458,7 @@ describe("Agents", () => {
 
     // The heartbeat cell must render on a single line so full dates like
     // "Apr 30, 2026" never wrap (PAP-85 defect #2).
-    const heartbeatCell = container.querySelector(".whitespace-nowrap.w-24");
+    const heartbeatCell = container.querySelector(".whitespace-nowrap.w-28");
     expect(heartbeatCell).not.toBeNull();
     expect(heartbeatCell?.textContent).not.toContain("\n");
   });

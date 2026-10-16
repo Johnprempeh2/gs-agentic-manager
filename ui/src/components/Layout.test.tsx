@@ -127,24 +127,13 @@ vi.mock("./CommandPalette", () => ({
   CommandPalette: () => null,
 }));
 
-vi.mock("./NewIssueDialog", () => ({
-  NewIssueDialog: () => null,
-}));
-
-vi.mock("./NewProjectDialog", () => ({
-  NewProjectDialog: () => null,
-}));
-
-vi.mock("./NewGoalDialog", () => ({
-  NewGoalDialog: () => null,
-}));
-
-vi.mock("./NewAgentDialog", () => ({
-  NewAgentDialog: () => null,
+vi.mock("./OnDemandDialogs", () => ({
+  OnDemandCreateDialogs: () => null,
 }));
 
 vi.mock("./KeyboardShortcutsCheatsheet", () => ({
   KeyboardShortcutsCheatsheet: () => null,
+  OPEN_SHORTCUTS_EVENT: "gsam:open-shortcuts",
 }));
 
 vi.mock("./ToastViewport", () => ({

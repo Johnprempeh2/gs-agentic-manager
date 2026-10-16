@@ -526,7 +526,7 @@ describe("Sidebar", () => {
     );
     const root = await renderSidebar();
 
-    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox"]);
+    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
 
     flushSync(() => {
       root.unmount();
@@ -557,7 +557,7 @@ describe("Sidebar", () => {
     const statusLink = container.querySelector('a[href="/status"]');
     expect(statusLink?.textContent).toContain("Status");
     expect(statusLink?.textContent).toContain("beta");
-    expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
 
     flushSync(() => {
       root.unmount();
@@ -592,7 +592,7 @@ describe("Sidebar", () => {
     const chats = container.querySelector('[data-sidebar-section="chats"]');
     expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
-    expect(sectionLabels("Clients")).toEqual(["Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
 
     flushSync(() => {
       root.unmount();
@@ -655,7 +655,7 @@ describe("Sidebar", () => {
       await click(textButton("Customise sidebar"));
       await click(button("More options for Inbox"));
       await click(menuItem("Move up"));
-      expect(lastSavedLayout()?.sections?.today).toEqual(["decisions", "inbox", "my-tasks"]);
+      expect(lastSavedLayout()?.sections?.today).toEqual(["needed", "decisions", "inbox", "my-tasks", "calendar"]);
 
       await click(button("More options for Agents"));
       await click(menuItem("Pin to top"));
@@ -663,7 +663,7 @@ describe("Sidebar", () => {
       expect(button("Unpin Agents")).not.toBeNull();
 
       await click(textButton("Done"));
-      expect(sectionLabels("Today")).toEqual(["Decisions", "Inbox", "My tasks"]);
+      expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "Inbox", "My tasks", "Calendar"]);
       expect(sectionLabels("Pinned")).toEqual(["Agents"]);
       // Pinned items move to the top group; they are not listed twice.
       expect(container.querySelectorAll('a[href="/agents"]')).toHaveLength(1);
@@ -781,10 +781,10 @@ describe("Sidebar", () => {
     const headings = [...container.querySelectorAll("[data-sidebar-section]")]
       .map((section) => section.getAttribute("data-sidebar-section"));
     expect(headings).toEqual(["today", "chats", "clients", "work", "team", "admin"]);
-    expect(sectionLabels("Today")).toEqual(["Decisions", "My tasks", "Inbox"]);
-    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables"]);
+    expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
+    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
-    expect(sectionLabels("Team")).toEqual(["Agents", "Conference Room", "Statusbeta"]);
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
     expect(sectionLabels("Admin")).toEqual([
       "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta",
       "Audit", "Releases", "Settings", "Design guide",
@@ -823,7 +823,7 @@ describe("Sidebar", () => {
     expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
     expect(button("Expand Admin")).not.toBeNull();
     // Pipelines and Deep Dive are off, so Clients holds only Deliverables; chats are off, so no Chats section.
-    expect(sectionLabels("Clients")).toEqual(["Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
     expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
     flushSync(() => {
@@ -834,7 +834,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive in Clients only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "Images"]);
     flushSync(() => {
       root.unmount();
     });

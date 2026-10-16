@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ASK_TYPES } from "../ask-types.js";
 import {
   ISSUE_EXECUTION_DECISION_OUTCOMES,
   ISSUE_EXECUTION_MONITOR_CLEAR_REASONS,
@@ -21,6 +22,7 @@ import {
   ISSUE_RECOVERY_ACTION_OWNER_TYPES,
   ISSUE_RECOVERY_ACTION_STATUSES,
   ISSUE_REVIEW_POLICIES,
+  ISSUE_UNBLOCK_WAITING_ON,
   ISSUE_WORK_MODES,
   clampIssueRequestDepth,
   ISSUE_STATUSES,
@@ -702,6 +704,11 @@ const createIssueBaseSchema = z.object({
         z.literal("board"),
       ]),
       action: multilineTextSchema.pipe(z.string().trim().min(1).max(2_000)),
+      waitingOn: z.enum(ISSUE_UNBLOCK_WAITING_ON).optional(),
+      expectedBy: issueDueDateSchema.optional(),
+      // Server-owned marker. Accepted so a descriptor read back from the API
+      // can be sent again, but the server ignores the value sent.
+      expectedByWokenFor: issueDueDateSchema.optional(),
     })
     .strict()
     .optional()
@@ -1567,6 +1574,7 @@ export const requestConfirmationPayloadSchema = z.object({
   toolAction: requestConfirmationToolActionPayloadSchema.optional(),
   secretProposal: requestConfirmationSecretProposalPayloadSchema.optional(),
   atDesk: interactionAtDeskSchema.nullable().optional(),
+  askType: z.enum(ASK_TYPES).nullable().optional(),
 });
 
 export const requestCheckboxConfirmationOptionSchema = z.object({

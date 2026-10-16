@@ -59,3 +59,15 @@ export function resolveSetCaseNda(body: SetCaseNda): { status: NdaStatus; reason
 export function ndaClears(status: NdaStatus): boolean {
   return status !== "required";
 }
+
+/**
+ * The engagement pack (Ben, 8 and 12 Oct): it goes out once the NDA is
+ * accepted or suspended, then the client accepts it. not_sent is the default.
+ */
+export const engagementStatusSchema = z.enum(["not_sent", "sent", "accepted"]);
+
+/** PUT /api/cases/:caseId/engagement (board only). */
+export const setCaseEngagementSchema = z.object({ status: engagementStatusSchema }).strict();
+
+export type EngagementStatus = z.infer<typeof engagementStatusSchema>;
+export type SetCaseEngagement = z.infer<typeof setCaseEngagementSchema>;

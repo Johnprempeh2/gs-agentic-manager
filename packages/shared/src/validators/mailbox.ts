@@ -117,6 +117,41 @@ export const mailboxSaveSchema = z
   .strict();
 export type MailboxSaveInput = z.infer<typeof mailboxSaveSchema>;
 
+/** Board switch for agent drafts on one mailbox. Off until a person turns it on. */
+export const mailboxDraftsSettingSchema = z
+  .object({ allowDrafts: z.boolean() })
+  .strict();
+export type MailboxDraftsSettingInput = z.infer<typeof mailboxDraftsSettingSchema>;
+
+// No line breaks in anything that becomes a header line.
+const headerText = (max: number) =>
+  z.string().trim().min(1).max(max).refine((value) => !/[\r\n]/.test(value), "Use one line");
+const recipient = headerText(320).pipe(z.string().email("Use an email address"));
+
+/**
+ * An email draft an agent saves into the mailbox's Drafts folder. Nothing is
+ * sent: the owner reviews, edits and sends it from their own mail app.
+ */
+export const mailboxDraftSchema = z
+  .object({
+    to: z.array(recipient).min(1).max(20),
+    cc: z.array(recipient).max(20).default([]),
+    subject: headerText(300),
+    text: z.string().min(1).max(50_000),
+    // Message-ID of the email this replies to (from mailbox_search), so the
+    // draft sits in the same conversation.
+    inReplyTo: headerText(998).optional(),
+  })
+  .strict();
+export type MailboxDraftInput = z.infer<typeof mailboxDraftSchema>;
+
+export interface MailboxDraftResult {
+  mailboxId: string;
+  folder: string;
+  subject: string;
+  to: string[];
+}
+
 export interface MailboxSummary {
   id: string;
   label: string;
@@ -131,6 +166,8 @@ export interface MailboxSummary {
   healthCheckedAt: string | null;
   allAgents: boolean;
   agentIds: string[];
+  /** Agents may save drafts (never send) when true. Off by default. */
+  allowDrafts: boolean;
   createdAt: string;
 }
 

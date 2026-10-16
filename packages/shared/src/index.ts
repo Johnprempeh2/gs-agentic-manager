@@ -62,7 +62,16 @@ export {
   type StrategyBoardActionTask,
 } from "./strategy-board.js";
 export * from "./team-chat.js";
+export * from "./unblock-waiting.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
+export {
+  REQUIRED_CAPABILITIES_CONFIG_KEY,
+  RUN_CAPABILITY_KEYS,
+  RUN_CAPABILITY_LABELS,
+  isRunCapabilityKey,
+  readRequiredRunCapabilities,
+  type RunCapabilityKey,
+} from "./run-capabilities.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
   CONNECTION_REQUEST_TOOL_DESCRIPTION,
@@ -300,6 +309,18 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./types/agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./types/calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./types/team-scorecard.js";
+export type {
+  BlockedWorkIssueRef,
+  BlockedWorkItem,
+  BlockedWorkOverview,
+  BlockedWorkOwner,
+  BlockedWorkOwnerType,
+  BlockedWorkRootCause,
+  BlockedWorkTidyReason,
+} from "./types/blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./types/recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -515,6 +536,7 @@ export {
   INBOX_MINE_ISSUE_STATUS_FILTER,
   ISSUE_PRIORITIES,
   ISSUE_REVIEW_POLICIES,
+  ISSUE_UNBLOCK_WAITING_ON,
   ISSUE_WORK_MODES,
   ISSUE_HARNESS_KINDS,
   MAX_ISSUE_REQUEST_DEPTH,
@@ -727,6 +749,7 @@ export {
   type IssueStatus,
   type IssuePriority,
   type IssueReviewPolicy,
+  type IssueUnblockWaitingOn,
   type IssueWorkMode,
   type IssueHarnessKind,
   type SummarySlotScopeKind,
@@ -1658,6 +1681,11 @@ export type {
   ToolAppAttentionItem,
   ToolAppAttentionReason,
   ToolAppsAttentionResponse,
+  AgentAccessAgentSummary,
+  AgentAccessItem,
+  AgentAccessItemKind,
+  AgentAccessItemState,
+  AgentAccessSummary,
   ToolActionRequestListItem,
   ToolActionRequestsResponse,
   ToolConnectionActivityResponse,
@@ -2510,6 +2538,7 @@ export {
   pipelineStageVariableSchema,
   pipelineStageTemplateSchema,
   pipelineStageExpectedDeliverableSchema,
+  pipelineStageRequestedDocumentSchema,
   rotateRoutineTriggerSecretSchema,
   routineRevisionSnapshotRoutineV1Schema,
   routineRevisionSnapshotTriggerV1Schema,
@@ -3060,6 +3089,9 @@ export * from "./member-handover.js";
 export * from "./types/email.js";
 export * from "./validators/email.js";
 export * from "./validators/mailbox.js";
+export * from "./validators/inbound-task-hooks.js";
+export * from "./validators/outbound-webhooks.js";
+export * from "./validators/notion-import.js";
 export { configureRailwaySshSchema, type ConfigureRailwaySsh, type RailwaySshSetup } from "./railway-connection.js";
 export * from "./announcements.js";
 
@@ -3075,6 +3107,7 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export * from "./image-generation.js";
 export {
   AGENT_TEAM_COLORS,
   addAgentTeamMemberSchema,
@@ -3086,6 +3119,7 @@ export {
   type UpdateAgentTeam,
 } from "./agent-teams.js";
 export * from "./memory.js";
+export * from "./memory-import.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
@@ -3097,3 +3131,18 @@ export * from "./types/pipeline-fields.js";
 export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
 export * from "./partner-branding.js";
+export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
+export type { MorningSummary, MorningSummaryTask, NotificationPreferences } from "./types/notification-preferences.js";
+export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
+export {
+  updateNotificationPreferencesSchema,
+  type UpdateNotificationPreferences,
+} from "./validators/notification-preferences.js";
+export type {
+  WeeklyReport,
+  WeeklyReportAgentCost,
+  WeeklyReportAgentWork,
+  WeeklyReportPipelineMove,
+  WeeklyReportStuckTask,
+  WeeklyReportTask,
+} from "./types/weekly-report.js";

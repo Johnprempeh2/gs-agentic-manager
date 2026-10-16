@@ -12,6 +12,9 @@ import {
   digestSinceLabel,
 } from "./AgentWorkDigest";
 
+vi.mock("../api/issues", () => ({ issuesApi: { list: vi.fn() } }));
+vi.mock("../api/decisionsFeed", () => ({ decisionsFeedApi: { needsMe: vi.fn() } }));
+
 vi.mock("@/lib/router", () => ({
   Link: ({ children, to, ...props }: React.ComponentProps<"a"> & { to: string }) => (
     <a href={to} {...props}>
@@ -99,6 +102,20 @@ describe("digest views", () => {
     const link = container.querySelector("a")!;
     expect(link.getAttribute("href")).toBe(SINCE_LAST_VISIT_PATH);
     expect(link.textContent).toContain("See what happened");
+  });
+
+  it("home card: adds what got stuck and what needs you, and a catch-up button", () => {
+    const onCatchUp = vi.fn();
+    act(() => {
+      root.render(<DashboardDigestCardView digest={digest([])} extras={{ stuck: 2, needsYou: 1 }} onCatchUp={onCatchUp} />);
+    });
+    const away = container.querySelector('[data-testid="dashboard-digest-away"]')!;
+    expect(away.textContent).toContain("2 tasks got stuck");
+    expect(away.textContent).toContain("1 thing needs you");
+    act(() => {
+      (container.querySelector('[data-testid="dashboard-digest-catch-up"]') as HTMLButtonElement).click();
+    });
+    expect(onCatchUp).toHaveBeenCalledTimes(1);
   });
 
   it("home card: says so when nothing happened, and keeps the link", () => {

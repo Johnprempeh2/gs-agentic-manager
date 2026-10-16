@@ -86,6 +86,7 @@ export {
   pipelineCaseProjectLinks,
   pipelineCaseContacts,
   pipelineCaseEvidence,
+  pipelineCaseDocumentRequests,
   pipelineCaseStageDeliverables,
   pipelineCaseBlockers,
   pipelineDocuments,
@@ -102,6 +103,9 @@ export {
   type CrmSyncStoredValue,
 } from "./crm_sync.js";
 export { organisations, organisationContacts } from "./organisations.js";
+export { inboundTaskHooks } from "./inbound_task_hooks.js";
+export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks.js";
+export { calendarFeeds } from "./calendar_feeds.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
 export { websiteProperties, websitePulls } from "./website.js";
@@ -138,6 +142,7 @@ export {
 export { feedbackExports } from "./feedback_exports.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
+export { generatedImages } from "./generated_images.js";
 export { issueAttachments } from "./issue_attachments.js";
 export { documents } from "./documents.js";
 export { documentRevisions } from "./document_revisions.js";
@@ -236,6 +241,7 @@ export * from "./email.js";
 export { announcementDismissals, announcementPublications } from "./announcement_dismissals.js";
 export { userTourDismissals } from "./user_tour_dismissals.js";
 export { pushSubscriptions, pushNotifiedDecisions } from "./push_subscriptions.js";
+export { notificationPreferences } from "./notification_preferences.js";
 export * from "./support.js";
 export {
   memorySettings,

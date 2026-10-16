@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
 import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
-import { TaskChatLab } from "./pages/TaskChatLab";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
@@ -18,113 +17,24 @@ import {
   UnprefixedExecutionWorkspaceRedirect,
 } from "./components/UnprefixedExecutionWorkspaceRedirect";
 import { useHiddenSettings } from "./hooks/useHiddenSettings";
-import { Cases } from "./pages/Cases";
-import { CaseDetail } from "./pages/CaseDetail";
-import { DeepDive } from "./pages/DeepDive";
-import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
+import { OnDemandOnboarding } from "./components/OnDemandDialogs";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
-import { Dashboard } from "./pages/Dashboard";
-import { DashboardLive } from "./pages/DashboardLive";
-import { Companies } from "./pages/Companies";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
-import { AgentDetail } from "./pages/AgentDetail";
-import { Projects } from "./pages/Projects";
-import { ProjectDetail } from "./pages/ProjectDetail";
-import { ProjectWorkspaceDetail } from "./pages/ProjectWorkspaceDetail";
-import { Workspaces } from "./pages/Workspaces";
-import { Issues } from "./pages/Issues";
-import { Search } from "./pages/Search";
-import { IssueDetail } from "./pages/IssueDetail";
-import { AgentChat } from "./pages/AgentChat";
-import { TeamChat } from "./pages/TeamChat";
-import { IssueChatLongThreadPerf } from "./pages/IssueChatLongThreadPerf";
-import { Routines } from "./pages/Routines";
-import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, ReviewQueue } from "./pages/Pipelines";
-import { PipelineSettings } from "./pages/PipelineSettings";
-import { PipelineAccessOverview } from "./pages/PipelineAccessOverview";
-import { Organisations } from "./pages/Organisations";
-import { OrganisationPage } from "./pages/OrganisationPage";
-import { StatusCards } from "./pages/StatusCards";
-import { RoutineDetail } from "./pages/RoutineDetail";
-import { UserProfile } from "./pages/UserProfile";
-import { ExecutionWorkspaceDetail } from "./pages/ExecutionWorkspaceDetail";
-import { Goals } from "./pages/Goals";
-import { WorkflowTemplates } from "./pages/WorkflowTemplates";
-import { Releases } from "./pages/Releases";
-import { Billing } from "./pages/Billing";
-import { Artifacts } from "./pages/Artifacts";
-import { Deliverables } from "./pages/Deliverables";
-import { Website } from "./pages/Website";
-import { Intelligence } from "./pages/Intelligence";
-import { Memory } from "./pages/Memory";
-import { MemoryActivity } from "./pages/MemoryActivity";
-import { MemoryReview } from "./pages/MemoryReview";
-import { GoalDetail } from "./pages/GoalDetail";
-import { StrategyBoard } from "./pages/StrategyBoard";
-import { Tutorials } from "./pages/Tutorials";
-import { BoardAgentChat } from "./pages/BoardAgentChat";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
-import { Approvals } from "./pages/Approvals";
-import { ApprovalDetail } from "./pages/ApprovalDetail";
-import { CompanyActivity } from "./pages/audit/CompanyActivity";
-import { SinceLastVisit } from "./pages/SinceLastVisit";
-import { AuditHub } from "./pages/audit/AuditHub";
-import { Inbox } from "./pages/Inbox";
-import { WhatNeedsMe } from "./pages/WhatNeedsMe";
-import { MyTasks } from "./pages/MyTasks";
-import { DecisionQueuePage } from "./pages/DecisionQueuePage";
-import { BoardChat } from "./pages/BoardChat";
-import { CompanySettings } from "./pages/CompanySettings";
-import { CompanyEnvironments } from "./pages/CompanyEnvironments";
-import { BootstrapSetupUxLab } from "./pages/BootstrapSetupUxLab";
-import { ResponsibleUserDenialUxLab } from "./pages/ResponsibleUserDenialUxLab";
-import { CrossIssueCollaborationUxLab } from "./pages/CrossIssueCollaborationUxLab";
-import { CompanySettingsPluginPage } from "./pages/CompanySettingsPluginPage";
-import { CompanyAccess, CompanyAccessLegacyRoute } from "./pages/CompanyAccess";
-import { AdvancedToolsRoute } from "./pages/tools/AdvancedToolsRoute";
-import { ProfileWizardRoute } from "./pages/tools/profiles/ProfileWizardRoute";
-import { ProfileDetailRoute } from "./pages/tools/profiles/ProfileDetailRoute";
-import { Browse } from "./pages/apps/Browse";
-import { Mailboxes } from "./pages/apps/Mailboxes";
-import { AppsConnect } from "./pages/apps/AppsConnect";
-import { ChatEndpointSetup } from "./pages/apps/chat/ChatEndpointSetup";
-import { ChatEndpointDetail } from "./pages/apps/chat/ChatEndpointDetail";
-import { ChatIdentityConfirm } from "./pages/apps/chat/ChatIdentityConfirm";
 import { ChatConnectorsExperimentalGate } from "./components/ChatConnectorsExperimentalGate";
 import { useChatConnectorsEnabled } from "./hooks/useChatConnectorsEnabled";
 import { canEnterAppsConnect } from "./pages/apps/app-connect-policy";
-import { AppsReview } from "./pages/apps/AppsReview";
-import { AppDetail } from "./pages/apps/AppDetail";
-import { AppNotConnected } from "./pages/apps/AppNotConnected";
-import { PaperclipCloudOAuthHandoffPage } from "./pages/apps/PaperclipCloudOAuthHandoff";
-import { GatewaysList } from "./pages/apps/gateways/GatewaysList";
-import { GatewayDetail } from "./pages/apps/gateways/GatewayDetail";
-import { CompanySkills } from "./pages/CompanySkills";
-import { TeamCatalog } from "./pages/TeamCatalog";
-import { SkillStudio } from "./pages/SkillStudio";
-import { Secrets } from "./pages/Secrets";
-import { CompanyImport } from "./pages/CompanyImport";
-import { DesignGuide } from "./pages/DesignGuide";
-import { InstanceExperimentalSettings } from "./pages/InstanceExperimentalSettings";
-import { InstanceAccess } from "./pages/InstanceAccess";
-import { Fleet } from "./pages/Fleet";
-import { GetHelp } from "./pages/GetHelp";
-import { ProfileSettings } from "./pages/ProfileSettings";
-import { PluginManager } from "./pages/PluginManager";
-import { PluginSettings } from "./pages/PluginSettings";
-import { AdapterManager } from "./pages/AdapterManager";
-import { PluginPage } from "./pages/PluginPage";
-import { NewAgent } from "./pages/NewAgent";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
-import { JoinRequestQueue } from "./pages/JoinRequestQueue";
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
+import { lazyPage } from "./lib/lazy-page";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -135,6 +45,115 @@ import { useCloudInstance } from "./hooks/useCloudInstance";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
 import { navigateTopLevel } from "@/lib/browserNavigation";
 
+const TaskChatLab = lazyPage(() => import("./pages/TaskChatLab"), "TaskChatLab");
+const Cases = lazyPage(() => import("./pages/Cases"), "Cases");
+const CaseDetail = lazyPage(() => import("./pages/CaseDetail"), "CaseDetail");
+const DeepDive = lazyPage(() => import("./pages/DeepDive"), "DeepDive");
+const DashboardLive = lazyPage(() => import("./pages/DashboardLive"), "DashboardLive");
+const Companies = lazyPage(() => import("./pages/Companies"), "Companies");
+const AgentDetail = lazyPage(() => import("./pages/AgentDetail"), "AgentDetail");
+const Projects = lazyPage(() => import("./pages/Projects"), "Projects");
+const ProjectDetail = lazyPage(() => import("./pages/ProjectDetail"), "ProjectDetail");
+const ProjectWorkspaceDetail = lazyPage(() => import("./pages/ProjectWorkspaceDetail"), "ProjectWorkspaceDetail");
+const Workspaces = lazyPage(() => import("./pages/Workspaces"), "Workspaces");
+const Issues = lazyPage(() => import("./pages/Issues"), "Issues");
+const Search = lazyPage(() => import("./pages/Search"), "Search");
+const AgentChat = lazyPage(() => import("./pages/AgentChat"), "AgentChat");
+const TeamChat = lazyPage(() => import("./pages/TeamChat"), "TeamChat");
+const IssueChatLongThreadPerf = lazyPage(() => import("./pages/IssueChatLongThreadPerf"), "IssueChatLongThreadPerf");
+const Routines = lazyPage(() => import("./pages/Routines"), "Routines");
+const Learnings = lazyPage(() => import("./pages/Pipelines"), "Learnings");
+const PipelineItemDetail = lazyPage(() => import("./pages/Pipelines"), "PipelineItemDetail");
+const PipelineItemLegacyRedirect = lazyPage(() => import("./pages/Pipelines"), "PipelineItemLegacyRedirect");
+const Pipelines = lazyPage(() => import("./pages/Pipelines"), "Pipelines");
+const ReviewQueue = lazyPage(() => import("./pages/Pipelines"), "ReviewQueue");
+const PipelineSettings = lazyPage(() => import("./pages/PipelineSettings"), "PipelineSettings");
+const PipelineAccessOverview = lazyPage(() => import("./pages/PipelineAccessOverview"), "PipelineAccessOverview");
+const Organisations = lazyPage(() => import("./pages/Organisations"), "Organisations");
+const OrganisationPage = lazyPage(() => import("./pages/OrganisationPage"), "OrganisationPage");
+const StatusCards = lazyPage(() => import("./pages/StatusCards"), "StatusCards");
+const RoutineDetail = lazyPage(() => import("./pages/RoutineDetail"), "RoutineDetail");
+const UserProfile = lazyPage(() => import("./pages/UserProfile"), "UserProfile");
+const ExecutionWorkspaceDetail = lazyPage(() => import("./pages/ExecutionWorkspaceDetail"), "ExecutionWorkspaceDetail");
+const Goals = lazyPage(() => import("./pages/Goals"), "Goals");
+const WorkflowTemplates = lazyPage(() => import("./pages/WorkflowTemplates"), "WorkflowTemplates");
+const Releases = lazyPage(() => import("./pages/Releases"), "Releases");
+const Billing = lazyPage(() => import("./pages/Billing"), "Billing");
+const Artifacts = lazyPage(() => import("./pages/Artifacts"), "Artifacts");
+const Deliverables = lazyPage(() => import("./pages/Deliverables"), "Deliverables");
+const Website = lazyPage(() => import("./pages/Website"), "Website");
+const Intelligence = lazyPage(() => import("./pages/Intelligence"), "Intelligence");
+const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
+const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
+const MemoryReview = lazyPage(() => import("./pages/MemoryReview"), "MemoryReview");
+const MemoryApps = lazyPage(() => import("./pages/MemoryApps"), "MemoryApps");
+const MemoryClientDetail = lazyPage(() => import("./pages/MemoryClients"), "MemoryClientDetail");
+const MemoryClients = lazyPage(() => import("./pages/MemoryClients"), "MemoryClients");
+const GoalDetail = lazyPage(() => import("./pages/GoalDetail"), "GoalDetail");
+const StrategyBoard = lazyPage(() => import("./pages/StrategyBoard"), "StrategyBoard");
+const Tutorials = lazyPage(() => import("./pages/Tutorials"), "Tutorials");
+const BoardAgentChat = lazyPage(() => import("./pages/BoardAgentChat"), "BoardAgentChat");
+const Approvals = lazyPage(() => import("./pages/Approvals"), "Approvals");
+const ApprovalDetail = lazyPage(() => import("./pages/ApprovalDetail"), "ApprovalDetail");
+const CompanyActivity = lazyPage(() => import("./pages/audit/CompanyActivity"), "CompanyActivity");
+const SinceLastVisit = lazyPage(() => import("./pages/SinceLastVisit"), "SinceLastVisit");
+const Calendar = lazyPage(() => import("./pages/Calendar"), "Calendar");
+const TeamScorecard = lazyPage(() => import("./pages/TeamScorecard"), "TeamScorecard");
+const WeeklyReport = lazyPage(() => import("./pages/WeeklyReport"), "WeeklyReport");
+const Integrations = lazyPage(() => import("./pages/Integrations"), "Integrations");
+const Images = lazyPage(() => import("./pages/Images"), "Images");
+const NotificationSettings = lazyPage(() => import("./pages/NotificationSettings"), "NotificationSettings");
+const MorningSummary = lazyPage(() => import("./pages/MorningSummary"), "MorningSummary");
+const AuditHub = lazyPage(() => import("./pages/audit/AuditHub"), "AuditHub");
+const MyTasks = lazyPage(() => import("./pages/MyTasks"), "MyTasks");
+const DecisionQueuePage = lazyPage(() => import("./pages/DecisionQueuePage"), "DecisionQueuePage");
+const BoardChat = lazyPage(() => import("./pages/BoardChat"), "BoardChat");
+const CompanySettings = lazyPage(() => import("./pages/CompanySettings"), "CompanySettings");
+const CompanyEnvironments = lazyPage(() => import("./pages/CompanyEnvironments"), "CompanyEnvironments");
+const BootstrapSetupUxLab = lazyPage(() => import("./pages/BootstrapSetupUxLab"), "BootstrapSetupUxLab");
+const ResponsibleUserDenialUxLab = lazyPage(() => import("./pages/ResponsibleUserDenialUxLab"), "ResponsibleUserDenialUxLab");
+const CrossIssueCollaborationUxLab = lazyPage(() => import("./pages/CrossIssueCollaborationUxLab"), "CrossIssueCollaborationUxLab");
+const CompanySettingsPluginPage = lazyPage(() => import("./pages/CompanySettingsPluginPage"), "CompanySettingsPluginPage");
+const CompanyAccess = lazyPage(() => import("./pages/CompanyAccess"), "CompanyAccess");
+const CompanyAccessLegacyRoute = lazyPage(() => import("./pages/CompanyAccess"), "CompanyAccessLegacyRoute");
+const AdvancedToolsRoute = lazyPage(() => import("./pages/tools/AdvancedToolsRoute"), "AdvancedToolsRoute");
+const ProfileWizardRoute = lazyPage(() => import("./pages/tools/profiles/ProfileWizardRoute"), "ProfileWizardRoute");
+const ProfileDetailRoute = lazyPage(() => import("./pages/tools/profiles/ProfileDetailRoute"), "ProfileDetailRoute");
+const Browse = lazyPage(() => import("./pages/apps/Browse"), "Browse");
+const Mailboxes = lazyPage(() => import("./pages/apps/Mailboxes"), "Mailboxes");
+const AppsConnect = lazyPage(() => import("./pages/apps/AppsConnect"), "AppsConnect");
+const ChatEndpointSetup = lazyPage(() => import("./pages/apps/chat/ChatEndpointSetup"), "ChatEndpointSetup");
+const ChatEndpointDetail = lazyPage(() => import("./pages/apps/chat/ChatEndpointDetail"), "ChatEndpointDetail");
+const ChatIdentityConfirm = lazyPage(() => import("./pages/apps/chat/ChatIdentityConfirm"), "ChatIdentityConfirm");
+const AppsReview = lazyPage(() => import("./pages/apps/AppsReview"), "AppsReview");
+const AppDetail = lazyPage(() => import("./pages/apps/AppDetail"), "AppDetail");
+const AppNotConnected = lazyPage(() => import("./pages/apps/AppNotConnected"), "AppNotConnected");
+const PaperclipCloudOAuthHandoffPage = lazyPage(() => import("./pages/apps/PaperclipCloudOAuthHandoff"), "PaperclipCloudOAuthHandoffPage");
+const GatewaysList = lazyPage(() => import("./pages/apps/gateways/GatewaysList"), "GatewaysList");
+const GatewayDetail = lazyPage(() => import("./pages/apps/gateways/GatewayDetail"), "GatewayDetail");
+const CompanySkills = lazyPage(() => import("./pages/CompanySkills"), "CompanySkills");
+const TeamCatalog = lazyPage(() => import("./pages/TeamCatalog"), "TeamCatalog");
+const SkillStudio = lazyPage(() => import("./pages/SkillStudio"), "SkillStudio");
+const Secrets = lazyPage(() => import("./pages/Secrets"), "Secrets");
+const CompanyImport = lazyPage(() => import("./pages/CompanyImport"), "CompanyImport");
+const DesignGuide = lazyPage(() => import("./pages/DesignGuide"), "DesignGuide");
+const InstanceExperimentalSettings = lazyPage(() => import("./pages/InstanceExperimentalSettings"), "InstanceExperimentalSettings");
+const InstanceAccess = lazyPage(() => import("./pages/InstanceAccess"), "InstanceAccess");
+const Fleet = lazyPage(() => import("./pages/Fleet"), "Fleet");
+const GetHelp = lazyPage(() => import("./pages/GetHelp"), "GetHelp");
+const ProfileSettings = lazyPage(() => import("./pages/ProfileSettings"), "ProfileSettings");
+const PluginManager = lazyPage(() => import("./pages/PluginManager"), "PluginManager");
+const PluginSettings = lazyPage(() => import("./pages/PluginSettings"), "PluginSettings");
+const AdapterManager = lazyPage(() => import("./pages/AdapterManager"), "AdapterManager");
+const PluginPage = lazyPage(() => import("./pages/PluginPage"), "PluginPage");
+const NewAgent = lazyPage(() => import("./pages/NewAgent"), "NewAgent");
+const JoinRequestQueue = lazyPage(() => import("./pages/JoinRequestQueue"), "JoinRequestQueue");
+
+const Dashboard = lazyPage(() => import("./pages/Dashboard"), "Dashboard");
+const IssueDetail = lazyPage(() => import("./pages/IssueDetail"), "IssueDetail");
+const Inbox = lazyPage(() => import("./pages/Inbox"), "Inbox");
+const WhatNeedsMe = lazyPage(() => import("./pages/WhatNeedsMe"), "WhatNeedsMe");
+const NeededFromYou = lazyPage(() => import("./pages/NeededFromYou"), "NeededFromYou");
 const CompanyExport = lazy(() =>
   import("./pages/CompanyExport").then((module) => ({ default: module.CompanyExport })),
 );
@@ -185,6 +204,7 @@ function boardRoutes() {
         path="company/settings/pipelines-access"
         element={<PipelinesExperimentalGate><PipelineAccessOverview /></PipelinesExperimentalGate>}
       />
+      <Route path="company/settings/integrations" element={<Integrations />} />
       <Route path="company/settings/tools" element={<LegacyToolsSettingsRedirect />} />
       <Route path="company/settings/tools/:tab" element={<LegacyToolsSettingsRedirect />} />
       <Route path="tools" element={<LegacyToolsRedirect />} />
@@ -397,18 +417,27 @@ function boardRoutes() {
         element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="images" element={<Images />} />
       <Route path="website" element={<Website />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
+      <Route path="memory/apps" element={<MemoryApps />} />
+      <Route path="memory/clients" element={<MemoryClients />} />
+      <Route path="memory/clients/:scopeId" element={<MemoryClientDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
       <Route path="approvals/all" element={<Approvals />} />
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="since-last-visit" element={<SinceLastVisit />} />
+      <Route path="calendar" element={<Calendar />} />
+      <Route path="scorecard" element={<TeamScorecard />} />
+      <Route path="weekly-report" element={<WeeklyReport />} />
+      <Route path="notifications" element={<NotificationSettings />} />
+      <Route path="morning" element={<MorningSummary />} />
       <Route path="activity" element={<CompanyActivity />} />
       <Route path="activity/runs" element={<AuditHub section="runs" />} />
       <Route path="activity/costs" element={<AuditHub section="costs" />} />
@@ -436,6 +465,7 @@ function boardRoutes() {
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
+      <Route path="needed" element={<NeededFromYou />} />
       <Route path="decisions" element={<WhatNeedsMe />} />
       <Route path="my-tasks" element={<MyTasks />} />
       <Route path="decisions/queues/:key" element={<DecisionQueuePage />} />
@@ -762,6 +792,7 @@ function NoCompaniesStartPage() {
 export function App() {
   return (
     <>
+      <Suspense fallback={<BrandLoading />}>
       <Routes>
         <Route path="oauth-handoff" element={<PaperclipCloudOAuthHandoffPage />} />
         <Route path="auth" element={<AuthPage />} />
@@ -811,11 +842,18 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="calendar" element={<UnprefixedBoardRedirect />} />
+          <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
+          <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
+          <Route path="images" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/apps" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients/:scopeId" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           <Route path="audit/*" element={<UnprefixedBoardRedirect />} />
           <Route path="activity" element={<UnprefixedBoardRedirect />} />
@@ -857,13 +895,17 @@ export function App() {
           <Route path="execution-workspaces/:workspaceId/runtime-logs" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/issues" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/routines" element={<UnprefixedExecutionWorkspaceRedirect />} />
+          {UNPREFIXED_BOARD_ROOTS.map((root) => (
+            <Route key={`unprefixed-${root}`} path={`${root}/*`} caseSensitive element={<UnprefixedBoardRedirect />} />
+          ))}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
           <Route path="*" element={<NotFoundPage scope="global" />} />
         </Route>
       </Routes>
-      <OnboardingWizardVariant />
+      </Suspense>
+      <OnDemandOnboarding />
     </>
   );
 }

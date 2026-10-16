@@ -15,15 +15,15 @@ export interface SidebarSectionDefault {
  * destination appears exactly once; feature switches decide which ones render.
  */
 export const SIDEBAR_SECTIONS: readonly SidebarSectionDefault[] = [
-  { id: "today", label: "Today", items: ["decisions", "my-tasks", "inbox"] },
+  { id: "today", label: "Today", items: ["needed", "decisions", "my-tasks", "inbox", "calendar"] },
   { id: "chats", label: "Chats", items: ["chats"] },
-  { id: "clients", label: "Clients", items: ["organisations", "pipelines", "deep-dive", "deliverables"] },
+  { id: "clients", label: "Clients", items: ["organisations", "pipelines", "deep-dive", "deliverables", "images"] },
   {
     id: "work",
     label: "Work",
     items: ["dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory"],
   },
-  { id: "team", label: "Team", items: ["agents", "conference-room", "status"] },
+  { id: "team", label: "Team", items: ["agents", "scorecard", "weekly-report", "conference-room", "status"] },
   {
     id: "admin",
     label: "Admin",

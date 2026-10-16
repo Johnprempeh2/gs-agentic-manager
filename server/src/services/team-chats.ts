@@ -17,6 +17,9 @@ import {
   extractAgentMentionIds,
   extractUserMentionIds,
   teamChatAgentHops,
+  teamChatAlertReason,
+  teamChatSnippet,
+  type TeamChatAlertReason,
   type IssueCommentPresentation,
   type TeamChatMember,
   type TeamChatSummary,
@@ -59,16 +62,6 @@ function notice(title: string): IssueCommentPresentation {
   return { kind: "system_notice", tone: "info", title: title.slice(0, NOTICE_TITLE_LIMIT), detailsDefaultOpen: false, density: "compact" };
 }
 
-/** Mention links read as their label; markdown punctuation is dropped. */
-export function plainSnippet(markdown: string, limit = 140): string {
-  const text = markdown
-    .replace(/\[([^\]]*)]\([^)]*\)/g, "$1")
-    .replace(/[*_`>#~]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
-}
-
 function authorTypeOf(row: { authorType: string | null; authorAgentId: string | null; authorUserId: string | null }) {
   if (row.authorAgentId) return "agent" as const;
   if (row.authorType === "system") return "system" as const;
@@ -103,7 +96,7 @@ export function teamChatService(
 
   async function participants(issueId: string) {
     return db
-      .select({ type: issueParticipants.principalType, id: issueParticipants.principalId })
+      .select({ type: issueParticipants.principalType, id: issueParticipants.principalId, mutedAt: issueParticipants.mutedAt })
       .from(issueParticipants)
       .where(eq(issueParticipants.issueId, issueId));
   }
@@ -187,7 +180,7 @@ export function teamChatService(
     if (!chats.length) return [];
     const ids = chats.map((chat) => chat.id);
     const memberRows = await db
-      .select({ issueId: issueParticipants.issueId, type: issueParticipants.principalType, id: issueParticipants.principalId })
+      .select({ issueId: issueParticipants.issueId, type: issueParticipants.principalType, id: issueParticipants.principalId, mutedAt: issueParticipants.mutedAt })
       .from(issueParticipants)
       .where(inArray(issueParticipants.issueId, ids));
     const nameOf = await names(memberRows);
@@ -218,6 +211,7 @@ export function teamChatService(
           members,
           lastMessageAt: stat?.last_at ? new Date(stat.last_at).toISOString() : null,
           unreadCount: Number(stat?.unread ?? 0),
+          muted: memberRows.some((row) => row.issueId === chat.id && row.type === "user" && row.id === userId && row.mutedAt !== null),
         };
       })
       .sort((a, b) => (b.lastMessageAt ?? "").localeCompare(a.lastMessageAt ?? ""));
@@ -228,7 +222,7 @@ export function teamChatService(
     await logActivity(db, {
       companyId: chat.companyId, actorType: "system", actorId: "team_chat",
       action: "issue.comment_added", entityType: "issue", entityId: chat.id,
-      details: { commentId: comment.id },
+      details: { commentId: comment.id, teamChat: true },
     });
     return comment;
   }
@@ -320,6 +314,20 @@ export function teamChatService(
       if (!removed.length) throw notFound("Not a member of this chat");
     },
 
+    /** Mute or unmute the chat for one member. Mentions still alert a muted member. */
+    async setMuted(chat: ChatIssue, userId: string, muted: boolean) {
+      const updated = await db
+        .update(issueParticipants)
+        .set({ mutedAt: muted ? new Date() : null })
+        .where(and(
+          eq(issueParticipants.issueId, chat.id),
+          eq(issueParticipants.principalType, "user"),
+          eq(issueParticipants.principalId, userId),
+        ))
+        .returning({ id: issueParticipants.id });
+      if (!updated.length) throw unprocessable("Only members can mute a chat");
+    },
+
     /**
      * Which agents a message wakes: only mentioned members, never the author,
      * and nobody once agents have mentioned each other TEAM_CHAT_AGENT_HOP_LIMIT
@@ -387,23 +395,28 @@ export function teamChatService(
     },
 
     /**
-     * Phone notifications for one new message: the other person in a direct
-     * message, and anyone @mentioned (members only in a team chat, active
-     * company members elsewhere). Only people who turned push on have phones
-     * registered. At most one push per person per chat every two minutes.
+     * Phone notifications for one new message. In a team chat every person in
+     * it except the author (teamChatAlertReason: muted members only when
+     * @mentioned); elsewhere anyone @mentioned who is an active company member.
+     * Only people who turned push on have phones registered. At most one push
+     * per person per chat every two minutes, except @mentions, which always go.
      */
-    async notifyPeople(issue: { id: string; companyId: string; identifier: string | null; title: string; originKind?: string | null; originId?: string | null }, comment: { body: string }, author: TeamChatActor) {
+    async notifyPeople(issue: { id: string; companyId: string; identifier: string | null; title: string; originKind?: string | null; originId?: string | null }, comment: { id?: string; body: string }, author: TeamChatActor) {
       try {
         const chat = isTeamChat(issue);
         const mentioned = new Set(extractUserMentionIds(comment.body));
-        const recipients = new Map<string, "dm" | "mention">();
+        const recipients = new Map<string, TeamChatAlertReason>();
+        const direct = chat && isDirect({ originId: issue.originId ?? null });
         if (chat) {
           const members = (await participants(issue.id)).filter((row) => row.type === "user");
-          const direct = isDirect({ originId: issue.originId ?? null });
           for (const member of members) {
-            if (author.type === "user" && member.id === author.id) continue;
-            if (mentioned.has(member.id)) recipients.set(member.id, "mention");
-            else if (direct) recipients.set(member.id, "dm");
+            const why = teamChatAlertReason({
+              recipientUserId: member.id,
+              author,
+              muted: member.mutedAt !== null,
+              mentionedUserIds: [...mentioned],
+            });
+            if (why) recipients.set(member.id, why);
           }
         } else if (mentioned.size) {
           const active = await db
@@ -419,20 +432,24 @@ export function teamChatService(
         }
         if (!recipients.size) return 0;
         const at = now();
-        const due = [...recipients].filter(([userId]) => (lastPushAt.get(`${userId}:${issue.id}`) ?? 0) + PUSH_WINDOW_MS <= at);
+        const due = [...recipients].filter(([userId, why]) =>
+          why === "mention" || (lastPushAt.get(`${userId}:${issue.id}`) ?? 0) + PUSH_WINDOW_MS <= at);
         if (!due.length) return 0;
         const nameOf = await names([author]);
         const authorName = nameOf(author.type, author.id);
         const [company] = await db.select({ prefix: companies.issuePrefix }).from(companies).where(eq(companies.id, issue.companyId));
+        // A chat alert opens at the message itself, not just the newest one.
         const url = chat
-          ? `/${company?.prefix ?? ""}/messages/${issue.id}`
+          ? `/${company?.prefix ?? ""}/messages/${issue.id}${comment.id ? `#comment-${comment.id}` : ""}`
           : `/${company?.prefix ?? ""}/issues/${issue.identifier ?? issue.id}`;
         let sent = 0;
         for (const [userId, why] of due) {
           lastPushAt.set(`${userId}:${issue.id}`, at);
           const message: DecisionPushMessage = {
-            title: why === "dm" ? authorName : chat ? `${authorName} mentioned you in ${issue.title}` : `${authorName} mentioned you`,
-            body: plainSnippet(comment.body),
+            title: why === "mention"
+              ? chat && !direct ? `${authorName} mentioned you in ${issue.title}` : `${authorName} mentioned you`
+              : direct ? authorName : `${authorName} in ${issue.title}`,
+            body: teamChatSnippet(comment.body),
             url,
             tag: `chat:${issue.id}`,
           };

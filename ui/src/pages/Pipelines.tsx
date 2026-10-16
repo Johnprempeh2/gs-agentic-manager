@@ -109,6 +109,7 @@ import {
 import { IssueChatThread } from "../components/IssueChatThread";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { PipelineHealthBar } from "../components/PipelineHealthWarnings";
 import { PipelineItemBodyDocument } from "../components/PipelineItemBodyDocument";
 import { PipelineLivenessBanner } from "../components/PipelineLivenessBanner";
@@ -686,7 +687,7 @@ export function PipelineStageDistribution({ pipeline }: { pipeline: Pick<Pipelin
   );
 }
 
-const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-[minmax(0,1fr)_11rem_5rem_6rem_7.5rem] lg:items-start lg:gap-x-6";
+const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-(--gtc-72) lg:items-start lg:gap-x-6";
 
 interface PipelinesIndexTableProps {
   pipelines: PipelineListItem[];
@@ -1129,6 +1130,7 @@ function PipelinesIndex() {
         <EmptyState
           icon={Hexagon}
           message="No pipelines yet."
+          description="A pipeline tracks clients or deals stage by stage, from first contact to signed work."
           action={canCreatePipelines ? "New pipeline" : undefined}
           onAction={canCreatePipelines ? () => setNewPipelineOpen(true) : undefined}
         />
@@ -1903,6 +1905,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   }, [pipelineId]);
 
   if (pipelineQuery.isLoading || casesQuery.isLoading) return <PageSkeleton />;
+  // A failed load says so, rather than an empty board or "not found".
+  if (pipelineQuery.error && !pipeline) {
+    return <ErrorState error={pipelineQuery.error} title="Could not load this pipeline" onRetry={() => void pipelineQuery.refetch()} />;
+  }
+  if (casesQuery.error && !casesQuery.data) {
+    return <ErrorState error={casesQuery.error} title="Could not load the items" onRetry={() => void casesQuery.refetch()} />;
+  }
   if (!pipeline) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }
@@ -2953,6 +2962,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   });
 
   if (pipeline.isLoading || item.isLoading) return <PageSkeleton />;
+  if (pipeline.error && !pipeline.data) {
+    return <ErrorState error={pipeline.error} title="Could not load this pipeline" onRetry={() => void pipeline.refetch()} />;
+  }
+  if (item.error && !detail) {
+    return <ErrorState error={item.error} title="Could not load this item" onRetry={() => void item.refetch()} />;
+  }
   if (!detail || !pipeline.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Item not found.</div>;
   }
@@ -4496,6 +4511,12 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   });
 
   if (pipeline.isLoading || intake.isLoading) return <PageSkeleton />;
+  if (pipeline.error && !pipeline.data) {
+    return <ErrorState error={pipeline.error} title="Could not load this pipeline" onRetry={() => void pipeline.refetch()} />;
+  }
+  if (intake.error && !intake.data) {
+    return <ErrorState error={intake.error} title="Could not load the intake form" onRetry={() => void intake.refetch()} />;
+  }
   if (!pipeline.data || !intake.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }

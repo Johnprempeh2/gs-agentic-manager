@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Agent } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import { AlertTriangle, ArrowUpRight, Bot, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Clock, ExternalLink, FileText, GitBranch, ImagePlus, KeyRound, Loader2, MessageSquareQuote, MinusCircle, ShieldAlert, ThumbsUp, TriangleAlert, Wrench, X, XCircle } from "lucide-react";
 import { Link } from "@/lib/router";
 import { formatAssigneeUserLabel } from "../lib/assignees";
@@ -32,6 +33,7 @@ import {
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
+import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { InteractionGuideSheet, InteractionGuideText } from "./InteractionGuide";
 import { interactionGuideSummary, needsInteractionGuide } from "../lib/interaction-guide";
 import { Button } from "./ui/button";
@@ -879,7 +881,7 @@ function SuggestTasksCard({
 
       {interaction.status === "accepted" ? (
         <div className="rounded-sm border border-emerald-500/60 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-emerald-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-success-foreground">
             Resolution summary
           </div>
           <p className="mt-1 leading-6">
@@ -892,7 +894,7 @@ function SuggestTasksCard({
 
       {interaction.status === "rejected" ? (
         <div className="rounded-sm border border-rose-500/60 bg-rose-500/10 px-4 py-3 text-sm text-rose-900 dark:text-rose-100">
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-rose-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-danger-foreground">
             Rejection reason
           </div>
           <p className={cn(
@@ -1015,7 +1017,7 @@ function QuestionOptionButton({
         "w-full rounded-sm border px-4 py-3 text-left transition-colors outline-none focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50",
         selected
           ? "border-sky-500/80 bg-sky-500/10 text-sky-950 dark:border-sky-400/80 dark:bg-sky-400/15 dark:text-sky-50"
-          : "border-border/70 bg-transparent text-foreground hover:border-sky-500/70 hover:bg-sky-500/10 dark:hover:border-sky-400/70 dark:hover:bg-sky-400/10",
+          : "border-border/70 bg-field text-foreground hover:border-sky-500/70 hover:bg-sky-500/10 dark:hover:border-sky-400/70 dark:hover:bg-sky-400/10",
       )}
       id={id}
       onClick={onClick}
@@ -1470,8 +1472,8 @@ function AskUserQuestionsCard({
           })}
 
           {interaction.result?.summaryMarkdown ? (
-            <div className="rounded-2xl border border-emerald-300/60 bg-emerald-50/85 p-4">
-              <div className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-emerald-700">
+            <div className="rounded-2xl border border-status-success/40 bg-status-success-soft p-4">
+              <div className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-success-foreground">
                 Submitted summary
               </div>
               <MarkdownBody externalReferences={externalReferences}>{interaction.result.summaryMarkdown}</MarkdownBody>
@@ -1605,7 +1607,7 @@ function RequestConfirmationResolution({
             <RequestConfirmationTargetChip interaction={interaction} target={target} />
           </div>
           <div className="rounded-sm border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-            <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-amber-700">
+            <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-warning-foreground">
               Agent resume failed
             </div>
             <p className="mt-1 leading-6">
@@ -1672,7 +1674,7 @@ function RequestConfirmationResolution({
          * generically as "Expired".
          */}
         {expiredByIssueClosed ? null : (
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-amber-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-warning-foreground">
             {expiredByComment ? "Expired by comment" : "Expired by target change"}
           </div>
         )}
@@ -1696,7 +1698,7 @@ function RequestConfirmationResolution({
               tone="subtle"
             />
             {staleTarget && target ? (
-              <ChevronRight className="h-3.5 w-3.5 text-amber-700" />
+              <ChevronRight className="h-3.5 w-3.5 text-status-warning-foreground" />
             ) : null}
             <RequestConfirmationTargetChip interaction={interaction} target={target} />
           </div>
@@ -2625,8 +2627,12 @@ function RequestConfirmationCard({
   const allowScreenshots = isPlan && Boolean(onUploadImage);
   const rejectRequiresReason = interaction.payload.rejectRequiresReason === true;
   const allowRevise = interaction.payload.allowDeclineReason !== false;
+  // A typed ask (access, file, signature...) gets answers in plain words.
+  const askType = readAskType(interaction.payload);
+  const askCopy = askType ? ASK_TYPE_COPY[askType] : null;
   const reasonPlaceholder =
     interaction.payload.declineReasonPlaceholder
+    ?? (askCopy ? `Optional: ${askCopy.declinePlaceholder.toLowerCase()}.` : null)
     ?? (interaction.payload.acceptLabel === "Approve plan"
       ? "Optional: what would you like revised?"
       : "Optional: tell the agent what you'd change.");
@@ -2710,8 +2716,8 @@ function RequestConfirmationCard({
   const actionRow = (
     <ConfirmationActionRow
       resetKey={`${interaction.id}:${interaction.status}`}
-      approveLabel={interaction.payload.acceptLabel ?? CONFIRMATION_APPROVE_LABEL}
-      rejectLabel={CONFIRMATION_REJECT_LABEL}
+      approveLabel={interaction.payload.acceptLabel ?? askCopy?.acceptLabel ?? CONFIRMATION_APPROVE_LABEL}
+      rejectLabel={askCopy ? interaction.payload.rejectLabel ?? askCopy.rejectLabel : CONFIRMATION_REJECT_LABEL}
       approveVariant={isPlan ? "cta" : "default"}
       primaryActionOnRight={primaryActionOnRight}
       allowRevise={allowRevise}
@@ -2822,6 +2828,9 @@ function RequestConfirmationCard({
             interaction={interaction}
             target={interaction.payload.target}
           />
+          <div className="flex justify-end">
+            <CopyMarkdownButton markdown={details ? `${prompt}\n\n${details}` : prompt} />
+          </div>
         </div>
       ) : null}
 

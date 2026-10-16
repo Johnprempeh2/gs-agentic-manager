@@ -165,10 +165,11 @@ type InteractionWakeup = (
   options: {
     source: "automation";
     triggerDetail: "system";
-    reason: "issue_commented";
+    reason: "issue_commented" | "pull_request_merged";
     payload: Record<string, unknown>;
     idempotencyKey: string;
     allowRunCoalescing?: boolean;
+    issueStateGuard?: { statuses: string[]; assigneeAgentId: string };
     requestedByActorType: "system";
     requestedByActorId: string;
     contextSnapshot: Record<string, unknown>;
@@ -893,8 +894,10 @@ function normalizeCreateInteractionInput(
       return {
         ...input,
         // "Done" on an at-your-desk card wakes the agent to check (GRE-450).
+        // A typed ask (access, file, signature...) always wakes its agent:
+        // the person acted, so the agent must carry on.
         continuationPolicy:
-          input.payload.atDesk && input.continuationPolicy === "none"
+          (input.payload.atDesk || input.payload.askType) && input.continuationPolicy === "none"
             ? "wake_assignee"
             : input.continuationPolicy,
         payload: {
@@ -2879,7 +2882,13 @@ export function issueThreadInteractionService(
         return references.length > 0 ? [{ ...row, references }] : [];
       });
       if (candidates.length === 0) {
-        return { checked: rows.length, candidates: 0, accepted: 0, woken: 0 };
+        return {
+          checked: rows.length,
+          candidates: 0,
+          accepted: 0,
+          woken: 0,
+          acceptedIssueIds: [] as string[],
+        };
       }
 
       const candidateIds = candidates.map(({ interaction }) => interaction.id);
@@ -2938,6 +2947,9 @@ export function issueThreadInteractionService(
 
       let accepted = 0;
       let woken = 0;
+      // Tasks whose merge confirmation this sweep accepted. The webhook path
+      // uses this to avoid waking the same task twice for one merge.
+      const acceptedIssueIds = new Set<string>();
       for (const candidate of eligible) {
         const allMerged = candidate.references.every((reference) => {
           const key = `${candidate.issue.companyId}:${reference.owner.toLowerCase()}/${reference.repo.toLowerCase()}#${reference.number}`;
@@ -2976,6 +2988,8 @@ export function issueThreadInteractionService(
         accepted += 1;
 
         const wakeIssue = resolved.continuationIssue ?? candidate.issue;
+        acceptedIssueIds.add(candidate.issue.id);
+        acceptedIssueIds.add(wakeIssue.id);
         const shouldWake =
           resolved.interaction.continuationPolicy === "wake_assignee" ||
           resolved.interaction.continuationPolicy === "wake_assignee_on_accept";
@@ -3026,6 +3040,7 @@ export function issueThreadInteractionService(
         candidates: eligible.length,
         accepted,
         woken,
+        acceptedIssueIds: [...acceptedIssueIds],
       };
     },
     listForIssue: async (issueId: string) => {

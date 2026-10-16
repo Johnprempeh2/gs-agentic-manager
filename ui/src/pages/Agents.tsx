@@ -893,7 +893,7 @@ function AgentMetaColumns({
       {week !== undefined && (
         <div className="w-28 min-w-0 text-right leading-tight" title="What this agent's work in the last 7 days would cost on the API">
           <div className="truncate text-xs font-medium tabular-nums text-foreground">
-            {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "None"}
+            {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "$0"}
           </div>
           <div className="truncate text-(length:--text-micro) tabular-nums text-subtle-foreground">
             {week?.runCount ? `${week.runCount} ${week.runCount === 1 ? "run" : "runs"} this week` : "No runs this week"}
@@ -921,8 +921,11 @@ function AgentMetaColumns({
           </div>
         </div>
       )}
-      <span className="w-24 whitespace-nowrap text-right text-xs text-muted-foreground">
-        {agent.lastHeartbeatAt ? relativeTime(agent.lastHeartbeatAt) : "Never"}
+      <span
+        className="w-28 whitespace-nowrap text-right text-xs text-muted-foreground"
+        title="When this agent last checked in for work"
+      >
+        {agent.lastHeartbeatAt ? `Active ${relativeTime(agent.lastHeartbeatAt)}` : "Not run yet"}
       </span>
     </>
   );
@@ -947,7 +950,7 @@ function LiveRunIndicator({
         <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
         <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
       </span>
-      <span className="text-(length:--text-micro) font-medium text-blue-600 dark:text-blue-400">
+      <span className="text-(length:--text-micro) font-medium text-blue-700 dark:text-blue-400">
         Live{liveCount > 1 ? ` (${liveCount})` : ""}
       </span>
     </Link>

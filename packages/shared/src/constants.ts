@@ -88,6 +88,7 @@ export const ADAPTER_AGNOSTIC_KEYS = [
   "graceSec",
   "bootstrapPromptTemplate",
   "paperclipSkillSync",
+  "requiredCapabilities",
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
 
@@ -211,6 +212,10 @@ export const ISSUE_PRIORITIES = ["critical", "high", "medium", "low"] as const;
 export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
 export const ISSUE_REVIEW_POLICIES = ["anyone", "not_creator", "human_only"] as const;
 export type IssueReviewPolicy = (typeof ISSUE_REVIEW_POLICIES)[number];
+
+/** Who a blocked task is waiting on, beyond its unblock owner. */
+export const ISSUE_UNBLOCK_WAITING_ON = ["client", "board", "outside"] as const;
+export type IssueUnblockWaitingOn = (typeof ISSUE_UNBLOCK_WAITING_ON)[number];
 export const ISSUE_WORK_MODES = ["standard", "ask", "planning", "skill_test"] as const;
 export type IssueWorkMode = (typeof ISSUE_WORK_MODES)[number];
 export const ISSUE_HARNESS_KINDS = ["skill_test"] as const;
@@ -714,7 +719,7 @@ export type EnvironmentCustomImageSetupConnectionType =
 export const ROUTINE_STATUSES = ["active", "paused", "archived"] as const;
 export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
 
-export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active"] as const;
+export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"] as const;
 export type RoutineConcurrencyPolicy = (typeof ROUTINE_CONCURRENCY_POLICIES)[number];
 
 export const ROUTINE_CATCH_UP_POLICIES = ["skip_missed", "enqueue_missed_with_cap"] as const;
@@ -740,6 +745,7 @@ export const ROUTINE_RUN_STATUSES = [
   "coalesced",
   "skipped",
   "issue_created",
+  "issue_reopened",
   "completed",
   "failed",
  ] as const;

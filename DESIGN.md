@@ -103,3 +103,44 @@ tokenize motion. Principles — reasoning only; values live in `ui/src/index.css
 - **Reduced motion is honored at the token layer.** A `prefers-reduced-motion: reduce`
   block collapses the duration/stagger tokens to zero, cascading to every scoped token,
   in addition to each animation's own component-level guard.
+
+## Daylight (light mode) surfaces
+
+Light mode is a sage-stone canvas (`--background`) under white surfaces
+(`--card`). Depth comes from that step plus layered shadows, not extra borders.
+
+- **Surfaces.** Use `bg-card` (or the `Card` component, `gs-glass-card`) for
+  anything that holds content. A bare `rounded-* border border-border` box with
+  no `bg-*` class takes the card fill in light mode automatically
+  (`greatstone-glass.css`); give it an explicit `bg-*` to opt out. Never assume
+  `--card` and `--background` are the same colour.
+- **Fields.** Inputs, textareas and select triggers use `bg-field`: white in
+  light mode, transparent on the void (where `dark:bg-input/30` applies).
+- **Lime.** `bg-highlight text-highlight-foreground` is the brand lime under ink
+  in both themes. Lime is never text or a thin line on a light surface (1.15:1).
+- **Destructive.** A deep brick (`--destructive`) in light mode, so a Reject
+  button can sit beside Approve without shouting.
+- **Status colour.** Use the status tokens (`bg-status-success-soft
+  text-status-success-foreground`, and the warning, danger and info sets) for
+  chips, eyebrows and notes. Named Tailwind palette classes are capped by
+  `scripts/check-named-colors.baseline.json`; the foreground tokens are tuned
+  to reach WCAG AA (4.5:1) on both the card and the soft fill.
+- **Contrast.** Body text, chips and counts must reach 4.5:1 (3:1 for large
+  text) on the surface they sit on, in both themes. Check new colours before
+  adding them; "close enough" in daylight is often 3:1.
+- **Scrim.** Dialogs dim the page with `--glass-scrim` and a light blur, not a
+  black wash.
+
+## Night (dark mode) surfaces
+
+Dark mode keeps the near-black void (`--background`) with cards one step
+above it (`--card`), and popovers one step above that (`--popover`). The same
+rule as daylight applies: a card must read as raised, so never set `--card`
+equal to `--background`.
+
+- **Hover and focus.** Hover uses `--accent` (a faint lime tint). Focus is the
+  solid lime `--ring`, never removed without a visible replacement.
+- **Text on fills.** Text and fallback initials on a coloured fill inherit the
+  fill's foreground (`text-current`), never `text-muted-foreground`.
+- **Markdown.** Rendered markdown pins headings and table headers to
+  `--foreground`, so prose defaults never leave near-black text on the void.

@@ -1,0 +1,2 @@
+ALTER TABLE "notification_preferences" ADD COLUMN "weekly_report" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "notification_preferences" ADD COLUMN "last_weekly_report_on" text;

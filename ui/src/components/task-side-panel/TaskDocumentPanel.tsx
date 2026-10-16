@@ -7,6 +7,7 @@ import { issuesApi } from "@/api/issues";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "@/components/IssueDocumentAnnotations";
 import { IssueDocumentEvidence } from "@/components/IssueDocumentEvidence";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
 import { queryKeys } from "@/lib/queryKeys";
 import { documentDisplayTitle } from "@/lib/issue-artifacts";
 import { useLocation } from "@/lib/router";
@@ -79,6 +80,9 @@ export function TaskDocumentPanel({
             panelOpen={annotationPanelOpen}
             onToggle={() => setAnnotationPanelOpen((open) => !open)}
           />
+          {document.body.trim() ? (
+            <CopyMarkdownButton markdown={document.body} className="ml-auto" />
+          ) : null}
         </div>
       </header>
       {document.body.trim() ? (

@@ -55,6 +55,7 @@ import { AttachmentPreviewContext } from "../context/AttachmentPreviewContext";
 import { IssueWorkspaceCard } from "../components/IssueWorkspaceCard";
 import { TaskPreviewLink } from "../components/LivePreviewCard";
 import { ImageGalleryModal } from "../components/ImageGalleryModal";
+import { MakeImageButton } from "../components/MakeImageDialog";
 import { FileViewerProvider } from "../context/FileViewerContext";
 import { ArtifactFileChip } from "../components/ArtifactFileChip";
 import { ScrollToBottom } from "../components/ScrollToBottom";
@@ -868,7 +869,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     !treeControlPreviewLoading &&
     !treeControlPreviewError;
   const attachmentUploadButton = (
-    <>
+    <div className="flex items-center gap-2">
       <input
         ref={fileInputRef}
         type="file"
@@ -898,7 +899,12 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
           </>
         )}
       </Button>
-    </>
+      <MakeImageButton
+        companyId={issue.companyId}
+        onAttach={(file) => uploadAttachment.mutateAsync(file)}
+        disabled={uploadAttachment.isPending}
+      />
+    </div>
   );
 
   // Task Chat Redesign ("not sticky" header): the parent breadcrumb, the

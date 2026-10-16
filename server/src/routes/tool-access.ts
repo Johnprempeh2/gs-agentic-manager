@@ -1519,6 +1519,13 @@ function connectorEnrollmentPrincipal(req: Request): string {
     res.json(await svc.listAppsNeedingAttention(companyId));
   });
 
+  router.get("/companies/:companyId/tools/agent-access", async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await svc.listAgentAccess(companyId));
+  });
+
   router.get("/companies/:companyId/tools/action-requests", async (req, res) => {
     assertBoard(req);
     const companyId = req.params.companyId as string;

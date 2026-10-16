@@ -5,8 +5,9 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureTour } from "@/components/FeatureTour";
-import { PIPELINE_BOARD_TOUR } from "@/lib/feature-tours";
+import { CORE_TOURS, PIPELINE_BOARD_TOUR } from "@/lib/feature-tours";
 import { tourSeenKey } from "@/hooks/useTourSeen";
+import { GLOSSARY } from "@/lib/glossary";
 import { Tutorials } from "./Tutorials";
 
 const flags = vi.hoisted(() => ({
@@ -38,6 +39,8 @@ vi.mock("@/api/pipelines", () => ({
     listCases: async () => [],
   },
 }));
+vi.mock("@/api/issues", () => ({ issuesApi: { list: async () => [{ id: "i1", identifier: "GRE-7" }] } }));
+vi.mock("@/api/agents", () => ({ agentsApi: { list: async () => [] } }));
 vi.mock("@/api/tools", () => ({ toolsApi: { listConnections: async () => ({ connections: [] }) } }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1", selectedCompany: null }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
@@ -103,19 +106,45 @@ describe("Tutorials", () => {
     await render();
     const ids = [...document.querySelectorAll("[data-testid^='tutorial-']")].map((el) => el.getAttribute("data-testid"));
     // Board and Share with agents are hidden: their switches are off.
-    expect(ids).toEqual(["tutorial-pipelines-list", "tutorial-pipeline-board", "tutorial-client-case", "tutorial-website"]);
+    expect(ids).toEqual([
+      ...CORE_TOURS.map((tour) => `tutorial-${tour.id}`),
+      "tutorial-search-ask",
+      "tutorial-pipelines-list",
+      "tutorial-pipeline-board",
+      "tutorial-client-case",
+      "tutorial-website",
+    ]);
     expect(row("pipelines-list")!.textContent).toContain("Seen");
     expect(row("pipeline-board")!.textContent).toContain("Not seen yet");
     expect(row("website")!.textContent).toContain("Visitors and Google Search");
   });
 
-  it("says so when no tour's feature is switched on", async () => {
+  it("keeps the everyday pages when no feature is switched on, and drops the Features group", async () => {
     flags.enablePipelines = false;
     flags.enableWebsiteView = false;
     await render();
-    expect(document.querySelector("[data-testid^='tutorial-']")).toBeNull();
-    expect(container.textContent).toContain("No tutorials yet");
+    expect(row("dashboard")).not.toBeNull();
+    expect(row("website")).toBeNull();
+    expect(document.querySelector('section[aria-label="Features"]')).toBeNull();
+    expect(document.querySelector('section[aria-label="Everyday pages"]')).not.toBeNull();
     flags.enableWebsiteView = true;
+  });
+
+  it("Start on the task tour opens the newest task, and says so when there are no agents", async () => {
+    await render();
+    await act(async () => startButton("agent-detail").click());
+    await flush();
+    expect(row("agent-detail")!.textContent).toContain("There are no agents yet");
+    await act(async () => startButton("task-detail").click());
+    await flush();
+    expect(pathname).toBe("/issues/GRE-7");
+  });
+
+  it("Start on an everyday page opens that page with its tour", async () => {
+    await render();
+    await act(async () => startButton("decisions").click());
+    await flush();
+    expect(pathname).toBe("/decisions");
   });
 
   it("Start opens the first live pipeline's board and starts its tour there", async () => {
@@ -144,5 +173,29 @@ describe("Tutorials", () => {
     expect(localStorage.getItem(tourSeenKey({ id: "website", version: 1 }, "ama"))).toBeNull();
     expect(row("pipelines-list")!.textContent).toContain("Not seen yet");
     expect(container.textContent).toContain("Every tutorial will open again");
+  });
+  it("lists the words we use in plain words", async () => {
+    await render();
+    const words = document.getElementById("words")!;
+    const terms = [...words.querySelectorAll("dt")].map((el) => el.textContent);
+    expect(terms).toEqual(GLOSSARY.map((entry) => entry.term));
+    expect(words.querySelector("#word-routine")?.textContent).toContain("Work that repeats on a schedule");
+  });
+
+  it("leads a new person through the first four tours in order", async () => {
+    server.rows = [{ tourKey: "needed", tourVersion: 2, seenAt: "2026-10-01T00:00:00.000Z" }];
+    await render();
+    const card = document.querySelector<HTMLElement>('[data-testid="tutorials-start-here"]')!;
+    expect(card.textContent).toContain("1 of 4 done");
+    expect([...card.querySelectorAll("li")].map((li) => li.textContent)).toEqual([
+      "1. Needed from you(done)",
+      "2. Decisions(not done yet)",
+      "3. Tasks(not done yet)",
+      "4. Agents(not done yet)",
+    ]);
+    const next = [...card.querySelectorAll("button")].find((el) => el.textContent === "Next: Decisions")!;
+    await act(async () => next.click());
+    await flush();
+    expect(pathname).toBe("/decisions");
   });
 });

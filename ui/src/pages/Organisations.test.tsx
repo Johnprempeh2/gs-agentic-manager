@@ -21,6 +21,7 @@ const mockApi = vi.hoisted(() => ({
   archiveContact: vi.fn(),
 }));
 
+const accessMock = vi.hoisted(() => ({ listMembers: vi.fn() }));
 const mockPipelinesApi = vi.hoisted(() => ({ list: vi.fn() }));
 
 const mockPeople = vi.hoisted(() => ({
@@ -28,7 +29,9 @@ const mockPeople = vi.hoisted(() => ({
   agents: [{ id: "agent-1", name: "Sales Agent", status: "idle" }] as unknown[],
 }));
 vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
-vi.mock("@/api/access", () => ({ accessApi: { listUserDirectory: () => Promise.resolve({ users: mockPeople.users }) } }));
+vi.mock("@/api/access", () => ({
+  accessApi: { ...accessMock, listUserDirectory: () => Promise.resolve({ users: mockPeople.users }) },
+}));
 vi.mock("@/api/agents", () => ({ agentsApi: { list: () => Promise.resolve(mockPeople.agents) } }));
 vi.mock("@/api/pipelines", () => ({ pipelinesApi: mockPipelinesApi }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
@@ -36,6 +39,8 @@ vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompan
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => state.isPhone }));
 // The Pipedrive import has its own tests (PipedriveImport.test.tsx).
 vi.mock("@/components/PipedriveImport", () => ({ PipedriveImport: () => null }));
+vi.mock("@/components/HubspotImport", () => ({ HubspotImport: () => null }));
+vi.mock("@/components/NotionImport", () => ({ NotionImport: () => null }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
@@ -94,6 +99,13 @@ describe("Organisations page", () => {
       },
       { id: "pipe-old", name: "Old", archivedAt: "2026-01-01T00:00:00Z", stages: [] },
     ]);
+    accessMock.listMembers.mockReset();
+    accessMock.listMembers.mockResolvedValue({
+      members: [
+        { principalId: "user-ama", status: "active", user: { name: "Ama Owusu", email: "ama@example.com" } },
+        { principalId: "user-gone", status: "suspended", user: { name: "Former Member", email: null } },
+      ],
+    });
   });
 
   afterEach(() => {
@@ -413,5 +425,43 @@ describe("Organisations page", () => {
     await settle();
     expect(mockApi.create).not.toHaveBeenCalled();
     expect(document.body.textContent).toContain("Add the currency of the annual revenue");
+  });
+
+  it("picks the country owner from the team, or takes a typed name", async () => {
+    mockApi.list.mockResolvedValue([]);
+    mockApi.create.mockResolvedValue(organisation({}));
+    await render();
+
+    const add = [...container.querySelectorAll("button")].find((button) => button.textContent === "Add organisation")!;
+    await act(async () => add.click());
+    await settle();
+    await act(async () => setValue(document.querySelector<HTMLInputElement>("#organisation-name")!, "Acme Mining"));
+    const owner = document.querySelector<HTMLSelectElement>("#organisation-countryOwnerUserId")!;
+    const options = [...owner.options].map((option) => option.textContent);
+    expect(options).toEqual(["Nobody yet", "Ama Owusu", "Someone else (type a name)"]);
+
+    await act(async () => setValue(owner, "user-ama"));
+    const submit = () => [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find(
+      (button) => button.textContent === "Add organisation",
+    )!;
+    await act(async () => submit().click());
+    await settle();
+    expect(mockApi.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({
+      countryOwnerUserId: "user-ama",
+      countryOwner: "Ama Owusu",
+    }));
+
+    // Saving closes the dialog; a second organisation takes a typed owner.
+    await act(async () => add.click());
+    await settle();
+    await act(async () => setValue(document.querySelector<HTMLInputElement>("#organisation-name")!, "Blue Bank"));
+    await act(async () => setValue(document.querySelector<HTMLSelectElement>("#organisation-countryOwnerUserId")!, "__other"));
+    await act(async () => setValue(document.querySelector<HTMLInputElement>('input[aria-label="Country owner name"]')!, "Kwame"));
+    await act(async () => submit().click());
+    await settle();
+    expect(mockApi.create).toHaveBeenLastCalledWith("company-1", expect.objectContaining({
+      countryOwnerUserId: null,
+      countryOwner: "Kwame",
+    }));
   });
 });

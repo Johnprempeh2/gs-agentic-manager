@@ -28,6 +28,9 @@ export const organisations = pgTable(
     industry: text("industry"),
     country: text("country"),
     countryOwner: text("country_owner"),
+    // The GSAM user who owns the country (Ben, 12 Oct), when the owner is a
+    // member. country_owner keeps their name for search and imports.
+    countryOwnerUserId: text("country_owner_user_id"),
     status: text("status").notNull().default("target"),
     notes: text("notes"),
     // Global CRM fields (GRE-1539). `country` above is the address country.
@@ -72,7 +75,7 @@ export const organisations = pgTable(
       .on(table.companyId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
     statusCheck: check("organisations_status_check", sql`${table.status} in ('target', 'prospect', 'client', 'former')`),
-    sourceCheck: check("organisations_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv')`),
+    sourceCheck: check("organisations_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')`),
     sizeBandCheck: check(
       "organisations_size_band_check",
       sql`${table.sizeBand} is null or ${table.sizeBand} in ('1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5001+')`,
@@ -113,6 +116,6 @@ export const organisationContacts = pgTable(
     externalUq: uniqueIndex("organisation_contacts_company_source_external_uq")
       .on(table.companyId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
-    sourceCheck: check("organisation_contacts_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv')`),
+    sourceCheck: check("organisation_contacts_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')`),
   }),
 );

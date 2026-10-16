@@ -88,6 +88,18 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./team-scorecard.js";
+export type {
+  BlockedWorkIssueRef,
+  BlockedWorkItem,
+  BlockedWorkOverview,
+  BlockedWorkOwner,
+  BlockedWorkOwnerType,
+  BlockedWorkRootCause,
+  BlockedWorkTidyReason,
+} from "./blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -520,6 +532,11 @@ export type {
   ToolAppAttentionItem,
   ToolAppAttentionReason,
   ToolAppsAttentionResponse,
+  AgentAccessAgentSummary,
+  AgentAccessItem,
+  AgentAccessItemKind,
+  AgentAccessItemState,
+  AgentAccessSummary,
   ToolActionRequestListItem,
   ToolActionRequestsResponse,
   ToolConnectionActivityResponse,

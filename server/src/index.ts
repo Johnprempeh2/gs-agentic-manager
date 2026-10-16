@@ -126,6 +126,8 @@ import {
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { pushNotificationService } from "./services/push-notifications.js";
+import { morningSummaryService } from "./services/morning-summary.js";
+import { weeklyReportService } from "./services/weekly-report.js";
 import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
@@ -2120,6 +2122,12 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
+              const reconciled = await heartbeat.reconcileWaitingDatesPassed();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic waiting-date sweep woke assignees whose expected date passed");
+              }
+            })
+            .then(async () => {
               const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
               if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
@@ -2159,6 +2167,8 @@ async function startServerWithDatabaseTeardown(
   // users who turned notifications on, so it costs nothing until someone does.
   // A self-rescheduling timer: a slow round never overlaps the next.
   const decisionPushes = pushNotificationService(db as any);
+  const morningSummaries = morningSummaryService(db as any);
+  const weeklyReports = weeklyReportService(db as any);
   let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
   let decisionPushStopped = false;
   const scheduleDecisionPushRound = () => {
@@ -2167,6 +2177,12 @@ async function startServerWithDatabaseTeardown(
       void decisionPushes
         .notifyNewDecisions()
         .catch((err) => logger.warn({ err }, "decision push round failed"))
+        // The morning summary rides the same round: each person's chosen hour, once a day.
+        .then(() => morningSummaries.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "morning summary round failed"))
+        // The weekly report goes on Monday at the same hour, for people who chose it.
+        .then(() => weeklyReports.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "weekly report round failed"))
         .finally(scheduleDecisionPushRound);
     }, DECISION_PUSH_INTERVAL_MS);
     decisionPushTimer.unref?.();

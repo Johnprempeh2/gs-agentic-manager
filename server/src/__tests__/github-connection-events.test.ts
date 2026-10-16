@@ -2,11 +2,15 @@ import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   activityLog,
+  agents,
   companies,
   connectionEventDeliveries,
   connectionGrants,
   createDb,
   externalObjects,
+  issueThreadInteractions,
+  issueWorkProducts,
+  issues,
   toolApplications,
   toolConnections,
 } from "@greatstone/db";
@@ -36,6 +40,10 @@ describeEmbeddedPostgres.sequential("GitHub connection event delivery", () => {
 
   afterEach(async () => {
     await db.delete(activityLog);
+    await db.delete(issueThreadInteractions);
+    await db.delete(issueWorkProducts);
+    await db.delete(issues);
+    await db.delete(agents);
     await db.delete(connectionEventDeliveries);
     await db.delete(externalObjects);
     await db.delete(connectionGrants);
@@ -491,5 +499,250 @@ describeEmbeddedPostgres.sequential("GitHub connection event delivery", () => {
     await vi.waitFor(() => expect(lease).toHaveBeenCalledTimes(3));
     pending[2]!(null);
     await expect(next).resolves.toEqual(nothingPolled);
+  });
+  async function seedCompanyWithGitHub(issuePrefix: string) {
+    const companyId = randomUUID();
+    const applicationId = randomUUID();
+    const connectionId = randomUUID();
+    const grantId = randomUUID();
+    await db.insert(companies).values({ id: companyId, name: "GS Agentic Manager", issuePrefix });
+    await db.insert(toolApplications).values({
+      id: applicationId,
+      companyId,
+      applicationKey: `github-${randomUUID()}`,
+      name: "GitHub",
+      type: "mcp_server",
+      status: "active",
+    });
+    await db.insert(toolConnections).values({
+      id: connectionId,
+      companyId,
+      applicationId,
+      name: "GitHub",
+      uid: `github-${randomUUID()}`,
+      transport: "mcp_remote",
+      authKind: "oauth",
+      credentialPolicy: "per_user",
+      status: "active",
+      enabled: true,
+      config: { sourceTemplateKey: "github", oauth: { connectorProfile: "github.code" } },
+      transportConfig: {},
+    });
+    await db.insert(connectionGrants).values({
+      id: grantId,
+      companyId,
+      connectionId,
+      kind: "user",
+      subjectUserId: `github-owner-${randomUUID()}`,
+      status: "active",
+      isDefault: false,
+      providerTenant: {
+        oauth: { strategy: "paperclip_cloud_connector", accessTokenExpiresAt: null },
+        github: {
+          userId: "42",
+          login: "octocat",
+          installationCount: 1,
+          repositoryCount: 1,
+          repositorySelection: "selected",
+          installationIds: ["101"],
+          installationOwnerLogins: ["paperclipai"],
+          webhookHealth: "healthy",
+        },
+      },
+    });
+    return { companyId, grantId };
+  }
+
+  async function seedTaskWithPullRequest(input: {
+    companyId: string;
+    status: string;
+    url: string;
+    workProductStatus?: string;
+  }) {
+    const agentId = randomUUID();
+    const issueId = randomUUID();
+    const workProductId = randomUUID();
+    await db.insert(agents).values({
+      id: agentId,
+      companyId: input.companyId,
+      name: `Coder ${agentId.slice(0, 8)}`,
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+    await db.insert(issues).values({
+      id: issueId,
+      companyId: input.companyId,
+      title: "Ship the change",
+      status: input.status,
+      priority: "medium",
+      assigneeAgentId: agentId,
+    });
+    await db.insert(issueWorkProducts).values({
+      id: workProductId,
+      companyId: input.companyId,
+      issueId,
+      type: "pull_request",
+      provider: "github",
+      title: "Pull request",
+      url: input.url,
+      status: input.workProductStatus ?? "ready_for_review",
+    });
+    return { agentId, issueId, workProductId };
+  }
+
+  function pullRequestEvent(grantId: string, input: { id: string; merged: boolean; number?: number }) {
+    const number = input.number ?? 123;
+    return {
+      id: input.id,
+      provider: "github" as const,
+      event: "pull_request",
+      action: "closed",
+      installationId: "101",
+      repositoryId: "99",
+      createdAt: "2026-09-04T12:00:00.000Z",
+      bindingIds: [`${grantId}_101`],
+      payload: {
+        repository: "paperclipai/paperclip",
+        number,
+        state: "closed",
+        merged: input.merged,
+        ...(input.merged ? { mergedAt: "2026-09-04T11:59:00.000Z" } : {}),
+        updatedAt: "2026-09-04T11:59:01.000Z",
+        url: `https://github.com/paperclipai/paperclip/pull/${number}`,
+      },
+    };
+  }
+
+  async function workProductStatus(id: string) {
+    const [row] = await db.select({ status: issueWorkProducts.status })
+      .from(issueWorkProducts)
+      .where(eq(issueWorkProducts.id, id));
+    return row?.status;
+  }
+
+  it("wakes the assignee of an open task once when its pull request merges", async () => {
+    const { companyId, grantId } = await seedCompanyWithGitHub("GHM");
+    const other = await seedCompanyWithGitHub("GHO");
+    const url = "https://github.com/paperclipai/paperclip/pull/123";
+    const inReview = await seedTaskWithPullRequest({ companyId, status: "in_review", url });
+    const done = await seedTaskWithPullRequest({ companyId, status: "done", url });
+    const unrelated = await seedTaskWithPullRequest({
+      companyId,
+      status: "in_review",
+      url: "https://github.com/paperclipai/paperclip/pull/124",
+    });
+    const otherCompany = await seedTaskWithPullRequest({ companyId: other.companyId, status: "in_review", url });
+
+    const event = pullRequestEvent(grantId, { id: "delivery_merged_wake_123", merged: true });
+    const { connector } = connectorLeasing(async () => ({ leaseId: `lease-${randomUUID()}`, events: [event] }));
+    const wakeup = vi.fn(async () => ({ id: "wake-1" }));
+    let currentTime = new Date("2026-09-04T12:00:05.000Z");
+    const service = githubConnectionEventService(db, { connector, now: () => currentTime, wakeup });
+
+    await expect(service.pollOnce()).resolves.toMatchObject({ processed: 1, failed: 0 });
+    expect(wakeup).toHaveBeenCalledTimes(1);
+    expect(wakeup).toHaveBeenCalledWith(inReview.agentId, expect.objectContaining({
+      reason: "pull_request_merged",
+      requestedByActorType: "system",
+      requestedByActorId: "system:pr-merged",
+      idempotencyKey: `pull_request_merged:${inReview.issueId}:paperclipai/paperclip#123`,
+      payload: expect.objectContaining({
+        issueId: inReview.issueId,
+        pullRequest: "paperclipai/paperclip#123",
+        pullRequestUrl: url,
+      }),
+      contextSnapshot: expect.objectContaining({
+        issueId: inReview.issueId,
+        wakeReason: "pull_request_merged",
+      }),
+    }));
+
+    expect(await workProductStatus(inReview.workProductId)).toBe("merged");
+    expect(await workProductStatus(done.workProductId)).toBe("ready_for_review");
+    expect(await workProductStatus(unrelated.workProductId)).toBe("ready_for_review");
+    expect(await workProductStatus(otherCompany.workProductId)).toBe("ready_for_review");
+
+    const audit = await db.select().from(activityLog).where(eq(activityLog.action, "issue.work_product_updated"));
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({
+      companyId,
+      actorType: "system",
+      actorId: "system:pr-merged",
+      entityType: "issue",
+      entityId: inReview.issueId,
+      details: expect.objectContaining({
+        workProductId: inReview.workProductId,
+        previousStatus: "ready_for_review",
+        status: "merged",
+        pullRequest: "paperclipai/paperclip#123",
+      }),
+    });
+
+    // A redelivered event is a duplicate and wakes nobody again.
+    currentTime = new Date(currentTime.getTime() + 6_000);
+    await expect(service.pollOnce()).resolves.toMatchObject({ duplicate: 1 });
+    expect(wakeup).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing when a pull request is closed without merging", async () => {
+    const { companyId, grantId } = await seedCompanyWithGitHub("GHC");
+    const task = await seedTaskWithPullRequest({
+      companyId,
+      status: "in_review",
+      url: "https://github.com/paperclipai/paperclip/pull/123",
+    });
+    const event = pullRequestEvent(grantId, { id: "delivery_closed_123", merged: false });
+    const { connector } = connectorLeasing(async () => ({ leaseId: "lease-closed", events: [event] }));
+    const wakeup = vi.fn(async () => ({ id: "wake-1" }));
+    const service = githubConnectionEventService(db, {
+      connector,
+      now: () => new Date("2026-09-04T12:00:05.000Z"),
+      wakeup,
+    });
+
+    await expect(service.pollOnce()).resolves.toMatchObject({ processed: 1, failed: 0 });
+    expect(wakeup).not.toHaveBeenCalled();
+    expect(await workProductStatus(task.workProductId)).toBe("ready_for_review");
+  });
+
+  it("wakes once when the same merge also accepts a pending merge confirmation", async () => {
+    const { companyId, grantId } = await seedCompanyWithGitHub("GHD");
+    const task = await seedTaskWithPullRequest({
+      companyId,
+      status: "in_review",
+      url: "https://github.com/paperclipai/paperclip/pull/123",
+    });
+    const interactionId = randomUUID();
+    await db.insert(issueThreadInteractions).values({
+      id: interactionId,
+      companyId,
+      issueId: task.issueId,
+      kind: "request_confirmation",
+      status: "pending",
+      continuationPolicy: "wake_assignee_on_accept",
+      requestedResolverPolicy: "board_only",
+      effectiveResolverPolicy: "board_only",
+      title: "Merge paperclipai/paperclip#123?",
+      payload: { version: 1, prompt: "Merge the PR?" },
+    });
+    const event = pullRequestEvent(grantId, { id: "delivery_merged_confirm_123", merged: true });
+    const { connector } = connectorLeasing(async () => ({ leaseId: "lease-confirm", events: [event] }));
+    const wakeup = vi.fn(async () => ({ id: "wake-1" }));
+    const service = githubConnectionEventService(db, {
+      connector,
+      now: () => new Date("2026-09-04T12:00:05.000Z"),
+      wakeup,
+    });
+
+    await expect(service.pollOnce()).resolves.toMatchObject({ processed: 1, failed: 0 });
+    expect(wakeup).toHaveBeenCalledTimes(1);
+    expect(wakeup).toHaveBeenCalledWith(task.agentId, expect.objectContaining({
+      idempotencyKey: `interaction:${interactionId}:accepted`,
+    }));
+    expect(await workProductStatus(task.workProductId)).toBe("merged");
   });
 });

@@ -127,7 +127,7 @@ vi.mock("../context/GeneralSettingsContext", () => ({
 
 vi.mock("../hooks/useInboxBadge", () => ({
   useDismissedInboxAlerts: () => ({ dismissed: new Set(), dismiss: vi.fn() }),
-  useInboxDismissals: () => ({ dismissedAtByKey: new Map(), dismiss: vi.fn() }),
+  useInboxDismissals: () => ({ dismissals: [], dismissedAtByKey: new Map(), dismiss: vi.fn(), snooze: vi.fn(), restore: vi.fn() }),
   useReadInboxItems: () => ({
     readItems: new Set(),
     markRead: vi.fn(),
@@ -389,6 +389,31 @@ describe("Inbox toolbar", () => {
     container.remove();
   });
 
+  it("says the inbox failed to load instead of showing Inbox zero", async () => {
+    routerMock.location.pathname = "/inbox/mine";
+    apiMocks.issuesList.mockRejectedValue(new Error("Server unavailable"));
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0, gcTime: 0 } },
+    });
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <Inbox />
+        </QueryClientProvider>,
+      );
+    });
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("The inbox could not load");
+    });
+    expect(container.textContent).toContain("Server unavailable");
+    expect(container.textContent).not.toContain("Inbox zero.");
+
+    act(() => root.unmount());
+  });
+
   it("does not render external-object summaries in inbox rows", async () => {
     routerMock.location.pathname = "/inbox/mine";
     const issue = createIssue({ title: "Inbox row without external object column" });
@@ -441,7 +466,7 @@ describe("Inbox toolbar", () => {
       );
     });
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Hire Agent: New teammate");
+      expect(container.textContent).toContain("Hire an agent: New teammate");
       expect(container.textContent).toContain("Failed run");
       expect(container.textContent).toContain("Jordan Example");
     });
@@ -450,7 +475,7 @@ describe("Inbox toolbar", () => {
       [...container.querySelectorAll("[data-inbox-item]")]
         .find((row) => row.textContent?.includes(text));
 
-    for (const text of ["Hire Agent: New teammate", "Failed run", "Jordan Example"]) {
+    for (const text of ["Hire an agent: New teammate", "Failed run", "Jordan Example"]) {
       const row = rowFor(text);
       expect(row, `missing inbox row for ${text}`).toBeDefined();
       expect(row?.querySelector('button[aria-label="Mark as read"]')).not.toBeNull();
@@ -461,7 +486,7 @@ describe("Inbox toolbar", () => {
       expect(row?.querySelector("[data-inbox-row-surface]")).not.toBeNull();
     }
 
-    const approvalRow = rowFor("Hire Agent: New teammate");
+    const approvalRow = rowFor("Hire an agent: New teammate");
     const approvalActions = [...(approvalRow?.querySelectorAll("button") ?? [])]
       .filter((button) => button.textContent === "Approve" || button.textContent === "Reject");
     expect(approvalActions.length).toBeGreaterThanOrEqual(2);

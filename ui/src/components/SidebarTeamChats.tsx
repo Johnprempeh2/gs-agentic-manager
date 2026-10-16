@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MessageSquarePlus, User, Users } from "lucide-react";
+import { BellOff, MessageSquarePlus, User, Users } from "lucide-react";
 import type { TeamChatSummary } from "@greatstone/shared";
 import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
@@ -101,6 +101,9 @@ export function SidebarTeamChats({ agentChatsFollow = false }: { agentChatsFollo
             active={activeId === chat.id}
             badge={chat.unreadCount > 0 ? chat.unreadCount : undefined}
             badgeLabel="unread"
+            badgeTone={chat.muted ? "quiet" : "default"}
+            trailing={chat.muted ? <BellOff aria-hidden="true" className="size-3 shrink-0 text-subtle-foreground" /> : undefined}
+            trailingLabel={chat.muted ? "muted" : undefined}
           />
         ))}
         {rail ? (

@@ -7,6 +7,7 @@ import {
   activityLog,
   agents,
   companies,
+  authUsers,
   companyMemberships,
   createDb,
   heartbeatRuns,
@@ -51,6 +52,7 @@ describeEmbeddedPostgres("organisation routes (GRE-1477)", () => {
     await db.delete(organisations);
     await db.delete(principalPermissionGrants);
     await db.delete(companyMemberships);
+    await db.delete(authUsers);
     await db.delete(heartbeatRuns);
     await db.delete(agents);
     await db.delete(companies);
@@ -207,6 +209,36 @@ describeEmbeddedPostgres("organisation routes (GRE-1477)", () => {
     expect(actions.map((row) => row.action)).toEqual(
       expect.arrayContaining(["organisation.created", "organisation.updated", "organisation.archived", "organisation.contact_created"]),
     );
+  });
+
+  it("links the country owner to an active member and keeps their name for search", async () => {
+    const companyId = await seedCompany();
+    const owner = await seedMember(companyId, "operator");
+    const ownerId = (owner as { userId: string }).userId;
+    const now = new Date();
+    await db.insert(authUsers).values({ id: ownerId, name: "Ama Owusu", email: "ama@example.com", createdAt: now, updatedAt: now });
+    const http = request(app());
+
+    const created = await http
+      .post(`/api/companies/${companyId}/organisations`)
+      .send({ name: "Acme", countryOwner: "someone else", countryOwnerUserId: ownerId })
+      .expect(201);
+    expect(created.body).toMatchObject({ countryOwnerUserId: ownerId, countryOwner: "Ama Owusu" });
+    const found = await http.get(`/api/companies/${companyId}/organisations`).query({ q: "Ama" }).expect(200);
+    expect(JSON.stringify(found.body)).toContain("Acme");
+
+    // Someone outside the company, or a suspended member, cannot own it.
+    await http
+      .patch(`/api/companies/${companyId}/organisations/${created.body.id}`)
+      .send({ countryOwnerUserId: "not-a-member" })
+      .expect(422);
+
+    // Unlinking keeps a typed name.
+    const unlinked = await http
+      .patch(`/api/companies/${companyId}/organisations/${created.body.id}`)
+      .send({ countryOwnerUserId: null, countryOwner: "Kofi (Pipedrive)" })
+      .expect(200);
+    expect(unlinked.body).toMatchObject({ countryOwnerUserId: null, countryOwner: "Kofi (Pipedrive)" });
   });
 
   it("searches by name, country and contact name, and filters by status", async () => {

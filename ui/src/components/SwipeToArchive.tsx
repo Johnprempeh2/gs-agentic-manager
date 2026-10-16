@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Archive } from "lucide-react";
+import { Archive, Clock } from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface SwipeToArchiveProps {
   children: ReactNode;
-  onArchive: () => void;
+  /** Swipe left to archive the row. Off when not given. */
+  onArchive?: () => void;
+  /** Swipe right to put the row away for later. Off when not given. */
+  onSnooze?: () => void;
+  snoozeLabel?: string;
   disabled?: boolean;
   selected?: boolean;
   className?: string;
+  /** The row's resting background, to match the surface it sits on. */
+  surfaceClassName?: string;
 }
 
 const COMMIT_THRESHOLD = 0.32;
@@ -17,9 +23,12 @@ const COMMIT_DELAY_MS = 140;
 export function SwipeToArchive({
   children,
   onArchive,
+  onSnooze,
+  snoozeLabel = "Later",
   disabled = false,
   selected = false,
   className,
+  surfaceClassName = "bg-background",
 }: SwipeToArchiveProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const startPointRef = useRef<{ x: number; y: number } | null>(null);
@@ -78,17 +87,22 @@ export function SwipeToArchive({
     setOffsetX(0);
   };
 
-  const commitArchive = () => {
+  const commitSwipe = (direction: "left" | "right") => {
+    const action = direction === "right" ? onSnooze : onArchive;
     clearArchiveTimeout();
+    if (!action) {
+      reset();
+      return;
+    }
     const node = containerRef.current;
     if (!node) {
-      onArchive();
+      action();
       return;
     }
     startPointRef.current = null;
     setIsDragging(false);
     setLockedHeight(node.offsetHeight);
-    const commitOffset = -Math.max(widthRef.current, node.offsetWidth);
+    const commitOffset = (direction === "right" ? 1 : -1) * Math.max(widthRef.current, node.offsetWidth);
     offsetXRef.current = commitOffset;
     setOffsetX(commitOffset);
     window.requestAnimationFrame(() => {
@@ -98,7 +112,7 @@ export function SwipeToArchive({
     });
     archiveTimeoutRef.current = window.setTimeout(() => {
       archiveTimeoutRef.current = null;
-      onArchive();
+      action();
     }, COMMIT_DELAY_MS);
   };
 
@@ -133,7 +147,7 @@ export function SwipeToArchive({
       suppressClickRef.current = true;
     }
 
-    if (deltaX >= 0) {
+    if ((deltaX >= 0 && !onSnooze) || (deltaX <= 0 && !onArchive)) {
       event.preventDefault();
       setIsDragging(true);
       offsetXRef.current = 0;
@@ -144,7 +158,7 @@ export function SwipeToArchive({
     const maxSwipe = widthRef.current > 0 ? widthRef.current * MAX_SWIPE : Number.POSITIVE_INFINITY;
     event.preventDefault();
     setIsDragging(true);
-    const nextOffset = Math.max(deltaX, -maxSwipe);
+    const nextOffset = Math.min(Math.max(deltaX, -maxSwipe), maxSwipe);
     offsetXRef.current = nextOffset;
     setOffsetX(nextOffset);
   };
@@ -155,7 +169,7 @@ export function SwipeToArchive({
       widthRef.current > 0 && Math.abs(offsetXRef.current) >= widthRef.current * COMMIT_THRESHOLD;
     if (shouldCommit) {
       releaseClickSuppressionSoon();
-      commitArchive();
+      commitSwipe(offsetXRef.current > 0 ? "right" : "left");
       return;
     }
     if (isDragging) releaseClickSuppressionSoon();
@@ -168,7 +182,9 @@ export function SwipeToArchive({
     reset();
   };
 
-  const archiveReveal = widthRef.current > 0 ? Math.min(Math.abs(offsetX) / widthRef.current, 1) : 0;
+  const reveal = widthRef.current > 0 ? Math.min(Math.abs(offsetX) / widthRef.current, 1) : 0;
+  const archiveReveal = offsetX < 0 ? reveal : 0;
+  const snoozeReveal = offsetX > 0 ? reveal : 0;
 
   return (
     <div
@@ -190,24 +206,38 @@ export function SwipeToArchive({
         clearClickSuppression();
       }}
     >
-      <div
-        aria-hidden="true"
-        // Visible only while actually swiping: the selected row surface is
-        // translucent (matching the task-list hover), so a resting opacity
-        // floor would tint the whole row green and ghost the label through.
-        className="pointer-events-none absolute inset-0 flex items-center justify-end rounded-lg bg-emerald-600 px-4 text-white"
-        style={{ opacity: archiveReveal }}
-      >
-        <span className="inline-flex items-center gap-2 text-sm font-medium">
-          <Archive className="h-4 w-4" />
-          Archive
-        </span>
-      </div>
+      {onArchive ? (
+        <div
+          aria-hidden="true"
+          // Visible only while actually swiping: the selected row surface is
+          // translucent (matching the task-list hover), so a resting opacity
+          // floor would tint the whole row green and ghost the label through.
+          className="pointer-events-none absolute inset-0 flex items-center justify-end rounded-lg bg-emerald-600 px-4 text-white"
+          style={{ opacity: archiveReveal }}
+        >
+          <span className="inline-flex items-center gap-2 text-sm font-medium">
+            <Archive className="h-4 w-4" />
+            Archive
+          </span>
+        </div>
+      ) : null}
+      {onSnooze ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex items-center justify-start rounded-lg bg-status-info-soft px-4 text-status-info-foreground"
+          style={{ opacity: snoozeReveal }}
+        >
+          <span className="inline-flex items-center gap-2 text-sm font-medium">
+            <Clock className="h-4 w-4" />
+            {snoozeLabel}
+          </span>
+        </div>
+      ) : null}
       <div
         data-inbox-row-surface
         className={cn(
           "relative will-change-transform",
-          selected ? "rounded-lg bg-accent/50" : "bg-background",
+          selected ? "rounded-lg bg-accent/50" : surfaceClassName,
         )}
         style={{
           transform: `translate3d(${offsetX}px, 0, 0)`,

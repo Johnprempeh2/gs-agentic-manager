@@ -51,6 +51,8 @@ export const queryKeys = {
   tools: {
     applications: (companyId: string) =>
       ["tools", companyId, "applications"] as const,
+    agentAccess: (companyId: string) =>
+      ["tools", companyId, "agent-access"] as const,
     connections: (companyId: string) =>
       ["tools", companyId, "connections"] as const,
     connection: (connectionId: string) =>
@@ -321,6 +323,10 @@ export const queryKeys = {
       ["issues", companyId, "blocked-attention"] as const,
     countBlockedAttention: (companyId: string) =>
       ["issues", companyId, "blocked-attention", "count"] as const,
+    blockedWork: (companyId: string) =>
+      ["issues", companyId, "blocked-work"] as const,
+    recoveryHolds: (companyId: string) =>
+      ["issues", companyId, "recovery-holds"] as const,
     labels: (companyId: string) => ["issues", companyId, "labels"] as const,
     listByProject: (companyId: string, projectId: string) =>
       ["issues", companyId, "project", projectId] as const,
@@ -630,6 +636,12 @@ export const queryKeys = {
         groupIssueId ?? "",
       ] as const,
   },
+  images: {
+    all: (companyId: string) => ["images", companyId] as const,
+    status: (companyId: string) => ["images", companyId, "status"] as const,
+    list: (companyId: string) => ["images", companyId, "list"] as const,
+    detail: (imageId: string) => ["images", "detail", imageId] as const,
+  },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
     list: (companyId: string, params: Record<string, string | undefined>) =>
@@ -667,6 +679,9 @@ export const queryKeys = {
     graph: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "graph", filters] as const,
     node: (companyId: string, recordId: string) => ["memory-graph", companyId, "node", recordId] as const,
+    scopes: (companyId: string) => ["memory-graph", companyId, "scopes"] as const,
+    connections: (companyId: string) => ["memory-graph", companyId, "connections"] as const,
+    connectionActivity: (companyId: string, agentId: string) => ["memory-graph", companyId, "connections", agentId, "activity"] as const,
     edge: (companyId: string, edgeId: string) => ["memory-graph", companyId, "edge", edgeId] as const,
     activity: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "activity", filters] as const,
@@ -767,6 +782,11 @@ export const queryKeys = {
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
   /** "Since you were last here" (GRE-357). */
   agentWorkDigest: (companyId: string) => ["agent-work-digest", companyId] as const,
+  calendar: (companyId: string, from: string, to: string) => ["calendar", companyId, from, to] as const,
+  teamScorecard: (companyId: string, days: number) => ["team-scorecard", companyId, days] as const,
+  notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
+  morningSummary: (companyId: string) => ["morning-summary", companyId] as const,
+  weeklyReport: (companyId: string) => ["weekly-report", companyId] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   /** One Decisions feed (GRE-263). Under the `attention` prefix so every
    *  existing attention invalidation also refreshes the feed and its count. */

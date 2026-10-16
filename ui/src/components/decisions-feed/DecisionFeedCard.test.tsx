@@ -206,6 +206,15 @@ describe("DecisionFeedCard rendering per kind", () => {
     expect(decisionKindLabel(blockedCard(), "blocked")).toBe("Blocked");
   });
 
+  it("names a typed ask by what the agent needs", () => {
+    const card = confirmationCard();
+    card.items = card.items.map((item) => ({
+      ...item,
+      subject: { ...item.subject, metadata: { ...item.subject.metadata, askType: "grant_access" } },
+    })) as DecisionCard["items"];
+    expect(decisionKindLabel(card, "question")).toBe("Access needed");
+  });
+
   it("folds the task actions into More when the card is answered in place", async () => {
     render(questionCard());
     expect(hasButton("Reassign")).toBe(false);

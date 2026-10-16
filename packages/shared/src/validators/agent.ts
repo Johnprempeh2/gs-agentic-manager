@@ -13,6 +13,7 @@ import { trustAuthorizationPolicySchema, trustPresetSchema } from "./trust-polic
 import { agentDesiredSkillSelectionSchema } from "./adapter-skills.js";
 import { objectWithoutDefaults } from "./partial.js";
 import { PIPELINE_ACCESS_LEVELS } from "../pipeline-access.js";
+import { RUN_CAPABILITY_KEYS, isRunCapabilityKey } from "../run-capabilities.js";
 
 export const agentPermissionsSchema = z.object({
   // No schema default: the server derives the default (enabled unless the
@@ -43,6 +44,17 @@ export const upsertAgentInstructionsFileSchema = z.object({
 export type UpsertAgentInstructionsFile = z.infer<typeof upsertAgentInstructionsFileSchema>;
 
 const adapterConfigSchema = z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+  const requiredCapabilities = value.requiredCapabilities;
+  if (
+    requiredCapabilities !== undefined &&
+    (!Array.isArray(requiredCapabilities) || !requiredCapabilities.every(isRunCapabilityKey))
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `adapterConfig.requiredCapabilities must be a list of: ${RUN_CAPABILITY_KEYS.join(", ")}`,
+      path: ["requiredCapabilities"],
+    });
+  }
   const envValue = value.env;
   if (envValue === undefined) return;
   const parsed = envConfigSchema.safeParse(envValue);

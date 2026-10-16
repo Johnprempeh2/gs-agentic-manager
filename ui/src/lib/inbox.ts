@@ -334,6 +334,25 @@ export function buildInboxDismissedAtByKey(dismissals: InboxDismissal[]): Map<st
   );
 }
 
+/** Swiping a task right in the Inbox puts it away until 08:00 the next morning. */
+export function inboxSnoozeUntilTomorrow(now: Date = new Date()): Date {
+  const until = new Date(now);
+  until.setDate(until.getDate() + 1);
+  until.setHours(8, 0, 0, 0);
+  return until;
+}
+
+/** Tasks put away for later that have not come back yet. */
+export function activeSnoozedInboxIssueIds(dismissals: InboxDismissal[], now: number = Date.now()): Set<string> {
+  const ids = new Set<string>();
+  for (const dismissal of dismissals) {
+    if (dismissal.kind !== "snooze" || !dismissal.itemKey.startsWith("issue:")) continue;
+    if (normalizeTimestamp(dismissal.snoozedUntil) <= now) continue;
+    ids.add(dismissal.itemKey.slice("issue:".length));
+  }
+  return ids;
+}
+
 export function isInboxEntityDismissed(
   dismissedAtByKey: ReadonlyMap<string, number>,
   itemKey: string,

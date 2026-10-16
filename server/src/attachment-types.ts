@@ -190,3 +190,17 @@ export function formatAttachmentSize(bytes: number): string {
   const rounded = value.toFixed(1).replace(/\.0$/, "");
   return `${rounded} ${ATTACHMENT_SIZE_UNITS[unitIndex]}`;
 }
+
+/**
+ * A Content-Disposition value that survives any stored filename. Node throws
+ * ERR_INVALID_CHAR on a raw header with characters above U+00FF (such as
+ * "合同.pdf"), so the plain `filename` keeps printable ASCII only and the full
+ * name travels in `filename*` (RFC 6266 / RFC 5987).
+ */
+export function contentDispositionHeader(type: "inline" | "attachment", filename: string): string {
+  const name = filename.trim() || "file";
+  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  if (ascii === name) return `${type}; filename="${ascii}"`;
+  const encoded = encodeURIComponent(name).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return `${type}; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}

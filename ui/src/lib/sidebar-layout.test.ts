@@ -12,10 +12,10 @@ import {
 import { mergeSectionOrder } from "./sidebar-section-order";
 
 const EVERY_DESTINATION = [
-  "decisions", "my-tasks", "inbox", "chats",
-  "organisations", "pipelines", "deep-dive", "deliverables",
+  "needed", "decisions", "my-tasks", "inbox", "calendar", "chats",
+  "organisations", "pipelines", "deep-dive", "deliverables", "images",
   "dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory",
-  "agents", "conference-room", "status",
+  "agents", "scorecard", "weekly-report", "conference-room", "status",
   "skills", "connectors", "routines", "workflows", "workspaces", "artifacts", "cases",
   "website", "activity", "releases", "billing", "settings", "design-guide",
 ];
@@ -65,8 +65,8 @@ describe("merging a saved layout with the defaults", () => {
     const resolved = resolveSidebarLayout({
       sections: { today: ["decisions", "deliverables"], clients: ["deliverables", "organisations"] },
     });
-    expect(itemsOf(resolved, "today")).toEqual(["decisions", "my-tasks", "inbox", "deliverables"]);
-    expect(itemsOf(resolved, "clients")).toEqual(["organisations", "pipelines", "deep-dive"]);
+    expect(itemsOf(resolved, "today")).toEqual(["needed", "decisions", "my-tasks", "inbox", "calendar", "deliverables"]);
+    expect(itemsOf(resolved, "clients")).toEqual(["organisations", "pipelines", "deep-dive", "images"]);
   });
 
   it("respects hidden items and drops a pin on a hidden item", () => {
@@ -87,10 +87,10 @@ describe("merging a saved layout with the defaults", () => {
 describe("layout changes", () => {
   it("moves an item within a section and across sections", () => {
     let layout = moveSidebarItem({}, "inbox", "today", 0);
-    expect(itemsOf(resolveSidebarLayout(layout), "today")).toEqual(["inbox", "decisions", "my-tasks"]);
+    expect(itemsOf(resolveSidebarLayout(layout), "today")).toEqual(["inbox", "needed", "decisions", "my-tasks", "calendar"]);
     layout = moveSidebarItem(layout, "deliverables", "today", 1);
     const resolved = resolveSidebarLayout(layout);
-    expect(itemsOf(resolved, "today")).toEqual(["inbox", "deliverables", "decisions", "my-tasks"]);
+    expect(itemsOf(resolved, "today")).toEqual(["inbox", "deliverables", "needed", "decisions", "my-tasks", "calendar"]);
     expect(itemsOf(resolved, "clients")).not.toContain("deliverables");
     expect(moveSidebarItem(layout, "nope", "today", 0)).toBe(layout);
   });
@@ -99,9 +99,9 @@ describe("layout changes", () => {
     // board sits between goals and intelligence but is switched off.
     const layout = moveSidebarItemBy({}, "intelligence", -1, (id) => id !== "board");
     expect(itemsOf(resolveSidebarLayout(layout), "work")?.slice(3, 6)).toEqual(["intelligence", "goals", "board"]);
-    expect(moveSidebarItemBy({}, "decisions", -1)).toEqual({});
+    expect(moveSidebarItemBy({}, "needed", -1)).toEqual({});
     expect(itemsOf(resolveSidebarLayout(moveSidebarItemBy({}, "decisions", 1)), "today")).toEqual([
-      "my-tasks", "decisions", "inbox",
+      "needed", "my-tasks", "decisions", "inbox", "calendar",
     ]);
   });
 

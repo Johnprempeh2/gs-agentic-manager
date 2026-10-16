@@ -1,9 +1,10 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
-import type { DecisionCard, DecisionsFeed } from "@greatstone/shared";
+import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
-import { decisionsFeedService } from "./decisions-feed.js";
+import { needsMeService } from "./needs-me.js";
+import { isQuietHour, mayNotify, notificationPreferencesService } from "./notification-preferences.js";
 import { loadOrCreateVapidKeys } from "./push-keys.js";
 import { sendWebPush, type PushSendResult, type PushTarget, type VapidKeys } from "./web-push.js";
 
@@ -26,8 +27,35 @@ export interface DecisionPushMessage {
   badge?: number;
 }
 
-type FeedBuilder = (companyId: string, userId: string) => Promise<Pick<DecisionsFeed, "cards" | "count">>;
+/**
+ * What needs this user now: the Decisions feed (`count` is its count, the
+ * same number as the Decisions badge) and the open tasks assigned to them
+ * that are not already a decision card.
+ */
+type FeedBuilder = (
+  companyId: string,
+  userId: string,
+) => Promise<Pick<DecisionsFeed, "cards" | "count"> & { assignedTasks?: Array<Pick<NeedsMeTask, "id" | "title">> }>;
+type PreferencesReader = (companyId: string, userId: string) => Promise<NotificationPreferences>;
 type Sender = (target: PushTarget, message: DecisionPushMessage) => Promise<PushSendResult>;
+
+/** Remembered-card id for a task given to the user, kept apart from decision card ids (`task:...`). */
+export const assignedTaskCardId = (issueId: string) => `assigned:${issueId}`;
+
+/** One notification for tasks newly given to the user. */
+export function assignedTaskPushMessage(fresh: Array<Pick<NeedsMeTask, "id" | "title">>, count: number, prefix: string): DecisionPushMessage {
+  const first = fresh[0]!;
+  if (fresh.length === 1) {
+    return { title: "A task was given to you", body: first.title, url: `/${prefix}/inbox/mine`, tag: assignedTaskCardId(first.id), badge: count };
+  }
+  return {
+    title: `${fresh.length} tasks were given to you`,
+    body: `${first.title} and ${fresh.length - 1} more`,
+    url: `/${prefix}/inbox/mine`,
+    tag: "assigned-tasks",
+    badge: count,
+  };
+}
 
 /** One notification per round: the card itself, or a summary when several arrive at once. */
 export function decisionPushMessage(fresh: DecisionCard[], count: number, prefix: string): DecisionPushMessage {
@@ -51,11 +79,17 @@ export function decisionPushMessage(fresh: DecisionCard[], count: number, prefix
 
 export function pushNotificationService(
   db: Db,
-  options: { keys?: () => VapidKeys; buildFeed?: FeedBuilder; send?: Sender } = {},
+  options: { keys?: () => VapidKeys; buildFeed?: FeedBuilder; send?: Sender; preferences?: PreferencesReader; now?: () => Date } = {},
 ) {
   const keys = options.keys ?? (() => loadOrCreateVapidKeys());
-  const feeds = decisionsFeedService(db);
-  const buildFeed: FeedBuilder = options.buildFeed ?? ((companyId, userId) => feeds.build(companyId, { userId }));
+  const needsMe = needsMeService(db);
+  const buildFeed: FeedBuilder = options.buildFeed ?? (async (companyId, userId) => {
+    const built = await needsMe.build(companyId, { userId });
+    return { cards: built.decisions, count: built.decisionCount, assignedTasks: built.assignedTasks };
+  });
+  const prefsService = notificationPreferencesService(db);
+  const readPreferences: PreferencesReader = options.preferences ?? ((companyId, userId) => prefsService.get(companyId, userId));
+  const now = options.now ?? (() => new Date());
   const send: Sender = options.send ?? ((target, message) => sendWebPush(target, message, keys(), { subject: PUSH_SUBJECT }));
 
   async function rememberCards(companyId: string, userId: string, cardIds: string[]) {
@@ -116,7 +150,10 @@ export function pushNotificationService(
         })
         .returning();
       const feed = await buildFeed(companyId, userId);
-      await rememberCards(companyId, userId, feed.cards.map((card) => card.id));
+      await rememberCards(companyId, userId, [
+        ...feed.cards.map((card) => card.id),
+        ...(feed.assignedTasks ?? []).map((task) => assignedTaskCardId(task.id)),
+      ]);
       return row!;
     },
 
@@ -136,14 +173,24 @@ export function pushNotificationService(
       return Boolean(row);
     },
 
-    /** One notification to every phone this user registered for the company (team chat messages). */
-    sendToUser: (companyId: string, userId: string, message: DecisionPushMessage) => deliver(companyId, userId, message),
+    /**
+     * One team chat notification to every phone this user registered for the
+     * company, unless they turned team chat off or it is their quiet hours.
+     */
+    async sendToUser(companyId: string, userId: string, message: DecisionPushMessage) {
+      const prefs = await readPreferences(companyId, userId);
+      if (!mayNotify(prefs, "teamChat", now())) return { targets: 0, delivered: 0 };
+      return deliver(companyId, userId, message);
+    },
+
+    /** One message to every phone this user registered, with no preference check (the morning summary checks its own). */
+    deliver: (companyId: string, userId: string, message: DecisionPushMessage) => deliver(companyId, userId, message),
 
     /** A test notification to every phone this user registered for the company. */
     async sendTest(companyId: string, userId: string, prefix: string) {
       return deliver(companyId, userId, {
         title: "Notifications are on",
-        body: "You will hear from GS Agentic Manager when a decision needs you.",
+        body: "You will hear from GS Agentic Manager when something needs you.",
         url: `/${prefix}/decisions`,
         tag: "push-test",
         badge: (await buildFeed(companyId, userId)).count,
@@ -164,8 +211,13 @@ export function pushNotificationService(
       for (const { companyId, userId, prefix } of audiences) {
         try {
           const built = await buildFeed(companyId, userId);
+          const prefs = await readPreferences(companyId, userId);
+          // During quiet hours nothing is sent or remembered: what arrived
+          // overnight goes out in the first round after they end.
+          if (isQuietHour(prefs, now())) continue;
           // "At your desk" cards never go to the phone (GRE-450).
           const feed = { ...built, cards: built.cards.filter((card) => !card.atDesk) };
+          const assigned = built.assignedTasks ?? [];
           const known = new Set(
             (await db
               .select({ cardId: pushNotifiedDecisions.cardId })
@@ -173,7 +225,7 @@ export function pushNotificationService(
               .where(and(eq(pushNotifiedDecisions.companyId, companyId), eq(pushNotifiedDecisions.userId, userId))))
               .map((row) => row.cardId),
           );
-          const current = new Set(feed.cards.map((card) => card.id));
+          const current = new Set([...feed.cards.map((card) => card.id), ...assigned.map((task) => assignedTaskCardId(task.id))]);
           const gone = [...known].filter((cardId) => !current.has(cardId));
           if (gone.length > 0) {
             await db.delete(pushNotifiedDecisions).where(and(
@@ -197,11 +249,22 @@ export function pushNotificationService(
               fresh = fresh.filter((card) => !told.has(card.id));
             }
           }
-          if (fresh.length === 0) continue;
-          // Remember first: a slow or failing push service never repeats a card.
-          await rememberCards(companyId, userId, fresh.map((card) => card.id));
-          const { delivered } = await deliver(companyId, userId, decisionPushMessage(fresh, feed.count, prefix));
-          sent += delivered;
+          const freshTasks = assigned.filter((task) => !known.has(assignedTaskCardId(task.id)));
+          if (fresh.length === 0 && freshTasks.length === 0) continue;
+          // Remember first: a slow or failing push service never repeats a
+          // card. A topic switched off is remembered too, so switching it back
+          // on never floods the phone with the backlog.
+          await rememberCards(companyId, userId, [...fresh.map((card) => card.id), ...freshTasks.map((task) => assignedTaskCardId(task.id))]);
+          // An outage notice is about GSAM itself, so it ignores the decisions switch.
+          const sendCards = prefs.decisions ? fresh : fresh.filter((card) => card.kind === "outage");
+          if (sendCards.length > 0) {
+            const { delivered } = await deliver(companyId, userId, decisionPushMessage(sendCards, feed.count, prefix));
+            sent += delivered;
+          }
+          if (prefs.assignedTasks && freshTasks.length > 0) {
+            const { delivered } = await deliver(companyId, userId, assignedTaskPushMessage(freshTasks, feed.count, prefix));
+            sent += delivered;
+          }
         } catch (error) {
           logger.warn({ err: error, companyId }, "decision push round failed for one user");
         }

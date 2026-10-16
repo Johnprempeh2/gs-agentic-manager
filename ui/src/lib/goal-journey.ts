@@ -55,6 +55,26 @@ export function formatTargetDate(targetDate: string | null): string | null {
   return target.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+/** Within this many days the target date also says how many days are left. */
+const TARGET_COUNTDOWN_DAYS = 14;
+
+/**
+ * The target date with how far away it is, so nobody has to count days:
+ * "Target 31 Dec", "Target 20 Oct, 4 days to go", "Target today",
+ * "Target 6 Oct, 10 days late". A done goal shows the date only.
+ */
+export function targetDateLabel(targetDate: string | null, done: boolean, now: Date = new Date()): string | null {
+  const date = formatTargetDate(targetDate);
+  const days = daysToTarget(targetDate, now);
+  if (!date || days == null) return null;
+  if (done) return `Target ${date}`;
+  if (days === 0) return "Target today";
+  const plural = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+  if (days < 0) return `Target ${date}, ${plural(-days)} late`;
+  if (days <= TARGET_COUNTDOWN_DAYS) return `Target ${date}, ${plural(days)} to go`;
+  return `Target ${date}`;
+}
+
 type HealthInput = Pick<GoalWithProgress, "status" | "progress" | "blockers" | "targetDate" | "createdAt">;
 
 export function goalHealth(goal: HealthInput, now: Date = new Date()): GoalHealth {

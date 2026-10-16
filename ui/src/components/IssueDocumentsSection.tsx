@@ -15,7 +15,7 @@ import { useLocation } from "@/lib/router";
 import { ApiError } from "../api/client";
 import { issuesApi } from "../api/issues";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
-import { copyTextToClipboard } from "../lib/clipboard";
+import { copyMarkdownToClipboard } from "../lib/markdown-clipboard";
 import { deriveDocumentRevisionState } from "../lib/document-revisions";
 import type { CompanyUserProfile } from "../lib/company-members";
 import { queryKeys } from "../lib/queryKeys";
@@ -694,7 +694,9 @@ export function IssueDocumentsSection({
 
   const copyDocumentBody = useCallback(async (key: string, body: string) => {
     try {
-      await copyTextToClipboard(body);
+      // Rich copy so the document pastes into Outlook or Word as normal
+      // text with real lists (GRE-1585).
+      await copyMarkdownToClipboard(body);
       setCopiedDocumentKey(key);
       if (copiedDocumentTimerRef.current) {
         clearTimeout(copiedDocumentTimerRef.current);

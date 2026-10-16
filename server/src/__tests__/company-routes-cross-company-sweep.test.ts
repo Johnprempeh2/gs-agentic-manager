@@ -9,7 +9,7 @@ import {
   agentApiKeys, agents, agentTeams, approvals, assets, authUsers, cases, chatEndpoints, companies,
   companyMemberships, companySecretProviderConfigs, companySecrets, crmSyncBindings, crmSyncConflicts,
   decisions, decisionTrainingExamples, intelligenceRecommendations, workflowTemplates,
-  environmentLeases, environments, executionWorkspaces, feedbackExports, feedbackVotes, goals, heartbeatRuns,
+  environmentLeases, environments, executionWorkspaces, generatedImages, feedbackExports, feedbackVotes, goals, heartbeatRuns,
   invites, issueAttachments, issues, goalWhyRequests, strategyBoardPacks,
   issueThreadInteractions, issueWorkProducts, labels, pipelines, plugins, projects, routines, routineTriggers,
   statusCards, toolActionRequests, toolApplications, toolConnections, toolGatewaySessions, toolInvocations,
@@ -107,6 +107,8 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/chat-webhooks/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
   "/api/chat-webhooks/agentmail/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
   "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
+  "/api/inbound/tasks/:publicId": "Inbound task webhook; authenticated by the hook's own token, not a session.",
+  "/api/calendar-feeds/:file": "Subscribed calendar feed; the secret token in the URL is the credential, not a session.",
   "/api/companies/import/": "Import jobs and transfers belong to the user who started them, before a company exists.",
   "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
   "/api/environment-custom-image-setup-sessions/:sessionId": "Instance-admin only: every handler calls "
@@ -330,7 +332,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     const inviteId = id(), decisionId = id();
     const boardPackId = id(), whyRequestId = id();
     const recommendationId = id(), bindingId = id(), conflictId = id(), workflowTemplateId = id();
-    const teamChatId = id();
+    const teamChatId = id(), generatedImageId = id();
     const ownerAId = `user-${id()}`;
 
     await ctx.db.insert(agents).values({
@@ -437,6 +439,10 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
     // The id routes check the company before they read the definition.
     await ctx.db.insert(workflowTemplates).values({ ...A, id: workflowTemplateId, key: "a-template", name: "Company A template", definition: {} });
 
+    await ctx.db.insert(generatedImages).values({
+      ...A, id: generatedImageId, prompt: "Company A image", aspectRatio: "1:1", provider: "mock", model: "practice",
+    });
+
     // Team chats are issues with the team_chat origin kind.
     await ctx.db.insert(issues).values({
       ...A, id: teamChatId, title: "Company A chat", originKind: TEAM_CHAT_ORIGIN_KIND,
@@ -469,6 +475,7 @@ describeEmbeddedPostgres("company routes refuse another company's caller (GRE-50
       "/api/crm-sync/bindings/:bindingId": bindingId, "/api/crm-sync/conflicts/:conflictId": conflictId,
       "/api/workflow-templates/:id": workflowTemplateId,
       "/api/team-chats/:id": teamChatId,
+      "/api/generated-images/:id": generatedImageId,
     };
     return Object.fromEntries(Object.entries(byPrefix).map(([prefix, recordId]) => [
       prefix, prefix.replace(/:[A-Za-z0-9_]+/, recordId).replace(/:companyId\b/, companyAId),

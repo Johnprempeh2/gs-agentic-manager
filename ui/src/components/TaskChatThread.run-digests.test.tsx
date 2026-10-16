@@ -259,7 +259,7 @@ describe("task thread run digests", () => {
       expect.stringContaining("1 tool · 900 tokens"),
     ]);
     expect(fromLogs.rows[0]).toContain("Stopped");
-    for (const marker of ["Run failed", "Execution was stopped", "Run completed"]) {
+    for (const marker of ["Run failed", "The work was stopped", "Run completed"]) {
       expect(fromLogs.text).toContain(marker);
     }
     expect(fromLogs.text).not.toContain("Nothing to do here.");

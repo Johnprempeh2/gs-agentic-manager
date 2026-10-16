@@ -446,9 +446,6 @@
     "text-green-500": 2,
     "text-red-500": 2
   },
-  "ui/src/components/FinanceTimelineCard.tsx": {
-    "text-amber-600": 1
-  },
   "ui/src/components/FrontmatterPanel.tsx": {
     "text-amber-500": 3
   },
@@ -691,7 +688,6 @@
     "bg-amber-50/85": 1,
     "bg-amber-500/10": 13,
     "bg-amber-500/15": 6,
-    "bg-emerald-50/85": 1,
     "bg-emerald-500/10": 5,
     "bg-emerald-500/15": 3,
     "bg-green-500/10": 4,
@@ -703,7 +699,7 @@
     "bg-rose-500/15": 2,
     "bg-sky-400/10": 1,
     "bg-sky-400/15": 1,
-    "bg-sky-500/10": 6,
+    "bg-sky-500/10": 5,
     "bg-sky-500/15": 2,
     "bg-sky-500/5": 1,
     "bg-violet-500/10": 2,
@@ -714,7 +710,6 @@
     "border-amber-500/50": 2,
     "border-amber-500/60": 10,
     "border-amber-500/70": 4,
-    "border-emerald-300/60": 1,
     "border-emerald-400/70": 1,
     "border-emerald-500/50": 2,
     "border-emerald-500/60": 3,
@@ -735,7 +730,7 @@
     "border-sky-400/70": 1,
     "border-sky-400/80": 1,
     "border-sky-500/60": 1,
-    "border-sky-500/70": 5,
+    "border-sky-500/70": 4,
     "border-sky-500/80": 1,
     "border-violet-500/60": 2,
     "border-violet-500/80": 2,
@@ -743,12 +738,10 @@
     "text-amber-100": 13,
     "text-amber-100/80": 1,
     "text-amber-50": 1,
-    "text-amber-700": 3,
     "text-amber-900": 12,
     "text-amber-900/80": 1,
     "text-amber-950": 2,
     "text-emerald-100": 5,
-    "text-emerald-700": 2,
     "text-emerald-900": 5,
     "text-green-100": 4,
     "text-green-100/80": 1,
@@ -761,7 +754,6 @@
     "text-red-900": 5,
     "text-red-900/80": 2,
     "text-rose-100": 5,
-    "text-rose-700": 1,
     "text-rose-900": 4,
     "text-rose-900/75": 1,
     "text-rose-950": 1,
@@ -984,16 +976,6 @@
     "text-purple-700": 1,
     "text-purple-900": 1,
     "text-purple-950": 1
-  },
-  "ui/src/components/ProjectProperties.tsx": {
-    "bg-green-500/15": 1,
-    "bg-red-500/15": 1,
-    "text-green-300": 1,
-    "text-green-400": 1,
-    "text-green-600": 1,
-    "text-green-700": 1,
-    "text-red-300": 1,
-    "text-red-700": 1
   },
   "ui/src/components/ProjectWorkspaceSummaryCard.tsx": {
     "bg-emerald-500": 1,
@@ -1400,10 +1382,6 @@
   "ui/src/components/search/HighlightedText.tsx": {
     "bg-yellow-200/60": 1,
     "bg-yellow-300/30": 1
-  },
-  "ui/src/components/search/ZeroResultsRecovery.tsx": {
-    "text-emerald-400": 1,
-    "text-emerald-600": 1
   },
   "ui/src/components/skill-studio/AgentsUsingSkillDialog.tsx": {
     "text-amber-500": 1
@@ -2007,16 +1985,14 @@
     "bg-blue-500": 1,
     "bg-blue-950/25": 1,
     "bg-blue-950/40": 1,
-    "bg-emerald-50": 3,
-    "bg-emerald-500": 4,
+    "bg-emerald-50": 2,
+    "bg-emerald-500": 3,
     "bg-emerald-900/25": 1,
     "bg-emerald-900/30": 1,
-    "bg-emerald-950/30": 1,
     "bg-indigo-50": 1,
     "bg-indigo-900/25": 1,
     "bg-red-50": 2,
     "bg-red-500/10": 1,
-    "bg-red-600": 1,
     "bg-red-950/30": 1,
     "border-amber-200": 1,
     "border-amber-300": 4,
@@ -2025,11 +2001,9 @@
     "border-amber-900/70": 5,
     "border-blue-300": 2,
     "border-blue-900/70": 2,
-    "border-emerald-200": 1,
     "border-emerald-300/30": 2,
     "border-emerald-400/35": 1,
     "border-emerald-400/40": 1,
-    "border-emerald-900/60": 1,
     "border-green-400": 1,
     "border-green-600": 1,
     "border-indigo-300/30": 1,
@@ -2047,15 +2021,14 @@
     "text-blue-400": 1,
     "text-blue-600": 1,
     "text-blue-950": 1,
-    "text-emerald-300": 5,
-    "text-emerald-700": 5,
+    "text-emerald-300": 3,
+    "text-emerald-700": 3,
     "text-green-400": 2,
     "text-green-600": 2,
     "text-indigo-300": 1,
     "text-indigo-700": 1,
     "text-red-200": 1,
-    "text-red-400": 1,
-    "text-red-700": 2
+    "text-red-700": 1
   },
   "ui/src/pages/PluginManager.tsx": {
     "bg-amber-500/10": 2,

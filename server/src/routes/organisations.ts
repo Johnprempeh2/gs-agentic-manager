@@ -1,11 +1,14 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { toolConnections, type Db } from "@greatstone/db";
+import { organisations, toolConnections, type Db } from "@greatstone/db";
 import {
   createOrganisationContactSchema,
   createOrganisationSchema,
   importOrganisationsFromPipedriveSchema,
+  importHubspotExportSchema,
+  importNotionSchema,
+  importPipedriveExportSchema,
   listOrganisationsQuerySchema,
   updateOrganisationContactSchema,
   updateOrganisationSchema,
@@ -25,7 +28,12 @@ import {
 } from "../services/crm-sync-pipedrive.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
+import { notionImportService } from "../services/organisation-import-notion.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
+import {
+  hubspotExportImportService,
+  pipedriveExportImportService,
+} from "../services/organisation-import-pipedrive-export.js";
 import { organisationService } from "../services/organisations.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyBoardRole } from "./authz.js";
 
@@ -63,6 +71,9 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const svc = organisationService(db);
   const access = accessService(db);
   const importer = pipedriveOrganisationImportService(db);
+  const exportImporter = pipedriveExportImportService(db);
+  const hubspotImporter = hubspotExportImportService(db);
+  const notionImporter = notionImportService(db);
   const history = organisationHistoryService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
@@ -223,6 +234,152 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
     },
   );
 
+  /**
+   * Import of the CSV files Pipedrive exports, for teams without an API key.
+   * Company owners only, like the API import, and it shares its rows: a later
+   * API import updates what this one made. Open deals become client cases in
+   * the chosen pipeline.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/pipedrive-export`,
+    validate(importPipedriveExportSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the Pipedrive import", { code: "owner_required" });
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("A Pipedrive import is already running for this company", { code: "import_running" });
+      }
+      runningImports.add(companyId);
+      try {
+        const result = await exportImporter.run(companyId, req.body, actorIds(req));
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "pipedrive",
+            via: "export",
+            pipelineId: req.body.pipelineId ?? null,
+            organisations: result.organisations,
+            contacts: result.contacts,
+            deals: result.deals ?? null,
+            activities: result.activities ?? null,
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
+
+  /**
+   * Import of the CSV files HubSpot exports (companies, contacts, deals), for
+   * teams without a HubSpot key. Company owners only. Rows keep source
+   * "hubspot" and the HubSpot record id, so a rerun updates them.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/hubspot-export`,
+    validate(importHubspotExportSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the HubSpot import", { code: "owner_required" });
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("An import is already running for this company", { code: "import_running" });
+      }
+      runningImports.add(companyId);
+      try {
+        const result = await hubspotImporter.run(companyId, req.body, actorIds(req));
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "hubspot",
+            via: "export",
+            pipelineId: req.body.pipelineId ?? null,
+            organisations: result.organisations,
+            contacts: result.contacts,
+            deals: result.deals ?? null,
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
+
+  /**
+   * Import of client notes from a Notion export (the Markdown pages). Company
+   * owners only. `preview` writes nothing; `import` makes or updates clients,
+   * adds the notes and makes a task for each unticked to-do. A rerun adds
+   * nothing twice.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/notion`,
+    validate(importNotionSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the Notion import", { code: "owner_required" });
+      }
+      if (req.body.mode === "preview") {
+        res.json(await notionImporter.preview(companyId, req.body));
+        return;
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("An import is already running for this company", { code: "import_running" });
+      }
+      runningImports.add(companyId);
+      try {
+        const result = await notionImporter.run(companyId, req.body, actorIds(req));
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "notion",
+            via: "export",
+            organisations: { ...result.organisations, skipped: result.skipped.length },
+            tasks: { created: result.tasksCreated },
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
+
   router.get(`${ORGANISATION_ROUTE_PREFIX}/:organisationId`, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
@@ -249,9 +406,22 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
       const companyId = req.params.companyId as string;
       await assertCrmWriter(req, companyId);
       const organisationId = parseId(req.params.organisationId, "Organisation");
+      const previousStatus = req.body.status === undefined
+        ? null
+        : await db
+            .select({ status: organisations.status })
+            .from(organisations)
+            .where(and(eq(organisations.companyId, companyId), eq(organisations.id, organisationId)))
+            .then((rows) => rows[0]?.status ?? null);
       const organisation = await svc.update(companyId, organisationId, req.body);
       if (!organisation) throw notFound("Organisation not found");
-      await audit(req, companyId, "organisation.updated", organisation.id, { fields: Object.keys(req.body) });
+      await audit(req, companyId, "organisation.updated", organisation.id, {
+        fields: Object.keys(req.body),
+        // Stage moves are sent to outbound webhooks as client.stage_changed.
+        ...(previousStatus && previousStatus !== organisation.status
+          ? { status: organisation.status, previousStatus }
+          : {}),
+      });
       res.json(organisation);
     },
   );

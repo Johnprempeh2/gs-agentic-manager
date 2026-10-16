@@ -10,6 +10,7 @@ import {
   plainText,
   remainingLabel,
   shortTitle,
+  targetDateLabel,
 } from "./goal-journey";
 import { makeGoal } from "./goal-journey.fixtures";
 
@@ -242,5 +243,21 @@ describe("mainBlockerSummary", () => {
     const goal = makeGoal({ progress: { percent: 13, source: "issues", done: 1, open: 7, blocked: 0, total: 8 } });
     expect(mainBlockerSummary(goal, "at_risk")).toEqual({ kind: "open", sentence: "No blocker. 7 of 8 tasks still open." });
     expect(mainBlockerSummary(goal, "on_track")).toBeNull();
+  });
+});
+
+describe("targetDateLabel", () => {
+  const now = new Date(2026, 9, 16, 9, 0);
+  it("says how far away the target is", () => {
+    expect(targetDateLabel(null, false, now)).toBeNull();
+    expect(targetDateLabel("2026-12-31", false, now)).toBe("Target 31 Dec");
+    expect(targetDateLabel("2026-10-20", false, now)).toBe("Target 20 Oct, 4 days to go");
+    expect(targetDateLabel("2026-10-17", false, now)).toBe("Target 17 Oct, 1 day to go");
+    expect(targetDateLabel("2026-10-16", false, now)).toBe("Target today");
+    expect(targetDateLabel("2026-10-06", false, now)).toBe("Target 6 Oct, 10 days late");
+  });
+
+  it("shows only the date once the goal is done", () => {
+    expect(targetDateLabel("2026-10-06", true, now)).toBe("Target 6 Oct");
   });
 });

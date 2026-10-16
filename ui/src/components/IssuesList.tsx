@@ -76,8 +76,11 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, List, ListTree, User, Search, CircleSlash2, ChevronsDownUp, PanelTopClose, RotateCcw, ListCollapse,
-  SquareKanban,
+  SquareKanban, Download, ClipboardList,
 } from "lucide-react";
+import { downloadTextFile, issuesCsvFileName, issuesToCsv } from "../lib/issues-csv";
+import { issuesToPlainList } from "../lib/issues-text";
+import { useCopyAction } from "../lib/use-copy-action";
 import {
   KanbanBoard,
   KANBAN_BOARD_HIGH_VOLUME_THRESHOLD,
@@ -100,6 +103,7 @@ import {
   type TaskCollectionPreferenceLocation,
 } from "../lib/task-collection-preferences";
 import { taskDateGroup, taskDateGroupSeparator, type TaskDateGroup } from "../lib/task-date-groups";
+import { compareIssueDueDates } from "../lib/issue-due-sort";
 import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type IssueWorkFilter, type Project } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 const ISSUE_SEARCH_DEBOUNCE_MS = 250;
@@ -158,7 +162,7 @@ const progressSegmentClasses: Record<IssueStatus, string> = {
 
 /* ── View state ── */
 
-export type IssueSortField = "status" | "priority" | "title" | "created" | "updated" | "workflow";
+export type IssueSortField = "status" | "priority" | "title" | "created" | "updated" | "due" | "workflow";
 export type BoardCardDensity = "auto" | "compact" | "comfortable";
 export type BoardColdLaneMode = "auto" | "collapsed" | "expanded";
 export type BoardColumnPageSize = KanbanColumnPageSize;
@@ -213,7 +217,7 @@ function normalizeIssueViewState(value: unknown): IssueViewState {
     ...defaultViewState,
     ...parsed,
     ...normalizeIssueFilterState(parsed),
-    sortField: ["status", "priority", "title", "created", "updated", "workflow"].includes(parsed.sortField ?? "")
+    sortField: ["status", "priority", "title", "created", "updated", "due", "workflow"].includes(parsed.sortField ?? "")
       ? parsed.sortField as IssueSortField
       : defaultViewState.sortField,
     sortDir: parsed.sortDir === "asc" ? "asc" : "desc",
@@ -308,6 +312,8 @@ function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
         return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       case "updated":
         return dir * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+      case "due":
+        return compareIssueDueDates(a, b, dir);
       default:
         return 0;
     }
@@ -830,7 +836,7 @@ export function IssuesList({
     // null, so continuous hovering triggers no re-render.
     setSelectedNavKey((prev) => (prev === null ? prev : null));
   }, []);
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewIssue } = useDialogActions();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -1289,6 +1295,33 @@ export function IssuesList({
     liveIssueIds,
     issueFilterContext,
   ]);
+
+  const downloadSpreadsheet = useCallback(() => {
+    const agentNames = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
+    const prefix = selectedCompany?.issuePrefix ?? "";
+    const csv = issuesToCsv(filtered, {
+      statusLabel: (status) => issueStatusLabels[status] ?? status,
+      agentName: (agentId) => agentNames.get(agentId),
+      userLabel: (userId) => companyUserLabelMap.get(userId),
+      projectName: (id) => projectById.get(id)?.name,
+      taskUrl: (issue) => `${window.location.origin}/${prefix}/issues/${issue.identifier ?? issue.id}`,
+    });
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    downloadTextFile(issuesCsvFileName(prefix, today), csv);
+  }, [agents, companyUserLabelMap, filtered, projectById, selectedCompany?.issuePrefix]);
+
+  const listCopy = useCopyAction();
+  const copyAsList = useCallback(() => {
+    const agentNames = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
+    void listCopy.copy(
+      issuesToPlainList(filtered, {
+        statusLabel: (status) => issueStatusLabels[status] ?? status,
+        agentName: (agentId) => agentNames.get(agentId),
+        userLabel: (userId) => companyUserLabelMap.get(userId),
+      }),
+    );
+  }, [agents, companyUserLabelMap, filtered, listCopy.copy]);
 
   const progressSummary = useMemo(
     () => shouldRenderSubIssueProgressSummary(showProgressSummary, issues.length)
@@ -2023,6 +2056,7 @@ export function IssuesList({
                     ["title", "Title"],
                     ["created", "Created"],
                     ["updated", "Updated"],
+                    ["due", "Due date"],
                   ] as const)
                     .filter(([field]) => SHOW_TASK_PRIORITY_UI || field !== "priority")
                     .map(([field, label]) => (
@@ -2090,6 +2124,36 @@ export function IssuesList({
               </PopoverContent>
             </Popover>
           )}
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            title={`Download ${filtered.length === 1 ? "this task" : `these ${filtered.length} tasks`} as a spreadsheet`}
+            aria-label="Download as spreadsheet"
+            disabled={filtered.length === 0}
+            onClick={downloadSpreadsheet}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            title={
+              listCopy.copied
+                ? "Copied"
+                : listCopy.failed
+                  ? "Could not copy"
+                  : `Copy ${filtered.length === 1 ? "this task" : `these ${filtered.length} tasks`} as a list to paste into an email or chat`
+            }
+            aria-label={listCopy.copied ? "Copied" : "Copy as a list"}
+            disabled={filtered.length === 0}
+            onClick={copyAsList}
+          >
+            {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
+          </Button>
           </>
         )}
       />

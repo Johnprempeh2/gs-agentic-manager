@@ -262,3 +262,21 @@ it("names the unavailable AI account instead of suggesting secret bindings", () 
   expect(notice.body).toContain("Reconnect the account");
   expect(notice.body).not.toContain("secret/env");
 });
+
+it("names the missing tool on the machine in plain words", () => {
+  const seed = buildConfigurationIncompleteRecoveryNoticeSeed({
+    reason: "required_capability_missing",
+    reasons: [
+      {
+        capability: "docker",
+        reason:
+          "Docker is not running on this machine, so this agent cannot start its tests. Ask whoever runs the machine to start Docker.",
+      },
+    ],
+  });
+  expect(seed.title).toBe("A required tool is missing on this machine");
+  expect(seed.tone).toBe("danger");
+  expect(seed.body).toContain("Docker is not running on this machine");
+  expect(seed.body).not.toContain("secret/env");
+  expect(seed.nextAction).toContain("Ask whoever runs the machine");
+});

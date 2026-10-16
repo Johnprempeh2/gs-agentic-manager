@@ -37,6 +37,7 @@ import { principalIdsInclude, viewerPrincipalUserIds } from "./board-identity.js
 import { evaluateAgentInvokability, type AgentOrgRow } from "./agent-invokability.js";
 import { isExplicitResumeCapableStatus } from "./issue-comment-wakeup.js";
 import { parseIssueExecutionState } from "./issue-execution-policy.js";
+import { isReleaseTask } from "./release-task.js";
 
 /** activity_log.details.source on the comment a clarity question writes. */
 export const DECISIONS_CLARITY_SOURCE = "decisions_clarity";
@@ -634,6 +635,8 @@ export function decisionsFeedService(db: Db, serviceOptions: AttentionServiceOpt
         const readyToRetry = group.items.length === 0
           && (group.aiRepairedAt !== null || group.setupFixedAt !== null) && leftBlocked;
         if (group.items.length === 0 && !readyToRetry) continue;
+        // Releases run from Claude, not from Decisions (release-task.ts).
+        if (task && isReleaseTask(task.title)) continue;
         cards.push(buildCard({
           companyId,
           group,
@@ -859,7 +862,9 @@ function buildCard(input: {
 
   const blockedCount = (blockedItem?.detail as { blockedTaskCount?: unknown } | null)?.blockedTaskCount;
   const nextStepByKind: Record<DecisionCardKind, string> = {
-    question: `${waiting?.name ?? "The agent"} waits for your answer, then continues.`,
+    question: readString(main?.subject.metadata, "askType")
+      ? `${waiting?.name ?? "The agent"} is woken as soon as you answer, either way.`
+      : `${waiting?.name ?? "The agent"} waits for your answer, then continues.`,
     approval: main?.subject.metadata?.type === "permission_grant"
       ? `${waiting?.name ?? "The agent"} stays blocked until you grant or deny the permission.`
       : "Nothing moves until you approve or reject it.",

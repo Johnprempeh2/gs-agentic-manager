@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, User, UserPlus, X } from "lucide-react";
+import { Bell, BellOff, Bot, User, UserPlus, X } from "lucide-react";
 import type { IssueComment, TeamChatSummary } from "@greatstone/shared";
 import { accessApi } from "@/api/access";
 import { agentsApi } from "@/api/agents";
@@ -9,19 +9,23 @@ import { issuesApi } from "@/api/issues";
 import { teamChatsApi } from "@/api/teamChats";
 import { FeatureTour } from "@/components/FeatureTour";
 import { NewTeamChatDialog, type NewTeamChatInput } from "@/components/NewTeamChatDialog";
+import { desktopAlertsPermission } from "@/components/team-chat/TeamChatAlerts";
 import { scrollTeamChatToLatest, TeamChatThread } from "@/components/team-chat/TeamChatThread";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
 import { buildCompanyUserLabelMap, isAgentTaskTarget } from "@/lib/company-members";
 import { TEAM_CHAT_TOUR } from "@/lib/feature-tours";
 import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
+import { usePageVisibility } from "@/lib/page-visibility";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link, useParams } from "@/lib/router";
 import { teamChatLabel, teamChatMentionOptions } from "@/lib/team-chats";
 
 const THREAD_LIMIT = 200;
+const ALERTS_ASKED_KEY = "team-chat-desktop-alerts-asked";
 
 /** One direct message or group chat (enableTeamChat). Messages are the chat issue's comments. */
 export function TeamChat() {
@@ -31,6 +35,10 @@ export function TeamChat() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const client = useQueryClient();
   const [adding, setAdding] = useState(false);
+  const [alertsPermission, setAlertsPermission] = useState(desktopAlertsPermission);
+  const [alertsAsked, setAlertsAsked] = useState(() => localStorage.getItem(ALERTS_ASKED_KEY) === "1");
+  const { visible } = usePageVisibility();
+  const push = usePushNotifications(selectedCompanyId);
   const session = useQuery({ queryKey: queryKeys.auth.session, queryFn: () => authApi.getSession() });
   const userId = session.data?.user?.id ?? session.data?.session?.userId ?? "local-board";
   const chat = useQuery({
@@ -61,12 +69,12 @@ export function TeamChat() {
     setBreadcrumbs([{ label: "Chats" }, { label }]);
   }, [label, setBreadcrumbs]);
 
-  // Reading the chat clears its unread count.
+  // Reading the chat clears its unread count; a chat left open in a hidden tab is not being read.
   const lastCommentId = comments.data?.at(-1)?.id;
   useEffect(() => {
-    if (!summary || !lastCommentId) return;
+    if (!summary || !lastCommentId || !visible) return;
     void issuesApi.markRead(summary.id).then(() => client.invalidateQueries({ queryKey: queryKeys.teamChats.all }));
-  }, [summary?.id, lastCommentId, client]);
+  }, [summary?.id, lastCommentId, visible, client]);
 
   const agentMap = useMemo(() => new Map((agents.data ?? []).map((agent) => [agent.id, agent])), [agents.data]);
   const names = useMemo(() => new Map((summary?.members ?? []).map((member) => [member.id, member.name])), [summary?.members]);
@@ -86,6 +94,17 @@ export function TeamChat() {
   const updateSummary = (next: TeamChatSummary) => {
     client.setQueryData(queryKeys.teamChats.detail(next.id), next);
     void client.invalidateQueries({ queryKey: queryKeys.teamChats.all });
+  };
+  const closeAlertsPrompt = () => {
+    localStorage.setItem(ALERTS_ASKED_KEY, "1");
+    setAlertsAsked(true);
+  };
+  // Web Push reaches a hidden or closed tab; without it, alerts show only while the app is open.
+  const turnOnAlerts = async () => {
+    if (push.state === "off") await push.enable();
+    else await window.Notification.requestPermission();
+    setAlertsPermission(desktopAlertsPermission());
+    closeAlertsPrompt();
   };
 
   if (!loaded || chat.isPending) return <p className="text-sm text-muted-foreground">Loading chat…</p>;
@@ -118,7 +137,21 @@ export function TeamChat() {
       <header className="sticky top-0 z-sticky -mx-4 -mt-2 flex flex-col gap-2 border-b border-border bg-background px-4 pb-3 pt-2 md:-mx-1 md:px-1 md:-top-6 md:-mt-6 md:pt-6">
         <div className="flex items-center justify-between gap-2">
           <h1 className="min-w-0 truncate text-xl font-bold">{label}</h1>
-          <FeatureTour tour={TEAM_CHAT_TOUR} onClose={scrollTeamChatToLatest} />
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-pressed={summary.muted}
+              title={summary.muted ? "Muted: you hear only @mentions" : "Mute: alert only when you are @mentioned"}
+              className="gap-1.5 text-muted-foreground"
+              onClick={() => void teamChatsApi.setMuted(summary.id, !summary.muted).then(updateSummary)}
+            >
+              {summary.muted ? <BellOff aria-hidden="true" className="size-4" /> : <Bell aria-hidden="true" className="size-4" />}
+              {summary.muted ? "Muted" : "Mute"}
+            </Button>
+            <FeatureTour tour={TEAM_CHAT_TOUR} onClose={scrollTeamChatToLatest} />
+          </div>
         </div>
         <ul aria-label="Members" data-tour="team-chat-members" className="flex flex-wrap items-center gap-1.5">
           {summary.members.map((member) => (
@@ -150,6 +183,20 @@ export function TeamChat() {
           )}
         </ul>
         {group && <p className="text-xs text-muted-foreground">Agents here reply only when you @mention them.</p>}
+        {alertsPermission === "default" && !alertsAsked && (
+          <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Bell aria-hidden="true" className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              {summary.muted ? "Alert me here when @mentioned" : "Alert me here for new messages"}
+            </span>
+            <Button type="button" variant="outline" size="sm" className="ml-auto h-6 shrink-0 px-2 text-xs" onClick={() => void turnOnAlerts()}>
+              Turn on
+            </Button>
+            <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0" aria-label="Not now" title="Not now" onClick={closeAlertsPrompt}>
+              <X aria-hidden="true" className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </header>
       <div data-tour="team-chat-thread">
         <TeamChatThread

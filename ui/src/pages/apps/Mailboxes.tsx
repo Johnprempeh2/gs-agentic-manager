@@ -15,6 +15,7 @@ import { mailboxesApi } from "@/api/mailboxes";
 import { queryKeys } from "@/lib/queryKeys";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -343,6 +344,16 @@ function MailboxRow({
       void refresh();
     },
   });
+  const drafts = useMutation({
+    mutationFn: (allowDrafts: boolean) => mailboxesApi.setDrafts(companyId, mailbox.id, allowDrafts),
+    onSuccess: () => void refresh(),
+    onError: (error) =>
+      pushToast({
+        title: "Could not change drafts",
+        body: error instanceof Error ? error.message : undefined,
+        tone: "error",
+      }),
+  });
   const reconnect = useMutation({
     mutationFn: () =>
       mailboxesApi.startOAuth(companyId, {
@@ -403,6 +414,20 @@ function MailboxRow({
           <Button size="sm" variant="ghost" aria-label={`Remove ${mailbox.label}`} onClick={onRemove}>
             <Trash2 className="size-4" aria-hidden="true" />
           </Button>
+        </div>
+      </div>
+      <div className="flex items-start gap-2.5">
+        <ToggleSwitch
+          checked={drafts.isPending ? drafts.variables === true : mailbox.allowDrafts}
+          disabled={drafts.isPending}
+          onCheckedChange={(next) => drafts.mutate(next)}
+          aria-label={`Let agents save email drafts in ${mailbox.label}`}
+        />
+        <div className="min-w-0">
+          <p className="text-sm">Let agents save email drafts</p>
+          <p className="text-xs text-muted-foreground">
+            Drafts land in this mailbox&apos;s Drafts folder for you to check and send. Agents never send mail.
+          </p>
         </div>
       </div>
       {editing && (

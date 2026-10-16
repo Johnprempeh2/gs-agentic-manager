@@ -31,6 +31,8 @@ export interface Organisation {
   industry: string | null;
   country: string | null;
   countryOwner: string | null;
+  /** The member who owns the country, when the owner is a GSAM user. */
+  countryOwnerUserId?: string | null;
   status: OrganisationStatus;
   notes: string | null;
   // Global CRM fields (GRE-1539). All optional; `country` above is the address country.
@@ -98,13 +100,20 @@ export interface OrganisationImportCounts {
   errors: number;
 }
 
-/** Answer of POST .../organisations/import/pipedrive. Nothing is written to Pipedrive. */
+/**
+ * Answer of POST .../organisations/import/pipedrive and .../import/pipedrive-export.
+ * Nothing is written to Pipedrive.
+ */
 export interface OrganisationImportResult {
-  source: "pipedrive";
+  source: "pipedrive" | "hubspot";
   organisations: OrganisationImportCounts;
   contacts: OrganisationImportCounts;
+  /** Export import only: deals added as client cases in the chosen pipeline. */
+  deals?: OrganisationImportCounts;
+  /** Export import only: activities attached to the imported deals' cases. */
+  activities?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }
@@ -131,6 +140,9 @@ export interface OrganisationHistoryCase {
   stageName: string;
   stageKind: string;
   terminalKind: "done" | "cancelled" | null;
+  /** The client's NDA and engagement pack, as on the journey (Ben, 12 Oct). */
+  ndaStatus?: "required" | "accepted" | "suspended";
+  engagementStatus?: "not_sent" | "sent" | "accepted";
   createdAt: string;
   updatedAt: string;
   /** Oldest first. */

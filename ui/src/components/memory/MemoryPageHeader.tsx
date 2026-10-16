@@ -2,12 +2,14 @@ import { useNavigate } from "@/lib/router";
 import { Tabs } from "@/components/ui/tabs";
 import { PageTabBar } from "../PageTabBar";
 
-export type MemoryTab = "connections" | "contributions" | "review";
+export type MemoryTab = "connections" | "contributions" | "review" | "clients" | "apps";
 
 const TAB_PATH: Record<MemoryTab, string> = {
   connections: "/memory",
   contributions: "/memory/activity",
   review: "/memory/review",
+  clients: "/memory/clients",
+  apps: "/memory/apps",
 };
 
 /** Title and the views of the Memory page. Switching view keeps no selection. */
@@ -32,6 +34,8 @@ export function MemoryPageHeader({ tab }: { tab: MemoryTab }) {
             { value: "connections", label: "Connections" },
             { value: "contributions", label: "Contributions" },
             { value: "review", label: "Review" },
+            { value: "clients", label: "Clients" },
+            { value: "apps", label: "Claude and ChatGPT" },
           ]}
         />
       </Tabs>

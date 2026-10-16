@@ -1500,9 +1500,12 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "issue_tree_hold_active",
   "missing_issue_comment",
   "process_lost_retry",
+  "pull_request_merged",
   "run_liveness_continuation",
+  "waiting_date_passed",
   "heartbeat.disabled",
   "heartbeat.timer.no_actionable_work",
+  "heartbeat.timer.nothing_changed",
   "heartbeat.wakeOnDemand.disabled",
 ]);
 
@@ -3218,6 +3221,8 @@ function toCompactIssue(issue: any): CompactIssue {
     cancelledAt: issue.cancelledAt,
     createdAt: issue.createdAt,
     updatedAt: issue.updatedAt,
+    // Only when set, so lists and the spreadsheet download can show it.
+    ...(issue.dueDate ? { dueDate: issue.dueDate } : {}),
     ...(issue.labelIds ? { labelIds: issue.labelIds } : {}),
     ...(issue.labels ? { labels: issue.labels } : {}),
     ...(issue.blockedBy ? { blockedBy: issue.blockedBy } : {}),
@@ -18850,8 +18855,9 @@ export function issueRoutes(
         details: {
           commentId: comment.id,
           // Activity reaches the whole company; a team chat's words stay in the chat.
+          // teamChat lets members' browsers raise their own alert instead of a generic toast.
           ...(isTeamChat(currentIssue)
-            ? {}
+            ? { teamChat: true }
             : { bodySnippet: comment.body.slice(0, 120), issueTitle: currentIssue.title }),
           identifier: currentIssue.identifier,
           authorizationReason: commentAuthorizationReason,

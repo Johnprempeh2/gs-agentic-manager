@@ -28,6 +28,7 @@ import {
   heartbeatService,
 } from "../services/heartbeat.ts";
 import { runningProcesses } from "../adapters/index.ts";
+import { readTimerWakeNews } from "../services/timer-wake-news.ts";
 import { recoveryService } from "../services/recovery/service.ts";
 import { withQueuedCommentIdsInWakePayload } from "../services/issue-queued-comment-queue.ts";
 
@@ -449,6 +450,50 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
       },
     });
     expect(runRows).toHaveLength(0);
+  });
+
+  it("skips generic timer wakes when nothing changed since the last run, and runs once something does", async () => {
+    const { companyId, agentId } = await seedCompanyAndAgent({
+      heartbeatConfig: {
+        enabled: true,
+        skipTimerWhenNothingChanged: true,
+      },
+    });
+    const issueId = randomUUID();
+    const lastRunEnded = new Date(Date.now() - 10 * 60_000);
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "Standing task",
+      status: "todo" as const,
+      priority: "medium" as const,
+      assigneeAgentId: agentId,
+      updatedAt: new Date(lastRunEnded.getTime() - 60_000),
+    });
+    await db.insert(heartbeatRuns).values({
+      companyId,
+      agentId,
+      status: "succeeded",
+      createdAt: new Date(lastRunEnded.getTime() - 120_000),
+      startedAt: new Date(lastRunEnded.getTime() - 120_000),
+      finishedAt: lastRunEnded,
+    });
+
+    const quiet = await heartbeat.wakeup(agentId, { source: "timer", triggerDetail: "schedule" });
+    expect(quiet).toBeNull();
+    const [skipped] = await db
+      .select({ status: agentWakeupRequests.status, reason: agentWakeupRequests.reason })
+      .from(agentWakeupRequests)
+      .where(eq(agentWakeupRequests.agentId, agentId));
+    expect(skipped).toMatchObject({ status: "skipped", reason: "heartbeat.timer.nothing_changed" });
+
+    // A comment from someone else is news, so the next timer wake would run.
+    // Checked through the news reader so this test starts no real run.
+    await db.insert(issueComments).values({ companyId, issueId, body: "Any update?", authorUserId: "user-1" });
+    await expect(readTimerWakeNews(db, { id: agentId, companyId })).resolves.toMatchObject({
+      hasNews: true,
+      reason: "new_comment",
+    });
   });
 
   it("checks guarded issue status and assignee under the enqueue lock", async () => {

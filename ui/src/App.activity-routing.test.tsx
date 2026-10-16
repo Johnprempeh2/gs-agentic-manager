@@ -48,8 +48,8 @@ vi.mock("./components/Layout", async () => {
 });
 
 // Rendered by <App> outside <Routes> and needs DialogProvider; irrelevant here.
-vi.mock("./components/OnboardingWizardVariant", () => ({
-  OnboardingWizardVariant: () => null,
+vi.mock("./components/OnDemandDialogs", () => ({
+  OnDemandOnboarding: () => null,
 }));
 
 // Cloud access is unrelated to the route-table regression. Let it fall through

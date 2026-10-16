@@ -51,7 +51,7 @@ export function SecretPopoverForm({
     }
     return null;
   })();
-  const valueError = value.length === 0 ? (touched ? "Value is required" : null) : null;
+  const valueError = value.length === 0 ? (touched ? "Enter the secret value." : null) : null;
   const canSubmit = !submitting && trimmedName.length > 0 && value.length > 0 && !nameError;
 
   async function handleSubmit() {

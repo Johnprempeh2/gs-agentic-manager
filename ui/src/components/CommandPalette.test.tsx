@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandPalette } from "./CommandPalette";
 import { queryKeys } from "../lib/queryKeys";
+import { OPEN_COMMAND_PALETTE_EVENT } from "../lib/global-search";
 
 function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> | undefined;
@@ -33,6 +34,17 @@ const sidebarState = vi.hoisted(() => ({
 const mockIssuesApi = vi.hoisted(() => ({
   list: vi.fn(),
   listLabels: vi.fn(),
+  update: vi.fn(),
+  create: vi.fn(),
+  get: vi.fn(),
+}));
+
+const mockDecisionsFeedApi = vi.hoisted(() => ({
+  table: vi.fn(),
+}));
+
+const toastState = vi.hoisted(() => ({
+  pushToast: vi.fn(),
 }));
 
 const mockAgentsApi = vi.hoisted(() => ({
@@ -76,8 +88,20 @@ vi.mock("@/lib/router", () => ({
   useLocation: () => locationState.location,
 }));
 
+vi.mock("../context/ToastContext", () => ({
+  useToastActions: () => toastState,
+}));
+
+vi.mock("./search/GlobalSearchSources", () => ({
+  GlobalSearchSources: () => null,
+}));
+
 vi.mock("../api/issues", () => ({
   issuesApi: mockIssuesApi,
+}));
+
+vi.mock("../api/decisionsFeed", () => ({
+  decisionsFeedApi: mockDecisionsFeedApi,
 }));
 
 vi.mock("../api/agents", () => ({
@@ -200,6 +224,12 @@ describe("CommandPalette", () => {
     sidebarState.setSidebarOpen.mockReset();
     mockIssuesApi.list.mockReset();
     mockIssuesApi.listLabels.mockReset();
+    mockIssuesApi.update.mockReset();
+    mockIssuesApi.update.mockResolvedValue({});
+    mockIssuesApi.create.mockReset();
+    mockIssuesApi.get.mockReset();
+    mockDecisionsFeedApi.table.mockReset();
+    toastState.pushToast.mockReset();
     mockAgentsApi.list.mockReset();
     mockProjectsApi.list.mockReset();
     mockInstanceSettingsApi.getExperimental.mockReset();
@@ -498,4 +528,243 @@ describe("CommandPalette", () => {
     });
   });
 
+
+  it("opens from the global open event with the query already typed", async () => {
+    const { root } = renderWithQueryClient(<CommandPalette />, container);
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "indago" } }));
+    });
+    await waitForAssertion(() => {
+      const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement | null;
+      expect(input?.value).toBe("indago");
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  const openTask = {
+    id: "issue-1",
+    identifier: "GRE-7",
+    title: "Send the Indago proposal",
+    status: "in_progress",
+    assigneeAgentId: null,
+    assigneeUserId: null,
+  };
+
+  async function openActionsForTask() {
+    mockIssuesApi.list.mockResolvedValue([openTask]);
+    const agents = [{ id: "agent-1", name: "Mason", role: "engineer", status: "idle" }];
+    mockAgentsApi.list.mockResolvedValue(agents);
+    const rendered = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.issues.list("company-1"), [openTask]);
+      queryClient.setQueryData(queryKeys.agents.list("company-1"), agents);
+      queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
+    });
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Being worked on");
+      expect(container.querySelector('[data-testid="command-task-actions"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="command-task-actions"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-action-done"]')).not.toBeNull();
+    });
+    expect(navigateState.navigate).not.toHaveBeenCalled();
+    return rendered;
+  }
+
+  it("marks a task done from its quick actions", async () => {
+    const { root } = await openActionsForTask();
+    act(() => {
+      container.querySelector('[data-testid="command-action-done"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.update).toHaveBeenCalledWith("issue-1", { status: "done" });
+      expect(toastState.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "GRE-7 marked as done" }));
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("assigns a task to me or hands it to an agent", async () => {
+    const { root } = await openActionsForTask();
+    expect(container.querySelector('[data-testid="command-action-assign-me"]')).not.toBeNull();
+    const agentAction = container.querySelector('[data-testid="command-action-assign-agent"]');
+    expect(agentAction?.textContent).toContain("Assign to Mason");
+    act(() => {
+      agentAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.update).toHaveBeenCalledWith("issue-1", { assigneeAgentId: "agent-1", assigneeUserId: null });
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("offers recent searches and questions for the lead agent before anything is typed", async () => {
+    window.localStorage.setItem("paperclip:recent-searches:company-1", JSON.stringify(["indago fee"]));
+    const agents = [{ id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null }];
+    const asked = vi.fn();
+    window.addEventListener("gsam:open-ask-everest", asked);
+    const { root } = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.agents.list("company-1"), agents);
+    });
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("indago fee");
+      expect(container.querySelector('[data-testid="global-search-ask-suggestion"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="global-search-ask-suggestion"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(asked).toHaveBeenCalledTimes(1);
+    window.removeEventListener("gsam:open-ask-everest", asked);
+    window.localStorage.removeItem("paperclip:recent-searches:company-1");
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  async function typeCommand(text: string) {
+    const agents = [
+      { id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null },
+      { id: "agent-1", name: "Mason", role: "engineer", status: "idle", reportsTo: "agent-ceo" },
+    ];
+    mockAgentsApi.list.mockResolvedValue(agents);
+    const rendered = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.agents.list("company-1"), agents);
+      queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
+    });
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: text } }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-suggestion"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="command-suggestion"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-preview"]')).not.toBeNull();
+    });
+    return rendered;
+  }
+
+  it("previews a plain-English task before creating it", async () => {
+    mockIssuesApi.create.mockResolvedValue({ id: "new-1", identifier: "GRE-30", title: "Draft the Indago pack" });
+    const { root } = await typeCommand("create a task for Mason to draft the Indago pack tomorrow");
+    expect(container.textContent).toContain("Nothing happens until you confirm.");
+    expect(container.textContent).toContain("Draft the Indago pack");
+    expect(container.textContent).toContain("Mason");
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
+    act(() => {
+      container.querySelector('[data-testid="command-confirm"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.create).toHaveBeenCalledWith("company-1", expect.objectContaining({
+        title: "Draft the Indago pack",
+        status: "todo",
+        assigneeAgentId: "agent-1",
+        description: expect.stringMatching(/^Due by /),
+      }));
+      expect(navigateState.navigate).toHaveBeenCalledWith("/issues/GRE-30");
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("goes back to the typed words without creating anything", async () => {
+    const { root } = await typeCommand("create a task to chase the Indago invoice");
+    act(() => {
+      container.querySelector('[data-testid="command-cancel"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
+      expect(input.value).toBe("create a task to chase the Indago invoice");
+    });
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("sets a reminder as a task put aside until that morning", async () => {
+    mockIssuesApi.create.mockResolvedValue({ id: "new-2", identifier: "GRE-31", title: "Call Ben" });
+    mockDecisionsFeedApi.table.mockResolvedValue({});
+    const { root } = await typeCommand("remind me on Monday to call Ben");
+    act(() => {
+      container.querySelector('[data-testid="command-confirm"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.create).toHaveBeenCalledWith("company-1", { title: "Call Ben", status: "todo", assigneeUserId: "user-1" });
+      expect(mockDecisionsFeedApi.table).toHaveBeenCalledWith("new-2", expect.any(String));
+    });
+    const returnAt = new Date(mockDecisionsFeedApi.table.mock.calls[0]![1] as string);
+    expect(returnAt.getDay()).toBe(1);
+    expect(returnAt.getHours()).toBe(9);
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("saves a search and pins the page, then offers both in an empty box", async () => {
+    window.localStorage.clear();
+    locationState.location.pathname = "/PAP/issues";
+    locationState.location.search = "?status=blocked";
+    const { root } = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
+    });
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "indago fee" } }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-save-search"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="command-save-search"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-save-search"]')).toBeNull();
+      expect(toastState.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Search saved" }));
+    });
+    act(() => {
+      container.querySelector('[data-testid="command-pin-view"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      const saved = [...container.querySelectorAll('[data-testid="global-search-saved"]')].map((node) => node.textContent);
+      expect(saved).toHaveLength(2);
+      expect(saved[1]).toContain("indago fee");
+    });
+    act(() => {
+      container.querySelectorAll('[data-testid="global-search-saved"]')[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigateState.navigate).toHaveBeenCalledWith("/issues?status=blocked");
+    window.localStorage.clear();
+    act(() => {
+      root.unmount();
+    });
+  });
 });

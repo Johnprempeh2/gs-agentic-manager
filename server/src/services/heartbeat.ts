@@ -2,6 +2,7 @@ import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
 import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
+import { readTimerWakeNews } from "./timer-wake-news.js";
 import { settleSlackConversation } from "./slack-conversation-lifecycle.js";
 import { publicChatTaskUrl } from "./chat-task-url.js";
 import { bindLegacyBoardUserId } from "./board-identity.js";
@@ -45,6 +46,13 @@ import { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-
 export { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
 import { buildExecutionContinuation, StaleExecutionContinuationError } from "./execution-continuation.js";
 import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
+import {
+  REQUIRED_CAPABILITY_MISSING_REASON,
+  RUN_CAPABILITY_CHECK_EVENT_TYPE,
+  checkRequiredRunCapabilities,
+  runCapabilityCheckEventPayload,
+  type RunCapabilityProbe,
+} from "./run-capability-check.js";
 import { rebrandRunLogText } from "@greatstone/adapter-utils/run-log-transcript";
 import { collectRunSecretValues, redactRunSecretValues } from "@greatstone/adapter-utils/run-secret-values";
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
@@ -9615,6 +9623,8 @@ export type HeartbeatEnvironmentRuntime = ReturnType<
 >;
 
 export interface HeartbeatServiceOptions {
+  /** Test seam for the required-tools check at run start. */
+  runCapabilityProbe?: RunCapabilityProbe;
   /** Test seam before the atomic native runtime handoff. */
   beforeNativeRuntimeSelection?: (runId: string) => Promise<void>;
   /** Test seam immediately before the durable chat-control admission check. */
@@ -17551,6 +17561,10 @@ export function heartbeatService(
           heartbeat.issueOnlyTimer,
         false,
       ),
+      skipTimerWhenNothingChanged: asBoolean(
+        heartbeat.skipTimerWhenNothingChanged,
+        false,
+      ),
       maxDailyRuns: normalizeOptionalNonNegativeInteger(
         heartbeat.maxDailyRuns ??
           heartbeat.dailyRunLimit ??
@@ -21272,6 +21286,10 @@ export function heartbeatService(
     return recovery.reconcileOverdueHumanWaits(opts);
   }
 
+  async function reconcileWaitingDatesPassed(opts?: { companyId?: string | null; now?: Date }) {
+    return recovery.reconcileWaitingDatesPassed(opts);
+  }
+
   async function updateRuntimeState(
     agent: typeof agents.$inferSelect,
     run: typeof heartbeatRuns.$inferSelect,
@@ -24289,6 +24307,52 @@ export function heartbeatService(
         };
       } else {
         delete context.paperclipSecrets;
+      }
+      // Tools the agent declared it needs on this machine. Nothing declared
+      // means no check and no cost. A resumed native run already passed it.
+      if (!persistedNativeExecutionInput) {
+        const capabilityCheck = await checkRequiredRunCapabilities({
+          resolvedConfig,
+          environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
+          githubAccessProvidedByPlatform: githubSelection.configured,
+          baseEnv: runtimeEnv,
+          probe: options.runCapabilityProbe,
+        });
+        if (capabilityCheck.status !== "not_declared") {
+          const missing = capabilityCheck.status === "missing";
+          await appendRunEvent(run, {
+            eventType: RUN_CAPABILITY_CHECK_EVENT_TYPE,
+            stream: "system",
+            level: missing ? "error" : "info",
+            message:
+              capabilityCheck.status === "skipped"
+                ? "Skipped the check for required tools: this run does not use this machine."
+                : missing
+                  ? (capabilityCheck.message ?? "Some required tools are missing on this machine.")
+                  : "All required tools are available on this machine.",
+            payload: runCapabilityCheckEventPayload(capabilityCheck),
+          });
+          if (capabilityCheck.status === "missing") {
+            const missingCapabilities = [...capabilityCheck.report.missing].sort();
+            throw new ConfigurationIncompleteFailure(
+              capabilityCheck.message ?? "Some required tools are missing on this machine.",
+              {
+                configurationIncomplete: {
+                  reason: REQUIRED_CAPABILITY_MISSING_REASON,
+                  companyId: agent.companyId,
+                  agentId: agent.id,
+                  issueId: issueId ?? null,
+                  missingCapabilities,
+                  reasons: capabilityCheck.report.checks
+                    .filter((check) => !check.ok)
+                    .map((check) => ({ capability: check.capability, reason: check.reason })),
+                  actionUrl: `/agents/${agent.id}/configuration`,
+                  fingerprint: `capabilities:${agent.id}:${missingCapabilities.join(",")}`,
+                },
+              },
+            );
+          }
+        }
       }
       const effectiveResolvedConfig = applyRunScopedMentionedSkillKeys(
         resolvedConfig,
@@ -29231,6 +29295,18 @@ export function heartbeatService(
       await markTimerHeartbeatChecked(agentId, source);
       return null;
     }
+    if (policy.skipTimerWhenNothingChanged && genericTimerWake) {
+      const news = await readTimerWakeNews(db, agent);
+      if (!news.hasNews) {
+        await writeSkippedHeartbeatRequest("heartbeat.timer.nothing_changed", {
+          reason:
+            "Nothing assigned to or made by this agent changed, and nobody commented on its tasks, since its last run.",
+          since: news.since.toISOString(),
+        });
+        await markTimerHeartbeatChecked(agentId, source);
+        return null;
+      }
+    }
 
     // "Not now" (GRE-262): a tabled task gets no wakes of any kind. The wake
     // is dropped, not saved; bringing the task back sends one fresh wake.
@@ -32461,6 +32537,7 @@ export function heartbeatService(
     reconcileResolvedDependencyWakes,
 
     reconcileOverdueHumanWaits,
+    reconcileWaitingDatesPassed,
 
     scanSilentActiveRuns,
     stopSilentRuns,

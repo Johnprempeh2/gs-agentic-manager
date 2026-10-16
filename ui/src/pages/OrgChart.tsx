@@ -649,7 +649,8 @@ export function OrgChart({ orgTree: providedOrgTree, agents: providedAgents, emb
 
   if (orgTree && orgTree.length === 0) {
     return (
-      <EmptyState icon={Network} message="No organizational hierarchy defined." action="New agent" onAction={() => navigate("/agents/new")} />
+      <EmptyState icon={Network} message="No agents yet."
+        description="Hire your first agent and the chart shows who reports to whom." action="New agent" onAction={() => navigate("/agents/new")} />
     );
   }
 
@@ -1056,7 +1057,7 @@ function AgentPanel({
           )}
         </section>
 
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+        <dl className="grid grid-cols-(--gtc-16) gap-x-4 gap-y-1.5">
           {rows.map(([label, value]) => (
             <div key={label} className="contents">
               <dt className="text-muted-foreground">{label}</dt>

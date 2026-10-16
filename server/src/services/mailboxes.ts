@@ -12,6 +12,8 @@ import type {
   MailboxAddress,
   MailboxAgentsInput,
   MailboxConnectInput,
+  MailboxDraftInput,
+  MailboxDraftResult,
   MailboxMessage,
   MailboxOAuthAppInput,
   MailboxOAuthAppSummary,
@@ -74,6 +76,8 @@ type MailboxConfig = {
   username: string;
   /** Set for Microsoft / Google sign-in; absent for an IMAP app password. */
   oauthProvider?: MailboxOAuthProvider;
+  /** Agents may save drafts (never send). Absent means off. */
+  allowDrafts?: boolean;
 };
 export type MailboxBoardActor = { userId?: string; localImplicit?: boolean };
 /** Who is reading. Agents only reach mailboxes installed for them. */
@@ -107,6 +111,42 @@ function parsedAddresses(value: AddressObject | AddressObject[] | undefined): Ma
       address: entry.address || null,
     })),
   );
+}
+
+/** RFC 2047 encoded-word for a header value that is not plain ASCII. */
+function headerValue(value: string) {
+  return /^[\x20-\x7e]*$/.test(value)
+    ? value
+    : `=?UTF-8?B?${Buffer.from(value, "utf8").toString("base64")}?=`;
+}
+
+/**
+ * A plain-text RFC 822 message for the Drafts folder. The body is base64 so
+ * any text survives; header values were checked for line breaks by the schema.
+ */
+export function buildDraftMessage(
+  from: string,
+  input: MailboxDraftInput,
+  now = new Date(),
+): Buffer {
+  const domain = from.split("@")[1] || "gsam.local";
+  const headers = [
+    `From: ${from}`,
+    `To: ${input.to.join(", ")}`,
+    ...(input.cc.length ? [`Cc: ${input.cc.join(", ")}`] : []),
+    `Subject: ${headerValue(input.subject)}`,
+    `Date: ${now.toUTCString().replace("GMT", "+0000")}`,
+    `Message-ID: <${randomUUID()}@${domain}>`,
+    ...(input.inReplyTo ? [`In-Reply-To: ${input.inReplyTo}`, `References: ${input.inReplyTo}`] : []),
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=utf-8",
+    "Content-Transfer-Encoding: base64",
+    "X-GSAM-Draft: agent",
+  ];
+  const body = Buffer.from(input.text.replace(/\r?\n/g, "\r\n"), "utf8")
+    .toString("base64")
+    .replace(/.{1,76}/g, "$&\r\n");
+  return Buffer.from(`${headers.join("\r\n")}\r\n\r\n${body}`, "utf8");
 }
 
 function appKey(provider: MailboxOAuthProvider) {
@@ -170,6 +210,7 @@ export function mailboxService(
       agentIds: own
         .filter((install) => install.targetType === "agent")
         .map((install) => install.targetId),
+      allowDrafts: config.allowDrafts === true,
       createdAt: connection.createdAt.toISOString(),
     };
   }
@@ -845,6 +886,65 @@ export function mailboxService(
     };
   }
 
+  /** Turn agent drafts on or off for one mailbox. Board only; logged. */
+  async function setDrafts(
+    companyId: string,
+    id: string,
+    allowDrafts: boolean,
+    actor: MailboxBoardActor,
+  ) {
+    const connection = await get(companyId, id);
+    const config = connection.config as unknown as MailboxConfig;
+    await db
+      .update(toolConnections)
+      .set({ config: { ...config, allowDrafts } as unknown as Connection["config"], updatedAt: new Date() })
+      .where(and(eq(toolConnections.id, id), eq(toolConnections.companyId, companyId)));
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: actor.userId ?? "board",
+      action: "mailbox.drafts_updated",
+      entityType: "tool_connection",
+      entityId: id,
+      details: { allowDrafts },
+    });
+    return (await list(companyId)).find((m) => m.id === id)!;
+  }
+
+  /**
+   * Save an email draft into the mailbox's Drafts folder. Nothing is sent:
+   * the owner reviews and sends it from their own mail app. Refused unless a
+   * person turned drafts on for this mailbox.
+   */
+  async function saveDraft(
+    companyId: string,
+    id: string,
+    input: MailboxDraftInput,
+    reader: MailboxReader,
+  ): Promise<MailboxDraftResult> {
+    const connection = await get(companyId, id, reader);
+    const config = connection.config as unknown as MailboxConfig;
+    if (config.allowDrafts !== true)
+      throw forbidden(
+        "Drafts are turned off for this mailbox. Ask a person to turn on drafts in Apps > Mailboxes.",
+        { code: "mailbox_drafts_off" },
+      );
+    const raw = buildDraftMessage(config.address, input);
+    const { folder } = await withClient(connection, (client) => client.appendDraft(raw));
+    await logActivity(db, {
+      companyId,
+      actorType: reader.kind === "agent" ? "agent" : "user",
+      actorId: reader.kind === "agent" ? reader.agentId : (reader.userId ?? "board"),
+      agentId: reader.kind === "agent" ? reader.agentId : null,
+      runId: reader.kind === "agent" ? (reader.runId ?? null) : null,
+      action: "mailbox.draft_saved",
+      entityType: "tool_connection",
+      entityId: id,
+      details: { folder, recipientCount: input.to.length + input.cc.length },
+    });
+    return { mailboxId: id, folder, subject: input.subject, to: input.to };
+  }
+
   return {
     list,
     assigned,
@@ -861,6 +961,8 @@ export function mailboxService(
     search,
     read,
     save,
+    setDrafts,
+    saveDraft,
   };
 }
 

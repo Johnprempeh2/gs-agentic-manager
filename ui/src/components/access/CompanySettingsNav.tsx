@@ -14,6 +14,7 @@ const items = [
   { value: "export", label: "Export", href: "/company/export" },
   { value: "import", label: "Import", href: "/company/import" },
   { value: "members", label: "Members", href: "/company/settings/members" },
+  { value: "integrations", label: "Integrations", href: "/company/settings/integrations" },
   { value: "secrets", label: "Secrets", href: "/company/settings/secrets" },
   { value: "pipelines-access", label: "Pipelines access", href: "/company/settings/pipelines-access" },
   { value: "instance-profile", label: "Profile", href: `${INSTANCE_SETTINGS_PATH_PREFIX}/profile` },
@@ -91,6 +92,10 @@ export function getCompanySettingsTab(pathname: string): CompanySettingsTab {
     return "members";
   }
 
+  if (pathname.includes("/company/settings/integrations")) {
+    return "integrations";
+  }
+
   if (pathname.includes("/company/settings/secrets")) {
     return "secrets";
   }
@@ -140,6 +145,7 @@ export function CompanySettingsNav() {
         value={activeTab}
         onValueChange={handleTabChange}
         align="start"
+        mobileLabel="Settings page"
       />
     </Tabs>
   );

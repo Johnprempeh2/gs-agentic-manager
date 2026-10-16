@@ -25,6 +25,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { ArrowUpDown, Check, Hexagon, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ErrorState } from "../components/ErrorState";
+import { HelpTerm } from "../components/HelpTerm";
 
 type ProjectSortField = "name" | "updated" | "created" | "targetDate";
 type ProjectSortDir = "asc" | "desc";
@@ -133,6 +134,9 @@ export function Projects() {
 
   return (
     <div className="space-y-4">
+      <p className="text-sm text-muted-foreground" data-testid="projects-intro">
+        Each <HelpTerm term="project" /> groups the <HelpTerm term="task">tasks</HelpTerm> that work towards one result.
+      </p>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <Popover>
           <PopoverTrigger asChild>
@@ -175,7 +179,7 @@ export function Projects() {
         </Popover>
         <Button size="sm" variant="outline" onClick={openNewProject}>
           <Plus className="h-4 w-4 mr-1" />
-          Add Project
+          Add project
         </Button>
       </div>
 
@@ -185,7 +189,8 @@ export function Projects() {
         <EmptyState
           icon={Hexagon}
           message="No projects yet."
-          action="Add Project"
+          description="A project groups related tasks, like a client engagement or a launch, so you can see progress in one place."
+          action="Add project"
           onAction={openNewProject}
         />
       )}

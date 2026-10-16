@@ -40,6 +40,7 @@ import type {
   ReorderToolPolicies,
   AppDefinition,
   ToolAppsAttentionResponse,
+  AgentAccessSummary,
   ToolConnectionActivityResponse,
   ToolConnectionLifecycleEventType,
   ToolConnectionTestAgentsResponse,
@@ -329,6 +330,8 @@ export const toolsApi = {
     ),
   listAppsAttention: (companyId: string) =>
     api.get<ToolAppsAttentionResponse>(`/companies/${companyId}/tools/apps/attention`),
+  listAgentAccess: (companyId: string) =>
+    api.get<AgentAccessSummary>(`/companies/${companyId}/tools/agent-access`),
   listApplications: (companyId: string) =>
     api.get<ToolApplicationsResponse>(`/companies/${companyId}/tools/applications`),
   createApplication: (companyId: string, input: CreateToolApplicationInput) =>

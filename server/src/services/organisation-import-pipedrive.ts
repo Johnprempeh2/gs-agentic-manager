@@ -18,6 +18,9 @@ import type {
 import type { OrganisationActor } from "./organisations.js";
 
 const SOURCE = "pipedrive";
+
+/** The CRM an import reads from; it is also the rows' `source`, so each CRM keeps its own ids. */
+export type CrmImportSource = OrganisationImportResult["source"];
 const MAX_ERROR_SAMPLES = 20;
 
 export interface MappedPipedriveOrganisation {
@@ -31,8 +34,9 @@ export interface MappedPipedriveOrganisation {
   /**
    * Global CRM fields Pipedrive has (GRE-1539). Only the ones with a value are
    * here, so a rerun fills them in but never blanks what someone typed in GSAM.
+   * Imports that do not map them (export file, HubSpot, Notion) leave it out.
    */
-  crm: Partial<{
+  crm?: Partial<{
     website: string;
     linkedinUrl: string;
     addressStreet: string;
@@ -146,7 +150,7 @@ export function mapPipedriveOrganization(
 }
 
 /** True when every CRM field Pipedrive sent already has that value on the row. */
-function crmUnchanged(existing: typeof organisations.$inferSelect, crm: MappedPipedriveOrganisation["crm"]) {
+function crmUnchanged(existing: typeof organisations.$inferSelect, crm: NonNullable<MappedPipedriveOrganisation["crm"]>) {
   return Object.entries(crm).every(([key, value]) => {
     const current = existing[key as keyof typeof existing];
     return key === "annualRevenue" ? current !== null && Number(current) === value : current === value;
@@ -154,7 +158,7 @@ function crmUnchanged(existing: typeof organisations.$inferSelect, crm: MappedPi
 }
 
 /** numeric columns take text in Drizzle. */
-function crmRowValues(crm: MappedPipedriveOrganisation["crm"]) {
+function crmRowValues(crm: NonNullable<MappedPipedriveOrganisation["crm"]>) {
   const { annualRevenue, ...rest } = crm;
   return annualRevenue === undefined ? rest : { ...rest, annualRevenue: String(annualRevenue) };
 }
@@ -173,7 +177,173 @@ export function mapPipedrivePerson(person: PipedrivePerson): MappedPipedriveCont
   };
 }
 
-const emptyCounts = (): OrganisationImportCounts => ({ created: 0, updated: 0, skipped: 0, errors: 0 });
+export const emptyImportCounts = (): OrganisationImportCounts => ({ created: 0, updated: 0, skipped: 0, errors: 0 });
+
+type OrganisationRow = typeof organisations.$inferSelect;
+type ContactRow = typeof organisationContacts.$inferSelect;
+
+/**
+ * Writes mapped Pipedrive records for one company, keyed by source "pipedrive"
+ * and the Pipedrive id, so the API import and the export file import update
+ * the same rows. Counts and error samples go into `result`.
+ */
+export function pipedriveRecordWriter(
+  db: Db,
+  companyId: string,
+  actor: OrganisationActor,
+  result: OrganisationImportResult,
+  now: () => Date,
+  source: CrmImportSource = SOURCE,
+) {
+  const orgByExternalId = new Map<string, OrganisationRow>();
+  const contactByExternalId = new Map<string, ContactRow>();
+
+  const recordError = (kind: "organisation" | "contact", externalId: string, error: unknown) => {
+    result[kind === "organisation" ? "organisations" : "contacts"].errors += 1;
+    if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
+      result.errorSamples.push({ kind, externalId, message: error instanceof Error ? error.message : String(error) });
+    }
+  };
+
+  return {
+    orgByExternalId,
+    recordError,
+
+    async loadOrganisations() {
+      const rows = await db
+        .select()
+        .from(organisations)
+        .where(and(eq(organisations.companyId, companyId), eq(organisations.source, source), isNotNull(organisations.externalId)));
+      for (const row of rows) orgByExternalId.set(row.externalId!, row);
+    },
+
+    async loadContacts() {
+      const rows = await db
+        .select()
+        .from(organisationContacts)
+        .where(
+          and(
+            eq(organisationContacts.companyId, companyId),
+            eq(organisationContacts.source, source),
+            isNotNull(organisationContacts.externalId),
+          ),
+        );
+      for (const row of rows) contactByExternalId.set(row.externalId!, row);
+    },
+
+    async writeOrganisation(mapped: MappedPipedriveOrganisation) {
+      const crm = mapped.crm ?? {};
+      try {
+        const existing = orgByExternalId.get(mapped.externalId);
+        if (!existing) {
+          const [row] = await db
+            .insert(organisations)
+            .values({
+              companyId,
+              name: mapped.name,
+              industry: mapped.industry,
+              country: mapped.country,
+              countryOwner: mapped.countryOwner,
+              status: mapped.status,
+              ...crmRowValues(crm),
+              source,
+              externalId: mapped.externalId,
+              createdByUserId: actor.userId,
+              createdByAgentId: actor.agentId,
+            })
+            .returning();
+          orgByExternalId.set(mapped.externalId, row!);
+          result.organisations.created += 1;
+          return;
+        }
+        const fields = {
+          name: mapped.name,
+          industry: mapped.industry,
+          country: mapped.country,
+          countryOwner: mapped.countryOwner,
+        };
+        if (
+          existing.name === fields.name &&
+          existing.industry === fields.industry &&
+          existing.country === fields.country &&
+          existing.countryOwner === fields.countryOwner &&
+          crmUnchanged(existing, crm)
+        ) {
+          result.organisations.skipped += 1;
+          return;
+        }
+        const [row] = await db
+          .update(organisations)
+          .set({ ...fields, ...crmRowValues(crm), updatedAt: now() })
+          .where(and(eq(organisations.companyId, companyId), eq(organisations.id, existing.id)))
+          .returning();
+        orgByExternalId.set(mapped.externalId, row!);
+        result.organisations.updated += 1;
+      } catch (error) {
+        recordError("organisation", mapped.externalId, error);
+      }
+    },
+
+    async writeContact(mapped: MappedPipedriveContact, organisation: OrganisationRow) {
+      try {
+        const existing = contactByExternalId.get(mapped.externalId);
+        const fields = {
+          organisationId: organisation.id,
+          name: mapped.name,
+          role: mapped.role,
+          email: mapped.email,
+          phone: mapped.phone,
+        };
+        if (!existing) {
+          const [row] = await db
+            .insert(organisationContacts)
+            .values({
+              companyId,
+              ...fields,
+              source,
+              externalId: mapped.externalId,
+              createdByUserId: actor.userId,
+              createdByAgentId: actor.agentId,
+            })
+            .returning();
+          contactByExternalId.set(mapped.externalId, row!);
+          result.contacts.created += 1;
+          return;
+        }
+        if (
+          existing.organisationId === fields.organisationId &&
+          existing.name === fields.name &&
+          existing.role === fields.role &&
+          existing.email === fields.email &&
+          existing.phone === fields.phone
+        ) {
+          result.contacts.skipped += 1;
+          return;
+        }
+        const [row] = await db
+          .update(organisationContacts)
+          .set({ ...fields, updatedAt: now() })
+          .where(and(eq(organisationContacts.companyId, companyId), eq(organisationContacts.id, existing.id)))
+          .returning();
+        contactByExternalId.set(mapped.externalId, row!);
+        result.contacts.updated += 1;
+      } catch (error) {
+        recordError("contact", mapped.externalId, error);
+      }
+    },
+  };
+}
+
+export function newImportResult(startedAt: Date, source: CrmImportSource = SOURCE): OrganisationImportResult {
+  return {
+    source,
+    organisations: emptyImportCounts(),
+    contacts: emptyImportCounts(),
+    errorSamples: [],
+    startedAt: startedAt.toISOString(),
+    finishedAt: startedAt.toISOString(),
+  };
+}
 
 /**
  * Runs one full import for a company. The caller checks permissions and
@@ -184,32 +354,12 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
 
   return {
     async run(companyId: string, client: PipedriveClient, actor: OrganisationActor): Promise<OrganisationImportResult> {
-      const startedAt = now();
-      const result: OrganisationImportResult = {
-        source: SOURCE,
-        organisations: emptyCounts(),
-        contacts: emptyCounts(),
-        errorSamples: [],
-        startedAt: startedAt.toISOString(),
-        finishedAt: startedAt.toISOString(),
-      };
-      const recordError = (kind: "organisation" | "contact", externalId: string, error: unknown) => {
-        result[kind === "organisation" ? "organisations" : "contacts"].errors += 1;
-        if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
-          result.errorSamples.push({ kind, externalId, message: error instanceof Error ? error.message : String(error) });
-        }
-      };
+      const result = newImportResult(now());
+      const writer = pipedriveRecordWriter(db, companyId, actor, result, now);
 
       // Organisations first, so persons can link to them by Pipedrive id.
       const industries = industryLabels(await client.listOrganizationFields());
-      const orgByExternalId = new Map(
-        (
-          await db
-            .select()
-            .from(organisations)
-            .where(and(eq(organisations.companyId, companyId), eq(organisations.source, SOURCE), isNotNull(organisations.externalId)))
-        ).map((row) => [row.externalId!, row]),
-      );
+      await writer.loadOrganisations();
 
       let start: number | null = 0;
       while (start !== null) {
@@ -220,73 +370,12 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
             result.organisations.skipped += 1;
             continue;
           }
-          try {
-            const existing = orgByExternalId.get(mapped.externalId);
-            if (!existing) {
-              const [row] = await db
-                .insert(organisations)
-                .values({
-                  companyId,
-                  name: mapped.name,
-                  industry: mapped.industry,
-                  country: mapped.country,
-                  countryOwner: mapped.countryOwner,
-                  status: mapped.status,
-                  ...crmRowValues(mapped.crm),
-                  source: SOURCE,
-                  externalId: mapped.externalId,
-                  createdByUserId: actor.userId,
-                  createdByAgentId: actor.agentId,
-                })
-                .returning();
-              orgByExternalId.set(mapped.externalId, row!);
-              result.organisations.created += 1;
-              continue;
-            }
-            const fields = {
-              name: mapped.name,
-              industry: mapped.industry,
-              country: mapped.country,
-              countryOwner: mapped.countryOwner,
-            };
-            if (
-              existing.name === fields.name &&
-              existing.industry === fields.industry &&
-              existing.country === fields.country &&
-              existing.countryOwner === fields.countryOwner &&
-              crmUnchanged(existing, mapped.crm)
-            ) {
-              result.organisations.skipped += 1;
-              continue;
-            }
-            const [row] = await db
-              .update(organisations)
-              .set({ ...fields, ...crmRowValues(mapped.crm), updatedAt: now() })
-              .where(and(eq(organisations.companyId, companyId), eq(organisations.id, existing.id)))
-              .returning();
-            orgByExternalId.set(mapped.externalId, row!);
-            result.organisations.updated += 1;
-          } catch (error) {
-            recordError("organisation", mapped.externalId, error);
-          }
+          await writer.writeOrganisation(mapped);
         }
         start = page.nextStart;
       }
 
-      const contactByExternalId = new Map(
-        (
-          await db
-            .select()
-            .from(organisationContacts)
-            .where(
-              and(
-                eq(organisationContacts.companyId, companyId),
-                eq(organisationContacts.source, SOURCE),
-                isNotNull(organisationContacts.externalId),
-              ),
-            )
-        ).map((row) => [row.externalId!, row]),
-      );
+      await writer.loadContacts();
 
       start = 0;
       while (start !== null) {
@@ -294,56 +383,12 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         for (const person of page.items) {
           const mapped = mapPipedrivePerson(person);
           // A person with no organisation, or one whose organisation was not imported, has nowhere to go.
-          const organisation = mapped?.organisationExternalId ? orgByExternalId.get(mapped.organisationExternalId) : undefined;
+          const organisation = mapped?.organisationExternalId ? writer.orgByExternalId.get(mapped.organisationExternalId) : undefined;
           if (!mapped || !organisation) {
             result.contacts.skipped += 1;
             continue;
           }
-          try {
-            const existing = contactByExternalId.get(mapped.externalId);
-            const fields = {
-              organisationId: organisation.id,
-              name: mapped.name,
-              role: mapped.role,
-              email: mapped.email,
-              phone: mapped.phone,
-            };
-            if (!existing) {
-              const [row] = await db
-                .insert(organisationContacts)
-                .values({
-                  companyId,
-                  ...fields,
-                  source: SOURCE,
-                  externalId: mapped.externalId,
-                  createdByUserId: actor.userId,
-                  createdByAgentId: actor.agentId,
-                })
-                .returning();
-              contactByExternalId.set(mapped.externalId, row!);
-              result.contacts.created += 1;
-              continue;
-            }
-            if (
-              existing.organisationId === fields.organisationId &&
-              existing.name === fields.name &&
-              existing.role === fields.role &&
-              existing.email === fields.email &&
-              existing.phone === fields.phone
-            ) {
-              result.contacts.skipped += 1;
-              continue;
-            }
-            const [row] = await db
-              .update(organisationContacts)
-              .set({ ...fields, updatedAt: now() })
-              .where(and(eq(organisationContacts.companyId, companyId), eq(organisationContacts.id, existing.id)))
-              .returning();
-            contactByExternalId.set(mapped.externalId, row!);
-            result.contacts.updated += 1;
-          } catch (error) {
-            recordError("contact", mapped.externalId, error);
-          }
+          await writer.writeContact(mapped, organisation);
         }
         start = page.nextStart;
       }

@@ -5,6 +5,8 @@ import { projectToolRoutes } from "./routes/project-tools.js";
 import { emailChannelService } from "./services/email-channels.js";
 import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
 import { mailboxRoutes } from "./routes/mailboxes.js";
+import { inboundTaskHookRoutes } from "./routes/inbound-task-hooks.js";
+import { outboundWebhookRoutes } from "./routes/outbound-webhooks.js";
 import { toolActionDeliveryService } from "./services/tool-action-delivery.js";
 import { registerAssignedMcpGateway } from "./services/native-runtime/assigned-mcp-tools.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -100,6 +102,7 @@ import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
+import { memoryConnectionRoutes } from "./routes/memory-connections.js";
 import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
@@ -118,6 +121,11 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
 import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
+import { blockedWorkRoutes } from "./routes/blocked-work.js";
+import { calendarRoutes } from "./routes/calendar.js";
+import { teamScorecardRoutes } from "./routes/team-scorecard.js";
+import { weeklyReportRoutes } from "./routes/weekly-report.js";
+import { recoveryHoldRoutes } from "./routes/recovery-holds.js";
 import { supportRoutes } from "./routes/support.js";
 import { clientSupportRoutes } from "./routes/client-support.js";
 import { pushRoutes } from "./routes/push.js";
@@ -145,6 +153,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { authRoutes } from "./routes/auth.js";
 import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
+import { generatedImageRoutes } from "./routes/generated-images.js";
 import { accessRoutes } from "./routes/access.js";
 import { legacyBoardRoutes } from "./routes/legacy-board.js";
 import { memberHandoverRoutes } from "./routes/member-handover.js";
@@ -204,7 +213,8 @@ import {
   flushPluginLogBuffer,
 } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
-import { setPluginEventBus } from "./services/activity-log.js";
+import { addActivityListener, setPluginEventBus } from "./services/activity-log.js";
+import { startOutboundWebhookDispatch } from "./services/outbound-webhooks.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
@@ -816,6 +826,7 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
+  api.use(generatedImageRoutes(db, opts.storageService));
   api.use(deliverableRoutes(db, opts.storageService, { publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
@@ -824,7 +835,7 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db));
+  api.use(pipelineRoutes(db, { storage: opts.storageService }));
   api.use(crmSyncRoutes(db));
   api.use(organisationRoutes(db));
   api.use(
@@ -841,6 +852,9 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
   api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(inboundTaskHookRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
+  api.use(outboundWebhookRoutes(db, { publicBaseUrl: opts.authPublicBaseUrl }));
+  startOutboundWebhookDispatch(db, addActivityListener, { publicBaseUrl: opts.authPublicBaseUrl });
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
@@ -848,9 +862,10 @@ export async function createApp(
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
+  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode, storage: opts.storageService }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));
   api.use(managedAgentProfileRoutes(db));
@@ -873,6 +888,11 @@ export async function createApp(
   api.use(attentionRoutes(db));
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(agentWorkDigestRoutes(db));
+  api.use(blockedWorkRoutes(db));
+  api.use(calendarRoutes(db));
+  api.use(teamScorecardRoutes(db));
+  api.use(weeklyReportRoutes(db));
+  api.use(recoveryHoldRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(clientSupportRoutes(db, { storage: opts.storageService }));
   api.use(pushRoutes(db));

@@ -282,6 +282,7 @@ export function CompanySettings() {
           onValueChange={handleTabChange}
           align="start"
           ariaLabel="Settings section"
+          mobileLabel="Section of this page"
         />
 
         <TabsContent value="general" className="space-y-8">

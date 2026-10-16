@@ -73,6 +73,7 @@ import {
   useLocalInboxArchiveIssueIds,
 } from "../lib/inboxArchiveCache";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorState } from "../components/ErrorState";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { CollectionToolbar, type CollectionToolbarProps } from "../components/CollectionToolbar";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
@@ -88,6 +89,8 @@ import { IssueFiltersPopover } from "../components/IssueFiltersPopover";
 import { InboxArchiveButton, IssueRow } from "../components/IssueRow";
 import { TaskOwnerLabel } from "../components/TaskOwnerLabel";
 import { BlockedInboxView } from "../components/BlockedInboxView";
+import { BlockedWorkSummary } from "../components/BlockedWorkSummary";
+import { RecoveryHoldsPanel } from "../components/RecoveryHoldsPanel";
 import { SwipeToArchive } from "../components/SwipeToArchive";
 import { useNeedsMe } from "../hooks/useDecisionsFeed";
 import { NeedsMeList } from "../components/NeedsMeList";
@@ -144,6 +147,8 @@ import {
   getLatestFailedRunsByAgent,
   matchesInboxIssueSearch,
   getRecentTouchedIssues,
+  activeSnoozedInboxIssueIds,
+  inboxSnoozeUntilTomorrow,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadCollapsedInboxGroupKeys,
@@ -824,7 +829,13 @@ export function Inbox() {
     () => loadInboxCollectionPreferences(selectedCompanyId).columns,
   );
   const { dismissed: dismissedAlerts, dismiss: dismissAlert } = useDismissedInboxAlerts();
-  const { dismissedAtByKey, dismiss: dismissInboxItem } = useInboxDismissals(selectedCompanyId);
+  const {
+    dismissals: inboxDismissals,
+    dismissedAtByKey,
+    dismiss: dismissInboxItem,
+    snooze: snoozeInboxItem,
+    restore: restoreInboxItem,
+  } = useInboxDismissals(selectedCompanyId);
   const { readItems, markRead: markItemRead, markUnread: markItemUnread } = useReadInboxItems();
   const { allCategoryFilter, allApprovalFilter, issueFilters } = filterPreferences;
 
@@ -951,7 +962,13 @@ export function Inbox() {
     queryKey: inboxIssuesQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data: issues, isLoading: isIssuesLoading, dataUpdatedAt: issuesUpdatedAt } = useQuery({
+  const {
+    data: issues,
+    isLoading: isIssuesLoading,
+    dataUpdatedAt: issuesUpdatedAt,
+    error: issuesError,
+    refetch: refetchIssues,
+  } = useQuery({
     queryKey: inboxIssuesQueryKey,
     queryFn: () =>
       issuesApi.listCompact(selectedCompanyId!, {
@@ -971,6 +988,8 @@ export function Inbox() {
     data: mineIssuesRaw = [],
     isLoading: isMineIssuesLoading,
     dataUpdatedAt: mineIssuesUpdatedAt,
+    error: mineIssuesError,
+    refetch: refetchMineIssues,
   } = useQuery({
     queryKey: [...queryKeys.issues.listMineByMe(selectedCompanyId!), "compact", "with-routine-executions", "live-descendant-summary", INBOX_ISSUE_LIST_LIMIT] as const,
     queryFn: () =>
@@ -998,6 +1017,8 @@ export function Inbox() {
     data: touchedIssuesRaw = [],
     isLoading: isTouchedIssuesLoading,
     dataUpdatedAt: touchedIssuesUpdatedAt,
+    error: touchedIssuesError,
+    refetch: refetchTouchedIssues,
   } = useQuery({
     queryKey: [...queryKeys.issues.listTouchedByMe(selectedCompanyId!), "compact", "with-routine-executions", "live-descendant-summary", INBOX_ISSUE_LIST_LIMIT] as const,
     queryFn: () =>
@@ -1055,13 +1076,22 @@ export function Inbox() {
   const [undoableArchiveIssueIds, setUndoableArchiveIssueIds] = useState<string[]>([]);
   const [unarchivingIssueIds, setUnarchivingIssueIds] = useState<Set<string>>(new Set());
   const guardedArchiveIssueIds = useLocalInboxArchiveIssueIds(selectedCompanyId);
+  // Swipe right puts a task away until tomorrow morning. The local set hides it
+  // straight away; the server copy keeps it hidden on every device.
+  const [laterIssueIds, setLaterIssueIds] = useState<Set<string>>(new Set());
+  const snoozedIssueIds = useMemo(() => {
+    const issueIds = activeSnoozedInboxIssueIds(inboxDismissals);
+    for (const issueId of laterIssueIds) issueIds.add(issueId);
+    return issueIds;
+  }, [inboxDismissals, laterIssueIds]);
   const locallyArchivedIssueIds = useMemo(() => {
     const issueIds = new Set(guardedArchiveIssueIds);
+    for (const issueId of snoozedIssueIds) issueIds.add(issueId);
     for (const issueId of undoableArchiveIssueIds) issueIds.add(issueId);
     for (const issueId of archivingIssueIds) issueIds.add(issueId);
     for (const issueId of unarchivingIssueIds) issueIds.delete(issueId);
     return issueIds;
-  }, [archivingIssueIds, guardedArchiveIssueIds, undoableArchiveIssueIds, unarchivingIssueIds]);
+  }, [archivingIssueIds, guardedArchiveIssueIds, snoozedIssueIds, undoableArchiveIssueIds, unarchivingIssueIds]);
 
   const companyUserLabelMap = useMemo(
     () => buildCompanyUserLabelMap(companyMembers?.users),
@@ -1832,6 +1862,32 @@ export function Inbox() {
     },
   });
 
+  const putIssueAwayForLater = useCallback(
+    (issue: Issue) => {
+      const itemKey = `issue:${issue.id}`;
+      setLaterIssueIds((prev) => new Set(prev).add(issue.id));
+      snoozeInboxItem(itemKey, inboxSnoozeUntilTomorrow().toISOString());
+      pushToast({
+        id: `inbox-later-${issue.id}`,
+        title: "Back tomorrow at 08:00",
+        body: issue.title,
+        tone: "info",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            setLaterIssueIds((prev) => {
+              const next = new Set(prev);
+              next.delete(issue.id);
+              return next;
+            });
+            restoreInboxItem(itemKey);
+          },
+        },
+      });
+    },
+    [pushToast, restoreInboxItem, snoozeInboxItem],
+  );
+
   const [fadingOutIssues, setFadingOutIssues] = useState<Set<string>>(new Set());
   const [showMarkAllReadConfirm, setShowMarkAllReadConfirm] = useState(false);
   const [fadingNonIssueItems, setFadingNonIssueItems] = useState<Set<string>>(new Set());
@@ -2380,6 +2436,14 @@ export function Inbox() {
     !isTouchedIssuesLoading &&
     !isRunsLoading;
 
+  // A failed task list must not read as "Inbox zero": say it failed and offer a retry.
+  const inboxLoadError = issuesError ?? mineIssuesError ?? touchedIssuesError ?? null;
+  const retryInboxLoad = () => {
+    if (issuesError) void refetchIssues();
+    if (mineIssuesError) void refetchMineIssues();
+    if (touchedIssuesError) void refetchTouchedIssues();
+  };
+
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
   const markAllReadIssues = (tab === "mine" ? visibleMineIssues : unreadTouchedIssues)
     .filter((issue) => issue.isUnreadForMe && !fadingOutIssues.has(issue.id) && !archivingIssueIds.has(issue.id));
@@ -2699,6 +2763,13 @@ export function Inbox() {
 
       {tab === "blocked" ? (
         <div className="-mx-2 sm:mx-0">
+        <RecoveryHoldsPanel companyId={selectedCompanyId!} agentNameById={agentById} />
+        <BlockedWorkSummary
+          companyId={selectedCompanyId!}
+          agentNameById={agentById}
+          userLabelById={companyUserLabelMap}
+          currentUserId={currentUserId}
+        />
         <BlockedInboxView
           companyId={selectedCompanyId!}
           searchQuery={searchQuery}
@@ -2720,11 +2791,20 @@ export function Inbox() {
         </div>
       ) : null}
 
+      {tab !== "blocked" && inboxLoadError ? (
+        <ErrorState
+          error={inboxLoadError}
+          title="The inbox could not load"
+          onRetry={retryInboxLoad}
+          compact={visibleSections.length > 0}
+        />
+      ) : null}
+
       {tab !== "blocked" && !allLoaded && visibleSections.length === 0 && (
         <PageSkeleton variant="inbox" />
       )}
 
-      {tab !== "blocked" && allLoaded && visibleSections.length === 0 && (
+      {tab !== "blocked" && allLoaded && !inboxLoadError && visibleSections.length === 0 && (
         <EmptyState
           icon={searchQuery.trim() ? Search : tab === "mine" ? BrandStoneIcon : InboxIcon}
           message={
@@ -2737,6 +2817,11 @@ export function Inbox() {
               : tab === "recent"
                 ? "No recent inbox items."
                 : "No inbox items match these filters."
+          }
+          description={
+            !searchQuery.trim() && tab === "mine"
+              ? "New activity on tasks you are part of lands here. Anything that needs your answer is in Decisions."
+              : undefined
           }
         />
       )}
@@ -3156,6 +3241,7 @@ export function Inbox() {
                                 selected={isChildSelected}
                                 disabled={isChildArchiving}
                                 onArchive={() => archiveIssueMutation.mutate(child.id)}
+                                onSnooze={() => putIssueAwayForLater(child)}
                               >
                                 {childRow}
                               </SwipeToArchive>
@@ -3184,6 +3270,7 @@ export function Inbox() {
                         selected={isSelected}
                         disabled={archivingIssueIds.has(issue.id)}
                         onArchive={() => archiveIssueMutation.mutate(issue.id)}
+                        onSnooze={() => putIssueAwayForLater(issue)}
                       >
                         {parentRow}
                       </SwipeToArchive>

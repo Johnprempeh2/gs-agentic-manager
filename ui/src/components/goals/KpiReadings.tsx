@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn, formatDateTime, formatShortDate } from "@/lib/utils";
+import { cn, formatDateTime, formatNumber, formatShortDate } from "@/lib/utils";
 
 /** Each colour reuses a status token, so light and dark both follow the theme. */
 const RAG_COLOR: Record<KpiRagStatus, string> = {
@@ -61,7 +61,7 @@ export function rollupSummary(rollup: GoalRagRollup): string | null {
 }
 
 export function formatKpiValue(value: number, unit: string | null): string {
-  const n = Number.isInteger(value) ? value.toLocaleString() : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const n = formatNumber(value, { maximumFractionDigits: Number.isInteger(value) ? 0 : 2 });
   return unit ? `${n} ${unit}` : n;
 }
 

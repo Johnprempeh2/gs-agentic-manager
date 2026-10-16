@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, CircleDashed, FileStack, Globe, Package, Trash2 } from "lucide-react";
+import { CircleCheck, CircleDashed, FileCheck2, FileStack, FileUp, Globe, Package, Trash2 } from "lucide-react";
 import type {
+  ClientEvidenceItem,
   ClientJourneyStage,
   ClientJourneyStageDeliverable,
   ClientJourneyStageState,
@@ -21,6 +22,11 @@ import { NativeSelect } from "./ui/native-select";
 import { Textarea } from "./ui/textarea";
 import { ToggleSwitch } from "./ui/toggle-switch";
 import { ConfidentialityBadge } from "./deliverables/DeliverableBadges";
+import { ClientUploadZone, formatFileSize } from "./PipelineCaseFiles";
+import { ClientDocumentRequests } from "./ClientDocumentRequests";
+import { FileDropArea } from "./FileDropArea";
+import { ClientEngagementRow } from "./ClientEngagementRow";
+import { ErrorState } from "./ErrorState";
 
 // Client journey by stage (GRE-1473): each stage of the client's journey as a
 // section with its standard templates and the deliverables filed under it, and
@@ -139,22 +145,61 @@ function StageDeliverableRow({
   );
 }
 
+/** A file uploaded or filed under this stage, from the client's evidence. */
+function StageFileRow({ item }: { item: ClientEvidenceItem }) {
+  const external = item.kind === "link" || item.openPath.startsWith("/api/");
+  const size = item.kind === "upload" ? formatFileSize(item.byteSize) : null;
+  return (
+    <li className="flex items-start gap-2 py-1.5 text-sm">
+      <FileUp className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        {external ? (
+          <a href={item.openPath} target="_blank" rel="noopener noreferrer" className="block truncate font-medium text-foreground hover:underline" title={item.title}>
+            {item.title}
+          </a>
+        ) : (
+          <Link to={item.openPath} className="block truncate font-medium text-foreground hover:underline" title={item.title}>
+            {item.title}
+          </Link>
+        )}
+        <p className="mt-0.5 flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+          <span>{item.typeLabel}</span>
+          {size ? <span>{size}</span> : null}
+          <span>{formatDay(item.createdAt)}</span>
+        </p>
+      </div>
+    </li>
+  );
+}
+
 function StageSection({
+  caseId,
   stage,
   index,
   stages,
+  files,
   busy,
   onUpdate,
   onRemove,
 }: {
+  caseId: string;
   stage: ClientJourneyStage;
   index: number;
   stages: ClientJourneyStage[];
+  files: ClientEvidenceItem[];
   busy: boolean;
   onUpdate: (linkId: string, patch: UpdateClientJourneyDeliverable) => void;
   onRemove: (linkId: string) => void;
 }) {
-  const empty = stage.templates.length === 0 && stage.deliverables.length === 0 && stage.expected.length === 0;
+  // A file that met a document request shows on that request, not twice.
+  const requestFileIds = new Set((stage.requests ?? []).flatMap((request) => request.received ? [request.received.evidenceId] : []));
+  const looseFiles = files.filter((item) => !requestFileIds.has(item.id));
+  const empty = stage.templates.length === 0
+    && stage.deliverables.length === 0
+    && stage.expected.length === 0
+    && files.length === 0
+    && (stage.requests ?? []).length === 0
+    && (stage.suggestedRequests ?? []).length === 0;
   const met = stage.expected.filter((entry) => entry.deliverableId).length;
   return (
     <section aria-labelledby={`journey-stage-${stage.id}`} className="py-3">
@@ -193,6 +238,7 @@ function StageSection({
         </ul>
       ) : null}
       {stage.expected.length > 0 ? <ExpectedList stage={stage} met={met} /> : null}
+      <ClientDocumentRequests caseId={caseId} stage={stage} />
       {stage.deliverables.length > 0 ? (
         <ul className="mt-1 divide-y divide-border" aria-label={`${stage.name} deliverables`}>
           {stage.deliverables.map((row) => (
@@ -207,7 +253,22 @@ function StageSection({
           ))}
         </ul>
       ) : null}
-      {empty ? <p className="mt-1 text-sm text-muted-foreground">No templates or deliverables for this stage yet.</p> : null}
+      {looseFiles.length > 0 ? (
+        <ul className="mt-1" aria-label={`${stage.name} files`}>
+          {looseFiles.map((item) => <StageFileRow key={item.id} item={item} />)}
+        </ul>
+      ) : null}
+      {empty ? <p className="mt-1 text-sm text-muted-foreground">Nothing in this stage yet.</p> : null}
+      {stage.state !== "next" || files.length > 0 ? (
+        <div className="mt-2">
+          <ClientUploadZone
+            caseId={caseId}
+            stageId={stage.id}
+            label="Upload to this stage"
+            hint={`Drop the ${stage.name} documents here, or choose them.`}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -270,11 +331,15 @@ export function NdaRow({
   nda,
   busy,
   onChange,
+  onUploadSigned,
 }: {
   nda: ClientNda;
   busy: boolean;
   onChange: (input: { status: NdaStatus; reason?: string | null }) => void;
+  /** Upload the signed NDA; it is kept with the client and marks the NDA accepted (Ben, 8 Oct). */
+  onUploadSigned?: (file: File) => void;
 }) {
+  const signedInput = useRef<HTMLInputElement>(null);
   const [suspending, setSuspending] = useState(false);
   const [reason, setReason] = useState("");
   const choose = (status: NdaStatus) => {
@@ -314,6 +379,49 @@ export function NdaRow({
         </div>
       </div>
       <p className="text-xs text-muted-foreground">{ndaSummary(nda)}</p>
+      {nda.signedDocument ? (
+        <p className="flex flex-wrap items-center gap-x-2 text-xs" data-testid="journey-nda-signed">
+          <FileCheck2 className="h-3.5 w-3.5 shrink-0 text-status-success" aria-hidden="true" />
+          <a
+            href={nda.signedDocument.contentPath}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-foreground hover:underline"
+          >
+            {nda.signedDocument.title}
+          </a>
+          <span className="text-muted-foreground">Uploaded {formatDay(nda.signedDocument.uploadedAt)}</span>
+        </p>
+      ) : null}
+      {onUploadSigned && nda.status !== "suspended" ? (
+        <FileDropArea
+          label="Drop or paste the signed NDA here"
+          disabled={busy}
+          onFiles={([file]) => onUploadSigned(file)}
+          className="-m-1 p-1"
+          testId="journey-nda-drop"
+        >
+          <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => signedInput.current?.click()}>
+            <FileUp className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            {nda.signedDocument ? "Replace the signed NDA" : "Upload the signed NDA"}
+          </Button>
+          <input
+            ref={signedInput}
+            type="file"
+            accept="application/pdf,image/*"
+            className="hidden"
+            aria-label="Upload the signed NDA"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (file) onUploadSigned(file);
+            }}
+          />
+          {nda.status === "required" ? (
+            <p className="mt-1 text-xs text-muted-foreground">Uploading the signed copy marks the NDA accepted and keeps the file with this client. You can drop or paste it here too.</p>
+          ) : null}
+        </FileDropArea>
+      ) : null}
       {nda.status === "suspended" && nda.suspendedReason && !suspending ? (
         <p className="text-xs text-foreground" data-testid="journey-nda-reason">
           <span className="font-medium">Reason: </span>{nda.suspendedReason}
@@ -397,6 +505,10 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
     queryKey: queryKeys.pipelines.caseJourney(caseId),
     queryFn: () => pipelinesApi.getCaseJourney(caseId),
   });
+  const caseFiles = useQuery({
+    queryKey: queryKeys.pipelines.caseFiles(caseId),
+    queryFn: () => pipelinesApi.getCaseFiles(caseId),
+  });
 
   const invalidate = () =>
     Promise.all([
@@ -424,6 +536,22 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
     onSuccess: invalidate,
     onError: () => pushToast({ title: "Could not change the NDA", body: "Only board users can change a client's NDA.", tone: "error" }),
   });
+  const uploadSignedNda = useMutation({
+    mutationFn: (file: File) => pipelinesApi.uploadSignedNda(caseId, file),
+    onSuccess: async () => {
+      pushToast({ title: "Signed NDA saved", body: "The NDA is now accepted.", tone: "success" });
+      await Promise.all([
+        invalidate(),
+        queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseFiles(caseId) }),
+      ]);
+    },
+    onError: (error) =>
+      pushToast({
+        title: "Could not save the signed NDA",
+        body: error instanceof Error ? error.message : "Only board users can change a client's NDA.",
+        tone: "error",
+      }),
+  });
   const removeLink = useMutation({
     mutationFn: (linkId: string) => pipelinesApi.removeCaseJourneyDeliverable(caseId, linkId),
     onSuccess: invalidate,
@@ -431,7 +559,17 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
   });
 
   if (journey.isLoading) return <p className="py-3 text-sm text-muted-foreground">Loading the journey...</p>;
-  if (journey.error || !journey.data) return <p className="py-3 text-sm text-destructive">Could not load the journey.</p>;
+  if (journey.error || !journey.data) {
+    return (
+      <ErrorState
+        compact
+        error={journey.error}
+        title="Could not load the journey"
+        onRetry={() => void journey.refetch()}
+        retrying={journey.isFetching}
+      />
+    );
+  }
 
   const { stages, unfiled } = journey.data;
   // A server from before 0335 sends only ndaAcceptedAt.
@@ -442,14 +580,27 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
     changedBy: null,
     changedAt: null,
   };
-  const busy = fileDeliverable.isPending || updateLink.isPending || removeLink.isPending || setNda.isPending;
+  const busy = fileDeliverable.isPending || updateLink.isPending || removeLink.isPending || setNda.isPending || uploadSignedNda.isPending;
+  const filesByStage = new Map<string, ClientEvidenceItem[]>();
+  for (const item of caseFiles.data?.evidence ?? []) {
+    if (!item.stageId) continue;
+    filesByStage.set(item.stageId, [...(filesByStage.get(item.stageId) ?? []), item]);
+  }
   const journeyIndex = new Map(stages.filter((stage) => stage.state !== "side").map((stage, index) => [stage.id, index]));
   return (
     <div className="divide-y divide-border">
-      <NdaRow nda={nda} busy={busy} onChange={(input) => setNda.mutate(input)} />
+      <NdaRow
+        nda={nda}
+        busy={busy}
+        onChange={(input) => setNda.mutate(input)}
+        onUploadSigned={(file) => uploadSignedNda.mutate(file)}
+      />
+      <ClientEngagementRow caseId={caseId} engagement={journey.data.engagement} ndaCleared={nda.status !== "required"} />
       {stages.map((stage) => (
         <StageSection
           key={stage.id}
+          caseId={caseId}
+          files={filesByStage.get(stage.id) ?? []}
           stage={stage}
           index={journeyIndex.get(stage.id) ?? 0}
           stages={stages}

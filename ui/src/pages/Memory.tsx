@@ -58,7 +58,9 @@ export function Memory() {
   const selectedEdgeId = params.get("edge");
   const [searchText, setSearchText] = useState(filters.q ?? "");
   const webgl = useMemo(() => supportsWebGL(), []);
-  const view: MemoryView = params.get("view") === "list" || !webgl ? "list" : "graph";
+  // A search shows results to read, unless the person picked the graph.
+  const viewParam = params.get("view");
+  const view: MemoryView = !webgl || viewParam === "list" || (filters.q && viewParam !== "graph") ? "list" : "graph";
   const groupBy: MemoryGraphGroupBy = params.get("group") === "scope" ? "scope" : "contributor";
   const showSuggested = params.get("suggested") === "1";
   const focusMode: MemoryGraphFocusMode = params.get("others") === "dim" ? "dim" : "hide";
@@ -181,7 +183,13 @@ export function Memory() {
           : `${nodes.length} ${entryWord(nodes.length)}, ${edges.length} ${edges.length === 1 ? "connection" : "connections"}`}
         {graph.data?.truncated ? <span className="block">Showing the first {nodes.length}. Narrow the filters to see the rest.</span> : null}
       </div>
-      <MemoryRecordList nodes={explorer.listNodes} edges={explorer.listEdges} selectedNodeId={selectedNode?.id ?? null} onSelectNode={selectNode} />
+      <MemoryRecordList
+        nodes={explorer.listNodes}
+        edges={explorer.listEdges}
+        selectedNodeId={selectedNode?.id ?? null}
+        onSelectNode={selectNode}
+        query={filters.q}
+      />
     </section>
   );
 
@@ -205,7 +213,8 @@ export function Memory() {
         hasFilters(filters) ? (
           <EmptyState
             icon={SearchX}
-            message="No memory matches these filters."
+            message={filters.q ? `Nothing in memory matches "${filters.q}".` : "No memory matches these filters."}
+            description={filters.q ? "Try fewer or different words, or clear the filters." : undefined}
             action="Clear filters"
             onAction={clearFilters}
             hideActionIcon
@@ -227,7 +236,7 @@ export function Memory() {
               groupBy={groupBy}
               showSuggested={showSuggested}
               suggestedCount={explorer.graph3d.suggestedCount}
-              onViewChange={(next) => updateParams({ view: next === "list" ? "list" : undefined })}
+              onViewChange={(next) => updateParams({ view: next === "list" ? (filters.q ? undefined : "list") : filters.q ? "graph" : undefined })}
               onGroupByChange={(next) => updateParams({ group: next === "scope" ? "scope" : undefined })}
               onShowSuggestedChange={(show) => updateParams({ suggested: show ? "1" : undefined })}
             />

@@ -7,6 +7,7 @@ import { ASSET_NAMESPACE_RULE, createAssetImageMetadataSchema } from "@greatston
 import type { StorageService } from "../storage/types.js";
 import { assetService, logActivity } from "../services/index.js";
 import {
+  contentDispositionHeader,
   formatAttachmentSize,
   isAllowedContentType,
   isInlineAttachmentContentType,
@@ -340,11 +341,7 @@ export function assetRoutes(db: Db, storage: StorageService) {
     if (!inlineSafe) {
       res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
     }
-    const filename = asset.originalFilename ?? "asset";
-    const disposition = inlineSafe
-      ? "inline"
-      : "attachment";
-    res.setHeader("Content-Disposition", `${disposition}; filename=\"${filename.replaceAll("\"", "")}\"`);
+    res.setHeader("Content-Disposition", contentDispositionHeader(inlineSafe ? "inline" : "attachment", asset.originalFilename ?? "asset"));
 
     object.stream.on("error", (err) => {
       next(err);

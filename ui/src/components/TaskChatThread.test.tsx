@@ -777,7 +777,7 @@ describe("TaskChatThread runtime transcript selection", () => {
       agentId: "agent-1", agentName: "Runner", adapterType: "grok_local",
       createdAt: "2026-08-25T18:00:00.000Z", startedAt: null, finishedAt: "2026-08-25T18:00:02.000Z",
     }]} />);
-    expect(container.textContent).toContain("The run failed");
+    expect(container.textContent).toContain("Something went wrong and the agent stopped");
     expect(container.textContent).not.toContain("before returning an answer");
     expect(container.textContent).not.toContain("Workspace restore failed");
   });
@@ -2418,7 +2418,7 @@ describe("TaskChatThread runtime transcript selection", () => {
         />,
       );
       renderRun(true);
-      expect(container.textContent).toContain("Your message is preserved.");
+      expect(container.textContent).toContain("Your message is saved.");
       expect(container.textContent).not.toContain("You can retry this message now.");
       expect(container.querySelector('[data-testid="task-chat-run-failed-try-again"]')).toBeNull();
       renderRun(false);
@@ -3426,8 +3426,9 @@ describe("TaskChatThread mobile composer dock (PAP-495)", () => {
     // height while the nav is on screen) — NOT the raw safe-area dock, which is
     // what let the nav occlude the action row before PAP-495. It also clears
     // the part of the page the iPhone keyboard hides.
-    expect(dock?.className).toContain("var(--tc-composer-bottom)");
-    expect(dock?.className).toContain("var(--vv-bottom-inset)");
+    // .tc-composer-dock-bottom (index.css) is max(--tc-composer-bottom,
+    // --vv-bottom-inset + 0.25rem).
+    expect(dock?.className).toContain("tc-composer-dock-bottom");
     expect(dock?.className).not.toContain("bottom-(--sz-calc-8)");
   });
 });
@@ -3651,7 +3652,7 @@ describe("TaskChatThread live transcript", () => {
     render(<TaskChatThread comments={[]} onAdd={async () => {}} issueStatus="in_progress" linkedRuns={[
       { ...run, runId: run.id, status: "failed", errorCode: "workspace_git_scan_timeout", finishedAt: "2026-09-15T10:00:10Z" },
     ]} />);
-    expect(container.textContent).toContain("Workspace setup failed before the agent started.");
+    expect(container.textContent).toContain("The agent's workspace could not be set up, so it did not start.");
     expect(container.textContent).not.toContain("Review the task’s connection");
   });
 

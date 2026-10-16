@@ -2449,6 +2449,16 @@ function renderPaperclipWakePromptBody(
           "- instruction: Do not narrate the recovery in your next comment — at most one short sentence; lead with the work.",
         ]
       : []),
+    ...(normalized.reason === "pull_request_merged"
+      ? [
+          "- instruction: A pull request attached to this task has merged. Check whether the task's work is now complete. If it is, record the task as done. If work remains, carry on with it. Do not create a new task to push or merge this pull request.",
+        ]
+      : []),
+    ...(normalized.reason === "waiting_date_passed"
+      ? [
+          "- instruction: The date this task expected to hear back by has passed. Chase the person it is waiting on, or set a new expected date (`unblockDescriptor.expectedBy`), and say what you did in a comment.",
+        ]
+      : []),
   ];
   const externalInteractionContinuationLines =
     !externalChatQuestionResponseTurn &&

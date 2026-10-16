@@ -935,6 +935,8 @@ function buildActivityToast(
   ) {
     return null;
   }
+  // Team chat messages alert their members only (TeamChatAlerts).
+  if (details?.teamChat === true) return null;
 
   const issue = resolveIssueToastContext(
     queryClient,

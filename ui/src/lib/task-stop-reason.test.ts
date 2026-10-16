@@ -197,6 +197,42 @@ describe("describeTaskStopReason", () => {
     ).toBe("Claude is signed out · Ridge to act · Fix the CI");
   });
 
+  it("says who a blocked task waits on and until when, and marks a passed date", () => {
+    const owner = { agentId: "agent-ridge" };
+    const now = new Date("2026-10-16T12:00:00Z");
+    expect(
+      reason({
+        issue: { status: "blocked", unblockDescriptor: { owner, action: "Chase the client", waitingOn: "client", expectedBy: "2026-10-20" } },
+        input: { now },
+      }),
+    ).toBe("Waiting on a client until 20 Oct · Ridge to act · Chase the client");
+    expect(
+      reason({
+        issue: { status: "blocked", unblockDescriptor: { owner, action: "Chase them", waitingOn: "outside", expectedBy: "2026-10-15" } },
+        input: { now },
+      }),
+    ).toBe("Waiting on someone outside the company until 15 Oct · Date passed · Ridge to act · Chase them");
+    // The expected day itself is not yet passed.
+    expect(
+      reason({
+        issue: { status: "blocked", unblockDescriptor: { owner, action: "Ask John", waitingOn: "board", expectedBy: "2026-10-16" } },
+        input: { now },
+      }),
+    ).toBe("Waiting on you (the board) until 16 Oct · Ridge to act · Ask John");
+    expect(
+      reason({
+        issue: { status: "blocked", unblockDescriptor: { owner, action: "Chase", waitingOn: "client" } },
+        input: { now },
+      }),
+    ).toBe("Waiting on a client · Ridge to act · Chase");
+    expect(
+      reason({
+        issue: { status: "blocked", unblockDescriptor: { owner, action: "Chase", expectedBy: "2026-10-01" } },
+        input: { now },
+      }),
+    ).toBe("Waiting until 1 Oct · Date passed · Ridge to act · Chase");
+  });
+
   it("asks the owner when a task is blocked with no reason", () => {
     expect(reason({ issue: { status: "blocked" } })).toBe(
       "Marked blocked with no reason given · Mica to act · Waiting for Mica to say what is needed",

@@ -1,4 +1,5 @@
 import type { DraftDiffSegment } from "../draft-diff.js";
+import type { AskType } from "../ask-types.js";
 import type { ExecutionProjection, ExecutionBlocker } from "./execution-projection.js";
 import type {
   IssueCommentAuthorType,
@@ -20,6 +21,7 @@ import type {
   IssueOriginKind,
   IssuePriority,
   IssueReviewPolicy,
+  IssueUnblockWaitingOn,
   IssueRecoveryActionKind,
   IssueRecoveryActionOutcome,
   IssueRecoveryActionOwnerType,
@@ -538,6 +540,15 @@ export type IssueUnblockOwner = { agentId: string } | { userId: string } | "boar
 export interface IssueUnblockDescriptor {
   owner: IssueUnblockOwner;
   action: string;
+  /** Who the task is waiting on: a client, the board, or someone outside the company. */
+  waitingOn?: IssueUnblockWaitingOn;
+  /** The calendar day (YYYY-MM-DD, UTC) the task expects to hear back by. */
+  expectedBy?: string;
+  /**
+   * Set by the server only: the `expectedBy` day the assignee was already woken
+   * for, so the "date passed" wake fires once per date.
+   */
+  expectedByWokenFor?: string;
 }
 
 export interface IssueRecoveryAction {
@@ -935,6 +946,7 @@ export type CompactIssue = Pick<
   | "cancelledAt"
   | "createdAt"
   | "updatedAt"
+  | "dueDate"
 > & {
   labelIds?: string[];
   labels?: IssueLabel[];
@@ -1437,6 +1449,8 @@ export interface RequestConfirmationPayload {
   connectionAuthorization?: RequestConfirmationConnectionAuthorizationPayload;
   /** Needs the board user at the computer (GRE-450). */
   atDesk?: InteractionAtDesk | null;
+  /** What the agent needs the person to do; names the ask in Decisions and always wakes the agent. */
+  askType?: AskType | null;
 }
 
 export interface RequestCheckboxConfirmationOption {

@@ -1,6 +1,11 @@
 import type {
   CreateOrganisation,
   CreateOrganisationContact,
+  ImportHubspotExport,
+  ImportNotion,
+  NotionImportPreview,
+  NotionImportResult,
+  ImportPipedriveExport,
   Organisation,
   OrganisationContact,
   OrganisationDetail,
@@ -50,6 +55,14 @@ export const organisationsApi = {
   /** Read-only import of every Pipedrive organisation and person (company owners only). */
   importFromPipedrive: (companyId: string, connectionId: string) =>
     api.post<OrganisationImportResult>(`${base(companyId)}/import/pipedrive`, { connectionId }),
+  importFromPipedriveExport: (companyId: string, body: ImportPipedriveExport) =>
+    api.post<OrganisationImportResult>(`${base(companyId)}/import/pipedrive-export`, body),
+  importFromHubspotExport: (companyId: string, body: ImportHubspotExport) =>
+    api.post<OrganisationImportResult>(`${base(companyId)}/import/hubspot-export`, body),
+  previewNotionImport: (companyId: string, body: Omit<ImportNotion, "mode">) =>
+    api.post<NotionImportPreview>(`${base(companyId)}/import/notion`, { ...body, mode: "preview" }),
+  importFromNotion: (companyId: string, body: Omit<ImportNotion, "mode">) =>
+    api.post<NotionImportResult>(`${base(companyId)}/import/notion`, { ...body, mode: "import" }),
   archiveContact: (companyId: string, organisationId: string, contactId: string) =>
     api.post<OrganisationContact>(
       `${base(companyId)}/${encodeURIComponent(organisationId)}/contacts/${encodeURIComponent(contactId)}/archive`,

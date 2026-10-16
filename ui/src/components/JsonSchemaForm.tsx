@@ -185,7 +185,7 @@ export function validateField(
 
   // Required check
   if (isRequired && (value === undefined || value === null || value === "")) {
-    return "This field is required";
+    return "Please fill this in.";
   }
 
   // Skip further validation if empty and not required
