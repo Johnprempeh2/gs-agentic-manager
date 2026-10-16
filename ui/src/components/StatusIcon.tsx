@@ -134,6 +134,7 @@ export function StatusIcon({ status, externalConversationState, blockerAttention
     <button
       type="button"
       data-slot="icon-button"
+      data-status-icon-trigger=""
       aria-label={`Change status (current: ${ariaLabel})`}
       className="inline-flex cursor-pointer items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
     >
