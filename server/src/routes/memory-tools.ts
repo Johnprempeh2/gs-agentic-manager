@@ -1,11 +1,18 @@
 import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
-import { HttpError, notFound } from "../errors.js";
+import { forbidden, HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
-import { isMemoryOnlyActor } from "../middleware/memory-only-key-guard.js";
+import {
+  isLiveMemoryLink,
+  isMemoryOnlyActor,
+  MEMORY_KEY_NOT_LINKED_CODE,
+  MEMORY_KEY_NOT_LINKED_MESSAGE,
+} from "../middleware/memory-only-key-guard.js";
 import type { MemoryEngine } from "../services/memory-gateway/engine.js";
+import { memoryCardService } from "../services/memory-gateway/card-writes.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
-import { MEMORY_DISABLED_MESSAGE, memoryGatewayService } from "../services/memory-gateway/service.js";
+import { isExternalApp, MEMORY_DISABLED_MESSAGE, memoryGatewayService } from "../services/memory-gateway/service.js";
+import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { callMemoryTool, memoryToolDefinitions } from "../services/memory-tools.js";
 import { projectToolContext } from "../services/project-tool-context.js";
 import { assertCompanyAccess } from "./authz.js";
@@ -19,8 +26,8 @@ import {
 } from "./mcp-streamable-http.js";
 
 /**
- * Agent memory tools over MCP (GRE-672): memory_recall, memory_contribute,
- * memory_get and memory_link. Only an authenticated, task-bound agent run or a memory_only key
+ * Agent memory tools over MCP (GRE-672): recall, contribute, get and link,
+ * and since GRE-1081 history, revise, confirm, dispute and retire. Only an authenticated, task-bound agent run or a memory_only key
  * (GRE-958) may call them, and that identity is the caller. While the company
  * setting is off the endpoint answers 404 to everything.
  */
@@ -28,6 +35,7 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
   const router = Router();
   const gateway = memoryGatewayService(db, options);
   const reviews = memoryReviewService(db, gateway);
+  const cards = memoryCardService(db, gateway, reviews, memoryStewardService(db, gateway, reviews));
 
   /**
    * The caller is the authenticated run, or the agent behind a memory_only key
@@ -36,6 +44,10 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
   async function memoryToolIdentity(req: Request) {
     const actor = req.actor;
     if (isMemoryOnlyActor(actor) && actor.source === "agent_key" && actor.agentId && actor.companyId) {
+      // The app guard checks this first on the real app; kept here so the tools never run for a key tied to nobody.
+      if (!(await isLiveMemoryLink(db, actor.companyId, actor.agentId))) {
+        throw forbidden(MEMORY_KEY_NOT_LINKED_MESSAGE, { code: MEMORY_KEY_NOT_LINKED_CODE });
+      }
       return { companyId: actor.companyId, agentId: actor.agentId, runId: null, ...memoryCallerApp(actor, null) };
     }
     const context = await projectToolContext(db, actor, false, "Memory");
@@ -71,7 +83,7 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
     }
     if (method === "ping") return send({});
     const definitions = memoryToolDefinitions();
-    if (method === "tools/list") return send({ tools: definitions });
+    if (method === "tools/list") return send({ tools: memoryToolDefinitions({ externalApp: isExternalApp({ app }) }) });
     if (method !== "tools/call") return sendMcpMethodNotFound(res, id);
 
     try {
@@ -82,6 +94,7 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
         arguments: (params?.arguments ?? {}) as Record<string, unknown>,
         gateway,
         reviews,
+        cards,
         caller: {
           companyId,
           actorType: "agent",

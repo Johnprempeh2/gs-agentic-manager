@@ -88,7 +88,7 @@ const feed: MemoryActivityFeed = {
   nextCursor: null,
 };
 
-const zero = { unreviewed: 0, approved: 0, disputed: 0, superseded: 0, deleted: 0 };
+const zero = { unreviewed: 0, approved: 0, disputed: 0, superseded: 0, retired: 0, deleted: 0 };
 const counts: MemoryActivityCounts = {
   note: MEMORY_ACTIVITY_NOTE,
   contributors: [

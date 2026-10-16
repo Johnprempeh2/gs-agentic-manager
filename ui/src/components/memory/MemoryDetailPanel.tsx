@@ -29,6 +29,7 @@ const ACTION_LABEL: Record<MemoryReviewEventAction, string> = {
   edit: "Edited for confirmation",
   reject: "Rejected",
   merge: "Merged into another card",
+  retire: "Retired as no longer true",
 };
 
 function Section({ title, children }: { title: string; children: ReactNode }) {

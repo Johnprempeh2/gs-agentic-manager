@@ -73,7 +73,7 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
   id: "pipeline-board",
   title: "A pipeline's board",
   description: "Stages as columns, moving a case on, and adding items.",
-  version: 1,
+  version: 2,
   flag: "enablePipelines",
   label: "this board",
   steps: [
@@ -81,6 +81,16 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
       target: "board-columns",
       title: "Stages as columns",
       body: "Each column is a stage, in order from left to right. The cards in a column are the cases sitting in that stage.",
+    },
+    {
+      target: "pipeline-open-deal-value",
+      title: "What the open deals are worth",
+      body: "On a board of Pipedrive deals, the total value of every deal still open. When more than one person owns deals, the Owner menu at the top shows just one person's.",
+    },
+    {
+      target: "stage-deal-value",
+      title: "Value in each stage",
+      body: "Each column shows what the deals in that stage are worth, so you can see where the money sits.",
     },
     {
       target: "pipeline-card",
