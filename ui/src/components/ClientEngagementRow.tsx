@@ -136,7 +136,7 @@ export function ClientEngagementRow({
                 role="radio"
                 aria-checked={checked}
                 disabled={busy || blocked}
-                title={blocked ? "The NDA must be accepted or suspended first" : undefined}
+                title={blocked ? "Mark the NDA as accepted or suspended first" : undefined}
                 onClick={() => {
                   if (!checked) setStatus.mutate(step.value);
                 }}
