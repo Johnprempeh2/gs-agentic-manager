@@ -387,7 +387,7 @@ export function Dashboard() {
       );
     }
     return (
-      <EmptyState icon={LayoutDashboard} message="Create or select an organization to view the dashboard." />
+      <EmptyState icon={LayoutDashboard} message="Choose an organisation to see its dashboard." />
     );
   }
 
@@ -511,14 +511,14 @@ export function Dashboard() {
           onClick={() => setPhoneDetailsOpen((open) => !open)}
           data-testid="dashboard-phone-details-toggle"
         >
-          {phoneDetailsOpen ? "Show less" : "Show runs, numbers and activity"}
+          {phoneDetailsOpen ? "Show less" : "Show recent work, numbers and activity"}
           <ChevronDown className={cn("transition-transform", phoneDetailsOpen && "rotate-180")} />
         </Button>
       ) : null}
 
       {showDetails ? (
         <div id="dashboard-details" className="space-y-6">
-          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
+          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent work" />
 
           {data && (
             <>
@@ -583,7 +583,7 @@ export function Dashboard() {
               <SmokeLabDashboardCard companyId={selectedCompanyId!} />
 
               <div className={cn("gs-stagger grid grid-cols-1 gap-4 sm:grid-cols-2", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-                <ChartCard title="Run Activity" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Work activity" subtitle={chartWindowLabel(companyStart)}>
                   <RunActivityChart activity={data.runActivity} start={companyStart} />
                 </ChartCard>
                 {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}

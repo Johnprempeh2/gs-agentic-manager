@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { relativeTime } from "@/lib/utils";
+import { useConfirm } from "@/context/ConfirmContext";
 
 export const calendarFeedKey = (companyId: string) => ["calendar-feed", companyId] as const;
 
@@ -32,6 +33,7 @@ export function calendarFeedStatusLine(status: { enabled: boolean; lastFetchedAt
  * dates. Off until a person turns it on. Needs no Google or Microsoft keys.
  */
 export function CalendarFeedDialog({ companyId, open, onOpenChange }: { companyId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const status = useQuery({
     queryKey: calendarFeedKey(companyId),
@@ -99,14 +101,31 @@ export function CalendarFeedDialog({ companyId, open, onOpenChange }: { companyI
             <p className="text-muted-foreground">Turned off. Turn it on to get a private address for your calendar app.</p>
           )}
         </div>
-        {error ? <p className="text-sm text-destructive" role="alert">{(error as Error).message}</p> : null}
+        {error ? <p className="text-sm text-destructive" role="alert">That did not work. Please try again in a moment. ({(error as Error).message})</p> : null}
         <DialogFooter className="gap-2">
           {enabled ? (
-            <Button type="button" variant="ghost" disabled={disable.isPending} onClick={() => disable.mutate()}>
+            <Button type="button" variant="ghost" disabled={disable.isPending} onClick={async () => {
+              const ok = await confirm({
+                title: "Turn off the calendar feed?",
+                description: "Calendars that use it stop showing your deadlines. You can turn it back on later, with a new address.",
+                confirmLabel: "Turn off",
+              });
+              if (ok) disable.mutate();
+            }}>
               Turn off
             </Button>
           ) : null}
-          <Button type="button" disabled={enable.isPending} onClick={() => enable.mutate()}>
+          <Button type="button" disabled={enable.isPending} onClick={async () => {
+            if (enabled) {
+              const ok = await confirm({
+                title: "Make a new address?",
+                description: "Calendars using the old address stop showing your deadlines until you add the new one.",
+                confirmLabel: "Make a new address",
+              });
+              if (!ok) return;
+            }
+            enable.mutate();
+          }}>
             {enabled ? "Make a new address" : "Turn on"}
           </Button>
         </DialogFooter>

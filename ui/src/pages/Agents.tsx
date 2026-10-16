@@ -867,10 +867,10 @@ function formatWorkValue(cents: number): string {
   return `$${Math.round(cents / 100).toLocaleString("en-GB")}`;
 }
 
-/** "$123 of work · 41 runs this week", or that it did not run. */
+/** "$123 of work · Worked 41 times this week", or that it did no work. */
 export function agentWeekLine(row: ApiEquivalentAgentRow | undefined): string {
-  if (!row || row.runCount === 0) return "No runs this week";
-  const runs = `${row.runCount} ${row.runCount === 1 ? "run" : "runs"} this week`;
+  if (!row || row.runCount === 0) return "No work this week";
+  const runs = `Worked ${row.runCount} ${row.runCount === 1 ? "time" : "times"} this week`;
   return row.apiEquivalentCents > 0 ? `${formatWorkValue(row.apiEquivalentCents)} of work · ${runs}` : runs;
 }
 
@@ -896,7 +896,7 @@ function AgentMetaColumns({
             {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "$0"}
           </div>
           <div className="truncate text-(length:--text-micro) tabular-nums text-subtle-foreground">
-            {week?.runCount ? `${week.runCount} ${week.runCount === 1 ? "run" : "runs"} this week` : "No runs this week"}
+            {week?.runCount ? `Worked ${week.runCount} ${week.runCount === 1 ? "time" : "times"} this week` : "No work this week"}
           </div>
         </div>
       )}

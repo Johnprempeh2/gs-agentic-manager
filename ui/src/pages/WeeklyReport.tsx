@@ -141,7 +141,7 @@ function DayByDay({ report }: { report: WeeklyReportData }) {
       )}
       {error ? (
         <p className="text-sm text-destructive">
-          Could not load each agent's part of the digests: {error instanceof Error ? error.message : "unknown error"}
+          Some agents' parts of this report did not load. Refresh the page to try again.
         </p>
       ) : null}
       {task ? (

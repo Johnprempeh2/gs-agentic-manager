@@ -283,7 +283,7 @@ describe("explainWhyBlocked", () => {
 
   it("explains a repair that needs the board", () => {
     const result = expectPlain(explain({ activeRecoveryAction: recovery({ ownerType: "board", ownerAgentId: null, kind: "workspace_validation" }) }));
-    expect(result.headline).toBe("Needs your decision to carry on. The task's code folder failed its safety check.");
+    expect(result.headline).toBe("Needs your decision to carry on. The task's files did not pass a safety check.");
   });
 
   it("explains a stopped run in plain words", () => {

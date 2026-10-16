@@ -128,7 +128,8 @@ function ImageCard({
         ) : (
           <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
             <AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground">{image.error ?? "This image could not be made."}</p>
+            <p className="text-xs text-muted-foreground">This image could not be made. Try different words, or try again in a few minutes.</p>
+            {image.error ? <p className="line-clamp-2 text-xs text-muted-foreground" title={image.error}>{image.error}</p> : null}
             <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
               <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
               Try again

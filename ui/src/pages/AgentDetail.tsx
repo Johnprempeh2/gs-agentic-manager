@@ -1363,7 +1363,15 @@ export function AgentDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => resetBuiltIn.mutate()}
+              onClick={async () => {
+                const confirmed = await confirmAction({
+                  title: "Reset this agent to its original settings?",
+                  description: "Your changes to its instructions, model, budget and schedule will be replaced. This cannot be undone.",
+                  confirmLabel: "Reset agent",
+                  tone: "destructive",
+                });
+                if (confirmed) resetBuiltIn.mutate();
+              }}
               disabled={resetBuiltIn.isPending}
             >
               {resetBuiltIn.isPending ? "Resetting…" : "Reset to defaults"}
@@ -3509,10 +3517,19 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive text-xs h-6 px-2"
-                  onClick={() => cancelRun.mutate()}
+                  onClick={async () => {
+                    const confirmed = await confirmAction({
+                      title: "Stop this piece of work?",
+                      description: "The agent stops straight away. Anything it has not saved yet will be lost.",
+                      confirmLabel: "Stop work",
+                      cancelLabel: "Keep working",
+                      tone: "destructive",
+                    });
+                    if (confirmed) cancelRun.mutate();
+                  }}
                   disabled={cancelRun.isPending}
                 >
-                  {cancelRun.isPending ? "Cancelling…" : "Cancel"}
+                  {cancelRun.isPending ? "Stopping…" : "Stop work"}
                 </Button>
               )}
               {canResumeLostRun && (
@@ -4542,6 +4559,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
 /* ---- Keys Tab ---- */
 
 export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }) {
+  const confirmAction = useConfirm();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [newKeyName, setNewKeyName] = useState("");
@@ -4661,7 +4679,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
       {isLoading && <p className="text-sm text-muted-foreground">Loading keys...</p>}
 
       {!isLoading && activeKeys.length === 0 && !newToken && (
-        <p className="text-sm text-muted-foreground">No active API keys.</p>
+        <p className="text-sm text-muted-foreground">No access keys yet. Make one above if another tool needs to connect to this agent.</p>
       )}
 
       {activeKeys.length > 0 && (
@@ -4682,7 +4700,15 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive text-xs"
-                  onClick={() => revokeKey.mutate(key.id)}
+                  onClick={async () => {
+                    const confirmed = await confirmAction({
+                      title: `Revoke the key "${key.name}"?`,
+                      description: "Anything using this key stops working at once. This cannot be undone.",
+                      confirmLabel: "Revoke key",
+                      tone: "destructive",
+                    });
+                    if (confirmed) revokeKey.mutate(key.id);
+                  }}
                   disabled={revokeKey.isPending}
                 >
                   Revoke

@@ -40,27 +40,27 @@ export const BLOCKED_REASON_VARIANT_ORDER: BlockedReasonVariant[] = [
 
 export const BLOCKED_VARIANT_LABELS: Record<BlockedReasonVariant, string> = {
   needs_decision: "Needs decision",
-  stalled: "Blocked chain stalled",
+  stalled: "Waiting on stuck work",
   needs_attention: "Needs attention",
-  recovery_required: "Recovery required",
-  external_wait: "External wait",
-  owner_paused: "Owner paused",
+  recovery_required: "Needs fixing",
+  external_wait: "Waiting on someone outside",
+  owner_paused: "Owner is paused",
 };
 
 const REASON_LABELS: Record<IssueBlockedInboxReason, string> = {
-  pending_board_decision: "Pending board decision",
-  pending_user_decision: "Pending user decision",
-  missing_successful_run_disposition: "Pick disposition",
-  blocked_chain_stalled: "Blocked chain stalled",
-  blocked_by_unassigned_issue: "Unassigned blocker",
-  blocked_by_assigned_backlog_issue: "Parked blocker",
-  blocked_by_cancelled_issue: "Cancelled blocker",
-  blocked_without_action_path: "No unblock path",
-  in_review_without_action_path: "Review without action path",
-  invalid_review_participant: "Invalid review participant",
-  open_recovery_issue: "Recovery in progress",
-  external_owner_action: "External owner action",
-  blocked_by_uninvokable_assignee: "Owner paused",
+  pending_board_decision: "Waiting for your decision",
+  pending_user_decision: "Waiting for a person to decide",
+  missing_successful_run_disposition: "Say what happens next",
+  blocked_chain_stalled: "Waiting on stuck work",
+  blocked_by_unassigned_issue: "Waiting on a task nobody owns",
+  blocked_by_assigned_backlog_issue: "Waiting on a parked task",
+  blocked_by_cancelled_issue: "Waiting on a cancelled task",
+  blocked_without_action_path: "No clear way forward",
+  in_review_without_action_path: "Review with no next step",
+  invalid_review_participant: "Reviewer can no longer review",
+  open_recovery_issue: "Being fixed",
+  external_owner_action: "Waiting on someone outside",
+  blocked_by_uninvokable_assignee: "Owner is paused",
 };
 
 const SEVERITY_RANK: Record<IssueBlockedInboxSeverity, number> = {

@@ -53,7 +53,7 @@ export function DashboardLive() {
         minRunCount={DASHBOARD_LIVE_RUN_LIMIT}
         fetchLimit={DASHBOARD_LIVE_RUN_LIMIT}
         cardLimit={DASHBOARD_LIVE_RUN_LIMIT}
-        emptyMessage="No active or recent agent runs."
+        emptyMessage="No agents are working right now, and none have worked recently."
         queryScope="dashboard-live"
         showMoreLink={false}
       />
