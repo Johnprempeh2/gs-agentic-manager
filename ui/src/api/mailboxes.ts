@@ -2,6 +2,8 @@ import { api } from "./client";
 import type {
   MailboxAgentsInput,
   MailboxConnectInput,
+  MailboxDraftInput,
+  MailboxDraftResult,
   MailboxOAuthAppInput,
   MailboxOAuthAppSummary,
   MailboxOAuthProvider,
@@ -18,6 +20,9 @@ export const mailboxesApi = {
     api.put<MailboxSummary>(`/companies/${companyId}/mailboxes/${id}/agents`, input),
   setDrafts: (companyId: string, id: string, allowDrafts: boolean) =>
     api.put<MailboxSummary>(`/companies/${companyId}/mailboxes/${id}/drafts`, { allowDrafts }),
+  /** Saves an email into the mailbox's Drafts folder. Nothing is sent. */
+  saveDraft: (companyId: string, id: string, input: MailboxDraftInput) =>
+    api.post<MailboxDraftResult>(`/companies/${companyId}/mailboxes/${id}/draft`, input),
   test: (companyId: string, id: string) =>
     api.post<{ ok: true; folderCount: number }>(
       `/companies/${companyId}/mailboxes/${id}/test`,
