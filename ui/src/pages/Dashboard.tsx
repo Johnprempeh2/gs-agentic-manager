@@ -34,13 +34,15 @@ import { useLiveAgents } from "../hooks/useLiveAgents";
 import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
-import { Bot, ChevronDown, CircleDot, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
+import { Bot, Check, ChevronDown, CircleDot, ClipboardList, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
+import { useCopyAction } from "@/lib/use-copy-action";
+import { dashboardNumbersText } from "../lib/dashboard-text";
 import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
@@ -217,6 +219,7 @@ export function Dashboard() {
     setBreadcrumbs([{ label: "Dashboard" }]);
   }, [setBreadcrumbs]);
 
+  const numbersCopy = useCopyAction();
   const dashboardQueryKey = queryKeys.dashboard(selectedCompanyId!);
   const sharedDashboard = useSharedPollingQuery({
     companyId: selectedCompanyId,
@@ -522,6 +525,17 @@ export function Dashboard() {
 
           {data && (
             <>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy the agents, tasks, spend and approvals numbers, ready to paste into a message"
+                  onClick={() => void numbersCopy.copy(dashboardNumbersText(data))}
+                >
+                  {numbersCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                  {numbersCopy.copied ? "Copied" : numbersCopy.failed ? "Could not copy" : "Copy the numbers"}
+                </Button>
+              </div>
               <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
                 <MetricCard
                   icon={Bot}
