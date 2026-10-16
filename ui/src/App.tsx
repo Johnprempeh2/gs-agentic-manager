@@ -132,6 +132,7 @@ import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -877,6 +878,9 @@ export function App() {
           <Route path="execution-workspaces/:workspaceId/runtime-logs" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/issues" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/routines" element={<UnprefixedExecutionWorkspaceRedirect />} />
+          {UNPREFIXED_BOARD_ROOTS.map((root) => (
+            <Route key={`unprefixed-${root}`} path={`${root}/*`} caseSensitive element={<UnprefixedBoardRedirect />} />
+          ))}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>
