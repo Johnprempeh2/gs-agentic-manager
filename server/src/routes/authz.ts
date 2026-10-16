@@ -68,6 +68,14 @@ export function assertBoardOrAgent(req: Request) {
   throw forbidden("Board or agent access required");
 }
 
+/**
+ * The hosting operator of this instance (GRE-1363): an instance admin or the
+ * implicit local board. A client's board log-in is a company owner, not this.
+ */
+export function isHostingOperator(req: Request) {
+  return req.actor.type === "board" && (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin === true);
+}
+
 export function assertInstanceAdmin(req: Request) {
   assertBoard(req);
   if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
