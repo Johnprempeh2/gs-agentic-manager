@@ -547,12 +547,29 @@ describe("Sidebar", () => {
     });
   });
 
-  it("always shows Status, without a beta tag, last in the Team section (GRE-1622)", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: false, enableConferenceRoomChat: true });
+  it("shows Status, without a beta tag, last in the Team section (GRE-1622)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: true, enableConferenceRoomChat: true });
     const root = await renderSidebar();
 
     expect(container.querySelector('a[href="/status"]')?.textContent).toBe("Status");
     expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
+  it("hides Status and the agent Chats when a client plan turns them off (GRE-1633)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableStatusCards: false,
+      enableAgentChat: false,
+      enableConferenceRoomChat: true,
+    });
+    const root = await renderSidebar();
+
+    expect(container.querySelector('a[href="/status"]')).toBeNull();
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room"]);
+    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
     flushSync(() => {
       root.unmount();
@@ -768,6 +785,7 @@ describe("Sidebar", () => {
       enablePipelines: true,
       enableConferenceRoomChat: true,
       enableAgentChat: true,
+      enableStatusCards: true,
     });
     mockSidebarPrefs.layout = { collapsed: { admin: false } };
     const root = await renderSidebar();
@@ -819,8 +837,8 @@ describe("Sidebar", () => {
     expect(button("Expand Admin")).not.toBeNull();
     // Pipelines and Deep Dive are off, so Clients holds only Deliverables.
     expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
-    // Agent Chat graduated (GRE-1621), so the Chats section shows with every switch stored off.
-    expect(container.querySelector('[data-sidebar-section="chats"]')).not.toBeNull();
+    // Agent Chat reads off here (as in a client plan, GRE-1633), so Chats has nothing to show.
+    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
     flushSync(() => {
       root.unmount();

@@ -18,15 +18,16 @@ describe("toDesiredSkillPayload", () => {
   const skillKey = "paperclipai/paperclip/paperclip";
   const versionId = "22222222-2222-4222-8222-222222222222";
 
-  // Beta skills graduated (GRE-1621): saved pins are always sent.
-  it("includes saved version pins", () => {
-    expect(toDesiredSkillPayload([skillKey], { [skillKey]: versionId })).toEqual([
+  it("includes saved version pins while beta skills are enabled", () => {
+    expect(toDesiredSkillPayload([skillKey], { [skillKey]: versionId }, true)).toEqual([
       { key: skillKey, versionId },
     ]);
   });
 
-  it("sends a bare key when the skill has no pin", () => {
-    expect(toDesiredSkillPayload([skillKey], {})).toEqual([skillKey]);
+  it("omits saved version pins while beta skills are disabled", () => {
+    expect(toDesiredSkillPayload([skillKey], { [skillKey]: versionId }, false)).toEqual([
+      skillKey,
+    ]);
   });
 });
 

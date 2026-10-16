@@ -314,6 +314,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
     canResolveBoardRecoveryAction,
     canManageBoardRuntime,
     feedbackVotes,
+    instanceExperimentalSettings,
     keyboardShortcutsEnabled,
     casesChipsEnabled,
     feedbackDataSharingPreference,
@@ -1344,6 +1345,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
               retryDispositionRecovery={retryDispositionRecovery}
               handleOpenSkill={handleOpenSkill}
               taskChatThreadHeader={taskChatThreadHeader}
+              instanceExperimentalSettings={instanceExperimentalSettings}
               updateIssue={updateIssue}
               mentionOptions={mentionOptions}
               externalObjectsState={externalObjectsState}

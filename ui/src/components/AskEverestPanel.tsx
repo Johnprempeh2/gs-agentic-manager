@@ -15,6 +15,7 @@ import { teamScorecardApi } from "../api/teamScorecard";
 import { agentWorkDigestApi } from "../api/agentWorkDigest";
 import { agentChatsApi } from "../api/agentChats";
 import { queryKeys } from "../lib/queryKeys";
+import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useDictation } from "../hooks/useDictation";
 import { useFileIntake } from "../hooks/useFileIntake";
 import {
@@ -632,6 +633,7 @@ function LiveAsk({
   lead: PanelAgent;
   onNavigate: () => void;
 }) {
+  const { enabled: chatEnabled, loaded } = useAgentChatEnabled();
   const send = useMutation({
     mutationFn: async () => {
       const chat = await agentChatsApi.ensure(companyId, lead.id);
@@ -655,6 +657,8 @@ function LiveAsk({
     refetchInterval: (query) => (query.state.data || Date.now() - startedAt > LIVE_REPLY_WAIT_MS ? false : 4000),
   });
   const chatHref = leadChatHref(lead);
+
+  if (!loaded || !chatEnabled) return null;
 
   if (!sent) {
     return (

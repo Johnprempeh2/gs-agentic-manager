@@ -6,6 +6,7 @@ import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
+import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
@@ -340,8 +341,14 @@ function boardRoutes() {
         path="deep-dive"
         element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
       />
-      <Route path="status" element={<StatusCards />} />
-      <Route path="status/:cardId" element={<StatusCards />} />
+      <Route
+        path="status"
+        element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
+      />
+      <Route
+        path="status/:cardId"
+        element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
+      />
       {/* Back-compat: the board lived at /status-cards before PAP-15223. */}
       <Route path="status-cards" element={<StatusCardsLegacyRedirect />} />
       <Route path="status-cards/:cardId" element={<StatusCardsLegacyRedirect />} />

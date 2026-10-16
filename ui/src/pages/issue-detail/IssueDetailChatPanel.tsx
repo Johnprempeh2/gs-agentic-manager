@@ -25,7 +25,7 @@ import { useRecoveryActionHandlers } from "./useRecoveryActionHandlers";
 import { useThreadHandlers } from "./useThreadHandlers";
 import { useIssueDetailDerivedState } from "./useIssueDetailDerivedState";
 import { useIssueAndComments } from "./useIssueAndComments";
-import type { IssueThreadInteraction, IssueAttachment, IssueWorkProduct, FeedbackVote, AskUserQuestionsInteraction } from "@greatstone/shared";
+import type { IssueThreadInteraction, InstanceExperimentalSettingsWithManaged, IssueAttachment, IssueWorkProduct, FeedbackVote, AskUserQuestionsInteraction } from "@greatstone/shared";
 import type { CurrentBoardAccess } from "@/api/access";
 import type { JSX, RefObject, Dispatch, SetStateAction } from "react";
 import type { MentionOption } from "@/components/MarkdownEditor";
@@ -52,6 +52,7 @@ export type IssueDetailChatPanelProps = {
   retryDispositionRecovery: ReturnType<typeof useIssueMutations>["retryDispositionRecovery"];
   handleOpenSkill: (skillId: string, name: string) => void;
   taskChatThreadHeader: JSX.Element | undefined;
+  instanceExperimentalSettings: InstanceExperimentalSettingsWithManaged | undefined;
   updateIssue: ReturnType<typeof useIssueMutations>["updateIssue"];
   mentionOptions: MentionOption[];
   externalObjectsState: IssueExternalObjectsResult;
@@ -160,6 +161,7 @@ export function IssueDetailChatPanel({
   retryDispositionRecovery,
   handleOpenSkill,
   taskChatThreadHeader,
+  instanceExperimentalSettings,
   updateIssue,
   mentionOptions,
   externalObjectsState,
@@ -438,7 +440,7 @@ export function IssueDetailChatPanel({
             } : undefined,
             resumeHref: !activePauseHold.isRoot ? createIssueDetailPath(activePauseHoldRoot?.identifier ?? activePauseHold.rootIssueId) : undefined,
           } : null}
-          composerDisabledReason={treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
+          composerDisabledReason={issue.conversationAgentId && !questionsOnly && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is not part of this plan." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
           composerHint={composerHint}
           queuedCommentReason={queuedCommentReason}
           onVote={handleCommentVote}

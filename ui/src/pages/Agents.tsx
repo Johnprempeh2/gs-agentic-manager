@@ -1,4 +1,5 @@
 import { AgentAvatar } from "@/components/AgentAvatar";
+import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useState, useEffect, useMemo, lazy, Suspense } from "react";
 import { Link, useNavigate, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
@@ -201,6 +202,7 @@ function filterOrgTree(nodes: OrgNode[], tab: FilterTab, builtInAgentIds: Set<st
 export type AgentsView = "list" | "org";
 
 export function Agents({ initialView = "list" }: { initialView?: AgentsView } = {}) {
+  const agentChat = useAgentChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const teamCopy = useCopyAction();
   const { openNewAgent } = useDialogActions();
@@ -208,7 +210,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
   const navigate = useNavigate();
   const location = useLocation();
   const pathSegment = location.pathname.split("/").pop() ?? "all";
-  const tab: FilterTab = isFilterTab(pathSegment) ? pathSegment : "all";
+  const requestedTab: FilterTab = isFilterTab(pathSegment) ? pathSegment : "all";
   const [view, setView] = useState<AgentsView>(initialView);
 
   useEffect(() => {
@@ -220,19 +222,26 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
     queryFn: () => instanceSettingsApi.get(),
     enabled: !!selectedCompanyId,
   });
+  const builtInAgentsEnabled = instanceSettings?.experimental.enableBuiltInAgents === true;
+  const tab: FilterTab = requestedTab === "builtin" && !builtInAgentsEnabled ? "all" : requestedTab;
+  const visibleTabItems = useMemo(
+    () => AGENT_FILTER_TAB_ITEMS.filter((item) => item.value !== "builtin" || builtInAgentsEnabled),
+    [builtInAgentsEnabled],
+  );
 
   const { data: builtInAgents } = useQuery({
     queryKey: queryKeys.builtInAgents.list(selectedCompanyId!),
     queryFn: () => builtInAgentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    enabled: !!selectedCompanyId && builtInAgentsEnabled,
   });
   const builtInByAgentId = useMemo(() => {
     const map = new Map<string, BuiltInAgentState>();
+    if (!builtInAgentsEnabled) return map;
     for (const entry of builtInAgents ?? []) {
       if (entry.agentId) map.set(entry.agentId, entry);
     }
     return map;
-  }, [builtInAgents]);
+  }, [builtInAgents, builtInAgentsEnabled]);
   const builtInAgentIds = useMemo(() => new Set(builtInByAgentId.keys()), [builtInByAgentId]);
   const [configureState, setConfigureState] = useState<BuiltInAgentState | null>(null);
 
@@ -350,6 +359,11 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
     setBreadcrumbs([{ label: "Agents" }]);
   }, [setBreadcrumbs]);
 
+  useEffect(() => {
+    if (selectedCompanyId && requestedTab === "builtin" && instanceSettings && !builtInAgentsEnabled) {
+      navigate("/agents/all", { replace: true });
+    }
+  }, [builtInAgentsEnabled, instanceSettings, navigate, requestedTab, selectedCompanyId]);
 
   if (!selectedCompanyId) {
     return <EmptyState icon={Bot} message="Choose an organisation to view agents." />;
@@ -458,7 +472,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
         metaSpacerClassName="hidden @5xl:block"
         trailing={
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={event => { event.preventDefault(); event.stopPropagation(); navigate(`/chats/${agentRouteRef(agent)}`); }}>Chat</Button>
+            {agentChat.enabled && <Button variant="ghost" size="sm" onClick={event => { event.preventDefault(); event.stopPropagation(); navigate(`/chats/${agentRouteRef(agent)}`); }}>Chat</Button>}
             <div className="hidden sm:flex items-center gap-3">
               {liveRunByAgent.has(agent.id) && (
                 <LiveRunIndicator
@@ -528,7 +542,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={(v) => navigate(`/agents/${v}`)}>
           <PageTabBar
-            items={AGENT_FILTER_TAB_ITEMS}
+            items={visibleTabItems}
             value={tab}
             onValueChange={(v) => navigate(`/agents/${v}`)}
           />

@@ -4209,9 +4209,14 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("loads plan decompositions even when an old stored setting says off (graduated, GRE-1621)", async () => {
+  // GRE-1633: the server ignores a stored off, so this reads off only when a
+  // managed config or the entitlement document turns it off.
+  it("does not load plan decompositions when Task Plan Decomposition reads off", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIssuePlanDecompositions: false });
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: false,
+      enableClassicTaskInterface: true,
+    });
 
     await act(async () => {
       root.render(
@@ -4221,6 +4226,34 @@ describe("IssueDetail", () => {
       );
     });
 
+    await flushReact();
+    await flushReact();
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
+  });
+
+  it("loads plan decompositions when Task Plan Decomposition reads on (GRE-1621)", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    // The classic page shows the section in the centre column; the chat shell
+    // shows it in the (mocked) properties pane.
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: true,
+      enableClassicTaskInterface: true,
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+
+    await flushReact();
+    await flushReact();
+    // The query waits for the settings read first (GRE-1633).
     await flushReact();
     await flushReact();
 

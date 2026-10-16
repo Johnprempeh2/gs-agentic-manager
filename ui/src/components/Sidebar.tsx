@@ -80,6 +80,7 @@ import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
 import { SidebarTeamChats } from "./SidebarTeamChats";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
+import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { SidebarRecentTasks } from "./SidebarRecentTasks";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -326,6 +327,7 @@ function CustomiseActionRow({
 export function Sidebar({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const { openNewIssue } = useDialogActions();
+  const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: teamChatEnabled } = useTeamChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { collapsed, peeking } = useSidebar();
@@ -359,11 +361,13 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const attentionCount = useDecisionsCount(selectedCompanyId);
   // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
   const myTasksCount = useMyTasksCount(selectedCompanyId);
+  // GRE-1633: Status Cards ignores the stored switch, but a client plan can still turn it off.
+  const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // GRE-1622: Cases ignores the stored switch, but a client plan can still turn it off.
   const showCases = experimentalSettings?.enableCases === true;
   // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
-  const showAgentChats = !children;
+  const showAgentChats = agentChatEnabled && !children;
   const showTeamChats = teamChatEnabled && !children;
 
   const pluginContext = {
@@ -444,8 +448,9 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     "weekly-report": link("/weekly-report", "This week", Newspaper),
     // Greatstone (GRE-1624): Conference Room Chat graduated from Experimental; always shown.
     "conference-room": link("/board-chat", "Conference Room", MessagesSquare),
-    // Greatstone (GRE-1622): Status Cards graduated from Experimental; always shown.
-    status: link("/status", "Status", LayoutGrid),
+    // Greatstone (GRE-1622, GRE-1633): Status Cards graduated from Experimental;
+    // shown unless a client plan turns it off.
+    status: gated(showStatusCards, link("/status", "Status", LayoutGrid)),
     skills: link("/skills", "Skills", Boxes),
     connectors: link("/apps", "Connectors", Unplug),
     routines: link("/routines", "Routines", Repeat),

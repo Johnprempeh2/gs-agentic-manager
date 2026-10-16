@@ -57,8 +57,9 @@ export interface AgentSkillReleasePickerProps {
 }
 
 /**
- * Release picker for the paperclip core skill. Only rendered when the skill
- * has seeded releases (Beta skills graduated, GRE-1621).
+ * Release picker for the paperclip core skill. Only rendered when
+ * `enableBetaSkills` reads on (always for Greatstone and self-hosted since
+ * GRE-1621; off in client installs, GRE-1633) and the skill has seeded releases.
  * Selecting a release pins the agent to that frozen snapshot; "Default" clears
  * the pin and returns the agent to the live skill.
  */

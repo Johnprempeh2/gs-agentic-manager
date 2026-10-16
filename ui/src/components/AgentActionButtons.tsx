@@ -36,6 +36,7 @@ import { agentsApi } from "../api/agents";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { agentRouteRef } from "../lib/utils";
+import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { useDialogActions } from "../context/DialogContext";
 import { useToastActions } from "../context/ToastContext";
@@ -219,6 +220,7 @@ export function AgentActionButtons({
   className?: string;
 }) {
   const navigate = useNavigate();
+  const agentChat = useAgentChatEnabled();
   const queryClient = useQueryClient();
   const { openNewIssue } = useDialogActions();
   const { pushToast } = useToastActions();
@@ -400,12 +402,14 @@ export function AgentActionButtons({
           Raw tracing on
         </span>
       ) : null}
-      {/* Chatting is what an owner does with an agent, so it leads. */}
-      <Button size={size} onClick={() => navigate(`/chats/${agentRouteRef(agent)}`)}>
-        <MessageCircle className="h-3.5 w-3.5 sm:mr-1" />
-        <span className="hidden sm:inline">Chat</span>
-        <span className="sr-only sm:hidden">Chat with {agent.name}</span>
-      </Button>
+      {agentChat.enabled ? (
+        // Chatting is what an owner does with an agent, so it leads.
+        <Button size={size} onClick={() => navigate(`/chats/${agentRouteRef(agent)}`)}>
+          <MessageCircle className="h-3.5 w-3.5 sm:mr-1" />
+          <span className="hidden sm:inline">Chat</span>
+          <span className="sr-only sm:hidden">Chat with {agent.name}</span>
+        </Button>
+      ) : null}
       <Button
         variant="outline"
         size={size}

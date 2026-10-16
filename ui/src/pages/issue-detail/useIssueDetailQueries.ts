@@ -284,8 +284,8 @@ export function useIssueDetailQueries({
   const casesChipsEnabled = instanceExperimentalSettings?.enableCases === true;
   const feedbackDataSharingPreference =
     instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
-  // Task Plan Decomposition graduated out of Experimental (GRE-1621): always shown.
-  const showPlanDecompositionsSection = true;
+  const showPlanDecompositionsSection =
+    instanceExperimentalSettings?.enableIssuePlanDecompositions === true;
   // The file viewer graduated out of Experimental (GRE-1623): always on.
   const fileViewerEnabled = true;
   const { orderedProjects } = useProjectOrder({
