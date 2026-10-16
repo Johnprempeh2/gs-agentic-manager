@@ -14,7 +14,7 @@ import {
   type MemoryImportResult,
   type MemoryScope,
 } from "@greatstone/shared";
-import { Link } from "@/lib/router";
+import { Link, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -113,7 +113,9 @@ export function MemoryApps() {
   const queryClient = useQueryClient();
   const [app, setApp] = useState<MemoryImportApp>("chatgpt");
   const [method, setMethod] = useState<Method>("paste");
-  const [scopeId, setScopeId] = useState("");
+  const [params] = useSearchParams();
+  // A client page links here with its scope picked.
+  const [scopeId, setScopeId] = useState(params.get("scope") ?? "");
   const [pasted, setPasted] = useState("");
   const [fileCandidates, setFileCandidates] = useState<MemoryImportCandidate[] | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -135,7 +137,7 @@ export function MemoryApps() {
   });
   const writableScopes = useMemo(() => (scopes.data ?? []).filter((scope) => scope.kind !== "agent"), [scopes.data]);
   useEffect(() => {
-    if (!scopeId && writableScopes.length > 0) setScopeId(defaultScopeId(writableScopes));
+    if (writableScopes.length > 0 && !writableScopes.some((scope) => scope.id === scopeId)) setScopeId(defaultScopeId(writableScopes));
   }, [scopeId, writableScopes]);
 
   const pastedCandidates = useMemo(() => parsePastedMemories(pasted), [pasted]);
