@@ -198,10 +198,20 @@ type EmbeddedPostgresCtor = new (opts: {
   port: number;
   persistent: boolean;
   initdbFlags?: string[];
+  postgresFlags?: string[];
   onLog?: (message: unknown) => void;
   onError?: (message: unknown) => void;
 }) => EmbeddedPostgresInstance;
 
+
+// Keep dynamic shared memory in files under the data directory instead of
+// POSIX shared memory in /dev/shm. systemd-logind deletes a user's /dev/shm
+// objects when their last session ends (RemoveIPC=yes), which broke every
+// query on live on 16 Oct 2026 while the postmaster kept running. Windows
+// has no mmap implementation, so it keeps PostgreSQL's default.
+export function embeddedPostgresFlags(platform: NodeJS.Platform = process.platform): string[] {
+  return platform === "win32" ? [] : ["-c", "dynamic_shared_memory_type=mmap"];
+}
 
 export interface StartedServer {
   server: ReturnType<typeof createServer>;
@@ -612,6 +622,7 @@ async function startServerWithDatabaseTeardown(
           port,
           persistent: true,
           initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
+          postgresFlags: embeddedPostgresFlags(),
           onLog: appendEmbeddedPostgresLog,
           onError: appendEmbeddedPostgresLog,
         });

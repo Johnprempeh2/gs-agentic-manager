@@ -216,6 +216,24 @@ describe("GET /health", () => {
     });
   });
 
+  it("names lost PostgreSQL shared memory on the 503", async () => {
+    const lost = new Error('could not open shared memory segment "/PostgreSQL.1450751626": No such file or directory');
+    const db = {
+      execute: vi.fn().mockRejectedValue(new Error("Failed query: SELECT 1", { cause: lost })),
+    } as unknown as Db;
+    const app = createApp(db);
+
+    const res = await request(app).get("/health");
+
+    expect(res.status).toBe(503);
+    expect(res.body).toMatchObject({
+      status: "unhealthy",
+      error: "database_unreachable",
+      reason: "shared_memory_lost",
+    });
+    expect(res.body.hint).toContain("enable-linger");
+  });
+
   it("returns safe server info fallbacks when git metadata is unavailable", async () => {
     const app = createApp(undefined, {
       processStartedAt: "2026-06-26T00:00:00.000Z",
