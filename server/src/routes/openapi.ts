@@ -251,6 +251,9 @@ import {
   // Document annotations
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   updateDocumentAnnotationThreadSchema,
   // Document evidence trail
   upsertDocumentEvidenceSchema,
@@ -12149,6 +12152,44 @@ for (const route of [
     summary: route[2],
   });
 }
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/issues/{id}/document-links",
+  tags: ["issues"],
+  summary: "List documents linked into an issue from other issues",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/document-links",
+  tags: ["issues"],
+  summary: "Link another issue's document into this issue",
+  body: createIssueDocumentLinkSchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/issues/{id}/document-links/{linkId}",
+  tags: ["issues"],
+  summary: "Remove a linked document from an issue",
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/issues/{id}/documents/{key}/maker",
+  tags: ["issues"],
+  summary: "Name the maker agent allowed to write an issue document",
+  body: setIssueDocumentMakerSchema,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/issues/{id}/documents/{key}/approved-revision",
+  tags: ["issues"],
+  summary: "Mark or clear the approved revision of an issue document",
+  body: setIssueDocumentApprovedRevisionSchema,
+});
 
 registerCurrentRoute({
   method: "post",

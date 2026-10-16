@@ -2229,6 +2229,28 @@ export const upsertIssueDocumentSchema = z.object({
 
 export const restoreIssueDocumentRevisionSchema = z.object({});
 
+/** Link a document owned by another task in the same company to this task. */
+export const createIssueDocumentLinkSchema = z.object({
+  sourceIssueId: z.string().guid(),
+  key: issueDocumentKeySchema,
+});
+
+/** Name one extra agent allowed to write a document, or null to clear it. */
+export const setIssueDocumentMakerSchema = z.object({
+  makerAgentId: z.string().guid().nullable(),
+});
+
+/** Mark one revision as the current approved one, or null to clear it. */
+export const setIssueDocumentApprovedRevisionSchema = z.object({
+  revisionId: z.string().guid().nullable(),
+});
+
+export type CreateIssueDocumentLink = z.infer<typeof createIssueDocumentLinkSchema>;
+export type SetIssueDocumentMaker = z.infer<typeof setIssueDocumentMakerSchema>;
+export type SetIssueDocumentApprovedRevision = z.infer<
+  typeof setIssueDocumentApprovedRevisionSchema
+>;
+
 export type IssueDocumentFormat = z.infer<typeof issueDocumentFormatSchema>;
 export type UpsertIssueDocument = z.infer<typeof upsertIssueDocumentSchema>;
 export type RestoreIssueDocumentRevision = z.infer<

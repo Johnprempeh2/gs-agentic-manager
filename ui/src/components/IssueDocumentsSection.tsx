@@ -23,6 +23,7 @@ import { cn, relativeTime } from "../lib/utils";
 import { FoldCurtain } from "./FoldCurtain";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "./IssueDocumentAnnotations";
 import { IssueDocumentEvidence } from "./IssueDocumentEvidence";
+import { IssueLinkedDocuments } from "./IssueLinkedDocuments";
 import type { DocumentAnnotationTarget } from "@/api/document-annotations";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
 import { MarkdownEditor, type MentionOption } from "./MarkdownEditor";
@@ -36,7 +37,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Check, Copy, Diff, Download, FilePenLine, FileText, Lock, MoreHorizontal, Plus, Trash2, Unlock, X } from "lucide-react";
+import { BadgeCheck, Check, Copy, Diff, Download, FilePenLine, FileText, Lock, MoreHorizontal, Plus, Trash2, Unlock, X } from "lucide-react";
 import { DocumentDiffModal } from "./DocumentDiffModal";
 import { DocumentFrameHeader, type DocumentFrameHeaderRevisionActor } from "./DocumentFrameHeader";
 import { SourceTrustBadge } from "./SourceTrustBadge";
@@ -76,6 +77,8 @@ type DocumentSubjectConfig = {
   deleteDocument?: (key: string) => Promise<unknown>;
   restoreDocumentRevision?: (key: string, revisionId: string) => Promise<IssueDocument>;
   setDocumentLock?: (key: string, locked: boolean) => Promise<IssueDocument>;
+  /** Marks one revision as the approved version, or clears it with null. */
+  setApprovedRevision?: (key: string, revisionId: string | null) => Promise<IssueDocument>;
   syncDetailCache?: (queryClient: QueryClient, document: IssueDocument) => void;
   hideSystemDocuments?: boolean;
   legacyPlanDocument?: { body: string } | null;
@@ -218,6 +221,7 @@ function makeIssueDocumentSubject(issue: Issue): DocumentSubjectConfig {
     restoreDocumentRevision: (key, revisionId) => issuesApi.restoreDocumentRevision(issue.id, key, revisionId),
     setDocumentLock: (key, locked) =>
       locked ? issuesApi.lockDocument(issue.id, key) : issuesApi.unlockDocument(issue.id, key),
+    setApprovedRevision: (key, revisionId) => issuesApi.setDocumentApprovedRevision(issue.id, key, revisionId),
     syncDetailCache: (queryClient, document) => {
       queryClient.setQueryData<Issue | undefined>(
         queryKeys.issues.detail(issue.id),
@@ -417,6 +421,22 @@ export function IssueDocumentsSection({
     },
     onError: (err) => {
       setError(err instanceof Error ? err.message : "Failed to restore document revision");
+    },
+  });
+
+  const setApprovedRevision = useMutation({
+    mutationFn: ({ key, revisionId }: { key: string; revisionId: string | null }) => {
+      if (!documentSubject.setApprovedRevision) {
+        throw new Error("Approved versions are not available here");
+      }
+      return documentSubject.setApprovedRevision(key, revisionId);
+    },
+    onSuccess: () => {
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: documentSubject.documentsQueryKey });
+    },
+    onError: (err) => {
+      setError(err instanceof Error ? err.message : "Could not change the approved version");
     },
   });
 
@@ -920,6 +940,8 @@ export function IssueDocumentsSection({
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 
+      {issue ? <IssueLinkedDocuments issueId={issue.id} canRemoveLinks={canDeleteDocuments} /> : null}
+
       {draft?.isNew && (
         <div
           className="space-y-3 rounded-lg border border-border bg-accent/10 p-3"
@@ -1035,7 +1057,23 @@ export function IssueDocumentsSection({
                 documentKey={doc.key}
                 folded={isFolded}
                 onToggleFolded={() => toggleFoldedDocument(doc.key)}
-                sourceTrustSlot={<SourceTrustBadge sourceTrust={doc.sourceTrust} artifactLabel="document" />}
+                sourceTrustSlot={
+                  <>
+                    <SourceTrustBadge sourceTrust={doc.sourceTrust} artifactLabel="document" />
+                    {doc.approvedRevisionNumber != null ? (
+                      <Badge
+                        variant="secondary"
+                        className="gap-1"
+                        title={`Version ${doc.approvedRevisionNumber} is the approved version`}
+                      >
+                        <BadgeCheck className="h-3 w-3" aria-hidden="true" />
+                        {doc.approvedRevisionNumber === doc.latestRevisionNumber
+                          ? "Approved version"
+                          : `Approved version: ${doc.approvedRevisionNumber}`}
+                      </Badge>
+                    ) : null}
+                  </>
+                }
                 revisionMenu={{
                   open: revisionMenuOpenKey === doc.key,
                   onOpenChange: (open) => setRevisionMenuOpenKey(open ? doc.key : null),
@@ -1126,6 +1164,32 @@ export function IssueDocumentsSection({
                           <Download className="h-3.5 w-3.5" />
                           Download document
                         </DropdownMenuItem>
+                        {canManageDocumentLocks && documentSubject.setApprovedRevision ? (() => {
+                          const shownRevisionId = selectedHistoricalRevision?.id ?? doc.latestRevisionId;
+                          if (shownRevisionId && shownRevisionId !== doc.approvedRevisionId) {
+                            return (
+                              <DropdownMenuItem
+                                onClick={() => setApprovedRevision.mutate({ key: doc.key, revisionId: shownRevisionId })}
+                                disabled={setApprovedRevision.isPending}
+                              >
+                                <BadgeCheck className="h-3.5 w-3.5" />
+                                Mark this version as approved
+                              </DropdownMenuItem>
+                            );
+                          }
+                          if (doc.approvedRevisionId) {
+                            return (
+                              <DropdownMenuItem
+                                onClick={() => setApprovedRevision.mutate({ key: doc.key, revisionId: null })}
+                                disabled={setApprovedRevision.isPending}
+                              >
+                                <BadgeCheck className="h-3.5 w-3.5" />
+                                Clear approved version
+                              </DropdownMenuItem>
+                            );
+                          }
+                          return null;
+                        })() : null}
                         {doc.latestRevisionNumber > 1 ? (
                           <DropdownMenuItem onClick={() => setDiffViewKey(doc.key)}>
                             <Diff className="h-3.5 w-3.5" />

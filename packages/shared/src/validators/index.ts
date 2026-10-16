@@ -509,6 +509,9 @@ export {
   issueDocumentKeySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   upsertIssueWatchdogSchema,
   type CreateIssue,
   type CreateChildIssue,
@@ -535,6 +538,9 @@ export {
   type IssueDocumentFormat,
   type UpsertIssueDocument,
   type RestoreIssueDocumentRevision,
+  type CreateIssueDocumentLink,
+  type SetIssueDocumentMaker,
+  type SetIssueDocumentApprovedRevision,
   type UpsertIssueWatchdog,
 } from "./issue.js";
 
