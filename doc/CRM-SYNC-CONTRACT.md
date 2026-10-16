@@ -225,6 +225,13 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   product taken off a deal in Pipedrive comes off the case. An account without the Products
   add-on still imports everything else, and a deal whose products cannot be read keeps what it
   had. Code: `server/src/services/pipedrive-product-import.ts`.
+- The Leads inbox (`/v1/leads?archived_status=all`, `/v1/leadLabels`) becomes cases in one
+  "Pipedrive leads" pipeline, keyed `pipedrive-lead-<id>`, with stages Lead, Archived and
+  Converted or removed. Each lead keeps its value, owner, creator, person, organisation, labels,
+  source, seen flag and the custom deal fields Pipedrive shares with leads. Pipedrive removes a
+  lead when it is converted to a deal, so a lead no longer listed moves to Converted or removed.
+  Activities and notes on a lead link to its case. An account with no leads gets no empty
+  pipeline. Code: `server/src/services/pipedrive-lead-import.ts`.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.

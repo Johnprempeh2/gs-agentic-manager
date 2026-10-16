@@ -313,6 +313,25 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/products`, input.start ?? 0, 100);
     },
 
+    /**
+     * One page of every lead, archived ones included (API v1, read only). The
+     * leads list answers its paging at the top of `additional_data`.
+     */
+    async listLeadsPage(input: { start?: number } = {}) {
+      const start = input.start ?? 0;
+      const body = await get("/api/v1/leads", { start, limit: V1_LIST_PAGE_SIZE, archived_status: "all" });
+      const items = Array.isArray(body.data) ? body.data as Record<string, unknown>[] : [];
+      const extra = body.additional_data as { more_items_in_collection?: boolean; pagination?: { more_items_in_collection?: boolean } } | undefined;
+      const more = extra?.more_items_in_collection ?? extra?.pagination?.more_items_in_collection ?? false;
+      return { items, nextStart: more && items.length > 0 ? start + items.length : null };
+    },
+
+    /** Every lead label, so leads show label names. */
+    async listLeadLabels() {
+      const body = await get("/api/v1/leadLabels", {});
+      return Array.isArray(body.data) ? body.data as Array<{ id: string; name?: string | null }> : [];
+    },
+
     /** Every pipeline (API v1, read only). Used by the full deal import. */
     async listPipelines() {
       const body = await get("/api/v1/pipelines", {});

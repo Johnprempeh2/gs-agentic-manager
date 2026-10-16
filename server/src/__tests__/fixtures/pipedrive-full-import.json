@@ -1,5 +1,5 @@
 {
-  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703. Also /api/v1/productFields, /api/v1/products and /api/v1/deals/{id}/products pages for deals 701 and 702.",
+  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703. Also /api/v1/productFields, /api/v1/products and /api/v1/deals/{id}/products pages for deals 701 and 702. Also /api/v1/leadLabels and /api/v1/leads pages.",
   "pipelines": {
     "success": true,
     "data": [
@@ -778,6 +778,71 @@
         "limit": 100,
         "more_items_in_collection": false
       }
+    }
+  },
+  "leadLabels": {
+    "success": true,
+    "data": [
+      {
+        "id": "f0a1b2c3-0000-4000-8000-000000000001",
+        "name": "Hot",
+        "color": "red"
+      },
+      {
+        "id": "f0a1b2c3-0000-4000-8000-000000000002",
+        "name": "From the SDK docs",
+        "color": "blue"
+      }
+    ]
+  },
+  "leadsPage": {
+    "success": true,
+    "data": [
+      {
+        "id": "adf21080-0e10-11eb-879b-05d71fb426ec",
+        "title": "Tunde Bakare CLI enquiry",
+        "owner_id": 9001,
+        "creator_id": 9002,
+        "label_ids": [
+          "f0a1b2c3-0000-4000-8000-000000000001",
+          "f0a1b2c3-0000-4000-8000-000000000002"
+        ],
+        "person_id": 502,
+        "organization_id": 102,
+        "source_name": "Web forms",
+        "origin": "WebForms",
+        "channel": null,
+        "channel_id": null,
+        "is_archived": false,
+        "was_seen": true,
+        "value": {
+          "amount": 5000,
+          "currency": "GBP"
+        },
+        "expected_close_date": "2026-11-30",
+        "add_time": "2026-10-02T09:00:00.000Z",
+        "update_time": "2026-10-05T10:00:00.000Z",
+        "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "31"
+      },
+      {
+        "id": "bdf21080-0e10-11eb-879b-05d71fb426ec",
+        "title": "Old conference contact",
+        "owner_id": 9002,
+        "label_ids": [],
+        "person_id": null,
+        "organization_id": null,
+        "source_name": "Manually created",
+        "is_archived": true,
+        "was_seen": false,
+        "value": null,
+        "add_time": "2026-03-01T09:00:00.000Z",
+        "update_time": "2026-04-01T09:00:00.000Z"
+      }
+    ],
+    "additional_data": {
+      "start": 0,
+      "limit": 500,
+      "more_items_in_collection": false
     }
   }
 }

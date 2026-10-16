@@ -74,6 +74,8 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/products": { 0: recorded.productsPage },
   "/api/v1/deals/701/products": { 0: recorded.dealProducts701 },
   "/api/v1/deals/702/products": { 0: recorded.dealProducts702 },
+  "/api/v1/leadLabels": { 0: recorded.leadLabels },
+  "/api/v1/leads": { 0: recorded.leadsPage },
 });
 
 function fakePipedrive(pages: () => Pages) {
@@ -314,6 +316,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(gsamPipelines.map((row) => [row.key, row.name])).toEqual([
       ["pipedrive-1", "DevTools journey"],
       ["pipedrive-2", "DX engagements"],
+      ["pipedrive-leads", "Pipedrive leads"],
     ]);
     const devToolsStages = await db.select().from(pipelineStages)
       .where(eq(pipelineStages.pipelineId, gsamPipelines[0]!.id))
@@ -391,7 +394,8 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     cases = await casesByKey(companyId);
     expect(cases.get("pipedrive-701")).toMatchObject({ stageKey: "won" });
-    expect(await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId))).toHaveLength(3);
+    // Three deal cases plus the two leads.
+    expect(await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId))).toHaveLength(5);
   }, 60_000);
 
   it("brings activities, notes and calls across, linked to the organisation, person and deal", async () => {
@@ -542,6 +546,79 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(await db.select().from(crmDealProducts).where(eq(crmDealProducts.companyId, companyId))).toHaveLength(2);
     const after = await casesByKey(companyId);
     expect(after.get("pipedrive-701")!.fields.dealProducts).toBe("20 x Team seat at 600 GBP, 10% off: 10,800 GBP (Annual, billed upfront)");
+  }, 60_000);
+
+  it("brings the Leads inbox across as cases, links notes to them, and moves converted leads", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    let pages = recordedPages();
+    pages["/api/v1/notes"][0].data.push({ id: 7003, content: "Asked about SSO.", add_time: "2026-10-03 09:00:00", user_id: 9001, lead_id: "adf21080-0e10-11eb-879b-05d71fb426ec" });
+    const pipedrive = fakePipedrive(() => pages);
+
+    const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    expect(first.body.leads).toEqual({ created: 2, updated: 0, skipped: 0, errors: 0 });
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+    expect(pipedrive.calls.some((call) => call.url.includes("/api/v1/leads") && call.url.includes("archived_status=all"))).toBe(true);
+
+    const blueHarbour = await db.select().from(organisations)
+      .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "102")))
+      .then((rows) => rows[0]!);
+    let cases = await casesByKey(companyId);
+    const open = cases.get("pipedrive-lead-adf21080-0e10-11eb-879b-05d71fb426ec")!;
+    expect(open).toMatchObject({ title: "Tunde Bakare CLI enquiry", pipelineKey: "pipedrive-leads", stageKey: "lead_open", organisationId: blueHarbour.id });
+    expect(open.fields).toMatchObject({
+      leadValue: 5000,
+      leadCurrency: "GBP",
+      leadOwner: "Ama Owusu",
+      leadCreator: "Kofi Mensah",
+      contactPerson: "Tunde Bakare",
+      pipedriveOrganisation: "Blue Harbour Energy",
+      expectedCloseDate: "2026-11-30",
+      leadLabels: ["Hot", "From the SDK docs"],
+      leadSource: "Web forms",
+      leadSeen: "Yes",
+      addedOn: "2026-10-02",
+      [PLAN]: "Starter",
+    });
+    expect(cases.get("pipedrive-lead-bdf21080-0e10-11eb-879b-05d71fb426ec")).toMatchObject({ stageKey: "lead_archived" });
+    const note = await db.select().from(crmTimelineEntries)
+      .where(and(eq(crmTimelineEntries.companyId, companyId), eq(crmTimelineEntries.externalId, "7003")))
+      .then((rows) => rows[0]!);
+    const leadCase = await db.select().from(pipelineCases)
+      .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.caseKey, "pipedrive-lead-adf21080-0e10-11eb-879b-05d71fb426ec")))
+      .then((rows) => rows[0]!);
+    expect(note.caseId).toBe(leadCase.id);
+
+    // Same answers again: nothing changes.
+    const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.leads).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
+
+    // Converted to a deal in Pipedrive: the lead is gone from the list.
+    pages = recordedPages();
+    pages["/api/v1/leads"][0].data.shift();
+    const third = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(third.body.leads).toEqual({ created: 0, updated: 1, skipped: 1, errors: 0 });
+    cases = await casesByKey(companyId);
+    expect(cases.get("pipedrive-lead-adf21080-0e10-11eb-879b-05d71fb426ec")).toMatchObject({ stageKey: "lead_closed" });
+  }, 60_000);
+
+  it("makes no leads pipeline for an account without leads, and still imports the rest", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    const pages = recordedPages();
+    pages["/api/v1/leads"][0].data = [];
+    delete pages["/api/v1/leadLabels"];
+    let pipedrive = fakePipedrive(() => pages);
+    const denied = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(denied.status).toBe(200);
+    expect(denied.body.leads).toEqual({ created: 0, updated: 0, skipped: 0, errors: 1 });
+    expect(denied.body.deals.created).toBe(3);
+
+    pages["/api/v1/leadLabels"] = { 0: recorded.leadLabels };
+    pipedrive = fakePipedrive(() => pages);
+    const empty = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(empty.body.leads).toEqual({ created: 0, updated: 0, skipped: 0, errors: 0 });
+    const keys = (await db.select().from(pipelines).where(eq(pipelines.companyId, companyId))).map((row) => row.key);
+    expect(keys).not.toContain("pipedrive-leads");
   }, 60_000);
 
   it("still imports everything else when the account has no products, keeping what deals had", async () => {
