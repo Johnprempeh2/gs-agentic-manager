@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarItem } from "@greatstone/shared";
-import { calendarItemHref, dayTitle, isOverdue, monthGrid, monthTitle, routineTimesLabel, shiftMonth } from "./calendar";
+import { calendarItemHref, canReschedule, dayTitle, isOverdue, monthGrid, monthTitle, routineTimesLabel, shiftMonth } from "./calendar";
 
 function item(overrides: Partial<CalendarItem>): CalendarItem {
   return {
@@ -21,6 +21,13 @@ function item(overrides: Partial<CalendarItem>): CalendarItem {
 }
 
 describe("calendar helpers", () => {
+  it("lets only open tasks move to another day", () => {
+    expect(canReschedule(item({}))).toBe(true);
+    expect(canReschedule(item({ closed: true }))).toBe(false);
+    expect(canReschedule(item({ kind: "routine" }))).toBe(false);
+    expect(canReschedule(item({ kind: "goal" }))).toBe(false);
+  });
+
   it("lays a month out in whole weeks, Monday first", () => {
     const weeks = monthGrid("2026-10");
     expect(weeks[0]![0]).toBe("2026-09-28");

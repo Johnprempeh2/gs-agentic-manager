@@ -115,6 +115,11 @@ export function isOverdue(item: CalendarItem, today: string): boolean {
 }
 
 /** Where an item opens. */
+/** Only open tasks can move to another day: routines follow their schedule, and goals change on their own page. */
+export function canReschedule(item: CalendarItem): boolean {
+  return item.kind === "task" && !item.closed;
+}
+
 export function calendarItemHref(item: CalendarItem): string {
   if (item.kind === "task") return `/issues/${item.identifier ?? item.id}`;
   if (item.kind === "routine") return `/routines/${item.id}`;
