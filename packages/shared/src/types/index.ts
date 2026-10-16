@@ -418,6 +418,8 @@ export type {
   CompanySearchHighlight,
   CompanySearchArtifactSummary,
   CompanySearchFileSummary,
+  CompanySearchRecordKind,
+  CompanySearchRecordSummary,
   CompanySearchIssueFilterKey,
   CompanySearchIssueSummary,
   CompanySearchResponse,
@@ -434,6 +436,7 @@ export {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
   COMPANY_SEARCH_SCOPES,
+  COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SORTS,
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
 } from "./search.js";

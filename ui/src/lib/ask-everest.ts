@@ -4,7 +4,7 @@
  * history). This is the instant answer; the panel can also pass the
  * question to Everest itself, whose reply arrives in its chat.
  */
-import type { AgentWorkDigest, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
 import { timeAgo } from "./timeAgo";
 import { plainTaskStatus } from "./global-search";
 
@@ -217,9 +217,33 @@ export function answerAgent(
   return { headline, lines: lines.slice(0, 8), more: { label: `Open ${agent.name}`, href: `/agents/${agent.id}` } };
 }
 
-export function answerSubject(subject: string, issues: readonly Issue[]): AskAnswer {
+const RECORD_KIND_WORDS: Record<string, string> = {
+  organisation: "Organisation",
+  person: "Person",
+  client: "Client",
+  product: "Product",
+  image: "Image",
+};
+
+/** Clients, organisations, people and products that match, as answer lines. */
+export function recordLines(records: readonly CompanySearchResult[]): AnswerLine[] {
+  return records
+    .filter((result) => result.type === "record" && result.record)
+    .slice(0, 4)
+    .map((result) => ({
+      text: result.title,
+      detail: [RECORD_KIND_WORDS[result.record!.kind] ?? "Record", result.record!.subtitle].filter(Boolean).join(": "),
+      href: result.href,
+    }));
+}
+
+export function answerSubject(subject: string, issues: readonly Issue[], records: readonly CompanySearchResult[] = []): AskAnswer {
+  const found = recordLines(records);
   if (issues.length === 0) {
-    return { headline: `I could not find any task about ${subject}.`, lines: [], more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` } };
+    const headline = found.length > 0
+      ? `I found ${found[0]!.text}${found.length > 1 ? ` and ${plural(found.length - 1, "more record")}` : ""}, but no tasks about ${subject} yet.`
+      : `I could not find any task about ${subject}.`;
+    return { headline, lines: found, more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` } };
   }
   const open = issues.filter((issue) => issue.status !== "done" && issue.status !== "cancelled");
   const stuck = open.filter((issue) => issue.status === "blocked");
@@ -238,7 +262,7 @@ export function answerSubject(subject: string, issues: readonly Issue[]): AskAns
     .map((issue) => ({ text: issue.title, detail: plainTaskStatus(issue.status), href: taskHref(issue) }));
   return {
     headline: `${plural(issues.length, "task")} about ${subject}: ${parts.join(", ")}.`,
-    lines,
+    lines: [...found, ...lines],
     more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}` },
   };
 }

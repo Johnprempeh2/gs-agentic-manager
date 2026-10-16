@@ -8,6 +8,7 @@ import { Link } from "@/lib/router";
 import { cn } from "../lib/utils";
 import { useCompany } from "../context/CompanyContext";
 import { agentsApi } from "../api/agents";
+import { searchApi } from "../api/search";
 import { issuesApi } from "../api/issues";
 import { decisionsFeedApi } from "../api/decisionsFeed";
 import { teamScorecardApi } from "../api/teamScorecard";
@@ -557,6 +558,13 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     },
     enabled: active && (intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away"),
   });
+  // Clients, organisations, people and products named in the question.
+  const records = useQuery({
+    queryKey: ["ask-everest", companyId, "records", intent.kind === "subject" ? intent.subject : null],
+    queryFn: () => searchApi.search(companyId, { q: intent.kind === "subject" ? intent.subject : "", scope: "records", limit: 4 }),
+    enabled: active && intent.kind === "subject",
+    retry: false,
+  });
   const setLabel = taskSetLabel(intent);
   const set = useMemo(
     () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
@@ -567,6 +575,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
   const pending = (needsNeedsMe && needsMe.isPending)
     || (intent.kind === "agent" && scorecard.isPending && !scorecard.isError)
     || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
+    || (intent.kind === "subject" && records.isPending && !records.isError)
     || (intent.kind === "away" && digest.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error) || (intent.kind === "away" && digest.error) || issues.error;
   if (!active) return { loading: true };
@@ -591,7 +600,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
         set,
       };
     case "subject":
-      return { value: answerSubject(intent.subject, issues.data ?? []), set };
+      return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
     default:
       return { value: answerOverview(scorecard.data ?? null, needsMe.data ?? null) };
   }

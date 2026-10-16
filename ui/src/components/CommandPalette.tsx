@@ -44,6 +44,11 @@ import {
   Keyboard,
   Pin,
   Star,
+  Briefcase,
+  Building2,
+  CalendarDays,
+  Gauge,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { openShortcutsSheet } from "./KeyboardShortcutsCheatsheet";
@@ -688,6 +693,26 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/activity")}>
             <History className="mr-2 h-4 w-4" />
             Activity
+          </CommandItem>
+          <CommandItem onSelect={() => go("/pipelines")}>
+            <Briefcase className="mr-2 h-4 w-4" />
+            Clients and pipelines
+          </CommandItem>
+          <CommandItem onSelect={() => go("/organisations")}>
+            <Building2 className="mr-2 h-4 w-4" />
+            Organisations
+          </CommandItem>
+          <CommandItem onSelect={() => go("/calendar")}>
+            <CalendarDays className="mr-2 h-4 w-4" />
+            Calendar
+          </CommandItem>
+          <CommandItem onSelect={() => go("/scorecard")}>
+            <Gauge className="mr-2 h-4 w-4" />
+            Scorecard
+          </CommandItem>
+          <CommandItem onSelect={() => go("/images")}>
+            <ImageIcon className="mr-2 h-4 w-4" />
+            Images
           </CommandItem>
         </CommandGroup>
 

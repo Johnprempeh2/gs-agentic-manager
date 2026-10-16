@@ -127,6 +127,20 @@ describe("answers", () => {
     expect(answer.headline).toBe("3 tasks about indago: 2 open, 1 stuck, 1 done.");
     expect(answer.lines[0]?.text).toBe("Kick-off pack");
   });
+
+  it("puts matching clients and people first, and answers with them when there are no tasks", () => {
+    const records = [
+      { id: "organisation:o1", type: "record", title: "Indago Ltd", href: "/PAP/organisations/o1", record: { kind: "organisation", subtitle: "Finance, UK" } },
+      { id: "person:p1", type: "record", title: "Ada Indago", href: "/PAP/organisations/o1", record: { kind: "person", subtitle: "CFO at Indago Ltd" } },
+      { id: "issue:x", type: "issue", title: "Not a record", href: "/PAP/issues/X-1" },
+    ] as unknown as Parameters<typeof answerSubject>[2];
+    const withTasks = answerSubject("indago", [issue({ id: "a", title: "Draft proposal", status: "in_progress" })], records);
+    expect(withTasks.lines.map((line) => line.text)).toEqual(["Indago Ltd", "Ada Indago", "Draft proposal"]);
+    expect(withTasks.lines[0]).toEqual({ text: "Indago Ltd", detail: "Organisation: Finance, UK", href: "/PAP/organisations/o1" });
+    const noTasks = answerSubject("indago", [], records);
+    expect(noTasks.headline).toBe("I found Indago Ltd and 1 more record, but no tasks about indago yet.");
+    expect(noTasks.lines[1]?.detail).toBe("Person: CFO at Indago Ltd");
+  });
 });
 
 describe("since you were away", () => {

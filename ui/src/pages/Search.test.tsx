@@ -190,7 +190,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -276,7 +276,7 @@ describe("Search page", () => {
     }));
     searchApiMock.search.mockResolvedValue({ query: "rank", normalizedQuery: "rank", scope: "all",
       sort, limit: 20, offset: 0, hasMore: false, zeroResults: null, results,
-      countsByType: { issue: 1, comment: 1, document: 1, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 1, comment: 1, document: 1, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: { status: {}, priority: {}, assigneeAgentId: {}, assigneeUserId: {}, projectId: {}, labelId: {}, updatedWithin: {} },
     });
     const { root } = renderSearch(`/search?q=rank&sort=${sort}`, container);
@@ -295,7 +295,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 1, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 1, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -371,7 +371,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 1, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 1, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -425,6 +425,60 @@ describe("Search page", () => {
     });
   });
 
+  it("renders an organisation record with its kind and detail line", async () => {
+    searchApiMock.search.mockResolvedValueOnce({
+      query: "retainer",
+      normalizedQuery: "retainer",
+      scope: "records",
+      limit: 20,
+      offset: 0,
+      sort: "relevance",
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 1, agent: 0, project: 0 },
+      filterOptionCounts: {
+        status: {},
+        priority: {},
+        assigneeAgentId: {},
+        assigneeUserId: {},
+        projectId: {},
+        labelId: {},
+        updatedWithin: {},
+      },
+      zeroResults: null,
+      hasMore: false,
+      results: [
+        {
+          id: "organisation:o1",
+          type: "record",
+          score: 100,
+          title: "Acme Ltd",
+          href: "/PAP/organisations/o1",
+          matchedFields: ["record"],
+          sourceLabel: "Organisation",
+          snippet: "Finance, UK",
+          snippets: [],
+          record: { kind: "organisation", subtitle: "Finance, UK" },
+          updatedAt: new Date().toISOString(),
+          previewImageUrl: null,
+        },
+      ],
+    });
+
+    const { root } = renderSearch("/search?q=acme&scope=records", container);
+
+    await waitForAssertion(() => {
+      const row = container.querySelector('[data-result-type="record"]');
+      expect(row?.getAttribute("data-record-kind")).toBe("organisation");
+      expect(row?.textContent).toContain("Acme Ltd");
+      expect(row?.textContent).toContain("Organisation");
+      expect(row?.textContent).toContain("Finance, UK");
+    });
+    expect(container.textContent).toContain("Clients and records");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("renders comment and document result rows with exact anchors, source chips, and highlights", async () => {
     searchApiMock.search.mockResolvedValueOnce({
       query: "needle",
@@ -433,7 +487,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 1, document: 1, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 1, document: 1, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -565,7 +619,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -620,7 +674,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -685,7 +739,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -721,7 +775,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -766,7 +820,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -905,7 +959,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -964,7 +1018,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
