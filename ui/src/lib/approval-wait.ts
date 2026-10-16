@@ -31,3 +31,24 @@ export function pendingSummary(approvals: readonly Pick<Approval, "status" | "cr
   if (oldest < 1) return `${count}, ${waiting.length === 1 ? "from" : "all from"} today.`;
   return `${count}, the oldest for ${oldest} ${oldest === 1 ? "day" : "days"}.`;
 }
+
+/**
+ * "Copy as a list" on the Pending tab: each sign-off with who asked, how long
+ * it has waited and a link, ready to paste.
+ */
+export function pendingListText(
+  approvals: readonly (Pick<Approval, "id" | "status" | "createdAt"> & { label: string; requester?: string | null })[],
+  linkFor: (id: string) => string,
+  now: Date = new Date(),
+): string {
+  const waiting = approvals.filter(isAwaitingDecision);
+  const lines = ["Sign-offs waiting for me", pendingSummary(waiting, now) ?? "Nothing is waiting."];
+  if (waiting.length > 0) lines.push("");
+  for (const approval of waiting) {
+    const detail = [approval.requester ? `from ${approval.requester}` : null, waitingLabel(approval, now)?.toLowerCase() ?? "today"]
+      .filter(Boolean)
+      .join(", ");
+    lines.push(`• ${approval.label} (${detail}) ${linkFor(approval.id)}`);
+  }
+  return lines.join("\n");
+}

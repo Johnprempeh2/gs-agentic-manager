@@ -7,6 +7,7 @@ import { Approvals } from "./Approvals";
 
 vi.mock("@/lib/router", () => ({
   useNavigate: () => vi.fn(),
+  useActiveCompanyPrefix: () => null,
   useLocation: () => ({ pathname: "/approvals/pending" }),
   Link: ({ children, to }: { children?: ReactNode; to: string }) => <a href={to}>{children}</a>,
 }));
