@@ -95,4 +95,34 @@ describe("TeamScorecard", () => {
     expect(api.addComment).toHaveBeenCalledWith("t2", STUCK_TASK_UPDATE_REQUEST, undefined, undefined, undefined, expect.any(String));
     expect(container.textContent).toContain("Asked");
   });
+
+  it("asks about every stuck task at once, then hides the button", async () => {
+    api.scorecard.mockResolvedValue({
+      ...scorecard,
+      agents: [
+        { ...scorecard.agents[0]!, stuckTasks: [{ id: "t2", identifier: "ACM-2", title: "Pipedrive import" }] },
+        {
+          ...scorecard.agents[0]!,
+          agentId: "a2",
+          name: "Lodestone",
+          stuckTasks: [{ id: "t3", identifier: "ACM-3", title: "Board pack" }],
+        },
+      ],
+    });
+    await render();
+    const askAll = Array.from(container.querySelectorAll("button")).find((button) =>
+      button.textContent?.includes("Ask about all 2 stuck tasks"),
+    );
+    expect(askAll).toBeDefined();
+
+    await act(async () => {
+      askAll!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+
+    expect(api.addComment).toHaveBeenCalledTimes(2);
+    expect(api.addComment.mock.calls.map((call) => call[0]).sort()).toEqual(["t2", "t3"]);
+    expect(container.textContent?.match(/Asked/g)).toHaveLength(2);
+    expect(container.textContent).not.toContain("Ask about all");
+  });
 });
