@@ -10,6 +10,7 @@ import {
   companyMemberships,
   createDb,
   instanceSettings,
+  organisationContacts,
   organisations,
   pipelineCases,
   pipelineFieldDefinitions,
@@ -26,6 +27,7 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { organisationRoutes } from "../routes/organisations.js";
 import type { PipedriveDealField, PipedriveFetch } from "../services/crm-sync-pipedrive.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { pipedriveRecordFields } from "../services/pipedrive-record-fields.js";
 import {
   coerceForField,
   gsamKeyForCustomField,
@@ -52,6 +54,7 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/organizationFields": { 0: orgs.organizationFields },
   "/api/v1/organizations": { 0: orgs.organizationsPage1, 2: orgs.organizationsPage2 },
   "/api/v1/persons": { 0: orgs.personsPage1, 2: orgs.personsPage2 },
+  "/api/v1/personFields": { 0: { success: true, data: [] } },
   "/api/v1/pipelines": { 0: recorded.pipelines },
   "/api/v1/stages": { 0: recorded.stages },
   "/api/v1/users": { 0: recorded.users },
@@ -114,6 +117,56 @@ describe("Pipedrive deal field mapping", () => {
     expect(coerceForField({ type: "select", options: ["Starter"] }, "Legacy")).toEqual({ value: "Legacy", missing: ["Legacy"] });
     expect(coerceForField({ type: "date", options: [] }, "not a date")).toEqual({ value: null, missing: [] });
     expect(coerceForField({ type: "text", options: [] }, "x".repeat(600)).value).toHaveLength(500);
+  });
+});
+
+const ORG_FIELDS = [
+  { key: "name", name: "Name", field_type: "varchar" },
+  { key: "owner_id", name: "Owner", field_type: "user" },
+  { key: "website", name: "Website", field_type: "varchar" },
+  { key: "label_ids", name: "Labels", field_type: "set", options: [{ id: 1, label: "DevTools" }, { id: 2, label: "Partner" }] },
+  { key: "address", name: "Address", field_type: "address" },
+  { key: "employee_count", name: "Number of employees", field_type: "int" },
+  { key: "9a1b2c3d4e5f60718293a4b5c6d7e8f901234567", name: "Signed up via", field_type: "enum", options: [{ id: 7, label: "CLI" }] },
+  { key: "8a1b2c3d4e5f60718293a4b5c6d7e8f901234567", name: "Account manager", field_type: "user" },
+  { key: "7a1b2c3d4e5f60718293a4b5c6d7e8f901234567", name: "Empty field", field_type: "varchar" },
+];
+
+describe("Pipedrive organisation and person fields", () => {
+  it("keeps every field with a value under Pipedrive's name, skipping the ones with a column", () => {
+    const org = {
+      id: 101,
+      name: "Northwind Minerals",
+      owner_id: { id: 9001, name: "Ama Owusu", value: 9001 },
+      website: "northwind.example",
+      label_ids: [1, 2],
+      address: "1 Harbour Road, Accra, Ghana",
+      employee_count: 120,
+      "9a1b2c3d4e5f60718293a4b5c6d7e8f901234567": "7",
+      "8a1b2c3d4e5f60718293a4b5c6d7e8f901234567": 9002,
+      "7a1b2c3d4e5f60718293a4b5c6d7e8f901234567": "",
+    };
+    const fields = pipedriveRecordFields(org, ORG_FIELDS as PipedriveDealField[], {
+      skip: new Set(["id", "name", "owner_id"]),
+      users: new Map([["9002", "Kofi Mensah"]]),
+    });
+    expect(fields).toEqual([
+      { key: "website", label: "Website", value: "northwind.example" },
+      { key: "label_ids", label: "Labels", value: ["DevTools", "Partner"] },
+      { key: "address", label: "Address", value: "1 Harbour Road, Accra, Ghana" },
+      { key: "employee_count", label: "Number of employees", value: 120 },
+      { key: "9a1b2c3d4e5f60718293a4b5c6d7e8f901234567", label: "Signed up via", value: "CLI" },
+      { key: "8a1b2c3d4e5f60718293a4b5c6d7e8f901234567", label: "Account manager", value: "Kofi Mensah" },
+    ]);
+  });
+
+  it("lists every email and phone with its label", () => {
+    const fields = pipedriveRecordFields(
+      { email: [{ value: "esi@example.test", label: "work", primary: true }, { value: "esi@home.test", label: "home" }] },
+      [{ key: "email", name: "Email", field_type: "varchar" }],
+      { skip: new Set() },
+    );
+    expect(fields).toEqual([{ key: "email", label: "Email", value: "esi@example.test (work), esi@home.test (home)" }]);
   });
 });
 
@@ -308,5 +361,41 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     cases = await casesByKey(companyId);
     expect(cases.get("pipedrive-701")).toMatchObject({ stageKey: "won" });
     expect(await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId))).toHaveLength(3);
+  }, 60_000);
+
+  it("keeps every organisation and person field on the record, and a rerun changes nothing", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    const pages = recordedPages();
+    pages["/api/v1/organizationFields"][0] = { success: true, data: [...orgs.organizationFields.data, ...ORG_FIELDS] };
+    const northwind = pages["/api/v1/organizations"][0].data[0];
+    Object.assign(northwind, { website: "northwind.example", label_ids: [1], "9a1b2c3d4e5f60718293a4b5c6d7e8f901234567": 7 });
+    pages["/api/v1/personFields"][0] = {
+      success: true,
+      data: [{ key: "phone", name: "Phone", field_type: "phone" }, { key: "6a1b2c3d4e5f60718293a4b5c6d7e8f901234567", name: "GitHub handle", field_type: "varchar" }],
+    };
+    pages["/api/v1/persons"][0].data[0]["6a1b2c3d4e5f60718293a4b5c6d7e8f901234567"] = "esi-b";
+    const pipedrive = fakePipedrive(() => pages);
+
+    const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    const detail = await db.select().from(organisations)
+      .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "101")))
+      .then((rows) => rows[0]!);
+    expect(detail.website).toBe("https://northwind.example/");
+    expect(detail.crmFields).toEqual([
+      { key: "website", label: "Website", value: "northwind.example" },
+      { key: "label_ids", label: "Labels", value: ["DevTools"] },
+      { key: "9a1b2c3d4e5f60718293a4b5c6d7e8f901234567", label: "Signed up via", value: "CLI" },
+    ]);
+    const esi = await db.select().from(organisationContacts)
+      .where(and(eq(organisationContacts.companyId, companyId), eq(organisationContacts.externalId, "501")))
+      .then((rows) => rows[0]!);
+    expect(esi.crmFields).toEqual(expect.arrayContaining([
+      { key: "6a1b2c3d4e5f60718293a4b5c6d7e8f901234567", label: "GitHub handle", value: "esi-b" },
+    ]));
+
+    const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.organisations.updated).toBe(0);
+    expect(rerun.body.contacts.updated).toBe(0);
   }, 60_000);
 });

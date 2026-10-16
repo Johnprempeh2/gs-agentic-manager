@@ -2,6 +2,13 @@ import type { OrganisationSource, OrganisationStatus } from "../organisations.js
 
 /** API response shapes for CRM organisations (GRE-1477). Every record is scoped to one company. */
 
+/** A field imported from a CRM that has no column in GSAM, under the CRM's own name. */
+export interface CrmRecordField {
+  key: string;
+  label: string;
+  value: string | number | boolean | string[];
+}
+
 export interface OrganisationContact {
   id: string;
   companyId: string;
@@ -11,6 +18,8 @@ export interface OrganisationContact {
   email: string | null;
   phone: string | null;
   isKeyContact: boolean;
+  /** Imported fields with no column of their own, in the CRM's order. */
+  crmFields?: CrmRecordField[];
   source: OrganisationSource;
   externalId: string | null;
   archivedAt: string | null;
@@ -30,6 +39,8 @@ export interface Organisation {
   countryOwnerUserId?: string | null;
   status: OrganisationStatus;
   notes: string | null;
+  /** Imported fields with no column of their own (custom fields, labels, address), in the CRM's order. */
+  crmFields?: CrmRecordField[];
   source: OrganisationSource;
   externalId: string | null;
   archivedAt: string | null;
