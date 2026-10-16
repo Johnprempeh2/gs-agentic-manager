@@ -7,6 +7,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarItem } from "@greatstone/shared";
+import { localToday, rescheduleOptions } from "../lib/calendar";
 import { Calendar } from "./Calendar";
 
 const api = vi.hoisted(() => ({ calendar: vi.fn(), update: vi.fn(), pushToast: vi.fn() }));
@@ -40,6 +41,13 @@ function item(overrides: Partial<CalendarItem>): CalendarItem {
 async function flushReact() {
   for (let index = 0; index < 8; index += 1) await new Promise((resolve) => setTimeout(resolve, 0));
   flushSync(() => {});
+}
+
+// Radix DropdownMenu opens and selects on pointer events, not a bare click.
+function pointerClick(el: Element) {
+  el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true, button: 0 }));
+  el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, button: 0 }));
+  (el as HTMLElement).click();
 }
 
 /** jsdom has no DataTransfer, so the test carries one on a plain event. */
@@ -136,5 +144,23 @@ describe("Calendar drag to reschedule", () => {
     });
     await flushReact();
     expect(api.update).not.toHaveBeenCalled();
+  });
+
+  it("moves a task's due date from the day list menu, which also works on phones", async () => {
+    await render();
+    const trigger = container.querySelector('[aria-label="Change the due date of Send the proposal"]');
+    expect(trigger).not.toBeNull();
+    // Goals have no menu.
+    expect(container.querySelector('[aria-label="Change the due date of Launch"]')).toBeNull();
+    await act(async () => pointerClick(trigger!));
+    await flushReact();
+    const first = rescheduleOptions("2026-10-20", localToday())[0]!;
+    const item = Array.from(document.querySelectorAll('[role="menuitem"]')).find((node) =>
+      node.textContent?.startsWith(first.label),
+    );
+    expect(item).toBeDefined();
+    await act(async () => pointerClick(item!));
+    await flushReact();
+    expect(api.update).toHaveBeenCalledWith("t1", { dueDate: first.date });
   });
 });

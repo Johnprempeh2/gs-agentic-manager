@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CompanyCalendar, CalendarItem, CalendarItemKind } from "@greatstone/shared";
-import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
+import { CalendarClock, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
 import { calendarApi } from "../api/calendar";
 import { issuesApi } from "../api/issues";
 import { useToastActions } from "../context/ToastContext";
@@ -16,6 +16,7 @@ import {
   WEEKDAY_LABELS,
   calendarItemHref,
   canReschedule,
+  rescheduleOptions,
   dayOfMonth,
   dayTitle,
   groupByDate,
@@ -33,6 +34,7 @@ import { calendarIcsFileName, calendarToIcs } from "../lib/calendar-ics";
 import { downloadTextFile } from "../lib/issues-csv";
 import { Link, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 const KIND_ICONS: Record<CalendarItemKind, typeof CircleCheck> = {
@@ -107,7 +109,39 @@ function CalendarChip({ item, today }: { item: CalendarItem; today: string }) {
   );
 }
 
-function DayList({ date, items, today }: { date: string; items: CalendarItem[]; today: string }) {
+function MoveTaskMenu({ item, today, onMove }: { item: CalendarItem; today: string; onMove: (id: string, date: string) => void }) {
+  const options = rescheduleOptions(item.date, today);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" className="mr-2 mt-1.5 shrink-0" aria-label={`Change the due date of ${item.title}`} title="Change the due date">
+          <CalendarClock className="size-4" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Move the due date to</DropdownMenuLabel>
+        {options.map((option) => (
+          <DropdownMenuItem key={option.date} onSelect={() => onMove(item.id, option.date)}>
+            {option.label}
+            <span className="ml-auto pl-3 text-xs text-muted-foreground">{dayTitle(option.date)}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DayList({
+  date,
+  items,
+  today,
+  onMove,
+}: {
+  date: string;
+  items: CalendarItem[];
+  today: string;
+  onMove: (id: string, date: string) => void;
+}) {
   const timeZone = viewerTimeZone();
   return (
     <section aria-labelledby={`day-${date}`} className="space-y-2">
@@ -122,8 +156,8 @@ function DayList({ date, items, today }: { date: string; items: CalendarItem[]; 
           {items.map((item) => {
             const Icon = KIND_ICONS[item.kind];
             return (
-              <li key={`${item.kind}:${item.id}:${item.date}`}>
-                <Link to={calendarItemHref(item)} className="flex items-start gap-3 px-3 py-2 hover:bg-accent">
+              <li key={`${item.kind}:${item.id}:${item.date}`} className="flex items-start">
+                <Link to={calendarItemHref(item)} className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2 hover:bg-accent">
                   <span className={cn("mt-0.5 rounded-sm p-1", chipClasses(item, today))}>
                     <Icon className="size-3.5" aria-hidden />
                   </span>
@@ -137,6 +171,7 @@ function DayList({ date, items, today }: { date: string; items: CalendarItem[]; 
                     </span>
                   </span>
                 </Link>
+                {canReschedule(item) ? <MoveTaskMenu item={item} today={today} onMove={onMove} /> : null}
               </li>
             );
           })}
@@ -206,6 +241,10 @@ export function Calendar() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId ?? "") });
     },
   });
+
+  function moveTask(id: string, date: string) {
+    reschedule.mutate({ id, date });
+  }
 
   function dropTask(event: DragEvent, date: string) {
     setDropDate(null);
@@ -419,7 +458,7 @@ export function Calendar() {
               </Button>
             ) : null}
             {phoneDays.map(([date, items]) => (
-              <DayList key={date} date={date} items={items} today={today} />
+              <DayList key={date} date={date} items={items} today={today} onMove={moveTask} />
             ))}
             {monthItemCount === 0 ? (
               <EmptyState icon={CalendarDays} message={`Nothing is scheduled for ${monthTitle(month)}.`} />
@@ -427,7 +466,7 @@ export function Calendar() {
           </div>
 
           <div className="hidden md:block">
-            <DayList date={selectedDay} items={byDate.get(selectedDay) ?? []} today={today} />
+            <DayList date={selectedDay} items={byDate.get(selectedDay) ?? []} today={today} onMove={moveTask} />
           </div>
 
           <p className="text-xs text-muted-foreground">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarItem } from "@greatstone/shared";
-import { calendarItemHref, canReschedule, dayTitle, isOverdue, monthGrid, monthTitle, routineTimesLabel, shiftMonth } from "./calendar";
+import { calendarItemHref, canReschedule, rescheduleOptions, dayTitle, isOverdue, monthGrid, monthTitle, routineTimesLabel, shiftMonth } from "./calendar";
 
 function item(overrides: Partial<CalendarItem>): CalendarItem {
   return {
@@ -21,6 +21,23 @@ function item(overrides: Partial<CalendarItem>): CalendarItem {
 }
 
 describe("calendar helpers", () => {
+  it("offers today, tomorrow and next Monday, without the current day", () => {
+    // 2026-10-16 is a Friday.
+    expect(rescheduleOptions("2026-10-10", "2026-10-16")).toEqual([
+      { label: "Today", date: "2026-10-16" },
+      { label: "Tomorrow", date: "2026-10-17" },
+      { label: "Next Monday", date: "2026-10-19" },
+    ]);
+    expect(rescheduleOptions("2026-10-16", "2026-10-16").map((option) => option.label)).toEqual(["Tomorrow", "Next Monday"]);
+    // On a Sunday, tomorrow is next Monday, so it shows once.
+    expect(rescheduleOptions("2026-10-01", "2026-10-18")).toEqual([
+      { label: "Today", date: "2026-10-18" },
+      { label: "Tomorrow", date: "2026-10-19" },
+    ]);
+    // On a Monday, next Monday is a week away.
+    expect(rescheduleOptions("2026-10-01", "2026-10-19").at(-1)).toEqual({ label: "Next Monday", date: "2026-10-26" });
+  });
+
   it("lets only open tasks move to another day", () => {
     expect(canReschedule(item({}))).toBe(true);
     expect(canReschedule(item({ closed: true }))).toBe(false);
