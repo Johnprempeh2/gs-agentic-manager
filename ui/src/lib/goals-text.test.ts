@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GoalWithProgress } from "@greatstone/shared";
-import { goalsCsvFileName, goalsToCsv, goalsUpdateText } from "./goals-text";
+import { goalDetailUpdateText, goalsCsvFileName, goalsToCsv, goalsUpdateText } from "./goals-text";
 
 function goal(overrides: Partial<GoalWithProgress> = {}): GoalWithProgress {
   return {
@@ -103,5 +103,38 @@ describe("goalsToCsv", () => {
   it("names the file after the organisation and day", () => {
     expect(goalsCsvFileName("GRE", "2026-10-16")).toBe("gre-goals-2026-10-16.csv");
     expect(goalsCsvFileName(null, "2026-10-16")).toBe("goals-2026-10-16.csv");
+  });
+});
+
+describe("goalDetailUpdateText", () => {
+  it("writes the goal line, then its tasks grouped with blocked first", () => {
+    const task = (id: string, title: string, status: string, assigneeAgentId: string | null = null) =>
+      ({ id, identifier: `GRE-${id}`, title, status, assigneeAgentId, goalId: "g1", createdAt: new Date(), completedAt: null }) as never;
+    const text = goalDetailUpdateText(
+      goal({ ownerAgentId: "a1", targetDate: "2026-10-06" }),
+      "at_risk",
+      [
+        task("1", "Write the copy", "done"),
+        task("2", "Approve the copy", "blocked", "a1"),
+        task("3", "Build the pages", "in_progress"),
+        task("4", "Old idea", "cancelled"),
+      ],
+      lookups,
+      "2026-10-16",
+    );
+    expect(text).toBe(
+      [
+        "Win three new clients: At risk, due 6 Oct, 10 days late, Ridge",
+        "",
+        "Blocked:",
+        "• GRE-2 Approve the copy (Ridge)",
+        "",
+        "In progress:",
+        "• GRE-3 Build the pages",
+        "",
+        "Done:",
+        "• GRE-1 Write the copy",
+      ].join("\n"),
+    );
   });
 });
