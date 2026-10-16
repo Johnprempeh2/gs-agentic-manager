@@ -89,6 +89,7 @@ const {
       heldRetries: { released: 0, escalated: 0, superseded: 0, held: 0 },
     })),
     sweepStaleIssueLocks: vi.fn(async () => ({ cleared: 0 })),
+    releaseBudgetHeldWork: vi.fn(async () => ({ released: 0, dropped: 0, failed: 0 })),
     sweepPendingCleanupLeases: vi.fn(async () => ({ swept: 0, destroyed: 0, capped: 0 })),
     sweepExpiredRuntimeStatuses: vi.fn(() => 0),
     sweepStaleRunOutputFiles: vi.fn(async () => undefined),
