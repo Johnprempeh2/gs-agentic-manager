@@ -16,6 +16,8 @@ export const mailboxesApi = {
     api.post<MailboxSummary>(`/companies/${companyId}/mailboxes`, input),
   setAgents: (companyId: string, id: string, input: MailboxAgentsInput) =>
     api.put<MailboxSummary>(`/companies/${companyId}/mailboxes/${id}/agents`, input),
+  setDrafts: (companyId: string, id: string, allowDrafts: boolean) =>
+    api.put<MailboxSummary>(`/companies/${companyId}/mailboxes/${id}/drafts`, { allowDrafts }),
   test: (companyId: string, id: string) =>
     api.post<{ ok: true; folderCount: number }>(
       `/companies/${companyId}/mailboxes/${id}/test`,

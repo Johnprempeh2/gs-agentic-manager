@@ -19,6 +19,7 @@ export const updateNotificationPreferencesSchema = z
     teamChat: z.boolean().optional(),
     morningSummary: z.boolean().optional(),
     morningSummaryHour: hour.optional(),
+    weeklyReport: z.boolean().optional(),
     quietHoursStart: hour.nullable().optional(),
     quietHoursEnd: hour.nullable().optional(),
     timeZone: z.string().min(1).max(64).refine(isTimeZone, "Unknown time zone").optional(),

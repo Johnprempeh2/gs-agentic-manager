@@ -3,6 +3,7 @@
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireFiles } from "../fixtures/fileEvents";
 import { ChatComposer, type ChatComposerProps } from "./ChatComposer";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -74,6 +75,30 @@ describe("ChatComposer", () => {
       root.render(<Harness onAttachFiles={() => {}} />);
     });
     expect(attachButton()).toBeTruthy();
+    act(() => root.unmount());
+  });
+
+  it("attaches a pasted screenshot, can remove a chip, and leaves text paste alone", () => {
+    const onAttachFiles = vi.fn();
+    const onRemoveAttachment = vi.fn();
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <Harness
+          onAttachFiles={onAttachFiles}
+          onRemoveAttachment={onRemoveAttachment}
+          attachments={[{ id: "a1", name: "Q3.csv", status: "attached" }]}
+        />,
+      );
+    });
+    fireFiles(input(), "paste", [new File(["png"], "image.png", { type: "image/png" })]);
+    expect(onAttachFiles).toHaveBeenCalledTimes(1);
+    expect(onAttachFiles.mock.calls[0]![0][0].name).toMatch(/^Pasted image /);
+    const text = fireFiles(input(), "paste", []);
+    expect(text.defaultPrevented).toBe(false);
+    expect(onAttachFiles).toHaveBeenCalledTimes(1);
+    act(() => container.querySelector<HTMLButtonElement>('button[aria-label="Remove Q3.csv"]')!.click());
+    expect(onRemoveAttachment).toHaveBeenCalledWith("a1");
     act(() => root.unmount());
   });
 

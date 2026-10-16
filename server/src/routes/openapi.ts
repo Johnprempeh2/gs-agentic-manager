@@ -380,6 +380,8 @@ import {
   mailboxOAuthAppSchema,
   mailboxOAuthStartSchema,
   mailboxReadSchema,
+  mailboxDraftSchema,
+  mailboxDraftsSettingSchema,
   mailboxSaveSchema,
   mailboxSearchSchema,
   memoryReviewQueueQuerySchema,
@@ -1489,6 +1491,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/mailbox-oauth/callback",
   "POST /api/companies/{companyId}/mailboxes",
   "PUT /api/companies/{companyId}/mailboxes/{mailboxId}/agents",
+  "PUT /api/companies/{companyId}/mailboxes/{mailboxId}/drafts",
   "DELETE /api/companies/{companyId}/mailboxes/{mailboxId}",
   "POST /api/companies/{companyId}/mailboxes/{mailboxId}/test",
   "POST /api/companies/{companyId}/organisations/import/pipedrive",
@@ -8213,11 +8216,28 @@ registry.registerPath({
         companyId: z.string(),
         message: z.string(),
         taskId: z.string().optional(),
+        attachmentIds: z.array(z.string()).max(5).optional(),
       }),
     ),
   },
   responses: {
     200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/board/chat/issue",
+  tags: ["instance"],
+  summary:
+    "Find or create the board conversation's issue, so files can be attached before the first message (requires enableConferenceRoomChat)",
+  request: { body: jsonBody(z.object({ companyId: z.string() })) },
+  responses: {
+    200: r.ok(z.object({ issueId: z.string() })),
     400: r.badRequest,
     401: r.unauthorized,
     403: r.forbidden,
@@ -14571,6 +14591,15 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "put",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/drafts",
+  tags: ["mailboxes"],
+  summary: "Turn agent email drafts on or off for a mailbox (connection managers). Off by default.",
+  body: mailboxDraftsSettingSchema,
+  responses: mailboxResponses,
+});
+
+registerCurrentRoute({
   method: "delete",
   path: "/api/companies/{companyId}/mailboxes/{mailboxId}",
   tags: ["mailboxes"],
@@ -14619,6 +14648,15 @@ registerCurrentRoute({
   summary: "Save a message (as .eml) or one attachment from a mailbox onto a task (connection managers, or an agent it is installed for)",
   body: mailboxSaveSchema,
   responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/mailboxes/{mailboxId}/draft",
+  tags: ["mailboxes"],
+  summary: "Save an email draft in the mailbox's Drafts folder; nothing is sent (403 mailbox_drafts_off until drafts are turned on)",
+  body: mailboxDraftSchema,
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 // ─── Website view ─────────────────────────────────────────────────────────────

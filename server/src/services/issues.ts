@@ -193,6 +193,7 @@ import {
   type IssueGraphLivenessInput,
   type IssueLivenessFinding,
 } from "./recovery/issue-graph-liveness.js";
+import { carryWaitingDateMarker } from "./recovery/waiting-date.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
@@ -10460,6 +10461,9 @@ export function issueService(db: Db) {
         if (values.dueDate) {
           await assertDueDateOnPlan(tx, companyId, values.goalId ?? null);
         }
+        if (values.unblockDescriptor) {
+          values.unblockDescriptor = carryWaitingDateMarker(values.unblockDescriptor, null);
+        }
         if (values.status === "in_progress" && !values.startedAt) {
           values.startedAt = new Date();
         }
@@ -11005,6 +11009,9 @@ export function issueService(db: Db) {
         ...issueData,
         updatedAt: new Date(),
       };
+      if (issueData.unblockDescriptor !== undefined) {
+        patch.unblockDescriptor = carryWaitingDateMarker(issueData.unblockDescriptor, existing.unblockDescriptor);
+      }
       if (existing.status !== "blocked" && issueData.status === "blocked") {
         patch.blockedTransitionAt = patch.updatedAt;
         patch.blockedOwnerNotifiedAt = null;

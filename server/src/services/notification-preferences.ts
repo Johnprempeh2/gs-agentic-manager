@@ -8,7 +8,7 @@ import {
 } from "@greatstone/shared";
 
 /** The kinds of notification a person can switch off. */
-export type NotificationTopic = "decisions" | "assignedTasks" | "teamChat" | "morningSummary";
+export type NotificationTopic = "decisions" | "assignedTasks" | "teamChat" | "morningSummary" | "weeklyReport";
 
 /** Local hour (0 to 23) and date (YYYY-MM-DD) in a time zone. Falls back to London on a bad zone. */
 export function localClock(timeZone: string, now: Date): { hour: number; date: string } {
@@ -52,6 +52,7 @@ function fromRow(row: Row | undefined): NotificationPreferences {
     teamChat: row.teamChat,
     morningSummary: row.morningSummary,
     morningSummaryHour: row.morningSummaryHour,
+    weeklyReport: row.weeklyReport,
     quietHoursStart: row.quietHoursStart,
     quietHoursEnd: row.quietHoursEnd,
     timeZone: row.timeZone,
@@ -86,6 +87,19 @@ export function notificationPreferencesService(db: Db) {
 
     /** The local date of the last morning summary sent, or null. */
     lastMorningSummaryOn: async (companyId: string, userId: string) => (await row(companyId, userId))?.lastMorningSummaryOn ?? null,
+
+    /** The local date of the last weekly report sent, or null. */
+    lastWeeklyReportOn: async (companyId: string, userId: string) => (await row(companyId, userId))?.lastWeeklyReportOn ?? null,
+
+    async markWeeklyReportSent(companyId: string, userId: string, localDate: string) {
+      await db
+        .insert(notificationPreferences)
+        .values({ companyId, userId, lastWeeklyReportOn: localDate })
+        .onConflictDoUpdate({
+          target: [notificationPreferences.companyId, notificationPreferences.userId],
+          set: { lastWeeklyReportOn: localDate, updatedAt: new Date() },
+        });
+    },
 
     async markMorningSummarySent(companyId: string, userId: string, localDate: string) {
       await db

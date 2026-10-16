@@ -9,6 +9,7 @@ import { DecisionCard, type DecisionIssueRef } from "./DecisionCard";
 import type { Decision, DecisionEffectExecution } from "../api/decisions";
 import { ThemeProvider } from "../context/ThemeContext";
 import { TooltipProvider } from "./ui/tooltip";
+import { fireFiles } from "../fixtures/fileEvents";
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -319,5 +320,56 @@ describe("DecisionCard", () => {
     });
     expect(expired.textContent).toContain("target issues were completed");
     expect(expired.textContent).not.toContain("expiry deadline");
+  });
+
+  describe("attaching files to an answer", () => {
+    const withInput = () =>
+      mkDecision({ inputs: [{ id: "note", label: "Your answer", required: false }] });
+
+    it("hides the attach control when uploads are not wired", () => {
+      const el = render({ decision: withInput() });
+      expect(el.textContent).not.toContain("Attach a file");
+    });
+
+    it("uploads a dropped file and links it in the answer, holding the options until it lands", async () => {
+      let finish: (value: { name: string; href: string }) => void = () => undefined;
+      const onUploadFile = vi.fn(() => new Promise<{ name: string; href: string }>((resolve) => (finish = resolve)));
+      const el = render({ decision: withInput(), onUploadFile });
+      expect(el.textContent).toContain("Attach a file");
+
+      const target = el.querySelector('[data-testid="decision-input-note"]')!;
+      fireFiles(target, "drop", [new File(["x"], "brief.pdf", { type: "application/pdf" })]);
+      expect(onUploadFile).toHaveBeenCalledTimes(1);
+      const option = [...el.querySelectorAll("button")].find((b) => b.textContent?.includes("Comment and snooze"))!;
+      expect(option.disabled).toBe(true);
+
+      await reactAct(async () => {
+        finish({ name: "brief.pdf", href: "/api/attachments/a1/content" });
+      });
+      expect((el.querySelector("textarea") as HTMLTextAreaElement).value).toBe("[brief.pdf](/api/attachments/a1/content)");
+      expect(option.disabled).toBe(false);
+    });
+
+    it("adds a pasted screenshot as an image under what was already typed", async () => {
+      const onUploadFile = vi.fn(async (file: File) => ({ name: file.name, href: "/api/attachments/a2/content", isImage: true }));
+      const el = render({ decision: withInput(), onUploadFile });
+      const textarea = el.querySelector("textarea") as HTMLTextAreaElement;
+      await reactAct(async () => {
+        fireFiles(textarea, "paste", [new File(["x"], "image.png", { type: "image/png" })]);
+      });
+      expect(onUploadFile).toHaveBeenCalledTimes(1);
+      expect(textarea.value).toMatch(/^!\[Pasted image .+\.png\]\(\/api\/attachments\/a2\/content\)$/);
+    });
+
+    it("says when an upload fails", async () => {
+      const onUploadFile = vi.fn(async () => {
+        throw new Error("Too big.");
+      });
+      const el = render({ decision: withInput(), onUploadFile });
+      await reactAct(async () => {
+        fireFiles(el.querySelector('[data-testid="decision-input-note"]')!, "drop", [new File(["x"], "huge.mov")]);
+      });
+      expect(el.querySelector('[role="alert"]')?.textContent).toBe("Could not attach huge.mov. Too big.");
+    });
   });
 });
