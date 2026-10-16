@@ -202,12 +202,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableConferenceRoomChat: {
-    title: "Conference Room Chat",
+    title: "Conference Room Chat (compatibility)",
     description:
-      "Add the Conference Room team chat, the live activity feed, and the redesigned onboarding; restyles task threads as chat bubbles.",
+      "Deprecated compatibility key. Conference Room Chat is always on (GRE-1624); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableClassicTaskInterface: {
     title: "Classic Task Interface",
@@ -445,6 +445,7 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
  */
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableConferenceRoomChat", issue: "GRE-1624" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },

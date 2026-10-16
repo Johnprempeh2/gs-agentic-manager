@@ -160,6 +160,7 @@ export interface InstanceExperimentalSettings {
   enableAgentChat: boolean;
   /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
   enableTeamChat: boolean;
+  /** Compatibility key (GRE-1624): Conference Room Chat is always on; reads as true. */
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
   enableIssuePlanDecompositions: boolean;
