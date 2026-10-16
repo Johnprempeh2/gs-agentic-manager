@@ -26,6 +26,8 @@ export interface Organisation {
   industry: string | null;
   country: string | null;
   countryOwner: string | null;
+  /** The member who owns the country, when the owner is a GSAM user. */
+  countryOwnerUserId?: string | null;
   status: OrganisationStatus;
   notes: string | null;
   source: OrganisationSource;
@@ -53,13 +55,20 @@ export interface OrganisationImportCounts {
   errors: number;
 }
 
-/** Answer of POST .../organisations/import/pipedrive. Nothing is written to Pipedrive. */
+/**
+ * Answer of POST .../organisations/import/pipedrive and .../import/pipedrive-export.
+ * Nothing is written to Pipedrive.
+ */
 export interface OrganisationImportResult {
   source: "pipedrive";
   organisations: OrganisationImportCounts;
   contacts: OrganisationImportCounts;
+  /** Export import only: deals added as client cases in the chosen pipeline. */
+  deals?: OrganisationImportCounts;
+  /** Export import only: activities attached to the imported deals' cases. */
+  activities?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }

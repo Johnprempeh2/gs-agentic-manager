@@ -99,6 +99,7 @@ const CompanyActivity = lazyPage(() => import("./pages/audit/CompanyActivity"), 
 const SinceLastVisit = lazyPage(() => import("./pages/SinceLastVisit"), "SinceLastVisit");
 const Calendar = lazyPage(() => import("./pages/Calendar"), "Calendar");
 const TeamScorecard = lazyPage(() => import("./pages/TeamScorecard"), "TeamScorecard");
+const WeeklyReport = lazyPage(() => import("./pages/WeeklyReport"), "WeeklyReport");
 const NotificationSettings = lazyPage(() => import("./pages/NotificationSettings"), "NotificationSettings");
 const MorningSummary = lazyPage(() => import("./pages/MorningSummary"), "MorningSummary");
 const AuditHub = lazyPage(() => import("./pages/audit/AuditHub"), "AuditHub");
@@ -430,6 +431,7 @@ function boardRoutes() {
       <Route path="since-last-visit" element={<SinceLastVisit />} />
       <Route path="calendar" element={<Calendar />} />
       <Route path="scorecard" element={<TeamScorecard />} />
+      <Route path="weekly-report" element={<WeeklyReport />} />
       <Route path="notifications" element={<NotificationSettings />} />
       <Route path="morning" element={<MorningSummary />} />
       <Route path="activity" element={<CompanyActivity />} />
@@ -838,6 +840,7 @@ export function App() {
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
           <Route path="calendar" element={<UnprefixedBoardRedirect />} />
           <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
+          <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />

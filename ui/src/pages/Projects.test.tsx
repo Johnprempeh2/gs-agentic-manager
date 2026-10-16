@@ -212,6 +212,9 @@ describe("Projects", () => {
 
     const content = container.textContent ?? "";
     expect(container.querySelector('button[title="Sort"]')?.textContent).toContain("Sort: Name");
+    const intro = container.querySelector('[data-testid="projects-intro"]');
+    expect(intro?.textContent).toContain("work towards one result");
+    expect(intro?.querySelector('[data-testid="help-term-project"]')).toBeTruthy();
     expect(content.indexOf("My Projects")).toBeLessThan(content.indexOf("Alpha"));
     expect(content.indexOf("Alpha")).toBeLessThan(content.indexOf("Charlie"));
     expect(content.indexOf("Charlie")).toBeLessThan(content.indexOf("Other Projects"));

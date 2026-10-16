@@ -9,6 +9,7 @@ import {
   type OrganisationListItem,
   type OrganisationStatus,
 } from "@greatstone/shared";
+import { accessApi } from "@/api/access";
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { PipedriveImport } from "@/components/PipedriveImport";
@@ -236,17 +237,41 @@ export function OrganisationDialogContent({
     industry: organisation?.industry ?? "",
     country: organisation?.country ?? "",
     countryOwner: organisation?.countryOwner ?? "",
+    countryOwnerUserId: organisation?.countryOwnerUserId ?? "",
     status: organisation?.status ?? ("target" as OrganisationStatus),
     notes: organisation?.notes ?? "",
   });
   const set = (key: keyof typeof form) => (value: string) => setForm((current) => ({ ...current, [key]: value }));
   const invalidate = () => queryClient.invalidateQueries({ queryKey: queryKeys.organisations.all(companyId) });
 
+  // The country owner is picked from the company's members (Ben, 12 Oct);
+  // "Someone else" keeps a typed name for owners who are not on GSAM.
+  const members = useQuery({
+    queryKey: queryKeys.access.companyMembers(companyId),
+    queryFn: () => accessApi.listMembers(companyId),
+  });
+  const people = (members.data?.members ?? [])
+    .filter((member) => member.status === "active" && member.user)
+    .map((member) => ({ id: member.principalId, name: member.user?.name || member.user?.email || "Unnamed member" }));
+  const [ownerIsOther, setOwnerIsOther] = useState(
+    Boolean(organisation?.countryOwner && !organisation?.countryOwnerUserId),
+  );
+  const payload = () => {
+    const { countryOwnerUserId, ...rest } = form;
+    const ownerId = ownerIsOther ? null : countryOwnerUserId || null;
+    const changed = ownerId !== (organisation?.countryOwnerUserId ?? null);
+    return {
+      ...rest,
+      countryOwner: ownerIsOther ? rest.countryOwner : ownerId ? rest.countryOwner : "",
+      ...(changed || !organisation ? { countryOwnerUserId: ownerId } : {}),
+    };
+  };
+
   const save = useMutation({
     mutationFn: () =>
       organisation
-        ? organisationsApi.update(companyId, organisation.id, form)
-        : organisationsApi.create(companyId, form),
+        ? organisationsApi.update(companyId, organisation.id, payload())
+        : organisationsApi.create(companyId, payload()),
     onSuccess: async () => {
       await invalidate();
       onDone();
@@ -266,7 +291,7 @@ export function OrganisationDialogContent({
     save.mutate();
   };
 
-  const field = (key: "website" | "industry" | "country" | "countryOwner", label: string) => (
+  const field = (key: "website" | "industry" | "country", label: string) => (
     <div className="space-y-1">
       <Label htmlFor={`organisation-${key}`}>{label}</Label>
       <Input id={`organisation-${key}`} value={form[key]} onChange={(event) => set(key)(event.target.value)} />
@@ -288,7 +313,41 @@ export function OrganisationDialogContent({
           {field("industry", "Industry")}
           {field("website", "Website")}
           {field("country", "Country")}
-          {field("countryOwner", "Country owner")}
+          <div className="space-y-1">
+            <Label htmlFor="organisation-countryOwnerUserId">Country owner</Label>
+            <NativeSelect
+              id="organisation-countryOwnerUserId"
+              value={ownerIsOther ? "__other" : form.countryOwnerUserId}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "__other") {
+                  setOwnerIsOther(true);
+                  setForm((current) => ({ ...current, countryOwnerUserId: "" }));
+                  return;
+                }
+                setOwnerIsOther(false);
+                const person = people.find((entry) => entry.id === value);
+                setForm((current) => ({ ...current, countryOwnerUserId: value, countryOwner: person?.name ?? "" }));
+              }}
+            >
+              <option value="">Nobody yet</option>
+              {form.countryOwnerUserId && !people.some((entry) => entry.id === form.countryOwnerUserId) ? (
+                <option value={form.countryOwnerUserId}>{form.countryOwner || "Current owner"}</option>
+              ) : null}
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>{person.name}</option>
+              ))}
+              <option value="__other">Someone else (type a name)</option>
+            </NativeSelect>
+            {ownerIsOther ? (
+              <Input
+                aria-label="Country owner name"
+                value={form.countryOwner}
+                onChange={(event) => set("countryOwner")(event.target.value)}
+                placeholder="Name"
+              />
+            ) : null}
+          </div>
         </div>
         <div className="space-y-1">
           <Label htmlFor="organisation-status">Status</Label>

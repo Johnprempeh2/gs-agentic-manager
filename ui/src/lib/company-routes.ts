@@ -40,6 +40,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "since-last-visit",
   "calendar",
   "scorecard",
+  "weekly-report",
   "notifications",
   "morning",
   // Every root mounted under /:companyPrefix must be listed, or a link to it is

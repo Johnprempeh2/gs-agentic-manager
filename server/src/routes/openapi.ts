@@ -368,6 +368,7 @@ import {
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
+  importPipedriveExportSchema,
   listCrmSyncConflictsQuerySchema,
   listCrmSyncEventsQuerySchema,
   listOrganisationsQuerySchema,
@@ -1488,6 +1489,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "DELETE /api/companies/{companyId}/mailboxes/{mailboxId}",
   "POST /api/companies/{companyId}/mailboxes/{mailboxId}/test",
   "POST /api/companies/{companyId}/organisations/import/pipedrive",
+  "POST /api/companies/{companyId}/organisations/import/pipedrive-export",
   "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
   "POST /api/companies/{companyId}/website/properties",
   "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
@@ -1595,6 +1597,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/tools/apps/{connectionId}/finalize-oauth-access",
   "POST /api/companies/{companyId}/tools/apps/{connectionId}/finish",
   "GET /api/companies/{companyId}/tools/apps/attention",
+  "GET /api/companies/{companyId}/tools/agent-access",
   "GET /api/companies/{companyId}/tools/action-requests",
   "GET /api/companies/{companyId}/tools/examples",
   "POST /api/companies/{companyId}/tools/examples/{id}/install",
@@ -7042,6 +7045,15 @@ registry.registerPath({
   path: "/api/companies/{companyId}/morning-summary",
   tags: ["inbox"],
   summary: "The caller's morning summary: what needs them, what finished in the last 24 hours, what is stuck",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/weekly-report",
+  tags: ["inbox"],
+  summary: "This week at the company: finished work by agent, stuck tasks, pipeline moves, what needs the caller and spend by agent",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -12651,6 +12663,13 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/companies/{companyId}/tools/agent-access",
+  tags: ["tool-access"],
+  summary: "List what each agent can reach and what needs attention",
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/companies/{companyId}/tools/action-requests",
   tags: ["tool-access"],
   summary: "List pending tool action requests",
@@ -14024,6 +14043,22 @@ registerCurrentRoute({
     422: r.unprocessable,
     502: { description: "Pipedrive error", content: { "application/json": { schema: ErrorSchema } } },
     503: { description: "Pipedrive rate limit reached", content: { "application/json": { schema: ErrorSchema } } },
+  },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/import/pipedrive-export",
+  tags: ["organisations"],
+  summary: "Import Pipedrive export files (organisations, people, deals, activities) without an API key (company owners); 409 while an import runs",
+  body: importPipedriveExportSchema,
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
   },
 });
 

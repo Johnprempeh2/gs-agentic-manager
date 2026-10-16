@@ -15,7 +15,7 @@ const EVERY_DESTINATION = [
   "needed", "decisions", "my-tasks", "inbox", "calendar", "chats",
   "organisations", "pipelines", "deep-dive", "deliverables",
   "dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory",
-  "agents", "scorecard", "conference-room", "status",
+  "agents", "scorecard", "weekly-report", "conference-room", "status",
   "skills", "connectors", "routines", "workflows", "workspaces", "artifacts", "cases",
   "website", "activity", "releases", "billing", "settings", "design-guide",
 ];

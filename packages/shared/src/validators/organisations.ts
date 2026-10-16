@@ -22,6 +22,8 @@ export const createOrganisationSchema = z
     industry: optionalText(200),
     country: optionalText(120),
     countryOwner: optionalText(200),
+    /** A company member who owns the country; their name fills countryOwner. */
+    countryOwnerUserId: z.string().trim().min(1).max(200).nullish(),
     status: organisationStatusSchema.default("target"),
     notes: optionalText(20_000),
     source: organisationSourceSchema.default("manual"),
@@ -37,6 +39,7 @@ export const updateOrganisationSchema = z
     industry: optionalText(200).optional(),
     country: optionalText(120).optional(),
     countryOwner: optionalText(200).optional(),
+    countryOwnerUserId: z.string().trim().min(1).max(200).nullish(),
     status: organisationStatusSchema.optional(),
     notes: optionalText(20_000).optional(),
     /** false restores an archived organisation; archive itself is POST .../archive. */
@@ -102,3 +105,27 @@ export const importOrganisationsFromPipedriveSchema = z
   })
   .strict();
 export type ImportOrganisationsFromPipedrive = z.infer<typeof importOrganisationsFromPipedriveSchema>;
+
+/** Largest single export file accepted, in characters (the request body limit is 10 MB). */
+export const PIPEDRIVE_EXPORT_FILE_MAX_CHARS = 3_000_000;
+
+const exportFile = z.string().max(PIPEDRIVE_EXPORT_FILE_MAX_CHARS, "This file is too large. Export fewer columns or split it.");
+
+/**
+ * Body of the Pipedrive export import: the CSV text of each file Pipedrive
+ * exports, any of them optional but at least one. Deals become client cases
+ * only when a pipeline is chosen.
+ */
+export const importPipedriveExportSchema = z
+  .object({
+    organisations: exportFile.optional(),
+    people: exportFile.optional(),
+    deals: exportFile.optional(),
+    activities: exportFile.optional(),
+    pipelineId: z.string().guid().optional(),
+  })
+  .strict()
+  .refine((body) => Boolean(body.organisations || body.people || body.deals || body.activities), {
+    message: "Choose at least one Pipedrive export file",
+  });
+export type ImportPipedriveExport = z.infer<typeof importPipedriveExportSchema>;

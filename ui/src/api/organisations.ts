@@ -1,6 +1,7 @@
 import type {
   CreateOrganisation,
   CreateOrganisationContact,
+  ImportPipedriveExport,
   Organisation,
   OrganisationContact,
   OrganisationDetail,
@@ -45,6 +46,8 @@ export const organisationsApi = {
   /** Read-only import of every Pipedrive organisation and person (company owners only). */
   importFromPipedrive: (companyId: string, connectionId: string) =>
     api.post<OrganisationImportResult>(`${base(companyId)}/import/pipedrive`, { connectionId }),
+  importFromPipedriveExport: (companyId: string, body: ImportPipedriveExport) =>
+    api.post<OrganisationImportResult>(`${base(companyId)}/import/pipedrive-export`, body),
   archiveContact: (companyId: string, organisationId: string, contactId: string) =>
     api.post<OrganisationContact>(
       `${base(companyId)}/${encodeURIComponent(organisationId)}/contacts/${encodeURIComponent(contactId)}/archive`,

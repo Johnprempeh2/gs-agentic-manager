@@ -6,6 +6,7 @@ import {
   createOrganisationContactSchema,
   createOrganisationSchema,
   importOrganisationsFromPipedriveSchema,
+  importPipedriveExportSchema,
   listOrganisationsQuerySchema,
   updateOrganisationContactSchema,
   updateOrganisationSchema,
@@ -26,6 +27,7 @@ import {
 import { requireEntitlement } from "../services/entitlements.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
+import { pipedriveExportImportService } from "../services/organisation-import-pipedrive-export.js";
 import { organisationService } from "../services/organisations.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyBoardRole } from "./authz.js";
 
@@ -63,6 +65,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const svc = organisationService(db);
   const access = accessService(db);
   const importer = pipedriveOrganisationImportService(db);
+  const exportImporter = pipedriveExportImportService(db);
   const history = organisationHistoryService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
@@ -214,6 +217,55 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             connectionId: connection.id,
             organisations: result.organisations,
             contacts: result.contacts,
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
+
+  /**
+   * Import of the CSV files Pipedrive exports, for teams without an API key.
+   * Company owners only, like the API import, and it shares its rows: a later
+   * API import updates what this one made. Open deals become client cases in
+   * the chosen pipeline.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/pipedrive-export`,
+    validate(importPipedriveExportSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the Pipedrive import", { code: "owner_required" });
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("A Pipedrive import is already running for this company", { code: "import_running" });
+      }
+      runningImports.add(companyId);
+      try {
+        const result = await exportImporter.run(companyId, req.body, actorIds(req));
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "pipedrive",
+            via: "export",
+            pipelineId: req.body.pipelineId ?? null,
+            organisations: result.organisations,
+            contacts: result.contacts,
+            deals: result.deals ?? null,
+            activities: result.activities ?? null,
           },
         });
         res.json(result);

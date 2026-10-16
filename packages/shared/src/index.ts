@@ -1670,6 +1670,11 @@ export type {
   ToolAppAttentionItem,
   ToolAppAttentionReason,
   ToolAppsAttentionResponse,
+  AgentAccessAgentSummary,
+  AgentAccessItem,
+  AgentAccessItemKind,
+  AgentAccessItemState,
+  AgentAccessSummary,
   ToolActionRequestListItem,
   ToolActionRequestsResponse,
   ToolConnectionActivityResponse,
@@ -3118,3 +3123,11 @@ export {
   updateNotificationPreferencesSchema,
   type UpdateNotificationPreferences,
 } from "./validators/notification-preferences.js";
+export type {
+  WeeklyReport,
+  WeeklyReportAgentCost,
+  WeeklyReportAgentWork,
+  WeeklyReportPipelineMove,
+  WeeklyReportStuckTask,
+  WeeklyReportTask,
+} from "./types/weekly-report.js";

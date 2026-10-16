@@ -466,15 +466,28 @@ export function ProjectDetail() {
       invalidateProject();
       const name = updatedProject?.name ?? project?.name ?? "Project";
       if (archived) {
-        pushToast({ title: `"${name}" has been archived`, tone: "success" });
+        const projectPath = location.pathname;
+        pushToast({
+          title: `Archived "${name}"`,
+          body: "It is hidden from the sidebar. You can bring it back at any time.",
+          tone: "success",
+          ttlMs: 8000,
+          action: {
+            label: "Undo",
+            onClick: () => {
+              archiveProject.mutate(false);
+              navigate(projectPath);
+            },
+          },
+        });
         navigate("/dashboard");
       } else {
-        pushToast({ title: `"${name}" has been unarchived`, tone: "success" });
+        pushToast({ title: `"${name}" is back in the sidebar`, tone: "success" });
       }
     },
     onError: (_, archived) => {
       pushToast({
-        title: archived ? "Failed to archive project" : "Failed to unarchive project",
+        title: archived ? "Could not archive the project. Try again." : "Could not bring the project back. Try again.",
         tone: "error",
       });
     },
