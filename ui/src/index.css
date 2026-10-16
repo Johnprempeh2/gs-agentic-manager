@@ -231,7 +231,7 @@
   --brand-thinking-cycle: 1.2s;       /* BrandThinkingIcon pulse loop */
   color-scheme: light;
   --radius: 0.625rem;
-  --background: #f2f4ee;
+  --background: #e9ede3; /* warm stone: tinted so white cards lift off it */
   --foreground: #121512;
   --card: #ffffff;
   --card-foreground: #121512;
@@ -1334,6 +1334,19 @@
   --sidebar-action-rest-surface: var(--sidebar);
   background-color: var(--sidebar-action-rest-surface);
   box-shadow: inset -1px 0 0 var(--glass-card-border);
+}
+/* Charcoal rail: the navigation rail is always night-side. Layout puts
+   `gs-rail dark` on the rail wrappers, so the rail reads the dark token set in
+   both themes; in daylight the rail sits on brand charcoal (#252525, the
+   brand's deeper charcoal so lime status text on the active row clears AA) instead
+   of the near-black night rail, so it reads as Greatstone next to the light
+   workspace rather than as a hole in the page. Popovers portal out and stay
+   in the page theme. */
+:root:not(.dark) .gs-rail {
+  --sidebar: #252525;
+  --sidebar-accent: color-mix(in oklab, #c8ff00 8%, #252525);
+  --sidebar-border: rgb(255 255 255 / 8%);
+  --glass-card-border: rgb(255 255 255 / 8%);
 }
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));
