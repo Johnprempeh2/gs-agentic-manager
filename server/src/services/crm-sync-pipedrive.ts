@@ -72,7 +72,7 @@ export interface PipedriveDealField {
 }
 
 /** A linked record in a v1 answer: `owner_id` and `org_id` come back as objects or bare ids. */
-export type PipedriveLink = number | { id?: number; value?: number; name?: string | null } | null;
+export type PipedriveLink = number | { id?: number; value?: number; name?: string | null; email?: string | null } | null;
 
 /** One organisation from the v1 list (GRE-1479). Only the fields the import reads are typed. */
 export interface PipedriveOrganization {

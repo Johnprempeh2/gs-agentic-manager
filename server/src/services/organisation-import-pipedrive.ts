@@ -6,7 +6,7 @@
 // duplicating. Nothing is written back to Pipedrive.
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { organisationContacts, organisations } from "@greatstone/db";
+import { authUsers, companyMemberships, organisationContacts, organisations } from "@greatstone/db";
 import type { CrmRecordField, OrganisationImportCounts, OrganisationImportResult, OrganisationStatus } from "@greatstone/shared";
 import type {
   PipedriveClient,
@@ -43,6 +43,11 @@ export interface MappedPipedriveOrganisation {
   industry: string | null;
   country: string | null;
   countryOwner: string | null;
+  /**
+   * The Pipedrive owner's email, so the owner links to the GSAM member with
+   * the same email. Undefined when the source does not say (export files).
+   */
+  ownerEmail?: string | null;
   /** Used only when the organisation is created; a rerun never changes the GSAM status. */
   status: OrganisationStatus;
   /** Website, when Pipedrive has one. Fills an empty website; never overwrites one typed in GSAM. */
@@ -66,6 +71,8 @@ export interface MappedPipedriveContact {
 export interface PipedriveFieldContext {
   fields: PipedriveDealField[];
   users: Map<string, string>;
+  /** Pipedrive user emails by user id, for owners answered as a bare id. */
+  userEmails?: Map<string, string>;
 }
 
 /** Trimmed text cut to the API limit, or null when blank. */
@@ -73,6 +80,14 @@ function text(value: unknown, max: number): string | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
   const trimmed = String(value).trim();
   return trimmed ? trimmed.slice(0, max) : null;
+}
+
+/** The email of a linked Pipedrive user, lower-cased, from the link itself or the users list. */
+function ownerEmailOf(link: PipedriveLink | undefined, userEmails?: Map<string, string>): string | null {
+  const own = link && typeof link === "object" ? text(link.email, 320) : null;
+  const id = linkId(link);
+  const email = own ?? (id ? userEmails?.get(id) ?? null : null);
+  return email ? email.toLowerCase() : null;
 }
 
 function linkId(link: PipedriveLink | undefined): string | null {
@@ -126,6 +141,7 @@ export function mapPipedriveOrganization(
       ? {
         website: websiteOf(org.website),
         crmFields: pipedriveRecordFields(org, context.fields, { skip: ORGANISATION_COLUMN_KEYS, users: context.users }),
+        ownerEmail: ownerEmailOf(org.owner_id, context.userEmails),
       }
       : {}),
   };
@@ -181,6 +197,21 @@ export function pipedriveRecordWriter(
 ) {
   const orgByExternalId = new Map<string, OrganisationRow>();
   const contactByExternalId = new Map<string, ContactRow>();
+  /** Active members by lower-cased email; filled by loadMembers for the API import only. */
+  let memberIdByEmail: Map<string, string> | null = null;
+
+  /**
+   * The member a Pipedrive owner links to. Undefined leaves the link as it
+   * is: the source gave no owner email, or the owner did not change and no
+   * member matches. Null unlinks a member who no longer owns it in Pipedrive.
+   */
+  const ownerUserId = (mapped: MappedPipedriveOrganisation, existing?: OrganisationRow): string | null | undefined => {
+    if (!memberIdByEmail || mapped.ownerEmail === undefined) return undefined;
+    const match = mapped.ownerEmail ? memberIdByEmail.get(mapped.ownerEmail) : undefined;
+    if (match) return match;
+    if (!existing?.countryOwnerUserId) return undefined;
+    return existing.countryOwner === mapped.countryOwner ? undefined : null;
+  };
 
   const recordError = (kind: "organisation" | "contact", externalId: string, error: unknown) => {
     result[kind === "organisation" ? "organisations" : "contacts"].errors += 1;
@@ -200,6 +231,19 @@ export function pipedriveRecordWriter(
         .from(organisations)
         .where(and(eq(organisations.companyId, companyId), eq(organisations.source, source), isNotNull(organisations.externalId)));
       for (const row of rows) orgByExternalId.set(row.externalId!, row);
+    },
+
+    async loadMembers() {
+      const rows = await db
+        .select({ userId: companyMemberships.principalId, email: authUsers.email })
+        .from(companyMemberships)
+        .innerJoin(authUsers, eq(authUsers.id, companyMemberships.principalId))
+        .where(and(
+          eq(companyMemberships.companyId, companyId),
+          eq(companyMemberships.principalType, "user"),
+          eq(companyMemberships.status, "active"),
+        ));
+      memberIdByEmail = new Map(rows.filter((row) => row.email).map((row) => [row.email!.trim().toLowerCase(), row.userId]));
     },
 
     async loadContacts() {
@@ -228,6 +272,7 @@ export function pipedriveRecordWriter(
               industry: mapped.industry,
               country: mapped.country,
               countryOwner: mapped.countryOwner,
+              countryOwnerUserId: ownerUserId(mapped) ?? null,
               website: mapped.website ?? null,
               crmFields: mapped.crmFields ?? [],
               status: mapped.status,
@@ -247,6 +292,8 @@ export function pipedriveRecordWriter(
           country: mapped.country,
           countryOwner: mapped.countryOwner,
         };
+        const linkedUserId = ownerUserId(mapped, existing);
+        if (linkedUserId !== undefined && linkedUserId !== existing.countryOwnerUserId) fields.countryOwnerUserId = linkedUserId;
         if (mapped.website && !existing.website) fields.website = mapped.website;
         if (mapped.crmFields && !sameRecordFields(mapped.crmFields, existing.crmFields)) fields.crmFields = mapped.crmFields;
         if (
@@ -255,7 +302,8 @@ export function pipedriveRecordWriter(
           existing.country === fields.country &&
           existing.countryOwner === fields.countryOwner &&
           fields.website === undefined &&
-          fields.crmFields === undefined
+          fields.crmFields === undefined &&
+          fields.countryOwnerUserId === undefined
         ) {
           result.organisations.skipped += 1;
           return;
@@ -352,11 +400,13 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       const organizationFields = await client.listOrganizationFields();
       const industries = industryLabels(organizationFields);
       // Owner and user fields read as names. A token that may not list users still imports.
-      const users = new Map(
-        (await client.listUsers().catch(() => [])).map((user) => [String(user.id), user.name?.trim() || user.email || String(user.id)]),
-      );
-      const orgContext: PipedriveFieldContext = { fields: organizationFields, users };
+      const pdUsers = await client.listUsers().catch(() => []);
+      const users = new Map(pdUsers.map((user) => [String(user.id), user.name?.trim() || user.email || String(user.id)]));
+      const userEmails = new Map(pdUsers.filter((user) => user.email).map((user) => [String(user.id), user.email!]));
+      const orgContext: PipedriveFieldContext = { fields: organizationFields, users, userEmails };
       await writer.loadOrganisations();
+      // Owners link to the GSAM member with the same email.
+      await writer.loadMembers();
 
       let start: number | null = 0;
       while (start !== null) {
