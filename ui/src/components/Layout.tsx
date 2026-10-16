@@ -15,6 +15,7 @@ import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
+import { AskEverestPanel } from "./AskEverestPanel";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { NewGoalDialog } from "./NewGoalDialog";
@@ -776,6 +777,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       {isMobile && <MobileBottomNav visible={showMobileNav} />}
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
+      <AskEverestPanel />
       <NewIssueDialog />
       <NewProjectDialog />
       <NewGoalDialog />
