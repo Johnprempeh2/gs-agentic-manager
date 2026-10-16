@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MorningSummaryTask } from "@greatstone/shared";
-import { AlertTriangle, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { PauseNotifications } from "../components/PauseNotifications";
 import { queryKeys } from "../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
@@ -99,8 +100,8 @@ function Section({
 
 /**
  * Today (also the morning summary): what needs you, what is due today, what
- * the agents finished since yesterday, and what is stuck. It is the landing
- * page on a phone and the morning notification opens here, so it reads well
+ * the agents are working on now, what they finished since yesterday, and what
+ * is stuck. It is the landing page on a phone and the morning notification opens here, so it reads well
  * on a phone first.
  */
 export function MorningSummary() {
@@ -148,6 +149,8 @@ export function MorningSummary() {
         </p>
       </header>
 
+      <PauseNotifications companyId={selectedCompanyId} compact />
+
       <Section
         icon={UserCheck}
         title="Needs you"
@@ -167,6 +170,17 @@ export function MorningSummary() {
         tone="danger"
         today={localToday(now)}
       />
+      {data.workingNow ? (
+        <Section
+          icon={Activity}
+          title="Working now"
+          count={data.workingNow.count}
+          empty="No agent is working on a task right now."
+          items={data.workingNow.items}
+          more={{ label: "See all tasks", to: "/issues" }}
+          tone="success"
+        />
+      ) : null}
       <Section
         icon={CircleCheck}
         title="Finished since yesterday"

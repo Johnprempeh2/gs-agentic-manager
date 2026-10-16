@@ -7,9 +7,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MorningSummary as Summary } from "@greatstone/shared";
 import { MorningSummary, greeting, lateLabel } from "./MorningSummary";
 
-const server = vi.hoisted(() => ({ summary: null as Summary | null }));
+const server = vi.hoisted(() => ({ summary: null as Summary | null, pausedUntil: null as string | null }));
 
-vi.mock("../api/notificationPreferences", () => ({ morningSummaryApi: { get: async () => server.summary } }));
+vi.mock("../api/notificationPreferences", () => ({
+  morningSummaryApi: { get: async () => server.summary },
+  notificationPreferencesApi: {
+    get: async () => ({ morningSummaryHour: 8, pausedUntil: server.pausedUntil }),
+    update: async () => ({ morningSummaryHour: 8, pausedUntil: null }),
+  },
+}));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1", selectedCompany: null }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
 
@@ -42,6 +48,29 @@ async function render() {
 }
 
 describe("MorningSummary", () => {
+  it("says when notifications are paused, and nothing when they are not", async () => {
+    server.summary = {
+      companyId: "company-1",
+      generatedAt: "",
+      since: "",
+      needsYou: { count: 0, items: [] },
+      dueToday: { count: 0, items: [] },
+      finished: { count: 0, items: [] },
+      stuck: { count: 0, items: [] },
+    };
+    server.pausedUntil = null;
+    await render();
+    expect(container.querySelector('[data-testid="notifications-paused"]')).toBeNull();
+    act(() => root?.unmount());
+
+    server.pausedUntil = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    await render();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    expect(container.textContent).toContain("Notifications paused until");
+    expect(container.textContent).toContain("Resume now");
+    server.pausedUntil = null;
+  });
+
   it("shows what needs you, what finished and what is stuck, with links to each task", async () => {
     server.summary = {
       companyId: "company-1",
@@ -57,8 +86,11 @@ describe("MorningSummary", () => {
       },
       finished: { count: 1, items: [{ id: "b", identifier: "GRE-5", title: "Write the one-pager" }] },
       stuck: { count: 0, items: [] },
+      workingNow: { count: 1, items: [{ id: "w", identifier: "GRE-9", title: "Drafting the deck" }] },
     };
     await render();
+    expect(container.textContent).toContain("Working now");
+    expect(container.querySelector('a[href="/issues/GRE-9"]')?.textContent).toContain("Drafting the deck");
     const text = container.textContent ?? "";
     expect(text).toContain("Approve the brief");
     expect(text).toContain("See all 5");
