@@ -30,6 +30,7 @@ import {
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  chatEndpoints,
   connectionGrantMembers,
   connectionGrantDelegations,
   connectionGrants,
@@ -110,6 +111,7 @@ import type {
   ToolCredentialSecretRef,
   ToolOAuthStartResult,
   ToolAppsAttentionResponse,
+  AgentAccessSummary,
   ToolAppMetadataPreflightResult,
   ToolActionRequest,
   ToolActionRequestListItem,
@@ -246,6 +248,7 @@ import {
   ToolRuntimeSupervisorError,
 } from "./tool-runtime-supervisor.js";
 import { listConnectionLifecycleEvents } from "./tool-connection-activity.js";
+import { deriveAgentAccess } from "./agent-access.js";
 import { isRetiredComposioConnection, RETIRED_COMPOSIO_MESSAGE } from "@greatstone/shared";
 import {
   appWithPaperclipCloudConnectorAvailability,
@@ -7737,6 +7740,164 @@ export function toolAccessService(
       discoveredCount: descriptors.length,
       quarantinedCount,
     };
+  }
+
+  /**
+   * Read-only summary of what each agent can reach and what is missing,
+   * failing or expiring soon. A fixed number of bulk queries; the state rules
+   * live in `deriveAgentAccess` so they can be tested without a database.
+   */
+  async function listAgentAccess(companyId: string): Promise<AgentAccessSummary> {
+    const [
+      agentRows,
+      connectionRows,
+      installRows,
+      grantRows,
+      delegatedRows,
+      tokenRows,
+      secretRows,
+      channelRows,
+    ] = await Promise.all([
+      db
+        .select({ id: agents.id, name: agents.name })
+        .from(agents)
+        .where(and(eq(agents.companyId, companyId), ne(agents.status, "terminated")))
+        .orderBy(asc(agents.name)),
+      db
+        .select({
+          id: toolConnections.id,
+          name: toolConnections.name,
+          healthStatus: toolConnections.healthStatus,
+          credentialPolicy: toolConnections.credentialPolicy,
+          credentialSecretRefs: toolConnections.credentialSecretRefs,
+        })
+        .from(toolConnections)
+        .where(and(eq(toolConnections.companyId, companyId), ne(toolConnections.status, "archived"))),
+      db
+        .select({
+          connectionId: toolConnectionInstalls.connectionId,
+          targetType: toolConnectionInstalls.targetType,
+          targetId: toolConnectionInstalls.targetId,
+        })
+        .from(toolConnectionInstalls)
+        .where(eq(toolConnectionInstalls.companyId, companyId)),
+      db
+        .select()
+        .from(connectionGrants)
+        .where(
+          and(
+            eq(connectionGrants.companyId, companyId),
+            inArray(connectionGrants.kind, ["agent", "organization"]),
+          ),
+        ),
+      db
+        .select({ agentId: connectionGrantDelegations.agentId, grant: connectionGrants })
+        .from(connectionGrantDelegations)
+        .innerJoin(
+          connectionGrants,
+          and(
+            eq(connectionGrants.id, connectionGrantDelegations.grantId),
+            eq(connectionGrants.companyId, connectionGrantDelegations.companyId),
+          ),
+        )
+        .where(eq(connectionGrantDelegations.companyId, companyId)),
+      db
+        .select({
+          id: toolMcpGatewayTokens.id,
+          name: toolMcpGatewayTokens.name,
+          subjectId: toolMcpGatewayTokens.subjectId,
+          expiresAt: toolMcpGatewayTokens.expiresAt,
+          lastUsedAt: toolMcpGatewayTokens.lastUsedAt,
+        })
+        .from(toolMcpGatewayTokens)
+        .where(
+          and(
+            eq(toolMcpGatewayTokens.companyId, companyId),
+            eq(toolMcpGatewayTokens.subjectType, "agent"),
+            isNull(toolMcpGatewayTokens.revokedAt),
+          ),
+        ),
+      db
+        .select({
+          id: companySecretBindings.id,
+          agentId: companySecretBindings.targetId,
+          configPath: companySecretBindings.configPath,
+          label: companySecretBindings.label,
+          required: companySecretBindings.required,
+          secretName: companySecrets.name,
+          secretStatus: companySecrets.status,
+          secretDeletedAt: companySecrets.deletedAt,
+          secretLastResolvedAt: companySecrets.lastResolvedAt,
+        })
+        .from(companySecretBindings)
+        .leftJoin(
+          companySecrets,
+          and(
+            eq(companySecrets.id, companySecretBindings.secretId),
+            eq(companySecrets.companyId, companySecretBindings.companyId),
+          ),
+        )
+        .where(
+          and(
+            eq(companySecretBindings.companyId, companyId),
+            eq(companySecretBindings.targetType, "agent"),
+          ),
+        ),
+      db
+        .select({
+          id: chatEndpoints.id,
+          connectionId: chatEndpoints.connectionId,
+          provider: chatEndpoints.provider,
+          assignedAgentId: chatEndpoints.assignedAgentId,
+          status: chatEndpoints.status,
+          botDisplayName: chatEndpoints.botDisplayName,
+          providerAccountLabel: chatEndpoints.providerAccountLabel,
+          lastEventAt: chatEndpoints.lastEventAt,
+        })
+        .from(chatEndpoints)
+        .where(
+          and(
+            eq(chatEndpoints.companyId, companyId),
+            isNull(chatEndpoints.archivedAt),
+            ne(chatEndpoints.status, "archived"),
+          ),
+        ),
+    ]);
+
+    const grantById = new Map<string, typeof connectionGrants.$inferSelect>();
+    for (const grant of grantRows) grantById.set(grant.id, grant);
+    for (const row of delegatedRows) grantById.set(row.grant.id, row.grant);
+
+    return deriveAgentAccess({
+      now: now(),
+      agents: agentRows,
+      connections: connectionRows,
+      installs: installRows,
+      grants: [...grantById.values()].map((grant) => ({
+        id: grant.id,
+        connectionId: grant.connectionId,
+        kind: grant.kind,
+        subjectAgentId: grant.subjectAgentId,
+        status: grant.status,
+        isDefault: grant.isDefault,
+        lastUsedAt: grant.lastUsedAt,
+        refreshTokenExpiresAt: grant.providerTenant?.oauth?.refreshTokenExpiresAt ?? null,
+        webhookHealth: grant.providerTenant?.github?.webhookHealth ?? null,
+        credentialSecretRefs: grant.credentialSecretRefs.map((ref) => ({ expiresAt: ref.expiresAt ?? null })),
+      })),
+      delegations: delegatedRows.map((row) => ({ grantId: row.grant.id, agentId: row.agentId })),
+      mcpTokens: tokenRows,
+      secretBindings: secretRows,
+      channels: channelRows.map((channel) => ({
+        id: channel.id,
+        connectionId: channel.connectionId,
+        provider: channel.provider,
+        assignedAgentId: channel.assignedAgentId,
+        status: channel.status,
+        label: channel.botDisplayName ?? channel.providerAccountLabel ?? null,
+        lastEventAt: channel.lastEventAt,
+      })),
+    });
   }
 
   async function listAppsNeedingAttention(
@@ -18769,6 +18930,8 @@ export function toolAccessService(
     },
 
     listAppsNeedingAttention,
+
+    listAgentAccess,
 
     sweepConnectionHealth,
 

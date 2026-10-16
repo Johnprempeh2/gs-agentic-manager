@@ -51,6 +51,8 @@ export const queryKeys = {
   tools: {
     applications: (companyId: string) =>
       ["tools", companyId, "applications"] as const,
+    agentAccess: (companyId: string) =>
+      ["tools", companyId, "agent-access"] as const,
     connections: (companyId: string) =>
       ["tools", companyId, "connections"] as const,
     connection: (connectionId: string) =>
