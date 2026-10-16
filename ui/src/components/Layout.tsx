@@ -1,7 +1,7 @@
 import { useUserPreferences } from "../hooks/useUserPreferences";
 import { SetupWizardSidebarOutlet } from "./SetupWizard";
 import { ChatSetupSidebarProvider } from "@/context/ChatSetupSidebarContext";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet, useLocation, useNavigate, useNavigationType, useParams } from "@/lib/router";
 import { Sidebar } from "./Sidebar";
@@ -29,6 +29,7 @@ import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
 import { AddToHomeScreen } from "./AddToHomeScreen";
+import { PageSkeleton } from "./PageSkeleton";
 import { PullToRefresh } from "./PullToRefresh";
 import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
@@ -789,7 +790,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               ) : (
                 <RouteErrorBoundary>
                   {isMobile && !isMobileChatRoute ? <AddToHomeScreen /> : null}
-                  <Outlet />
+                  {/* Pages load when opened; keep the shell up while one arrives. */}
+                  <Suspense fallback={<PageSkeleton variant="detail" />}>
+                    <Outlet />
+                  </Suspense>
                 </RouteErrorBoundary>
               )}
               </main>

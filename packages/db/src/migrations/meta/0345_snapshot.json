@@ -1,5 +1,5 @@
 {
-  "id": "5e0cc4f7-5c7e-4ced-a3d1-df1c748a0a7a",
+  "id": "beeaf621-ad81-49ef-814d-48cfd8a3c8e6",
   "prevId": "827c3ffc-d6ba-483d-8578-0ea9e80dbf70",
   "version": "7",
   "dialect": "postgresql",
@@ -39205,6 +39205,13 @@
           "notNull": true,
           "default": 8
         },
+        "weekly_report": {
+          "name": "weekly_report",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "quiet_hours_start": {
           "name": "quiet_hours_start",
           "type": "integer",
@@ -39226,6 +39233,12 @@
         },
         "last_morning_summary_on": {
           "name": "last_morning_summary_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_weekly_report_on": {
+          "name": "last_weekly_report_on",
           "type": "text",
           "primaryKey": false,
           "notNull": false
@@ -39487,7 +39500,7 @@
       "checkConstraints": {
         "organisation_contacts_source_check": {
           "name": "organisation_contacts_source_check",
-          "value": "\"organisation_contacts\".\"source\" in ('manual', 'pipedrive', 'csv', 'hubspot')"
+          "value": "\"organisation_contacts\".\"source\" in ('manual', 'pipedrive', 'csv')"
         }
       },
       "isRLSEnabled": false
@@ -39714,7 +39727,7 @@
         },
         "organisations_source_check": {
           "name": "organisations_source_check",
-          "value": "\"organisations\".\"source\" in ('manual', 'pipedrive', 'csv', 'hubspot')"
+          "value": "\"organisations\".\"source\" in ('manual', 'pipedrive', 'csv')"
         }
       },
       "isRLSEnabled": false

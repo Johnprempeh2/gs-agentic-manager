@@ -142,6 +142,19 @@ describe("IssueRow", () => {
     ));
     expect(line()?.textContent).toBe("Waiting for GRE-306 · Ridge to act");
 
+    // A wait on someone outside, with the date it expected to hear back by.
+    const waitOn = (expectedBy: string) => createIssue({
+      status: "blocked",
+      assigneeAgentId: "agent-ridge",
+      unblockDescriptor: { owner: { agentId: "agent-ridge" }, action: "Chase the client", waitingOn: "client", expectedBy },
+    });
+    act(() => root.render(<IssueRow issue={waitOn("2099-10-20")} stopReasonContext={stopReasonContext} />));
+    expect(line()?.textContent).toBe("Waiting on a client until 20 Oct · Ridge to act");
+    expect(container.querySelector('[data-slot="task-row-date-passed"]')).toBeNull();
+    act(() => root.render(<IssueRow issue={waitOn("2020-10-20")} stopReasonContext={stopReasonContext} />));
+    expect(line()?.textContent).toBe("Waiting on a client until 20 Oct · Date passed · Ridge to act");
+    expect(container.querySelector('[data-slot="task-row-date-passed"]')?.className).toContain("text-destructive");
+
     // Nothing for a running row, a done row, or a run that went fine.
     act(() => root.render(
       <IssueRow

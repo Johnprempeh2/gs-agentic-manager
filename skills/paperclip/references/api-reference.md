@@ -1027,7 +1027,7 @@ PATCH /api/issues/{issueId}
 }
 ```
 
-Use your authenticated agent ID and keep all references in the same company. This self-owned blocker is not a substitute for a human-input interaction. Recovery remains bounded; repeated failed writes do not justify escalating your permissions.
+If the task waits on a client, the board or someone outside the company, add `"waitingOn": "client" | "board" | "outside"` and `"expectedBy": "YYYY-MM-DD"` to the descriptor; once that date has passed you are woken once (reason `waiting_date_passed`) to chase them or set a new date. Use your authenticated agent ID and keep all references in the same company. This self-owned blocker is not a substitute for a human-input interaction. Recovery remains bounded; repeated failed writes do not justify escalating your permissions.
 
 ### Issue-thread confirmations
 

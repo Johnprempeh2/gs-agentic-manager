@@ -62,6 +62,7 @@ export {
   type StrategyBoardActionTask,
 } from "./strategy-board.js";
 export * from "./team-chat.js";
+export * from "./unblock-waiting.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
@@ -527,6 +528,7 @@ export {
   INBOX_MINE_ISSUE_STATUS_FILTER,
   ISSUE_PRIORITIES,
   ISSUE_REVIEW_POLICIES,
+  ISSUE_UNBLOCK_WAITING_ON,
   ISSUE_WORK_MODES,
   ISSUE_HARNESS_KINDS,
   MAX_ISSUE_REQUEST_DEPTH,
@@ -739,6 +741,7 @@ export {
   type IssueStatus,
   type IssuePriority,
   type IssueReviewPolicy,
+  type IssueUnblockWaitingOn,
   type IssueWorkMode,
   type IssueHarnessKind,
   type SummarySlotScopeKind,

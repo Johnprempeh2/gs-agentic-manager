@@ -9,14 +9,52 @@ import {
   costEvents,
   createDb,
   issues,
+  notificationPreferences,
   pipelineCaseEvents,
   pipelineCases,
   pipelineStages,
   pipelines,
+  pushSubscriptions,
 } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
-import type { NeedsMe } from "@greatstone/shared";
-import { weeklyReportService } from "../services/weekly-report.js";
+import { DEFAULT_NOTIFICATION_PREFERENCES, type NeedsMe, type WeeklyReport } from "@greatstone/shared";
+import { weeklyReportDue, weeklyReportMessage, weeklyReportService } from "../services/weekly-report.js";
+
+describe("when the weekly report is due", () => {
+  const prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, weeklyReport: true, timeZone: "Europe/London", morningSummaryHour: 8 };
+  const monday = (time: string) => new Date(`2026-10-19T${time}Z`); // London is UTC+1 that day
+
+  it("goes on Monday at the morning summary hour, once", () => {
+    expect(weeklyReportDue(prefs, null, monday("06:59:00")).due).toBe(false);
+    expect(weeklyReportDue(prefs, null, monday("07:00:00"))).toEqual({ due: true, localDate: "2026-10-19" });
+    expect(weeklyReportDue(prefs, "2026-10-19", monday("07:30:00")).due).toBe(false);
+    expect(weeklyReportDue(prefs, null, new Date("2026-10-20T07:00:00Z")).due).toBe(false);
+  });
+
+  it("is off until chosen, and waits for quiet hours to end", () => {
+    expect(weeklyReportDue({ ...prefs, weeklyReport: false }, null, monday("07:00:00")).due).toBe(false);
+    expect(weeklyReportDue({ ...prefs, quietHoursStart: 22, quietHoursEnd: 9 }, null, monday("07:30:00")).due).toBe(false);
+    expect(weeklyReportDue({ ...prefs, quietHoursStart: 22, quietHoursEnd: 9 }, null, monday("08:30:00")).due).toBe(true);
+    expect(weeklyReportDue(prefs, null, monday("11:30:00")).due).toBe(false);
+  });
+
+  it("sums the week up in one line and opens the report", () => {
+    const report = {
+      companyName: "Greatstone",
+      finished: { count: 12, agents: [] },
+      stuck: { count: 3, items: [] },
+      pipeline: { added: 1, moved: 2, won: 0, lost: 0, moves: [] },
+      needsYou: { count: 1, items: [] },
+    } as unknown as WeeklyReport;
+    expect(weeklyReportMessage(report, "GRE")).toEqual({
+      title: "Your week at Greatstone",
+      body: "12 tasks finished. 3 stuck. Pipeline: 1 new, 2 moves. 1 thing needs you.",
+      url: "/GRE/weekly-report",
+      tag: "weekly-report",
+      badge: 1,
+    });
+  });
+});
 
 const needsMe = (): NeedsMe => ({
   companyId: "c",
@@ -117,5 +155,22 @@ describe("weekly report service", () => {
         { agentId: ada, name: "Ada", cents: 400 },
       ],
     });
+  });
+
+  it("sends on Monday morning only to people who chose it", async () => {
+    await db.insert(pushSubscriptions).values([
+      { companyId, userId: "john", endpoint: "https://push.example/john", p256dh: "k", auth: "a" },
+      { companyId, userId: "ben", endpoint: "https://push.example/ben", p256dh: "k", auth: "a" },
+    ]);
+    await db.insert(notificationPreferences).values({ companyId, userId: "john", weeklyReport: true });
+    const sent: Array<{ userId: string; title: string }> = [];
+    const deliver = async (_companyId: string, userId: string, message: { title: string }) => {
+      sent.push({ userId, title: message.title });
+      return { targets: 1, delivered: 1 };
+    };
+    const service = weeklyReportService(db, { buildNeedsMe: async () => needsMe() });
+    expect(await service.sendDue(deliver, now)).toBe(1);
+    expect(await service.sendDue(deliver, new Date(now.getTime() + 60_000))).toBe(0);
+    expect(sent).toEqual([{ userId: "john", title: "Your week at Greatstone" }]);
   });
 });
