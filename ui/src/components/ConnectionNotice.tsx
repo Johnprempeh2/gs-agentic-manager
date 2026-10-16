@@ -106,7 +106,7 @@ export function ConnectionNotice() {
       role="status"
       aria-live="polite"
       data-testid="connection-notice"
-      className="flex items-center gap-3 border-b border-border bg-status-warning-soft px-4 py-2 text-sm text-status-warning-foreground"
+      className="flex items-center gap-3 print:hidden border-b border-border bg-status-warning-soft px-4 py-2 text-sm text-status-warning-foreground"
     >
       <WifiOff className="size-4 shrink-0" aria-hidden="true" />
       <p className="min-w-0 flex-1">

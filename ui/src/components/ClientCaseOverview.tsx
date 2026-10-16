@@ -183,7 +183,7 @@ export function ClientCaseOverview({
       <PipelineCaseCrmSync
         caseId={detail.case.id}
         companyId={detail.case.companyId}
-        wrap={(children) => <OverviewSection title="CRM sync">{children}</OverviewSection>}
+        wrap={(children) => <OverviewSection title="Sync with your CRM">{children}</OverviewSection>}
       />
 
       <OverviewSection title="Contacts" tour="client-contacts">
@@ -191,11 +191,11 @@ export function ClientCaseOverview({
       </OverviewSection>
 
       <OverviewSection title="Evidence" tour="client-evidence">
-        <PipelineCaseEvidence caseId={detail.case.id} />
+        <PipelineCaseEvidence caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
 
       <OverviewSection title="Journey by stage" tour="client-deliverables">
-        <ClientJourneyStages caseId={detail.case.id} />
+        <ClientJourneyStages caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
 
       <OverviewSection title="What the client sees on the portal" tour="client-portal">

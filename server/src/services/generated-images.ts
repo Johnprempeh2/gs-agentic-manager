@@ -1,19 +1,22 @@
-import { and, count, desc, eq, ilike, inArray, lt, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, lt, or, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { assets, generatedImages, issues, organisations } from "@greatstone/db";
 import {
   composeImagePrompt,
+  imageAltText,
   createGeneratedImageSchema,
   generatedImagesQuerySchema,
   GENERATED_IMAGES_MAX_PENDING_PER_COMPANY,
   type CreateGeneratedImage,
   type GeneratedImage,
+  type GeneratedImageCovers,
   type GeneratedImagesQuery,
   type GeneratedImagesResponse,
   type GeneratedImageStatus,
   type ImageAspectRatio,
   type ImageGenerationProviderId,
   type ImageStylePresetId,
+  type UpdateGeneratedImageCover,
 } from "@greatstone/shared";
 import { notFound, tooManyRequests, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -68,6 +71,9 @@ export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageL
     createdByUserId: row.createdByUserId,
     issue: links?.issue ?? null,
     organisation: links?.organisation ?? null,
+    altText: imageAltText(row.prompt, row.style),
+    issueCover: row.issueCover,
+    organisationCover: row.organisationCover,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -381,6 +387,77 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     },
 
     toResponse: withLinks,
+
+    /**
+     * Make a finished image the cover of its task or client card, or stop. A
+     * task or client has at most one cover, so setting one clears the last.
+     */
+    setCover: async (row: GeneratedImageRow, patch: UpdateGeneratedImageCover) => {
+      if (row.status !== "completed" || !row.assetId) {
+        throw unprocessable("Only a finished image can be a cover", { code: "generated_image_not_ready" });
+      }
+      if (patch.issueCover && !row.issueId) {
+        throw unprocessable("Link the image to a task before using it as the task's cover", { code: "generated_image_no_task" });
+      }
+      if (patch.organisationCover && !row.organisationId) {
+        throw unprocessable("Link the image to a client before using it as the client's cover", {
+          code: "generated_image_no_client",
+        });
+      }
+      const updated = await db.transaction(async (tx) => {
+        if (patch.issueCover && row.issueId) {
+          await tx
+            .update(generatedImages)
+            .set({ issueCover: false })
+            .where(and(eq(generatedImages.companyId, row.companyId), eq(generatedImages.issueId, row.issueId), eq(generatedImages.issueCover, true)));
+        }
+        if (patch.organisationCover && row.organisationId) {
+          await tx
+            .update(generatedImages)
+            .set({ organisationCover: false })
+            .where(
+              and(
+                eq(generatedImages.companyId, row.companyId),
+                eq(generatedImages.organisationId, row.organisationId),
+                eq(generatedImages.organisationCover, true),
+              ),
+            );
+        }
+        return tx
+          .update(generatedImages)
+          .set({
+            ...(patch.issueCover !== undefined ? { issueCover: patch.issueCover } : {}),
+            ...(patch.organisationCover !== undefined ? { organisationCover: patch.organisationCover } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(generatedImages.id, row.id))
+          .returning()
+          .then((rows) => rows[0]!);
+      });
+      return updated;
+    },
+
+    /** Every cover in the company, keyed by task id and by client id, for the boards. */
+    covers: async (companyId: string): Promise<GeneratedImageCovers> => {
+      const rows = await db
+        .select()
+        .from(generatedImages)
+        .where(
+          and(
+            eq(generatedImages.companyId, companyId),
+            eq(generatedImages.status, "completed"),
+            or(eq(generatedImages.issueCover, true), eq(generatedImages.organisationCover, true)),
+          ),
+        );
+      const result: GeneratedImageCovers = { issues: {}, organisations: {} };
+      for (const row of rows) {
+        if (!row.assetId) continue;
+        const cover = { imageId: row.id, contentPath: `/api/assets/${row.assetId}/content`, altText: imageAltText(row.prompt, row.style) };
+        if (row.issueCover && row.issueId) result.issues[row.issueId] = cover;
+        if (row.organisationCover && row.organisationId) result.organisations[row.organisationId] = cover;
+      }
+      return result;
+    },
 
     remove: async (id: string) => {
       const row = await db

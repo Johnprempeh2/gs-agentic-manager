@@ -644,6 +644,7 @@ export const queryKeys = {
     list: (companyId: string, filters?: { q?: string; organisationId?: string }) =>
       filters ? (["images", companyId, "list", filters] as const) : (["images", companyId, "list"] as const),
     detail: (imageId: string) => ["images", "detail", imageId] as const,
+    covers: (companyId: string) => ["images", companyId, "covers"] as const,
   },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,

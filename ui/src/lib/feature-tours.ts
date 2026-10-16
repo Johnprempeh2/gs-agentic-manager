@@ -581,6 +581,42 @@ export const AGENT_DETAIL_TOUR: TourDefinition = {
   ],
 };
 
+export const INTEGRATIONS_TOUR: TourDefinition = {
+  id: "integrations",
+  title: "Integrations",
+  description: "What each integration is for: bringing work in, sending updates out, spreadsheets and keys.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/company\/settings\/integrations\/?$/, path: "/company/settings/integrations" },
+  label: "Integrations",
+  steps: [
+    {
+      title: "Work in and out of GSAM",
+      body: "Integrations connect GSAM to the tools your team already uses. Nothing is switched on until you turn it on, and you can turn anything off again.",
+    },
+    {
+      target: "integrations-apps",
+      title: "Your other tools",
+      body: "Each card says what it does and when you would want it. Connect lets agents work in that tool. Import copies your clients and notes in once, from a file, with no key.",
+    },
+    {
+      target: "integrations-builtin",
+      title: "Built in, no account needed",
+      body: "An incoming webhook turns a form or another tool's requests into tasks. Updates to Slack, Teams or Zapier tell your team when work is done. The calendar feed puts deadlines in your own calendar.",
+    },
+    {
+      target: "integrations-export",
+      title: "Download to a spreadsheet",
+      body: "Take your clients, tasks or this week's numbers into Excel or Google Sheets with one click.",
+    },
+    {
+      target: "integrations-keys",
+      title: "What needs a key",
+      body: "Some integrations wait on a key from the provider. This list names each one, the exact names to paste and where they go.",
+    },
+  ],
+};
+
 /** Everyday pages: their tours live in the page bar. */
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
@@ -596,6 +632,7 @@ export const CORE_TOURS: TourDefinition[] = [
   MEMORY_TOUR,
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,
+  INTEGRATIONS_TOUR,
 ];
 
 /** The everyday tour for a company relative path, if there is one. */

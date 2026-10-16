@@ -144,3 +144,20 @@ equal to `--background`.
   fill's foreground (`text-current`), never `text-muted-foreground`.
 - **Markdown.** Rendered markdown pins headings and table headers to
   `--foreground`, so prose defaults never leave near-black text on the void.
+
+## Print
+
+Browser print and "Save as PDF" always come out in daylight colours, whatever
+theme is on screen. `ThemeContext` drops the `dark` class on `beforeprint`
+and restores it on `afterprint`, so every token prints with its light value.
+The `@media print` block in `ui/src/index.css` backs that up for the core
+surface and text tokens, drops shadows and glass,
+and hides secondary sidebars; `Layout.tsx` hides the rest of the app chrome
+with `print:` utilities so only the page prints, as one flowing column.
+
+- **Actions.** Mark buttons and controls that mean nothing on paper
+  `print:hidden` (see the This week report header).
+- **Blocks.** Give each card or section `print:break-inside-avoid` so a page
+  break never splits it.
+- **No new colours.** Print uses the same tokens; never add print-only hex in
+  a component.

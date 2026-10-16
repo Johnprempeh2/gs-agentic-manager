@@ -26,6 +26,8 @@ import {
   AlertDialogTitle,
 } from "./ui/alert-dialog";
 import { Button, buttonVariants } from "./ui/button";
+import { MakeImageButton } from "./MakeImageDialog";
+import { useOptionalCompany } from "../context/CompanyContext";
 import { Input } from "./ui/input";
 
 /** "2.4 MB", "830 KB", for a file's size in the list. */
@@ -231,21 +233,25 @@ export function ClientUploadZone({
   label = "Upload files",
   hint = "Drop files here, paste a screenshot, or choose them. PDFs, decks, documents and images up to the size limit.",
   onUploaded,
+  organisationId,
 }: {
   caseId: string;
   stageId?: string | null;
   label?: string;
   hint?: string;
   onUploaded?: (item: ClientEvidenceItem) => void;
+  /** The client the case belongs to, so an image made here is linked to them. */
+  organisationId?: string | null;
 }) {
   const queryClient = useQueryClient();
+  const companyId = useOptionalCompany()?.selectedCompanyId ?? null;
   const { pushToast } = useToastActions();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
   const uploadAll = async (files: File[]) => {
-    if (files.length === 0) return;
+    if (files.length === 0) return 0;
     let done = 0;
     for (const file of files) {
       setUploading(files.length > 1 ? `Uploading ${done + 1} of ${files.length}: ${file.name}` : `Uploading ${file.name}`);
@@ -275,6 +281,7 @@ export function ClientUploadZone({
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseEvents(caseId) }),
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseJourney(caseId) }),
     ]);
+    return done;
   };
   const intake = useFileIntake((files) => void uploadAll(files), { disabled: uploading !== null });
 
@@ -298,6 +305,17 @@ export function ClientUploadZone({
         <FileUp className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
         {label}
       </Button>
+      {companyId ? (
+        <MakeImageButton
+          companyId={companyId}
+          organisationId={organisationId}
+          attachLabel="this client's files"
+          disabled={uploading !== null}
+          onAttach={async (file) => {
+            if ((await uploadAll([file])) === 0) throw new Error("The image could not be added to this client.");
+          }}
+        />
+      ) : null}
       {preview ? (
         <img src={preview} alt="" className="h-10 w-10 shrink-0 rounded-sm border border-border object-cover" data-testid="client-upload-preview" />
       ) : null}
@@ -328,7 +346,7 @@ function useCaseFiles(caseId: string) {
 }
 
 /** The client's own material: files and documents from its tasks, and links (GRE-1311). */
-export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
+export function PipelineCaseEvidence({ caseId, organisationId }: { caseId: string; organisationId?: string | null }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [adding, setAdding] = useState(false);
@@ -377,7 +395,7 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
           No files yet. Upload the client's documents here, or add files and links from their tasks.
         </p>
       )}
-      <ClientUploadZone caseId={caseId} />
+      <ClientUploadZone caseId={caseId} organisationId={organisationId} />
       {adding ? (
         <AddEvidencePanel
           caseId={caseId}

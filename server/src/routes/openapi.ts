@@ -55,6 +55,7 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   createGeneratedImageSchema,
+  updateGeneratedImageCoverSchema,
   generatedImagesQuerySchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
@@ -4569,6 +4570,24 @@ registry.registerPath({
   summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). 422 code image_generation_not_configured when no image service key is set; 429 when 6 images are already being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/generated-images/covers",
+  tags: ["assets"],
+  summary: "Cover pictures for task and client cards: issues and organisations, each keyed by id with imageId, contentPath and altText",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/generated-images/{id}/cover",
+  tags: ["assets"],
+  summary: "Show a finished image on the card of its linked task (issueCover) or client (organisationCover), or stop. Setting one clears that task's or client's previous cover. 422 when the image is not finished or has no such link",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedImageCoverSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({
