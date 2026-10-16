@@ -13763,6 +13763,24 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/evidence/upload",
+  tags: ["pipelines"],
+  summary:
+    "Upload a file straight onto a pipeline case as evidence (Work cases). multipart/form-data: a `file` field, " +
+    "with optional `title`, `note` and `stageId` (a stage on the case's own pipeline)",
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/evidence/{evidenceId}/content",
+  tags: ["pipelines"],
+  summary: "Get the file behind an uploaded evidence item; ?download=1 asks for a download",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
   method: "delete",
   path: "/api/cases/{caseId}/evidence/{evidenceId}",
   tags: ["pipelines"],

@@ -31,7 +31,8 @@ import {
   upsertPipelineDocumentSchema,
   upsertPipelineCaseDocumentSchema,
 } from "./pipelines-schemas.js";
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
+import multer from "multer";
 import { z } from "zod";
 import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -62,6 +63,15 @@ import {
   routines,
 } from "@greatstone/db";
 import { validate } from "../middleware/validate.js";
+import type { StorageService } from "../storage/types.js";
+import {
+  formatAttachmentSize,
+  isAllowedContentType,
+  isInlineAttachmentContentType,
+  MAX_ATTACHMENT_BYTES,
+  normalizeUploadAttachmentContentType,
+  SVG_CONTENT_TYPE,
+} from "../attachment-types.js";
 import { requireEntitlement } from "../services/entitlements.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unauthorized, unprocessable } from "../errors.js";
 import {
@@ -98,6 +108,7 @@ import { assertCompanyAccess } from "./authz.js";
 import {
   clientFilesQuerySchema,
   clientFilesSearchSchema,
+  uploadClientEvidenceFieldsSchema,
   computePipelineHealth,
   createClientEvidenceSchema,
   createClientJourneyDeliverableSchema,
@@ -929,9 +940,26 @@ export const PIPELINE_ROUTE_PREFIXES = [
   "/companies/:companyId/client-files",
 ];
 
-export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineService>[1] = {}) {
+function singleEvidenceUpload(req: Request, res: Response) {
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
+  }).single("file");
+  return new Promise<void>((resolve, reject) => {
+    upload(req, res, (err) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
+}
+
+export function pipelineRoutes(
+  db: Db,
+  options: Parameters<typeof pipelineService>[1] & { storage?: StorageService } = {},
+) {
   const router = Router();
-  const svc = pipelineService(db, options);
+  const { storage, ...serviceOptions } = options;
+  const svc = pipelineService(db, serviceOptions);
   const outputsSvc = pipelineCaseOutputsService(db);
   const filesSvc = pipelineCaseFilesService(db);
   const journeySvc = pipelineCaseJourneyService(db);
@@ -2750,6 +2778,7 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const caseId = req.params.caseId as string;
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
     const body = req.body as CreateClientEvidence;
+    if (body.stageId) await filesSvc.assertStageOnCase(companyId, caseId, body.stageId);
     const source = await filesSvc.resolveSource(companyId, body);
     // Only someone who can read the source task may file its content here.
     if (source.sourceIssue) await assertIssueReadable(req, access, source.sourceIssue);
@@ -2772,6 +2801,99 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     res.status(201).json(item);
   });
 
+  // Upload a file straight onto the client (Ben, 12 and 13 Oct): one
+  // multipart `file`, with optional title, note and stageId fields. The file
+  // is stored under the case and only served back through the case's own
+  // access-checked content route below.
+  router.post("/cases/:caseId/evidence/upload", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    if (!storage) throw new HttpError(503, "File storage is not available");
+    try {
+      await singleEvidenceUpload(req, res);
+    } catch (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === "LIMIT_FILE_SIZE") {
+          throw unprocessable(`File is larger than the ${formatAttachmentSize(MAX_ATTACHMENT_BYTES)} limit`);
+        }
+        throw badRequest(err.message);
+      }
+      throw err;
+    }
+    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
+    if (!file) throw badRequest("Missing file field 'file'");
+    if (file.buffer.length <= 0) throw unprocessable("The file is empty");
+    const fields = uploadClientEvidenceFieldsSchema.safeParse(req.body ?? {});
+    if (!fields.success) throw badRequest("Invalid upload fields", fields.error.flatten());
+    const contentType = normalizeUploadAttachmentContentType({
+      contentType: file.mimetype,
+      originalFilename: file.originalname,
+      isAllowedContentType,
+    });
+    if (!isAllowedContentType(contentType)) {
+      throw unprocessable(`Files of type ${contentType} cannot be uploaded here`);
+    }
+    if (fields.data.stageId) await filesSvc.assertStageOnCase(companyId, caseId, fields.data.stageId);
+
+    const stored = await storage.putFile({
+      companyId,
+      namespace: `pipeline-cases/${caseId}`,
+      originalFilename: file.originalname || null,
+      contentType,
+      body: file.buffer,
+    });
+    const item = await filesSvc.addUpload(
+      companyId,
+      caseId,
+      stored,
+      fields.data,
+      actor.type === "agent"
+        ? { type: "agent", agentId: actor.agentId }
+        : { type: "user", userId: actor.type === "user" ? actor.userId : "board" },
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: {
+        action: "evidence_added",
+        evidenceId: item.id,
+        kind: item.kind,
+        ...(item.stageId ? { stageId: item.stageId } : {}),
+      },
+    });
+    res.status(201).json(item);
+  });
+
+  router.get("/cases/:caseId/evidence/:evidenceId/content", async (req, res, next) => {
+    const caseId = req.params.caseId as string;
+    const parsedId = z.string().guid().safeParse(req.params.evidenceId);
+    if (!parsedId.success) throw notFound("File not found");
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (!storage) throw new HttpError(503, "File storage is not available");
+    const upload = await filesSvc.getUpload(companyId, caseId, parsedId.data);
+    if (!upload) throw notFound("File not found");
+
+    const object = await storage.getObject(upload.companyId, upload.objectKey);
+    const contentType = upload.contentType || object.contentType || "application/octet-stream";
+    const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    const inlineSafe = mediaType !== SVG_CONTENT_TYPE && isInlineAttachmentContentType(mediaType);
+    const wantsDownload = req.query.download === "1";
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", String(upload.byteSize || object.contentLength || 0));
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    if (!inlineSafe) res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+    const filename = (upload.originalFilename ?? "file").replaceAll("\"", "");
+    res.setHeader(
+      "Content-Disposition",
+      `${inlineSafe && !wantsDownload ? "inline" : "attachment"}; filename="${filename}"`,
+    );
+    object.stream.on("error", (err) => next(err));
+    object.stream.pipe(res);
+  });
+
   router.delete("/cases/:caseId/evidence/:evidenceId", async (req, res) => {
     const caseId = req.params.caseId as string;
     const parsedId = z.string().guid().safeParse(req.params.evidenceId);
@@ -2779,6 +2901,10 @@ export function pipelineRoutes(db: Db, options: Parameters<typeof pipelineServic
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
     const removed = await filesSvc.removeEvidence(companyId, caseId, parsedId.data);
     if (!removed) throw notFound("Evidence not found");
+    if (removed.removedObjectKey && storage) {
+      // The row is gone either way; a stored object left behind is harmless.
+      await storage.deleteObject(companyId, removed.removedObjectKey).catch(() => undefined);
+    }
     await writeRouteEvent(db, {
       companyId,
       caseId,

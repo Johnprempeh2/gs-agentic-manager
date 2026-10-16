@@ -1,4 +1,5 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { sql } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
@@ -14,6 +15,7 @@ import {
   issues,
   issueWorkProducts,
   pipelineCaseEvidence,
+  pipelineStages,
   projects,
 } from "@greatstone/db";
 import {
@@ -23,6 +25,34 @@ import {
 import { errorHandler } from "../middleware/error-handler.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import type { StorageService } from "../storage/types.js";
+
+// In-memory storage for uploads: object key to bytes.
+const storedObjects = new Map<string, { body: Buffer; contentType: string }>();
+const memoryStorage: StorageService = {
+  provider: "local_disk",
+  putFile: async (input) => {
+    const objectKey = `${input.companyId}/${input.namespace}/${randomUUID()}-${input.originalFilename ?? "file"}`;
+    storedObjects.set(objectKey, { body: input.body, contentType: input.contentType });
+    return {
+      provider: "local_disk",
+      objectKey,
+      contentType: input.contentType,
+      byteSize: input.body.length,
+      sha256: createHash("sha256").update(input.body).digest("hex"),
+      originalFilename: input.originalFilename,
+    };
+  },
+  getObject: async (_companyId, objectKey) => {
+    const object = storedObjects.get(objectKey);
+    if (!object) throw new Error("missing object");
+    return { stream: Readable.from(object.body), contentType: object.contentType, contentLength: object.body.length };
+  },
+  headObject: async (_companyId, objectKey) => ({ exists: storedObjects.has(objectKey) }),
+  deleteObject: async (_companyId, objectKey) => {
+    storedObjects.delete(objectKey);
+  },
+};
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe.sequential : describe.skip;
@@ -48,6 +78,7 @@ describeEmbeddedPostgres("client files", () => {
   });
 
   afterEach(async () => {
+    storedObjects.clear();
     await db.execute(sql`TRUNCATE "companies", "instance_settings", "activity_log" CASCADE`);
   });
 
@@ -69,7 +100,7 @@ describeEmbeddedPostgres("client files", () => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", pipelineRoutes(db, { heartbeat: { wakeup: async () => null } }));
+    instance.use("/api", pipelineRoutes(db, { heartbeat: { wakeup: async () => null }, storage: memoryStorage }));
     instance.use(errorHandler);
     return instance;
   }
@@ -302,5 +333,110 @@ describeEmbeddedPostgres("client files", () => {
       .send({ kind: "link", url: "https://www.notion.so/x", title: "Notion" })
       .expect(403);
     expect(await db.select().from(pipelineCaseEvidence)).toEqual([]);
+  });
+  it("uploads a file straight onto a client, files it under a stage and serves it back", async () => {
+    const { company, agent } = await seedCompany("Greatstone");
+    const caseId = await seedClientCase(company.id, "Indago");
+    const http = request(app());
+    const [leadStage] = await db.select().from(pipelineStages).where(sql`${pipelineStages.key} = 'lead'`);
+    const leadStageId = leadStage!.id;
+
+    const pdf = Buffer.from("%PDF-1.4 executive discovery");
+    const uploaded = await http
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .field("stageId", leadStageId)
+      .field("note", "Signed off by the CEO")
+      .attach("file", pdf, { filename: "Executive discovery.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(uploaded.body).toMatchObject({
+      kind: "upload",
+      title: "Executive discovery.pdf",
+      typeLabel: "PDF",
+      byteSize: pdf.length,
+      note: "Signed off by the CEO",
+      stageId: leadStageId,
+      stageName: "Lead",
+      sourceIssue: null,
+      contentPath: `/api/cases/${caseId}/evidence/${uploaded.body.id}/content`,
+      addedBy: { type: "user", id: "board-user" },
+    });
+
+    const content = await http.get(uploaded.body.contentPath).buffer(true).expect(200);
+    expect(content.headers["content-type"]).toContain("application/pdf");
+    expect(content.headers["content-disposition"]).toContain("inline");
+    expect(Buffer.from(content.body).toString()).toBe(pdf.toString());
+    const download = await http.get(uploaded.body.downloadPath).expect(200);
+    expect(download.headers["content-disposition"]).toContain("attachment");
+
+    // The upload is listed with the client's files and found by name.
+    const files = await http.get(`/api/cases/${caseId}/evidence`).query({ q: "discovery" }).expect(200);
+    expect(files.body.evidence.map((item: { id: string }) => item.id)).toEqual([uploaded.body.id]);
+
+    // No file, an empty file, or a stage from another pipeline is refused.
+    await http.post(`/api/cases/${caseId}/evidence/upload`).field("title", "x").expect(400);
+    await http
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .attach("file", Buffer.alloc(0), { filename: "empty.pdf", contentType: "application/pdf" })
+      .expect(422);
+    const other = await http
+      .post(`/api/companies/${company.id}/pipelines`)
+      .send({
+        key: "other",
+        name: "Other",
+        stages: [
+          { key: "a", name: "A", kind: "open", position: 100 },
+          { key: "done", name: "Done", kind: "done", position: 900 },
+          { key: "lost", name: "Lost", kind: "cancelled", position: 1000 },
+        ],
+      })
+      .expect(201);
+    const otherStage = await db.select().from(pipelineStages).where(sql`${pipelineStages.pipelineId} = ${other.body.id} and ${pipelineStages.key} = 'a'`);
+    await http
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .field("stageId", otherStage[0]!.id)
+      .attach("file", pdf, { filename: "x.pdf", contentType: "application/pdf" })
+      .expect(404);
+
+    // An agent without a pipeline grant can read it but not upload.
+    const agentHttp = request(app({
+      type: "agent",
+      agentId: agent.id,
+      companyId: company.id,
+      runId: randomUUID(),
+      source: "agent_key",
+    }));
+    await agentHttp
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .attach("file", pdf, { filename: "x.pdf", contentType: "application/pdf" })
+      .expect(403);
+
+    // Removing the upload removes its stored file too.
+    expect(storedObjects.size).toBe(1);
+    await http.delete(`/api/cases/${caseId}/evidence/${uploaded.body.id}`).expect(200);
+    expect(storedObjects.size).toBe(0);
+    await http.get(uploaded.body.contentPath).expect(404);
+    expect(await db.select().from(assets).where(sql`${assets.originalFilename} = 'Executive discovery.pdf'`)).toEqual([]);
+  });
+
+  it("keeps a client's uploads inside its own company", async () => {
+    const a = await seedCompany("Company A");
+    const b = await seedCompany("Company B");
+    const caseOfA = await seedClientCase(a.company.id, "Client of A");
+    const caseOfB = await seedClientCase(b.company.id, "Client of B");
+    const admin = request(app());
+    const uploaded = await admin
+      .post(`/api/cases/${caseOfA}/evidence/upload`)
+      .attach("file", Buffer.from("secret"), { filename: "nda.pdf", contentType: "application/pdf" })
+      .expect(201);
+    // The same evidence id through another company's case finds nothing.
+    await admin.get(`/api/cases/${caseOfB}/evidence/${uploaded.body.id}/content`).expect(404);
+    const agentOfB = request(app({
+      type: "agent",
+      agentId: b.agent.id,
+      companyId: b.company.id,
+      runId: randomUUID(),
+      source: "agent_key",
+    }));
+    await agentOfB.get(`/api/cases/${caseOfA}/evidence/${uploaded.body.id}/content`).expect(404);
   });
 });
