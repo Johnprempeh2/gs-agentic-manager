@@ -44,6 +44,7 @@ import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, R
 import { PipelineSettings } from "./pages/PipelineSettings";
 import { PipelineAccessOverview } from "./pages/PipelineAccessOverview";
 import { Organisations } from "./pages/Organisations";
+import { Integrations } from "./pages/Integrations";
 import { OrganisationPage } from "./pages/OrganisationPage";
 import { StatusCards } from "./pages/StatusCards";
 import { RoutineDetail } from "./pages/RoutineDetail";
@@ -194,6 +195,7 @@ function boardRoutes() {
         path="company/settings/pipelines-access"
         element={<PipelinesExperimentalGate><PipelineAccessOverview /></PipelinesExperimentalGate>}
       />
+      <Route path="company/settings/integrations" element={<Integrations />} />
       <Route path="company/settings/tools" element={<LegacyToolsSettingsRedirect />} />
       <Route path="company/settings/tools/:tab" element={<LegacyToolsSettingsRedirect />} />
       <Route path="tools" element={<LegacyToolsRedirect />} />
