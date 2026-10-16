@@ -59,7 +59,9 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { PipelineOrganisationsView } from "@/components/PipelineOrganisationsView";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "../api/client";
 import { activityApi, type RunForIssue } from "../api/activity";
 import { heartbeatsApi, type ActiveRunForIssue, type LiveRunForIssue } from "../api/heartbeats";
@@ -153,7 +155,7 @@ import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
 import { CardCover, useImageCovers } from "@/components/ImageCoverControls";
-import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
+import { CaseOrganisationLink, CaseOrganisationMissing } from "@/components/CaseOrganisationLink";
 import { OrganisationPicker } from "@/components/OrganisationPicker";
 
 type PipelineConversationActionableInteraction =
@@ -205,11 +207,8 @@ function isBlank(value: string | undefined) {
 /** Error key for the organisation picker; never a field key. */
 export const ORGANISATION_ERROR_KEY = "__organisation";
 
-export function validateDraftRows(
-  rows: DraftRow[],
-  fields: PipelineIntakeField[],
-  options: { requiresOrganisation?: boolean } = {},
-): RowErrors {
+/** Every item needs an organisation, in every pipeline (GRE-1538). */
+export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[]): RowErrors {
   const errors: RowErrors = {};
   for (const row of rows) {
     const rowErrors: FieldErrors = {};
@@ -218,7 +217,7 @@ export function validateDraftRows(
         rowErrors[field.key] = `${field.label} is required.`;
       }
     }
-    if (options.requiresOrganisation && !row.organisationId) {
+    if (!row.organisationId) {
       rowErrors[ORGANISATION_ERROR_KEY] = "Pick or create an organisation.";
     }
     if (Object.keys(rowErrors).length > 0) {
@@ -1625,6 +1624,19 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const pipelineStars = usePipelineStars(selectedCompanyId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Board or "By organisation" (GRE-1540); kept in the URL so the view survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const boardView = searchParams.get("view") === "organisations" ? "organisations" : "board";
+  const setBoardView = (value: string) =>
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value === "organisations") next.set("view", "organisations");
+        else next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
@@ -1968,16 +1980,24 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <FeatureTour tour={PIPELINE_BOARD_TOUR} />
-          <Select value={groupBy} onValueChange={handleGroupByChange}>
-            <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
-              <Layers className="h-4 w-4 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              <SelectItem value="builtFor">Built for</SelectItem>
-            </SelectContent>
-          </Select>
+          <Tabs value={boardView} onValueChange={setBoardView}>
+            <TabsList aria-label="Pipeline view">
+              <TabsTrigger value="board">Board</TabsTrigger>
+              <TabsTrigger value="organisations">By organisation</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {boardView === "board" ? (
+            <Select value={groupBy} onValueChange={handleGroupByChange}>
+              <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
+                <Layers className="h-4 w-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                <SelectItem value="builtFor">Built for</SelectItem>
+              </SelectContent>
+            </Select>
+          ) : null}
           <Button asChild data-tour="board-add">
             <Link to={`/pipelines/${pipelineId}/add`}>
               <Plus className="mr-2 h-4 w-4" />
@@ -1997,6 +2017,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onSelectStage={(stageId) => navigate(`/pipelines/${pipelineId}/settings?stage=${stageId}`)}
       />
 
+      {boardView === "organisations" ? (
+        <PipelineOrganisationsView companyId={pipeline.companyId} pipelineId={pipelineId} />
+      ) : (
       <DndContext
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -2054,6 +2077,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           {activeCase ? <PipelineCaseCard caseItem={activeCase} isOverlay /> : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       <Dialog
         open={Boolean(pendingMove)}
@@ -3045,6 +3069,8 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               companyId={(detail.case.companyId ?? selectedCompanyId)!}
               organisationId={detail.case.organisationId}
             />
+          ) : (detail.case.companyId ?? selectedCompanyId) ? (
+            <CaseOrganisationMissing companyId={(detail.case.companyId ?? selectedCompanyId)!} caseId={detail.case.id} />
           ) : null}
           {detail.parentCase ? (
             <p className="mt-2 text-sm text-muted-foreground">
@@ -4481,11 +4507,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   }, [pipeline.data?.name, pipelineId, setBreadcrumbs]);
 
   const fields = intake.data?.fields ?? [];
-  const requiresOrganisation = Boolean(pipeline.data?.requiresOrganisation);
-  const errors = useMemo(
-    () => validateDraftRows(rows, fields, { requiresOrganisation }),
-    [fields, requiresOrganisation, rows],
-  );
+  const errors = useMemo(() => validateDraftRows(rows, fields), [fields, rows]);
   const invalid = rows.length === 0 || Object.keys(errors).length > 0;
 
   const submit = useMutation({
@@ -4554,7 +4576,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
             index={index}
             fields={fields}
             intake={intake.data}
-            organisationCompanyId={requiresOrganisation ? pipeline.data.companyId : null}
+            organisationCompanyId={pipeline.data.companyId}
             errors={errors[row.id] ?? {}}
             onToggle={() =>
               setRows((current) => current.map((candidate) => candidate.id === row.id ? { ...candidate, expanded: !candidate.expanded } : candidate))
@@ -4622,8 +4644,8 @@ function DraftItemRow({
   index: number;
   fields: PipelineIntakeField[];
   intake: PipelineIntakeForm;
-  /** Set when the pipeline requires an organisation on every case. */
-  organisationCompanyId: string | null;
+  /** Company whose organisation records the picker offers; every item needs one. */
+  organisationCompanyId: string;
   errors: FieldErrors;
   onToggle: () => void;
   onRemove: () => void;
@@ -4660,16 +4682,14 @@ function DraftItemRow({
       {row.expanded ? (
         <div className="grid gap-5 border-t border-border px-4 py-4 lg:grid-cols-(--gtc-50)">
           <div className="grid gap-4 md:grid-cols-2">
-            {organisationCompanyId ? (
-              <div className="md:col-span-2">
-                <OrganisationPicker
-                  companyId={organisationCompanyId}
-                  value={row.organisationId ?? null}
-                  onChange={onOrganisationChange}
-                  error={errors[ORGANISATION_ERROR_KEY]}
-                />
-              </div>
-            ) : null}
+            <div className="md:col-span-2">
+              <OrganisationPicker
+                companyId={organisationCompanyId}
+                value={row.organisationId ?? null}
+                onChange={onOrganisationChange}
+                error={errors[ORGANISATION_ERROR_KEY]}
+              />
+            </div>
             {fields.map((field) => (
               <GeneratedField
                 key={field.key}

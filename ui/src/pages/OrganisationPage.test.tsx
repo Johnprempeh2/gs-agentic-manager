@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import type { OrganisationDetail, OrganisationHistory } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyOrganisationCrmFields } from "@/fixtures/organisationCrmFields";
 import { OrganisationPage } from "./OrganisationPage";
 
 const mockApi = vi.hoisted(() => ({
@@ -20,7 +21,13 @@ const mockApi = vi.hoisted(() => ({
   archiveContact: vi.fn(),
 }));
 
+const mockPeople = vi.hoisted(() => ({
+  users: [{ principalId: "user-1", status: "active", user: { name: "Ama Owusu", email: "ama@example.test" } }] as unknown[],
+  agents: [{ id: "agent-1", name: "Sales Agent", status: "idle" }] as unknown[],
+}));
 vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
+vi.mock("@/api/access", () => ({ accessApi: { listUserDirectory: () => Promise.resolve({ users: mockPeople.users }) } }));
+vi.mock("@/api/agents", () => ({ agentsApi: { list: () => Promise.resolve(mockPeople.agents) } }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => false }));
@@ -32,6 +39,7 @@ function detail(overrides: Partial<OrganisationDetail> = {}): OrganisationDetail
   return {
     id: "org-1",
     companyId: "company-1",
+    ...emptyOrganisationCrmFields,
     name: "Acme Mining",
     website: "acme.example",
     industry: "Mining",
@@ -178,6 +186,52 @@ describe("Organisation company page", () => {
     expect(engagement.textContent).toContain("Proposal → Won by Sales Agent");
     expect(engagement.querySelector('a[href="/projects/proj-1"]')?.textContent).toBe("Acme onboarding");
     expect(engagement.querySelector('a[href="/issues/GRE-9"]')?.textContent).toBe("GRE-9 Send the proposal");
+  });
+
+  it("shows the global CRM fields that are set and hides the rest (GRE-1539)", async () => {
+    mockApi.get.mockImplementation((_companyId: string, id: string) =>
+      Promise.resolve(id === "org-group" ? detail({ id: "org-group", name: "Acme Group" }) : detail({
+        legalName: "Acme Mining Ltd",
+        accountOwnerUserId: "user-1",
+        parentOrganisationId: "org-group",
+        segment: "Tier 1",
+        ownershipType: "subsidiary",
+        employeeCount: 1200,
+        annualRevenue: 2500000,
+        annualRevenueCurrency: "USD",
+        domain: "acme.example",
+        email: "info@acme.example",
+        addressCity: "Accra",
+        addressRegion: "Greater Accra",
+        tags: ["gold", "bauxite"],
+        description: "Gold producer.",
+        taxId: "TAX-1",
+      })),
+    );
+    mockApi.history.mockResolvedValue(history());
+    await render();
+
+    const crm = container.querySelector('[data-testid="organisation-crm-info"]')!;
+    expect(crm.textContent).toContain("Account ownerAma Owusu");
+    expect(crm.textContent).toContain("Legal nameAcme Mining Ltd");
+    expect(crm.textContent).toContain("Segment or tierTier 1");
+    expect(crm.textContent).toContain("OwnershipSubsidiary");
+    expect(crm.textContent).toContain("Size1,200 employees");
+    expect(crm.textContent).toMatch(/Annual revenue(US)?\$2,500,000/);
+    expect(crm.textContent).toContain("AddressAccra, Greater Accra");
+    expect(crm.textContent).toContain("Tax IDTAX-1");
+    expect(crm.textContent).toContain("Gold producer.");
+    expect(crm.querySelector('a[href="/organisations/org-group"]')?.textContent).toBe("Acme Group");
+    expect(crm.querySelector('a[href="mailto:info@acme.example"]')).not.toBeNull();
+    expect([...crm.querySelectorAll('[aria-label="Tags"] > *')].map((tag) => tag.textContent)).toEqual(["gold", "bauxite"]);
+    expect(crm.textContent).not.toContain("Registration number");
+  });
+
+  it("shows no CRM block when none of the fields is set (GRE-1539)", async () => {
+    mockApi.get.mockResolvedValue(detail());
+    mockApi.history.mockResolvedValue(history());
+    await render();
+    expect(container.querySelector('[data-testid="organisation-crm-info"]')).toBeNull();
   });
 
   it("shows empty states when there are no contacts and no history", async () => {

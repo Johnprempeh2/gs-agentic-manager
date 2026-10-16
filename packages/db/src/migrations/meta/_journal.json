@@ -2465,6 +2465,13 @@
       "when": 1792127068463,
       "tag": "0353_generated_image_covers",
       "breakpoints": true
+    },
+    {
+      "idx": 354,
+      "version": "7",
+      "when": 1792130770790,
+      "tag": "0354_organisation_crm_fields",
+      "breakpoints": true
     }
   ]
 }

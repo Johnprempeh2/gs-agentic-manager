@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { OrganisationListItem } from "@greatstone/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyOrganisationCrmFields } from "@/fixtures/organisationCrmFields";
 import { MemoryRouter } from "react-router-dom";
 import { Organisations } from "./Organisations";
 
@@ -21,9 +22,18 @@ const mockApi = vi.hoisted(() => ({
 }));
 
 const accessMock = vi.hoisted(() => ({ listMembers: vi.fn() }));
+const mockPipelinesApi = vi.hoisted(() => ({ list: vi.fn() }));
 
+const mockPeople = vi.hoisted(() => ({
+  users: [{ principalId: "user-1", status: "active", user: { name: "Ama Owusu", email: "ama@example.test" } }] as unknown[],
+  agents: [{ id: "agent-1", name: "Sales Agent", status: "idle" }] as unknown[],
+}));
 vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
-vi.mock("@/api/access", () => ({ accessApi: accessMock }));
+vi.mock("@/api/access", () => ({
+  accessApi: { ...accessMock, listUserDirectory: () => Promise.resolve({ users: mockPeople.users }) },
+}));
+vi.mock("@/api/agents", () => ({ agentsApi: { list: () => Promise.resolve(mockPeople.agents) } }));
+vi.mock("@/api/pipelines", () => ({ pipelinesApi: mockPipelinesApi }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => state.isPhone }));
@@ -46,6 +56,7 @@ function organisation(overrides: Partial<OrganisationListItem>): OrganisationLis
   return {
     id: "org-1",
     companyId: "company-1",
+    ...emptyOrganisationCrmFields,
     name: "Acme Mining",
     website: null,
     industry: "Mining",
@@ -60,6 +71,7 @@ function organisation(overrides: Partial<OrganisationListItem>): OrganisationLis
     updatedAt: "2026-10-12T00:00:00Z",
     keyContacts: [{ id: "c1", name: "Kofi Mensah", role: "CEO", email: null, phone: null }],
     contactCount: 2,
+    pipelines: [],
     ...overrides,
   };
 }
@@ -75,6 +87,19 @@ describe("Organisations page", () => {
     root = createRoot(container);
     state.isPhone = false;
     for (const fn of Object.values(mockApi)) fn.mockReset();
+    mockPipelinesApi.list.mockReset();
+    mockPipelinesApi.list.mockResolvedValue([
+      {
+        id: "pipe-sales",
+        name: "Sales",
+        archivedAt: null,
+        stages: [
+          { id: "stage-proposal", pipelineId: "pipe-sales", key: "proposal", name: "Proposal", kind: "working", position: 1 },
+          { id: "stage-lead", pipelineId: "pipe-sales", key: "lead", name: "Lead", kind: "working", position: 0 },
+        ],
+      },
+      { id: "pipe-old", name: "Old", archivedAt: "2026-01-01T00:00:00Z", stages: [] },
+    ]);
     accessMock.listMembers.mockReset();
     accessMock.listMembers.mockResolvedValue({
       members: [
@@ -129,8 +154,8 @@ describe("Organisations page", () => {
       [...row.querySelectorAll("td")].map((cell) => cell.textContent),
     );
     expect(rows).toEqual([
-      ["Acme Mining", "Mining", "Ghana", "Ama", "Prospect", "Kofi Mensah (CEO)", "Edit"],
-      ["Blue Bank", "Not set", "Ghana", "Ama", "Client", "No key contact", "Edit"],
+      ["Acme Mining", "Mining", "Ghana", "Ama", "Not set", "Not set", "Prospect", "Not in a pipeline", "Kofi Mensah (CEO)", "Edit"],
+      ["Blue Bank", "Not set", "Ghana", "Ama", "Not set", "Not set", "Client", "Not in a pipeline", "No key contact", "Edit"],
     ]);
     // Each name opens the company page (GRE-1480).
     expect(container.querySelector("tbody tr a")?.getAttribute("href")).toBe("/organisations/org-1");
@@ -139,7 +164,7 @@ describe("Organisations page", () => {
   it("sends the search and status filter to the server", async () => {
     mockApi.list.mockResolvedValue([]);
     await render();
-    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", { q: "", status: "" });
+    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", { q: "", status: "", pipelineId: "", stageId: "" });
 
     const search = container.querySelector<HTMLInputElement>('input[aria-label="Search organisations"]')!;
     const status = container.querySelector<HTMLSelectElement>('select[aria-label="Filter by status"]')!;
@@ -147,8 +172,60 @@ describe("Organisations page", () => {
     await act(async () => setValue(status, "client"));
     await settle();
 
-    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", { q: "kofi", status: "client" });
+    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", { q: "kofi", status: "client", pipelineId: "", stageId: "" });
     expect(container.textContent).toContain("No organisations match this search.");
+  });
+
+  it("shows each organisation's pipeline and stage", async () => {
+    mockApi.list.mockResolvedValue([
+      organisation({
+        pipelines: [
+          { caseId: "case-1", caseKey: "d-1", pipelineId: "pipe-delivery", pipelineName: "Delivery", stageId: "s-won", stageName: "Won", stageKind: "done", terminalKind: "done" },
+          { caseId: "case-2", caseKey: "s-1", pipelineId: "pipe-sales", pipelineName: "Sales", stageId: "stage-proposal", stageName: "Proposal", stageKind: "working", terminalKind: null },
+        ],
+      }),
+    ]);
+    await render();
+    const cells = [...container.querySelectorAll("tbody tr td")].map((cell) => cell.textContent);
+    expect(cells[7]).toBe("Delivery: WonSales: Proposal");
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    state.isPhone = true;
+    await render();
+    expect(container.querySelector('ul[aria-label="Organisations"] li')!.textContent).toContain("Sales: Proposal");
+  });
+
+  it("filters by pipeline, then by a stage of that pipeline", async () => {
+    mockApi.list.mockResolvedValue([]);
+    await render();
+
+    const pipeline = container.querySelector<HTMLSelectElement>('select[aria-label="Filter by pipeline"]')!;
+    const stage = container.querySelector<HTMLSelectElement>('select[aria-label="Filter by stage"]')!;
+    // Archived pipelines are not offered; the stage filter waits for a pipeline.
+    expect([...pipeline.options].map((option) => option.textContent)).toEqual(["All pipelines", "Sales"]);
+    expect(stage.disabled).toBe(true);
+
+    await act(async () => setValue(pipeline, "pipe-sales"));
+    await settle();
+    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", { q: "", status: "", pipelineId: "pipe-sales", stageId: "" });
+    // Stages in board order.
+    expect([...stage.options].map((option) => option.textContent)).toEqual(["All stages", "Lead", "Proposal"]);
+
+    await act(async () => setValue(stage, "stage-proposal"));
+    await settle();
+    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", {
+      q: "",
+      status: "",
+      pipelineId: "pipe-sales",
+      stageId: "stage-proposal",
+    });
+    expect(container.textContent).toContain("No organisations match this search.");
+
+    // Changing the pipeline clears the stage.
+    await act(async () => setValue(pipeline, ""));
+    await settle();
+    expect(mockApi.list).toHaveBeenLastCalledWith("company-1", { q: "", status: "", pipelineId: "", stageId: "" });
   });
 
   it("shows the empty state and the load error", async () => {
@@ -217,6 +294,138 @@ describe("Organisations page", () => {
 
     expect(mockApi.update).toHaveBeenCalledWith("company-1", "org-1", expect.objectContaining({ name: "Acme Mining" }));
     expect(document.body.textContent).toContain("You may view organisations but not change them");
+  });
+
+  it("shows account owner, segment, domain and tags in the list (GRE-1539)", async () => {
+    mockApi.list.mockResolvedValue([
+      organisation({ accountOwnerAgentId: "agent-1", segment: "Enterprise", domain: "acme.example", tags: ["gold", "west-africa"] }),
+    ]);
+    await render();
+    const cells = [...container.querySelectorAll("tbody tr td")].map((cell) => cell.textContent);
+    expect(cells[0]).toBe("Acme Miningacme.examplegoldwest-africa");
+    expect(cells.slice(4, 6)).toEqual(["Sales Agent", "Enterprise"]);
+  });
+
+  it("saves the global CRM fields from the add dialog (GRE-1539)", async () => {
+    mockApi.list.mockResolvedValue([organisation({ id: "org-group", name: "Acme Group" })]);
+    mockApi.create.mockResolvedValue(organisation({}));
+    await render();
+
+    const add = [...container.querySelectorAll("button")].find((button) => button.textContent === "Add organisation")!;
+    await act(async () => add.click());
+    await settle();
+    const input = (id: string) => document.querySelector<HTMLInputElement | HTMLSelectElement>(`#organisation-${id}`)!;
+    await act(async () => setValue(input("name") as HTMLInputElement, "Acme Mining"));
+    const values: Record<string, string> = {
+      legalName: "Acme Mining Ltd",
+      segment: "Tier 1",
+      accountOwner: "user:user-1",
+      parentOrganisationId: "org-group",
+      ownershipType: "subsidiary",
+      tags: "gold, bauxite, gold",
+      domain: "acme.example",
+      linkedinUrl: "linkedin.com/company/acme",
+      phone: "+233 30 000",
+      email: "info@acme.example",
+      addressStreet: "1 Main Road",
+      addressCity: "Accra",
+      addressRegion: "Greater Accra",
+      addressPostalCode: "GA-1",
+      employeeCount: "1,200",
+      sizeBand: "1001-5000",
+      annualRevenue: "2500000",
+      annualRevenueCurrency: "usd",
+      registrationNumber: "CS-1",
+      taxId: "TAX-1",
+    };
+    for (const [id, value] of Object.entries(values)) {
+      await act(async () => setValue(input(id), value));
+    }
+    const submit = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find(
+      (button) => button.textContent === "Add organisation",
+    )!;
+    await act(async () => submit.click());
+    await settle();
+
+    expect(mockApi.create).toHaveBeenCalledWith("company-1", expect.objectContaining({
+      name: "Acme Mining",
+      legalName: "Acme Mining Ltd",
+      segment: "Tier 1",
+      accountOwnerUserId: "user-1",
+      accountOwnerAgentId: null,
+      parentOrganisationId: "org-group",
+      ownershipType: "subsidiary",
+      tags: ["gold", "bauxite", "gold"],
+      domain: "acme.example",
+      linkedinUrl: "linkedin.com/company/acme",
+      email: "info@acme.example",
+      addressCity: "Accra",
+      employeeCount: 1200,
+      sizeBand: "1001-5000",
+      annualRevenue: 2500000,
+      annualRevenueCurrency: "usd",
+      registrationNumber: "CS-1",
+      taxId: "TAX-1",
+      description: null,
+    }));
+  });
+
+  it("loads the CRM fields into the edit dialog and keeps them on save (GRE-1539)", async () => {
+    const acme = organisation({
+      legalName: "Acme Mining Ltd",
+      accountOwnerAgentId: "agent-1",
+      employeeCount: 450,
+      annualRevenue: 1000,
+      annualRevenueCurrency: "GBP",
+      tags: ["gold"],
+    });
+    mockApi.list.mockResolvedValue([acme]);
+    mockApi.get.mockResolvedValue({ ...acme, contacts: [] });
+    mockApi.update.mockResolvedValue(acme);
+    await render();
+
+    const open = container.querySelector<HTMLButtonElement>('button[aria-label="Edit Acme Mining"]')!;
+    await act(async () => open.click());
+    await settle();
+    expect(document.querySelector<HTMLInputElement>("#organisation-legalName")!.value).toBe("Acme Mining Ltd");
+    expect(document.querySelector<HTMLSelectElement>("#organisation-accountOwner")!.value).toBe("agent:agent-1");
+    expect(document.querySelector<HTMLInputElement>("#organisation-employeeCount")!.value).toBe("450");
+    expect(document.querySelector<HTMLInputElement>("#organisation-tags")!.value).toBe("gold");
+    // An organisation is not offered as its own parent.
+    const parents = [...document.querySelectorAll("#organisation-parentOrganisationId option")].map((option) => option.textContent);
+    expect(parents).toEqual(["No parent"]);
+
+    const save = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find(
+      (button) => button.textContent === "Save",
+    )!;
+    await act(async () => save.click());
+    await settle();
+    expect(mockApi.update).toHaveBeenCalledWith("company-1", "org-1", expect.objectContaining({
+      legalName: "Acme Mining Ltd",
+      accountOwnerAgentId: "agent-1",
+      accountOwnerUserId: null,
+      employeeCount: 450,
+      annualRevenue: 1000,
+      annualRevenueCurrency: "GBP",
+      tags: ["gold"],
+    }));
+  });
+
+  it("asks for a currency before saving a revenue (GRE-1539)", async () => {
+    mockApi.list.mockResolvedValue([]);
+    await render();
+    const add = [...container.querySelectorAll("button")].find((button) => button.textContent === "Add organisation")!;
+    await act(async () => add.click());
+    await settle();
+    await act(async () => setValue(document.querySelector<HTMLInputElement>("#organisation-name")!, "Acme"));
+    await act(async () => setValue(document.querySelector<HTMLInputElement>("#organisation-annualRevenue")!, "5000"));
+    const submit = [...document.querySelectorAll<HTMLButtonElement>('button[type="submit"]')].find(
+      (button) => button.textContent === "Add organisation",
+    )!;
+    await act(async () => submit.click());
+    await settle();
+    expect(mockApi.create).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain("Add the currency of the annual revenue");
   });
 
   it("picks the country owner from the team, or takes a typed name", async () => {

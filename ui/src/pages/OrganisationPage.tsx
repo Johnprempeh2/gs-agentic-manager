@@ -9,6 +9,7 @@ import {
 } from "@greatstone/shared";
 import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
+import { OrganisationCrmInfo } from "@/components/OrganisationCrmFields";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -127,6 +128,7 @@ export function OrganisationPage() {
             </div>
           ))}
         </dl>
+        <OrganisationCrmInfo companyId={companyId} organisation={organisation} />
         {organisation.notes ? (
           <p className="mt-3 whitespace-pre-wrap border-t border-border pt-3 text-sm">{organisation.notes}</p>
         ) : null}

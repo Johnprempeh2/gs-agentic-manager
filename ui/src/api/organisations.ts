@@ -24,10 +24,15 @@ function base(companyId: string) {
 }
 
 export const organisationsApi = {
-  list: (companyId: string, filters: { q?: string; status?: OrganisationStatus | "" } = {}) => {
+  list: (
+    companyId: string,
+    filters: { q?: string; status?: OrganisationStatus | ""; pipelineId?: string; stageId?: string } = {},
+  ) => {
     const params = new URLSearchParams();
     if (filters.q?.trim()) params.set("q", filters.q.trim());
     if (filters.status) params.set("status", filters.status);
+    if (filters.pipelineId) params.set("pipelineId", filters.pipelineId);
+    if (filters.stageId) params.set("stageId", filters.stageId);
     const query = params.toString();
     return api.get<OrganisationListItem[]>(`${base(companyId)}${query ? `?${query}` : ""}`);
   },

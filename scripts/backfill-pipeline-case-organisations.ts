@@ -1,5 +1,6 @@
-// GRE-1478: link existing client cases to organisation records and turn the
-// "requires an organisation" rule on for the Client journey pipeline.
+// GRE-1478 / GRE-1538: link every existing case, in every pipeline, to an
+// organisation record. Names are matched to existing records; a card that
+// matches none gets a new record and is listed so John can check it.
 // Dry run by default; pass --apply to write. Run on live only in John's release.
 //   pnpm case-organisations:backfill [--company <id>] [--pipeline <key>] [--apply]
 import { companies, createDb, resolveEmbeddedPostgresConnectionString } from "../packages/db/src/index.js";
@@ -37,9 +38,18 @@ async function main() {
     });
     if (result.pipelines === 0) continue;
     console.log(
-      `- ${company.id}: ${result.casesLinked} cases linked, ${result.organisationsCreated} organisations created, `
-        + `${result.contactsCopied} contacts copied, rule on for ${result.pipelines} pipeline(s)`,
+      `- ${company.id}: ${result.casesLinked} cases linked across ${result.pipelines} pipeline(s), `
+        + `${result.organisationsCreated} organisations created, ${result.contactsCopied} contacts copied`,
     );
+    if (result.unmatched.length > 0) {
+      console.log(`  ${result.unmatched.length} card(s) matched no existing organisation:`);
+      for (const card of result.unmatched) {
+        const outcome = card.createdOrganisationId
+          ? `new record ${card.createdOrganisationId}`
+          : "NOT LINKED: blank title, set the organisation by hand";
+        console.log(`  - [${card.pipelineKey}] ${card.caseKey} "${card.title}": ${outcome}`);
+      }
+    }
   }
   console.log("Case organisation backfill complete.");
 }

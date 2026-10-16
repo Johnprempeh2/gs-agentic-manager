@@ -310,6 +310,9 @@ describeEmbeddedPostgres("Pipedrive export import route", () => {
     expect(res.body.activities).toEqual({ created: 2, updated: 0, skipped: 1, errors: 0 });
     const [caseRow] = await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId));
     expect((caseRow!.fields as { pipedriveActivities: unknown[] }).pipedriveActivities).toHaveLength(2);
+    // A deal whose organisation was not imported still gets one (GRE-1538).
+    const [org] = await db.select().from(organisations).where(eq(organisations.id, caseRow!.organisationId!));
+    expect(org).toMatchObject({ companyId, name: "Northwind Minerals" });
   });
 
   it("asks for a pipeline when open deals have nowhere to go, and writes nothing", async () => {

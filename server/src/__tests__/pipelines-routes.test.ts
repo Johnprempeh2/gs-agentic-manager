@@ -35,6 +35,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { fillTestCaseOrganisation } from "./helpers/case-organisation.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { issueRoutes } from "../routes/issues.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
@@ -108,6 +109,7 @@ describeEmbeddedPostgres("pipeline routes", () => {
       req.actor = actor;
       next();
     });
+    instance.use("/api", fillTestCaseOrganisation(db));
     instance.use("/api", pipelineRoutes(db, { heartbeat: noopHeartbeat }));
     instance.use("/api", issueRoutes(db, {} as any));
     instance.use(errorHandler);

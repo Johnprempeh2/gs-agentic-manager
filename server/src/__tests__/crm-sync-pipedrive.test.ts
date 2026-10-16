@@ -14,6 +14,7 @@ import {
   crmSyncFieldMaps,
   crmSyncRecordLinks,
   instanceSettings,
+  organisations,
   pipelineCaseEvents,
   pipelineCases,
   pipelineFieldDefinitions,
@@ -36,7 +37,7 @@ import {
   PipedriveRateLimitError,
   type PipedriveFetch,
 } from "../services/crm-sync-pipedrive.js";
-import { crmSyncRunner, CRM_SYNC_POLL_INTERVAL_MS } from "../services/crm-sync-runner.js";
+import { crmSyncRunner, CRM_SYNC_POLL_INTERVAL_MS, dealOrganisationRef } from "../services/crm-sync-runner.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { pipelineService } from "../services/pipelines.js";
 
@@ -77,6 +78,17 @@ const recorded = (name: string): Answer => {
   const entry = fixtures[name];
   return "status" in entry ? entry : ok(entry);
 };
+
+describe("the organisation a deal is about (GRE-1538)", () => {
+  it("reads a v1 organisation object, a v2 bare id, or falls back to the deal title", () => {
+    expect(dealOrganisationRef({ id: 1, org_id: { value: 7, name: "Northwind Minerals" } }, "Renewal"))
+      .toEqual({ pipedriveId: "7", name: "Northwind Minerals" });
+    expect(dealOrganisationRef({ id: 2, org_id: 8, org_name: "Blue Harbour" }, "Pilot"))
+      .toEqual({ pipedriveId: "8", name: "Blue Harbour" });
+    expect(dealOrganisationRef({ id: 3, org_id: 9 }, "Expansion")).toEqual({ pipedriveId: "9", name: "Expansion" });
+    expect(dealOrganisationRef({ id: 4, org_id: null }, "Demo Retail")).toEqual({ pipedriveId: null, name: "Demo Retail" });
+  });
+});
 
 describe("Pipedrive client", () => {
   it("retries a 429 after the wait Pipedrive asks for, then succeeds", async () => {
@@ -293,6 +305,11 @@ describeEmbeddedPostgres("Pipedrive read sync", () => {
     expect(await stageKey(cases.get("pipedrive-102")!.stageId)).toBe("qualified");
     // Stage 12 is not in the stage map: the case starts in the first stage.
     expect(await stageKey(cases.get("pipedrive-104")!.stageId)).toBe("lead");
+    // Every case needs an organisation (GRE-1538); these deals name none, so the title is used.
+    const orgs = await db.select().from(organisations).where(eq(organisations.companyId, s.companyId));
+    const orgNameById = new Map(orgs.map((org) => [org.id, org.name]));
+    expect(orgNameById.get(freight.organisationId!)).toBe("Example Freight renewal");
+    expect([...cases.values()].every((row) => row.organisationId)).toBe(true);
 
     const log = await events(s.bindingId);
     expect(log).toHaveLength(3);

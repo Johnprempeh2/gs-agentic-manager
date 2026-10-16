@@ -1094,7 +1094,6 @@ export function pipelineRoutes(
         description: req.body.description,
         projectId: req.body.projectId,
         enforceTransitions: req.body.enforceTransitions,
-        requiresOrganisation: req.body.requiresOrganisation,
         stages: req.body.stages?.map((stage: {
           key: string;
           name: string;
@@ -1386,7 +1385,6 @@ export function pipelineRoutes(
     if (req.body.name !== undefined) patch.name = req.body.name;
     if (req.body.description !== undefined) patch.description = req.body.description;
     if (req.body.enforceTransitions !== undefined) patch.enforceTransitions = req.body.enforceTransitions;
-    if (req.body.requiresOrganisation !== undefined) patch.requiresOrganisation = req.body.requiresOrganisation;
     if (req.body.archived !== undefined) patch.archivedAt = req.body.archived ? new Date() : null;
     const [updated] = await db
       .update(pipelines)

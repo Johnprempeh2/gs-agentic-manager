@@ -130,7 +130,10 @@ Notes:
   page. Progress (`syncState.updatedSince`) is saved after every page.
 - **New deal:** a case is made through the pipeline service (case key `pipedrive-<dealId>`, stage
   from the stage map, else the first stage), then linked. Imported cases follow the stage's
-  automation like any new case.
+  automation like any new case. Every case needs an organisation (GRE-1538): the deal's
+  Pipedrive organisation is matched by Pipedrive id, then by name, else created; a deal with no
+  organisation uses its title as the name. A linked case with no organisation gets one the same
+  way on its next content update.
 - **Linked deal:** each mapped field goes through the three-value rule. Pulls are written to the
   case; pushes are not sent; conflicts are queued. The stage moves only when the deal's stage
   changed since the last sync, so a move made in GSAM is not undone by an unrelated deal edit.

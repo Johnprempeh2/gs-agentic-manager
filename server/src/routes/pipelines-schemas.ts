@@ -33,6 +33,8 @@ export const createPipelineSchema = z.object({
   description: z.string().max(8_000).nullable().optional(),
   projectId: z.string().guid().nullable().optional(),
   enforceTransitions: z.boolean().optional(),
+  // Ignored since GRE-1538: every pipeline needs an organisation on each card.
+  // Still accepted so older clients that send it are not refused.
   requiresOrganisation: z.boolean().optional(),
   stages: z.array(z.object({
     key: z.string().trim().min(1).max(120),
@@ -46,6 +48,8 @@ export const updatePipelineSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(),
   description: z.string().max(8_000).nullable().optional(),
   enforceTransitions: z.boolean().optional(),
+  // Ignored since GRE-1538: every pipeline needs an organisation on each card.
+  // Still accepted so older clients that send it are not refused.
   requiresOrganisation: z.boolean().optional(),
   archived: z.boolean().optional(),
 });

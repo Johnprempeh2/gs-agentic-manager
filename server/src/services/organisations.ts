@@ -1,12 +1,24 @@
 import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { authUsers, companyMemberships, organisationContacts, organisations } from "@greatstone/db";
+import {
+  agents,
+  authUsers,
+  companyMemberships,
+  organisationContacts,
+  organisations,
+  pipelineCases,
+  pipelineStages,
+  pipelines,
+} from "@greatstone/db";
 import type {
   ListOrganisationsQuery,
   Organisation,
   OrganisationContact,
   OrganisationDetail,
   OrganisationListItem,
+  OrganisationOwnershipType,
+  OrganisationPipelineStage,
+  OrganisationSizeBand,
   OrganisationSource,
   OrganisationStatus,
 } from "@greatstone/shared";
@@ -16,6 +28,32 @@ type OrganisationRow = typeof organisations.$inferSelect;
 type ContactRow = typeof organisationContacts.$inferSelect;
 
 export type OrganisationActor = { userId: string | null; agentId: string | null };
+
+/** Global CRM fields (GRE-1539). Optional on create; the validator turns blanks into null. */
+export type OrganisationCrmFields = {
+  legalName: string | null;
+  domain: string | null;
+  phone: string | null;
+  email: string | null;
+  addressStreet: string | null;
+  addressCity: string | null;
+  addressRegion: string | null;
+  addressPostalCode: string | null;
+  employeeCount: number | null;
+  sizeBand: OrganisationSizeBand | null;
+  annualRevenue: number | null;
+  annualRevenueCurrency: string | null;
+  ownershipType: OrganisationOwnershipType | null;
+  parentOrganisationId: string | null;
+  linkedinUrl: string | null;
+  accountOwnerUserId: string | null;
+  accountOwnerAgentId: string | null;
+  segment: string | null;
+  tags: string[];
+  description: string | null;
+  registrationNumber: string | null;
+  taxId: string | null;
+};
 
 export type OrganisationInput = {
   name: string;
@@ -28,9 +66,12 @@ export type OrganisationInput = {
   notes: string | null;
   source: OrganisationSource;
   externalId?: string | null;
-};
+} & Partial<OrganisationCrmFields>;
 
 export type OrganisationPatch = Partial<Omit<OrganisationInput, "source" | "externalId">> & { archived?: false };
+
+/** How far up a parent chain we look for a loop; real group structures are far shallower. */
+const MAX_PARENT_DEPTH = 50;
 
 export type OrganisationContactInput = {
   name: string;
@@ -60,12 +101,40 @@ function toOrganisation(row: OrganisationRow): Organisation {
     countryOwnerUserId: row.countryOwnerUserId,
     status: row.status as OrganisationStatus,
     notes: row.notes,
+    legalName: row.legalName,
+    domain: row.domain,
+    phone: row.phone,
+    email: row.email,
+    addressStreet: row.addressStreet,
+    addressCity: row.addressCity,
+    addressRegion: row.addressRegion,
+    addressPostalCode: row.addressPostalCode,
+    employeeCount: row.employeeCount,
+    sizeBand: row.sizeBand as OrganisationSizeBand | null,
+    annualRevenue: row.annualRevenue === null ? null : Number(row.annualRevenue),
+    annualRevenueCurrency: row.annualRevenueCurrency,
+    ownershipType: row.ownershipType as OrganisationOwnershipType | null,
+    parentOrganisationId: row.parentOrganisationId,
+    linkedinUrl: row.linkedinUrl,
+    accountOwnerUserId: row.accountOwnerUserId,
+    accountOwnerAgentId: row.accountOwnerAgentId,
+    segment: row.segment,
+    tags: row.tags,
+    description: row.description,
+    registrationNumber: row.registrationNumber,
+    taxId: row.taxId,
     source: row.source as OrganisationSource,
     externalId: row.externalId,
     archivedAt: iso(row.archivedAt),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/** numeric columns take a string in Drizzle; keep null and undefined as they are. */
+function toRowValues<T extends { annualRevenue?: number | null }>(fields: T) {
+  const { annualRevenue, ...rest } = fields;
+  return annualRevenue === undefined ? rest : { ...rest, annualRevenue: annualRevenue === null ? null : String(annualRevenue) };
 }
 
 function toContact(row: ContactRow): OrganisationContact {
@@ -148,11 +217,126 @@ export function organisationService(db: Db) {
       .then((rows) => rows[0] ?? null);
   }
 
+  /**
+   * Checks the CRM links (GRE-1539) against the values the row will have:
+   * parent and account owner must belong to this company, a parent may not
+   * loop back to the organisation, and revenue needs a currency.
+   */
+  async function assertCrmFields(
+    companyId: string,
+    organisationId: string | null,
+    next: Partial<OrganisationCrmFields>,
+    current: OrganisationRow | null,
+  ) {
+    const value = <K extends keyof OrganisationCrmFields>(key: K) =>
+      (next[key] !== undefined ? next[key] : (current?.[key] ?? null)) as OrganisationCrmFields[K] | string | null;
+
+    if (value("annualRevenue") !== null && !value("annualRevenueCurrency")) {
+      throw unprocessable("Add the currency of the annual revenue", { code: "revenue_currency_required" });
+    }
+    if (value("accountOwnerUserId") && value("accountOwnerAgentId")) {
+      throw unprocessable("Choose a person or an agent as account owner, not both", { code: "one_account_owner" });
+    }
+
+    if (next.accountOwnerAgentId) {
+      const agent = await db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(eq(agents.companyId, companyId), eq(agents.id, next.accountOwnerAgentId)))
+        .then((rows) => rows[0] ?? null);
+      if (!agent) throw unprocessable("Account owner agent not found", { code: "account_owner_not_found" });
+    }
+    if (next.accountOwnerUserId) {
+      const member = await db
+        .select({ id: companyMemberships.id })
+        .from(companyMemberships)
+        .where(
+          and(
+            eq(companyMemberships.companyId, companyId),
+            eq(companyMemberships.principalType, "user"),
+            eq(companyMemberships.principalId, next.accountOwnerUserId),
+            eq(companyMemberships.status, "active"),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!member) throw unprocessable("Account owner is not a member of this company", { code: "account_owner_not_found" });
+    }
+
+    if (next.parentOrganisationId) {
+      if (next.parentOrganisationId === organisationId) {
+        throw unprocessable("An organisation cannot be its own parent", { code: "parent_loop" });
+      }
+      // Walk up from the new parent; meeting this organisation again would make a loop.
+      let cursor: string | null = next.parentOrganisationId;
+      for (let depth = 0; cursor && depth < MAX_PARENT_DEPTH; depth += 1) {
+        const parent = await getRow(companyId, cursor);
+        if (!parent) {
+          if (depth === 0) throw unprocessable("Parent organisation not found", { code: "parent_not_found" });
+          break;
+        }
+        if (organisationId && parent.parentOrganisationId === organisationId) {
+          throw unprocessable("This parent would make a loop: it already sits under this organisation", { code: "parent_loop" });
+        }
+        cursor = parent.parentOrganisationId;
+      }
+    }
+  }
+
+  /** Where each organisation is now: its live cases in pipelines that are not archived (GRE-1540). */
+  async function pipelineStagesFor(companyId: string, organisationIds: string[]) {
+    const rows = await db
+      .select({
+        organisationId: pipelineCases.organisationId,
+        caseId: pipelineCases.id,
+        caseKey: pipelineCases.caseKey,
+        pipelineId: pipelineCases.pipelineId,
+        pipelineName: pipelines.name,
+        stageId: pipelineCases.stageId,
+        stageName: pipelineStages.name,
+        stageKind: pipelineStages.kind,
+        terminalKind: pipelineCases.terminalKind,
+      })
+      .from(pipelineCases)
+      .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
+      .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
+      .where(
+        and(
+          eq(pipelineCases.companyId, companyId),
+          eq(pipelines.companyId, companyId),
+          inArray(pipelineCases.organisationId, organisationIds),
+          isNull(pipelineCases.retiredAt),
+          isNull(pipelines.archivedAt),
+        ),
+      )
+      .orderBy(asc(sql`lower(${pipelines.name})`), asc(pipelineStages.position), asc(pipelineCases.caseKey));
+    const byOrganisation = new Map<string, OrganisationPipelineStage[]>();
+    for (const { organisationId, terminalKind, ...stage } of rows) {
+      if (!organisationId) continue;
+      const list = byOrganisation.get(organisationId) ?? [];
+      list.push({ ...stage, terminalKind: terminalKind as OrganisationPipelineStage["terminalKind"] });
+      byOrganisation.set(organisationId, list);
+    }
+    return byOrganisation;
+  }
+
   return {
     async list(companyId: string, query: ListOrganisationsQuery): Promise<OrganisationListItem[]> {
       const conditions: SQL[] = [eq(organisations.companyId, companyId)];
       if (!query.includeArchived) conditions.push(isNull(organisations.archivedAt));
       if (query.status) conditions.push(eq(organisations.status, query.status));
+      if (query.pipelineId || query.stageId) {
+        // A live case (not retired, pipeline not archived) in the chosen pipeline and stage.
+        conditions.push(
+          sql`exists (select 1 from ${pipelineCases}
+            inner join ${pipelines} on ${pipelines.id} = ${pipelineCases.pipelineId}
+            where ${pipelineCases.organisationId} = ${organisations.id}
+              and ${pipelineCases.companyId} = ${companyId}
+              and ${pipelineCases.retiredAt} is null
+              and ${pipelines.archivedAt} is null
+              ${query.pipelineId ? sql`and ${pipelineCases.pipelineId} = ${query.pipelineId}` : sql``}
+              ${query.stageId ? sql`and ${pipelineCases.stageId} = ${query.stageId}` : sql``})`,
+        );
+      }
       if (query.q) {
         const pattern = likePattern(query.q);
         // Search the organisation's own fields and the names of its live contacts.
@@ -162,6 +346,10 @@ export function organisationService(db: Db) {
             ilike(organisations.industry, pattern),
             ilike(organisations.country, pattern),
             ilike(organisations.countryOwner, pattern),
+            ilike(organisations.legalName, pattern),
+            ilike(organisations.domain, pattern),
+            ilike(organisations.segment, pattern),
+            sql`array_to_string(${organisations.tags}, ' ') ilike ${pattern}`,
             sql`exists (select 1 from ${organisationContacts}
               where ${organisationContacts.organisationId} = ${organisations.id}
                 and ${organisationContacts.archivedAt} is null
@@ -187,6 +375,7 @@ export function organisationService(db: Db) {
           ),
         )
         .orderBy(desc(organisationContacts.isKeyContact), asc(organisationContacts.name));
+      const stages = await pipelineStagesFor(companyId, rows.map((row) => row.id));
       const byOrganisation = new Map<string, ContactRow[]>();
       for (const contact of contacts) {
         const list = byOrganisation.get(contact.organisationId) ?? [];
@@ -202,6 +391,7 @@ export function organisationService(db: Db) {
             .filter((contact) => contact.isKeyContact)
             .map(({ id, name, role, email, phone }) => ({ id, name, role, email, phone })),
           contactCount: own.length,
+          pipelines: stages.get(row.id) ?? [],
         };
       });
     },
@@ -218,13 +408,14 @@ export function organisationService(db: Db) {
     },
 
     async create(companyId: string, input: OrganisationInput, actor: OrganisationActor): Promise<Organisation> {
+      await assertCrmFields(companyId, null, input, null);
       input = { ...input, ...(await ownerFields(companyId, input.countryOwnerUserId)) };
       try {
         const [row] = await db
           .insert(organisations)
           .values({
             companyId,
-            ...input,
+            ...toRowValues(input),
             externalId: input.externalId ?? null,
             createdByUserId: actor.userId,
             createdByAgentId: actor.agentId,
@@ -240,11 +431,17 @@ export function organisationService(db: Db) {
     },
 
     async update(companyId: string, id: string, patch: OrganisationPatch): Promise<Organisation | null> {
+      const current = await getRow(companyId, id);
+      if (!current) return null;
       const { archived, ...rest } = patch;
       const fields = { ...rest, ...(await ownerFields(companyId, rest.countryOwnerUserId)) };
+      // Picking a person as account owner clears the agent, and the other way round.
+      if (fields.accountOwnerUserId && fields.accountOwnerAgentId === undefined) fields.accountOwnerAgentId = null;
+      if (fields.accountOwnerAgentId && fields.accountOwnerUserId === undefined) fields.accountOwnerUserId = null;
+      await assertCrmFields(companyId, id, fields, current);
       const [row] = await db
         .update(organisations)
-        .set({ ...fields, ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
+        .set({ ...toRowValues(fields), ...(archived === false ? { archivedAt: null } : {}), updatedAt: new Date() })
         .where(and(eq(organisations.companyId, companyId), eq(organisations.id, id)))
         .returning();
       return row ? toOrganisation(row) : null;

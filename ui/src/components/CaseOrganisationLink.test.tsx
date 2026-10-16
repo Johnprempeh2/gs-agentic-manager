@@ -5,10 +5,20 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CaseOrganisationLink } from "./CaseOrganisationLink";
+import { CaseOrganisationLink, CaseOrganisationMissing } from "./CaseOrganisationLink";
 
 const mockApi = vi.hoisted(() => ({ get: vi.fn() }));
+const mockPipelinesApi = vi.hoisted(() => ({ setCaseOrganisation: vi.fn() }));
 vi.mock("@/api/organisations", () => ({ organisationsApi: mockApi }));
+vi.mock("@/api/pipelines", () => ({ pipelinesApi: mockPipelinesApi }));
+vi.mock("@/components/OrganisationPicker", () => ({
+  OrganisationPicker: ({ onChange, error }: { onChange: (id: string) => void; error?: string | null }) => (
+    <div>
+      <button type="button" onClick={() => onChange("org-2")}>Pick Beta</button>
+      {error ? <p role="alert">{error}</p> : null}
+    </div>
+  ),
+}));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,22 +40,24 @@ describe("CaseOrganisationLink", () => {
     container.remove();
   });
 
-  async function render() {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={client}>
-          <MemoryRouter>
-            <CaseOrganisationLink companyId="company-1" organisationId="org-1" />
-          </MemoryRouter>
-        </QueryClientProvider>,
-      );
-    });
+  async function flush() {
     for (let i = 0; i < 3; i += 1) {
       await act(async () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
       });
     }
+  }
+
+  async function render(node = <CaseOrganisationLink companyId="company-1" organisationId="org-1" />) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>{node}</MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await flush();
   }
 
   it("links a pipeline item to its organisation's company page", async () => {
@@ -61,5 +73,30 @@ describe("CaseOrganisationLink", () => {
     mockApi.get.mockRejectedValue(new Error("Organisation not found"));
     await render();
     expect(container.querySelector("a")?.textContent).toBe("Open company page");
+  });
+
+  it("lets a card with no organisation pick one, and saves it on the card (GRE-1538)", async () => {
+    mockPipelinesApi.setCaseOrganisation.mockResolvedValue({ id: "case-1", organisationId: "org-2" });
+    await render(<CaseOrganisationMissing companyId="company-1" caseId="case-1" />);
+    expect(container.textContent).toContain("Every card needs one");
+
+    await act(async () => {
+      container.querySelector("button")!.click();
+    });
+    await flush();
+
+    expect(mockPipelinesApi.setCaseOrganisation).toHaveBeenCalledWith("case-1", "org-2");
+  });
+
+  it("shows the server's refusal", async () => {
+    mockPipelinesApi.setCaseOrganisation.mockRejectedValue(new Error("This organisation is archived"));
+    await render(<CaseOrganisationMissing companyId="company-1" caseId="case-1" />);
+
+    await act(async () => {
+      container.querySelector("button")!.click();
+    });
+    await flush();
+
+    expect(container.querySelector("[role=alert]")?.textContent).toBe("This organisation is archived");
   });
 });
