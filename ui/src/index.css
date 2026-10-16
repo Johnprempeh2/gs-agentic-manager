@@ -253,8 +253,8 @@
   --input: #cbd3c5;
   --field: #ffffff; /* daylight: text fields are white wells, so they read as fillable on the sage canvas and on cards */
   --ring: #0b2a1c;
-  --scrollbar-thumb: #b8c0b4;
-  --scrollbar-thumb-hover: #9aa396;
+  --scrollbar-thumb: #a9c2b1; /* daylight: emerald-tinted */
+  --scrollbar-thumb-hover: #7fa18b;
   --scrollbar-size: 8px;
   --scrollbar-radius: 999px;
   --chart-1: #1b5039;

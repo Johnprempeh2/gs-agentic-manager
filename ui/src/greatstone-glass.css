@@ -115,12 +115,12 @@
   --motion-switch: 260ms;
   --motion-check-draw: 240ms;
   --motion-skeleton-sweep: 1.7s;
-  --gs-skeleton-bg: rgb(27 80 57 / 0.07);
+  --gs-skeleton-bg: rgb(78 205 196 / 0.14); /* daylight: loading shapes in a teal tint */
   --gs-skeleton-sheen: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.75) 50%, transparent 80%);
-  --gs-tab-pill-bg: rgb(255 255 255 / 1);
+  --gs-tab-pill-bg: linear-gradient(160deg, color-mix(in oklab, #c8ff00 30%, #ffffff), color-mix(in oklab, #c8ff00 18%, #ffffff)); /* daylight: the selected pill tab is a lime wash */
   --gs-tab-pill-border: rgb(18 21 18 / 0.06);
   --gs-tab-pill-shadow: inset 0 1px 0 rgb(255 255 255 / 1), 0 1px 2px rgb(18 21 18 / 0.06), 0 6px 16px -8px rgb(27 80 57 / 0.35);
-  --gs-switch-on-glow: 0 0 0 3px rgb(27 80 57 / 0.1);
+  --gs-switch-on-glow: 0 0 0 3px rgb(200 255 0 / 0.4); /* daylight: an on switch glows brand lime */
   /* Form fields: the focused border is --ring (full strength, carries the
      3:1 focus contrast); the halo and glow around it are atmosphere. */
   --gs-field-halo: rgb(27 80 57 / 0.16);
