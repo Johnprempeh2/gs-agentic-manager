@@ -64,6 +64,7 @@ import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
 import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
+import { budgetUseLabel } from "../lib/agents-export";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -1775,6 +1776,7 @@ export function AgentOverview({
     ?? asNonEmptyString(agent.runtimeConfig?.model)
     ?? "Default model";
   const lastRun = runs[0] ?? null;
+  const budgetUse = budgetUseLabel(agent);
 
   return (
     <div className="space-y-6">
@@ -1784,7 +1786,17 @@ export function AgentOverview({
         <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-identity-heading">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h3 id="agent-identity-heading" className="text-sm font-medium">Identity</h3>
-            <StatusBadge status={agent.status} />
+            <div className="flex items-center gap-2">
+              {budgetUse ? (
+                <span
+                  className={cn("whitespace-nowrap text-xs font-medium", budgetUse.tone === "danger" ? "text-status-danger" : "text-status-warning")}
+                  title="How much of this month's budget the agent has spent"
+                >
+                  {budgetUse.text}
+                </span>
+              ) : null}
+              <StatusBadge status={agent.status} />
+            </div>
           </div>
           <div className="space-y-3">
             <SummaryRow label="Role"><span className="text-sm">{roleLabels[agent.role] ?? agent.role}</span></SummaryRow>
