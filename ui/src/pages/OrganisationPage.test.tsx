@@ -79,6 +79,8 @@ function history(overrides: Partial<OrganisationHistory> = {}): OrganisationHist
         stageName: "Won",
         stageKind: "done",
         terminalKind: "done",
+        ndaStatus: "accepted",
+        engagementStatus: "sent",
         createdAt: "2026-09-30T09:00:00Z",
         updatedAt: "2026-10-05T09:00:00Z",
         stageChanges: [
@@ -170,6 +172,9 @@ describe("Organisation company page", () => {
     const engagement = container.querySelector('section[aria-label="Engagement history"]')!;
     expect(engagement.querySelector('a[href="/pipelines/pipe-1/items/case-1"]')?.textContent).toBe("Acme drill rig");
     expect(engagement.textContent).toContain("Sales · Stage: Won");
+    expect(engagement.querySelector("[data-testid='organisation-case-agreements']")?.textContent).toBe(
+      "NDA: accepted · Engagement pack: sent",
+    );
     expect(engagement.textContent).toContain("Proposal → Won by Sales Agent");
     expect(engagement.querySelector('a[href="/projects/proj-1"]')?.textContent).toBe("Acme onboarding");
     expect(engagement.querySelector('a[href="/issues/GRE-9"]')?.textContent).toBe("GRE-9 Send the proposal");
