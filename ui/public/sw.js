@@ -7,10 +7,17 @@
 const BUILD_ID = "__GSAM_BUILD_ID__";
 // Separate this allowlisted cache from older workers that cached arbitrary URLs.
 const CACHE_NAME = `paperclip-public-assets-${BUILD_ID}`;
+// The app shell (index.html) for this build: the same static page for every
+// route and every person, with no account data in it. Kept so GSAM can start
+// with no signal and show the lists saved on the device.
+const SHELL_CACHE = `gsam-app-shell-${BUILD_ID}`;
+const SHELL_KEY = "/";
+const SHELL_MARKER = '<div id="root"></div>';
 const privateRequests = new Set();
 const privateCacheControl = /(?:^|,)\s*(?:no-store|private)(?:\s*(?:,|=)|\s*$)/i;
 
 // Static recovery only: never cache or embed authenticated page content here.
+// The app shell above is the one page kept, and only because it holds none.
 function offlineNavigationResponse() {
   return new Response(`<!doctype html>
 <html lang="en">
@@ -111,6 +118,19 @@ self.addEventListener("fetch", (event) => {
           // if storage is unavailable so offline fallback still fails closed.
           privateRequests.add(request.url);
           await evictRequest(request).catch(() => {});
+        } else if (
+          request.mode === "navigate" && response.ok && !response.redirected &&
+          url.origin === self.location.origin &&
+          (response.headers.get("content-type") ?? "").includes("text/html")
+        ) {
+          // Only the untouched shell (an empty root for the app to fill) is
+          // kept; any other HTML page, such as a sign-in redirect, is not.
+          const html = await response.clone().text().catch(() => "");
+          if (html.includes(SHELL_MARKER)) {
+            await caches.open(SHELL_CACHE).then((cache) => cache.put(SHELL_KEY, new Response(html, {
+              headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" },
+            }))).catch(() => {});
+          }
         } else if (response.ok && publicAsset && !privateRequests.has(request.url)) {
           const clone = response.clone();
           await caches.open(CACHE_NAME).then(async (cache) => {
@@ -123,7 +143,16 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(async () => {
         if (privateRequests.has(request.url)) return Response.error();
-        if (!publicAsset) return request.mode === "navigate" ? offlineNavigationResponse() : Response.error();
+        if (request.mode === "navigate") {
+          // Start the app from its shell when this build has one; the app then
+          // shows what is saved on the device and says it is offline.
+          try {
+            const shell = await (await caches.open(SHELL_CACHE)).match(SHELL_KEY);
+            if (shell) return shell;
+          } catch { /* Unavailable cache storage: fall back to the retry page. */ }
+          return offlineNavigationResponse();
+        }
+        if (!publicAsset) return Response.error();
         // Restrict lookup to this policy's cache; old arbitrary-response caches
         // must not become fallback candidates if activation cleanup fails.
         try {
