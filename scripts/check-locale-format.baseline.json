@@ -13,7 +13,6 @@
   "ui/src/components/ProviderQuotaCard.tsx": 1,
   "ui/src/components/ProviderTraceStatusBadge.tsx": 1,
   "ui/src/components/RoutineActivityRow.tsx": 1,
-  "ui/src/components/RoutineList.tsx": 1,
   "ui/src/components/RoutineOverview.tsx": 1,
   "ui/src/components/RoutineTriggerCard.tsx": 1,
   "ui/src/components/RunnerInspector.tsx": 1,

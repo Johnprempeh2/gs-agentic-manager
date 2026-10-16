@@ -1,4 +1,4 @@
-import type { GoalWithProgress } from "@greatstone/shared";
+import type { GoalMilestone, GoalWithProgress } from "@greatstone/shared";
 import {
   GOAL_HEALTH_LABEL,
   parseCalendarDate,
@@ -20,7 +20,7 @@ function ownerName(goal: GoalWithProgress, lookups: GoalsTextLookups): string | 
   return null;
 }
 
-function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsTextLookups, now: Date): string {
+export function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsTextLookups, now: Date): string {
   const { progress } = goal;
   const owner = ownerName(goal, lookups);
   const details = [
@@ -116,4 +116,42 @@ export function goalsToCsv(entries: readonly ScoreboardEntry[], lookups: GoalsTe
 export function goalsCsvFileName(prefix: string | null | undefined, today: string): string {
   const slug = (prefix ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `${slug ? `${slug}-` : ""}goals-${today}.csv`;
+}
+
+const MILESTONE_GROUPS: ReadonlyArray<{ label: string; statuses: readonly GoalMilestone["status"][] }> = [
+  { label: "Blocked", statuses: ["blocked"] },
+  { label: "In progress", statuses: ["in_progress", "in_review"] },
+  { label: "Still to do", statuses: ["todo", "backlog"] },
+  { label: "Done", statuses: ["done"] },
+];
+
+/**
+ * "Copy as an update" on one goal: the headline line, then its tasks grouped
+ * by where they stand, blocked first. Cancelled tasks are left out.
+ *
+ *   Launch the website: At risk, 40%, 4 of 10 tasks done, 1 blocked, due 6 Oct, 10 days late, Ridge
+ *
+ *   Blocked:
+ *   • GRE-7 Approve the copy (Ridge)
+ */
+export function goalDetailUpdateText(
+  goal: GoalWithProgress,
+  health: GoalHealth,
+  milestones: readonly GoalMilestone[],
+  lookups: GoalsTextLookups,
+  today: string,
+): string {
+  const now = parseCalendarDate(today) ?? new Date();
+  const lines = [goalLine(goal, health, lookups, now)];
+  for (const group of MILESTONE_GROUPS) {
+    const tasks = milestones.filter((task) => group.statuses.includes(task.status));
+    if (tasks.length === 0) continue;
+    lines.push("", `${group.label}:`);
+    for (const task of tasks) {
+      const name = task.identifier ? `${task.identifier} ${task.title}` : task.title;
+      const who = task.assigneeAgentId ? lookups.agentName(task.assigneeAgentId) : null;
+      lines.push(`• ${name}${who ? ` (${who})` : ""}`);
+    }
+  }
+  return lines.join("\n");
 }

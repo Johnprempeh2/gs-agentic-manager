@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "@/lib/router";
+import { useActiveCompanyPrefix, useNavigate, useLocation } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
@@ -10,13 +10,18 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
-import { ShieldCheck } from "lucide-react";
+import { Check, ClipboardList, ShieldCheck } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import { HelpTerm } from "../components/HelpTerm";
+import { pendingListText, pendingSummary } from "../lib/approval-wait";
+import { useCopyAction } from "../lib/use-copy-action";
+import { applyCompanyPrefix } from "../lib/company-routes";
+import { approvalLabel } from "../components/ApprovalPayload";
 
 type StatusFilter = "pending" | "all";
 
@@ -70,11 +75,20 @@ export function Approvals() {
     },
   });
 
+  const listCopy = useCopyAction();
+  const companyPrefix = useActiveCompanyPrefix();
+
   const filtered = (data ?? [])
     .filter(
       (a) => statusFilter === "all" || a.status === "pending" || a.status === "revision_requested",
     )
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Pending: the request that has waited longest comes first. All: newest first.
+    .sort((a, b) =>
+      statusFilter === "pending"
+        ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  const waitingSummary = statusFilter === "pending" ? pendingSummary(data ?? []) : null;
 
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
@@ -113,6 +127,35 @@ export function Approvals() {
         Each card is a <HelpTerm term="approval">sign-off</HelpTerm> an <HelpTerm term="agent" /> needs before it can go
         ahead, such as hiring another agent or spending more.
       </p>
+      {waitingSummary ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="text-sm font-medium text-foreground" data-testid="approvals-waiting-summary">
+            {waitingSummary}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Copy every sign-off waiting for you, with links, ready to paste"
+            onClick={() =>
+              void listCopy.copy(
+                pendingListText(
+                  filtered.map((approval) => ({
+                    ...approval,
+                    label: approvalLabel(approval.type, approval.payload as Record<string, unknown> | null),
+                    requester: approval.requestedByAgentId
+                      ? (agents ?? []).find((agent) => agent.id === approval.requestedByAgentId)?.name ?? null
+                      : null,
+                  })),
+                  (id) => `${window.location.origin}${applyCompanyPrefix(`/approvals/${id}`, companyPrefix)}`,
+                ),
+              )
+            }
+          >
+            {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+            {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+          </Button>
+        </div>
+      ) : null}
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
