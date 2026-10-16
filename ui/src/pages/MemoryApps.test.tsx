@@ -28,6 +28,7 @@ vi.mock("@/lib/router", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
   return {
     useNavigate: actual.useNavigate,
+    useSearchParams: actual.useSearchParams,
     Link: ({ to, children, ...props }: { to: string; children: ReactNode }) => <a href={to} {...props}>{children}</a>,
   };
 });

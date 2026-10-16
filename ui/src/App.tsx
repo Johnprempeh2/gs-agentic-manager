@@ -61,6 +61,7 @@ import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
 import { MemoryApps } from "./pages/MemoryApps";
+import { MemoryClientDetail, MemoryClients } from "./pages/MemoryClients";
 import { GoalDetail } from "./pages/GoalDetail";
 import { StrategyBoard } from "./pages/StrategyBoard";
 import { Tutorials } from "./pages/Tutorials";
@@ -409,6 +410,8 @@ function boardRoutes() {
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
       <Route path="memory/apps" element={<MemoryApps />} />
+      <Route path="memory/clients" element={<MemoryClients />} />
+      <Route path="memory/clients/:scopeId" element={<MemoryClientDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -829,6 +832,8 @@ export function App() {
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/apps" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients/:scopeId" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           <Route path="audit/*" element={<UnprefixedBoardRedirect />} />
           <Route path="activity" element={<UnprefixedBoardRedirect />} />
