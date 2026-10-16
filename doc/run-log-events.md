@@ -248,3 +248,14 @@ The message distinguishes an automatic retry from work that is no longer eligibl
 This pre-provider wait records `ai_connection_busy` on the cancelled run and does
 not consume the provider-failure retry allowance. The event contains no credentials
 and creates no Telemetry or OpenTelemetry export.
+
+## Required tools check
+
+When an agent lists tools in `adapterConfig.requiredCapabilities`, a local run
+writes one `capability_check` event before the agent starts. Its payload holds
+the status (`passed`, `missing` or `skipped`), the listed and missing tool
+names, and for each tool whether it was found, a short note and how long the
+check took. It holds no environment values, tokens or command output. A
+`missing` status is written at error level and the run then fails as
+`configuration_incomplete`. Agents with no list write no event. The event stays
+in the local run log and creates no Telemetry or OpenTelemetry export.
