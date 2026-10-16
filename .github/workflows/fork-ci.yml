@@ -17,6 +17,9 @@
 #   ui-tests   the ui and cli vitest suites, on every run
 #   server-security  the server's authz, cross-company and route contract
 #              tests (16 files, about 5 minutes), on every run
+#   server-tests  the whole server vitest suite in 6 shards, on pull requests
+#              that touch server/, packages/, cli/, scripts/ or the workspace
+#              (the changes job decides; ui-only pull requests skip it)
 #   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys, overnight-features and smoke-pages specs)
 #   test       the vitest suites through scripts/run-vitest-stable.mjs,
 #              sharded across runners (the server suites run one file at a time)
@@ -31,7 +34,9 @@
 # the fast lanes still green. Agents run the relevant server tests in their
 # sandbox before opening a pull request. The server security lane runs on
 # every pull request because two new routes reached main without their
-# cross-company test while every other lane was green (16 Oct 2026).
+# cross-company test while every other lane was green (16 Oct 2026). The
+# server-tests lane runs the rest of the server suite on pull requests for the
+# same reason: broken server tests kept reaching main with every lane green.
 #
 # No secrets, a read-only token, GitHub-hosted runners only.
 
@@ -213,6 +218,77 @@ jobs:
           pnpm --filter @greatstone/plugin-sdk ensure-build-deps
           cd server && npx vitest run authz cross-company cross-tenant attachment-types openapi-routes
 
+  # Whether a pull request touches anything the server suites exercise. A pull
+  # request that only changes ui/, docs or tests/e2e skips the server lanes.
+  changes:
+    name: Server changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      server: ${{ steps.diff.outputs.server }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: Compare with the base branch
+        id: diff
+        run: |
+          git diff --name-only HEAD^1 HEAD > changed.txt
+          cat changed.txt
+          if grep -Eq '^(server/|packages/|cli/|scripts/|skills/|\.github/|package\.json$|pnpm-lock\.yaml$|pnpm-workspace\.yaml$|tsconfig)' changed.txt; then
+            echo "server=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "server=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The whole server vitest suite on every pull request that touches the
+  # server or a package it uses, so a broken server test fails the pull request
+  # instead of reaching main (16 Oct 2026). Same groups as the manual matrix,
+  # in fewer, longer shards to stay inside the 20 concurrent job limit while
+  # several pull requests run at once. The native runner suite needs a cold
+  # cargo build, so it stays in the manual run.
+  server-tests:
+    name: Tests (${{ matrix.label }})
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: "server 1/3", mode: general, group: general-server-without-chat, shard_index: 0, shard_count: 3 }
+          - { label: "server 2/3", mode: general, group: general-server-without-chat, shard_index: 1, shard_count: 3 }
+          - { label: "server 3/3", mode: general, group: general-server-without-chat, shard_index: 2, shard_count: 3 }
+          - { label: "server chat", mode: general, group: general-chat }
+          - { label: "server routes 1/2", mode: serialized, shard_index: 0, shard_count: 2 }
+          - { label: "server routes 2/2", mode: serialized, shard_index: 1, shard_count: 2 }
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+
+      - name: Run vitest (${{ matrix.label }})
+        env:
+          MODE: ${{ matrix.mode }}
+          GROUP: ${{ matrix.group }}
+          SHARD_INDEX: ${{ matrix.shard_index }}
+          SHARD_COUNT: ${{ matrix.shard_count }}
+          GSAM_SKIP_NATIVE_RUNNER_SUITE: "1"
+        run: |
+          args=()
+          if [ -n "$GROUP" ]; then args+=(--group "$GROUP"); fi
+          if [ -n "$SHARD_COUNT" ]; then args+=(--shard-index "$SHARD_INDEX" --shard-count "$SHARD_COUNT"); fi
+          pnpm "test:run:$MODE" -- "${args[@]}"
+
   # Dashboard, new task, Needs you, a client, Inbox and Blocked, and the theme
   # switch, through the built UI against a throwaway local_trusted instance.
   journeys:
@@ -298,7 +374,7 @@ jobs:
   result:
     name: Fork CI
     if: always()
-    needs: [guard, typecheck, build, ui-tests, server-security, journeys, runner, test]
+    needs: [guard, typecheck, build, ui-tests, server-security, changes, server-tests, journeys, runner, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
