@@ -20,6 +20,7 @@ import {
   instanceSettings,
   organisationContacts,
   organisations,
+  pipelineCaseContacts,
   pipelineCases,
   pipelineFieldDefinitions,
   pipelines,
@@ -80,6 +81,9 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/products": { 0: recorded.productsPage },
   "/api/v1/deals/701/products": { 0: recorded.dealProducts701 },
   "/api/v1/deals/702/products": { 0: recorded.dealProducts702 },
+  "/api/v1/deals/701/participants": { 0: recorded.dealParticipants701 },
+  "/api/v1/deals/701/followers": { 0: recorded.dealFollowers701 },
+  "/api/v1/deals/702/followers": { 0: recorded.dealFollowers702 },
   "/api/v1/leadLabels": { 0: recorded.leadLabels },
   "/api/v1/leads": { 0: recorded.leadsPage },
   "/api/v1/files": { 0: recorded.filesPage },
@@ -344,7 +348,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
 
   async function casesByKey(companyId: string) {
     const rows = await db
-      .select({ caseKey: pipelineCases.caseKey, title: pipelineCases.title, fields: pipelineCases.fields, stageKey: pipelineStages.key, pipelineKey: pipelines.key, organisationId: pipelineCases.organisationId })
+      .select({ id: pipelineCases.id, caseKey: pipelineCases.caseKey, title: pipelineCases.title, fields: pipelineCases.fields, stageKey: pipelineStages.key, pipelineKey: pipelines.key, organisationId: pipelineCases.organisationId })
       .from(pipelineCases)
       .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
       .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
@@ -598,6 +602,51 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(await db.select().from(crmDealProducts).where(eq(crmDealProducts.companyId, companyId))).toHaveLength(2);
     const after = await casesByKey(companyId);
     expect(after.get("pipedrive-701")!.fields.dealProducts).toBe("20 x Team seat at 600 GBP, 10% off: 10,800 GBP (Annual, billed upfront)");
+  }, 60_000);
+
+  it("keeps the people on each deal as case contacts and names its followers", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    let pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+
+    const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    expect(first.body.participants).toEqual({ created: 3, updated: 0, skipped: 0, errors: 0 });
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+    // Deals with nobody on them, or no followers, are not asked.
+    expect(pipedrive.calls.some((call) => call.url.includes("/deals/702/participants"))).toBe(false);
+    expect(pipedrive.calls.some((call) => call.url.includes("/deals/703/followers"))).toBe(false);
+
+    const cases = await casesByKey(companyId);
+    const caseId = cases.get("pipedrive-701")!.id;
+    const contactsOf = () => db.select().from(pipelineCaseContacts)
+      .where(and(eq(pipelineCaseContacts.companyId, companyId), eq(pipelineCaseContacts.caseId, caseId)))
+      .orderBy(asc(pipelineCaseContacts.position));
+    // The main contact comes first and uses the imported person's details; a
+    // person who was not imported keeps what the deal said about them.
+    expect((await contactsOf()).map((row) => [row.name, row.role, row.email, row.phone, row.source, row.externalId])).toEqual([
+      ["Esi Boateng", "Main contact, Chief Financial Officer", "esi@example.test", expect.anything(), "pipedrive", "501"],
+      ["Tunde Bakare", null, "tunde@example.test", null, "pipedrive", "502"],
+      ["Kwame Ofori", null, "kwame@example.test", "+233 24 555 0102", "pipedrive", "599"],
+    ]);
+    expect(cases.get("pipedrive-701")!.fields).toMatchObject({ dealFollowers: "Ama Owusu, Kofi Mensah" });
+    expect(cases.get("pipedrive-702")!.fields).toMatchObject({ dealFollowers: "Kofi Mensah" });
+    expect(cases.get("pipedrive-703")!.fields).not.toHaveProperty("dealFollowers");
+
+    // A contact added by hand in GSAM is left alone by every rerun.
+    await db.insert(pipelineCaseContacts).values({ companyId, caseId, name: "Added in GSAM", position: 9 });
+    const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.participants).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
+    expect(rerun.body.deals).toEqual({ created: 0, updated: 0, skipped: 4, errors: 0 });
+
+    // Someone taken off the deal in Pipedrive leaves the case.
+    pages = recordedPages();
+    pages["/api/v1/deals/701/participants"][0].data.splice(0, 1);
+    pages["/api/v1/deals/701/followers"][0].data.pop();
+    const third = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(third.body.participants).toEqual({ created: 0, updated: 2, skipped: 1, errors: 0 });
+    expect((await contactsOf()).map((row) => row.name)).toEqual(["Esi Boateng", "Kwame Ofori", "Added in GSAM"]);
+    expect((await casesByKey(companyId)).get("pipedrive-701")!.fields.dealFollowers).toBe("Ama Owusu");
   }, 60_000);
 
   it("brings the Leads inbox across as cases, links notes to them, and moves converted leads", async () => {

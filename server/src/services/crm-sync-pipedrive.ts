@@ -326,6 +326,16 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/products`, input.start ?? 0, 100);
     },
 
+    /** One page of the people on a deal, its main contact included (API v1, read only). */
+    async listDealParticipantsPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/participants`, input.start ?? 0, 100);
+    },
+
+    /** One page of the users following a deal (API v1, read only). */
+    async listDealFollowersPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/followers`, input.start ?? 0, 100);
+    },
+
     /**
      * One page of every lead, archived ones included (API v1, read only). The
      * leads list answers its paging at the top of `additional_data`.

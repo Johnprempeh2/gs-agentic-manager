@@ -20,6 +20,7 @@ import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
 import type { StorageService } from "../storage/types.js";
 import { pipedriveFileImportService } from "./pipedrive-file-import.js";
+import { pipedriveParticipantImportService } from "./pipedrive-participant-import.js";
 import { pipedriveLeadImportService } from "./pipedrive-lead-import.js";
 import { pipedriveProductImportService } from "./pipedrive-product-import.js";
 import { pipedriveTimelineImportService } from "./pipedrive-timeline-import.js";
@@ -423,6 +424,19 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       });
 
       const contactIdByExternalId = new Map([...writer.contactByExternalId].map(([externalId, row]) => [externalId, row.id]));
+
+      // The people on each deal, as the case's contacts.
+      await pipedriveParticipantImportService(db, { now }).run({
+        companyId,
+        result,
+        userId: actor.userId ?? null,
+        caseIdByDealId: deals.caseIdByDealId,
+        participantsByDealId: deals.participantsByDealId,
+        people: new Map([...writer.contactByExternalId].map(([externalId, row]) => [
+          externalId,
+          { name: row.name, role: row.role, email: row.email, phone: row.phone },
+        ])),
+      });
 
       // Files on deals, leads, people and organisations, copied into GSAM storage.
       await pipedriveFileImportService(db, { storage: deps.storage, now }).run({
