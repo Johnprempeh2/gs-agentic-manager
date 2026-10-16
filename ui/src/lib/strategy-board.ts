@@ -1,4 +1,5 @@
-import type { StrategyBoardKpi, StrategyBoardOwner, StrategyBoardPackListItem } from "@greatstone/shared";
+import type { StrategyBoardKpi, StrategyBoardOwner, StrategyBoardPackListItem, StrategyBoardSummary } from "@greatstone/shared";
+import { formatCalendarDay } from "./utils";
 
 /**
  * How far the board can trust a KPI's number, shown apart from its colour
@@ -78,4 +79,38 @@ export function meetingPackId(packs: readonly Pick<StrategyBoardPackListItem, "i
     if (!best || new Date(pack.createdAt).getTime() > new Date(best.createdAt).getTime()) best = pack;
   }
   return best?.id ?? null;
+}
+
+const RAG_WORDS: Record<string, string> = { red: "Off course", amber: "Watch", green: "On course" };
+
+/**
+ * "Copy as an update" on the board panel: the headline, then what needs the
+ * board and the overdue actions, ready to paste into an email to the board.
+ */
+export function boardUpdateText(
+  board: Pick<StrategyBoardSummary, "asOf" | "attention" | "overdueActions">,
+  lede: string,
+): string {
+  const lines = [`Board update, as of ${formatCalendarDay(board.asOf)}`, lede];
+  if (board.attention.length > 0) {
+    lines.push("", "Needs board attention");
+    for (const kpi of board.attention) {
+      const parts = [
+        kpi.status ? RAG_WORDS[kpi.status] : `Not measured${kpi.notMeasuredReason ? ` (${kpi.notMeasuredReason.toLowerCase()})` : ""}`,
+        kpi.gapPercent ? `${Math.round(kpi.gapPercent)}% behind plan` : null,
+        boardOwnerName(kpi.owner),
+      ].filter(Boolean);
+      lines.push(`• ${kpi.title}: ${parts.join(", ")}`);
+    }
+  } else {
+    lines.push("", "Nothing needs board attention.");
+  }
+  if (board.overdueActions.length > 0) {
+    lines.push("", "Overdue actions");
+    for (const action of board.overdueActions) {
+      const late = action.daysOverdue === 1 ? "1 day overdue" : `${action.daysOverdue} days overdue`;
+      lines.push(`• ${action.title}: ${late}, ${boardOwnerName(action.owner)}`);
+    }
+  }
+  return lines.join("\n");
 }

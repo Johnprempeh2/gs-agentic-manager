@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { boardAssurance, meetingPackId, packFileName, previousQuarter, readingAgeText } from "./strategy-board";
+import { boardAssurance, meetingPackId, packFileName, previousQuarter, readingAgeText, boardUpdateText } from "./strategy-board";
 
 describe("boardAssurance", () => {
   it("is strong only for a fresh checked or system reading", () => {
@@ -44,5 +44,32 @@ describe("meetingPackId", () => {
   it("is null when there are only drafts or no packs", () => {
     expect(meetingPackId([{ id: "draft", status: "draft", createdAt: new Date("2026-10-09") }])).toBeNull();
     expect(meetingPackId([])).toBeNull();
+  });
+});
+
+describe("boardUpdateText", () => {
+  it("gives the headline, the KPIs needing attention and overdue actions", () => {
+    const text = boardUpdateText(
+      {
+        asOf: "2026-10-16",
+        attention: [
+          { title: "Revenue", status: "red", gapPercent: 12.4, owner: { type: "user", id: "u", name: "John" } },
+          { title: "NPS", status: null, gapPercent: null, owner: null, notMeasuredReason: "No reading yet" },
+        ] as never,
+        overdueActions: [{ title: "Hire a sales lead", daysOverdue: 5, owner: { type: "agent", id: "a", name: "Ridge" } }] as never,
+      },
+      "On course 2 · Watch 1 · Off course 1",
+    );
+    expect(text.split("\n")).toEqual([
+      "Board update, as of 16 Oct",
+      "On course 2 · Watch 1 · Off course 1",
+      "",
+      "Needs board attention",
+      "• Revenue: Off course, 12% behind plan, John",
+      "• NPS: Not measured (no reading yet), No owner",
+      "",
+      "Overdue actions",
+      "• Hire a sales lead: 5 days overdue, Ridge",
+    ]);
   });
 });
