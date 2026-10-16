@@ -123,6 +123,7 @@ const ProfileWizardRoute = lazyPage(() => import("./pages/tools/profiles/Profile
 const ProfileDetailRoute = lazyPage(() => import("./pages/tools/profiles/ProfileDetailRoute"), "ProfileDetailRoute");
 const Browse = lazyPage(() => import("./pages/apps/Browse"), "Browse");
 const Mailboxes = lazyPage(() => import("./pages/apps/Mailboxes"), "Mailboxes");
+const AgentAccess = lazyPage(() => import("./pages/apps/AgentAccess"), "AgentAccess");
 const AppsConnect = lazyPage(() => import("./pages/apps/AppsConnect"), "AppsConnect");
 const ChatEndpointSetup = lazyPage(() => import("./pages/apps/chat/ChatEndpointSetup"), "ChatEndpointSetup");
 const ChatEndpointDetail = lazyPage(() => import("./pages/apps/chat/ChatEndpointDetail"), "ChatEndpointDetail");
@@ -213,6 +214,7 @@ function boardRoutes() {
       <Route path="tools/:tab" element={<LegacyToolsRedirect />} />
       <Route path="apps" element={<Browse />} />
       <Route path="apps/mailboxes" element={<Mailboxes />} />
+      <Route path="apps/access" element={<AgentAccess />} />
       <Route path="apps/browse" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connections" element={<Navigate to="/apps" replace />} />
       <Route path="apps/byo" element={<AppsConnect byoOnly />} />

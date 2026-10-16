@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ClipboardPaste,
   Clock3,
+  KeyRound,
   Link2,
   Loader2,
   Mail,
@@ -361,6 +362,23 @@ function MailboxesCard({
       <Button type="button" size="sm" variant="outline" onClick={onOpen}>
         {count === 0 ? <Plus /> : null}
         {count === 0 ? "Add mailbox" : "Manage"}
+      </Button>
+    </section>
+  );
+}
+
+function AgentAccessLinkCard({ onOpen }: { onOpen: () => void }) {
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 py-3 sm:flex-row sm:items-center">
+      <KeyRound className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold text-foreground">Agent access</h2>
+        <p className="text-xs text-muted-foreground">
+          See what every agent can reach, and what is missing or expiring.
+        </p>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onOpen}>
+        Check access
       </Button>
     </section>
   );
@@ -861,6 +879,8 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         needsAttention={(mailboxesQuery.data ?? []).filter((m) => m.healthStatus !== "ok").length}
         onOpen={() => navigate("/apps/mailboxes")}
       />
+
+      <AgentAccessLinkCard onOpen={() => navigate("/apps/access")} />
 
       {loadFailed ? (
         <div
