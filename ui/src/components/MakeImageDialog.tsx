@@ -55,6 +55,8 @@ interface MakeImageDialogProps {
   attachLabel?: string;
   /** Links the image to this task, so the gallery can show where it came from. */
   issueId?: string | null;
+  /** Links the image to this client. */
+  organisationId?: string | null;
 }
 
 type Step = "compose" | "making" | "ready" | "failed" | "attached";
@@ -70,6 +72,7 @@ export function MakeImageDialog({
   onAttach,
   attachLabel = "this task",
   issueId = null,
+  organisationId = null,
 }: MakeImageDialogProps) {
   const queryClient = useQueryClient();
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
@@ -101,6 +104,7 @@ export function MakeImageDialog({
         aspectRatio,
         ...(style ? { style } : {}),
         ...(issueId ? { issueId } : {}),
+        ...(organisationId ? { organisationId } : {}),
       }),
     onSuccess: (image) => {
       setImageId(image.id);
@@ -190,7 +194,7 @@ export function MakeImageDialog({
                   <p className="text-sm text-muted-foreground">{image?.error ?? "This image could not be made."}</p>
                 </div>
               ) : image?.contentPath ? (
-                <img src={image.contentPath} alt={image.prompt} className="h-full w-full object-contain" />
+                <img src={image.contentPath} alt={image.altText} className="h-full w-full object-contain" />
               ) : null}
             </div>
             <p className="line-clamp-2 text-center text-xs text-muted-foreground">{image?.prompt ?? prompt}</p>
@@ -261,12 +265,17 @@ export function MakeImageButton({
   attachLabel,
   disabled,
   issueId,
+  organisationId,
+  variant = "button",
 }: {
   companyId: string;
   onAttach: (file: File) => Promise<unknown>;
   attachLabel?: string;
   disabled?: boolean;
   issueId?: string | null;
+  organisationId?: string | null;
+  /** "icon" is a small square button for a composer toolbar. */
+  variant?: "button" | "icon";
 }) {
   const [open, setOpen] = useState(false);
   const status = useQuery({
@@ -278,18 +287,32 @@ export function MakeImageButton({
   if (status.data?.configured !== true) return null;
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="shadow-none"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-        data-testid="make-image-button"
-      >
-        <ImageIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-        <span className="hidden sm:inline">Make an image</span>
-        <span className="sm:hidden">Image</span>
-      </Button>
+      {variant === "icon" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          aria-label="Make an image"
+          title="Make an image"
+          data-testid="make-image-button"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ImageIcon className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="shadow-none"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          data-testid="make-image-button"
+        >
+          <ImageIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden sm:inline">Make an image</span>
+          <span className="sm:hidden">Image</span>
+        </Button>
+      )}
       <MakeImageDialog
         companyId={companyId}
         open={open}
@@ -297,6 +320,7 @@ export function MakeImageButton({
         onAttach={onAttach}
         attachLabel={attachLabel}
         issueId={issueId}
+        organisationId={organisationId}
       />
     </>
   );

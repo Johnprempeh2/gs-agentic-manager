@@ -191,11 +191,11 @@ export function ClientCaseOverview({
       </OverviewSection>
 
       <OverviewSection title="Evidence" tour="client-evidence">
-        <PipelineCaseEvidence caseId={detail.case.id} />
+        <PipelineCaseEvidence caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
 
       <OverviewSection title="Journey by stage" tour="client-deliverables">
-        <ClientJourneyStages caseId={detail.case.id} />
+        <ClientJourneyStages caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
 
       <OverviewSection title="What the client sees on the portal" tour="client-portal">

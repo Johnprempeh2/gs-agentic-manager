@@ -2458,6 +2458,13 @@
       "when": 1792127008463,
       "tag": "0352_generated_image_style_and_links",
       "breakpoints": true
+    },
+    {
+      "idx": 353,
+      "version": "7",
+      "when": 1792127068463,
+      "tag": "0353_generated_image_covers",
+      "breakpoints": true
     }
   ]
 }

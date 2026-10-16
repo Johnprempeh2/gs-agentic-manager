@@ -152,6 +152,7 @@ import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
+import { CardCover, useImageCovers } from "@/components/ImageCoverControls";
 import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
 import { OrganisationPicker } from "@/components/OrganisationPicker";
 
@@ -1390,6 +1391,8 @@ function PipelineCaseCard({
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
   const { owner, nextAction } = readCardSummary(caseItem.fields);
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
+  const covers = useImageCovers(caseItem.companyId);
+  const cover = caseItem.organisationId ? covers.data?.organisations[caseItem.organisationId] : undefined;
   const {
     attributes,
     listeners,
@@ -1422,6 +1425,7 @@ function PipelineCaseCard({
         }}
         className="block text-inherit no-underline"
       >
+        <CardCover cover={cover} />
         <p className="font-medium leading-snug text-foreground">{title}</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {isWorking ? (

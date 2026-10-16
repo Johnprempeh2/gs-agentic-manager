@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Activity, ArrowDown, History, MessageSquarePlus, X } from "lucide-react";
 import { ActivityFeed } from "../components/ActivityFeed";
+import { MakeImageButton } from "../components/MakeImageDialog";
 import { ChatComposer, type ChatComposerAttachment, type ChatComposerHandle } from "../components/ChatComposer";
 import { boardChatApi, MAX_BOARD_CHAT_ATTACHMENTS } from "../api/boardChat";
 import {
@@ -1031,6 +1032,17 @@ export function BoardChat() {
               disabled={sending}
               sendLabel="Send message"
               onAttachFiles={attachFiles}
+              leadingTools={
+                selectedCompanyId ? (
+                  <MakeImageButton
+                    variant="icon"
+                    companyId={selectedCompanyId}
+                    attachLabel="this message"
+                    disabled={sending}
+                    onAttach={(file) => attachFiles([file])}
+                  />
+                ) : null
+              }
               attachments={attachments}
               attaching={attachments.some((attachment) => attachment.status === "uploading")}
               onRemoveAttachment={(id) =>

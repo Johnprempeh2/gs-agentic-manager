@@ -181,8 +181,10 @@ function StageSection({
   busy,
   onUpdate,
   onRemove,
+  organisationId,
 }: {
   caseId: string;
+  organisationId?: string | null;
   stage: ClientJourneyStage;
   index: number;
   stages: ClientJourneyStage[];
@@ -264,6 +266,7 @@ function StageSection({
           <ClientUploadZone
             caseId={caseId}
             stageId={stage.id}
+            organisationId={organisationId}
             label="Upload to this stage"
             hint={`Drop the ${stage.name} documents here, or choose them.`}
           />
@@ -497,7 +500,7 @@ function UnfiledRow({
 }
 
 /** Each journey stage as a section, with its templates and deliverables (GRE-1473). */
-export function ClientJourneyStages({ caseId }: { caseId: string }) {
+export function ClientJourneyStages({ caseId, organisationId }: { caseId: string; organisationId?: string | null }) {
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [unfiledOpen, setUnfiledOpen] = useState(false);
@@ -600,6 +603,7 @@ export function ClientJourneyStages({ caseId }: { caseId: string }) {
         <StageSection
           key={stage.id}
           caseId={caseId}
+          organisationId={organisationId}
           files={filesByStage.get(stage.id) ?? []}
           stage={stage}
           index={journeyIndex.get(stage.id) ?? 0}
