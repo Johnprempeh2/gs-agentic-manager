@@ -181,6 +181,24 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
     expect(((await request(outsider).get(`${base}/review-queue`)).body as MemoryReviewQueue).items).toEqual([]);
   });
 
+  it("points out a proposal that looks like a confirmed card or an earlier proposal", async () => {
+    const { board, steward, agent, base, org } = await setup("Lookalikes");
+    const confirmed = await contribute(agent, base, { scopeId: org.id, content: "Kestrel Works pays invoices within thirty days of receipt.", topics: ["kestrel"] });
+    expect((await request(board).post(`${base}/records/${confirmed.id}/review`).send({ action: "approve", reason: "Yes" })).status).toBe(200);
+    const repeat = await contribute(agent, base, { scopeId: org.id, content: "Kestrel Works pays invoices within thirty days of receipt", topics: ["payments"] });
+    const first = await contribute(agent, base, { scopeId: org.id, content: "Ben prefers a weekly summary email every Friday afternoon.", topics: ["ben"] });
+    const second = await contribute(agent, base, { scopeId: org.id, content: "Ben prefers a weekly summary email every Friday afternoon please.", topics: ["summaries"] });
+    const unrelated = await contribute(agent, base, { scopeId: org.id, content: "The office closes at six on Thursdays.", topics: ["office"] });
+
+    const queue = (await request(steward).get(`${base}/review-queue`)).body as MemoryReviewQueue;
+    const lookalike = (id: string) => queue.items.find((item) => item.proposal.id === id)!.lookalike;
+    expect(lookalike(repeat.id)).toMatchObject({ recordId: confirmed.id, status: "approved" });
+    // The later of two near-identical proposals points at the earlier one, not both ways.
+    expect(lookalike(second.id)).toMatchObject({ recordId: first.id, status: "unreviewed" });
+    expect(lookalike(first.id)).toBeNull();
+    expect(lookalike(unrelated.id)).toBeNull();
+  });
+
   it("shows the app a proposal came through, and filters by it (GRE-1124)", async () => {
     const { board, steward, agent, mason, base, org, companyId, actor } = await setup("Apps");
     const [key] = await ctx.db

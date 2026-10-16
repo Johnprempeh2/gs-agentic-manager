@@ -4,6 +4,7 @@ import { Inbox, Lock, PowerOff, SearchX, SlidersHorizontal } from "lucide-react"
 import { cn } from "@/lib/utils";
 import { useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -29,6 +30,7 @@ import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import {
+  BULK_REASON,
   actionErrorText,
   activeFilterCount,
   cardTitle,
@@ -263,6 +265,75 @@ function StewardActionDialog({
   );
 }
 
+type BulkAction = "confirm" | "reject";
+
+/**
+ * Confirm or reject several proposals in one go. Each one is still its own
+ * action with a recorded reason; any the server refuses are reported by name.
+ */
+function BulkReviewBar({
+  items,
+  companyId,
+  onDone,
+}: {
+  items: MemoryReviewQueueItem[];
+  companyId: string;
+  onDone: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [failures, setFailures] = useState<string[]>([]);
+  const confirmable = items.filter((item) => item.allowed.confirm);
+  const rejectable = items.filter((item) => item.allowed.reject);
+  const run = useMutation({
+    mutationFn: async (action: BulkAction) => {
+      const failed: string[] = [];
+      for (const item of action === "confirm" ? confirmable : rejectable) {
+        try {
+          await memoryReviewApi.act(companyId, item.proposal.id, {
+            action,
+            expectedVersion: item.proposal.version,
+            reason: BULK_REASON[action],
+          });
+        } catch (error) {
+          failed.push(`${cardTitle(item.proposal)}: ${actionErrorText(error)}`);
+        }
+      }
+      return failed;
+    },
+    onSuccess: (failed) => {
+      setFailures(failed);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.memoryReview.all(companyId) });
+      if (failed.length === 0) onDone();
+    },
+  });
+  const skipped = items.length - confirmable.length;
+  return (
+    <div className="space-y-2 border-b border-border bg-muted/40 px-3 py-2" aria-label="Act on picked proposals">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">{items.length} picked</span>
+        <Button size="sm" onClick={() => run.mutate("confirm")} disabled={run.isPending || confirmable.length === 0}>
+          Confirm {confirmable.length}
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => run.mutate("reject")} disabled={run.isPending || rejectable.length === 0}>
+          Reject {rejectable.length}
+        </Button>
+      </div>
+      {skipped > 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {skipped} of these you cannot confirm, usually because you added {skipped === 1 ? "it" : "them"}. Someone else must.
+        </p>
+      ) : null}
+      {failures.length > 0 ? (
+        <ul role="alert" className="space-y-0.5 text-xs text-destructive">
+          {failures.map((failure) => (
+            <li key={failure}>{failure}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function ReviewDetail({
   item,
   onAction,
@@ -302,6 +373,19 @@ function ReviewDetail({
         <MemoryCardPane heading="Proposed" tone="proposed" record={proposal} />
       </div>
 
+      {item.lookalike ? (
+        <div className="space-y-1 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
+          <p className="font-medium">
+            This looks like {item.lookalike.status === "approved" ? "a card already in memory" : "another proposal waiting here"}:
+          </p>
+          <p className="whitespace-pre-wrap break-words text-muted-foreground">
+            {item.lookalike.title ? `${item.lookalike.title}. ` : ""}
+            {item.lookalike.content ?? ""}
+          </p>
+          <p className="text-xs text-muted-foreground">If it says the same thing, reject this one or merge it into that card.</p>
+        </div>
+      ) : null}
+
       {item.conflictIds.length > 0 ? (
         <p className="rounded-md bg-status-alert-soft px-3 py-2 text-sm text-status-alert-foreground">
           This proposal conflicts with a confirmed card. Settle the conflict, or edit, merge or reject the proposal.
@@ -335,6 +419,7 @@ export function MemoryReview() {
   const selectedId = params.get("card");
   const view = params.get("view") === "stewards" ? "stewards" : "queue";
   const [pendingAction, setPendingAction] = useState<MemoryStewardAction | null>(null);
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Memory", href: "/memory" }, { label: "Review" }]);
@@ -367,6 +452,15 @@ export function MemoryReview() {
 
   const items = useMemo(() => sortQueue(queue.data?.items ?? []), [queue.data]);
   const selected = items.find((item) => item.proposal.id === selectedId) ?? items[0] ?? null;
+  const tickedItems = items.filter((item) => ticked.has(item.proposal.id));
+  const lookalikes = items.filter((item) => item.lookalike).length;
+  const tick = (id: string, on: boolean) =>
+    setTicked((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   if (!selectedCompanyId) {
     return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
@@ -427,9 +521,20 @@ export function MemoryReview() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-(--gtc-memory-review)">
               <section className="min-w-0 self-start overflow-hidden rounded-lg border border-border bg-card" aria-label="Review queue">
-                <div className="border-b border-border px-3 py-2 text-xs text-muted-foreground">
-                  {items.length} waiting{overdue > 0 ? ` · ${overdue} over 7 days` : ""}
+                <div className="flex items-center gap-3 border-b border-border px-3 py-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={tickedItems.length === items.length ? true : tickedItems.length > 0 ? "indeterminate" : false}
+                    onCheckedChange={(value) => setTicked(value === true ? new Set(items.map((item) => item.proposal.id)) : new Set())}
+                    aria-label="Pick all"
+                  />
+                  <span>
+                    {items.length} waiting{overdue > 0 ? ` · ${overdue} over 7 days` : ""}
+                    {lookalikes > 0 ? ` · ${lookalikes} look like ones already in memory` : ""}
+                  </span>
                 </div>
+                {tickedItems.length > 0 ? (
+                  <BulkReviewBar items={tickedItems} companyId={selectedCompanyId} onDone={() => setTicked(new Set())} />
+                ) : null}
                 <ul className="max-h-48 divide-y divide-border overflow-y-auto lg:max-h-(--sz-memory-list-max)">
                   {items.map((item) => (
                     <MemoryReviewRow
@@ -437,6 +542,8 @@ export function MemoryReview() {
                       item={item}
                       selected={item.proposal.id === selected?.proposal.id}
                       onSelect={() => updateParams({ card: item.proposal.id })}
+                      ticked={ticked.has(item.proposal.id)}
+                      onTick={(on) => tick(item.proposal.id, on)}
                     />
                   ))}
                 </ul>

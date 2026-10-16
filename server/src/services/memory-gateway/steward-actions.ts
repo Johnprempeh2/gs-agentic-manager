@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agentApiKeys,
@@ -12,12 +12,16 @@ import {
   memoryScopeStewards,
 } from "@greatstone/db";
 import {
+  MEMORY_IMPORT_SIMILAR_THRESHOLD,
   MEMORY_STEWARD_ACTIONS,
   memoryReviewAgeFlag,
+  memoryTextSimilarity,
+  memoryTextWords,
   type MemoryActorLabel,
   type MemoryCallerApp,
   type MemoryReviewQueue,
   type MemoryReviewQueueItem,
+  type MemoryRecordStatus,
   type MemoryReviewQueueQuery,
   type MemoryScopeKind,
   type MemoryScopeSteward,
@@ -57,6 +61,8 @@ type StewardRow = typeof memoryScopeStewards.$inferSelect;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const QUEUE_LIMIT = 1_000;
+/** Confirmed cards compared against for look-alikes, newest first. */
+const LOOKALIKE_LIMIT = 2_000;
 
 /** Plain reasons for every refusal; the UI shows them as they are. */
 const STEWARD_REFUSALS = {
@@ -237,6 +243,59 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     return { contributed, edited };
   }
 
+  /**
+   * For each proposal, the entry it most resembles by shared words: a
+   * confirmed card in the same scope, or an earlier proposal there. A hint for
+   * the reviewer only; nothing is merged or hidden.
+   */
+  async function findLookalikes(companyId: string, pending: RecordRow[], reviewable: RecordRow[], chains: Map<string, RecordRow[] | null>) {
+    const result = new Map<string, NonNullable<MemoryReviewQueueItem["lookalike"]>>();
+    if (reviewable.length === 0) return result;
+    const scopeIds = [...new Set(reviewable.map((row) => row.scopeId))];
+    const approved = await db
+      .select()
+      .from(memoryRecords)
+      .where(
+        and(
+          eq(memoryRecords.companyId, companyId),
+          eq(memoryRecords.status, "approved"),
+          isNull(memoryRecords.deletedAt),
+          inArray(memoryRecords.scopeId, scopeIds),
+        ),
+      )
+      .orderBy(desc(memoryRecords.updatedAt))
+      .limit(LOOKALIKE_LIMIT);
+    const words = new Map<string, Set<string>>();
+    const wordsOf = (row: RecordRow) => {
+      let found = words.get(row.id);
+      if (!found) {
+        found = memoryTextWords(`${row.title ?? ""} ${row.content ?? ""}`);
+        words.set(row.id, found);
+      }
+      return found;
+    };
+    // `pending` is oldest first, so a proposal is compared only with those before it.
+    const order = new Map(pending.map((row, index) => [row.id, index]));
+    for (const row of reviewable) {
+      const own = wordsOf(row);
+      if (own.size === 0) continue;
+      const related = new Set((chains.get(row.id) ?? [row]).map((version) => version.id));
+      const position = order.get(row.id) ?? 0;
+      const others = [...approved, ...pending.filter((other) => (order.get(other.id) ?? 0) < position)];
+      let best: { row: RecordRow; score: number } | null = null;
+      for (const other of others) {
+        if (other.scopeId !== row.scopeId || related.has(other.id)) continue;
+        const theirs = wordsOf(other);
+        // Jaccard can reach the threshold only when the sizes are close.
+        if (Math.min(own.size, theirs.size) / Math.max(own.size, theirs.size) < MEMORY_IMPORT_SIMILAR_THRESHOLD) continue;
+        const score = memoryTextSimilarity(own, theirs);
+        if (score >= MEMORY_IMPORT_SIMILAR_THRESHOLD && (!best || score > best.score)) best = { row: other, score };
+      }
+      if (best) result.set(row.id, { recordId: best.row.id, title: best.row.title, content: best.row.content, status: best.row.status as MemoryRecordStatus });
+    }
+    return result;
+  }
+
   async function reviewQueue(caller: MemoryCaller, query: MemoryReviewQueueQuery): Promise<MemoryReviewQueue> {
     await gateway.assertEnabled(caller.companyId);
     const access = await accessFor(caller);
@@ -299,6 +358,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
       reviewable.flatMap((row) => (chains.get(row.id) ?? [row]).map(actorKey)).filter((key): key is NonNullable<typeof key> => key !== null),
     );
     const apps = await appLabels(caller.companyId, [...new Set(reviewable.flatMap((row) => (chains.get(row.id) ?? [row]).map((version) => version.id)))]);
+    const lookalikes = await findLookalikes(caller.companyId, rows, reviewable, chains);
     const now = Date.now();
     const all: MemoryReviewQueueItem[] = reviewable.map((row) => {
       const scope = scopesById.get(row.scopeId)!;
@@ -331,6 +391,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
         conflictIds: conflicts.map((c) => c.id),
         allowed,
         blockedReason,
+        lookalike: currentRow && lookalikes.get(row.id)?.recordId === currentRow.id ? null : (lookalikes.get(row.id) ?? null),
       };
     });
 

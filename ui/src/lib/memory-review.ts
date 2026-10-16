@@ -94,13 +94,25 @@ export function actionErrorText(error: unknown): string {
 /** Cards a proposal can merge into: the confirmed card it changes, then other proposals in the same scope. */
 export function mergeTargets(item: MemoryReviewQueueItem, queue: MemoryReviewQueueItem[]) {
   const targets: Array<{ id: string; label: string }> = [];
+  // The look-alike comes first: it is the card a steward most likely means.
+  const lookalike = item.lookalike;
+  if (lookalike && lookalike.recordId !== item.current?.id) {
+    const kind = lookalike.status === "approved" ? "Confirmed" : "Proposal";
+    targets.push({ id: lookalike.recordId, label: `${kind}, looks the same: ${cardTitle(lookalike)}` });
+  }
   if (item.current) targets.push({ id: item.current.id, label: `Confirmed: ${cardTitle(item.current)}` });
   for (const other of queue) {
-    if (other.proposal.id === item.proposal.id || other.scope.id !== item.scope.id) continue;
+    if (other.proposal.id === item.proposal.id || other.scope.id !== item.scope.id || other.proposal.id === lookalike?.recordId) continue;
     targets.push({ id: other.proposal.id, label: `Proposal: ${cardTitle(other.proposal)}` });
   }
   return targets;
 }
+
+/** Reasons recorded when a steward confirms or rejects several cards at once. */
+export const BULK_REASON = {
+  confirm: "Confirmed with others in one go from the review queue.",
+  reject: "Rejected with others in one go from the review queue.",
+} as const;
 
 export function cardTitle(record: { title: string | null; content: string | null }) {
   return record.title?.trim() || record.content?.trim().slice(0, 80) || "Untitled card";
