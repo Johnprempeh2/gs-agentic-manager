@@ -56,6 +56,17 @@ export interface RoutineScheduleItem {
   triggers?: readonly (ScheduleTriggerSummary & { cronExpression?: string | null })[] | null;
 }
 
+/** "Every Monday at 09:00" for the enabled schedules; null when there are none or none can be read. */
+export function scheduleSummary(
+  triggers: readonly (ScheduleTriggerSummary & { cronExpression?: string | null })[] | null | undefined,
+): string | null {
+  const words = (triggers ?? [])
+    .filter((trigger) => trigger.kind === "schedule" && trigger.enabled)
+    .map((trigger) => describeCron(trigger.cronExpression))
+    .filter(Boolean) as string[];
+  return words.length > 0 ? words.join(" and ") : null;
+}
+
 function scheduleWords(routine: RoutineScheduleItem): string | null {
   const schedules = (routine.triggers ?? []).filter((trigger) => trigger.kind === "schedule" && trigger.enabled);
   const words = schedules.map((trigger) => describeCron(trigger.cronExpression)).filter(Boolean) as string[];
