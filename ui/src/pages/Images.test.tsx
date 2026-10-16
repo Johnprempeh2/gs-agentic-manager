@@ -47,6 +47,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     createdByUserId: null,
     issue: null,
     organisation: null,
+    altText: "A test image",
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,

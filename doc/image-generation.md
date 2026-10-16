@@ -42,7 +42,14 @@ show a plain message on the image card.
 
 From a task, **Make an image** (next to Upload attachment) opens the same
 composer in a dialog and adds the finished picture to the task through the
-normal attachment upload.
+normal attachment upload. The same button sits next to Upload files on a
+client's documents (the image is linked to that client and filed in the stage
+it was made from) and in board chat, where it joins the next message.
+
+Every image carries `altText`: a short description written from the prompt,
+with directions such as "no text" or "4k" left out. The UI uses it for the
+`alt` attribute so screen readers have plain words for the picture. It is
+worked out from the prompt, not by a language model, so it costs nothing.
 
 At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart

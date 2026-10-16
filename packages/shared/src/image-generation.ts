@@ -124,6 +124,42 @@ export function composeImagePrompt(prompt: string, style: string | null | undefi
   return `${sentence} ${preset.guidance}`;
 }
 
+// Directions to the image service that say nothing about what the picture
+// shows, so they are left out of the alt text.
+const ALT_TEXT_NOISE = [
+  /\bno (?:text|words|letters|logos?|watermarks?)\b/gi,
+  /\b(?:high|ultra)[ -]?(?:res(?:olution)?|detail(?:ed)?|quality)\b/gi,
+  /\b(?:4k|8k|hd|photorealistic|hyper[ -]?realistic|trending on \w+)\b/gi,
+  /\bplenty of (?:empty|negative) space\b/gi,
+];
+
+export const IMAGE_ALT_TEXT_MAX_LENGTH = 150;
+
+/**
+ * Alt text for a generated image, written from its description so screen
+ * readers and search have plain words for it. It keeps what the picture shows,
+ * drops directions such as "no text" or "4k", and stays short.
+ */
+export function imageAltText(prompt: string, style?: string | null): string {
+  let text = prompt.replace(/\s+/g, " ").trim();
+  for (const pattern of ALT_TEXT_NOISE) text = text.replace(pattern, "");
+  text = text
+    .replace(/\s*,\s*(?=,|$)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[\s,.;:]+|[\s,;:]+$/g, "")
+    .trim();
+  if (!text) text = "Generated image";
+  if (text.length > IMAGE_ALT_TEXT_MAX_LENGTH) {
+    const cut = text.slice(0, IMAGE_ALT_TEXT_MAX_LENGTH - 1);
+    const lastSpace = cut.lastIndexOf(" ");
+    text = `${(lastSpace > 60 ? cut.slice(0, lastSpace) : cut).replace(/[\s,;:.]+$/, "")}...`;
+  }
+  text = text.charAt(0).toUpperCase() + text.slice(1);
+  const preset = imageStylePreset(style);
+  if (preset?.id === "illustration") return `Illustration: ${text}`;
+  return text;
+}
+
 export const GENERATED_IMAGE_STATUSES = ["pending", "completed", "failed"] as const;
 export type GeneratedImageStatus = (typeof GENERATED_IMAGE_STATUSES)[number];
 
@@ -179,6 +215,8 @@ export interface GeneratedImage {
   issue: { id: string; identifier: string | null; title: string } | null;
   /** The client it was made for, if any. */
   organisation: { id: string; name: string } | null;
+  /** Short plain description for screen readers and search, written from the prompt. */
+  altText: string;
   createdAt: string;
   completedAt: string | null;
 }

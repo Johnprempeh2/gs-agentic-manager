@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { assets, generatedImages, issues, organisations } from "@greatstone/db";
 import {
   composeImagePrompt,
+  imageAltText,
   createGeneratedImageSchema,
   generatedImagesQuerySchema,
   GENERATED_IMAGES_MAX_PENDING_PER_COMPANY,
@@ -68,6 +69,7 @@ export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageL
     createdByUserId: row.createdByUserId,
     issue: links?.issue ?? null,
     organisation: links?.organisation ?? null,
+    altText: imageAltText(row.prompt, row.style),
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };

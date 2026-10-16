@@ -94,7 +94,7 @@ describeEmbeddedPostgres("generated images routes", () => {
       .send({ prompt: "  A lighthouse at dawn, watercolour ", aspectRatio: "16:9" });
     expect(created.status).toBe(202);
     const pending = created.body as GeneratedImage;
-    expect(pending).toMatchObject({ status: "pending", prompt: "A lighthouse at dawn, watercolour", aspectRatio: "16:9", createdByUserId: userId, contentPath: null });
+    expect(pending).toMatchObject({ status: "pending", prompt: "A lighthouse at dawn, watercolour", aspectRatio: "16:9", createdByUserId: userId, contentPath: null, altText: "A lighthouse at dawn, watercolour" });
 
     await waitForGeneratedImageJobs();
     expect(seen).toEqual([{ prompt: "A lighthouse at dawn, watercolour", aspectRatio: "16:9" }]);

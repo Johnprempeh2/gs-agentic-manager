@@ -101,7 +101,7 @@ function ImageCard({
           <button type="button" onClick={onOpen} className="block h-full w-full" aria-label={`Open image: ${image.prompt}`}>
             <img
               src={image.contentPath}
-              alt={image.prompt}
+              alt={image.altText}
               loading="lazy"
               className="h-full w-full object-cover transition-transform motion-safe:duration-300 group-hover:scale-105"
             />
@@ -445,7 +445,7 @@ export function Images() {
                 <DialogDescription className="whitespace-pre-wrap">{opened.prompt}</DialogDescription>
               </DialogHeader>
               {opened.contentPath ? (
-                <img src={opened.contentPath} alt={opened.prompt} className="max-h-(--sz-70vh) w-full rounded-md object-contain" />
+                <img src={opened.contentPath} alt={opened.altText} className="max-h-(--sz-70vh) w-full rounded-md object-contain" />
               ) : null}
               <p className="text-xs text-muted-foreground">
                 {[imageStyleLabel(opened.style), imageShapeLabel(opened.aspectRatio), `Made by ${makerName(opened)}`, relativeTime(opened.createdAt)]

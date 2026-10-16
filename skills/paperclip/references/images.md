@@ -55,7 +55,8 @@ next to that task.
    `failed` (then `error` says why in plain words).
 3. To attach it to your task, download `contentPath` and upload the file to
    `POST /api/companies/{companyId}/issues/{issueId}/attachments` as described
-   in `references/artifacts.md`.
+   in `references/artifacts.md`. When you put the image in a document or
+   comment, use its `altText` as the alt text: `![<altText>](<url>)`.
 
 ## Writing good prompts
 
