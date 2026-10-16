@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { Integrations, connectionState, describeImport, mailboxState } from "./Integrations";
-import { webhookState } from "./Integrations";
+import { outboundState, webhookState } from "./Integrations";
 
 const mocks = vi.hoisted(() => ({
   listConnections: vi.fn(),
@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   listActivity: vi.fn(),
   listHooks: vi.fn(),
   feedStatus: vi.fn(),
+  listOutbound: vi.fn(),
 }));
 
 vi.mock("@/api/tools", () => ({ toolsApi: { listConnections: mocks.listConnections } }));
@@ -23,6 +24,11 @@ vi.mock("@/api/inboundTaskHooks", () => ({ inboundTaskHooksApi: { list: mocks.li
 vi.mock("@/components/InboundTaskHooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/InboundTaskHooks")>()),
   InboundTaskHooksDialog: () => null,
+}));
+vi.mock("@/api/outboundWebhooks", () => ({ outboundWebhooksApi: { list: mocks.listOutbound } }));
+vi.mock("@/components/OutboundWebhooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/OutboundWebhooks")>()),
+  OutboundWebhooksDialog: () => null,
 }));
 vi.mock("@/api/calendar", () => ({ calendarApi: { feedStatus: mocks.feedStatus } }));
 vi.mock("@/components/CalendarFeed", async (importOriginal) => ({
@@ -61,6 +67,7 @@ describe("Integrations", () => {
     mocks.listActivity.mockResolvedValue([]);
     mocks.listHooks.mockResolvedValue([]);
     mocks.feedStatus.mockResolvedValue({ enabled: false, lastFetchedAt: null });
+    mocks.listOutbound.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -181,6 +188,25 @@ describe("Integrations", () => {
     expect(webhookState([hook({ enabled: false })] as never)).toBe("off");
     expect(webhookState([hook({ lastErrorAt: "2026-10-16T02:00:00Z" })] as never)).toBe("attention");
     expect(webhookState([hook({ lastErrorAt: "2026-10-16T01:00:00Z", lastUsedAt: "2026-10-16T02:00:00Z" })] as never)).toBe("connected");
+  });
+
+  it("shows outbound webhooks and their last send", async () => {
+    mocks.listConnections.mockResolvedValue({ connections: [] });
+    mocks.listMailboxes.mockResolvedValue([]);
+    mocks.listOutbound.mockResolvedValue([
+      { id: "o1", name: "Slack #ops", maskedUrl: "https://hooks.slack.com/…ABCD", events: ["task.done"], enabled: true, lastDeliveryAt: new Date().toISOString(), lastDeliveryOk: false, lastError: "The address answered 404", createdAt: new Date().toISOString() },
+    ]);
+    await render();
+    expect(card("outbound-webhook").textContent).toContain("Needs attention");
+    expect(card("outbound-webhook").textContent).toContain("Slack #ops: Last send failed");
+    expect(card("outbound-webhook").textContent).toContain("Manage");
+  });
+
+  it("works out the outbound webhook state", () => {
+    expect(outboundState([])).toBe("not_connected");
+    expect(outboundState([{ enabled: false }] as never)).toBe("off");
+    expect(outboundState([{ enabled: true, lastDeliveryOk: null }] as never)).toBe("connected");
+    expect(outboundState([{ enabled: true, lastDeliveryOk: false }] as never)).toBe("attention");
   });
 
   it("shows the deadlines calendar feed as off until turned on", async () => {
