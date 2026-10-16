@@ -63,12 +63,14 @@ export interface OrganisationImportResult {
   source: "pipedrive" | "hubspot";
   organisations: OrganisationImportCounts;
   contacts: OrganisationImportCounts;
-  /** Export import only: deals added as client cases in the chosen pipeline. */
+  /** Deals made into cases: in the chosen pipeline (export) or each deal's own pipeline (connection). */
   deals?: OrganisationImportCounts;
+  /** Connection import only: Pipedrive pipelines made into GSAM pipelines with their stages. */
+  pipelines?: OrganisationImportCounts;
   /** Export import only: activities attached to the imported deals' cases. */
   activities?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }

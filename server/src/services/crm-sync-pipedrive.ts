@@ -1,7 +1,8 @@
 // Pipedrive client for CRM sync (GRE-1100 part 2, write-back GRE-1076).
 // Contract: doc/CRM-SYNC-CONTRACT.md. It reads deals and deal fields, and
 // updates one deal's fields. The organisation import (GRE-1479) only reads
-// organisations, persons and organisation fields. Only the sync runner calls `updateDeal`; agents
+// organisations, persons and organisation fields, and the full deal import
+// reads pipelines, stages, users and every deal. Only the sync runner calls `updateDeal`; agents
 // never write to Pipedrive through it. Rate-limit answers (429) are retried
 // with back-off before the caller sees them.
 import type { CrmSyncFieldValue } from "@greatstone/shared";
@@ -61,6 +62,9 @@ export interface PipedriveDeal {
 export interface PipedriveDealField {
   key: string;
   name?: string;
+  /** Custom fields can be edited; Pipedrive's own fields cannot. */
+  edit_flag?: boolean | null;
+  active_flag?: boolean | null;
   field_type?: string;
   options?: Array<{ id: number | string; label: string }> | null;
 }
@@ -96,6 +100,35 @@ export interface PipedrivePerson {
   email?: PipedriveContactValue[] | string | null;
   phone?: PipedriveContactValue[] | string | null;
   [key: string]: unknown;
+}
+
+/** One pipeline from `/v1/pipelines`. */
+export interface PipedrivePipeline {
+  id: number;
+  name?: string | null;
+  order_nr?: number | null;
+  active?: boolean | null;
+  deal_probability?: boolean | null;
+}
+
+/** One stage from `/v1/stages`. */
+export interface PipedriveStage {
+  id: number;
+  name?: string | null;
+  pipeline_id?: number | null;
+  order_nr?: number | null;
+  deal_probability?: number | null;
+  rotten_flag?: boolean | null;
+  rotten_days?: number | null;
+  active_flag?: boolean | null;
+}
+
+/** One user from `/v1/users`. */
+export interface PipedriveUser {
+  id: number;
+  name?: string | null;
+  email?: string | null;
+  active_flag?: boolean | null;
 }
 
 export interface PipedriveClientOptions {
@@ -219,6 +252,39 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
         start = page.nextStart;
       }
       return fields;
+    },
+
+    /** Every pipeline (API v1, read only). Used by the full deal import. */
+    async listPipelines() {
+      const body = await get("/api/v1/pipelines", {});
+      return Array.isArray(body.data) ? body.data as PipedrivePipeline[] : [];
+    },
+
+    /** Every stage of every pipeline (API v1, read only). */
+    async listStages() {
+      const body = await get("/api/v1/stages", {});
+      return Array.isArray(body.data) ? body.data as PipedriveStage[] : [];
+    },
+
+    /** Every user on the account, so owner and user fields read as names. */
+    async listUsers() {
+      const body = await get("/api/v1/users", {});
+      return Array.isArray(body.data) ? body.data as PipedriveUser[] : [];
+    },
+
+    /**
+     * One page of every deal that is not deleted, in every pipeline and status
+     * (API v1, read only). v1 answers custom fields as top-level keys.
+     */
+    async listAllDealsPage(input: { start?: number } = {}) {
+      const body = await get("/api/v1/deals", { start: input.start ?? 0, limit: V1_LIST_PAGE_SIZE, status: "all_not_deleted" });
+      const items = Array.isArray(body.data) ? body.data as PipedriveDeal[] : [];
+      const pagination = (body.additional_data as { pagination?: { more_items_in_collection?: boolean; next_start?: number } } | undefined)
+        ?.pagination;
+      const nextStart = pagination?.more_items_in_collection && typeof pagination.next_start === "number"
+        ? pagination.next_start
+        : null;
+      return { items, nextStart };
     },
 
     /** Deals in one Pipedrive pipeline changed since `updatedSince`, oldest change first (API v2). */

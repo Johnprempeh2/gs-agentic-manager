@@ -1,0 +1,356 @@
+{
+  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented.",
+  "pipelines": {
+    "success": true,
+    "data": [
+      {
+        "id": 1,
+        "name": "DevTools journey",
+        "order_nr": 1,
+        "active": true,
+        "deal_probability": true
+      },
+      {
+        "id": 2,
+        "name": "DX engagements",
+        "order_nr": 2,
+        "active": true,
+        "deal_probability": false
+      }
+    ]
+  },
+  "stages": {
+    "success": true,
+    "data": [
+      {
+        "id": 11,
+        "name": "Signed up",
+        "pipeline_id": 1,
+        "order_nr": 1,
+        "deal_probability": 10,
+        "rotten_flag": false,
+        "rotten_days": null,
+        "active_flag": true
+      },
+      {
+        "id": 12,
+        "name": "Trial",
+        "pipeline_id": 1,
+        "order_nr": 2,
+        "deal_probability": 30,
+        "rotten_flag": true,
+        "rotten_days": 14,
+        "active_flag": true
+      },
+      {
+        "id": 13,
+        "name": "Team rollout",
+        "pipeline_id": 1,
+        "order_nr": 3,
+        "deal_probability": 70,
+        "rotten_flag": false,
+        "rotten_days": null,
+        "active_flag": true
+      },
+      {
+        "id": 21,
+        "name": "Discovery",
+        "pipeline_id": 2,
+        "order_nr": 1,
+        "deal_probability": 100,
+        "active_flag": true
+      },
+      {
+        "id": 22,
+        "name": "Proposal",
+        "pipeline_id": 2,
+        "order_nr": 2,
+        "deal_probability": 100,
+        "active_flag": true
+      }
+    ]
+  },
+  "users": {
+    "success": true,
+    "data": [
+      {
+        "id": 9001,
+        "name": "Ama Owusu",
+        "email": "ama@example.test",
+        "active_flag": true
+      },
+      {
+        "id": 9002,
+        "name": "Kofi Mensah",
+        "email": "kofi@example.test",
+        "active_flag": true
+      }
+    ]
+  },
+  "dealFields": {
+    "success": true,
+    "data": [
+      {
+        "key": "title",
+        "name": "Title",
+        "field_type": "varchar",
+        "edit_flag": false
+      },
+      {
+        "key": "value",
+        "name": "Value",
+        "field_type": "monetary",
+        "edit_flag": false
+      },
+      {
+        "key": "currency",
+        "name": "Currency",
+        "field_type": "varchar_options",
+        "edit_flag": false
+      },
+      {
+        "key": "user_id",
+        "name": "Owner",
+        "field_type": "user",
+        "edit_flag": false
+      },
+      {
+        "key": "person_id",
+        "name": "Contact person",
+        "field_type": "people",
+        "edit_flag": false
+      },
+      {
+        "key": "org_id",
+        "name": "Organization",
+        "field_type": "org",
+        "edit_flag": false
+      },
+      {
+        "key": "lost_reason",
+        "name": "Lost reason",
+        "field_type": "varchar",
+        "edit_flag": false
+      },
+      {
+        "key": "label",
+        "name": "Label",
+        "field_type": "set",
+        "edit_flag": false,
+        "options": [
+          {
+            "id": 5,
+            "label": "Hot"
+          },
+          {
+            "id": 6,
+            "label": "Enterprise"
+          }
+        ]
+      },
+      {
+        "key": "channel",
+        "name": "Source channel",
+        "field_type": "enum",
+        "edit_flag": false,
+        "options": [
+          {
+            "id": 1,
+            "label": "Product sign-up"
+          },
+          {
+            "id": 2,
+            "label": "Referral"
+          }
+        ]
+      },
+      {
+        "key": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "DevTools plan",
+        "field_type": "enum",
+        "edit_flag": true,
+        "options": [
+          {
+            "id": 31,
+            "label": "Starter"
+          },
+          {
+            "id": 32,
+            "label": "Team"
+          },
+          {
+            "id": 33,
+            "label": "Scale"
+          }
+        ]
+      },
+      {
+        "key": "b1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "Seats",
+        "field_type": "double",
+        "edit_flag": true
+      },
+      {
+        "key": "c1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "Tools in use",
+        "field_type": "set",
+        "edit_flag": true,
+        "options": [
+          {
+            "id": 41,
+            "label": "CLI"
+          },
+          {
+            "id": 42,
+            "label": "SDK"
+          },
+          {
+            "id": 43,
+            "label": "IDE plugin"
+          }
+        ]
+      },
+      {
+        "key": "d1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "Annual contract value",
+        "field_type": "monetary",
+        "edit_flag": true
+      },
+      {
+        "key": "e1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "Trial started",
+        "field_type": "date",
+        "edit_flag": true
+      },
+      {
+        "key": "f1b2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "Success manager",
+        "field_type": "user",
+        "edit_flag": true
+      },
+      {
+        "key": "0ab2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "Technical notes",
+        "field_type": "text",
+        "edit_flag": true
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealsPage1": {
+    "success": true,
+    "data": [
+      {
+        "id": 701,
+        "title": "Northwind CLI trial",
+        "value": 12000,
+        "currency": "GBP",
+        "status": "open",
+        "stage_id": 12,
+        "pipeline_id": 1,
+        "user_id": {
+          "id": 9001,
+          "name": "Ama Owusu",
+          "email": "ama@example.test",
+          "value": 9001
+        },
+        "person_id": {
+          "name": "Esi Boateng",
+          "value": 501
+        },
+        "org_id": {
+          "name": "Northwind Minerals",
+          "value": 101
+        },
+        "expected_close_date": "2026-12-01",
+        "probability": 40,
+        "lost_reason": null,
+        "label": "5,6",
+        "channel": 1,
+        "origin": "API",
+        "add_time": "2026-09-01 09:30:00",
+        "update_time": "2026-10-10 12:00:00",
+        "stage_change_time": "2026-09-20 08:00:00",
+        "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "32",
+        "b1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "25",
+        "c1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "41,42",
+        "d1b2c3d4e5f60718293a4b5c6d7e8f9012345678": 18000,
+        "d1b2c3d4e5f60718293a4b5c6d7e8f9012345678_currency": "GBP",
+        "e1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "2026-09-15",
+        "f1b2c3d4e5f60718293a4b5c6d7e8f9012345678": 9002,
+        "0ab2c3d4e5f60718293a4b5c6d7e8f9012345678": "Uses the SDK in CI."
+      },
+      {
+        "id": 702,
+        "title": "Blue Harbour team plan",
+        "value": 30000,
+        "currency": "USD",
+        "status": "won",
+        "stage_id": 13,
+        "pipeline_id": 1,
+        "user_id": 9002,
+        "person_id": null,
+        "org_id": {
+          "name": "Blue Harbour Energy",
+          "value": 102
+        },
+        "won_time": "2026-08-30 15:00:00",
+        "close_time": "2026-08-30 15:00:00",
+        "label": null,
+        "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "99",
+        "c1b2c3d4e5f60718293a4b5c6d7e8f9012345678": null
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": true,
+        "next_start": 2
+      }
+    }
+  },
+  "dealsPage2": {
+    "success": true,
+    "data": [
+      {
+        "id": 703,
+        "title": "Cedar Lane discovery",
+        "value": null,
+        "currency": "GBP",
+        "status": "lost",
+        "stage_id": 21,
+        "pipeline_id": 2,
+        "user_id": {
+          "id": 9001,
+          "name": "Ama Owusu",
+          "value": 9001
+        },
+        "org_id": null,
+        "lost_reason": "Chose an in-house build",
+        "lost_time": "2026-07-04 10:00:00",
+        "close_time": "2026-07-04 10:00:00"
+      },
+      {
+        "id": 704,
+        "title": "Deal in an unknown pipeline",
+        "status": "open",
+        "stage_id": 99,
+        "pipeline_id": 99
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  }
+}

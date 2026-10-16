@@ -225,6 +225,8 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             connectionId: connection.id,
             organisations: result.organisations,
             contacts: result.contacts,
+            ...(result.pipelines ? { pipelines: result.pipelines } : {}),
+            ...(result.deals ? { deals: result.deals } : {}),
           },
         });
         res.json(result);
