@@ -10,7 +10,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useToastActions } from "../context/ToastContext";
 import { useStrategyEnabled } from "../hooks/useStrategyEnabled";
 import { queryKeys } from "../lib/queryKeys";
-import { buildScoreboard } from "../lib/goal-journey";
+import { buildScoreboard, needsAttention } from "../lib/goal-journey";
 import { buildStrategyCascade, hasStrategyGoals } from "../lib/goal-cascade";
 import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { relativeTime } from "../lib/utils";
@@ -50,6 +50,7 @@ export function Goals() {
   const { pushToast } = useToastActions();
   const queryClient = useQueryClient();
   const [showAchieved, setShowAchieved] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const goalsCopy = useCopyAction();
 
   useEffect(() => {
@@ -102,10 +103,15 @@ export function Goals() {
   const cascade = useMemo(() => buildStrategyCascade(goals ?? []), [goals]);
   // Goals with a kind live in the strategic plan; the scoreboard keeps plain goals.
   const plainGoals = useMemo(() => (goals ?? []).filter((goal) => goal.kind == null), [goals]);
-  const entries = useMemo(
+  const allEntries = useMemo(
     () => buildScoreboard(plainGoals, { includeAchieved: showAchieved }),
     [plainGoals, showAchieved],
   );
+  const attentionEntries = useMemo(() => needsAttention(allEntries), [allEntries]);
+  // The filter only helps when some goals, but not all, need attention.
+  const canFilterAttention = attentionEntries.length > 0 && attentionEntries.length < allEntries.length;
+  const attentionOn = attentionOnly && canFilterAttention;
+  const entries = attentionOn ? attentionEntries : allEntries;
   const hasAchieved = plainGoals.some((goal) => goal.status === "achieved");
   const nameLookups = {
     agentName: (id: string) => agentsById.get(id)?.name,
@@ -154,6 +160,17 @@ export function Goals() {
               >
                 <Network className="size-3.5" />
                 {createStrategicPlan.isPending ? "Adding…" : STRATEGIC_PLAN_TEMPLATE_NAME}
+              </Button>
+            ) : null}
+            {canFilterAttention ? (
+              <Button
+                size="sm"
+                variant="outline"
+                aria-pressed={attentionOn}
+                title="Show only goals that are blocked or at risk. Copy and download follow what is shown."
+                onClick={() => setAttentionOnly(!attentionOn)}
+              >
+                {attentionOn ? "Show every goal" : `Needs attention (${attentionEntries.length})`}
               </Button>
             ) : null}
             {hasAchieved ? (
