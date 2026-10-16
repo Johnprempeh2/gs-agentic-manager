@@ -206,6 +206,8 @@ describe("instance settings service", () => {
       expect(normalizeExperimentalSettings({})[key]).toBe(true);
       expect(normalizeExperimentalSettings({ autoRestartDevServerWhenIdle: true })[key]).toBe(true);
       expect(normalizeExperimentalSettings({ [key]: false })[key]).toBe(true);
+      // An unparseable row takes the fallback branch.
+      expect(normalizeExperimentalSettings({ [key]: "yes" })[key]).toBe(true);
     }
   });
 
