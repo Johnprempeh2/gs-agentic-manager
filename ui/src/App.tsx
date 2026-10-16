@@ -92,6 +92,7 @@ const MemoryClients = lazyPage(() => import("./pages/MemoryClients"), "MemoryCli
 const GoalDetail = lazyPage(() => import("./pages/GoalDetail"), "GoalDetail");
 const StrategyBoard = lazyPage(() => import("./pages/StrategyBoard"), "StrategyBoard");
 const Tutorials = lazyPage(() => import("./pages/Tutorials"), "Tutorials");
+const WhatsNew = lazyPage(() => import("./pages/WhatsNew"), "WhatsNew");
 const BoardAgentChat = lazyPage(() => import("./pages/BoardAgentChat"), "BoardAgentChat");
 const Approvals = lazyPage(() => import("./pages/Approvals"), "Approvals");
 const ApprovalDetail = lazyPage(() => import("./pages/ApprovalDetail"), "ApprovalDetail");
@@ -421,6 +422,7 @@ function boardRoutes() {
       <Route path="website" element={<Website />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
+      <Route path="whats-new" element={<WhatsNew />} />
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
@@ -848,6 +850,7 @@ export function App() {
           <Route path="images" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
+          <Route path="whats-new" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />

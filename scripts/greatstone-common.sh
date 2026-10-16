@@ -288,6 +288,49 @@ preview_running() {
   ps -o command= -p "$pid" | grep -qF -- "$PREVIEW_DATA_DIR"
 }
 
+# gs_lock <name> [<what>...]: one holder at a time for the steps that share ~/GSAM/preview
+# ("preview") or cut tags ("candidate"). On 15 Oct 2026 Flint's preview starts
+# ran while John's did: each start removed the seed folder and the data copy
+# the other was restoring, and stopped its database. The lock is the folder
+# $GS_ROOT/locks/<name>.lock with the holder's pid ($$, also from a $(...)),
+# run and issue; the caller removes it on exit.
+# A lock whose holder is gone (killed with SIGKILL, so no exit trap) is taken
+# over. Fails, naming the holder, when another step holds it.
+gs_lock() {
+  local dir="$GS_ROOT/locks/$1.lock" pid age
+  mkdir -p "$GS_ROOT/locks"
+  if ! mkdir "$dir" 2>/dev/null; then
+    pid="$(sed -n 's/^pid=//p' "$dir/owner" 2>/dev/null || true)"
+    age="$(perl -e 'printf "%d", time - (stat shift)[9]' "$dir" 2>/dev/null || echo 0)"
+    # No owner yet: the holder made the folder a moment ago and writes it next.
+    if { [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; } || { [ -z "$pid" ] && [ "$age" -lt 60 ]; }; then
+      say "another $1 step runs ($(tr '\n' ' ' <"$dir/owner" 2>/dev/null | sed 's/ $//')); wait for it to end. If none runs, remove $dir."
+      return 1
+    fi
+    rm -rf "$dir"
+    mkdir "$dir" 2>/dev/null || { say "another $1 step took the lock just now; try again."; return 1; }
+    say "Took over the $1 lock from pid ${pid:-<none>}, which no longer runs." >&2
+  fi
+  printf 'pid=%s\ncommand=%s\nrun_id=%s\nissue_id=%s\nstarted_at=%s\n' "$$" "$(basename "$0") ${*:2}" \
+    "$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')" "$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$dir/owner"
+}
+
+# preview_check <commit> <tag>
+# Fails with the reason unless the preview runs <commit> and answers on
+# /api/health now. On 15 Oct 2026 the preview of rc-2026-10-15.3 never came up
+# and the release went out anyway, because the release only refused a preview
+# of a different tag, not a missing or broken one.
+preview_check() {
+  local skip="Only in an emergency: greatstone-release.sh --skip-preview \"<reason>\" $2 (logged in $GS_ROOT/preview-overrides.log). Nothing was changed."
+  preview_running || { say "no preview of $2 is running, so it was not checked on a copy of the live data. Start it: scripts/greatstone-preview.sh start $2. $skip"; return 1; }
+  [ "$(preview_state commit)" = "$1" ] \
+    || { say "the preview runs $(preview_state tag) ($(preview_state commit)), not $2. Release the tag you checked, or check $2 in the preview first. $skip"; return 1; }
+  [ "$(health_commit "$PREVIEW_URL")" = "$1" ] \
+    || { say "the preview of $2 does not answer on $PREVIEW_URL/api/health; see $PREVIEW_LOG. $skip"; return 1; }
+  say "the preview runs $2 ($1) and answers on $PREVIEW_URL"
+}
+
 # Prints the PIDs whose command line matches <pattern> (extended regex) and
 # whose working folder is <dir> or inside it. The folder tells live (~/GSAM/live)
 # from the preview (~/GSAM/preview/code) and from sandboxes in worktrees.

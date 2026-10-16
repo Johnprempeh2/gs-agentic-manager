@@ -65,6 +65,8 @@ const mockProjectService = vi.hoisted(() => ({
 
 const mockDocumentService = vi.hoisted(() => ({
   upsertIssueDocument: vi.fn(),
+  // No maker is named on these documents, so writes take the normal path.
+  getIssueDocumentWriteAccess: vi.fn(async () => null),
 }));
 
 const mockWorkProductService = vi.hoisted(() => ({

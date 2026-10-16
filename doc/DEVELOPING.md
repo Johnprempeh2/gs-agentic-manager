@@ -440,6 +440,18 @@ pnpm test:release-smoke
 
 These browser suites are intended for targeted local verification and CI, not the default agent/human test command.
 
+Before and after a release, run the page smoke from the checkout you are
+releasing:
+
+```sh
+pnpm smoke:pages
+```
+
+It boots a throwaway instance from that checkout (temp folder, embedded
+Postgres, port 3298 or `GSAM_E2E_PORT`) and walks about 30 main pages
+headless. It fails on a page error, a 5xx from the API, an error screen or
+"Page not found". It never touches live data. It takes about two minutes.
+
 The default E2E configuration builds the UI into `server/ui-dist` before starting
 its throwaway instance and serves that build with
 `GSAM_UI_DEV_MIDDLEWARE=false`. This exercises the

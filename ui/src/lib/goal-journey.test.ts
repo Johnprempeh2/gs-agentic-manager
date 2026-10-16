@@ -4,6 +4,7 @@ import {
   blockerSentence,
   buildJourney,
   buildScoreboard,
+  needsAttention,
   goalHealth,
   leadAgentId,
   mainBlockerSummary,
@@ -259,5 +260,28 @@ describe("targetDateLabel", () => {
 
   it("shows only the date once the goal is done", () => {
     expect(targetDateLabel("2026-10-06", true, now)).toBe("Target 6 Oct");
+  });
+});
+
+describe("needsAttention", () => {
+  it("keeps blocked and at-risk goals, and parents of sub-goals that need attention", () => {
+    const entries = buildScoreboard(
+      [
+        makeGoal({ id: "fine", title: "Fine", targetDate: "2026-12-31" }),
+        makeGoal({ id: "late", title: "Late", targetDate: "2026-01-01" }),
+        makeGoal({ id: "parent", title: "Parent", targetDate: "2026-12-31" }),
+        makeGoal({ id: "late-child", title: "Late child", parentId: "parent", targetDate: "2026-01-01" }),
+        makeGoal({ id: "fine-child", title: "Fine child", parentId: "parent", targetDate: "2026-12-31" }),
+      ],
+      { now: NOW },
+    );
+    const shown = needsAttention(entries);
+    expect(shown.map((entry) => entry.goal.id)).toEqual(["late", "parent"]);
+    expect(shown[1]!.subGoals.map((sub) => sub.goal.id)).toEqual(["late-child"]);
+  });
+
+  it("returns nothing when every goal is fine", () => {
+    const entries = buildScoreboard([makeGoal({ id: "fine", targetDate: "2026-12-31" })], { now: NOW });
+    expect(needsAttention(entries)).toEqual([]);
   });
 });

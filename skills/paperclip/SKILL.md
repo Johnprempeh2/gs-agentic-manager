@@ -642,7 +642,7 @@ PUT /api/issues/{issueId}/documents/plan
 }
 ```
 
-If `plan` already exists, first `GET /api/issues/{issueId}/documents/plan` and read its current body and `latestRevisionId`. Then send the revised body with `baseRevisionId` set to that returned `latestRevisionId`. The GET field is `latestRevisionId`; the PUT field is `baseRevisionId`. Omitting it on an update returns `409`. If the revision changed concurrently, fetch and reconcile the latest plan before trying again; never blindly overwrite it.
+If `plan` already exists, first `GET /api/issues/{issueId}/documents/plan` and read its current body and `latestRevisionId`. Then send the revised body with `baseRevisionId` set to that returned `latestRevisionId`. The GET field is `latestRevisionId`; the PUT field is `baseRevisionId`. Omitting it on an update returns `409`. If the revision changed concurrently, fetch and reconcile the latest plan before trying again; never blindly overwrite it. To share one document across stage tasks, link it with `POST /api/issues/{issueId}/document-links` (`{ "sourceIssueId", "key" }`) rather than copying it; only the owning task's assignee, or the one maker that task names, can write it.
 
 ## Key Endpoints (Hot Routes)
 

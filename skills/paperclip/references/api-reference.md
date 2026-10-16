@@ -1433,7 +1433,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/issues/:issueId/documents`   | List issue documents                                                                     |
 | GET    | `/api/issues/:issueId/documents/:key` | Get issue document by key                                                            |
 | PUT    | `/api/issues/:issueId/documents/:key` | Create or update issue document (send `baseRevisionId` when updating)                |
-| GET    | `/api/issues/:issueId/documents/:key/revisions` | Document revision history                                                  |
+| GET    | `/api/issues/:issueId/documents/:key/revisions` | Document revision history. Shared documents: `PUT .../documents/:key/approved-revision` with `{ "revisionId" }` (or `null`) marks the approved version; `PUT .../documents/:key/maker` with `{ "makerAgentId" }` names one extra agent who may write that document (both: board or the task assignee only); `GET\|POST /api/issues/:issueId/document-links` with `{ "sourceIssueId", "key" }` links another task's live document instead of copying it, and `DELETE .../document-links/:linkId` removes the link |
 | DELETE | `/api/issues/:issueId/documents/:key` | Delete document (board-only)                                                         |
 | GET    | `/api/issues/:issueId/approvals`   | List approvals linked to issue                                                           |
 | POST   | `/api/issues/:issueId/approvals`   | Link approval to issue                                                                   |

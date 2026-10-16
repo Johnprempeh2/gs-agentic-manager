@@ -5,12 +5,24 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientJourneyResponse, ClientJourneyStage } from "@greatstone/shared";
-import { buildJourneyOverview, ClientJourneyOverview } from "./ClientJourneyOverview";
+import { MemoryRouter } from "react-router-dom";
+import {
+  ballWith,
+  buildJourneyOverview,
+  ClientJourneyOverview,
+  daysSince,
+  reminderEmail,
+  statusEmail,
+} from "./ClientJourneyOverview";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const api = vi.hoisted(() => ({ getCaseJourney: vi.fn(), getCaseFiles: vi.fn() }));
+const api = vi.hoisted(() => ({ getCaseJourney: vi.fn(), getCaseFiles: vi.fn(), listCaseContacts: vi.fn() }));
+const mailboxes = vi.hoisted(() => ({ list: vi.fn(), saveDraft: vi.fn() }));
+const pushToast = vi.hoisted(() => vi.fn());
 vi.mock("../api/pipelines", () => ({ pipelinesApi: api }));
+vi.mock("../api/mailboxes", () => ({ mailboxesApi: mailboxes }));
+vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast }) }));
 
 function stage(overrides: Partial<ClientJourneyStage>): ClientJourneyStage {
   return {
@@ -91,6 +103,40 @@ describe("buildJourneyOverview", () => {
   });
 });
 
+describe("stuck days, the ball and the email drafts", () => {
+  const overview = buildJourneyOverview(journey, evidence);
+
+  it("counts whole days in the stage and says who has the next move", () => {
+    expect(daysSince("2026-10-01T09:00:00Z", new Date("2026-10-16T08:00:00Z"))).toBe(14);
+    expect(daysSince(null)).toBeNull();
+    expect(daysSince("not a date")).toBeNull();
+    expect(ballWith(overview)).toBe("client");
+    const ours = buildJourneyOverview(
+      { ...journey, engagement: { ...journey.engagement!, status: "accepted" }, stages: [journey.stages[1]!].map((entry) => ({ ...entry, requests: [] })) },
+      [],
+    );
+    expect(ballWith(ours)).toBe("us");
+  });
+
+  it("drafts a reminder listing what the client owes, and a status update", () => {
+    const context = { clientName: "Omni Bank", contactName: "Kofi Mensah", to: ["kofi@omni.example"] };
+    const reminder = reminderEmail(overview, context);
+    expect(reminder.subject).toBe("Omni Bank: a quick reminder");
+    expect(reminder.to).toEqual(["kofi@omni.example"]);
+    expect(reminder.text).toContain("Hello Kofi,");
+    expect(reminder.text).toContain("- Accept the engagement pack\n- Send Org chart");
+    expect(reminder.text).not.toContain("Deliver");
+
+    const status = statusEmail(overview, { ...context, nextAction: "Playback workshop on 20 Oct." });
+    expect(status.subject).toBe("Omni Bank: where things stand");
+    expect(status.text).toContain("Current stage: Deep Dive.");
+    expect(status.text).toContain("Completed: Executive Discovery.");
+    expect(status.text).toContain("Documents received at this stage: IT strategy, Site photos.zip.");
+    expect(status.text).toContain("Next step: Playback workshop on 20 Oct.\n");
+    expect(status.text).toContain("After that: GDXP.");
+  });
+});
+
 describe("ClientJourneyOverview", () => {
   let container: HTMLDivElement;
   let root: Root;
@@ -101,11 +147,59 @@ describe("ClientJourneyOverview", () => {
     root = createRoot(container);
     api.getCaseJourney.mockResolvedValue(journey);
     api.getCaseFiles.mockResolvedValue({ evidence, deliverables: [] });
+    api.listCaseContacts.mockResolvedValue([{ id: "c1", name: "Kofi Mensah", email: "kofi@omni.example" }]);
+    mailboxes.list.mockResolvedValue([
+      { id: "mb-off", label: "Shared", address: "team@greatstone.example", allowDrafts: false },
+      { id: "mb-1", label: "John", address: "john@greatstone.example", allowDrafts: true },
+    ]);
+    mailboxes.saveDraft.mockResolvedValue({ mailboxId: "mb-1", folder: "Drafts", subject: "s", to: [] });
   });
 
   afterEach(() => {
     act(() => root.unmount());
     container.remove();
+  });
+
+  async function settle() {
+    for (let i = 0; i < 4; i += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+  }
+
+  it("says how long the stage has waited and saves a reminder as a draft, never sending", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const entered = new Date(Date.now() - 10 * 86_400_000).toISOString();
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter>
+            <ClientJourneyOverview caseId="case-1" companyId="company-1" clientName="Omni Bank" stageEnteredAt={entered} />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      );
+    });
+    await settle();
+    expect(container.querySelector("[data-testid='client-journey-overview-days']")?.textContent).toBe("Stuck for 10 days");
+    expect(container.querySelector("[data-testid='client-journey-overview-ball']")?.textContent).toContain(
+      "The ball is with the client.",
+    );
+
+    const remind = [...container.querySelectorAll("button")].find((button) => button.textContent?.trim() === "Draft a reminder")!;
+    await act(async () => remind.click());
+    await settle();
+    expect(document.body.textContent).toContain("Saving in John.");
+    expect(document.querySelector<HTMLInputElement>("#email-draft-to")?.value).toBe("kofi@omni.example");
+    const save = [...document.querySelectorAll<HTMLButtonElement>("button")].find((button) => button.textContent === "Save as draft")!;
+    await act(async () => save.click());
+    await settle();
+    expect(mailboxes.saveDraft).toHaveBeenCalledWith("company-1", "mb-1", expect.objectContaining({
+      to: ["kofi@omni.example"],
+      cc: [],
+      subject: "Omni Bank: a quick reminder",
+    }));
+    expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Draft saved" }));
   });
 
   it("names who each wait is on and links the collected documents", async () => {
