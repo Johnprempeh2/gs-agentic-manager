@@ -711,3 +711,7 @@ For an open answer, use a text field, not invented choices. POST `/api/issues/{i
 ```
 
 See [the API reference](references/api-reference.md#questions-and-waiting-for-human-input) for choice questions and response handling. Include the normal Authorization and X-Paperclip-Run-Id headers.
+
+**Images.** Load `references/images.md` when a task asks you to make a picture (a social
+post, a slide or banner visual, an illustration). GSAM makes it from your
+description and can attach it to your task with `gsam image generate`.

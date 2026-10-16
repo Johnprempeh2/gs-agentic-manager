@@ -753,7 +753,7 @@ function Setup({
                           : "Your agent is ready"}
                       </h2>
                       <dl className="grid grid-cols-2 gap-4 text-sm">
-                        <dt className="text-muted-foreground">Adapter</dt>
+                        <dt className="text-muted-foreground">Runs on</dt>
                         <dd>{getAdapterDisplay(adapterType).label}</dd>
                         {showModel && (
                           <>
@@ -778,7 +778,7 @@ function Setup({
                         onClick={() => navigate(`${agentUrl(created)}/runtime`)}
                       >
                         <Settings2 className="size-4" />
-                        Edit configuration
+                        Change settings
                       </Button>
                       <Button
                         disabled={created.status === "pending_approval"}
@@ -807,7 +807,7 @@ function Setup({
                     </h2>
                     <fieldset disabled={busy} className="space-y-8">
                       <section className="space-y-5">
-                        <h3 className="text-sm font-semibold">Runtime</h3>
+                        <h3 className="text-sm font-semibold">How it runs</h3>
                         {aiProviderForAdapter(brandType) && (
                           connection && !aiBinding ? (
                             <div className="space-y-3">

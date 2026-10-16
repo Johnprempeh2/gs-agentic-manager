@@ -20,6 +20,7 @@ const BOARD_ROUTE_ROOTS = new Set([
   "releases",
   "artifacts",
   "deliverables",
+  "images",
   "tools",
   "approvals",
   "costs",

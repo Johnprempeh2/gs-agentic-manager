@@ -1,13 +1,14 @@
 import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound } from "lucide-react";
 import { MarkdownBody } from "./MarkdownBody";
 import { formatCents } from "../lib/utils";
+import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 
 export const typeLabel: Record<string, string> = {
-  hire_agent: "Hire Agent",
-  approve_ceo_strategy: "CEO Strategy",
-  budget_override_required: "Budget Override",
-  request_board_approval: "Board Approval",
-  permission_grant: "Permission Request",
+  hire_agent: "Hire an agent",
+  approve_ceo_strategy: "Strategy from the CEO",
+  budget_override_required: "Over budget",
+  request_board_approval: "Needs your approval",
+  permission_grant: "Permission request",
 };
 
 function firstNonEmptyString(...values: unknown[]): string | null {
@@ -28,7 +29,7 @@ export function approvalSubject(payload?: Record<string, unknown> | null): strin
   );
 }
 
-/** Build a contextual label for an approval, e.g. "Hire Agent: Designer" */
+/** Build a contextual label for an approval, e.g. "Hire an agent: Designer" */
 export function approvalLabel(type: string, payload?: Record<string, unknown> | null): string {
   const base = typeLabel[type] ?? type;
   const subject = approvalSubject(payload);
@@ -101,9 +102,9 @@ export function HireAgentPayload({ payload }: { payload: Record<string, unknown>
       )}
       {!!payload.adapterType && (
         <div className="flex items-center gap-2">
-          <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs">Adapter</span>
-          <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
-            {String(payload.adapterType)}
+          <span className="text-muted-foreground w-20 sm:w-24 shrink-0 text-xs">Runs on</span>
+          <span title={String(payload.adapterType)}>
+            {getAdapterDisplay(String(payload.adapterType)).label}
           </span>
         </div>
       )}
@@ -131,17 +132,22 @@ export function CeoStrategyPayload({ payload }: { payload: Record<string, unknow
   );
 }
 
+function budgetWindowLabel(value: unknown): unknown {
+  if (value === "calendar_month_utc") return "This month";
+  if (value === "lifetime") return "All time";
+  return value;
+}
+
 export function BudgetOverridePayload({ payload }: { payload: Record<string, unknown> }) {
   const budgetAmount = typeof payload.budgetAmount === "number" ? payload.budgetAmount : null;
   const observedAmount = typeof payload.observedAmount === "number" ? payload.observedAmount : null;
   return (
     <div className="mt-3 space-y-1.5 text-sm">
-      <PayloadField label="Scope" value={payload.scopeName ?? payload.scopeType} />
-      <PayloadField label="Window" value={payload.windowKind} />
-      <PayloadField label="Metric" value={payload.metric} />
+      <PayloadField label="Applies to" value={payload.scopeName ?? payload.scopeType} />
+      <PayloadField label="Period" value={budgetWindowLabel(payload.windowKind)} />
       {(budgetAmount !== null || observedAmount !== null) ? (
         <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-          Limit {budgetAmount !== null ? formatCents(budgetAmount) : "not set"} · Observed {observedAmount !== null ? formatCents(observedAmount) : "none"}
+          Limit {budgetAmount !== null ? formatCents(budgetAmount) : "not set"} · Spent {observedAmount !== null ? formatCents(observedAmount) : "nothing yet"}
         </div>
       ) : null}
       {!!payload.guidance && (
