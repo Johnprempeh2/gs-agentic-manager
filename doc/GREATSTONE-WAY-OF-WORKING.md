@@ -584,6 +584,16 @@ start live with `~/GSAM/start-live.sh` and tell Keystone. After a restore, tell
 Keystone too, so Flint checks live and the migration is fixed before the next
 candidate.
 
+**Tasks that block each other in a loop.** On 16 Oct 2026 live would not
+start, on the new release or on the rollback, because two tasks were each
+"blocked by" the other and startup recovery stopped on "Blocking relations
+cannot contain cycles". Since that fix a loop no longer stops startup: the log
+says "task keeps blockers that already form a cycle" with the task ids. To see
+and break loops on live, run `scripts/greatstone-blocking-cycles.sh` (it lists
+each loop and the id of each link), then
+`scripts/greatstone-blocking-cycles.sh --remove <link id>` for one link per
+loop. The removal is written to the activity log.
+
 ### Promote to Stable (John)
 
 Clients follow `stable-*` tags (Stable); our live install runs `live-*` tags
