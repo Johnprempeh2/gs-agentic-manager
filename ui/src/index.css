@@ -1361,6 +1361,15 @@
 :root:not(.dark) :is(h1, h2, h3, h4) > svg.text-muted-foreground:not(.dark *) {
   color: var(--eyebrow-foreground);
 }
+/* Secondary navs (agent, project and settings sub-navigation) in daylight:
+   a teal-tinted stone panel whose active and hovered row is the same lime
+   wash as --accent, so the second level of navigation carries the brand too.
+   Night and the charcoal rail are unchanged. */
+:root:not(.dark) [data-secondary-sidebar]:not(.dark *) {
+  --sidebar: color-mix(in oklab, #4ecdc4 10%, #eef1ea);
+  --sidebar-accent: color-mix(in oklab, #c8ff00 26%, #ffffff);
+  --sidebar-border: color-mix(in oklab, #4ecdc4 22%, #dadfd3);
+}
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));
 }

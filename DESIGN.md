@@ -135,6 +135,8 @@ the brand colour comes from the charcoal rail, the lime and teal light in
   `--gs-page-bar-wash`, a teal to lime band in light mode and `none` at night.
 - **Heading icons.** An icon that is the first child of an `h1` to `h4` with
   `text-muted-foreground` renders brand emerald in light mode.
+- **Secondary navs.** `[data-secondary-sidebar]` panels sit on a teal-tinted
+  stone in light mode, and their active row is the lime wash.
 - **Eyebrows.** Uppercase section labels (`h2` to `h4` with `uppercase
   text-muted-foreground`) render in `--eyebrow-foreground` (brand emerald)
   in light mode through one rule in `index.css`; keep writing them as
