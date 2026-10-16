@@ -1,5 +1,5 @@
 {
-  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages.",
+  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703.",
   "pipelines": {
     "success": true,
     "data": [
@@ -448,6 +448,124 @@
       "pagination": {
         "start": 0,
         "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealFlow701": {
+    "success": true,
+    "data": [
+      {
+        "object": "mailMessage",
+        "timestamp": "2026-09-21 09:15:00",
+        "data": {
+          "id": 88001,
+          "subject": "Re: CLI trial",
+          "snippet": "Thanks, the team &amp; I loved the demo.",
+          "message_time": "2026-09-21 09:15:00",
+          "from": [
+            {
+              "email_address": "esi@northwind.example",
+              "name": "Esi Boateng"
+            }
+          ],
+          "to": [
+            {
+              "email_address": "ama@greatstone.example",
+              "name": "Ama Owusu"
+            }
+          ],
+          "cc": [],
+          "has_attachments_flag": 0,
+          "mail_thread_id": 4401
+        }
+      },
+      {
+        "object": "dealChange",
+        "timestamp": "2026-09-10 12:00:00",
+        "data": {
+          "id": 66001,
+          "item_id": 701,
+          "user_id": 9001,
+          "field_key": "stage_id",
+          "old_value": "11",
+          "new_value": "12",
+          "log_time": "2026-09-10 12:00:00",
+          "change_source": "app",
+          "additional_data": {
+            "old_value_formatted": "Signed up",
+            "new_value_formatted": "Trial"
+          }
+        }
+      },
+      {
+        "object": "dealChange",
+        "timestamp": "2026-09-10 12:00:00",
+        "data": {
+          "id": 66002,
+          "item_id": 701,
+          "user_id": 9001,
+          "field_key": "value",
+          "old_value": "10000",
+          "new_value": "12000",
+          "log_time": "2026-09-10 12:00:00"
+        }
+      },
+      {
+        "object": "activity",
+        "timestamp": "2026-09-20 10:30:00",
+        "data": {
+          "id": 9001
+        }
+      },
+      {
+        "object": "note",
+        "timestamp": "2026-09-19 14:00:00",
+        "data": {
+          "id": 7001
+        }
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealFlow702": {
+    "success": true,
+    "data": [
+      {
+        "object": "dealChange",
+        "timestamp": "2026-08-30 16:00:00",
+        "data": {
+          "id": 66010,
+          "item_id": 702,
+          "user_id": 9002,
+          "field_key": "status",
+          "old_value": "open",
+          "new_value": "won",
+          "log_time": "2026-08-30 16:00:00"
+        }
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealFlowEmpty": {
+    "success": true,
+    "data": [],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
         "more_items_in_collection": false
       }
     }

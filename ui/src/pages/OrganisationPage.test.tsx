@@ -216,12 +216,18 @@ describe("Organisation company page", () => {
           occurredAt: "2026-09-30T08:00:00Z", durationMinutes: null, done: null, ownerName: null,
           contactId: null, contactName: null, caseId: "case-1", caseTitle: "Acme DevTools", details: {},
         },
+        {
+          id: "t3", source: "pipedrive", kind: "email", activityType: "email", subject: "Re: pricing", body: "Sounds good.",
+          occurredAt: "2026-09-29T08:00:00Z", durationMinutes: null, done: null, ownerName: null,
+          contactId: null, contactName: null, caseId: null, caseTitle: null,
+          details: { from: ["Kofi <kofi@acme.example>"], to: ["Ama <ama@greatstone.example>"] },
+        },
       ],
     }));
     await render();
     const section = container.querySelector('section[aria-label="Activities and notes"]')!;
     const rows = section.querySelectorAll("li");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0]!.textContent).toContain("DevTools demo");
     expect(rows[0]!.textContent).toContain("Done");
     expect(rows[0]!.textContent).toContain("45 min");
@@ -229,6 +235,9 @@ describe("Organisation company page", () => {
     expect(rows[1]!.textContent).toContain("Note");
     expect(rows[1]!.textContent).toContain("Acme DevTools");
     expect(rows[1]!.textContent).toContain("Wants a trial licence.");
+    expect(rows[2]!.textContent).toContain("Re: pricing");
+    expect(rows[2]!.textContent).toContain("from Kofi <kofi@acme.example>");
+    expect(rows[2]!.textContent).toContain("to Ama <ama@greatstone.example>");
   });
 
   it("shows empty states when there are no contacts and no history", async () => {

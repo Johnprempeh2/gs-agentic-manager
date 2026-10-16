@@ -207,6 +207,10 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   to its people and cases. A done activity, a note or a past call counts as last contact. An
   account that cannot read call logs still imports everything else. Code:
   `server/src/services/pipedrive-timeline-import.ts`.
+- Each imported deal's history (`/v1/deals/{id}/flow`, one read per deal) adds its emails
+  (subject, snippet, from, to, cc) and its stage, pipeline and status changes to the same
+  timeline, linked to the deal case (migration `0358_crm_timeline_email_history`). Other field
+  changes, and activities and notes already read above, are not added twice.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.
