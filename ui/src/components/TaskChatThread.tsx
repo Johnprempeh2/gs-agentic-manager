@@ -1731,10 +1731,10 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         settledRunIds.add(source.id);
         const code = meta?.errorCode ?? "native_runner_process_exited";
         const retryDetail = meta?.scheduledRetryAt
-          ? "Retry scheduled automatically."
+          ? "It will try again by itself shortly."
           : canRetryFailedRun
             ? "You can retry this message now."
-            : "Your message is preserved.";
+            : "Your message is saved.";
         const restoreFailed = hasWorkspaceRestoreFailure(meta?.resultJson);
         const savedPlan = Boolean(planDocument && (meta?.resultJson?.savedPlanRevisionId === planDocument.latestRevisionId || interactions?.some((interaction) =>
           interaction.sourceRunId === source.id && interactionTargetsPlanRevision(interaction, planDocument),
@@ -1748,13 +1748,13 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             : "This run stopped because its AI account was unavailable."
           : source.status === "cancelled"
             ? code === "execution_reconciliation_required"
-              ? "The previous execution must be checked before this task can continue. Your message is preserved. View the stopped run for details."
-              : "Execution was stopped."
+              ? "The agent stopped part way. Open the stopped run to check what it did before this task carries on. Your message is saved."
+              : "The work was stopped."
             : code === "provider_frame_too_large"
-            ? `Provider output exceeded the safe limit. ${retryDetail}`
+            ? `The agent's reply was too large to show safely. ${retryDetail}`
             : code.startsWith("workspace_git_scan_")
-            ? `Workspace setup failed before the agent started. ${retryDetail}`
-            : `The run failed (${code}). ${retryDetail}`;
+            ? `The agent's workspace could not be set up, so it did not start. ${retryDetail}`
+            : `Something went wrong and the agent stopped (${code}). ${retryDetail}`;
         const id = `${source.id}:failure`;
         entriesWithFailures.push({
           ms: toMs(meta?.finishedAt ?? meta?.startedAt ?? meta?.createdAt),
