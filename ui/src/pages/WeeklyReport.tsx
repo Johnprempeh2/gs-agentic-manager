@@ -68,7 +68,7 @@ function Section({
   return (
     <section className="space-y-2 rounded-lg border border-border bg-card p-4 print:break-inside-avoid" data-testid={testId} data-tour={testId}>
       <h2 className="flex items-center gap-2 text-base font-semibold">
-        <Icon className="size-4 text-muted-foreground" aria-hidden />
+        <Icon className="size-4 text-primary" aria-hidden />
         {title}
       </h2>
       {children}

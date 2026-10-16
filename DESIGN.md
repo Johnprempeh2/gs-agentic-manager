@@ -126,6 +126,13 @@ the brand colour comes from the charcoal rail, the lime and teal light in
   no `bg-*` class takes the card fill in light mode automatically
   (`greatstone-glass.css`); give it an explicit `bg-*` to opt out. Never assume
   `--card` and `--background` are the same colour.
+- **Brand washes.** `--accent` (hover, selected rows, the active item in a
+  settings nav, selected segmented controls) is a soft lime wash in light
+  mode, so interaction carries the brand colour. Text on it stays ink.
+- **Eyebrows.** Uppercase section labels (`h2` to `h4` with `uppercase
+  text-muted-foreground`) render in `--eyebrow-foreground` (brand emerald)
+  in light mode through one rule in `index.css`; keep writing them as
+  `text-muted-foreground` and they stay grey at night.
 - **Fields.** Inputs, textareas and select triggers use `bg-field`: white in
   light mode, transparent on the void (where `dark:bg-input/30` applies).
 - **Lime.** `bg-highlight text-highlight-foreground` is the brand lime under ink
