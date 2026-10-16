@@ -14730,6 +14730,14 @@ registerCurrentRoute({
   responses: inboundHookResponses,
 });
 
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/integration-keys",
+  tags: ["integrations"],
+  summary: "Integrations waiting on an outside key or sign-in, with the variable names and whether each is set; values are never returned",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
 const outboundWebhookResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
 
 registerCurrentRoute({
