@@ -140,7 +140,7 @@ describe("neededListText", () => {
         ],
       },
     ] as NeededGroup[];
-    const lines = neededListText(groups, "https://gsam.test", now).split("\n");
+    const lines = neededListText(groups, (href) => `https://gsam.test${href}`, now).split("\n");
     expect(lines[0]).toBe("What needs me, 16 Oct");
     expect(lines[1]).toBe("2 things need you. The oldest has waited 2 days.");
     expect(lines[3]).toBe("Answer a question");

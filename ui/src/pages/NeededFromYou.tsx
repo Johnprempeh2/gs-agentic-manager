@@ -45,7 +45,8 @@ import {
   type NeededItem,
 } from "@/lib/needed-from-you";
 import { queryKeys } from "@/lib/queryKeys";
-import { Link } from "@/lib/router";
+import { Link, useActiveCompanyPrefix } from "@/lib/router";
+import { applyCompanyPrefix } from "@/lib/company-routes";
 import { useCopyAction } from "@/lib/use-copy-action";
 
 /** Rows shown per group before "and N more". */
@@ -150,6 +151,7 @@ export function NeededFromYou() {
   );
 
   const listCopy = useCopyAction();
+  const companyPrefix = useActiveCompanyPrefix();
 
   if (!selectedCompanyId) {
     return <p className="text-sm text-muted-foreground">Select an organisation first.</p>;
@@ -169,7 +171,7 @@ export function NeededFromYou() {
               variant="outline"
               size="sm"
               title="Copy everything here as a list with links, ready to paste"
-              onClick={() => void listCopy.copy(neededListText(groups, window.location.origin))}
+              onClick={() => void listCopy.copy(neededListText(groups, (href) => `${window.location.origin}${applyCompanyPrefix(href, companyPrefix)}`))}
             >
               {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
               {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}

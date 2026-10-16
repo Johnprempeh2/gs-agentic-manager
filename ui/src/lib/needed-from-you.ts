@@ -232,7 +232,7 @@ export function withoutPutAway(
  * with who is waiting, for how long and a link, ready to paste into notes or
  * a message to an assistant.
  */
-export function neededListText(groups: NeededGroup[], origin = "", now = Date.now()): string {
+export function neededListText(groups: NeededGroup[], linkFor: (href: string) => string = () => "", now = Date.now()): string {
   const day = formatShortDate(new Date(now));
   const lines = [`What needs me, ${day}`, neededSummary(groups, now)];
   for (const group of groups) {
@@ -245,7 +245,8 @@ export function neededListText(groups: NeededGroup[], origin = "", now = Date.no
       ].filter(Boolean);
       const detail = item.reason ? `: ${item.reason}` : "";
       const tail = who.length > 0 ? ` (${who.join(", ")})` : "";
-      lines.push(`• ${item.title}${detail}${tail}${origin ? ` ${origin}${item.href}` : ""}`);
+      const link = linkFor(item.href);
+      lines.push(`• ${item.title}${detail}${tail}${link ? ` ${link}` : ""}`);
     }
   }
   return lines.join("\n");
