@@ -1400,7 +1400,7 @@ export function PipelineSettings() {
 
   const createSecret = useMutation({
     mutationFn: (input: { name: string; value: string }) => {
-      if (!selectedCompanyId) throw new Error("Choose an organisation to create secrets");
+      if (!selectedCompanyId) throw new Error("Select an organization to create secrets");
       return secretsApi.create(selectedCompanyId, input);
     },
     onSuccess: () => {
@@ -2147,7 +2147,7 @@ export function PipelineSettings() {
   };
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={Hexagon} message="Choose an organisation to edit pipeline settings." />;
+    return <EmptyState icon={Hexagon} message="Select an organization to edit pipeline settings." />;
   }
 
   if (!pipelineId) {
