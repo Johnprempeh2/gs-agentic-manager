@@ -21,6 +21,7 @@ import type {
   IssueOriginKind,
   IssuePriority,
   IssueReviewPolicy,
+  IssueUnblockWaitingOn,
   IssueRecoveryActionKind,
   IssueRecoveryActionOutcome,
   IssueRecoveryActionOwnerType,
@@ -539,6 +540,15 @@ export type IssueUnblockOwner = { agentId: string } | { userId: string } | "boar
 export interface IssueUnblockDescriptor {
   owner: IssueUnblockOwner;
   action: string;
+  /** Who the task is waiting on: a client, the board, or someone outside the company. */
+  waitingOn?: IssueUnblockWaitingOn;
+  /** The calendar day (YYYY-MM-DD, UTC) the task expects to hear back by. */
+  expectedBy?: string;
+  /**
+   * Set by the server only: the `expectedBy` day the assignee was already woken
+   * for, so the "date passed" wake fires once per date.
+   */
+  expectedByWokenFor?: string;
 }
 
 export interface IssueRecoveryAction {

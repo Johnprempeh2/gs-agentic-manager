@@ -7,6 +7,7 @@ import {
   describeTaskStopReason,
   formatTaskStopReason,
   runStoppedTheTask,
+  TASK_STOP_REASON_DATE_PASSED,
   taskStopReasonWhoLabel,
   type TaskStopReasonInput,
 } from "../lib/task-stop-reason";
@@ -41,6 +42,12 @@ export function TaskStopReasonLine({ issueId, className, ...input }: TaskStopRea
     >
       <span className="min-w-0 truncate">
         <span className="font-medium text-foreground">{reason.stopped}</span>
+        {reason.datePassed ? (
+          <span data-testid="task-stop-reason-date-passed" className="font-medium text-destructive">
+            {" · "}
+            {TASK_STOP_REASON_DATE_PASSED}
+          </span>
+        ) : null}
         <span className="text-muted-foreground">
           {" · "}
           {who}

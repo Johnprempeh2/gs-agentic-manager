@@ -2015,6 +2015,27 @@ describe("renderPaperclipWakePrompt", () => {
     );
   });
 
+  it("tells the agent to chase or set a new date when the expected date has passed", () => {
+    const prompt = renderPaperclipWakePrompt({
+      reason: "waiting_date_passed",
+      issue: {
+        id: "issue-1",
+        identifier: "PAP-2001",
+        title: "Waiting on the client's sign-off",
+        status: "blocked",
+      },
+      commentWindow: { requestedCount: 0, includedCount: 0, missingCount: 0 },
+      comments: [],
+      fallbackFetchNeeded: false,
+    });
+
+    expect(prompt).toContain("- reason: waiting_date_passed");
+    expect(prompt).toContain(
+      "The date this task expected to hear back by has passed. Chase the person it is waiting on, or set a new expected date",
+    );
+    expect(prompt).toContain("say what you did in a comment.");
+  });
+
   it("keeps exactly one execution contract in a composed fresh heartbeat prompt", () => {
     const wakePrompt = renderPaperclipWakePrompt({
       reason: "issue_assigned",

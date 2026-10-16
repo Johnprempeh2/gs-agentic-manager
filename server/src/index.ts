@@ -2121,6 +2121,12 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
+              const reconciled = await heartbeat.reconcileWaitingDatesPassed();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic waiting-date sweep woke assignees whose expected date passed");
+              }
+            })
+            .then(async () => {
               const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
               if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
