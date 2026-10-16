@@ -1,7 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TeamScorecardAgent } from "@greatstone/shared";
-import { AlertTriangle, CircleCheck, Clock, Eye, Loader, Trophy } from "lucide-react";
+import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Eye, Loader, Trophy } from "lucide-react";
 import { teamScorecardApi } from "../api/teamScorecard";
 import { costsApi } from "../api/costs";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -12,7 +12,9 @@ import { deriveInitials } from "../components/Identity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
-import { scorecardSentence, workValueLabel } from "../lib/team-scorecard";
+import { scorecardSentence, scorecardUpdateText, workValueLabel } from "../lib/team-scorecard";
+import { copyTextToClipboard } from "../lib/clipboard";
+import { Button } from "@/components/ui/button";
 import { Link, useSearchParams } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
@@ -89,8 +91,9 @@ function AgentCard({ agent, days, workCents }: { agent: TeamScorecardAgent; days
  * first, so an owner can see who is delivering and who needs help.
  */
 export function TeamScorecard() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [searchParams, setSearchParams] = useSearchParams();
   const days = searchParams.get("days") === "30" ? 30 : 7;
 
@@ -117,6 +120,17 @@ export function TeamScorecard() {
     [value],
   );
 
+  async function copyUpdate() {
+    if (!data) return;
+    try {
+      await copyTextToClipboard(scorecardUpdateText(data, selectedCompany?.name));
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    setTimeout(() => setCopyState("idle"), 2500);
+  }
+
   if (!selectedCompanyId) return <EmptyState icon={Trophy} message="Select an organisation to see its scorecard." />;
 
   return (
@@ -128,21 +142,33 @@ export function TeamScorecard() {
             What each agent finished, and what they are working on now. Agents with stuck work come first.
           </p>
         </div>
-        <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period">
-          {PERIODS.map((period) => (
-            <button
-              key={period.days}
-              type="button"
-              aria-pressed={days === period.days}
-              onClick={() => setSearchParams(period.days === 7 ? {} : { days: String(period.days) }, { replace: true })}
-              className={cn(
-                "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
-                days === period.days ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {period.label}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!data || data.agents.length === 0}
+            title="Copy a short written update to paste into an email or chat"
+            onClick={() => void copyUpdate()}
+          >
+            {copyState === "copied" ? <Check className="size-4" /> : <ClipboardCopy className="size-4" />}
+            {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy as an update"}
+          </Button>
+          <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period">
+            {PERIODS.map((period) => (
+              <button
+                key={period.days}
+                type="button"
+                aria-pressed={days === period.days}
+                onClick={() => setSearchParams(period.days === 7 ? {} : { days: String(period.days) }, { replace: true })}
+                className={cn(
+                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                  days === period.days ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {period.label}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 

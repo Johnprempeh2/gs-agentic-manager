@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TeamScorecardAgent } from "@greatstone/shared";
-import { scorecardSentence, workValueLabel } from "./team-scorecard";
+import { scorecardSentence, scorecardUpdateText, workValueLabel } from "./team-scorecard";
 
 function agent(overrides: Partial<TeamScorecardAgent>): TeamScorecardAgent {
   return {
@@ -32,5 +32,46 @@ describe("team scorecard wording", () => {
 
   it("shows work value in whole dollars", () => {
     expect(workValueLabel(4321)).toBe("$43");
+  });
+});
+
+describe("scorecardUpdateText", () => {
+  it("writes a plain update to paste into an email", () => {
+    const text = scorecardUpdateText(
+      {
+        since: "2026-10-09T00:00:00.000Z",
+        days: 7,
+        totals: { finished: 3, underWay: 1, inReview: 0, stuck: 1, overdue: 0 },
+        agents: [
+          agent({
+            name: "Ridge",
+            title: "Engineer",
+            finished: 2,
+            stuck: 1,
+            recentlyFinished: [
+              { id: "t1", identifier: "GRE-5", title: "Booking page" },
+              { id: "t2", identifier: null, title: "Copy refresh" },
+            ],
+            stuckTasks: [{ id: "t3", identifier: "GRE-8", title: "Pipedrive import" }],
+          }),
+          agent({ name: "Everest", finished: 1, underWay: 1 }),
+        ],
+      },
+      "Greatstone",
+    );
+    expect(text).toBe(
+      [
+        "Greatstone team update for the last 7 days",
+        "",
+        "Finished 3 tasks. 1 under way, 1 stuck.",
+        "",
+        "Ridge (Engineer): Finished 2 tasks this week. 1 task is stuck.",
+        "  - Finished: GRE-5 Booking page",
+        "  - Finished: Copy refresh",
+        "  - Stuck: GRE-8 Pipedrive import",
+        "",
+        "Everest: Finished 1 task this week. 1 under way.",
+      ].join("\n"),
+    );
   });
 });
