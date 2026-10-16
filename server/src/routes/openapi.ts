@@ -14358,6 +14358,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/companies/{companyId}/crm-products",
+  tags: ["organisations"],
+  summary: "List the CRM product catalogue with the deals each product is on",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/companies/{companyId}/crm-files/{fileId}/content",
   tags: ["organisations"],
   summary: "Download a file copied from a CRM import",
