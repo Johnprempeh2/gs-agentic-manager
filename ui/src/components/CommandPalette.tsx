@@ -60,6 +60,9 @@ import { GlobalSearchEmptyState } from "./search/GlobalSearchEmptyState";
 import { pushRecentSearch } from "../lib/recent-searches";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { resolveLeadAgent } from "./MobileEverestButton";
+import { decisionsFeedApi } from "../api/decisionsFeed";
+import { parseCommand, type PaletteCommand } from "../lib/palette-commands";
+import { CommandPreviewPanel, CommandSuggestion } from "./search/CommandPreview";
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
@@ -71,6 +74,12 @@ const ISSUE_DETAIL_PATH_RE = /\/issues\/[^/?#]+(?:$|\?|#|\/)/;
 
 function isOnIssueDetail(pathname: string): boolean {
   return ISSUE_DETAIL_PATH_RE.test(pathname);
+}
+
+/** The task reference in the address, such as GRE-12, when a task is open. */
+function issueRefFromPath(pathname: string): string | null {
+  const match = /\/issues\/([^/?#]+)/.exec(pathname);
+  return match ? decodeURIComponent(match[1]!) : null;
 }
 
 /** Max promoted project matches kept when typing in the palette. */
@@ -111,6 +120,9 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   // The task whose quick actions are showing (Tab or the arrow on a task row).
   const [actionIssue, setActionIssue] = useState<Issue | null>(null);
+  // A plain-English command waiting for confirmation ("create a task for Mason...").
+  const [pendingCommand, setPendingCommand] = useState<PaletteCommand | null>(null);
+  const [commandText, setCommandText] = useState("");
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const navigate = useNavigate();
@@ -153,6 +165,7 @@ export function CommandPalette() {
     if (!open) {
       setQuery("");
       setActionIssue(null);
+      setPendingCommand(null);
     }
   }, [open]);
 
@@ -225,6 +238,66 @@ export function CommandPalette() {
     },
   });
 
+  const currentTaskRef = onIssueDetail ? issueRefFromPath(location.pathname) : null;
+  const typedCommand = useMemo(
+    () => (actionIssue || pendingCommand ? null : parseCommand(searchQuery, agents)),
+    [actionIssue, pendingCommand, searchQuery, agents],
+  );
+
+  const runCommand = useMutation({
+    mutationFn: async (command: PaletteCommand): Promise<{ title: string; issue: Issue }> => {
+      const companyId = selectedCompanyId!;
+      if (command.kind === "create") {
+        const owner = command.agent ?? leadAgent;
+        const issue = await issuesApi.create(companyId, {
+          title: command.title,
+          status: "todo",
+          ...(owner ? { assigneeAgentId: owner.id } : {}),
+          ...(command.due ? { description: `Due by ${command.due.label}.` } : {}),
+        });
+        return { title: owner ? `Task created for ${owner.name}` : "Task created", issue };
+      }
+      if (command.kind === "assign") {
+        const ref = command.taskRef === "this" ? currentTaskRef : command.taskRef;
+        if (!ref) throw new Error("Open a task first, then try again.");
+        const target = await issuesApi.get(ref);
+        const patch = command.toMe
+          ? { assigneeUserId: currentUserId, assigneeAgentId: null }
+          : { assigneeAgentId: command.agent!.id, assigneeUserId: null };
+        const issue = await issuesApi.update(target.id, patch);
+        const label = target.identifier ?? "The task";
+        return { title: command.toMe ? `${label} is now yours` : `${label} handed to ${command.agent!.name}`, issue };
+      }
+      const issue = await issuesApi.create(companyId, {
+        title: command.title,
+        status: "todo",
+        ...(currentUserId ? { assigneeUserId: currentUserId } : {}),
+      });
+      const returnAt = new Date(command.when.date);
+      returnAt.setHours(9, 0, 0, 0);
+      await decisionsFeedApi.table(issue.id, returnAt.toISOString());
+      return { title: `Reminder set for ${command.when.label}`, issue };
+    },
+    onSuccess: ({ title, issue }) => {
+      void queryClient.invalidateQueries({ queryKey: ["issues", selectedCompanyId] });
+      pushToast({ title, body: issue.title, tone: "success" });
+      setOpen(false);
+      navigate(`/issues/${issue.identifier ?? issue.id}`);
+    },
+    onError: (error) => {
+      pushToast({
+        title: "That did not work",
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      });
+    },
+  });
+
+  function leaveCommandPreview() {
+    setPendingCommand(null);
+    setQuery(commandText);
+  }
+
   function openActionsFor(issue: Issue) {
     setActionIssue(issue);
     setQuery("");
@@ -284,12 +357,22 @@ export function CommandPalette() {
         if (v && isMobile) setSidebarOpen(false);
       }}>
       <CommandInput
-        placeholder={actionIssue
+        placeholder={pendingCommand
+          ? "Check the details, then confirm. Esc goes back."
+          : actionIssue
           ? `What should happen to ${actionIssue.identifier ?? "this task"}? Type to find an agent`
           : "Search tasks, clients, documents, agents, memory..."}
         value={query}
         onValueChange={setQuery}
         onKeyDown={(event) => {
+          if (pendingCommand) {
+            if (event.key === "Escape" || event.key === "Backspace") {
+              event.preventDefault();
+              event.stopPropagation();
+              leaveCommandPreview();
+            }
+            return;
+          }
           if (actionIssue) {
             if (event.key === "Escape" || (event.key === "Backspace" && query.length === 0)) {
               event.preventDefault();
@@ -321,7 +404,16 @@ export function CommandPalette() {
         }}
       />
       <CommandList className="max-h-(--sz-480px)">
-        {actionIssue ? (
+        {pendingCommand ? (
+          <CommandPreviewPanel
+            command={pendingCommand}
+            lead={leadAgent}
+            currentTaskRef={currentTaskRef}
+            busy={runCommand.isPending}
+            onConfirm={() => runCommand.mutate(pendingCommand)}
+            onBack={leaveCommandPreview}
+          />
+        ) : actionIssue ? (
           <TaskQuickActions
             issue={actionIssue}
             query={searchQuery}
@@ -345,6 +437,21 @@ export function CommandPalette() {
             "No results found."
           )}
         </CommandEmpty>
+
+        {typedCommand ? (
+          <CommandSuggestion
+            command={typedCommand}
+            lead={leadAgent}
+            currentTaskRef={currentTaskRef}
+            typed={searchQuery}
+            onSelect={() => {
+              // Clear the box so the confirm buttons are not filtered by the typed words.
+              setCommandText(query);
+              setPendingCommand(typedCommand);
+              setQuery("");
+            }}
+          />
+        ) : null}
 
         {showSearchAll ? (
           <CommandGroup heading="Search">
