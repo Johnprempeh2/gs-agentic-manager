@@ -84,8 +84,12 @@ export interface OrganisationImportResult {
   notes?: OrganisationImportCounts;
   /** Connection import only: call logs on the timeline. */
   calls?: OrganisationImportCounts;
+  /** Connection import only: emails from each deal's history. */
+  emails?: OrganisationImportCounts;
+  /** Connection import only: stage, pipeline and status changes from each deal's history. */
+  stageChanges?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }
@@ -140,7 +144,7 @@ export interface OrganisationHistory {
 export interface CrmTimelineEntry {
   id: string;
   source: string;
-  kind: "activity" | "note" | "call";
+  kind: "activity" | "note" | "call" | "email" | "stage_change";
   /** The CRM's activity type, such as call, meeting, task or email. */
   activityType: string | null;
   subject: string | null;

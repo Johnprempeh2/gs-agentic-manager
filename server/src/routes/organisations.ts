@@ -230,6 +230,8 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             ...(result.activities ? { activities: result.activities } : {}),
             ...(result.notes ? { notes: result.notes } : {}),
             ...(result.calls ? { calls: result.calls } : {}),
+            ...(result.emails ? { emails: result.emails } : {}),
+            ...(result.stageChanges ? { stageChanges: result.stageChanges } : {}),
           },
         });
         res.json(result);

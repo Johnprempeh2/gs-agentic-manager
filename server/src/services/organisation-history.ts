@@ -120,10 +120,10 @@ export function organisationHistoryService(db: Db) {
         caseTitle,
         details: entry.details ?? {},
       }));
-      // A done activity, a note or a call in the past counts as contact; a planned one does not.
+      // A done activity, a note, a call or an email in the past counts as contact; a planned activity or a stage change does not.
       const nowIso = new Date().toISOString();
       const timelineContact = timeline
-        .filter((entry) => entry.occurredAt && entry.occurredAt <= nowIso && (entry.kind !== "activity" || entry.done))
+        .filter((entry) => entry.occurredAt && entry.occurredAt <= nowIso && entry.kind !== "stage_change" && (entry.kind !== "activity" || entry.done))
         .map((entry) => entry.occurredAt);
 
       if (caseRows.length === 0) return { organisationId, lastContactAt: latest(timelineContact), cases: [], timeline };

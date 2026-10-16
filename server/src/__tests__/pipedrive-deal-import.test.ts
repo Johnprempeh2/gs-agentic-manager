@@ -64,6 +64,9 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/activities": { 0: recorded.activitiesPage },
   "/api/v1/notes": { 0: recorded.notesPage },
   "/api/v1/callLogs": { 0: recorded.callLogsPage },
+  "/api/v1/deals/701/flow": { 0: recorded.dealFlow701 },
+  "/api/v1/deals/702/flow": { 0: recorded.dealFlow702 },
+  "/api/v1/deals/703/flow": { 0: recorded.dealFlowEmpty },
 });
 
 function fakePipedrive(pages: () => Pages) {
@@ -379,6 +382,9 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     // The empty note is skipped, not stored.
     expect(first.body.notes).toEqual({ created: 1, updated: 0, skipped: 1, errors: 0 });
     expect(first.body.calls).toEqual({ created: 1, updated: 0, skipped: 0, errors: 0 });
+    // Deal history: one email, and the stage and status changes (the value change is not history).
+    expect(first.body.emails).toEqual({ created: 1, updated: 0, skipped: 0, errors: 0 });
+    expect(first.body.stageChanges).toEqual({ created: 2, updated: 0, skipped: 0, errors: 0 });
     expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
     expect(pipedrive.calls.some((call) => call.url.includes("/v1/activities") && call.url.includes("user_id=0"))).toBe(true);
 
@@ -389,8 +395,21 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(history.status).toBe(200);
     const timeline = history.body.timeline as Array<Record<string, unknown>>;
     // The demo (org, person and deal), the planned check-in (deal only) and the note (org only).
-    expect(timeline.map((entry) => entry.subject ?? entry.kind)).toEqual(["Trial check-in", "DevTools demo", "note"]);
+    expect(timeline.map((entry) => entry.subject ?? entry.kind)).toEqual([
+      "Trial check-in",
+      "Re: CLI trial",
+      "DevTools demo",
+      "note",
+      "Stage: Signed up → Trial",
+    ]);
     expect(timeline[1]).toMatchObject({
+      kind: "email",
+      body: "Thanks, the team & I loved the demo.",
+      caseTitle: "Northwind CLI trial",
+      details: { from: ["Esi Boateng <esi@northwind.example>"], to: ["Ama Owusu <ama@greatstone.example>"], threadId: "4401" },
+    });
+    expect(timeline[4]).toMatchObject({ kind: "stage_change", ownerName: "Ama Owusu", details: expect.objectContaining({ from: "Signed up", to: "Trial" }) });
+    expect(timeline[2]).toMatchObject({
       kind: "activity",
       activityType: "meeting",
       body: "Showed the CLI & SDK.",
@@ -403,7 +422,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
       details: expect.objectContaining({ location: "Accra office" }),
     });
     expect(timeline[0]).toMatchObject({ done: false, caseTitle: "Northwind CLI trial", contactName: null });
-    expect(timeline[2]).toMatchObject({ kind: "note", body: "Wants a trial licence\nfor 25 seats.", details: { pinned: true } });
+    expect(timeline[3]).toMatchObject({ kind: "note", body: "Wants a trial licence\nfor 25 seats.", details: { pinned: true } });
     // A planned activity does not count as contact.
     expect(history.body.lastContactAt.startsWith("2099")).toBe(false);
 
@@ -411,13 +430,16 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
       .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "102")))
       .then((rows) => rows[0]!);
     const blue = await request(app(actor, pipedrive.fetch)).get(`/api/companies/${companyId}/organisations/${blueHarbour.id}/history`);
-    expect(blue.body.timeline).toEqual([expect.objectContaining({
-      kind: "call",
-      subject: "Intro call",
-      durationMinutes: 12,
-      contactName: "Tunde Bakare",
-      details: expect.objectContaining({ outcome: "connected" }),
-    })]);
+    expect(blue.body.timeline).toEqual([
+      expect.objectContaining({
+        kind: "call",
+        subject: "Intro call",
+        durationMinutes: 12,
+        contactName: "Tunde Bakare",
+        details: expect.objectContaining({ outcome: "connected" }),
+      }),
+      expect.objectContaining({ kind: "stage_change", subject: "Status: open → won", caseTitle: expect.any(String) }),
+    ]);
 
     // A rerun changes nothing; an edit in Pipedrive updates in place.
     const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
@@ -427,7 +449,9 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     pages["/api/v1/activities"][0].data[1].done = true;
     const third = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(third.body.activities).toEqual({ created: 0, updated: 1, skipped: 1, errors: 0 });
-    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(4);
+    expect(rerun.body.emails).toEqual({ created: 0, updated: 0, skipped: 1, errors: 0 });
+    expect(rerun.body.stageChanges).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
+    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(7);
   }, 60_000);
 
   it("still imports everything else when the account cannot read call logs", async () => {

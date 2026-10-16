@@ -280,6 +280,11 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return listV1Page<Record<string, unknown>>("/api/v1/notes", input.start ?? 0, V1_LIST_PAGE_SIZE);
     },
 
+    /** One page of a deal's history: field changes, emails, activities, notes and files (read only). */
+    async listDealFlowPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/flow`, input.start ?? 0, 100);
+    },
+
     /** One page of call logs (API v1, read only; Pipedrive allows 50 a page). */
     async listCallLogsPage(input: { start?: number } = {}) {
       return listV1Page<Record<string, unknown>>("/api/v1/callLogs", input.start ?? 0, 50);

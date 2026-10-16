@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, CalendarClock, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
+import { ArrowRightLeft, Building2, CalendarClock, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
   type CrmRecordField,
@@ -192,12 +192,14 @@ export function OrganisationPage() {
   );
 }
 
-const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone } as const;
+const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone, email: Mail, stage_change: ArrowRightLeft } as const;
 
 function timelineTitle(entry: CrmTimelineEntry) {
   if (entry.subject) return entry.subject;
   if (entry.kind === "note") return "Note";
   if (entry.kind === "call") return "Call";
+  if (entry.kind === "email") return "Email";
+  if (entry.kind === "stage_change") return "Stage change";
   return entry.activityType ? entry.activityType.charAt(0).toUpperCase() + entry.activityType.slice(1) : "Activity";
 }
 
@@ -209,6 +211,12 @@ function timelineMeta(entry: CrmTimelineEntry) {
     parts.push(entry.done ? "Done" : "Planned");
   }
   if (entry.durationMinutes) parts.push(`${entry.durationMinutes} min`);
+  if (entry.kind === "email") {
+    const from = Array.isArray(entry.details.from) ? entry.details.from.join(", ") : "";
+    const to = Array.isArray(entry.details.to) ? entry.details.to.join(", ") : "";
+    if (from) parts.push(`from ${from}`);
+    if (to) parts.push(`to ${to}`);
+  }
   if (entry.ownerName) parts.push(entry.ownerName);
   if (entry.contactName) parts.push(`with ${entry.contactName}`);
   return parts.join(" · ");

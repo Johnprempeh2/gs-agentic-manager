@@ -13,7 +13,10 @@ const SOURCE = "pipedrive";
 const MAX_ERROR_SAMPLES = 20;
 const MAX_BODY = 50_000;
 
-type EntryKind = "activity" | "note" | "call";
+type EntryKind = "activity" | "note" | "call" | "email" | "stage_change";
+
+/** Deal fields whose changes make the deal's stage history. */
+const HISTORY_FIELDS: Record<string, string> = { stage_id: "Stage", pipeline_id: "Pipeline", status: "Status" };
 type EntryRow = typeof crmTimelineEntries.$inferSelect;
 type EntryValues = Omit<typeof crmTimelineEntries.$inferInsert, "id" | "companyId" | "source" | "createdAt" | "updatedAt">;
 
@@ -204,6 +207,74 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
+function addressList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const record = item as Record<string, unknown> | null;
+    const email = str(record?.email_address);
+    const name = str(record?.name);
+    if (!email && !name) return [];
+    return [name && email && name !== email ? `${name} <${email}>` : (email ?? name)!];
+  });
+}
+
+/** One deal flow item as a timeline entry: an email or a stage, pipeline or status change. Others are imported elsewhere. */
+export function mapPipedriveFlowItem(item: Record<string, unknown>, dealId: string, map: TimelineLinks): EntryValues | null {
+  const data = item.data as Record<string, unknown> | undefined;
+  if (!data || typeof data !== "object") return null;
+  const caseId = map.caseIdByDealId.get(dealId) ?? null;
+  if (item.object === "dealChange") {
+    const field = str(data.field_key);
+    const label = field ? HISTORY_FIELDS[field] : undefined;
+    const externalId = str(data.id);
+    if (!label || !externalId) return null;
+    const extra = (data.additional_data ?? {}) as Record<string, unknown>;
+    const from = str(extra.old_value_formatted) ?? str(data.old_value);
+    const to = str(extra.new_value_formatted) ?? str(data.new_value);
+    return {
+      externalId,
+      kind: "stage_change",
+      activityType: field,
+      subject: `${label}: ${from ?? "none"} → ${to ?? "none"}`,
+      body: null,
+      occurredAt: pipedriveTime(data.log_time) ?? pipedriveTime(item.timestamp),
+      durationMinutes: null,
+      done: null,
+      ownerName: nameOf(data.user_id, map.users),
+      organisationId: null,
+      contactId: null,
+      caseId,
+      details: compact({ field, from, to, fromId: str(data.old_value), toId: str(data.new_value), source: str(data.change_source) }),
+    };
+  }
+  if (item.object === "mailMessage") {
+    const externalId = str(data.id);
+    if (!externalId) return null;
+    return {
+      externalId,
+      kind: "email",
+      activityType: "email",
+      subject: str(data.subject)?.slice(0, 1_000) ?? null,
+      body: htmlToText(data.snippet ?? data.body),
+      occurredAt: pipedriveTime(data.message_time) ?? pipedriveTime(data.add_time) ?? pipedriveTime(item.timestamp),
+      durationMinutes: null,
+      done: null,
+      ownerName: nameOf(data.user_id, map.users),
+      organisationId: null,
+      contactId: null,
+      caseId,
+      details: compact({
+        from: addressList(data.from),
+        to: addressList(data.to),
+        cc: addressList(data.cc),
+        hasAttachments: data.has_attachments_flag === true || data.has_attachments_flag === 1 ? true : null,
+        threadId: str(data.mail_thread_id),
+      }),
+    };
+  }
+  return null;
+}
+
 function sameEntry(row: EntryRow, values: EntryValues) {
   return row.activityType === (values.activityType ?? null)
     && row.subject === (values.subject ?? null)
@@ -225,10 +296,18 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
   return {
     async run(input: { companyId: string; client: PipedriveClient; links: TimelineLinks; result: OrganisationImportResult }) {
       const { companyId, client, result } = input;
-      const counts = { activities: emptyCounts(), notes: emptyCounts(), calls: emptyCounts() };
+      const counts = {
+        activities: emptyCounts(),
+        notes: emptyCounts(),
+        calls: emptyCounts(),
+        emails: emptyCounts(),
+        stageChanges: emptyCounts(),
+      };
       result.activities = counts.activities;
       result.notes = counts.notes;
       result.calls = counts.calls;
+      result.emails = counts.emails;
+      result.stageChanges = counts.stageChanges;
 
       const existing = new Map<string, EntryRow>();
       const rows = await db.select().from(crmTimelineEntries)
@@ -259,7 +338,7 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
           count.errors += 1;
           if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
             result.errorSamples.push({
-              kind: kind === "note" ? "note" : kind === "call" ? "call" : "activity",
+              kind: kind === "stage_change" ? "deal" : kind,
               externalId: values.externalId,
               message: error instanceof Error ? error.message : String(error),
             });
@@ -288,6 +367,41 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
             break;
           }
           for (const item of page.items) await write(kind, map(item, input.links), count);
+          start = page.nextStart;
+        }
+      }
+
+      // Each deal's history holds its emails and its stage changes; one read per deal.
+      flow: for (const dealId of input.links.caseIdByDealId.keys()) {
+        let start: number | null = 0;
+        while (start !== null) {
+          let page: Awaited<ReturnType<PipedriveClient["listDealFlowPage"]>>;
+          try {
+            page = await client.listDealFlowPage({ dealId, start });
+          } catch (error) {
+            if (error instanceof PipedriveAuthError) {
+              // The token cannot read deal history at all; stop asking for every deal.
+              counts.stageChanges.errors += 1;
+              if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
+                result.errorSamples.push({ kind: "deal", externalId: dealId, message: `Pipedrive did not share deal history: ${error.message}` });
+              }
+              break flow;
+            }
+            if (!(error instanceof PipedriveApiError)) throw error;
+            counts.stageChanges.errors += 1;
+            if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
+              result.errorSamples.push({ kind: "deal", externalId: dealId, message: `Could not read the deal history: ${error.message}` });
+            }
+            break;
+          }
+          for (const item of page.items) {
+            const kind = item.object === "mailMessage" ? "email" : item.object === "dealChange" ? "stage_change" : null;
+            if (!kind) continue;
+            const values = mapPipedriveFlowItem(item, dealId, input.links);
+            // Field changes other than stage, pipeline and status are not history entries.
+            if (!values && kind === "stage_change") continue;
+            await write(kind, values, kind === "email" ? counts.emails : counts.stageChanges);
+          }
           start = page.nextStart;
         }
       }

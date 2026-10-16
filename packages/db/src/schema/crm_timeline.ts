@@ -1,5 +1,5 @@
-// The CRM timeline (Pipedrive import, 16 Oct): activities, notes and calls
-// from a CRM, each linked to the organisation, contact and case it was about.
+// The CRM timeline (Pipedrive import, 16 Oct): activities, notes, calls,
+// emails and deal stage changes from a CRM, each linked to the organisation, contact and case it was about.
 // source + kind + external_id is unique per company, so a rerun of an import
 // updates an entry instead of adding it twice.
 import { sql } from "drizzle-orm";
@@ -15,7 +15,8 @@ export const crmTimelineEntries = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
     source: text("source").notNull(),
     externalId: text("external_id").notNull(),
-    // activity (a call, meeting, task or email logged as an activity), note or call (a call log).
+    // activity (a call, meeting, task or email logged as an activity), note, call (a call log),
+    // email (a synced email) or stage_change (a deal moved stage, pipeline or status).
     kind: text("kind").notNull(),
     // The CRM's own activity type, such as call, meeting, task, deadline, email or lunch.
     activityType: text("activity_type"),
@@ -39,6 +40,6 @@ export const crmTimelineEntries = pgTable(
     companyOrganisationIdx: index("crm_timeline_entries_company_organisation_idx").on(table.companyId, table.organisationId, table.occurredAt),
     companyCaseIdx: index("crm_timeline_entries_company_case_idx").on(table.companyId, table.caseId, table.occurredAt),
     companyContactIdx: index("crm_timeline_entries_company_contact_idx").on(table.companyId, table.contactId),
-    kindCheck: check("crm_timeline_entries_kind_check", sql`${table.kind} in ('activity', 'note', 'call')`),
+    kindCheck: check("crm_timeline_entries_kind_check", sql`${table.kind} in ('activity', 'note', 'call', 'email', 'stage_change')`),
   }),
 );
