@@ -24,6 +24,8 @@ export interface TimelineLinks {
   organisationIdByExternalId: Map<string, string>;
   contactIdByExternalId: Map<string, string>;
   caseIdByDealId: Map<string, string>;
+  /** GSAM case id of every imported lead, by Pipedrive lead id. */
+  caseIdByLeadId?: Map<string, string>;
   users: Map<string, string>;
 }
 
@@ -97,10 +99,12 @@ function links(record: Record<string, unknown>, map: TimelineLinks) {
   const orgId = idOf(record.org_id);
   const personId = idOf(record.person_id);
   const dealId = idOf(record.deal_id);
+  const leadId = idOf(record.lead_id);
   return {
     organisationId: orgId ? map.organisationIdByExternalId.get(orgId) ?? null : null,
     contactId: personId ? map.contactIdByExternalId.get(personId) ?? null : null,
-    caseId: dealId ? map.caseIdByDealId.get(dealId) ?? null : null,
+    // An activity or note on a lead links to the lead's case.
+    caseId: (dealId ? map.caseIdByDealId.get(dealId) : undefined) ?? (leadId ? map.caseIdByLeadId?.get(leadId) : undefined) ?? null,
   };
 }
 

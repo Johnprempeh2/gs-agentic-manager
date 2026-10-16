@@ -18,6 +18,7 @@ import type {
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
+import { pipedriveLeadImportService } from "./pipedrive-lead-import.js";
 import { pipedriveProductImportService } from "./pipedrive-product-import.js";
 import { pipedriveTimelineImportService } from "./pipedrive-timeline-import.js";
 import {
@@ -407,6 +408,18 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         lineItemsByDealId: deals.lineItemsByDealId,
       });
 
+      // The Leads inbox, as cases in its own pipeline.
+      const leads = await pipedriveLeadImportService(db).run({
+        companyId,
+        client,
+        actor,
+        result,
+        users,
+        organisationIdByExternalId,
+        peopleNames: new Map([...writer.contactByExternalId].map(([externalId, row]) => [externalId, row.name])),
+        organisationNames: new Map([...writer.orgByExternalId].map(([externalId, row]) => [externalId, row.name])),
+      });
+
       // Activities, notes and call logs, linked to the records above.
       await pipedriveTimelineImportService(db, { now }).run({
         companyId,
@@ -416,6 +429,7 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
           organisationIdByExternalId,
           contactIdByExternalId: new Map([...writer.contactByExternalId].map(([externalId, row]) => [externalId, row.id])),
           caseIdByDealId: deals.caseIdByDealId,
+          caseIdByLeadId: leads.caseIdByLeadId,
           users,
         },
       });

@@ -93,8 +93,10 @@ export interface OrganisationImportResult {
   products?: OrganisationImportCounts;
   /** Connection import only: the products on each deal, with quantity, price and discount. */
   dealProducts?: OrganisationImportCounts;
+  /** Connection import only: the Leads inbox, as cases in the "Pipedrive leads" pipeline. */
+  leads?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product" | "lead"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }
