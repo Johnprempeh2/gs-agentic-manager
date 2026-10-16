@@ -78,6 +78,7 @@ import {
   ScanEye,
   Sparkles,
 } from "lucide-react";
+import { setFirstWeekMark } from "../lib/first-week";
 import { TASK_QUICK_STARTS, firstPlaceholderRange, unfilledPlaceholders, type TaskQuickStart } from "../lib/task-quick-starts";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "../lib/utils";
@@ -798,6 +799,7 @@ export function NewIssueDialog() {
   const applyQuickStart = useCallback((quickStart: TaskQuickStart) => {
     setIssueText(quickStart.title, quickStart.description);
     queueDraftSave({ title: quickStart.title, description: quickStart.description });
+    if (effectiveCompanyId) setFirstWeekMark(effectiveCompanyId, "quick-start");
     // Select the first [placeholder] in the title so typing replaces it.
     requestAnimationFrame(() => {
       const titleField = dialogBodyRef.current?.querySelector("textarea");
@@ -806,7 +808,7 @@ export function NewIssueDialog() {
       titleField.focus();
       if (range) titleField.setSelectionRange(range.start, range.end);
     });
-  }, [setIssueText, queueDraftSave]);
+  }, [setIssueText, queueDraftSave, effectiveCompanyId]);
 
   const handleTitleChange = useCallback((nextTitle: string) => {
     titleRef.current = nextTitle;

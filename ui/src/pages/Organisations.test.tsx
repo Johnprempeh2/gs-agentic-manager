@@ -41,6 +41,7 @@ vi.mock("@/hooks/useIsPhone", () => ({ useIsPhone: () => state.isPhone }));
 vi.mock("@/components/PipedriveImport", () => ({ PipedriveImport: () => null }));
 vi.mock("@/components/HubspotImport", () => ({ HubspotImport: () => null }));
 vi.mock("@/components/NotionImport", () => ({ NotionImport: () => null }));
+vi.mock("@/components/DataExport", () => ({ ClientsExportButton: () => null }));
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;

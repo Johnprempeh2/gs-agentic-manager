@@ -68,6 +68,7 @@ vi.mock("../components/DashboardOverview", () => ({
 }));
 vi.mock("../components/ActiveAgentsPanel", () => ({ ActiveAgentsPanel: () => <div data-testid="active-agents" /> }));
 vi.mock("../components/DashboardCostCard", () => ({ DashboardCostCard: () => null }));
+vi.mock("../components/FirstWeekChecklist", () => ({ FirstWeekChecklist: () => null }));
 vi.mock("../components/SmokeLabDashboardCard", () => ({ SmokeLabDashboardCard: () => null }));
 vi.mock("@/plugins/slots", () => ({ PluginSlotOutlet: () => null }));
 vi.mock("../components/ActivityCharts", () => ({

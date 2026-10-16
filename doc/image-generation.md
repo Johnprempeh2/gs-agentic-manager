@@ -27,13 +27,22 @@ show a plain message on the image card.
 
 1. `POST /api/companies/{companyId}/generated-images` with `prompt` and
    `aspectRatio` (`1:1`, `16:9`, `9:16`, `4:3`, `3:4`) saves a pending row and
-   answers `202`.
+   answers `202`. Optional: `style` (a preset id: `greatstone-brand`,
+   `client-proposal`, `social-post`, `photo`, `illustration`), `issueId` (the
+   task it is for) and `organisationId` (the client). The style's wording is
+   added to the prompt sent to the provider; the row keeps the person's words.
 2. The server asks the provider in the background (Higgsfield: submit, poll
    `status_url`, download `images[0].url`), stores the file under
    `assets/generated-images`, and marks the row `completed` with its `assetId`,
    or `failed` with a reason.
 3. Callers poll `GET /api/generated-images/{id}`. The Images page polls every
    three seconds while anything is pending.
+4. `GET /api/companies/{companyId}/generated-images` takes `q` (words in the
+   description), `issueId` and `organisationId` to filter the gallery.
+
+From a task, **Make an image** (next to Upload attachment) opens the same
+composer in a dialog and adds the finished picture to the task through the
+normal attachment upload.
 
 At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart

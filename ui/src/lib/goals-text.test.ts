@@ -44,6 +44,7 @@ describe("goalsUpdateText", () => {
     expect(text).toBe(
       [
         "Goals update, 16 Oct",
+        "1 goal: 1 at risk.",
         "",
         "• Win three new clients: At risk, 40%, 4 of 10 tasks done, 1 blocked, due 31 Dec, Ridge",
         "  ◦ Send the proposals: Not started, Ben",
@@ -62,6 +63,7 @@ describe("goalsUpdateText", () => {
     );
     expect(text).toContain("• Launch the website: At risk, due 6 Oct, 10 days late");
     expect(text).toContain("• Hire a designer: On track, due 20 Oct, 4 days to go");
+    expect(text.split("\n")[1]).toBe("2 goals: 1 at risk, 1 on track.");
   });
 
   it("says so when no goals are open", () => {

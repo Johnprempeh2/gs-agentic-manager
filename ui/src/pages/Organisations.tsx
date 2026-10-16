@@ -15,6 +15,7 @@ import { pipelinesApi } from "@/api/pipelines";
 import { EmptyState } from "@/components/EmptyState";
 import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
+import { ClientsExportButton } from "@/components/DataExport";
 import { accountOwnerValue, OrganisationCrmFieldsForm, useAccountOwnerOptions } from "@/components/OrganisationCrmFields";
 import { OrganisationPipelineStages } from "@/components/OrganisationPipelineStages";
 import { PipedriveImport } from "@/components/PipedriveImport";
@@ -124,6 +125,7 @@ export function Organisations() {
           {selectedCompanyId ? <PipedriveImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <HubspotImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <NotionImport companyId={selectedCompanyId} /> : null}
+          <ClientsExportButton rows={rows} />
           <Button onClick={() => setEditing("new")}>
             <Plus />
             Add organisation

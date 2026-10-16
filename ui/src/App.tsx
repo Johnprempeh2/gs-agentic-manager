@@ -42,6 +42,7 @@ import {
 } from "./lib/onboarding-route";
 import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
 import { useCloudInstance } from "./hooks/useCloudInstance";
+import { useIsPhone } from "./hooks/useIsPhone";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
 import { navigateTopLevel } from "@/lib/browserNavigation";
 
@@ -440,6 +441,7 @@ function boardRoutes() {
       <Route path="weekly-report" element={<WeeklyReport />} />
       <Route path="notifications" element={<NotificationSettings />} />
       <Route path="morning" element={<MorningSummary />} />
+      <Route path="today" element={<MorningSummary />} />
       <Route path="activity" element={<CompanyActivity />} />
       <Route path="activity/runs" element={<AuditHub section="runs" />} />
       <Route path="activity/costs" element={<AuditHub section="costs" />} />
@@ -676,6 +678,7 @@ export function OnboardingRoutePage() {
 function CompanyRootRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
   const location = useLocation();
+  const isPhone = useIsPhone();
 
   if (loading) {
     return <BrandLoading />;
@@ -694,7 +697,8 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  // On a phone the day starts with what needs you, not the full dashboard.
+  return <Navigate to={`/${targetCompany.issuePrefix}/${isPhone ? "today" : "dashboard"}`} replace />;
 }
 
 function StatusCardsLegacyRedirect() {

@@ -31,6 +31,10 @@ import {
   upsertPipelineDocumentSchema,
   upsertPipelineCaseDocumentSchema,
 } from "./pipelines-schemas.js";
+import { memoryCallerFromRequest } from "./memory.js";
+import { memoryGatewayService } from "../services/memory-gateway/service.js";
+import type { MemoryEngine } from "../services/memory-gateway/engine.js";
+import { CASE_DOCUMENT_TEXT_LIMIT, isReadableText, rememberCaseDocument } from "../services/memory-gateway/case-documents.js";
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
 import { z } from "zod";
@@ -967,11 +971,12 @@ function singleEvidenceUpload(req: Request, res: Response) {
 
 export function pipelineRoutes(
   db: Db,
-  options: Parameters<typeof pipelineService>[1] & { storage?: StorageService } = {},
+  options: Parameters<typeof pipelineService>[1] & { storage?: StorageService; memoryEngine?: MemoryEngine } = {},
 ) {
   const router = Router();
-  const { storage, ...serviceOptions } = options;
+  const { storage, memoryEngine, ...serviceOptions } = options;
   const svc = pipelineService(db, serviceOptions);
+  const memorySvc = memoryGatewayService(db, { engine: memoryEngine });
   const outputsSvc = pipelineCaseOutputsService(db);
   const filesSvc = pipelineCaseFilesService(db);
   const journeySvc = pipelineCaseJourneyService(db);
@@ -2859,7 +2864,34 @@ export function pipelineRoutes(
       contentType,
       body: file.buffer,
     });
-    return { stored, fields: fields.data };
+    const text = isReadableText(contentType) ? file.buffer.subarray(0, CASE_DOCUMENT_TEXT_LIMIT * 4).toString("utf8") : null;
+    return { stored, fields: fields.data, text };
+  }
+
+  /** A file added to a client also goes into memory, waiting for review. Never fails the upload. */
+  async function rememberUpload(
+    req: Request,
+    companyId: string,
+    caseId: string,
+    item: { id: string; title: string; note?: string | null },
+    stored: { originalFilename: string | null },
+    text: string | null,
+  ) {
+    const caseRow = await db
+      .select({ title: pipelineCases.title })
+      .from(pipelineCases)
+      .where(and(eq(pipelineCases.id, caseId), eq(pipelineCases.companyId, companyId)))
+      .then((rows) => rows[0]);
+    if (!caseRow?.title) return;
+    await rememberCaseDocument(memorySvc, memoryCallerFromRequest(req, companyId), {
+      caseId,
+      evidenceId: item.id,
+      clientName: caseRow.title,
+      title: item.title,
+      originalFilename: stored.originalFilename,
+      note: item.note ?? null,
+      text,
+    });
   }
 
   // Upload a file straight onto the client (Ben, 12 and 13 Oct): one
@@ -2869,7 +2901,7 @@ export function pipelineRoutes(
   router.post("/cases/:caseId/evidence/upload", async (req, res) => {
     const caseId = req.params.caseId as string;
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
-    const { stored, fields } = await receiveCaseUpload(req, res, companyId, caseId);
+    const { stored, fields, text } = await receiveCaseUpload(req, res, companyId, caseId);
     const item = await filesSvc.addUpload(
       companyId,
       caseId,
@@ -2878,6 +2910,7 @@ export function pipelineRoutes(
       requestActorOf(actor),
     );
     if (fields.requestId) await requestsSvc.markReceived(companyId, caseId, fields.requestId, item.id);
+    await rememberUpload(req, companyId, caseId, item, stored, text);
     await writeRouteEvent(db, {
       companyId,
       caseId,
@@ -3058,7 +3091,7 @@ export function pipelineRoutes(
     const caseId = req.params.caseId as string;
     const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
     if (req.actor.type !== "board") throw forbidden("Only board users can change a client's NDA");
-    const { stored, fields } = await receiveCaseUpload(req, res, companyId, caseId);
+    const { stored, fields, text } = await receiveCaseUpload(req, res, companyId, caseId);
     const item = await filesSvc.addUpload(
       companyId,
       caseId,
@@ -3066,6 +3099,7 @@ export function pipelineRoutes(
       { ...fields, title: fields.title ?? `Signed NDA (${stored.originalFilename ?? "file"})` },
       { type: "user", userId: req.actor.userId ?? "board" },
     );
+    await rememberUpload(req, companyId, caseId, item, stored, text);
     const result = await journeySvc.setNda(
       companyId,
       caseId,
@@ -3108,7 +3142,7 @@ export function pipelineRoutes(
     if (req.actor.type !== "board") throw forbidden("Only board users can change a client's engagement pack");
     // Refuse before the file is stored, so a blocked upload leaves nothing behind.
     await journeySvc.assertNdaCleared(companyId, caseId);
-    const { stored, fields } = await receiveCaseUpload(req, res, companyId, caseId);
+    const { stored, fields, text } = await receiveCaseUpload(req, res, companyId, caseId);
     const label = step === "pack" ? "Engagement pack" : "Signed engagement acceptance";
     const item = await filesSvc.addUpload(
       companyId,
@@ -3117,6 +3151,7 @@ export function pipelineRoutes(
       { ...fields, title: fields.title ?? `${label} (${stored.originalFilename ?? "file"})` },
       { type: "user", userId: req.actor.userId ?? "board" },
     );
+    await rememberUpload(req, companyId, caseId, item, stored, text);
     const result = await journeySvc.setEngagement(
       companyId,
       caseId,

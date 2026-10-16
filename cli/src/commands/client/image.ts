@@ -2,7 +2,9 @@ import { writeFile } from "node:fs/promises";
 import { Command } from "commander";
 import {
   IMAGE_SHAPE_OPTIONS,
+  IMAGE_STYLE_PRESETS,
   parseImageShape,
+  parseImageStyle,
   type GeneratedImage,
   type GeneratedImagesResponse,
   type ImageGenerationStatus,
@@ -21,6 +23,7 @@ import {
 interface ImageGenerateOptions extends BaseClientOptions {
   prompt?: string;
   shape?: string;
+  style?: string;
   issueId?: string;
   out?: string;
   wait?: boolean;
@@ -32,6 +35,7 @@ interface ImageListOptions extends BaseClientOptions {
 }
 
 const SHAPE_HELP = IMAGE_SHAPE_OPTIONS.map((option) => `${option.cliName} (${option.value})`).join(", ");
+const STYLE_HELP = IMAGE_STYLE_PRESETS.map((preset) => `${preset.id} (${preset.label})`).join(", ");
 const POLL_INTERVAL_MS = 3_000;
 
 export function registerImageCommands(program: Command): void {
@@ -43,7 +47,8 @@ export function registerImageCommands(program: Command): void {
       .description("Make an image from a description, wait for it, and optionally attach it to a task")
       .requiredOption("--prompt <text>", "What the image should show")
       .option("--shape <shape>", `Image shape: ${SHAPE_HELP}`, "square")
-      .option("--issue-id <id>", "Attach the finished image to this task")
+      .option("--style <style>", `Optional look: ${STYLE_HELP}`)
+      .option("--issue-id <id>", "Link the image to this task and attach it when finished")
       .option("--out <path>", "Also save the finished image to this file")
       .option("--no-wait", "Return as soon as the request is accepted")
       .option("--timeout <seconds>", "How long to wait for the image", "300")
@@ -52,9 +57,12 @@ export function registerImageCommands(program: Command): void {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const aspectRatio = parseImageShape(opts.shape);
           if (!aspectRatio) throw new Error(`Unknown shape "${opts.shape}". Use one of: ${SHAPE_HELP}`);
+          const style = opts.style?.trim() ? parseImageStyle(opts.style) : null;
+          if (opts.style?.trim() && !style) throw new Error(`Unknown style "${opts.style}". Use one of: ${STYLE_HELP}`);
+          const issueId = opts.issueId?.trim() || null;
           const created = await ctx.api.post<GeneratedImage>(
             apiPath`/api/companies/${ctx.companyId}/generated-images`,
-            { prompt: opts.prompt, aspectRatio },
+            { prompt: opts.prompt, aspectRatio, ...(style ? { style } : {}), ...(issueId ? { issueId } : {}) },
           );
           if (!created) throw new Error("The server did not return the image request");
           if (opts.wait === false) {

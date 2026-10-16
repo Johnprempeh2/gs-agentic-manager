@@ -11,6 +11,7 @@ import { outboundWebhooksApi } from "@/api/outboundWebhooks";
 import { toolsApi } from "@/api/tools";
 import { CalendarFeedDialog, calendarFeedKey, calendarFeedStatusLine } from "@/components/CalendarFeed";
 import { InboundTaskHooksDialog, hookStatusLine, inboundHooksKey } from "@/components/InboundTaskHooks";
+import { DataExportPanel } from "@/components/DataExport";
 import { IntegrationKeysPanel } from "@/components/IntegrationKeysPanel";
 import { OutboundWebhooksDialog, outboundStatusLine, outboundWebhooksKey } from "@/components/OutboundWebhooks";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -209,7 +210,7 @@ export function webhookState(hooks: InboundTaskHookSummary[]): IntegrationState 
 
 const WEBHOOK_DEF: IntegrationCardDef = {
   slug: "webhook",
-  name: "Incoming webhook",
+  name: "Tasks from other tools",
   does: "Lets a form, Zapier, Make or any outside tool create a task here, with files attached, by posting to a private address.",
 };
 
@@ -447,6 +448,8 @@ export function Integrations() {
       <InboundTaskHooksDialog companyId={companyId} open={hooksOpen} onOpenChange={setHooksOpen} />
       <OutboundWebhooksDialog companyId={companyId} open={outboundOpen} onOpenChange={setOutboundOpen} />
       <CalendarFeedDialog companyId={companyId} open={feedOpen} onOpenChange={setFeedOpen} />
+
+      <DataExportPanel companyId={companyId} />
 
       <IntegrationKeysPanel companyId={companyId} />
 

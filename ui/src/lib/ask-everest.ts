@@ -320,3 +320,213 @@ export function answerAway(digest: AgentWorkDigest, blocked: readonly Issue[], n
     more: { label: "See everything that happened", href: "/since-last-visit" },
   };
 }
+
+/* Follow-up questions: "and which of those are overdue?" narrows the last answer. */
+
+export type AskRefinement =
+  | { kind: "overdue" }
+  | { kind: "stuck" }
+  | { kind: "review" }
+  | { kind: "done" }
+  | { kind: "open" }
+  | { kind: "urgent" }
+  | { kind: "agent"; agentId: string; agentName: string };
+
+/** The tasks behind an answer, kept so the next question can narrow them. */
+export interface AskTaskSet {
+  /** How the set reads in a sentence: "stuck tasks", "tasks about Indago". */
+  about: string;
+  issues: Issue[];
+}
+
+const FOLLOW_UP_RE = /^\s*(and|but|also|so|ok|okay|then|what about|how about)\b|\b(those|these|them|which ones|that list|the ones|of them)\b/i;
+const OVERDUE_RE = /\b(overdue|late|past (their |the )?due|missed (the |their )?deadlines?|behind schedule)\b/i;
+const STUCK_ONLY_RE = /\b(stuck|blocked)\b/i;
+const REVIEW_RE = /\b(review|reviewed|checking)\b/i;
+const DONE_RE = /\b(done|finished|complete|completed)\b/i;
+const OPEN_RE = /\b(open|still going|not done|in progress|under way|underway)\b/i;
+const URGENT_RE = /\b(urgent|high priority|critical|important)\b/i;
+
+/** How a task set from an intent reads, or null when the answer has no task list to narrow. */
+export function taskSetLabel(intent: AskIntent): string | null {
+  switch (intent.kind) {
+    case "stuck":
+      return intent.subject ? `stuck tasks on ${intent.subject}` : "stuck tasks";
+    case "away":
+      return "stuck tasks";
+    case "agent":
+      return `tasks ${intent.agentName} worked on`;
+    case "subject":
+      return `tasks about ${intent.subject}`;
+    default:
+      return null;
+  }
+}
+
+/** A follow-up that narrows the last answer, or null when the question stands on its own. */
+export function followUpRefinement(question: string, agents: readonly AskAgentRef[]): AskRefinement | null {
+  const trimmed = question.trim();
+  if (!FOLLOW_UP_RE.test(trimmed)) return null;
+  if (OVERDUE_RE.test(trimmed)) return { kind: "overdue" };
+  if (URGENT_RE.test(trimmed)) return { kind: "urgent" };
+  if (REVIEW_RE.test(trimmed)) return { kind: "review" };
+  if (STUCK_ONLY_RE.test(trimmed)) return { kind: "stuck" };
+  if (DONE_RE.test(trimmed) && !/\bnot done\b/i.test(trimmed)) return { kind: "done" };
+  if (OPEN_RE.test(trimmed)) return { kind: "open" };
+  const agent = mentionedAgent(trimmed, agents.filter((candidate) => candidate.status !== "terminated"));
+  if (agent) return { kind: "agent", agentId: agent.id, agentName: agent.name };
+  return null;
+}
+
+function localDay(now: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function isOpen(issue: Issue) {
+  return issue.status !== "done" && issue.status !== "cancelled";
+}
+
+/** True when an open task's due date has passed. */
+export function isOverdue(issue: Issue, now: Date = new Date()): boolean {
+  return Boolean(issue.dueDate) && isOpen(issue) && issue.dueDate! < localDay(now);
+}
+
+function daysLate(dueDate: string, now: Date): number {
+  const due = new Date(`${dueDate}T00:00:00`).getTime();
+  const today = new Date(`${localDay(now)}T00:00:00`).getTime();
+  return Math.max(1, Math.round((today - due) / (24 * 60 * 60 * 1000)));
+}
+
+function refinementMatches(refinement: AskRefinement, issue: Issue, now: Date): boolean {
+  switch (refinement.kind) {
+    case "overdue":
+      return isOverdue(issue, now);
+    case "stuck":
+      return issue.status === "blocked";
+    case "review":
+      return issue.status === "in_review";
+    case "done":
+      return issue.status === "done";
+    case "open":
+      return isOpen(issue);
+    case "urgent":
+      return isOpen(issue) && (issue.priority === "critical" || issue.priority === "high");
+    case "agent":
+      return issue.assigneeAgentId === refinement.agentId;
+  }
+}
+
+function refinementPhrase(refinement: AskRefinement, one: boolean): string {
+  const be = one ? "is" : "are";
+  switch (refinement.kind) {
+    case "overdue":
+      return `${be} overdue`;
+    case "stuck":
+      return `${be} stuck`;
+    case "review":
+      return `${be} waiting for review`;
+    case "done":
+      return `${be} done`;
+    case "open":
+      return `${be} still open`;
+    case "urgent":
+      return `${be} urgent`;
+    case "agent":
+      return `${be} with ${refinement.agentName}`;
+  }
+}
+
+/** The tasks a follow-up keeps. */
+export function narrowTasks(refinement: AskRefinement, issues: readonly Issue[], now: Date = new Date()): Issue[] {
+  return issues.filter((issue) => refinementMatches(refinement, issue, now));
+}
+
+/** The last answer's tasks, narrowed by a follow-up. */
+export function answerFollowUp(
+  refinement: AskRefinement,
+  set: AskTaskSet,
+  agentName: (id: string | null) => string | null,
+  now: Date = new Date(),
+): AskAnswer {
+  const matched = narrowTasks(refinement, set.issues, now);
+  const total = set.issues.length;
+  if (total === 0) {
+    return { headline: `There were no ${set.about} to narrow down.`, lines: [] };
+  }
+  if (matched.length === 0) {
+    const none = total === 1
+      ? `That task ${refinementPhrase(refinement, true).replace(/^is /, "is not ")}.`
+      : `None of those ${total} ${set.about} ${refinementPhrase(refinement, false)}.`;
+    const noDates = refinement.kind === "overdue" && set.issues.every((issue) => !issue.dueDate)
+      ? " None of them has a due date yet."
+      : "";
+    return { headline: `${none}${noDates}`, lines: [] };
+  }
+  const lines = matched.slice(0, 8).map((issue) => {
+    const owner = agentName(issue.assigneeAgentId);
+    const status = refinement.kind === "overdue" && issue.dueDate
+      ? `Due ${issue.dueDate}, ${plural(daysLate(issue.dueDate, now), "day")} late`
+      : plainTaskStatus(issue.status);
+    return { text: issue.title, detail: owner && refinement.kind !== "agent" ? `${status}. With ${owner}.` : `${status}.`, href: taskHref(issue) };
+  });
+  return {
+    headline: total === 1
+      ? `That task ${refinementPhrase(refinement, true)}.`
+      : matched.length === total
+        ? `All ${total} of those ${set.about} ${refinementPhrase(refinement, false)}.`
+        : `${matched.length} of those ${total} ${set.about} ${refinementPhrase(refinement, matched.length === 1)}.`,
+    lines,
+  };
+}
+
+/* "Ask Everest about this": a page hands the panel what it is about. */
+
+export interface AskContext {
+  /** Shown on the chip: "This week at Greatstone", "Acme Ltd". */
+  label: string;
+  /** What Everest is told the question is about. */
+  summary: string;
+  /** A name the instant answer can search tasks for, such as a client. */
+  subject?: string;
+  /** One-tap questions for this page. */
+  suggestions?: string[];
+}
+
+/** Point an instant answer at the page's subject when the question does not name one. */
+export function intentWithContext(intent: AskIntent, context: AskContext | null): AskIntent {
+  const subject = context?.subject?.trim();
+  if (!subject) return intent;
+  if (intent.kind === "stuck" && !intent.subject) return { kind: "stuck", subject };
+  if (intent.kind === "subject" || intent.kind === "overview") return { kind: "subject", subject };
+  return intent;
+}
+
+/** The question as Everest receives it: with the page it came from, or the question it follows up. */
+export function liveQuestionText(question: string, options: { context?: AskContext | null; followsUp?: string | null } = {}): string {
+  const parts = [question];
+  if (options.followsUp) parts.push(`(Following up on: "${options.followsUp}")`);
+  if (options.context) parts.push(`\n\nAsked from ${options.context.label}:\n${options.context.summary}`);
+  return parts.join(" ").replace(/ \n/g, "\n");
+}
+
+/** What Everest is told when asked about a pipeline item, such as a client. */
+export function pipelineItemAskContext(item: {
+  title: string;
+  pipelineName: string;
+  stageName: string;
+  statusLabel: string;
+  isClient: boolean;
+}): AskContext {
+  const what = item.isClient ? "client" : "item";
+  return {
+    label: item.title,
+    subject: item.title,
+    summary: `The ${what} "${item.title}" in the ${item.pipelineName} pipeline. Stage: ${item.stageName}. Status: ${item.statusLabel}.`,
+    suggestions: [
+      `What is next for ${item.title}?`,
+      `What is ${item.title} waiting on?`,
+      `What is stuck on ${item.title}?`,
+    ],
+  };
+}

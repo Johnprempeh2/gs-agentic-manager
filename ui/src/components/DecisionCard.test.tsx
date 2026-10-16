@@ -135,7 +135,7 @@ describe("DecisionCard", () => {
     expect(el.textContent).toContain("Gardener");
     expect(el.textContent).toContain("PAP-123");
     expect(el.textContent).toContain("Comment on PAP-456");
-    expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Dismiss"))).toBe(true);
+    expect([...el.querySelectorAll("button")].some((b) => b.textContent?.includes("Not now"))).toBe(true);
   });
 
   it("links the target issue the decision applies to, not just the origin", () => {
@@ -196,7 +196,7 @@ describe("DecisionCard", () => {
   it("fires onDismiss from the always-present zero-effect dismiss", () => {
     const onDismiss = vi.fn();
     const el = render({ onDismiss });
-    clickButtonWithText(el, "Dismiss");
+    clickButtonWithText(el, "Not now");
     expect(onDismiss).toHaveBeenCalled();
   });
 
@@ -259,7 +259,7 @@ describe("DecisionCard", () => {
     clickButtonWithText(el, "Cancel the tree");
     expect(onDecide).not.toHaveBeenCalled();
     expect(el.textContent).toContain("to confirm");
-    const confirm = [...el.querySelectorAll("button")].find((b) => b.textContent?.match(/Cancel \d+ issue/));
+    const confirm = [...el.querySelectorAll("button")].find((b) => b.textContent?.match(/Cancel (\d+ tasks?|these tasks)/));
     expect(confirm?.disabled).toBe(true);
   });
 
@@ -318,8 +318,8 @@ describe("DecisionCard", () => {
     const expired = render({
       decision: mkDecision({ status: "expired", metadata: { expiredReason: "target_completed" } }),
     });
-    expect(expired.textContent).toContain("target issues were completed");
-    expect(expired.textContent).not.toContain("expiry deadline");
+    expect(expired.textContent).toContain("were finished before anyone decided");
+    expect(expired.textContent).not.toContain("before the deadline");
   });
 
   describe("attaching files to an answer", () => {

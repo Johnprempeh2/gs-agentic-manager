@@ -45,6 +45,85 @@ export function imageShapeLabel(aspectRatio: string): string {
   return IMAGE_SHAPE_OPTIONS.find((option) => option.value === aspectRatio)?.label ?? aspectRatio;
 }
 
+/**
+ * Looks people can pick instead of writing prompt craft. The guidance is added
+ * to the description before it reaches the image service; the gallery shows
+ * the person's own words and the style name.
+ */
+export const IMAGE_STYLE_PRESETS = [
+  {
+    id: "greatstone-brand",
+    label: "Greatstone brand",
+    hint: "Charcoal and neon lime, modern and premium",
+    guidance:
+      "In the Greatstone brand look: charcoal grey background, neon lime green accents with small touches of teal and soft purple, flowing spiral wave line art, modern, minimal and premium, plenty of clear space, no text or logos.",
+    aspectRatio: "16:9",
+  },
+  {
+    id: "client-proposal",
+    label: "Client proposal",
+    hint: "Clean and professional, room for words",
+    guidance:
+      "Styled for a client proposal: clean, professional and trustworthy, calm neutral colours, soft natural light, uncluttered composition with clear space for a heading, no text.",
+    aspectRatio: "16:9",
+  },
+  {
+    id: "social-post",
+    label: "Social post",
+    hint: "Bright and eye-catching for feeds",
+    guidance:
+      "Made for a social media post: bright, bold and eye-catching, strong single focal point, vivid colours, works at small sizes, no text.",
+    aspectRatio: "1:1",
+  },
+  {
+    id: "photo",
+    label: "Real photo",
+    hint: "Looks like a real photograph",
+    guidance: "As a realistic high quality photograph, natural lighting, true to life colours and detail, no text.",
+    aspectRatio: "4:3",
+  },
+  {
+    id: "illustration",
+    label: "Illustration",
+    hint: "Friendly flat drawing",
+    guidance: "As a friendly flat vector illustration, simple shapes, warm limited colour palette, no text.",
+    aspectRatio: "4:3",
+  },
+] as const satisfies ReadonlyArray<{
+  id: string;
+  label: string;
+  hint: string;
+  guidance: string;
+  aspectRatio: ImageAspectRatio;
+}>;
+
+export type ImageStylePresetId = (typeof IMAGE_STYLE_PRESETS)[number]["id"];
+export const IMAGE_STYLE_IDS = IMAGE_STYLE_PRESETS.map((preset) => preset.id) as [ImageStylePresetId, ...ImageStylePresetId[]];
+
+export function imageStylePreset(style: string | null | undefined) {
+  return IMAGE_STYLE_PRESETS.find((preset) => preset.id === style) ?? null;
+}
+
+export function imageStyleLabel(style: string | null | undefined): string | null {
+  return imageStylePreset(style)?.label ?? null;
+}
+
+/** Accepts a style id ("social-post") or its label ("Social post"); null when neither matches. */
+export function parseImageStyle(value: string | null | undefined): ImageStylePresetId | null {
+  const normalised = (value ?? "").trim().toLowerCase();
+  if (!normalised) return null;
+  return IMAGE_STYLE_PRESETS.find((preset) => preset.id === normalised || preset.label.toLowerCase() === normalised)?.id ?? null;
+}
+
+/** The text the image service receives: the person's words, then the style's guidance. */
+export function composeImagePrompt(prompt: string, style: string | null | undefined): string {
+  const preset = imageStylePreset(style);
+  const trimmed = prompt.trim();
+  if (!preset) return trimmed;
+  const sentence = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  return `${sentence} ${preset.guidance}`;
+}
+
 export const GENERATED_IMAGE_STATUSES = ["pending", "completed", "failed"] as const;
 export type GeneratedImageStatus = (typeof GENERATED_IMAGE_STATUSES)[number];
 
@@ -62,12 +141,21 @@ export const createGeneratedImageSchema = z.object({
     .min(GENERATED_IMAGE_PROMPT_MIN_LENGTH, "Describe the image in a few words")
     .max(GENERATED_IMAGE_PROMPT_MAX_LENGTH, `Keep the description under ${GENERATED_IMAGE_PROMPT_MAX_LENGTH} characters`),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS).default(DEFAULT_IMAGE_ASPECT_RATIO),
+  style: z.enum(IMAGE_STYLE_IDS).nullable().optional(),
+  /** The task the image is for, when it is made from a task. */
+  issueId: z.string().uuid().nullable().optional(),
+  /** The client the image is for. */
+  organisationId: z.string().uuid().nullable().optional(),
 });
 export type CreateGeneratedImage = z.input<typeof createGeneratedImageSchema>;
 
 export const generatedImagesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(GENERATED_IMAGES_MAX_LIMIT).default(GENERATED_IMAGES_DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
+  /** Words to look for in the description. */
+  q: z.string().trim().max(200).optional(),
+  issueId: z.string().uuid().optional(),
+  organisationId: z.string().uuid().optional(),
 });
 export type GeneratedImagesQuery = z.infer<typeof generatedImagesQuerySchema>;
 
@@ -76,6 +164,7 @@ export interface GeneratedImage {
   companyId: string;
   prompt: string;
   aspectRatio: ImageAspectRatio;
+  style: ImageStylePresetId | null;
   provider: ImageGenerationProviderId;
   model: string;
   status: GeneratedImageStatus;
@@ -86,6 +175,10 @@ export interface GeneratedImage {
   contentPath: string | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
+  /** The task it was made for, if any. */
+  issue: { id: string; identifier: string | null; title: string } | null;
+  /** The client it was made for, if any. */
+  organisation: { id: string; name: string } | null;
   createdAt: string;
   completedAt: string | null;
 }

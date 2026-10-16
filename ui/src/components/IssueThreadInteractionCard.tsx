@@ -1423,16 +1423,16 @@ function AskUserQuestionsCard({
             <AlertTriangle className="h-4 w-4" />
             {interaction.result?.outcome === "issue_closed"
               ? questions.length === 1
-                ? "Question expired when the issue closed"
-                : "Questions expired when the issue closed"
+                ? "Question closed with the task"
+                : "Questions closed with the task"
               : questions.length === 1
-                ? "Question expired by comment"
-                : "Questions expired by comment"}
+                ? "Question replaced by a later comment"
+                : "Questions replaced by a later comment"}
           </div>
           <p className="mt-1">
             {interaction.result?.outcome === "issue_closed"
-              ? "This question request expired automatically when the issue reached a terminal state."
-              : "A later board/user comment superseded this question request. Create a fresh request if answers are still needed."}
+              ? "The task was closed before anyone answered, so this question no longer needs a reply."
+              : "A later comment replaced this question. Ask again if you still need the answers."}
           </p>
           {interaction.result?.commentId ? (
             <a
@@ -1669,7 +1669,7 @@ function RequestConfirmationResolution({
       <div className="space-y-3 rounded-sm border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
         {/*
          * issue_closed already carries its label in the header status badge
-         * ("Expired · issue closed"), so this eyebrow would duplicate it
+         * ("Closed with the task"), so this eyebrow would duplicate it
          * verbatim — only render the eyebrow for the states the header shows
          * generically as "Expired".
          */}
@@ -1680,10 +1680,10 @@ function RequestConfirmationResolution({
         )}
         <p className="leading-6">
           {expiredByComment
-            ? "A board comment superseded this confirmation before it was resolved."
+            ? "A later comment replaced this request before anyone answered it."
             : expiredByIssueClosed
-              ? "This confirmation expired automatically when the issue reached a terminal state."
-              : "The requested target changed before this confirmation was resolved."}
+              ? "The task was closed before anyone answered, so this request no longer needs a reply."
+              : "What this request was about changed before anyone answered, so it no longer applies."}
         </p>
         {expiredByComment && interaction.result?.commentId ? (
           <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-amber-950 hover:bg-amber-500/15 dark:text-amber-50">
@@ -3837,7 +3837,7 @@ export function IssueThreadInteractionCard({
     adminOutcome === "withdrawn"
       ? "Withdrawn"
       : adminOutcome === "issue_closed"
-        ? "Expired · issue closed"
+        ? "Closed with the task"
         : activeStyles
           ? activeStyles.label
           : statusLabel(interaction.status);

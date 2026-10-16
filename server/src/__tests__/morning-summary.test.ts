@@ -8,11 +8,12 @@ import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-
 import { DEFAULT_NOTIFICATION_PREFERENCES, type MorningSummary, type NeedsMe } from "@greatstone/shared";
 import { morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems } from "../services/morning-summary.js";
 
-const summary = (needs: number, finished: number, stuck: number): MorningSummary => ({
+const summary = (needs: number, finished: number, stuck: number, due = 0): MorningSummary => ({
   companyId: "c",
   generatedAt: "",
   since: "",
   needsYou: { count: needs, items: [] },
+  dueToday: { count: due, items: [] },
   finished: { count: finished, items: [] },
   stuck: { count: stuck, items: [] },
 });
@@ -34,6 +35,9 @@ describe("morning summary wording", () => {
       title: "Good morning. Nothing needs you",
       body: "1 task finished since yesterday. Nothing is stuck.",
     });
+    expect(morningSummaryMessage(summary(1, 0, 0, 2), "GRE").body).toBe(
+      "2 tasks are due today. No tasks finished since yesterday. Nothing is stuck.",
+    );
   });
 
   it("lists decisions before assigned tasks, once per task, and leaves out outage notices", () => {
@@ -91,6 +95,10 @@ describe("morning summary service", () => {
       { companyId, title: "Import contacts", status: "blocked" },
       { companyId, title: "Hidden stuck", status: "blocked", hiddenAt: new Date() },
       { companyId, title: "Under way", status: "in_progress" },
+      { companyId, title: "Send the proposal", status: "todo", dueDate: "2026-10-16" },
+      { companyId, title: "Late invoice", status: "in_progress", dueDate: "2026-10-14" },
+      { companyId, title: "Due tomorrow", status: "todo", dueDate: "2026-10-17" },
+      { companyId, title: "Done today", status: "done", dueDate: "2026-10-16" },
     ]);
   }, 90000);
   afterAll(async () => { await database?.cleanup(); vi.unstubAllEnvs(); if (home) await rm(home, { recursive: true, force: true }); });
@@ -108,6 +116,19 @@ describe("morning summary service", () => {
     expect(built.stuck.count).toBe(1);
     expect(built.stuck.items.map((item) => item.title)).toEqual(["Import contacts"]);
     expect(built.needsYou.count).toBe(2);
+  });
+
+  it("lists open tasks due today by the person's own date, late ones first", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.dueToday.count).toBe(2);
+    expect(built.dueToday.items.map((item) => [item.title, item.dueDate])).toEqual([
+      ["Late invoice", "2026-10-14"],
+      ["Send the proposal", "2026-10-16"],
+    ]);
+    // 23:30 on the 16th in London is already the 17th in Tokyo.
+    await db.insert(notificationPreferences).values({ companyId, userId: "kenji", timeZone: "Asia/Tokyo" });
+    const tokyo = await service().build(companyId, "kenji", new Date("2026-10-16T22:30:00Z"));
+    expect(tokyo.dueToday.count).toBe(3);
   });
 
   it("sends once a day to people with a phone registered", async () => {

@@ -6,7 +6,13 @@ import {
   answerDecide,
   answerStuck,
   answerSubject,
+  answerFollowUp,
   classifyQuestion,
+  followUpRefinement,
+  intentWithContext,
+  liveQuestionText,
+  narrowTasks,
+  pipelineItemAskContext,
   questionSubject,
 } from "./ask-everest";
 
@@ -168,5 +174,66 @@ describe("since you were away", () => {
     expect(answerAway(quiet, [], null).headline).toBe(
       "In the last 24 hours: nothing new. Nothing finished, nothing got stuck and nothing needs you.",
     );
+  });
+});
+
+describe("follow-up questions", () => {
+  const now = new Date("2026-10-16T09:00:00");
+  const set = {
+    about: "stuck tasks",
+    issues: [
+      issue({ id: "a", identifier: "GRE-1", title: "Contract", status: "blocked", dueDate: "2026-10-13", assigneeAgentId: "mason" }),
+      issue({ id: "b", identifier: "GRE-2", title: "Venue", status: "blocked", dueDate: "2026-10-20", priority: "high" }),
+      issue({ id: "c", identifier: "GRE-3", title: "Logo", status: "done", dueDate: "2026-10-01" }),
+    ],
+  };
+  const name = (id: string | null) => (id === "mason" ? "Mason" : null);
+
+  it("only treats questions that point back as follow-ups", () => {
+    expect(followUpRefinement("and which of those are overdue?", agents)).toEqual({ kind: "overdue" });
+    expect(followUpRefinement("Which ones are urgent?", agents)).toEqual({ kind: "urgent" });
+    expect(followUpRefinement("what about Mason?", agents)).toEqual({ kind: "agent", agentId: "mason", agentName: "Mason" });
+    expect(followUpRefinement("What is overdue?", agents)).toBeNull();
+    expect(followUpRefinement("and the weather?", agents)).toBeNull();
+  });
+
+  it("narrows the last answer and says how late", () => {
+    const answer = answerFollowUp({ kind: "overdue" }, set, name, now);
+    expect(answer.headline).toBe("1 of those 3 stuck tasks is overdue.");
+    expect(answer.lines).toEqual([{ text: "Contract", detail: "Due 2026-10-13, 3 days late. With Mason.", href: "/issues/GRE-1" }]);
+    expect(narrowTasks({ kind: "urgent" }, set.issues, now).map((task) => task.id)).toEqual(["b"]);
+  });
+
+  it("says so when nothing matches, and when there are no due dates", () => {
+    const undated = { about: "stuck tasks", issues: [issue({ id: "x" }), issue({ id: "y" })] };
+    expect(answerFollowUp({ kind: "overdue" }, undated, name, now).headline).toBe(
+      "None of those 2 stuck tasks are overdue. None of them has a due date yet.",
+    );
+    expect(answerFollowUp({ kind: "done" }, { about: "stuck tasks", issues: [issue({ id: "x" })] }, name, now).headline).toBe(
+      "That task is not done.",
+    );
+  });
+});
+
+describe("asking about a page", () => {
+  const context = pipelineItemAskContext({ title: "Acme Ltd", pipelineName: "Clients", stageName: "Proposal", statusLabel: "Active", isClient: true });
+
+  it("describes the client and offers questions about it", () => {
+    expect(context.summary).toBe('The client "Acme Ltd" in the Clients pipeline. Stage: Proposal. Status: Active.');
+    expect(context.suggestions).toContain("What is Acme Ltd waiting on?");
+  });
+
+  it("points a vague question at the page's subject", () => {
+    expect(intentWithContext({ kind: "overview" }, context)).toEqual({ kind: "subject", subject: "Acme Ltd" });
+    expect(intentWithContext({ kind: "stuck", subject: null }, context)).toEqual({ kind: "stuck", subject: "Acme Ltd" });
+    expect(intentWithContext({ kind: "decide" }, context)).toEqual({ kind: "decide" });
+    expect(intentWithContext({ kind: "overview" }, null)).toEqual({ kind: "overview" });
+  });
+
+  it("sends Everest the page and the question it follows", () => {
+    expect(liveQuestionText("and which are late?", { followsUp: "What is stuck?" })).toBe(
+      'and which are late? (Following up on: "What is stuck?")',
+    );
+    expect(liveQuestionText("What next?", { context })).toBe(`What next?\n\nAsked from Acme Ltd:\n${context.summary}`);
   });
 });

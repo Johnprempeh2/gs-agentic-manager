@@ -50,8 +50,9 @@ function capitalise(value: string): string {
   return value ? value[0]!.toUpperCase() + value.slice(1) : value;
 }
 
-export function issuesToCsv(issues: readonly Issue[], lookups: IssuesCsvLookups): string {
-  const rows = issues.map((issue) => {
+/** One row per task, in the order of ISSUES_CSV_HEADERS. */
+export function issuesToRows(issues: readonly Issue[], lookups: IssuesCsvLookups): string[][] {
+  return issues.map((issue) => {
     const responsible = issue.assigneeAgentId
       ? lookups.agentName(issue.assigneeAgentId) ?? ""
       : issue.assigneeUserId
@@ -71,6 +72,10 @@ export function issuesToCsv(issues: readonly Issue[], lookups: IssuesCsvLookups)
       lookups.taskUrl(issue),
     ];
   });
+}
+
+export function issuesToCsv(issues: readonly Issue[], lookups: IssuesCsvLookups): string {
+  const rows = issuesToRows(issues, lookups);
   // The byte order mark makes Excel read the file as UTF-8, so names keep their accents.
   return `﻿${[ISSUES_CSV_HEADERS as readonly string[], ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
 }

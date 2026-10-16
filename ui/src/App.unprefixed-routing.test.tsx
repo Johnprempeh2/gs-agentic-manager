@@ -125,6 +125,7 @@ describe("App unprefixed board links", () => {
   it.each([
     ["/inbox/mine", "INBOX_PAGE"],
     ["/morning", "MORNING_PAGE"],
+    ["/today", "MORNING_PAGE"],
     ["/notifications", "NOTIFICATIONS_PAGE"],
   ])("opens %s under the selected company", async (path, sentinel) => {
     const root = await renderAppAt(container, path);
