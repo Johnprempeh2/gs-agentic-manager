@@ -5,10 +5,12 @@ import {
   MEMORY_IMPORT_APP_LABEL,
   MEMORY_IMPORT_MAX_ENTRIES,
   MEMORY_IMPORT_PROMPT,
+  mergeImportResults,
   parseAssistantExport,
   parsePastedMemories,
   type MemoryImportApp,
   type MemoryImportCandidate,
+  type MemoryImportCheckResult,
   type MemoryImportResult,
   type MemoryScope,
 } from "@greatstone/shared";
@@ -67,6 +69,44 @@ export function defaultScopeId(scopes: MemoryScope[]): string {
   return (scopes.find((scope) => scope.kind === "organization") ?? scopes[0])?.id ?? "";
 }
 
+const CHECK_BATCH = 200;
+/** Past this many, only the newest are checked against memory; the rest still import and skip repeats. */
+const CHECK_MAX = 2_000;
+
+type ImportMatch = MemoryImportCheckResult["entries"][number];
+
+/** Checks the candidates against memory in batches small enough for one request each. */
+export async function checkCandidates(
+  companyId: string,
+  scopeId: string,
+  app: MemoryImportApp,
+  candidates: MemoryImportCandidate[],
+): Promise<Map<string, ImportMatch>> {
+  const matches = new Map<string, ImportMatch>();
+  const toCheck = candidates.slice(0, CHECK_MAX);
+  for (let start = 0; start < toCheck.length; start += CHECK_BATCH) {
+    const batch = toCheck.slice(start, start + CHECK_BATCH);
+    const result = await memoryGraphApi.checkImport(companyId, {
+      scopeId,
+      app,
+      entries: batch.map((candidate) => ({ sourceId: candidate.sourceId, content: candidate.content })),
+    });
+    for (const entry of result.entries) if (entry.match) matches.set(entry.sourceId, entry);
+  }
+  return matches;
+}
+
+function MatchNote({ match }: { match: ImportMatch }) {
+  if (match.match === "already_imported") {
+    return <p className="text-xs text-muted-foreground">Already in memory, so it is unticked.</p>;
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      Looks like an entry already in memory{match.existing?.title ? `: "${match.existing.title}"` : ""}, so it is unticked. Tick it to add it anyway.
+    </p>
+  );
+}
+
 export function MemoryApps() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -101,11 +141,31 @@ export function MemoryApps() {
   const pastedCandidates = useMemo(() => parsePastedMemories(pasted), [pasted]);
   const candidates = useMemo(() => (method === "paste" ? pastedCandidates : (fileCandidates ?? [])), [method, pastedCandidates, fileCandidates]);
 
-  // A fresh paste or file picks everything it found, up to one import's worth.
+  // Kept outside the "memory-graph" key so an import does not re-run the check and re-tick the list.
+  // Waits for typing to pause before checking a paste.
+  const [checkTarget, setCheckTarget] = useState<MemoryImportCandidate[]>([]);
   useEffect(() => {
-    setPicked(new Set(candidates.slice(0, MEMORY_IMPORT_MAX_ENTRIES).map((candidate) => candidate.sourceId)));
-    setResult(null);
+    const timer = window.setTimeout(() => setCheckTarget(candidates), 500);
+    return () => window.clearTimeout(timer);
   }, [candidates]);
+  const candidateKey = useMemo(() => checkTarget.map((candidate) => candidate.sourceId).join("|"), [checkTarget]);
+  const check = useQuery({
+    queryKey: ["memory-import-check", selectedCompanyId, scopeId, app, candidateKey],
+    queryFn: () => checkCandidates(selectedCompanyId!, scopeId, app, checkTarget),
+    enabled: !!selectedCompanyId && !!scopeId && checkTarget.length > 0,
+    staleTime: Infinity,
+    retry: false,
+  });
+  const matches = check.data;
+
+  // A fresh paste or file picks everything new it found, up to one import's worth.
+  // Anything already in memory, or much like an entry there, starts unticked.
+  useEffect(() => {
+    const fresh = matches ? candidates.filter((candidate) => !matches.has(candidate.sourceId)) : candidates;
+    setPicked(new Set(fresh.slice(0, MEMORY_IMPORT_MAX_ENTRIES).map((candidate) => candidate.sourceId)));
+    setResult(null);
+  }, [candidates, matches]);
+  const matchedCount = matches?.size ?? 0;
 
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase();
@@ -135,11 +195,11 @@ export function MemoryApps() {
     },
   });
 
-  async function readFile(file: File) {
+  async function readFiles(files: File[]) {
     setFileError(null);
     setFileNote(null);
     setFileCandidates(null);
-    const parsed = parseAssistantExport(await file.text());
+    const parsed = mergeImportResults(await Promise.all(files.map(async (file) => parseAssistantExport(await file.text()))));
     if (!parsed.ok) {
       setFileError(parsed.error);
       return;
@@ -294,15 +354,18 @@ export function MemoryApps() {
             <input
               type="file"
               accept=".json,application/json"
+              multiple
               className="sr-only"
               onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void readFile(file);
+                const files = Array.from(event.target.files ?? []);
+                if (files.length > 0) void readFiles(files);
                 event.target.value = "";
               }}
             />
           </label>
-          <p className="text-xs text-muted-foreground">The file is read on this computer. Only the chats you tick are sent.</p>
+          <p className="text-xs text-muted-foreground">
+            The file is read on this computer. Only the chats you tick are sent. If the export came as several conversations files, choose them all at once.
+          </p>
           {fileError ? <p className="text-sm text-destructive">{fileError}</p> : null}
           {fileNote ? <p className="text-sm text-muted-foreground">{fileNote}</p> : null}
         </section>
@@ -328,6 +391,16 @@ export function MemoryApps() {
               </Button>
             </div>
           </div>
+          {check.isFetching ? <p className="text-xs text-muted-foreground">Checking what is already in memory...</p> : null}
+          {matchedCount > 0 ? (
+            <p className="text-xs text-muted-foreground">
+              {matchedCount} {matchedCount === 1 ? "looks" : "look"} like {matchedCount === 1 ? "something" : "things"} memory already has, so{" "}
+              {matchedCount === 1 ? "it starts" : "they start"} unticked.
+            </p>
+          ) : null}
+          {check.error ? (
+            <p className="text-xs text-muted-foreground">Could not check for repeats. Exact repeats are still skipped when you add.</p>
+          ) : null}
           {candidates.length > 8 ? (
             <Input value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Search these" aria-label="Search" />
           ) : null}
@@ -350,6 +423,7 @@ export function MemoryApps() {
                   />
                   <div className="min-w-0 space-y-1 text-sm">
                     <p className="font-medium">{candidate.title}</p>
+                    {matches?.get(candidate.sourceId) ? <MatchNote match={matches.get(candidate.sourceId)!} /> : null}
                     {candidate.messageCount !== null ? (
                       <p className="text-xs text-muted-foreground">
                         {candidate.occurredAt ? `${formatDate(candidate.occurredAt)}, ` : ""}

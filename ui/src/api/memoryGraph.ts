@@ -4,7 +4,9 @@ import type {
   CreatedMemoryConnection,
   MemoryConnection,
   MemoryConnectionActivity,
+  CheckMemoryImport,
   ImportMemory,
+  MemoryImportCheckResult,
   MemoryImportResult,
   MemoryScope,
   MemoryActivityCounts,
@@ -70,6 +72,9 @@ export const memoryGraphApi = {
   /** Adds picked Claude or ChatGPT entries as unreviewed contributions. */
   importEntries: (companyId: string, body: ImportMemory) =>
     api.post<MemoryImportResult>(`/companies/${companyId}/memory/import`, body),
+  /** Which of these entries are already in memory, or look like an existing entry. Writes nothing. */
+  checkImport: (companyId: string, body: CheckMemoryImport) =>
+    api.post<MemoryImportCheckResult>(`/companies/${companyId}/memory/import/check`, body),
   /** Live links from Claude, Codex and other MCP apps. Owner or admin only. */
   connections: (companyId: string) => api.get<MemoryConnection[]>(`/companies/${companyId}/memory/connections`),
   createConnection: (companyId: string, body: CreateMemoryConnection) =>

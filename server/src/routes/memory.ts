@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import type { ZodType } from "zod";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import { memoryRecords, type Db } from "@greatstone/db";
 import {
   confirmMemoryLinkLeadSchema,
@@ -8,6 +8,12 @@ import {
   createMemoryRelationshipSchema,
   dismissMemoryLinkLeadSchema,
   importMemorySchema,
+  checkMemoryImportSchema,
+  memoryTextSimilarity,
+  memoryTextWords,
+  MEMORY_IMPORT_SIMILAR_THRESHOLD,
+  type CheckMemoryImport,
+  type MemoryImportCheckResult,
   MEMORY_IMPORT_SOURCE_KIND,
   type ImportMemory,
   type MemoryImportResult,
@@ -255,6 +261,57 @@ export function memoryRoutes(
         detection: MEMORY_DETECTION_NOTE,
       });
     }
+  });
+
+  // Before an import: which picked entries are already in this scope, by
+  // source id or by much the same words, so the screen can untick them.
+  router.post("/companies/:companyId/memory/import/check", requireEnabled, validate(checkMemoryImportSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "import_check");
+    const { scopeId, app, entries } = req.body as CheckMemoryImport;
+    if (!(await svc.listScopes(caller)).some((scope) => scope.id === scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const rows = await db
+      .select({
+        id: memoryRecords.id,
+        title: memoryRecords.title,
+        content: memoryRecords.content,
+        status: memoryRecords.status,
+        sourceKind: memoryRecords.sourceKind,
+        sourceId: memoryRecords.sourceId,
+      })
+      .from(memoryRecords)
+      .where(
+        and(
+          eq(memoryRecords.companyId, companyId),
+          eq(memoryRecords.scopeId, scopeId),
+          isNull(memoryRecords.deletedAt),
+          ne(memoryRecords.status, "superseded"),
+        ),
+      )
+      .orderBy(desc(memoryRecords.updatedAt))
+      .limit(2_000);
+    const sourceKind = MEMORY_IMPORT_SOURCE_KIND[app];
+    const bySource = new Map(rows.filter((row) => row.sourceKind === sourceKind && row.sourceId).map((row) => [row.sourceId!, row]));
+    const words = rows.map((row) => ({ row, words: memoryTextWords(`${row.title ?? ""} ${row.content ?? ""}`) }));
+    const result: MemoryImportCheckResult = {
+      entries: entries.map((entry) => {
+        const same = bySource.get(entry.sourceId);
+        if (same) return { sourceId: entry.sourceId, match: "already_imported", existing: { recordId: same.id, title: same.title, status: same.status } };
+        const target = memoryTextWords(entry.content);
+        let best: { row: (typeof rows)[number]; score: number } | null = null;
+        for (const candidate of words) {
+          const score = memoryTextSimilarity(target, candidate.words);
+          if (score >= MEMORY_IMPORT_SIMILAR_THRESHOLD && (!best || score > best.score)) best = { row: candidate.row, score };
+        }
+        return best
+          ? { sourceId: entry.sourceId, match: "similar", existing: { recordId: best.row.id, title: best.row.title, status: best.row.status } }
+          : { sourceId: entry.sourceId, match: null, existing: null };
+      }),
+    };
+    res.json(result);
   });
 
   // Claude and ChatGPT import: the browser parses the export and sends only

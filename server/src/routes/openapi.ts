@@ -108,6 +108,7 @@ import {
   confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
   importMemorySchema,
+  checkMemoryImportSchema,
   createMemoryConnectionSchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
@@ -5492,6 +5493,15 @@ registry.registerPath({
   tags: ["memory"],
   summary: "Contribute a memory record under the caller's identity; kept as pending when the engine is down",
   request: { params: memoryCompanyParams, body: jsonBody(contributeMemorySchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/import/check",
+  tags: ["memory"],
+  summary: "Before an import, flag entries already in the scope by source id or by much the same words; nothing is written",
+  request: { params: memoryCompanyParams, body: jsonBody(checkMemoryImportSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
