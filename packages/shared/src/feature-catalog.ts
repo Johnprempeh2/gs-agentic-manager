@@ -110,7 +110,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableChatConnectors: {
     title: "Chat connectors (compatibility)",
     description:
-      "Deprecated compatibility key. Chat connectors are always enabled (GRE-1620); stored and managed values are ignored.",
+      "Deprecated compatibility key. Chat connectors are always enabled (GRE-1620); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -118,7 +118,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableMemoryConnectors: {
     title: "Memory connectors (compatibility)",
     description:
-      "Deprecated compatibility key. Memory connectors are always enabled (GRE-1620); stored and managed values are ignored.",
+      "Deprecated compatibility key. Memory connectors are always enabled (GRE-1620); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,

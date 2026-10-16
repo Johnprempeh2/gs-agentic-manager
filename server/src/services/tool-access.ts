@@ -1,5 +1,6 @@
 import { COGNEE_STDIO_TEMPLATE, cogneeCloudUrl } from "./cognee-connection.js";
 import { isMemoryConnectorId, isRemoteMcpConnectorMethod, connectionPurposeTransportSchema } from "@greatstone/shared";
+import { assertEntitled } from "./entitlements.js";
 import { githubBotRequest } from "./chat-github-client.js";
 import { syncConnectionCredentialBindings } from "./connection-credential-bindings.js";
 import {
@@ -12163,6 +12164,10 @@ export function toolAccessService(
     return `${base.slice(0, 151).trimEnd()} (${randomUUID().slice(0, 6)})`;
   }
 
+  async function assertExperimentalConnectorSetupEnabled(provider: unknown, existing = false) {
+    if (!existing && isMemoryConnectorId(provider)) await assertEntitled(db, "enableMemoryConnectors");
+  }
+
   async function connectGalleryApp(
     companyId: string,
     input: ConnectToolApp,
@@ -12311,6 +12316,10 @@ export function toolAccessService(
       ? connectionMethodFor(galleryEntry, inferredMethodKey)
       : null;
     const remoteMcpConnector = isRemoteMcpConnectorMethod(galleryEntry?.slug, method?.key);
+    await assertExperimentalConnectorSetupEnabled(galleryEntry?.slug, Boolean(
+      input.reconnectConnectionId && requestedResumeConnection?.status !== "draft"
+      && requestedResumeConnection?.config.sourceTemplateKey === galleryEntry?.slug,
+    ));
     if (galleryEntry && input.link) {
       const acceptsProviderGeneratedUrl =
         method?.transport === "mcp_remote" &&
@@ -14306,6 +14315,7 @@ export function toolAccessService(
   ): Promise<ToolConnectionHealthCheckResult> {
     const connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
+    await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot be reconnected");
     if (connection.credentialSource === "vercel_connect") {
@@ -14484,6 +14494,7 @@ export function toolAccessService(
   ): Promise<ToolOAuthStartResult> {
     let connection = await getConnectionRow(connectionId, companyId);
     assertSupportedConnection(connection);
+    await assertExperimentalConnectorSetupEnabled(connection.config.sourceTemplateKey, connection.status !== "draft");
     if (connection.status === "archived")
       throw conflict("Archived app connections cannot start sign in");
     const sourceTemplateKey =
@@ -16980,6 +16991,7 @@ export function toolAccessService(
     if (!app || app.availability?.available === false)
       throw notFound("App not found");
     const method = connectionMethodFor(app, methodKey);
+    await assertExperimentalConnectorSetupEnabled(app.slug);
     if (method.transport !== "mcp_remote" || !method.defaults?.serverUrl) {
       throw unprocessable(
         "This app method does not use a hosted remote MCP endpoint",

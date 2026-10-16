@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { emailSendSchema } from "@greatstone/shared";
 import { emailChannelService } from "../email-channels.js";
 import { forbidden, notFound } from "../../errors.js";
+import { assertEntitled } from "../entitlements.js";
 
 const AGENTMAIL_EMAIL_CONTRACT = {
   description:
@@ -117,6 +118,7 @@ export async function executeAgentmailTool(
   },
   value: unknown,
 ) {
+  await assertEntitled(db, "enableChatConnectors");
   const input = schema.parse(value);
   // This facade only persists intents/reads. The app's durable email worker owns execution.
   const service = emailChannelService(db, {

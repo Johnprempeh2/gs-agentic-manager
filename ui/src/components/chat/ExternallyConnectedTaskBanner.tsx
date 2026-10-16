@@ -18,6 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/context/ToastContext";
 import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
+import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import { issuesApi } from "@/api/issues";
 import {
   boardSendDraftKey,
@@ -109,7 +110,8 @@ const filePhaseLabels: Record<ChatFileTransferPhase, string> = {
 };
 
 export function useIssueChatBinding(companyId: string, issueId: string) {
-  const queryEnabled = Boolean(companyId && issueId) && !issueId.startsWith("chat:");
+  const { enabled } = useChatConnectorsEnabled();
+  const queryEnabled = enabled && Boolean(companyId && issueId) && !issueId.startsWith("chat:");
   const query = useQuery({
     queryKey: ["issue-chat-binding", companyId, issueId],
     queryFn: () => chatEndpointsApi.getIssueBinding(issueId),

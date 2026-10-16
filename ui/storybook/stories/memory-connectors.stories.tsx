@@ -6,14 +6,15 @@ import { getConnectableAppDefinition, MEMORY_CONNECTOR_IDS, INSTANCE_FEATURE_KEY
 import { queryKeys } from "@/lib/queryKeys";
 import { ConnectionSetupCompletionScreen, ConnectionSetupFlow, OAuthConnectStateScreen } from "@/features/connections/ConnectionSetupFlow";
 import { ConnectorCard } from "@/pages/apps/Browse";
+import { InstanceExperimentalSettings } from "@/pages/InstanceExperimentalSettings";
 import { Button } from "@/components/ui/button";
 
 const COMPANY = "company-storybook";
 const apps = MEMORY_CONNECTOR_IDS.map(slug => getConnectableAppDefinition(slug)!);
 
-type Scenario = "catalog" | "setup" | "rejected" | "waiting" | "oauth-error" | "complete";
+type Scenario = "catalog" | "setup" | "disabled" | "settings" | "rejected" | "waiting" | "oauth-error" | "complete";
 function MemoryReview({ provider = "mem0", scenario = "catalog" }: { provider?: MemoryConnectorId; scenario?: Scenario }) {
-  const [selection, setSelection] = useState<MemoryConnectorId | null>(scenario === "catalog" ? null : provider);
+  const [selection, setSelection] = useState<MemoryConnectorId | null>(scenario === "catalog" || scenario === "settings" ? null : provider);
   const [completed, setCompleted] = useState(scenario === "complete");
   const [ready, setReady] = useState(false);
   const [failure, setFailure] = useState(scenario === "rejected");
@@ -22,7 +23,7 @@ function MemoryReview({ provider = "mem0", scenario = "catalog" }: { provider?: 
   const [availableTo, setAvailableTo] = useState("Any agent");
   const client = useMemo(() => {
     const q = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false, refetchOnMount: false } } });
-    q.setQueryData(queryKeys.instance.experimentalSettings, instanceExperimentalSettingsSchema.parse({}));
+    q.setQueryData(queryKeys.instance.experimentalSettings, { ...instanceExperimentalSettingsSchema.parse({}), enableMemoryConnectors: scenario !== "disabled" });
     q.setQueryData(queryKeys.apps.gallery(COMPANY), { apps, capabilities: { canSetCompanyInstall: true, companyInstallReason: null } });
     q.setQueryData(queryKeys.health, { status: "ok", deploymentMode: "local_trusted", hiddenSettings: INSTANCE_FEATURE_KEYS.filter(k => k !== "enableMemoryConnectors").map(k => `instance.experimental.${k}`) });
     return q;
@@ -73,8 +74,8 @@ function MemoryReview({ provider = "mem0", scenario = "catalog" }: { provider?: 
   const app = selection ? getConnectableAppDefinition(selection)! : null;
   return <QueryClientProvider client={client}>
     <div className="min-h-screen bg-background text-foreground">
-      <p role="note" className="border-b border-border bg-muted p-4 text-sm">Storybook simulation · Production catalog and setup. Use fake credentials. Sign-in and tool discovery are simulated; no provider calls or secret storage.</p>
-      <div className="mx-auto max-w-4xl space-y-4 p-6">
+      <p role="note" className="border-b border-border bg-muted p-4 text-sm">Storybook simulation · Production catalog, setup, and experimental controls. Use fake credentials. Sign-in and tool discovery are simulated; no provider calls or secret storage.</p>
+      {scenario === "settings" ? <InstanceExperimentalSettings /> : <div className="mx-auto max-w-4xl space-y-4 p-6">
         {completed && app ? <ConnectionSetupCompletionScreen appName={app.name} logoUrl={app.branding.logoUrl} darkLogoUrl={app.branding.darkLogoUrl} summary={[{ label: "Identity", value: identity }, { label: "Available to", value: availableTo }, { label: "Actions", value: "All tools allowed" }]} onDone={() => { setCompleted(false); setSelection(null); }} />
           : (scenario === "waiting" || scenario === "oauth-error") && app ? <OAuthConnectStateScreen entry={app} resuming={false} phase={scenario === "oauth-error" ? "error" : "redirecting"} error={scenario === "oauth-error" ? "The provider did not authorize this connection. Check your account access and try again." : null} onRetry={() => setSelection(null)} onBack={() => setSelection(null)} onCancel={() => setSelection(null)} />
           : selection && ready ? <>
@@ -84,9 +85,9 @@ function MemoryReview({ provider = "mem0", scenario = "catalog" }: { provider?: 
               <OAuthConnectStateScreen entry={app} phase="entry" onRetry={() => { signIn.complete(); setSignIn(null); }} onBack={() => { setSignIn(null); setSelection(null); }} onCancel={() => { setSignIn(null); setSelection(null); }} />
             </div> : null}
           </>
-          : <div role="list" className="space-y-3">{apps.map(entry => <ConnectorCard key={entry.slug} row={{ key: entry.slug, slug: entry.slug, name: entry.name, description: entry.description, brandKey: entry.slug, logoUrl: entry.branding.logoUrl, darkLogoUrl: entry.branding.darkLogoUrl, entry, applications: [], connections: [], chatEndpoints: [] }} userProfileById={new Map()} onNavigate={() => setSelection(entry.slug as MemoryConnectorId)} onRequestRemove={() => {}} />)}</div>}
-        {selection && !completed && <div className="flex items-center gap-3 border-t border-border pt-4"><Button size="sm" variant="ghost" onClick={() => setSelection(null)}>Catalog</Button><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={failure} onChange={event => setFailure(event.target.checked)} />Simulate rejected credentials</label></div>}
-      </div>
+          : <div role="list" className="space-y-3">{apps.map(entry => <ConnectorCard key={entry.slug} row={{ key: entry.slug, slug: entry.slug, name: entry.name, description: entry.description, brandKey: entry.slug, logoUrl: entry.branding.logoUrl, darkLogoUrl: entry.branding.darkLogoUrl, entry, applications: [], connections: [], chatEndpoints: [] }} userProfileById={new Map()} chatConnectorsEnabled={false} onNavigate={() => setSelection(entry.slug as MemoryConnectorId)} onRequestRemove={() => {}} />)}</div>}
+        {selection && !completed && scenario !== "disabled" && <div className="flex items-center gap-3 border-t border-border pt-4"><Button size="sm" variant="ghost" onClick={() => setSelection(null)}>Catalog</Button><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={failure} onChange={event => setFailure(event.target.checked)} />Simulate rejected credentials</label></div>}
+      </div>}
     </div>
   </QueryClientProvider>;
 }
@@ -94,6 +95,8 @@ const meta = { title: "Apps/Connections/Memory", component: MemoryReview, parame
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const CatalogAndSetup: Story = { args: { scenario: "catalog" } };
+export const ExperimentalToggle: Story = { args: { scenario: "settings" } };
+export const DisabledSetup: Story = { args: { scenario: "disabled" } };
 export const Mem0: Story = { args: { scenario: "setup", provider: "mem0" } };
 export const Zep: Story = { args: { scenario: "setup", provider: "zep" } };
 export const Supermemory: Story = { args: { scenario: "setup", provider: "supermemory" } };

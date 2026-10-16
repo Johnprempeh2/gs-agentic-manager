@@ -49,7 +49,7 @@ type Story = StoryObj<typeof meta>;
 
 function Catalog() {
   const [message, setMessage] = useState("");
-  return <Frame><ConnectorCard row={{ key: "fireflies", slug: "fireflies", brandKey: "fireflies", name: fireflies.name, description: fireflies.description, logoUrl: fireflies.branding?.logoUrl, entry: fireflies, applications: [], connections: [], chatEndpoints: [] }} userProfileById={new Map()} onRequestRemove={noop} onNavigate={() => setMessage("Open the Access story to walk through the connection flow.")} /><p role="status" className="text-sm text-muted-foreground">{message}</p></Frame>;
+  return <Frame><ConnectorCard row={{ key: "fireflies", slug: "fireflies", brandKey: "fireflies", name: fireflies.name, description: fireflies.description, logoUrl: fireflies.branding?.logoUrl, entry: fireflies, applications: [], connections: [], chatEndpoints: [] }} userProfileById={new Map()} chatConnectorsEnabled={false} onRequestRemove={noop} onNavigate={() => setMessage("Open the Access story to walk through the connection flow.")} /><p role="status" className="text-sm text-muted-foreground">{message}</p></Frame>;
 }
 function Flow({ stage }: { stage: "access" | "setup" }) {
   const navigate = useNavigate();

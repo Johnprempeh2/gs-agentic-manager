@@ -99,6 +99,7 @@ import { RunTranscriptView, type TranscriptMode } from "../components/transcript
 import { AgentToolsTab } from "./AgentToolsTab";
 import { AgentAccessTab } from "./AgentAccessTab";
 import { AgentChannelsPanel } from "../components/chat/AgentChannelsPanel";
+import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import {
   appendCapped,
   LIVE_TRANSCRIPT_RENDER_LIMIT,
@@ -778,9 +779,11 @@ export function AgentDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { enabled: chatConnectorsEnabled, loaded: chatConnectorsLoaded } = useChatConnectorsEnabled();
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissedLeftAgentIds, setDismissedLeftAgentIds] = useState<Set<string>>(() => new Set());
-  const activeView: AgentDetailView = urlRunId ? "run-detail" : parseAgentDetailView(urlTab ?? null);
+  const activeView: AgentDetailView = urlRunId ? "run-detail"
+    : urlTab === "channels" && !chatConnectorsEnabled ? "overview" : parseAgentDetailView(urlTab ?? null);
   const legacyAuditSection = !urlRunId ? agentLegacyAuditSection(urlTab ?? null) : null;
   const legacyView = urlRunId
     ? "runs"
@@ -967,6 +970,13 @@ export function AgentDetail() {
 
   useEffect(() => {
     if (!agent) return;
+    if (!urlRunId && urlTab === "channels") {
+      if (!chatConnectorsLoaded) return;
+      if (!chatConnectorsEnabled) {
+        navigate(agentDetailHref(canonicalAgentRef, "overview"), { replace: true });
+        return;
+      }
+    }
     if (urlRunId) {
       if (routeAgentRef !== canonicalAgentRef) {
         navigate(`/agents/${canonicalAgentRef}/runs/${urlRunId}`, { replace: true });
@@ -979,7 +989,7 @@ export function AgentDetail() {
       navigate(agentDetailHref(canonicalAgentRef, canonicalTab), { replace: true });
       return;
     }
-  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate]);
+  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate, chatConnectorsEnabled, chatConnectorsLoaded]);
 
   useEffect(() => {
     if (!agent?.companyId || agent.companyId === selectedCompanyId) return;

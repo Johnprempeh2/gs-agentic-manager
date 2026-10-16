@@ -20,7 +20,7 @@ const meta = {
       entry: null, applications: [], connections: [],
       chatEndpoints: [endpoint, { ...endpoint, id: "slack-draft", status: "draft", assignedAgentName: "Carl" }],
     },
-    userProfileById: new Map(),
+    userProfileById: new Map(), chatConnectorsEnabled: true,
     onNavigate: fn(), onRequestRemove: fn(),
   },
 } satisfies Meta<typeof ConnectorCard>;

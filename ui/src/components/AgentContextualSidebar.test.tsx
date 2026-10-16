@@ -34,13 +34,13 @@ vi.mock("./SidebarNavItem", () => ({
 }));
 
 describe("AgentContextualSidebar", () => {
-  it.each([false, true])("always shows agent Channels, whatever the graduated switch says (%s, GRE-1620)", (enabled) => {
+  it.each([false, true])("shows agent Channels only when chat connectors are enabled (%s)", (enabled) => {
     const client = new QueryClient();
     client.setQueryData(queryKeys.instance.experimentalSettings, { enableChatConnectors: enabled });
     const markup = renderToStaticMarkup(<QueryClientProvider client={client}><MemoryRouter>
       <AgentContextualSidebar agentRef="agent" agentId="agent-1" agentName="Agent" />
     </MemoryRouter></QueryClientProvider>);
-    expect(markup).toContain('href="/agents/agent/channels"');
+    expect(markup.includes('href="/agents/agent/channels"')).toBe(enabled);
     expect(markup).toContain('href="/agents/agent/tools"');
     client.clear();
   });

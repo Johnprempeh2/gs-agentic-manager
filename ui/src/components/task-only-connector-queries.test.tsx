@@ -10,6 +10,10 @@ import { useIssueChatBinding } from "./chat/ExternallyConnectedTaskBanner";
 const api = vi.hoisted(() => ({ getIssueBinding: vi.fn(), thread: vi.fn() }));
 vi.mock("@/api/chatEndpoints", () => ({ chatEndpointsApi: api }));
 vi.mock("@/api/email", () => ({ emailApi: api }));
+vi.mock("@/hooks/useChatConnectorsEnabled", () => ({
+  useChatConnectorsEnabled: () => ({ enabled: true, loaded: true }),
+}));
+
 const companyId = "test-company";
 const taskId = "22222222-2222-4222-8222-222222222222";
 const chatId = `chat:${taskId}`;

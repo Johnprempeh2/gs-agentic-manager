@@ -11745,6 +11745,46 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(result.connection.healthStatus).toBe("ok");
   });
 
+  async function withManagedMemoryConnectorsOff<T>(run: () => Promise<T>): Promise<T> {
+    const previous = process.env.GSAM_MANAGED_CONFIG;
+    process.env.GSAM_MANAGED_CONFIG = JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "test", features: { enableMemoryConnectors: false }, plugins: { autoInstall: [] },
+    });
+    try {
+      return await run();
+    } finally {
+      if (previous === undefined) delete process.env.GSAM_MANAGED_CONFIG;
+      else process.env.GSAM_MANAGED_CONFIG = previous;
+    }
+  }
+
+  it.each(["mem0", "zep", "supermemory", "cognee", "honcho"])("hides and rejects %s setup when a managed config turns memory connectors off (GRE-1633)", async (provider) => {
+    const company = await createCompany(db);
+    const service = createTestToolAccessService(db);
+    await withManagedMemoryConnectorsOff(async () => {
+      const response = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
+      expect(response.body.apps.some((app: { slug: string }) => app.slug === provider)).toBe(false);
+      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({
+        status: 403, details: { code: "not_entitled", feature: "enableMemoryConnectors" },
+      });
+    });
+    expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toHaveLength(0);
+  });
+
+  it("rotates an existing Mem0 key when a managed config turns memory connectors off (GRE-1633)", async () => {
+    const company = await createCompany(db);
+    const service = createTestToolAccessService(db);
+    mockToolsList([{ name: "search_memories", annotations: { readOnlyHint: true } }]);
+    const connected = await service.connectGalleryApp(company.id, {
+      galleryKey: "mem0", credentialValues: { "credentials.authorization": "old-key" },
+    });
+    await db.update(toolConnections).set({ status: "active" }).where(eq(toolConnections.id, connected.connectionId));
+    const result = await withManagedMemoryConnectorsOff(() => service.reconnectGalleryApp(connected.connectionId, company.id,
+      { credentialValues: { "credentials.authorization": "new-key" } }));
+    expect(result.connection.id).toBe(connected.connectionId);
+    expect(result.connection.healthStatus).toBe("ok");
+  });
+
   it("keeps active Cognee tools available during a transient Cloud probe outage", async () => {
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);

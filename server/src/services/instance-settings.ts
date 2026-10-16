@@ -272,7 +272,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableApps: true,
       enableMcpAggregators: true,
       // Greatstone (GRE-1620): Chat and Memory connectors graduated; a stored
-      // off value is ignored.
+      // off value is ignored. A managed config or the entitlement document can
+      // still pin them off (client editions do, GRE-1633).
       enableChatConnectors: true,
       enableMemoryConnectors: true,
       enablePipelines: parsed.data.enablePipelines ?? false,
@@ -413,8 +414,6 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.
     if (key === "enableIsolatedWorkspaces") continue;
-    // Greatstone (GRE-1620): Chat and Memory connectors are always on; a managed "off" is ignored.
-    if (key === "enableChatConnectors" || key === "enableMemoryConnectors") continue;
     // Greatstone (GRE-1622): Summaries and Status Cards are always on; a
     // managed "off" is ignored. Cases and External Objects keep the managed
     // value: client editions pin them off and billing modules sell them.

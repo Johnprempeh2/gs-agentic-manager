@@ -68,7 +68,7 @@ describe("app connect policy", () => {
       const href = appSourceConnectHref(app.slug);
       const searchParams = new URL(href, "http://paperclip.test").searchParams;
 
-      expect(canEnterAppsConnect(searchParams), app.slug).toBe(true);
+      expect(canEnterAppsConnect(searchParams, { chatConnectorsEnabled: true }), app.slug).toBe(true);
       expect(resolveAppsConnectRouteKey({ sourceSlug: searchParams.get("source") }), app.slug).toBe(app.slug);
     }
   });
@@ -82,11 +82,11 @@ describe("app connect policy", () => {
     expect(resolveAppsConnectRouteKey({})).toBeUndefined();
   });
 
-  it("admits chat-only deep links now that chat connectors are always on (GRE-1620)", () => {
+  it("retains GitHub tools but denies chat-only deep links while chat connectors are disabled", () => {
     expect(canEnterAppsConnect(new URLSearchParams("source=github"))).toBe(true);
     for (const source of ["discord", "telegram", "microsoft-teams"]) {
-      expect(canEnterAppsConnect(new URLSearchParams({ source })), source).toBe(true);
-      expect(canEnterAppsConnect(new URLSearchParams({ source, reconnect: "connection-1" })), source).toBe(true);
+      expect(canEnterAppsConnect(new URLSearchParams({ source })), source).toBe(false);
+      expect(canEnterAppsConnect(new URLSearchParams({ source, reconnect: "connection-1" })), source).toBe(false);
     }
   });
 });

@@ -20,6 +20,8 @@ import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
+import { ChatConnectorsExperimentalGate } from "./components/ChatConnectorsExperimentalGate";
+import { useChatConnectorsEnabled } from "./hooks/useChatConnectorsEnabled";
 import { canEnterAppsConnect } from "./pages/apps/app-connect-policy";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
@@ -221,13 +223,13 @@ function boardRoutes() {
       />
       <Route path="apps/connect" element={<AppsConnectEntryRoute />} />
       <Route path="apps/chat/connect" element={
-        <ChatEndpointSetup />
+        <ChatConnectorsExperimentalGate><ChatEndpointSetup /></ChatConnectorsExperimentalGate>
       } />
       <Route path="apps/chat/:endpointId" element={
-        <Navigate to="settings" replace />
+        <ChatConnectorsExperimentalGate><Navigate to="settings" replace /></ChatConnectorsExperimentalGate>
       } />
       <Route path="apps/chat/:endpointId/:tab" element={
-        <ChatEndpointDetail />
+        <ChatConnectorsExperimentalGate><ChatEndpointDetail /></ChatConnectorsExperimentalGate>
       } />
       <Route path="apps/connect/:appKey" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connect/:appKey/:stage" element={<Navigate to="/apps" replace />} />
@@ -485,7 +487,8 @@ function AppsConnectEntryRoute({
 } = {}) {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  return canEnterAppsConnect(searchParams)
+  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
+  return canEnterAppsConnect(searchParams, { chatConnectorsEnabled })
     ? <AppsConnect credentialSource={credentialSource} />
     : <Navigate to="/apps" replace />;
 }

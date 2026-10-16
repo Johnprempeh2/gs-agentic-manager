@@ -147,11 +147,17 @@ export interface InstanceExperimentalSettings {
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;
-  /** Compatibility key (GRE-1620): chat connectors are always on; reads as true. */
+  /**
+   * Compatibility key (GRE-1620): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn chat connectors off.
+   */
   enableChatConnectors: boolean;
   /** @deprecated Compatibility key only. MCP aggregators are always enabled. */
   enableMcpAggregators: boolean;
-  /** Compatibility key (GRE-1620): memory connectors are always on; reads as true. */
+  /**
+   * Compatibility key (GRE-1620): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn memory connectors off.
+   */
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
   /**

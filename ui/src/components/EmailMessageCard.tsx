@@ -8,6 +8,7 @@ import type {
 } from "@greatstone/shared";
 import { emailApi } from "@/api/email";
 import { issuesApi } from "@/api/issues";
+import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 const EmailContext = createContext<EmailThreadSummary | null>(null);
 export function EmailThreadProvider({
   companyId,
@@ -21,8 +22,10 @@ export function EmailThreadProvider({
   refetchInterval?: number | false;
   children: ReactNode;
 }) {
+  const { enabled: connectorsEnabled } = useChatConnectorsEnabled();
   // An unsaved agent chat has no task yet: its id is "" or a "chat:" draft id.
-  const enabled = Boolean(companyId && issueId) && !issueId.startsWith("chat:");
+  const enabled =
+    connectorsEnabled && Boolean(companyId && issueId) && !issueId.startsWith("chat:");
   // The one poller for this thread; EmailTaskActivity reads the same cache.
   const thread = useQuery({
     queryKey: ["email-thread", companyId, issueId],

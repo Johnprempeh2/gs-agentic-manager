@@ -84,8 +84,14 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableChatConnectors: {
-    kind: "runtime",
-    reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
+    kind: "api",
+    probes: [
+      { method: "get", path: "/chat-identity-links/preview?token=x" },
+      { method: "post", path: "/chat-identity-links/confirm" },
+      { method: "post", path: "/chat-identity-links/request-access" },
+      { method: "get", path: "/slack/search/callback" },
+      { method: "get", path: `${COMPANY}/slack/endpoints/${ID}/search` },
+    ],
   },
   enableAgentChat: {
     kind: "runtime",
@@ -102,8 +108,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableMemoryConnectors: {
-    kind: "runtime",
-    reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
+    kind: "api",
+    probes: [{ method: "get", path: `${COMPANY}/tools/apps/mem0/preflight` }],
   },
   enableExternalObjects: {
     kind: "api",

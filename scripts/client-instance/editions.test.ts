@@ -107,6 +107,26 @@ test("client installs never show Deep Dive (deep dive design, section 5 rule 12)
   }
 });
 
+test("client installs keep Chat and Memory connectors off; Greatstone and self-hosted read them on (GRE-1620, GRE-1633)", () => {
+  const keys = ["enableChatConnectors", "enableMemoryConnectors"] as const;
+  for (const edition of ["managed", "managed-plus"] as const) {
+    const values = buildEditionValues({ edition, catalogVersion });
+    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+    assert.ok(parsed);
+    const { experimental } = applyManagedExperimentalOverlay(
+      applyCloudCatalogDefaults(normalizeExperimentalSettings({}), {}, parsed),
+      parsed,
+    );
+    for (const key of keys) {
+      assert.equal(parsed.features[key], false, `${edition}: ${key}`);
+      assert.ok(values.expectOff.includes(key), `${edition}: ${key}`);
+      assert.equal(experimental[key], false, `${edition}: ${key}`);
+    }
+  }
+  const selfHosted = normalizeExperimentalSettings({ enableChatConnectors: false, enableMemoryConnectors: false });
+  for (const key of keys) assert.equal(selfHosted[key], true, key);
+});
+
 test("agents can run without a sandbox provider (GRE-160)", () => {
   for (const edition of ["managed", "managed-plus"] as const) {
     const values = buildEditionValues({ edition, catalogVersion });

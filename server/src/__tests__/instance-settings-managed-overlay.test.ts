@@ -171,21 +171,28 @@ describe("instanceSettingsService managed overlay", () => {
     });
   });
 
-  it("keeps Chat and Memory connectors on when stored and managed values say off (GRE-1620)", async () => {
+  it("ignores a stored Chat or Memory connectors off, but keeps a managed off for client editions (GRE-1620, GRE-1633)", async () => {
     const off = { enableChatConnectors: false, enableMemoryConnectors: false };
-    const { db } = stubDb(settingsRow(off));
-    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
-      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
-    })) });
-    expect(await service.getExperimental()).toMatchObject({
-      enableChatConnectors: true,
-      enableMemoryConnectors: true,
-      managedKeys: {},
-    });
-    expect(await service.updateExperimental(off)).toMatchObject({
+    const stored = instanceSettingsService(stubDb(settingsRow(off)).db, { runtimeEnv: {} });
+    expect(await stored.getExperimental()).toMatchObject({ enableChatConnectors: true, enableMemoryConnectors: true });
+    expect(await stored.updateExperimental(off)).toMatchObject({
       experimental: { enableChatConnectors: true, enableMemoryConnectors: true },
     });
+
+    const { db, persistedSets } = stubDb(settingsRow({}));
+    const managed = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    expect(await managed.getExperimental()).toMatchObject({
+      ...off,
+      managedKeys: {
+        enableChatConnectors: { managed: true, managedBy: "paperclip-cloud" },
+        enableMemoryConnectors: { managed: true, managedBy: "paperclip-cloud" },
+      },
+    });
+    expect(persistedSets).toHaveLength(0);
   });
+
   it("keeps Summaries and Status Cards on when stored and managed values say off (GRE-1622)", async () => {
     const off = { enableSummaries: false, enableStatusCards: false };
     const on = { enableSummaries: true, enableStatusCards: true };
