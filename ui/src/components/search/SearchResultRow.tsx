@@ -1,7 +1,7 @@
 import { AgentAvatar } from "../AgentAvatar";
 import { AgentIdentity } from "../AgentIdentity";
 import { memo, type ComponentType, type SVGProps } from "react";
-import { Bot, FileText, Hexagon, MessageSquare, PaperclipIcon, Quote } from "lucide-react";
+import { Bot, FileSearch, FileText, Hexagon, Image as ImageIcon, MessageSquare, PaperclipIcon, Quote } from "lucide-react";
 import type { Agent, CompanySearchResult } from "@greatstone/shared";
 import { Link } from "@/lib/router";
 import { cn } from "@/lib/utils";
@@ -18,6 +18,8 @@ const SNIPPET_STYLES: Record<string, SnippetStyle> = {
   comment: { Icon: MessageSquare, label: "Comment" },
   document: { Icon: FileText, label: "Doc" },
   artifact: { Icon: PaperclipIcon, label: "Artifact" },
+  file: { Icon: FileSearch, label: "In file" },
+  image: { Icon: ImageIcon, label: "Image" },
   description: { Icon: Quote, label: "Description" },
 };
 
@@ -155,6 +157,48 @@ function SearchResultRowImpl({
             />
           ) : null}
         </div>
+      </Link>
+    );
+  }
+
+  if (result.type === "file") {
+    const file = result.file;
+    if (!file) return null;
+    const FileIcon = file.mediaKind === "image" ? ImageIcon : FileText;
+    return (
+      <Link
+        to={result.href}
+        disableIssueQuicklook
+        className={cn(ROW_BASE, "py-4", isActive && "bg-muted/40", className)}
+        data-result-type="file"
+      >
+        <FileIcon className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
+            <span className="truncate text-sm font-medium text-foreground">{result.title}</span>
+            <span className="truncate text-xs text-muted-foreground">
+              {file.owner.kind === "client" ? "Client: " : ""}{file.owner.label}
+            </span>
+          </div>
+          {result.snippet ? (
+            <SnippetLine
+              text={result.snippets[0]?.text ?? result.snippet}
+              highlights={result.snippets[0]?.highlights}
+              field={file.matchedAltText ? "image" : "file"}
+              fallbackLabel="In file"
+              multiline
+            />
+          ) : null}
+        </div>
+        {result.previewImageUrl ? (
+          <img
+            src={result.previewImageUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="ml-2 hidden h-(--sz-88px) w-(--sz-88px) shrink-0 rounded-md border border-border bg-muted object-cover sm:block"
+          />
+        ) : null}
       </Link>
     );
   }

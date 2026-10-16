@@ -134,6 +134,7 @@ import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runt
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
+import { assetTextIndexService } from "./services/asset-text-index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { supportQueueService } from "./services/support-queue.js";
@@ -2231,6 +2232,21 @@ async function startServerWithDatabaseTeardown(
     decisionPushTimer.unref?.();
   };
   scheduleDecisionPushRound();
+
+  /** How often newly uploaded files are read so search can find their words. */
+  const FILE_TEXT_INTERVAL_MS = 60_000;
+  // Reads a few unread files per round (PDF, Word, text); no outside service.
+  const fileTexts = assetTextIndexService(db as any, storageService);
+  const scheduleFileTextRound = () => {
+    const timer = setTimeout(() => {
+      void fileTexts
+        .sweep()
+        .catch((err) => logger.warn({ err }, "file text round failed"))
+        .finally(scheduleFileTextRound);
+    }, FILE_TEXT_INTERVAL_MS);
+    timer.unref?.();
+  };
+  scheduleFileTextRound();
 
   /** How often the nightly digest checks whether yesterday (UTC) still needs one. */
   const AGENT_DAILY_DIGEST_INTERVAL_MS = 10 * 60_000;

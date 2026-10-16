@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Brain, Briefcase, FileText, MessageSquareText, Repeat } from "lucide-react";
+import { Brain, Briefcase, FileSearch, FileText, Image as ImageIcon, MessageSquareText, Repeat } from "lucide-react";
 import { CommandGroup, CommandItem, CommandSeparator } from "@/components/ui/command";
 import { searchApi } from "../../api/search";
 import { pipelinesApi } from "../../api/pipelines";
@@ -113,6 +113,16 @@ export function GlobalSearchSources({
     return rows.slice(0, PER_GROUP);
   }, [insideComments, insideDocuments, excludeIssueIds]);
 
+  // Words inside uploaded files (PDF, Word, slides, sheets) and images by
+  // their description, with the line that matched.
+  const { data: insideFiles } = useQuery({
+    queryKey: ["global-search", companyId, "files", q],
+    queryFn: () => searchApi.search(companyId, { q, scope: "files", limit: PER_GROUP }),
+    enabled: active,
+    retry: false,
+  });
+  const fileResults = insideFiles?.results.filter((result) => result.type === "file" && result.file) ?? [];
+
   const { data: routines = [] } = useQuery({
     queryKey: queryKeys.routines.list(companyId),
     queryFn: () => routinesApi.list(companyId),
@@ -207,6 +217,41 @@ export function GlobalSearchSources({
                 </span>
               </CommandItem>
             ))}
+          </CommandGroup>
+        </>
+      ) : null}
+
+      {fileResults.length > 0 ? (
+        <>
+          <CommandSeparator />
+          <CommandGroup heading="Inside files">
+            {fileResults.map((result) => {
+              const file = result.file!;
+              const Icon = file.mediaKind === "image" ? ImageIcon : FileSearch;
+              return (
+                <CommandItem
+                  key={result.id}
+                  value={`${q} file ${result.id} ${result.title}`}
+                  onSelect={() => onGo(result.href)}
+                  data-testid="global-search-file"
+                >
+                  <Icon className="mr-2 h-4 w-4 shrink-0 self-start" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">
+                      {result.title}
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {file.owner.kind === "client" ? "Client: " : "in "}{file.owner.label}
+                      </span>
+                    </span>
+                    {result.snippet ? (
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {file.matchedAltText ? "Image" : "Line"}: {result.snippet}
+                      </span>
+                    ) : null}
+                  </span>
+                </CommandItem>
+              );
+            })}
           </CommandGroup>
         </>
       ) : null}

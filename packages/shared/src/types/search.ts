@@ -1,6 +1,6 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
 
-export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "agents", "projects"] as const;
+export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "files", "agents", "projects"] as const;
 export type CompanySearchScope = (typeof COMPANY_SEARCH_SCOPES)[number];
 
 export const COMPANY_SEARCH_SORTS = ["relevance", "updated", "created", "priority"] as const;
@@ -9,7 +9,7 @@ export type CompanySearchSort = (typeof COMPANY_SEARCH_SORTS)[number];
 export const COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS = ["24h", "7d", "30d", "90d"] as const;
 export type CompanySearchUpdatedWithinOption = (typeof COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS)[number];
 
-export type CompanySearchResultType = "issue" | "artifact" | "agent" | "project";
+export type CompanySearchResultType = "issue" | "artifact" | "file" | "agent" | "project";
 export type CompanySearchCountType = CompanySearchResultType | "comment" | "document";
 export type CompanySearchIssueFilterKey =
   | "status"
@@ -58,6 +58,24 @@ export interface CompanySearchArtifactSummary {
   updatedAt: string;
 }
 
+/** An uploaded file whose words matched: a PDF, Word file or text file, or an image by its alt text. */
+export interface CompanySearchFileSummary {
+  assetId: string;
+  filename: string | null;
+  contentType: string;
+  mediaKind: "image" | "document";
+  /** Where the file lives: a task (or chat) or a client in a pipeline. */
+  owner: {
+    kind: "task" | "client";
+    label: string;
+    href: string;
+  };
+  /** Where the file itself opens, when it is reachable as an attachment. */
+  contentPath: string | null;
+  /** True when the match is the image's alt text rather than words inside the file. */
+  matchedAltText: boolean;
+}
+
 export interface CompanySearchResult {
   id: string;
   type: CompanySearchResultType;
@@ -70,6 +88,7 @@ export interface CompanySearchResult {
   snippets: CompanySearchSnippet[];
   issue?: CompanySearchIssueSummary;
   artifact?: CompanySearchArtifactSummary;
+  file?: CompanySearchFileSummary;
   updatedAt: string | null;
   previewImageUrl: string | null;
 }
