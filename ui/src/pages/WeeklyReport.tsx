@@ -22,6 +22,7 @@ import {
   weeklyReportSections,
 } from "../lib/weekly-report";
 import { downloadTextFile } from "../lib/issues-csv";
+import { setFirstWeekMark } from "../lib/first-week";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
 import { formatCents } from "../lib/utils";
@@ -205,6 +206,12 @@ export function WeeklyReport() {
     queryFn: () => weeklyReportApi.get(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  // Opening the report ticks "Read This week" on the Home checklist.
+  const reportLoaded = !!data;
+  useEffect(() => {
+    if (reportLoaded && selectedCompanyId) setFirstWeekMark(selectedCompanyId, "weekly-report");
+  }, [reportLoaded, selectedCompanyId]);
 
   async function copyReport() {
     if (!data) return;
