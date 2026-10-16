@@ -275,6 +275,33 @@ describe("client case page", () => {
     expect(mockPipelinesApi.getCasePortal).not.toHaveBeenCalled();
   });
 
+  it("shows field changes and kinds it does not know yet without breaking", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    const base = {
+      source: "pipedrive", activityType: null, body: null, occurredAt: "2026-09-01T10:00:00Z", durationMinutes: null,
+      done: null, ownerName: null, contactId: null, contactName: null, caseId: "case-1", caseTitle: "Client A", details: {},
+    };
+    mockPipelinesApi.getCaseCrmHistory.mockResolvedValue({
+      caseId: "case-1",
+      timeline: [
+        { ...base, id: "f1", kind: "field_change", subject: "Value: 10000 → 12000" },
+        { ...base, id: "f2", kind: "field_change", subject: null },
+        { ...base, id: "u1", kind: "something_new", subject: "Brand new kind" },
+        { ...base, id: "n1", kind: "note", subject: null, body: "A note" },
+      ],
+      files: [],
+      truncated: false,
+    });
+
+    await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);
+
+    const section = container.querySelector('[data-testid="case-crm-history"]')!;
+    expect(section.textContent).toContain("Value: 10000 → 12000");
+    expect(section.textContent).toContain("Field change");
+    expect(section.textContent).toContain("Brand new kind");
+    expect([...section.querySelectorAll("button")].some((button) => button.textContent?.startsWith("Field changes (2)"))).toBe(true);
+  });
+
   it("leaves the CRM history out when the case has none", async () => {
     mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
     await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);
