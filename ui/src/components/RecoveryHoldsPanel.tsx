@@ -143,7 +143,8 @@ function ClearHoldDialog({
       issuesApi.resolveRecoveryAction(hold.issue.id, {
         actionId: hold.recoveryActionId,
         outcome: "restored",
-        sourceIssueStatus: "todo",
+        // A task in review stays in review, so its review is not skipped.
+        sourceIssueStatus: hold.issue.status === "in_review" ? "in_review" : "todo",
         resolutionNote: "Cleared from the holds list.",
         executionReconciliation: buildHoldReconciliation({
           runId: hold.runId!,
