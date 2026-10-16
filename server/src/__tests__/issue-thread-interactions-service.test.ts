@@ -1340,6 +1340,54 @@ describeEmbeddedPostgres("issueThreadInteractionService", () => {
     })).resolves.toEqual([]);
   });
 
+  it("keeps a card pending when only the board assistant has replied since", async () => {
+    const { companyId, issueId } = await seedConfirmationIssue("Concierge reply keeps the card");
+    const createdAt = new Date("2026-05-18T12:00:00.000Z");
+    const created = await interactionsSvc.create({ id: issueId, companyId }, {
+      kind: "ask_user_questions",
+      payload: {
+        version: 1,
+        questions: [{
+          id: "scope",
+          prompt: "Choose the scope",
+          selectionMode: "single",
+          options: [{ id: "phase-1", label: "Phase 1" }],
+        }],
+      },
+    }, { userId: "local-board" });
+    await db
+      .update(issueThreadInteractions)
+      .set({ createdAt, updatedAt: createdAt })
+      .where(eq(issueThreadInteractions.id, created.id));
+    const comment = {
+      id: randomUUID(),
+      companyId,
+      issueId,
+      authorUserId: "board-concierge",
+      authorType: "user" as const,
+      body: "Automated board assistant reply.",
+      createdAt: new Date("2026-05-18T12:01:00.000Z"),
+      updatedAt: new Date("2026-05-18T12:01:00.000Z"),
+    };
+    await db.insert(issueComments).values(comment);
+
+    await expect(interactionsSvc.expireRequestConfirmationsSupersededByHistoricalComments({
+      id: issueId,
+      companyId,
+    })).resolves.toEqual([]);
+    await expect(interactionsSvc.expireRequestConfirmationsSupersededByComment(
+      { id: issueId, companyId },
+      comment,
+      { userId: "board-concierge" },
+    )).resolves.toEqual([]);
+    const row = await db
+      .select({ status: issueThreadInteractions.status })
+      .from(issueThreadInteractions)
+      .where(eq(issueThreadInteractions.id, created.id))
+      .then((rows) => rows[0]);
+    expect(row?.status).toBe("pending");
+  });
+
   it("reuses the existing interaction when the same idempotency key is submitted twice", async () => {
     const companyId = randomUUID();
     const goalId = randomUUID();
