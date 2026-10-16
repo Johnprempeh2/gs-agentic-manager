@@ -131,6 +131,10 @@ the brand colour comes from the charcoal rail, the lime and teal light in
   mode, so interaction carries the brand colour. Text on it stays ink.
 - **Card rim.** Glass cards carry `--glass-rim`: in light mode a lime to teal
   brand edge (lime top left, teal bottom right). It is decoration only.
+- **Page bar.** `.gs-page-bar` (the title bar on every page) carries
+  `--gs-page-bar-wash`, a teal to lime band in light mode and `none` at night.
+- **Heading icons.** An icon that is the first child of an `h1` to `h4` with
+  `text-muted-foreground` renders brand emerald in light mode.
 - **Eyebrows.** Uppercase section labels (`h2` to `h4` with `uppercase
   text-muted-foreground`) render in `--eyebrow-foreground` (brand emerald)
   in light mode through one rule in `index.css`; keep writing them as

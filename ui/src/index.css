@@ -1356,6 +1356,11 @@
 :root:not(.dark) :is(h2, h3, h4).uppercase.text-muted-foreground:not(.dark *) {
   color: var(--eyebrow-foreground);
 }
+/* Heading icons (an icon as the first child of a page or card heading) take
+   the same brand emerald in daylight. */
+:root:not(.dark) :is(h1, h2, h3, h4) > svg.text-muted-foreground:not(.dark *) {
+  color: var(--eyebrow-foreground);
+}
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));
 }
