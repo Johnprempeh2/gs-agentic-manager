@@ -108,6 +108,7 @@ import {
   confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
   importMemorySchema,
+  createMemoryConnectionSchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
   dismissMemoryLinkLeadSchema,
@@ -5501,6 +5502,34 @@ registry.registerPath({
     "Add up to 50 entries brought in from Claude or ChatGPT as unreviewed contributions with app provenance; repeats in the scope are skipped and entries with sensitive content are held back",
   request: { params: memoryCompanyParams, body: jsonBody(importMemorySchema) },
   responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/connections",
+  tags: ["memory"],
+  summary: "Apps linked to organization memory through memory-only keys, with their live keys; owner or admin signed in as a person",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/connections",
+  tags: ["memory"],
+  summary:
+    "Link Claude, Codex or another MCP app to organization memory: a paused link agent with a new memory-only key, shown once, and optionally the memory contribute right",
+  request: { params: memoryCompanyParams, body: jsonBody(createMemoryConnectionSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/memory/connections/{agentId}",
+  tags: ["memory"],
+  summary: "Disconnect a linked app by revoking every memory-only key of its link agent",
+  request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

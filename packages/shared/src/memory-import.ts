@@ -301,3 +301,43 @@ export interface MemoryImportResult {
   heldBack: number;
   entries: Array<{ sourceId: string; outcome: MemoryImportEntryOutcome; recordId: string | null; reason: string | null }>;
 }
+
+/**
+ * A live link from a person's Claude, Codex or other MCP app to organization
+ * memory. Each one is a paused agent that holds `memory_only` keys, so the app
+ * is recorded as its own contributor and can reach memory and nothing else.
+ */
+export const MEMORY_CONNECTION_APPS = ["claude", "claude_code", "codex", "chatgpt", "other"] as const;
+export type MemoryConnectionApp = (typeof MEMORY_CONNECTION_APPS)[number];
+
+export const MEMORY_CONNECTION_APP_LABEL: Record<MemoryConnectionApp, string> = {
+  claude: "Claude desktop app",
+  claude_code: "Claude Code",
+  codex: "Codex",
+  chatgpt: "ChatGPT",
+  other: "Another app",
+};
+
+export const createMemoryConnectionSchema = z
+  .object({
+    app: z.enum(MEMORY_CONNECTION_APPS),
+    /** Let the app add entries to organization and project memory, not only its own notes. */
+    canContribute: z.boolean().default(true),
+  })
+  .strict();
+export type CreateMemoryConnection = z.infer<typeof createMemoryConnectionSchema>;
+
+export interface MemoryConnection {
+  agentId: string;
+  app: MemoryConnectionApp;
+  name: string;
+  createdByUserId: string | null;
+  canContribute: boolean;
+  keys: Array<{ id: string; createdAt: Date | string; lastUsedAt: Date | string | null }>;
+}
+
+export interface CreatedMemoryConnection {
+  connection: MemoryConnection;
+  /** Shown once. GSAM keeps only its hash. */
+  token: string;
+}

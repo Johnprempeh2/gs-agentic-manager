@@ -39,6 +39,7 @@ const apiPrefixes: Record<string, string> = {
   "memory.ts": "/api",
   "memory-steward.ts": "/api",
   "memory-tools.ts": "/api",
+  "memory-connections.ts": "/api",
   "agent-avatars.ts": "/api",
   "announcements.ts": "/api",
   "ai-connections.ts": "/api",

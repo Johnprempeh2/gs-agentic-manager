@@ -1,5 +1,8 @@
 import type {
   ChangeMemoryGrant,
+  CreateMemoryConnection,
+  CreatedMemoryConnection,
+  MemoryConnection,
   ImportMemory,
   MemoryImportResult,
   MemoryScope,
@@ -66,6 +69,12 @@ export const memoryGraphApi = {
   /** Adds picked Claude or ChatGPT entries as unreviewed contributions. */
   importEntries: (companyId: string, body: ImportMemory) =>
     api.post<MemoryImportResult>(`/companies/${companyId}/memory/import`, body),
+  /** Live links from Claude, Codex and other MCP apps. Owner or admin only. */
+  connections: (companyId: string) => api.get<MemoryConnection[]>(`/companies/${companyId}/memory/connections`),
+  createConnection: (companyId: string, body: CreateMemoryConnection) =>
+    api.post<CreatedMemoryConnection>(`/companies/${companyId}/memory/connections`, body),
+  revokeConnection: (companyId: string, agentId: string) =>
+    api.delete<{ ok: true }>(`/companies/${companyId}/memory/connections/${encodeURIComponent(agentId)}`),
   /** `limit` caps the nodes returned (server default 200). */
   graph: (companyId: string, filters: MemoryGraphFilters & { limit?: number } = {}) =>
     api.get<MemoryGraph>(`/companies/${companyId}/memory/graph${toQuery(filters)}`),
