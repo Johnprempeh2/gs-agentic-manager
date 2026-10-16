@@ -21,7 +21,7 @@ import type {
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
 } from "@greatstone/shared";
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, UserRound, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { pipelineItemAskContext } from "../lib/ask-everest";
 import {
@@ -90,10 +90,15 @@ import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
+import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
 import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
+  DEVTOOLS_DEAL_FIELD_KEYS,
+  formatDealTotals,
+  isDevtoolsCaseType,
+  sumDealValues,
   daysInStage,
   formatDaysInStage,
   readCardSummary,
@@ -885,6 +890,11 @@ export function PipelinesIndexTable({
                         >
                           {row.pipeline.name}
                         </Link>
+                        {isDevtoolsCaseType(row.pipeline.key) ? (
+                          <Badge variant="outline" className="shrink-0 text-(length:--text-nano)" title="Imported from Pipedrive: the DevTools journey">
+                            DevTools
+                          </Badge>
+                        ) : null}
                         {onToggleStar && !row.pipeline.archivedAt ? (
                           <span className="inline-flex" data-tour="pipelines-pin">
                             <StarToggle
@@ -1185,6 +1195,17 @@ type PipelineTransitionEdge = { fromStageId: string; toStageId: string; label?: 
 type PipelineBoardGroupBy = "none" | "builtFor";
 
 const PIPELINE_BOARD_UNGROUPED_KEY = "__ungrouped";
+const ALL_OWNERS = "__all_owners";
+
+/** Distinct card owners on a board, sorted by name. */
+export function listCardOwners(cases: Array<{ fields?: Record<string, unknown> | null }>) {
+  const owners = new Set<string>();
+  for (const item of cases) {
+    const owner = readCardSummary(item.fields).owner;
+    if (owner) owners.add(owner);
+  }
+  return [...owners].sort((left, right) => left.localeCompare(right));
+}
 const PIPELINE_BOARD_GROUP_BY_STORAGE_PREFIX = "paperclip.pipelineBoard.groupBy.";
 
 function asText(value: unknown): string | null {
@@ -1390,6 +1411,7 @@ function PipelineCaseCard({
   const childrenSummary = getChildrenSummaryCount(caseItem);
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
   const { owner, nextAction } = readCardSummary(caseItem.fields);
+  const dealValue = formatDealTotals(sumDealValues([caseItem]));
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
   const covers = useImageCovers(caseItem.companyId);
   const cover = caseItem.organisationId ? covers.data?.organisations[caseItem.organisationId] : undefined;
@@ -1457,8 +1479,14 @@ function PipelineCaseCard({
             Built from {formatNumber(childrenSummary)} {childrenSummary === 1 ? "item" : "items"}
           </p>
         ) : null}
-        {owner || nextAction || daysLabel ? (
+        {owner || nextAction || daysLabel || dealValue ? (
           <dl className="mt-1.5 space-y-0.5 text-xs">
+            {dealValue ? (
+              <div className="flex gap-1">
+                <dt className="shrink-0 text-muted-foreground">Value</dt>
+                <dd className="min-w-0 truncate font-medium text-foreground">{dealValue}</dd>
+              </div>
+            ) : null}
             {owner ? (
               <div className="flex gap-1">
                 <dt className="shrink-0 text-muted-foreground">Owner</dt>
@@ -1517,6 +1545,8 @@ function PipelineBoardColumn({
     ? groupCasesByBuiltFor(cases)
     : [{ key: "all", label: "", href: null, cases }];
   const sortableCaseIds = caseGroups.flatMap((group) => group.cases.map((entry) => entry.id));
+  // Deal values from a Pipedrive import, summed per stage as Pipedrive shows them.
+  const stageValue = formatDealTotals(sumDealValues(cases));
 
   return (
     <div
@@ -1544,6 +1574,7 @@ function PipelineBoardColumn({
         </div>
         <span className="ml-2 flex shrink-0 items-center gap-2 text-xs">
           <span>{cases.length} item{cases.length === 1 ? "" : "s"}</span>
+          {stageValue ? <span className="font-normal text-muted-foreground" data-testid="stage-deal-value">{stageValue}</span> : null}
           {warningCount ? (
             <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -1627,6 +1658,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const navigate = useNavigate();
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
+  // Owner filter (Pipedrive's "my deals"), per pipeline; ALL_OWNERS shows everyone's.
+  const [ownerFilter, setOwnerFilter] = useState<{ pipelineId: string; owner: string }>({ pipelineId, owner: ALL_OWNERS });
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -1684,10 +1717,21 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     [casesQuery.data],
   );
 
+  const boardOwners = useMemo(() => listCardOwners(cases), [cases]);
+  const selectedOwner = ownerFilter.pipelineId === pipelineId && boardOwners.includes(ownerFilter.owner) ? ownerFilter.owner : ALL_OWNERS;
+  const visibleCases = useMemo(
+    () => (selectedOwner === ALL_OWNERS ? cases : cases.filter((item) => readCardSummary(item.fields).owner === selectedOwner)),
+    [cases, selectedOwner],
+  );
+
   const orderedStages = useMemo(() => {
     if (!pipeline?.stages) return [] as PipelineStage[];
     return [...pipeline.stages].sort((left, right) => left.position - right.position);
   }, [pipeline?.stages]);
+  const openDealValue = useMemo(() => {
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return formatDealTotals(sumDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
+  }, [visibleCases, orderedStages]);
   const healthWarningsByStage = useMemo(
     () => groupWarningsByStage(healthQuery.data?.warnings ?? []),
     [healthQuery.data?.warnings],
@@ -1705,7 +1749,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     const unassigned: BoardCase[] = [];
-    for (const caseItem of cases) {
+    for (const caseItem of visibleCases) {
       const stageId = caseItem.stageId && stageIds.has(caseItem.stageId) ? caseItem.stageId : UNASSIGNED_STAGE_ID;
       if (stageId === UNASSIGNED_STAGE_ID) {
         unassigned.push(caseItem);
@@ -1723,7 +1767,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     return { columns, byStage, caseToColumn, caseById };
-  }, [orderedStages, cases, stageIds, pipelineId]);
+  }, [orderedStages, visibleCases, stageIds, pipelineId]);
 
   const transitions = useMemo<PipelineTransitionEdge[]>(
     () => pipeline?.transitions ?? [],
@@ -1935,7 +1979,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     <div className="w-full space-y-4 px-6 py-8">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Pipeline</p>
+          <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+            {isDevtoolsCaseType(pipeline.key) ? "DevTools journey · from Pipedrive" : "Pipeline"}
+          </p>
           <div className="flex items-center gap-1">
             <h1 className="text-2xl font-semibold text-foreground">{pipeline.name}</h1>
             {pipeline.archivedAt ? null : (
@@ -1949,7 +1995,12 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
             )}
           </div>
           {pipeline.description ? <p className="mt-1 text-sm text-muted-foreground">{pipeline.description}</p> : null}
-          <p className="mt-1 text-xs text-muted-foreground">{cases.length} total item{cases.length === 1 ? "" : "s"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {selectedOwner === ALL_OWNERS
+              ? `${cases.length} total item${cases.length === 1 ? "" : "s"}`
+              : `${visibleCases.length} of ${cases.length} items, owned by ${selectedOwner}`}
+            {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
+          </p>
           {fedByPipelines.length > 0 ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {fedByPipelines.map((source) => (
@@ -1968,6 +2019,20 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <FeatureTour tour={PIPELINE_BOARD_TOUR} />
+          {boardOwners.length > 1 ? (
+            <Select value={selectedOwner} onValueChange={(owner) => setOwnerFilter({ pipelineId, owner })}>
+              <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Owner" title="Owner">
+                <UserRound className="h-4 w-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_OWNERS}>All owners</SelectItem>
+                {boardOwners.map((owner) => (
+                  <SelectItem key={owner} value={owner}>{owner}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Select value={groupBy} onValueChange={handleGroupByChange}>
             <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
               <Layers className="h-4 w-4 text-muted-foreground" />
@@ -2957,13 +3022,14 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
   const workReferences = extractWorkReferences(detail.case);
   const referenceKeys = referenceFieldKeys(detail.case.fields);
-  const isClientCase = detail.caseType === CLIENT_CASE_TYPE;
+  const isDevtoolsCase = isDevtoolsCaseType(detail.caseType);
+  const isClientCase = detail.caseType === CLIENT_CASE_TYPE || isDevtoolsCase;
   const projectsPanel = (
     <PipelineCaseProjects caseId={caseId} companyId={item.data?.case.companyId ?? selectedCompanyId ?? null} />
   );
   const { shortFields: itemFields, longFields: mainPaneFields } = splitPipelineItemFields(
     displayPipelineItemFields(detail.case.fields).filter((field) =>
-      !referenceKeys.has(field.key) && !(isClientCase && CLIENT_RECORD_FIELD_KEYS.has(field.key))
+      !referenceKeys.has(field.key) && !(isClientCase && (isDevtoolsCase ? DEVTOOLS_DEAL_FIELD_KEYS : CLIENT_RECORD_FIELD_KEYS).has(field.key))
     ),
   );
   const banner = getPendingTransitionBannerState(detail.case, stageLookup);
@@ -3078,7 +3144,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         </div>
         <div className="flex w-full flex-col gap-5">
           <div className="flex items-center gap-2 lg:justify-end">
-            {isClientCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
+            {isClientCase && !isDevtoolsCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
             <Button
               variant="outline"
               title={`Ask Everest a question about ${detail.case.title}`}
@@ -3501,20 +3567,34 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               events={eventRows}
               issueLinks={issueLinks.data ?? []}
               projects={projectsPanel}
+              journey={isDevtoolsCase ? "devtools" : "dx"}
             />
           ) : (
-            <PipelineCaseCrmSync
-              caseId={caseId}
-              companyId={detail.case.companyId}
-              wrap={(children) => (
-                <section>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-                    CRM sync
-                  </h2>
-                  <div className="border-y border-border">{children}</div>
-                </section>
-              )}
-            />
+            <>
+              <PipelineCaseCrmSync
+                caseId={caseId}
+                companyId={detail.case.companyId}
+                wrap={(children) => (
+                  <section>
+                    <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                      CRM sync
+                    </h2>
+                    <div className="border-y border-border">{children}</div>
+                  </section>
+                )}
+              />
+              <PipelineCaseCrmHistory
+                caseId={caseId}
+                wrap={(title, children) => (
+                  <section>
+                    <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                      {title}
+                    </h2>
+                    <div className="border-y border-border px-1">{children}</div>
+                  </section>
+                )}
+              />
+            </>
           )}
 
           <PipelineItemBodyDocument

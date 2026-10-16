@@ -164,6 +164,7 @@ import {
   pipelineCaseOutputsService,
   summarizePipelineCaseOutputsForContext,
 } from "../services/pipeline-case-outputs.js";
+import { pipelineCaseCrmHistoryService } from "../services/pipeline-case-crm-history.js";
 import { pipelineCaseFilesService, type ClientEvidenceSourceIssue } from "../services/pipeline-case-files.js";
 import { pipelineCaseJourneyService } from "../services/pipeline-case-journey.js";
 import { pipelineCaseDocumentRequestsService } from "../services/pipeline-case-document-requests.js";
@@ -985,6 +986,7 @@ export function pipelineRoutes(
   const svc = pipelineService(db, serviceOptions);
   const memorySvc = memoryGatewayService(db, { engine: memoryEngine });
   const outputsSvc = pipelineCaseOutputsService(db);
+  const crmHistorySvc = pipelineCaseCrmHistoryService(db);
   const filesSvc = pipelineCaseFilesService(db);
   const journeySvc = pipelineCaseJourneyService(db);
   const acceptanceSvc = clientAcceptanceService(db);
@@ -2417,6 +2419,17 @@ export function pipelineRoutes(
       ))
       .orderBy(asc(pipelineCaseIssueLinks.createdAt));
     res.json(links);
+  });
+
+  router.get("/cases/:caseId/crm-history", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    const title = await db
+      .select({ title: pipelineCases.title })
+      .from(pipelineCases)
+      .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)))
+      .then((rows) => rows[0]?.title ?? "");
+    res.json(await crmHistorySvc.get(companyId, caseId, title));
   });
 
   router.get("/cases/:caseId/outputs", async (req, res) => {

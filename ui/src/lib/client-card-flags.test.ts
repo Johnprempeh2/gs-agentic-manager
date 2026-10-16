@@ -11,6 +11,11 @@ describe("client card flags", () => {
     expect(getClientCardFlags({ fields: { lastContact: "2026-10-08" } }, now).noContactDays).toBeNull();
   });
 
+  it("reads the last activity date of a deal imported from Pipedrive", () => {
+    expect(isClientCard({ lastActivityDate: "2026-09-01" })).toBe(true);
+    expect(getClientCardFlags({ fields: { lastActivityDate: "2026-09-01" } }, now).noContactDays).toBe(38);
+  });
+
   it("flags a stage with no move for 30 days and not before", () => {
     const fields = { last_contact: "2026-10-08" };
     expect(getClientCardFlags({ fields, stageEnteredAt: "2026-08-01T00:00:00Z" }, now).stuckStageDays).toBe(69);

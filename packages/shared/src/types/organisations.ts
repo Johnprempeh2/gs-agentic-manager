@@ -153,6 +153,17 @@ export interface OrganisationHistory {
   files?: CrmFile[];
 }
 
+/** Answer of GET /api/cases/:caseId/crm-history: what a CRM import filed on one client case. */
+export interface PipelineCaseCrmHistory {
+  caseId: string;
+  /** Activities, notes, calls, emails and stage changes on the case, newest first. */
+  timeline: CrmTimelineEntry[];
+  /** Files that were on the deal or lead, newest first. */
+  files: CrmFile[];
+  /** True when the case has more entries than were returned. */
+  truncated: boolean;
+}
+
 /** One file imported from a CRM. */
 export interface CrmFile {
   id: string;
