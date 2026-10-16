@@ -248,6 +248,11 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   following a deal (`/v1/deals/{id}/followers`) are named in a "Followers" field on the case.
   Deals whose participant or follower count is 0 are not asked. Code:
   `server/src/services/pipedrive-participant-import.ts`.
+- An organisation's Pipedrive owner links to the GSAM member with the same email (from the
+  owner link or `/v1/users`, case ignored, active members only) as its owner
+  (`countryOwnerUserId`). When Pipedrive hands the organisation to someone with no GSAM account,
+  the old member is unlinked and the name follows Pipedrive. Export files carry no owner email,
+  so they leave the link alone.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.
