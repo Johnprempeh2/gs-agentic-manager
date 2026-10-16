@@ -502,6 +502,8 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "contacts"] as const,
     projectCases: (projectId: string) =>
       ["pipelines", "project-cases", projectId] as const,
+    caseCrmHistory: (caseId: string) =>
+      ["pipelines", "item", caseId, "crm-history"] as const,
     caseOutputs: (caseId: string) =>
       ["pipelines", "item", caseId, "outputs"] as const,
     caseFiles: (caseId: string) =>

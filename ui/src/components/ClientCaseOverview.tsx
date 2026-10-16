@@ -18,6 +18,7 @@ import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { cn, formatDate } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
+import { PipelineCaseCrmHistory } from "./PipelineCaseCrmHistory";
 import { ClientJourneyOverview } from "./ClientJourneyOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
@@ -189,6 +190,11 @@ export function ClientCaseOverview({
       <OverviewSection title="Contacts" tour="client-contacts">
         <PipelineCaseContacts caseId={detail.case.id} recordFields={detail.case.fields} />
       </OverviewSection>
+
+      <PipelineCaseCrmHistory
+        caseId={detail.case.id}
+        wrap={(title, children) => <OverviewSection title={title}>{children}</OverviewSection>}
+      />
 
       <OverviewSection title="Evidence" tour="client-evidence">
         <PipelineCaseEvidence caseId={detail.case.id} organisationId={detail.case.organisationId} />

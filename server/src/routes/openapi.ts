@@ -14179,6 +14179,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/cases/{caseId}/crm-history",
+  tags: ["pipelines"],
+  summary: "Get the CRM history filed on a client case: activities, notes, calls, emails, stage changes and files",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/cases/{caseId}/journey",
   tags: ["pipelines"],
   summary: "Get a client's journey by stage: each stage's templates and the deliverables filed under it",

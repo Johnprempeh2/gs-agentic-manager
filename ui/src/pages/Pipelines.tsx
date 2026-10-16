@@ -90,6 +90,7 @@ import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
+import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
 import {
   CLIENT_CASE_TYPE,
@@ -3503,18 +3504,31 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               projects={projectsPanel}
             />
           ) : (
-            <PipelineCaseCrmSync
-              caseId={caseId}
-              companyId={detail.case.companyId}
-              wrap={(children) => (
-                <section>
-                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
-                    CRM sync
-                  </h2>
-                  <div className="border-y border-border">{children}</div>
-                </section>
-              )}
-            />
+            <>
+              <PipelineCaseCrmSync
+                caseId={caseId}
+                companyId={detail.case.companyId}
+                wrap={(children) => (
+                  <section>
+                    <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                      CRM sync
+                    </h2>
+                    <div className="border-y border-border">{children}</div>
+                  </section>
+                )}
+              />
+              <PipelineCaseCrmHistory
+                caseId={caseId}
+                wrap={(title, children) => (
+                  <section>
+                    <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                      {title}
+                    </h2>
+                    <div className="border-y border-border px-1">{children}</div>
+                  </section>
+                )}
+              />
+            </>
           )}
 
           <PipelineItemBodyDocument
