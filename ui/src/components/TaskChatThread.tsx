@@ -1577,7 +1577,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
             item: {
               id, kind: "marker", variant: "interrupted", tone: "neutral",
               label: "Waiting to resume",
-              detail: "The previous execution needs to be checked before work can continue. See the task’s execution hold for the next action. Individual checks remain in the run history.",
+              detail: "The last run stopped part way and needs a check before work carries on. The note at the top of the task says what to do next.",
             },
           });
         }

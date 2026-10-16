@@ -644,7 +644,7 @@ export function DecisionCard({
                       value={confirmText}
                       onChange={(event) => setConfirmText(event.target.value)}
                       placeholder={confirmToken}
-                      aria-label="Type the issue identifier to confirm"
+                      aria-label="Type the task number to confirm"
                       autoFocus
                       className="mt-1"
                     />
@@ -666,7 +666,7 @@ export function DecisionCard({
                         onClick={() => onDecide?.(option.id, inputValues)}
                       >
                         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        {previewRows ? `Cancel ${pluralize(previewRows.length, "issue")}` : "Cancel tree"}
+                        {previewRows ? `Cancel ${pluralize(previewRows.length, "task")}` : "Cancel these tasks"}
                       </Button>
                     </div>
                   </div>
@@ -680,7 +680,7 @@ export function DecisionCard({
             <div className="flex items-center justify-between gap-2 pt-1">
               <span className="text-xs text-muted-foreground">Not now?</span>
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDismiss?.()}>
-                Dismiss (no effects)
+                Not now
               </Button>
             </div>
           )}
@@ -698,11 +698,11 @@ export function DecisionCard({
               </div>
               <p className="mt-1">
                 {expiredReason === "target_gone"
-                  ? "A target issue was cancelled before this was decided."
+                  ? "A task this was about was cancelled before anyone decided."
                   : expiredReason === "target_completed"
-                    ? "All target issues were completed before this was decided."
-                    : "No response before the expiry deadline."}
-                {decision.continuationPolicy === "wake_origin_agent" && " The proposer was re-woken."}
+                    ? "The tasks this was about were finished before anyone decided."
+                    : "Nobody answered before the deadline."}
+                {decision.continuationPolicy === "wake_origin_agent" && " The agent that asked has been told."}
               </p>
             </div>
           )}
