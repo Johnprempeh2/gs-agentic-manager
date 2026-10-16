@@ -14,7 +14,7 @@ after changing it.
 | --- | --- |
 | `HIGGSFIELD_API_KEY_ID`, `HIGGSFIELD_API_KEY_SECRET` | Higgsfield key pair from cloud.higgsfield.ai. With these set, Higgsfield is used automatically. `HF_API_KEY_ID`/`HF_API_KEY_SECRET`, or one `HIGGSFIELD_API_KEY=id:secret`, also work. |
 | `HIGGSFIELD_IMAGE_MODEL` | Optional. Model path, default `higgsfield-ai/soul/standard`. Any Higgsfield text-to-image model path that accepts `prompt` and `aspect_ratio` works, for example `higgsfield-ai/soul/v2/standard`. |
-| `HIGGSFIELD_IMAGE_RESOLUTION` | Optional. Sent as `resolution` (Soul accepts `2K` or `4K`). |
+| `HIGGSFIELD_IMAGE_RESOLUTION` | Optional. Sent as `resolution`. Soul standard accepts `720p` (its default) or `1080p`; other models may differ. |
 | `HIGGSFIELD_API_BASE_URL` | Optional. Default `https://api.higgsfield.ai`. |
 | `GSAM_IMAGE_PROVIDER` | Optional. `higgsfield`, `openai` or `mock`. `mock` draws labelled placeholder images with no service and no cost, for trying the flow. |
 | `GSAM_IMAGE_OPENAI_API_KEY`, `OPENAI_IMAGE_MODEL` | Used only with `GSAM_IMAGE_PROVIDER=openai` (falls back to `OPENAI_API_KEY`; default model `gpt-image-1`). OpenAI is never picked automatically, because `OPENAI_API_KEY` is usually there for agents. |

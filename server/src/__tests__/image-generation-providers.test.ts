@@ -46,7 +46,7 @@ describe("higgsfield provider", () => {
     expect(JSON.parse(String(submit.init?.body))).toEqual({
       prompt: "A lighthouse at dawn",
       aspect_ratio: "16:9",
-      num_images: 1,
+      batch_size: 1,
     });
   });
 
