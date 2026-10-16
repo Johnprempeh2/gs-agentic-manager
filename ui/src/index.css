@@ -864,9 +864,10 @@
 
   /* Those small widgets keep their drawn size, but a thumb still needs a
      bigger target. An invisible layer grows the tap area around them: the
-     toggle to 44px tall, the task status icon to 32px square. */
+     toggle to 44px tall, the task status icon to 28px square. */
   [data-slot="toggle"]::before,
-  [data-status-icon-trigger]::before {
+  [data-status-icon-trigger]::before,
+  [data-hint-trigger]::before {
     content: "";
     position: absolute;
   }
@@ -878,6 +879,13 @@
   }
   [data-status-icon-trigger]::before {
     inset: calc(var(--spacing) * -1.5);
+  }
+  /* The 12px help icon beside a field label: 32px wide to tap. */
+  [data-hint-trigger] {
+    position: relative;
+  }
+  [data-hint-trigger]::before {
+    inset: 0 calc(var(--spacing) * -2.5);
   }
 }
 

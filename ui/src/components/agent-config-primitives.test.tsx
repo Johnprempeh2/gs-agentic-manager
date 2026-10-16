@@ -49,6 +49,22 @@ describe("agent-config primitives accessible names (GRE-900)", () => {
     flushSync(() => root.unmount());
   });
 
+  it("shows the help text on a tap, since phones have no hover", async () => {
+    // The tooltip measures itself; jsdom has no ResizeObserver.
+    vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+    const root = render(
+      <Field label="Organization name" hint="The display name.">
+        <input />
+      </Field>,
+    );
+    const help = container.querySelector<HTMLButtonElement>('[aria-label="About Organization name"]')!;
+    flushSync(() => help.click());
+    await vi.waitFor(() => expect(help.getAttribute("data-state")).not.toBe("closed"));
+    expect(document.body.textContent).toContain("The display name.");
+    flushSync(() => root.unmount());
+    vi.unstubAllGlobals();
+  });
+
   it("names the toggle switch and its help icon after the toggle label", () => {
     const root = render(
       <ToggleField

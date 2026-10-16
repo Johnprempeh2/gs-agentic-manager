@@ -145,6 +145,7 @@ export function CompanySettingsNav() {
         value={activeTab}
         onValueChange={handleTabChange}
         align="start"
+        mobileLabel="Settings page"
       />
     </Tabs>
   );
