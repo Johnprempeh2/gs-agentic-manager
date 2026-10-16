@@ -87,10 +87,13 @@ function SecretReveal({ webhook, onDone }: { webhook: OutboundWebhookWithSecret;
             Copy
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">
-          Each request carries `X-GSAM-Signature: sha256=…`, an HMAC of the `X-GSAM-Timestamp` value, a dot and the body.
-          Slack and Teams ignore it.
-        </p>
+        <p className="text-xs text-muted-foreground">Slack and Teams do not need this. You can press Done.</p>
+        <details className="text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Technical details for whoever sets up the receiving tool</summary>
+          <p className="pt-1">
+            Each request carries `X-GSAM-Signature: sha256=…`, an HMAC of the `X-GSAM-Timestamp` value, a dot and the body.
+          </p>
+        </details>
       </div>
       <DialogFooter>
         <Button type="button" onClick={onDone}>Done</Button>

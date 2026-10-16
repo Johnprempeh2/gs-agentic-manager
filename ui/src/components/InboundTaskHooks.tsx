@@ -74,14 +74,14 @@ function TokenReveal({ hook, onDone }: { hook: InboundTaskHookWithToken; onDone:
           </div>
         </div>
       ))}
-      <div className="space-y-1">
-        <Label>For whoever connects the tool</Label>
+      <details className="space-y-1 text-sm">
+        <summary className="cursor-pointer text-xs text-muted-foreground">Technical details for whoever connects the tool</summary>
         <pre className="overflow-x-auto rounded-md border border-border bg-muted p-2 text-xs">{curlExample(url, hook.token)}</pre>
         <p className="text-xs text-muted-foreground">
           Send `title` (required), and optionally `description`, `priority` (low, medium, high or critical), `dueDate`
           (YYYY-MM-DD), `externalId` to avoid duplicates, and up to five `files` as name and base64 `data`.
         </p>
-      </div>
+      </details>
       <DialogFooter>
         <Button type="button" onClick={onDone}>Done</Button>
       </DialogFooter>
