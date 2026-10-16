@@ -14,7 +14,7 @@ function createSearchResponse(query: CompanySearchQuery): CompanySearchResponse 
     offset: query.offset,
     results: [],
     sort: query.sort,
-    countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
+    countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 },
     filterOptionCounts: {
       status: {},
       priority: {},

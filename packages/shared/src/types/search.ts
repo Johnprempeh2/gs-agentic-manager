@@ -1,6 +1,6 @@
 import type { IssuePriority, IssueStatus } from "../constants.js";
 
-export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "files", "agents", "projects"] as const;
+export const COMPANY_SEARCH_SCOPES = ["all", "issues", "comments", "documents", "artifacts", "files", "records", "agents", "projects"] as const;
 export type CompanySearchScope = (typeof COMPANY_SEARCH_SCOPES)[number];
 
 export const COMPANY_SEARCH_SORTS = ["relevance", "updated", "created", "priority"] as const;
@@ -9,7 +9,7 @@ export type CompanySearchSort = (typeof COMPANY_SEARCH_SORTS)[number];
 export const COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS = ["24h", "7d", "30d", "90d"] as const;
 export type CompanySearchUpdatedWithinOption = (typeof COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS)[number];
 
-export type CompanySearchResultType = "issue" | "artifact" | "file" | "agent" | "project";
+export type CompanySearchResultType = "issue" | "artifact" | "file" | "record" | "agent" | "project";
 export type CompanySearchCountType = CompanySearchResultType | "comment" | "document";
 export type CompanySearchIssueFilterKey =
   | "status"
@@ -59,6 +59,16 @@ export interface CompanySearchArtifactSummary {
 }
 
 /** An uploaded file whose words matched: a PDF, Word file or text file, or an image by its alt text. */
+/** Kinds of business record search finds outside tasks: imported CRM data and generated images. */
+export const COMPANY_SEARCH_RECORD_KINDS = ["organisation", "person", "client", "product", "image"] as const;
+export type CompanySearchRecordKind = (typeof COMPANY_SEARCH_RECORD_KINDS)[number];
+
+export interface CompanySearchRecordSummary {
+  kind: CompanySearchRecordKind;
+  /** One plain line under the title, such as "Finance director at Acme Ltd" or "Lead in Sales". */
+  subtitle: string | null;
+}
+
 export interface CompanySearchFileSummary {
   assetId: string;
   filename: string | null;
@@ -89,6 +99,7 @@ export interface CompanySearchResult {
   issue?: CompanySearchIssueSummary;
   artifact?: CompanySearchArtifactSummary;
   file?: CompanySearchFileSummary;
+  record?: CompanySearchRecordSummary;
   updatedAt: string | null;
   previewImageUrl: string | null;
 }

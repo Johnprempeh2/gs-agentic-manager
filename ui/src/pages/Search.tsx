@@ -64,6 +64,7 @@ const SCOPE_LABELS: Record<CompanySearchScope, string> = {
   documents: "Documents",
   artifacts: "Artifacts",
   files: "Inside files",
+  records: "Clients and records",
   agents: "Agents",
   projects: "Projects",
 };
@@ -84,6 +85,7 @@ function totalMatchCount(counts: Partial<Record<CompanySearchCountType, number>>
     + (counts.document ?? 0)
     + (counts.artifact ?? 0)
     + (counts.file ?? 0)
+    + (counts.record ?? 0)
     + (counts.agent ?? 0)
     + (counts.project ?? 0)
   );
@@ -446,7 +448,7 @@ export function Search() {
     return () => window.removeEventListener("keydown", handler);
   }, [focusInput]);
 
-  const counts = data?.countsByType ?? { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 };
+  const counts = data?.countsByType ?? { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, record: 0, agent: 0, project: 0 };
   const totalResults = data?.results.length ?? 0;
   const allMatchTotal = data ? totalMatchCount(counts) : 0;
   const previewTotal = previewData ? totalMatchCount(previewData.countsByType) : null;
@@ -469,6 +471,7 @@ export function Search() {
           + (counts.document ?? 0)
           + (counts.artifact ?? 0)
           + (counts.file ?? 0)
+          + (counts.record ?? 0)
           + (counts.agent ?? 0)
           + (counts.project ?? 0);
       } else if (value === "issues") count = issuesTotal;
@@ -476,11 +479,12 @@ export function Search() {
       else if (value === "documents") count = counts.document ?? 0;
       else if (value === "artifacts") count = counts.artifact ?? 0;
       else if (value === "files") count = counts.file ?? 0;
+      else if (value === "records") count = counts.record ?? 0;
       else if (value === "agents") count = counts.agent ?? 0;
       else if (value === "projects") count = counts.project ?? 0;
       // Issue-only filters don't constrain agents/projects, so show a dash there
       // rather than an unfiltered count that would misrepresent the result set.
-      const dashOut = filtersActive && (value === "agents" || value === "projects" || value === "files");
+      const dashOut = filtersActive && (value === "agents" || value === "projects" || value === "files" || value === "records");
       return {
         value,
         label: (
