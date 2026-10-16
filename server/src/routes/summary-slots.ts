@@ -2,8 +2,9 @@ import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
 import { generateSummarySlotSchema, writeSummarySlotSchema } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { forbidden } from "../errors.js";
-import { accessService, heartbeatService, logActivity } from "../services/index.js";
+import { accessService, heartbeatService, instanceSettingsService, logActivity } from "../services/index.js";
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
 import { summarySlotService } from "../services/summary-slots.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -26,6 +27,10 @@ export function summarySlotSessionTaskKey(input: {
 export function summarySlotRoutes(db: Db) {
   const router = Router();
   const access = accessService(db);
+  const settings = instanceSettingsService(db);
+
+  // GRE-1077: refuse every route while enableSummaries is off, before validation.
+  router.use("/companies/:companyId/summary-slots", requireEntitlement(settings, "enableSummaries"));
   const svc = summarySlotService(db);
   const heartbeat = heartbeatService(db);
 

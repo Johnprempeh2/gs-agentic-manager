@@ -27,6 +27,7 @@ import {
   type InstanceSettings,
   type PatchInstanceSettings,
   type PatchInstanceExperimentalSettings,
+  type InstanceFeatureKey,
 } from "@greatstone/shared";
 import {
   INSTANCE_FEATURE_CATALOG,
@@ -286,13 +287,15 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       strategyBoardSecretaryAgentId: parsed.data.strategyBoardSecretaryAgentId ?? null,
       enableWebsiteView: parsed.data.enableWebsiteView ?? false,
       enableIntelligence: parsed.data.enableIntelligence ?? false,
-      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored. A
+      // managed config or the entitlement document can still pin it off (GRE-1633).
       enableAgentChat: true,
       enableTeamChat: parsed.data.enableTeamChat ?? false,
       // Greatstone (GRE-1624): graduated; a stored off value is ignored.
       enableConferenceRoomChat: true,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
-      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored. A
+      // managed config or the entitlement document can still pin it off (GRE-1633).
       enableIssuePlanDecompositions: true,
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
       enableExperimentalFileViewer: true,
@@ -300,11 +303,15 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // managed config or the entitlement document can still pin it off.
       enableExternalObjects: true,
       enableSmokeLab: parsed.data.enableSmokeLab ?? false,
-      // Greatstone (GRE-1621): graduated; stored off values are ignored.
+      // Greatstone (GRE-1621): graduated; stored off values are ignored. A
+      // managed config or the entitlement document can still pin Built-in
+      // Agents off; Beta skills reads off in client installs (GRE-1633, see
+      // applyCloudCatalogDefaults).
       enableBuiltInAgents: true,
       enableBetaSkills: true,
       // Greatstone (GRE-1622): Summaries and Status Cards graduated; a stored
-      // off value is ignored.
+      // off value is ignored. A managed config or the entitlement document can
+      // still pin them off (GRE-1633).
       enableSummaries: true,
       enableStatusCards: true,
       enableDecisions: parsed.data.enableDecisions ?? true,
@@ -312,7 +319,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
       enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: parsed.data.enablePaperclipDeveloperMode ?? false,
-      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored. Reads
+      // off in client installs (GRE-1633, see applyCloudCatalogDefaults).
       enableSimplifiedEnglishInteractions: true,
       enableFirstTaskPlanProposal: parsed.data.enableFirstTaskPlanProposal ?? false,
       autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
@@ -414,21 +422,10 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.
     if (key === "enableIsolatedWorkspaces") continue;
-    // Greatstone (GRE-1622): Summaries and Status Cards are always on; a
-    // managed "off" is ignored. Cases and External Objects keep the managed
-    // value: client editions pin them off and billing modules sell them.
-    if (key === "enableSummaries" || key === "enableStatusCards") continue;
-    // Greatstone (GRE-1621): Agent Chat, Task Plan Decomposition, Built-in
-    // Agents, Beta skills and Simplified English are always on; a managed "off" is ignored.
-    if (
-      key === "enableAgentChat" ||
-      key === "enableIssuePlanDecompositions" ||
-      key === "enableBuiltInAgents" ||
-      key === "enableBetaSkills" ||
-      key === "enableSimplifiedEnglishInteractions"
-    ) {
-      continue;
-    }
+    // Greatstone (GRE-1622, GRE-1621): Cases, External Objects, Summaries,
+    // Status Cards, Agent Chat, Task Plan Decomposition and Built-in Agents
+    // graduated but keep the managed value: client editions pin them off
+    // (GRE-1633), so they fall through.
     // Greatstone (GRE-1624): Conference Room Chat is always on; a managed "off" is ignored.
     if (key === "enableConferenceRoomChat") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
@@ -438,6 +435,16 @@ export function applyManagedExperimentalOverlay(
   }
   return { experimental: next, managedKeys };
 }
+
+/**
+ * Preference keys whose stored value is ignored (GRE-1621) and that a managed
+ * config cannot carry. In a client install the Cloud default (off) always
+ * wins, so an old stored "on" cannot turn them on (GRE-1633).
+ */
+const CLOUD_DEFAULT_PINNED_KEYS: ReadonlySet<string> = new Set<InstanceFeatureKey>([
+  "enableBetaSkills",
+  "enableSimplifiedEnglishInteractions",
+]);
 
 /**
  * Keep self-hosted-only defaults out of Cloud.
@@ -463,7 +470,7 @@ export function applyCloudCatalogDefaults(
   const next: InstanceExperimentalSettings = { ...experimental };
   for (const [key, entry] of Object.entries(INSTANCE_FEATURE_CATALOG)) {
     if (entry.cloudDefault !== false || entry.selfHostedDefault !== true) continue;
-    if (typeof stored[key] === "boolean") continue;
+    if (typeof stored[key] === "boolean" && !CLOUD_DEFAULT_PINNED_KEYS.has(key)) continue;
     if (typeof managedConfig.features[key as ManagedExperimentalFeatureKey] === "boolean") continue;
     (next as unknown as Record<string, unknown>)[key] = false;
   }

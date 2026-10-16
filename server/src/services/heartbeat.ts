@@ -7898,8 +7898,8 @@ export async function buildPaperclipWakePayload(input: {
   } | null;
   exposeLowTrustRaw?: boolean;
   // Agents write user-interaction content in ASD-STE100 Simplified Technical
-  // English (rendered as a prompt directive downstream). The heartbeat always
-  // sets it since the switch graduated (GRE-1621).
+  // English (rendered as a prompt directive downstream). On for Greatstone and
+  // self-hosted since GRE-1621; off in client installs (GRE-1633).
   simplifiedEnglishInteractions?: boolean;
 }) {
   const executionStage = parseObject(input.contextSnapshot.executionStage);
@@ -23767,7 +23767,9 @@ export function heartbeatService(
             }
           : null,
         exposeLowTrustRaw,
-        simplifiedEnglishInteractions: true,
+        simplifiedEnglishInteractions:
+          experimentalInstanceSettings.enableSimplifiedEnglishInteractions ===
+          true,
       });
       if (paperclipWakePayload) {
         context[GSAM_WAKE_PAYLOAD_KEY] = paperclipWakePayload;
@@ -24403,6 +24405,11 @@ export function heartbeatService(
           return await companySkills.listRuntimeSkillEntries(agent.companyId, {
             versionSelections: skillVersionSelectionMap(
               runtimeSkillPreference.desiredSkillEntries,
+              {
+                versionPinsEnabled:
+                  resolvedInstanceSettings.experimental.enableBetaSkills ===
+                  true,
+              },
             ),
           });
         } catch (error) {

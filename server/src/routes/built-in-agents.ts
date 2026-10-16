@@ -2,8 +2,9 @@ import { Router, type Request } from "express";
 import type { Db } from "@greatstone/db";
 import { builtInAgentEmptyMutationSchema, builtInAgentProvisionSchema, builtInAgentResetSchema } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { forbidden } from "../errors.js";
-import { accessService, logActivity } from "../services/index.js";
+import { accessService, instanceSettingsService, logActivity } from "../services/index.js";
 import { builtInAgentService } from "../services/built-in-agents.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
@@ -73,6 +74,11 @@ export function builtInAgentRoutes(db: Db) {
   const router = Router();
   const access = accessService(db);
   const svc = builtInAgentService(db);
+  const settings = instanceSettingsService(db);
+
+  // GRE-1077: refuse every route while enableBuiltInAgents is off, before validation.
+  router.use("/companies/:companyId/built-in-agents", requireEntitlement(settings, "enableBuiltInAgents"));
+
 
   async function assertCanProvisionBuiltInAgents(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);

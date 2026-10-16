@@ -3055,10 +3055,13 @@ export function agentRoutes(
     } = {},
   ) {
     const preference = readPaperclipSkillSyncPreference(config);
+    const betaSkillsEnabled = (await instanceSettings.getExperimental()).enableBetaSkills === true;
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(companyId, {
       materializeMissing: options.materializeMissing
         ?? shouldMaterializeRuntimeSkillsForAdapter(adapterType),
-      versionSelections: skillVersionSelectionMap(preference.desiredSkillEntries),
+      versionSelections: skillVersionSelectionMap(preference.desiredSkillEntries, {
+        versionPinsEnabled: betaSkillsEnabled,
+      }),
     });
     return {
       ...config,
@@ -3081,6 +3084,13 @@ export function agentRoutes(
         desiredSkillEntries: null as AgentDesiredSkillEntry[] | null,
         runtimeSkillEntries: null as Awaited<ReturnType<typeof companySkills.listRuntimeSkillEntries>> | null,
       };
+    }
+
+    if (requestedDesiredSkills.some((entry) => entry.versionId !== null)) {
+      const betaSkillsEnabled = (await instanceSettings.getExperimental()).enableBetaSkills === true;
+      if (!betaSkillsEnabled) {
+        throw badRequest("Beta skill version pins are off on this instance; client installs run released skills only.");
+      }
     }
 
     const { resolved: resolvedRequestedSkillEntries, unresolved: unresolvedDesiredSkillKeys } =

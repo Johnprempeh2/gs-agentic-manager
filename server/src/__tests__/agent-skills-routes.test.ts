@@ -724,9 +724,30 @@ describe.sequential("agent skill routes", () => {
     );
   });
 
-  // Beta skills graduated (GRE-1621): pins are accepted whatever the old stored value says.
-  it("accepts version pins even when the old Beta skills setting is stored off", async () => {
+  // GRE-1633: a stored off is ignored (instance-settings tests), but a client
+  // install reads Beta skills off, so its agents run released skills only.
+  it("rejects version pins when Beta skills reads off (client install)", async () => {
     mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBetaSkills: false });
+    mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
+
+    const res = await requestApp(await createApp(), (baseUrl) => request(baseUrl)
+      .post("/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1")
+      .send({
+        mode: "replace",
+        desiredSkills: [{
+          key: "paperclipai/paperclip/paperclip",
+          versionId: "22222222-2222-4222-8222-222222222222",
+        }],
+      }));
+
+    expect(res.status, JSON.stringify(res.body)).toBe(400);
+    expect(res.body.error).toContain("client installs run released skills only");
+    expect(mockAgentService.update).not.toHaveBeenCalled();
+  });
+
+  // Beta skills graduated (GRE-1621): Greatstone and self-hosted read it on.
+  it("accepts version pins when Beta skills reads on (Greatstone and self-hosted)", async () => {
+    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBetaSkills: true });
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
     const versionId = "22222222-2222-4222-8222-222222222222";
 

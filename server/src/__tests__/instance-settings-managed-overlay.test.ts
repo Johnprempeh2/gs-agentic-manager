@@ -128,25 +128,42 @@ describe("instanceSettingsService managed overlay", () => {
     expect(await service.updateExperimental({ enableMcpAggregators: false })).toMatchObject({ experimental: { enableMcpAggregators: true, enableChatConnectors: true } });
   });
 
-  it("keeps the GRE-1621 graduated switches on when stored and managed values say off", async () => {
+  it("ignores a stored GRE-1621 off, but keeps a managed off for client editions (GRE-1633)", async () => {
     const off = {
       enableAgentChat: false,
       enableIssuePlanDecompositions: false,
       enableBuiltInAgents: false,
     };
-    const { db } = stubDb(settingsRow({ ...off, enableBetaSkills: false, enableSimplifiedEnglishInteractions: false }));
-    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
-      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
-    })) });
-    const on = {
+    const prefsOff = { enableBetaSkills: false, enableSimplifiedEnglishInteractions: false };
+    const allOn = {
       enableAgentChat: true,
       enableIssuePlanDecompositions: true,
       enableBuiltInAgents: true,
       enableBetaSkills: true,
       enableSimplifiedEnglishInteractions: true,
     };
-    expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
-    expect(await service.updateExperimental({ ...off, enableBetaSkills: false })).toMatchObject({ experimental: on });
+    // Greatstone and self-hosted: no managed config, a stored off is ignored.
+    const stored = instanceSettingsService(stubDb(settingsRow({ ...off, ...prefsOff })).db, { runtimeEnv: {} });
+    expect(await stored.getExperimental()).toMatchObject(allOn);
+    expect(await stored.updateExperimental({ ...off, ...prefsOff })).toMatchObject({ experimental: allOn });
+
+    // Client edition: the managed off is kept. Beta skills and Simplified
+    // English are preference keys a managed config cannot carry; the Cloud
+    // default keeps them off, even over an old stored on.
+    const { db, persistedSets } = stubDb(settingsRow({ enableBetaSkills: true, enableSimplifiedEnglishInteractions: true }));
+    const managed = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    expect(await managed.getExperimental()).toMatchObject({
+      ...off,
+      ...prefsOff,
+      managedKeys: {
+        enableAgentChat: { managed: true, managedBy: "paperclip-cloud" },
+        enableIssuePlanDecompositions: { managed: true, managedBy: "paperclip-cloud" },
+        enableBuiltInAgents: { managed: true, managedBy: "paperclip-cloud" },
+      },
+    });
+    expect(persistedSets).toHaveLength(0);
   });
 
   it("keeps workspace branch reconcile forward on when stored and managed values say off (GRE-1438)", async () => {
@@ -193,15 +210,23 @@ describe("instanceSettingsService managed overlay", () => {
     expect(persistedSets).toHaveLength(0);
   });
 
-  it("keeps Summaries and Status Cards on when stored and managed values say off (GRE-1622)", async () => {
+  it("ignores a stored Summaries or Status Cards off, but keeps a managed off for client editions (GRE-1622, GRE-1633)", async () => {
     const off = { enableSummaries: false, enableStatusCards: false };
     const on = { enableSummaries: true, enableStatusCards: true };
-    const { db } = stubDb(settingsRow(off));
-    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+    const stored = instanceSettingsService(stubDb(settingsRow(off)).db, { runtimeEnv: {} });
+    expect(await stored.getExperimental()).toMatchObject(on);
+    expect(await stored.updateExperimental(off)).toMatchObject({ experimental: on });
+
+    const managed = instanceSettingsService(stubDb(settingsRow({})).db, { runtimeEnv: managedEnv(JSON.stringify({
       v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
     })) });
-    expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
-    expect(await service.updateExperimental(off)).toMatchObject({ experimental: on });
+    expect(await managed.getExperimental()).toMatchObject({
+      ...off,
+      managedKeys: {
+        enableSummaries: { managed: true, managedBy: "paperclip-cloud" },
+        enableStatusCards: { managed: true, managedBy: "paperclip-cloud" },
+      },
+    });
   });
 
   it("ignores a stored Cases or External Objects off, but keeps a managed off for client editions (GRE-1622)", async () => {

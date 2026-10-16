@@ -127,6 +127,49 @@ test("client installs keep Chat and Memory connectors off; Greatstone and self-h
   for (const key of keys) assert.equal(selfHosted[key], true, key);
 });
 
+test("client installs keep the GRE-1621 and GRE-1622 gates; Greatstone and self-hosted read them on (GRE-1633)", () => {
+  const pinned = [
+    "enableAgentChat",
+    "enableBuiltInAgents",
+    "enableIssuePlanDecompositions",
+    "enableSummaries",
+    "enableStatusCards",
+  ] as const;
+  const cloudOff = ["enableBetaSkills", "enableSimplifiedEnglishInteractions"] as const;
+  // An old stored row says on for every key; a client install still reads them off.
+  const stored = Object.fromEntries([...pinned, ...cloudOff].map((key) => [key, true]));
+  for (const edition of ["managed", "managed-plus"] as const) {
+    const values = buildEditionValues({ edition, catalogVersion });
+    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+    assert.ok(parsed);
+    const { experimental } = applyManagedExperimentalOverlay(
+      applyCloudCatalogDefaults(normalizeExperimentalSettings(stored), stored, parsed),
+      parsed,
+    );
+    for (const key of pinned) {
+      assert.equal(parsed.features[key], false, `${edition}: ${key}`);
+      assert.ok(values.expectOff.includes(key), `${edition}: ${key}`);
+      assert.equal(experimental[key], false, `${edition}: ${key}`);
+    }
+    for (const key of cloudOff) {
+      assert.equal(experimental[key], false, `${edition}: ${key}`);
+      assert.equal(key in parsed.features, false, `${edition}: ${key} is a preference key, never in the managed config`);
+    }
+  }
+  // Packaging v2 "Needs configuration": Managed plus can turn each pinned one on.
+  const plus = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: [...pinned], catalogVersion });
+  const plusParsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: plus.managedConfig });
+  assert.ok(plusParsed);
+  for (const key of pinned) {
+    assert.equal(plusParsed.features[key], true, key);
+    assert.ok(plus.expectOn.includes(key), key);
+  }
+  // Greatstone and self-hosted: no managed config, and a stored off is ignored.
+  const offRow = Object.fromEntries([...pinned, ...cloudOff].map((key) => [key, false]));
+  const selfHosted = applyCloudCatalogDefaults(normalizeExperimentalSettings(offRow), offRow, null);
+  for (const key of [...pinned, ...cloudOff]) assert.equal(selfHosted[key], true, key);
+});
+
 test("agents can run without a sandbox provider (GRE-160)", () => {
   for (const edition of ["managed", "managed-plus"] as const) {
     const values = buildEditionValues({ edition, catalogVersion });

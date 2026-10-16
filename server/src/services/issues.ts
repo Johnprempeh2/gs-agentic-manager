@@ -12625,11 +12625,15 @@ export function issueService(db: Db) {
 
       if (!issue) throw notFound("Issue not found");
 
-      // A board question chat (GRE-1186) runs under the Strategy Board switch.
-      // Agent Chat graduated (GRE-1621) and has no switch.
-      if (issue.conversationAgentId && actor.userId && issue.originKind === "strategy_board_question") {
+      if (issue.conversationAgentId && actor.userId) {
+        // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+        // Agent Chat ignores the stored switch (GRE-1621), but a client plan can turn it off (GRE-1633).
         const experimental = await instanceSettingsService(dbOrTx).getExperimental();
-        if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
+        if (issue.originKind === "strategy_board_question") {
+          if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
+        } else if (!experimental.enableAgentChat) {
+          throw unprocessable("Agent Chat is not part of this plan");
+        }
       }
       const currentUserRedactionOptions = {
         // Keep every read on the caller's transaction connection. Re-entering

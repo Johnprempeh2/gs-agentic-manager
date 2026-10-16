@@ -124,8 +124,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableWebsiteView: z.boolean().default(false),
   // Greatstone: the Intelligence page (Daily Pulse and AI Intelligence Hub, written by an agent).
   enableIntelligence: z.boolean().default(false),
-  // Greatstone (GRE-1621): compatibility only. Agent Chat is always on; old
-  // stored and managed values must still parse.
+  // Greatstone (GRE-1621): compatibility only. Agent Chat is on by default; old
+  // stored values must still parse. A managed value still applies (GRE-1633).
   enableAgentChat: z.boolean().default(true),
   // Greatstone: direct messages and group chats of people and agents.
   enableTeamChat: z.boolean().default(false),
@@ -133,18 +133,18 @@ export const instanceExperimentalSettingsSchema = z.object({
   // on; old stored and managed values must still parse.
   enableConferenceRoomChat: z.boolean().default(true),
   enableClassicTaskInterface: z.boolean().default(false),
-  // Greatstone (GRE-1621): compatibility only; Task Plan Decomposition is always on.
+  // Greatstone (GRE-1621): compatibility only; Task Plan Decomposition is on by default.
   enableIssuePlanDecompositions: z.boolean().default(true),
   // Greatstone (GRE-1623): compatibility only; the file viewer is always on.
   enableExperimentalFileViewer: z.boolean().default(true),
   // Greatstone (GRE-1622): compatibility only; External Objects are always on.
   enableExternalObjects: z.boolean().default(true),
   enableSmokeLab: z.boolean().default(false),
-  // Greatstone (GRE-1621): compatibility only; Built-in Agents and Beta skills are always on.
+  // Greatstone (GRE-1621): compatibility only; Built-in Agents and Beta skills are on by default.
   enableBuiltInAgents: z.boolean().default(true),
   enableBetaSkills: z.boolean().default(true),
   // Greatstone (GRE-1622): compatibility only; Summaries and Status Cards
-  // are always on.
+  // are on by default.
   enableSummaries: z.boolean().default(true),
   enableStatusCards: z.boolean().default(true),
   enableDecisions: z.boolean().default(true),
@@ -152,7 +152,7 @@ export const instanceExperimentalSettingsSchema = z.object({
   // Greatstone (GRE-1623): compatibility only; the Server section always shows.
   enableServerInfoDebugView: z.boolean().default(true),
   enablePaperclipDeveloperMode: z.boolean().default(false),
-  // Greatstone (GRE-1621): compatibility only; Simplified English Interactions is always on.
+  // Greatstone (GRE-1621): compatibility only; Simplified English Interactions is on by default.
   enableSimplifiedEnglishInteractions: z.boolean().default(true),
   enableFirstTaskPlanProposal: z.boolean().default(false),
   autoRestartDevServerWhenIdle: z.boolean().default(false),

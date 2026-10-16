@@ -39,6 +39,15 @@ export const MANAGED_FEATURES_OFF = [
   "enableWebsiteView",
   // Intelligence page (Daily Pulse and AI hub): Greatstone internal for now.
   "enableIntelligence",
+  // GRE-1621 graduated these for Greatstone and self-hosted; client editions
+  // keep the gate (Everest on GRE-1632). Packaging v2 (GRE-1086): "Needs
+  // configuration", so Managed plus or an entitlement turns each one on.
+  "enableAgentChat",
+  "enableBuiltInAgents",
+  "enableIssuePlanDecompositions",
+  // GRE-1622 graduated these; same client rule (GRE-1633).
+  "enableSummaries",
+  "enableStatusCards",
   "enableTeamChat",
   "enableConferenceRoomChat",
   "enableChatConnectors",
@@ -78,17 +87,10 @@ export const CLIENT_DEFAULT_OK = {
     "Compatibility key; dirty quarantine repair graduated (GRE-1439), is always on and the app ignores the value.",
   enableExperimentalFileViewer:
     "Compatibility key; the file viewer graduated (GRE-1623), is always on and the app ignores the value.",
-  enableSummaries: "Compatibility key; Summaries graduated (GRE-1622), is always on and the app ignores the value.",
-  enableStatusCards: "Compatibility key; Status Cards graduated (GRE-1622), is always on and the app ignores the value.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
-  enableAgentChat: "Compatibility key; Agent Chat graduated (GRE-1621), is always on and the app ignores the value.",
-  enableBuiltInAgents:
-    "Compatibility key; Built-in Agents graduated (GRE-1621), is always on and the app ignores the value.",
-  enableIssuePlanDecompositions:
-    "Compatibility key; Task Plan Decomposition graduated (GRE-1621), is always on and the app ignores the value.",
   enableSimplifiedEnglishInteractions:
-    "Compatibility key; Simplified English Interactions graduated (GRE-1621), is always on and the app ignores the value.",
-  enableBetaSkills: "Compatibility key; Beta skills graduated (GRE-1621), is always on and the app ignores the value.",
+    "Off in client installs (Cloud default, GRE-1633); a Greatstone house style, not a client setting.",
+  enableBetaSkills: "Off in client installs (Cloud default, GRE-1633); clients run released skills only.",
   enablePaperclipDeveloperMode: "Off by default; maintainer tools only.",
   enableServerInfoDebugView:
     "Compatibility key; the Server Info view graduated (GRE-1623), is always on and the app ignores the value.",

@@ -27,6 +27,13 @@ const fakeDb = {} as never;
 const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> = {
   enablePipelines: async () => (await import("../routes/pipelines.js")).pipelineRoutes(fakeDb),
   enableCases: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
+  // GRE-1633: graduated, but a managed config or the entitlement document can still turn these off.
+  enableStatusCards: async () =>
+    (await import("../routes/status-cards.js")).statusCardRoutes(fakeDb, { heartbeat: {} as never }),
+  enableSummaries: async () => (await import("../routes/summary-slots.js")).summarySlotRoutes(fakeDb),
+  enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
+  enableAgentChat: issueRouter,
+  enableIssuePlanDecompositions: issueRouter,
   enableChatConnectors: async () =>
     Router()
       .use((await import("../routes/chat-channels.js")).chatChannelRoutes(fakeDb, { service: {} as never }))

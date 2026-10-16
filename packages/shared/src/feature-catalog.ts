@@ -190,7 +190,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableAgentChat: {
     title: "Agent Chat (compatibility)",
     description:
-      "Deprecated compatibility key. Agent Chat is always on (GRE-1621); stored and managed values are ignored.",
+      "Deprecated compatibility key. Agent Chat is always on (GRE-1621); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -222,7 +222,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableIssuePlanDecompositions: {
     title: "Task Plan Decomposition (compatibility)",
     description:
-      "Deprecated compatibility key. Accepted-plan decomposition history always shows on task detail pages (GRE-1621); stored and managed values are ignored.",
+      "Deprecated compatibility key. Accepted-plan decomposition history always shows on task detail pages (GRE-1621); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -238,7 +238,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableStatusCards: {
     title: "Status Cards (compatibility)",
     description:
-      "Deprecated compatibility key. The status-card board, update engine and API are always enabled (GRE-1622); stored and managed values are ignored.",
+      "Deprecated compatibility key. The status-card board, update engine and API are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -262,7 +262,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableBuiltInAgents: {
     title: "Built-in Agents (compatibility)",
     description:
-      "Deprecated compatibility key. Built-in agent surfaces are always on (GRE-1621); stored and managed values are ignored.",
+      "Deprecated compatibility key. Built-in agent surfaces are always on (GRE-1621); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -270,15 +270,15 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableBetaSkills: {
     title: "Beta skills (compatibility)",
     description:
-      "Deprecated compatibility key. Agents can always pin beta releases of the GS Agentic Manager core skill (GRE-1621); stored values are ignored.",
+      "Deprecated compatibility key. Agents can pin beta releases of the GS Agentic Manager core skill (GRE-1621); stored values are ignored. Off in client installs, which run released skills only (GRE-1633).",
     tier: "preference",
-    cloudDefault: true,
+    cloudDefault: false,
     selfHostedDefault: true,
   },
   enableSummaries: {
     title: "Summaries (compatibility)",
     description:
-      "Deprecated compatibility key. Summary slots are always enabled (GRE-1622); stored and managed values are ignored.",
+      "Deprecated compatibility key. Summary slots are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -301,9 +301,9 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableSimplifiedEnglishInteractions: {
     title: "Simplified English Interactions (compatibility)",
     description:
-      "Deprecated compatibility key. Agents always write user interactions in ASD-STE100 Simplified Technical English (GRE-1621); stored values are ignored.",
+      "Deprecated compatibility key. Agents write user interactions in ASD-STE100 Simplified Technical English (GRE-1621); stored values are ignored. Off in client installs: it is a Greatstone house style (GRE-1633).",
     tier: "preference",
-    cloudDefault: true,
+    cloudDefault: false,
     selfHostedDefault: true,
   },
   enableServerInfoDebugView: {

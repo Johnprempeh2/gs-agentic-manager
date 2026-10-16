@@ -266,17 +266,32 @@ describe("entitlement runtime", () => {
     expect(applyEntitlementsToExperimental({ enableWebsiteView: false }, rt).enableWebsiteView).toBe(false);
   });
 
-  it("never turns off the graduated Summaries or Status Cards, but still governs Cases and External Objects (GRE-1622)", async () => {
-    const off = { enableCases: false, enableExternalObjects: false, enableSummaries: false, enableStatusCards: false };
+  it("still governs the graduated client-gated switches (GRE-1622, GRE-1633)", async () => {
+    const keys = [
+      "enableCases",
+      "enableExternalObjects",
+      "enableSummaries",
+      "enableStatusCards",
+      "enableAgentChat",
+      "enableBuiltInAgents",
+      "enableIssuePlanDecompositions",
+    ] as const;
+    const off = Object.fromEntries(keys.map((key) => [key, false]));
+    const on = Object.fromEntries(keys.map((key) => [key, true]));
     await fs.writeFile(paths.filePath, signedFile(documentFor({ features: off })));
     const rt = runtime();
     await rt.start();
-    const on = { enableCases: true, enableExternalObjects: true, enableSummaries: true, enableStatusCards: true };
-    // Summaries and Status Cards are not sold, so a document cannot turn them off.
-    // Cases (CRM) and External Objects (software development) are sold modules.
-    expect(applyEntitlementsToExperimental(on, rt)).toMatchObject({ ...on, enableCases: false, enableExternalObjects: false });
-    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(expect.arrayContaining(["enableSummaries", "enableStatusCards"]));
-    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).toEqual(expect.arrayContaining(["enableCases", "enableExternalObjects"]));
+    // Client editions keep these gates (Everest on GRE-1632): a document that
+    // does not entitle them turns them off.
+    expect(applyEntitlementsToExperimental(on, rt)).toMatchObject(off);
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).toEqual(expect.arrayContaining([...keys]));
+    // Beta skills and Simplified English are preference keys, never entitlements.
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(
+      expect.arrayContaining(["enableBetaSkills"]),
+    );
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(
+      expect.arrayContaining(["enableSimplifiedEnglishInteractions"]),
+    );
   });
 
   it("passes settings through unchanged when entitlements are not configured", () => {

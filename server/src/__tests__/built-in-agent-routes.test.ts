@@ -149,7 +149,9 @@ describe("built-in agent routes", () => {
     expect(mockBuiltInAgentService.list).not.toHaveBeenCalled();
   });
 
-  it("lists built-in state even when the old stored switch is off (graduated, GRE-1621)", async () => {
+  // GRE-1633: a stored off is ignored (instance-settings tests), but a managed
+  // config or the entitlement document can still turn Built-in Agents off.
+  it("returns 403 not_entitled and does not load built-in state when Built-in Agents reads off", async () => {
     mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBuiltInAgents: false });
     const app = await createApp({
       type: "board",
@@ -161,8 +163,9 @@ describe("built-in agent routes", () => {
 
     const res = await request(app).get(`/api/companies/${companyId}/built-in-agents`);
 
-    expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(mockBuiltInAgentService.list).toHaveBeenCalledWith(companyId);
+    expect(res.status, JSON.stringify(res.body)).toBe(403);
+    expect(res.body).toMatchObject({ code: "not_entitled", feature: "enableBuiltInAgents" });
+    expect(mockBuiltInAgentService.list).not.toHaveBeenCalled();
   });
 
   it("provisions through the agents:create gate and passes optional adapter overrides", async () => {

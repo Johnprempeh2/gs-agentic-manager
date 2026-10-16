@@ -2026,6 +2026,9 @@ async function startServerWithDatabaseTeardown(
 
         if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork((async () => {
+          // GRE-1633: a managed config or the entitlement document can turn Status Cards off.
+          const experimental = await instanceSettingsService(db).getExperimental();
+          if (experimental.enableStatusCards !== true) return;
           const result = await statusCards.tickDueStatusCards(new Date());
           await Promise.all(result.enqueued.map(async ({ cardId, generatingIssue }) => {
             try {

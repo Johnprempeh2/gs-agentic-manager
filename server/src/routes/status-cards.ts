@@ -11,17 +11,22 @@ import {
 } from "@greatstone/shared";
 import { forbidden, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { authorizationDeniedDetails } from "../services/authorization.js";
-import { accessService, heartbeatService, issueService, logActivity, statusCardService } from "../services/index.js";
+import { accessService, heartbeatService, instanceSettingsService, issueService, logActivity, statusCardService } from "../services/index.js";
 import { queueIssueAssignmentWakeup, type IssueAssignmentWakeupDeps } from "../services/issue-assignment-wakeup.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 export function statusCardRoutes(db: Db, opts: { heartbeat?: IssueAssignmentWakeupDeps } = {}) {
   const router = Router();
   const access = accessService(db);
+  const settings = instanceSettingsService(db);
   const service = statusCardService(db);
   const issueSvc = issueService(db);
   const heartbeat = opts.heartbeat ?? heartbeatService(db);
+
+  // GRE-1077: refuse every route while enableStatusCards is off, before validation.
+  router.use(["/companies/:companyId/status-cards", "/status-cards"], requireEntitlement(settings, "enableStatusCards"));
 
 
   async function assertCanMutate(req: Request, companyId: string) {
