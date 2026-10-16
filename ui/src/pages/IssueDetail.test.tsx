@@ -4209,8 +4209,9 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("hides the plan decomposition panel by default", async () => {
+  it("loads plan decompositions even when an old stored setting says off (graduated, GRE-1621)", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIssuePlanDecompositions: false });
 
     await act(async () => {
       root.render(
@@ -4223,8 +4224,7 @@ describe("IssueDetail", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).not.toContain("Plan decomposition");
-    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).toHaveBeenCalledWith("issue-1");
   });
 
   it("shows file viewer entry points even with the old flag stored off (GRE-1623)", async () => {
