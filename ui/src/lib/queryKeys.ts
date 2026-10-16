@@ -640,6 +640,7 @@ export const queryKeys = {
     all: (companyId: string) => ["images", companyId] as const,
     status: (companyId: string) => ["images", companyId, "status"] as const,
     list: (companyId: string) => ["images", companyId, "list"] as const,
+    detail: (imageId: string) => ["images", "detail", imageId] as const,
   },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
