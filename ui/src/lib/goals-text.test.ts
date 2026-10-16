@@ -51,6 +51,19 @@ describe("goalsUpdateText", () => {
     );
   });
 
+  it("says how late a goal is, or how soon it is due", () => {
+    const text = goalsUpdateText(
+      [
+        { goal: goal({ title: "Launch the website", targetDate: "2026-10-06" }), health: "at_risk", subGoals: [] },
+        { goal: goal({ id: "g2", title: "Hire a designer", targetDate: "2026-10-20" }), health: "on_track", subGoals: [] },
+      ] as never,
+      lookups,
+      "2026-10-16",
+    );
+    expect(text).toContain("• Launch the website: At risk, due 6 Oct, 10 days late");
+    expect(text).toContain("• Hire a designer: On track, due 20 Oct, 4 days to go");
+  });
+
   it("says so when no goals are open", () => {
     expect(goalsUpdateText([], lookups, "2026-10-16")).toBe("Goals update, 16 Oct\n\nNo goals are open.");
   });
