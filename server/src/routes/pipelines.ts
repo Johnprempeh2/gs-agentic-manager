@@ -2805,9 +2805,11 @@ export function pipelineRoutes(
   // multipart `file`, with optional title, note and stageId fields. The file
   // is stored under the case and only served back through the case's own
   // access-checked content route below.
-  router.post("/cases/:caseId/evidence/upload", async (req, res) => {
-    const caseId = req.params.caseId as string;
-    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+  /**
+   * Read one multipart `file` (with optional title, note and stageId fields),
+   * check it, and put it in storage under the case. Callers record it.
+   */
+  async function receiveCaseUpload(req: Request, res: Response, companyId: string, caseId: string) {
     if (!storage) throw new HttpError(503, "File storage is not available");
     try {
       await singleEvidenceUpload(req, res);
@@ -2834,7 +2836,6 @@ export function pipelineRoutes(
       throw unprocessable(`Files of type ${contentType} cannot be uploaded here`);
     }
     if (fields.data.stageId) await filesSvc.assertStageOnCase(companyId, caseId, fields.data.stageId);
-
     const stored = await storage.putFile({
       companyId,
       namespace: `pipeline-cases/${caseId}`,
@@ -2842,11 +2843,22 @@ export function pipelineRoutes(
       contentType,
       body: file.buffer,
     });
+    return { stored, fields: fields.data };
+  }
+
+  // Upload a file straight onto the client (Ben, 12 and 13 Oct): one
+  // multipart `file`, with optional title, note and stageId fields. The file
+  // is stored under the case and only served back through the case's own
+  // access-checked content route below.
+  router.post("/cases/:caseId/evidence/upload", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const { stored, fields } = await receiveCaseUpload(req, res, companyId, caseId);
     const item = await filesSvc.addUpload(
       companyId,
       caseId,
       stored,
-      fields.data,
+      fields,
       actor.type === "agent"
         ? { type: "agent", agentId: actor.agentId }
         : { type: "user", userId: actor.type === "user" ? actor.userId : "board" },
@@ -2959,6 +2971,37 @@ export function pipelineRoutes(
       },
     });
     res.json(result);
+  });
+
+  // The signed NDA (Ben, 8 Oct): the client signs the PDF and sends it back.
+  // Uploading it files it in the client's evidence and marks the NDA
+  // accepted in one step. Board only, like the status itself.
+  router.post("/cases/:caseId/nda/signed", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's NDA");
+    const { stored, fields } = await receiveCaseUpload(req, res, companyId, caseId);
+    const item = await filesSvc.addUpload(
+      companyId,
+      caseId,
+      stored,
+      { ...fields, title: fields.title ?? `Signed NDA (${stored.originalFilename ?? "file"})` },
+      { type: "user", userId: req.actor.userId ?? "board" },
+    );
+    const result = await journeySvc.setNda(
+      companyId,
+      caseId,
+      { status: "accepted", reason: null, signedEvidenceId: item.id },
+      req.actor.userId ?? null,
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "nda_accepted", evidenceId: item.id, signedDocument: true },
+    });
+    res.status(201).json({ ...result, evidence: item });
   });
 
   router.post("/cases/:caseId/journey/deliverables", validate(createClientJourneyDeliverableSchema), async (req, res) => {

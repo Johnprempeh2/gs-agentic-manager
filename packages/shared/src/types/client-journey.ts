@@ -56,6 +56,17 @@ export interface ClientNda {
   /** The board user who last changed the status (name, else null) and when. */
   changedBy: string | null;
   changedAt: string | null;
+  /** The signed NDA uploaded onto the client, if there is one. */
+  signedDocument?: ClientNdaSignedDocument | null;
+}
+
+/** The uploaded signed NDA: an upload in the client's evidence. */
+export interface ClientNdaSignedDocument {
+  evidenceId: string;
+  title: string;
+  /** API path that returns the file. */
+  contentPath: string;
+  uploadedAt: string;
 }
 
 /** GET /api/cases/:caseId/journey — the internal, per-stage view of a client. */
