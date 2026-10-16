@@ -16,6 +16,13 @@ vi.mock("@/api/instanceSettings", () => ({ instanceSettingsApi: { getExperimenta
 vi.mock("@/api/pipelines", () => ({ pipelinesApi: { listAttention: async () => ({ reviews: [], suggestions: [], headsUp: [], counts: {} }) } }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
+vi.mock("@/api/agents", () => ({ agentsApi: { list: async () => [] } }));
+vi.mock("@/api/auth", () => ({ authApi: { getSession: async () => ({ user: { id: "user-1" } }) } }));
+vi.mock("@/components/decisions-feed/DecisionFeedCard", () => ({
+  DecisionFeedCard: ({ card, currentUserId }: { card: { title: string }; currentUserId: string | null }) => (
+    <div data-testid="decision-card">{card.title} for {currentUserId}</div>
+  ),
+}));
 vi.mock("@/components/BrandPageTitle", () => ({ BrandCaughtUpMark: () => null }));
 
 let root: Root | undefined;
@@ -69,5 +76,21 @@ describe("NeededFromYou", () => {
     expect(answer.textContent).toContain("and 1 more");
     expect(answer.querySelector("li a")?.getAttribute("href")).toBe("/issues/GRE-1");
     expect(container.querySelector('[data-testid="needed-group-tasks"]')?.textContent).toContain("Sign the lease");
+  });
+
+  it("opens a decision in place so it can be acted on without leaving the page", async () => {
+    state.cards = [questionCard("1")];
+    state.assignedTasks = [{ id: "t1", identifier: "GRE-9", title: "Sign the lease", status: "todo", priority: "high", updatedAt: new Date().toISOString() }];
+    await render();
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const actHere = [...container.querySelectorAll("button")].filter((el) => el.textContent === "Act here");
+    // Only decision cards can be acted on here; plain tasks open their page.
+    expect(actHere).toHaveLength(1);
+    expect(actHere[0].getAttribute("aria-label")).toBe("Act on Pick a supplier 1 here");
+    await act(async () => actHere[0].click());
+    expect(container.querySelector('[data-testid="decision-card"]')?.textContent).toBe("Pick a supplier 1 for user-1");
+    const close = [...container.querySelectorAll("button")].find((el) => el.textContent === "Close")!;
+    await act(async () => close.click());
+    expect(container.querySelector('[data-testid="decision-card"]')).toBeNull();
   });
 });

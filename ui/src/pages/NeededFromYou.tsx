@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -12,12 +12,16 @@ import {
   UserCheck,
   type LucideIcon,
 } from "lucide-react";
+import type { Agent, DecisionCard, DecisionCardAgentRef } from "@greatstone/shared";
+import { agentsApi } from "@/api/agents";
+import { authApi } from "@/api/auth";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { pipelinesApi } from "@/api/pipelines";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { BrandCaughtUpMark } from "@/components/BrandPageTitle";
 import { ErrorState } from "@/components/ErrorState";
+import { DecisionFeedCard } from "@/components/decisions-feed/DecisionFeedCard";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
@@ -70,6 +74,26 @@ export function NeededFromYou() {
     queryFn: () => pipelinesApi.listAttention(selectedCompanyId!),
     enabled: !!selectedCompanyId && pipelinesOn,
   });
+
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const { data: session } = useQuery({
+    queryKey: queryKeys.auth.session,
+    queryFn: () => authApi.getSession(),
+  });
+  const decide: DecideContext | null = useMemo(() => {
+    if (!selectedCompanyId) return null;
+    return {
+      companyId: selectedCompanyId,
+      cards: new Map((feed.data?.cards ?? []).map((card) => [card.id, card])),
+      assignableAgents: feed.data?.assignableAgents ?? [],
+      agentMap: new Map((agents ?? []).map((agent) => [agent.id, agent])),
+      currentUserId: session?.user?.id ?? session?.session?.userId ?? null,
+    };
+  }, [selectedCompanyId, feed.data, agents, session]);
 
   const groups = useMemo(
     () => buildNeededFromYou({
@@ -125,14 +149,24 @@ export function NeededFromYou() {
 
       {groups.length === 0 && !error ? <AllClear /> : (
         <div className="space-y-4">
-          {groups.map((group) => <NeededGroupCard key={group.id} group={group} />)}
+          {groups.map((group) => <NeededGroupCard key={group.id} group={group} decide={decide} />)}
         </div>
       )}
     </div>
   );
 }
 
-function NeededGroupCard({ group }: { group: NeededGroup }) {
+/** What a row needs to open its Decisions card in place. */
+interface DecideContext {
+  companyId: string;
+  cards: Map<string, DecisionCard>;
+  assignableAgents: DecisionCardAgentRef[];
+  agentMap: Map<string, Agent>;
+  currentUserId: string | null;
+}
+
+function NeededGroupCard({ group, decide }: { group: NeededGroup; decide: DecideContext | null }) {
+  const [openId, setOpenId] = useState<string | null>(null);
   const Icon = GROUP_ICON[group.id];
   const shown = group.items.slice(0, NEEDED_ROWS_PER_GROUP);
   const more = group.items.length - shown.length;
@@ -160,22 +194,53 @@ function NeededGroupCard({ group }: { group: NeededGroup }) {
         </Button>
       </div>
       <ul className="divide-y divide-border rounded-md border border-border">
-        {shown.map((item) => (
-          <li key={item.id}>
-            <Link
-              to={item.href}
-              className="flex flex-col gap-0.5 px-3 py-2.5 text-inherit no-underline hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <span className="line-clamp-2 text-sm font-medium text-foreground">{item.title}</span>
-              {item.reason ? <span className="line-clamp-2 text-sm text-muted-foreground">{item.reason}</span> : null}
-              {item.since ? (
-                <span className="text-xs text-muted-foreground">
-                  {item.waiting ? `${item.waiting} has waited` : "Waiting"} {waitedFor(Date.now() - new Date(item.since).getTime())}
-                </span>
+        {shown.map((item) => {
+          const card = item.cardId ? decide?.cards.get(item.cardId) : undefined;
+          if (card && decide && openId === item.id) {
+            return (
+              <li key={item.id} className="space-y-2 p-2" data-testid={`needed-decide-${item.id}`}>
+                <DecisionFeedCard
+                  card={card}
+                  companyId={decide.companyId}
+                  assignableAgents={decide.assignableAgents}
+                  agentMap={decide.agentMap}
+                  currentUserId={decide.currentUserId}
+                />
+                <Button type="button" size="sm" variant="ghost" onClick={() => setOpenId(null)}>
+                  Close
+                </Button>
+              </li>
+            );
+          }
+          return (
+            <li key={item.id} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Link
+                to={item.href}
+                className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5 text-inherit no-underline hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <span className="line-clamp-2 text-sm font-medium text-foreground">{item.title}</span>
+                {item.reason ? <span className="line-clamp-2 text-sm text-muted-foreground">{item.reason}</span> : null}
+                {item.since ? (
+                  <span className="text-xs text-muted-foreground">
+                    {item.waiting ? `${item.waiting} has waited` : "Waiting"} {waitedFor(Date.now() - new Date(item.since).getTime())}
+                  </span>
+                ) : null}
+              </Link>
+              {card ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mx-3 mb-2.5 shrink-0 self-start sm:mb-0 sm:self-center"
+                  onClick={() => setOpenId(item.id)}
+                  aria-label={`Act on ${item.title} here`}
+                >
+                  Act here
+                </Button>
               ) : null}
-            </Link>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
       {more > 0 ? (
         <p className="text-xs text-muted-foreground">

@@ -14,6 +14,8 @@ export interface NeededItem {
   /** When the wait started, for "waiting 2d". */
   since: string | null;
   href: string;
+  /** The Decisions card behind this item, so it can be acted on in place. */
+  cardId?: string;
 }
 
 export interface NeededGroup {
@@ -101,6 +103,7 @@ function cardItem(card: DecisionCard): NeededItem {
     waiting: card.waiting?.name ?? null,
     since: card.createdAt,
     href: card.task ? taskHref(card.task) : card.setup?.fixHref ?? "/decisions",
+    cardId: card.id,
   };
 }
 
