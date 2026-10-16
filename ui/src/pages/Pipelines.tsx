@@ -37,6 +37,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ClientMemoryPanel } from "../components/memory/ClientMemoryPanel";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -3608,6 +3609,10 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
         <aside className="min-w-0 space-y-8">
           {reviewPanel}
+
+          {isClientCase && (item.data?.case.companyId ?? selectedCompanyId) ? (
+            <ClientMemoryPanel companyId={(item.data?.case.companyId ?? selectedCompanyId)!} clientName={detail.case.title} />
+          ) : null}
 
           {/* Client cases show Projects inside the overview on narrow screens. */}
           <div className={isClientCase ? "hidden lg:block" : undefined} data-tour="client-projects">
