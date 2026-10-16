@@ -861,6 +861,24 @@
   textarea[data-autosize-title] {
     min-height: 0;
   }
+
+  /* Those small widgets keep their drawn size, but a thumb still needs a
+     bigger target. An invisible layer grows the tap area around them: the
+     toggle to 44px tall, the task status icon to 32px square. */
+  [data-slot="toggle"]::before,
+  [data-status-icon-trigger]::before {
+    content: "";
+    position: absolute;
+  }
+  [data-slot="toggle"]::before {
+    inset: calc(var(--spacing) * -3) calc(var(--spacing) * -1);
+  }
+  [data-status-icon-trigger] {
+    position: relative;
+  }
+  [data-status-icon-trigger]::before {
+    inset: calc(var(--spacing) * -1.5);
+  }
 }
 
 /* Mobile collection toolbars and square agent actions. */
