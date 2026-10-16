@@ -32,7 +32,7 @@ The document:
   "validUntil": "2026-11-09T00:00:00Z",
   "issuedBy": "jane@greatstone",
   "reason": "CRM bundle, monthly",
-  "features": { "enablePipelines": true, "enableCases": true },
+  "features": { "enablePipelines": true, "enableStrategy": true },
   "limits": { "maxAgents": 10 }
 }
 ```

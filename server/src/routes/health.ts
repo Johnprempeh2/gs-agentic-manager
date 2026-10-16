@@ -295,8 +295,7 @@ export function healthRoutes(
     // serverInfo (git SHA + process start) rides on the full-details responses
     // only, so it reaches board/agent actors in authenticated mode or any caller
     // in local_trusted dev — never anonymous authenticated callers. The
-    // enableServerInfoDebugView experimental flag gates the UI surface, not this
-    // already access-controlled field.
+    // account drawer Server section (graduated, GRE-1623) reads it.
     const serverInfo = opts.serverInfo ?? getServerInfoSnapshot();
     // The build commit is a plain git SHA of a public repository — not a
     // secret — so it is surfaced on every response, including the redacted

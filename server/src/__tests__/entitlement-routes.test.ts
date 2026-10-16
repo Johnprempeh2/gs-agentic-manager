@@ -72,7 +72,7 @@ describe("entitlement routes", () => {
     vi.clearAllMocks();
     // The real service narrows by entitlement on read; mirror that here.
     mockInstanceSettingsService.getExperimental.mockImplementation(async () =>
-      graph.value.runtime.applyEntitlementsToExperimental({ enablePipelines: true, enableCases: true }),
+      graph.value.runtime.applyEntitlementsToExperimental({ enablePipelines: true, enableWebsiteView: true }),
     );
     mockInstanceSettingsService.listCompanyIds.mockResolvedValue([]);
   });
@@ -93,7 +93,7 @@ describe("entitlement routes", () => {
   });
 
   it("serves effective features, and sync now applies a new document at once", async () => {
-    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableCases: true } })));
+    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableWebsiteView: true } })));
     await installRuntime();
 
     let res = await request(app(boardMember)).get("/api/instance/entitlements");
@@ -103,7 +103,7 @@ describe("entitlement routes", () => {
       limits: { maxAgents: 10 },
       features: {
         enablePipelines: { entitled: false, effective: false },
-        enableCases: { entitled: true, effective: true },
+        enableWebsiteView: { entitled: true, effective: true },
       },
     });
 
@@ -119,7 +119,7 @@ describe("entitlement routes", () => {
   });
 
   it("refuses to turn on a feature the document does not grant, but allows turning one off", async () => {
-    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableCases: true } })));
+    await fs.writeFile(paths.filePath, signedFile(documentFor({ features: { enableWebsiteView: true } })));
     await installRuntime();
     mockInstanceSettingsService.updateExperimental.mockResolvedValue({ id: "s1", experimental: {} });
 
@@ -130,7 +130,7 @@ describe("entitlement routes", () => {
 
     const off = await request(app(boardAdmin)).patch("/api/instance/settings/experimental").send({ enablePipelines: false });
     expect(off.status).toBe(200);
-    const on = await request(app(boardAdmin)).patch("/api/instance/settings/experimental").send({ enableCases: true });
+    const on = await request(app(boardAdmin)).patch("/api/instance/settings/experimental").send({ enableWebsiteView: true });
     expect(on.status).toBe(200);
   });
 });

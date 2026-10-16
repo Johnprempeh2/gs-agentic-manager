@@ -80,17 +80,19 @@ describe("SidebarServerInfo", () => {
     vi.useRealTimers();
   });
 
-  it("renders nothing while the experimental flag is disabled", async () => {
+  it("shows the Server section without reading the graduated flag (GRE-1623)", async () => {
     mockEnabledSettings(false);
+    mockHealthApi.get.mockResolvedValue({ status: "ok" });
 
     await render();
 
-    expect(container.textContent).toBe("");
-    expect(mockHealthApi.get).not.toHaveBeenCalled();
+    expect(container.textContent).toContain("Server");
+    expect(container.textContent).toContain("Running commit");
+    expect(mockHealthApi.get).toHaveBeenCalled();
+    expect(mockInstanceSettingsApi.getExperimental).not.toHaveBeenCalled();
   });
 
-  it("shows restart and commit rows from health data when enabled", async () => {
-    mockEnabledSettings(true);
+  it("shows restart and commit rows from health data", async () => {
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
       devServer: {
@@ -139,7 +141,6 @@ describe("SidebarServerInfo", () => {
 
   it("polls health while the drawer is open and the dev server is active", async () => {
     vi.useFakeTimers();
-    mockEnabledSettings(true);
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
       devServer: {
@@ -197,7 +198,6 @@ describe("SidebarServerInfo", () => {
   });
 
   it("shows path-free local change counts from health data", async () => {
-    mockEnabledSettings(true);
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
       serverInfo: {
@@ -227,7 +227,6 @@ describe("SidebarServerInfo", () => {
   });
 
   it("refetches fresh health each time the drawer reopens, even within staleTime", async () => {
-    mockEnabledSettings(true);
     const baseHealth = {
       status: "ok" as const,
       serverInfo: {
@@ -305,7 +304,6 @@ describe("SidebarServerInfo", () => {
   });
 
   it("falls back to process start and unavailable commit copy", async () => {
-    mockEnabledSettings(true);
     mockHealthApi.get.mockResolvedValue({
       status: "ok",
       serverInfo: {

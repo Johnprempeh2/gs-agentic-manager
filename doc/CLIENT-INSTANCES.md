@@ -99,7 +99,7 @@ scripts/client-instance.sh create --root /path/to/instances/c001 --edition manag
 
 # Managed plus: list ONLY features whose Beacon verdict on GRE-81 has passed
 scripts/client-instance.sh create --root /path/to/instances/c002 \
-  --edition managed-plus --passed-features enablePipelines,enableCases
+  --edition managed-plus --passed-features enablePipelines,enableWebsiteView
 
 # Greatstone's own install (no edition values; never for a client)
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
@@ -971,5 +971,5 @@ A client install from the Stable image (GRE-138, see "Stable image" in
 
 ```sh
 scripts/client-instance.sh edition-env --edition managed
-scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableCases
+scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableWebsiteView
 ```

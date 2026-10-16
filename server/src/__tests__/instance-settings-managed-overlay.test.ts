@@ -72,12 +72,29 @@ describe("applyManagedExperimentalOverlay", () => {
     // managed overlay > schema default
     expect(experimental.enablePipelines).toBe(true);
     // unmanaged keys keep their stored/default values
-    expect(experimental.enableCases).toBe(false);
+    expect(experimental.enableWebsiteView).toBe(false);
     expect(managedKeys).toEqual({
       enablePipelines: { managed: true, managedBy: "paperclip-cloud" },
     });
     // input is not mutated
     expect(stored.enableApps).toBe(true);
+  });
+
+  it("keeps a managed Environments off, which client editions use to pin it off (GRE-1623)", () => {
+    const config = parseManagedConfigEnv(managedEnv(JSON.stringify({
+      v: 1,
+      mode: "cloud",
+      catalogVersion: "gre-1623",
+      features: { enableEnvironments: false },
+      plugins: { autoInstall: [] },
+    })))!;
+    const stored = normalizeExperimentalSettings({ enableEnvironments: false });
+    // A stored off is ignored: Environments graduated.
+    expect(stored.enableEnvironments).toBe(true);
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(stored, config);
+
+    expect(experimental.enableEnvironments).toBe(false);
+    expect(managedKeys).toEqual({ enableEnvironments: { managed: true, managedBy: "paperclip-cloud" } });
   });
 });
 
@@ -111,6 +128,27 @@ describe("instanceSettingsService managed overlay", () => {
     expect(await service.updateExperimental({ enableMcpAggregators: false })).toMatchObject({ experimental: { enableMcpAggregators: true, enableChatConnectors: true } });
   });
 
+  it("keeps the GRE-1621 graduated switches on when stored and managed values say off", async () => {
+    const off = {
+      enableAgentChat: false,
+      enableIssuePlanDecompositions: false,
+      enableBuiltInAgents: false,
+    };
+    const { db } = stubDb(settingsRow({ ...off, enableBetaSkills: false, enableSimplifiedEnglishInteractions: false }));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    const on = {
+      enableAgentChat: true,
+      enableIssuePlanDecompositions: true,
+      enableBuiltInAgents: true,
+      enableBetaSkills: true,
+      enableSimplifiedEnglishInteractions: true,
+    };
+    expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
+    expect(await service.updateExperimental({ ...off, enableBetaSkills: false })).toMatchObject({ experimental: on });
+  });
+
   it("keeps workspace branch reconcile forward on when stored and managed values say off (GRE-1438)", async () => {
     const { db } = stubDb(settingsRow({ enableWorkspaceBranchReconcileForward: false }));
     const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
@@ -133,31 +171,49 @@ describe("instanceSettingsService managed overlay", () => {
     });
   });
 
-  it("persists chat connector opt-in and reads it back after service reconstruction", async () => {
-    const row = settingsRow({});
-    const { db, persistedSets } = stubDb(row);
-    const service = instanceSettingsService(db, { runtimeEnv: {} });
-    expect((await service.getExperimental()).enableChatConnectors).toBe(false);
-    for (const enabled of [true, false]) {
-      const updated = await service.updateExperimental({ enableChatConnectors: enabled });
-      Object.assign(row, persistedSets.at(-1));
-      expect(updated.experimental.enableChatConnectors).toBe(enabled);
-      const restored = await instanceSettingsService(db, { runtimeEnv: {} }).getExperimental();
-      expect(restored).toMatchObject({ enableApps: true, enableChatConnectors: enabled });
-    }
-  });
-
-  it("overlays the managed chat connector gate without changing stored data", async () => {
-    const { db, persistedSets } = stubDb(settingsRow({ enableChatConnectors: true }));
+  it("keeps Chat and Memory connectors on when stored and managed values say off (GRE-1620)", async () => {
+    const off = { enableChatConnectors: false, enableMemoryConnectors: false };
+    const { db } = stubDb(settingsRow(off));
     const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
-      v: 1, mode: "cloud", catalogVersion: "test", features: { enableChatConnectors: false }, plugins: { autoInstall: [] },
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
     })) });
     expect(await service.getExperimental()).toMatchObject({
-      enableChatConnectors: false,
-      managedKeys: { enableChatConnectors: { managed: true, managedBy: "paperclip-cloud" } },
+      enableChatConnectors: true,
+      enableMemoryConnectors: true,
+      managedKeys: {},
     });
-    expect(persistedSets).toHaveLength(0);
+    expect(await service.updateExperimental(off)).toMatchObject({
+      experimental: { enableChatConnectors: true, enableMemoryConnectors: true },
+    });
   });
+  it("keeps Summaries and Status Cards on when stored and managed values say off (GRE-1622)", async () => {
+    const off = { enableSummaries: false, enableStatusCards: false };
+    const on = { enableSummaries: true, enableStatusCards: true };
+    const { db } = stubDb(settingsRow(off));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
+    expect(await service.updateExperimental(off)).toMatchObject({ experimental: on });
+  });
+
+  it("ignores a stored Cases or External Objects off, but keeps a managed off for client editions (GRE-1622)", async () => {
+    const off = { enableCases: false, enableExternalObjects: false };
+    const stored = instanceSettingsService(stubDb(settingsRow(off)).db, { runtimeEnv: {} });
+    expect(await stored.getExperimental()).toMatchObject({ enableCases: true, enableExternalObjects: true });
+
+    const managed = instanceSettingsService(stubDb(settingsRow({})).db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    expect(await managed.getExperimental()).toMatchObject({
+      ...off,
+      managedKeys: {
+        enableCases: { managed: true, managedBy: "paperclip-cloud" },
+        enableExternalObjects: { managed: true, managedBy: "paperclip-cloud" },
+      },
+    });
+  });
+
   it("fails closed at construction on a malformed managed config", () => {
     const { db } = stubDb(settingsRow({}));
     expect(() => instanceSettingsService(db, { runtimeEnv: managedEnv("{bad") })).toThrow(
@@ -224,7 +280,7 @@ describe("instanceSettingsService managed overlay", () => {
     const { db, persistedSets } = stubDb(settingsRow({ enableApps: true }));
     const svc = instanceSettingsService(db, { runtimeEnv: managedEnv() });
 
-    const updated = await svc.updateExperimental({ enableCases: true });
+    const updated = await svc.updateExperimental({ enableWebsiteView: true });
 
     expect(persistedSets).toHaveLength(1);
     const persisted = persistedSets[0]!.experimental as Record<string, unknown>;
@@ -233,7 +289,7 @@ describe("instanceSettingsService managed overlay", () => {
     expect(persisted.enableApps).toBe(true);
     // The overlay-added value is not written.
     expect(persisted.enablePipelines).toBe(false);
-    expect(persisted.enableCases).toBe(true);
+    expect(persisted.enableWebsiteView).toBe(true);
     expect(persisted).not.toHaveProperty("managedKeys");
 
     // The response still reflects the overlay.
@@ -246,7 +302,7 @@ describe("instanceSettingsService managed overlay", () => {
     const { db, persistedSets } = stubDb(settingsRow({}));
     const svc = instanceSettingsService(db, { runtimeEnv: {} });
 
-    const updated = await svc.updateExperimental({ enableCases: true });
+    const updated = await svc.updateExperimental({ enableWebsiteView: true });
     expect(persistedSets).toHaveLength(1);
     expect(persistedSets[0]!.experimental).not.toHaveProperty("managedKeys");
     expect(Object.prototype.hasOwnProperty.call(updated.experimental, "managedKeys")).toBe(false);

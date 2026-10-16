@@ -58,16 +58,9 @@ describe("IssuePropertiesPlansTab", () => {
     return root;
   }
 
-  it("does not request plan decompositions while the switch is off", async () => {
+  // Task Plan Decomposition graduated out of Experimental (GRE-1621).
+  it("requests plan decompositions even when an old stored setting says off", async () => {
     mockGetExperimental.mockResolvedValue({ enableIssuePlanDecompositions: false });
-    const root = await renderTab();
-    expect(mockGetExperimental).toHaveBeenCalled();
-    expect(mockListAcceptedPlanDecompositions).not.toHaveBeenCalled();
-    await act(async () => root.unmount());
-  });
-
-  it("requests plan decompositions once the switch is on", async () => {
-    mockGetExperimental.mockResolvedValue({ enableIssuePlanDecompositions: true });
     const root = await renderTab();
     expect(mockListAcceptedPlanDecompositions).toHaveBeenCalledWith("issue-1");
     await act(async () => root.unmount());

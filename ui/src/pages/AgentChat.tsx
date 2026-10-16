@@ -3,13 +3,10 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { agentChatsApi } from "@/api/agentChats";
 import { agentsApi } from "@/api/agents";
 import { authApi } from "@/api/auth";
-import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
-import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { recordAgentChatVisit } from "@/lib/recent-agent-chats";
 import { queryKeys } from "@/lib/queryKeys";
-import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
-import { Link, useParams } from "@/lib/router";
+import { useParams } from "@/lib/router";
 import { agentRouteRef } from "@/lib/utils";
 import { TaskDetailSurface } from "./IssueDetail";
 import type { Issue } from "@greatstone/shared";
@@ -17,8 +14,6 @@ import type { Issue } from "@greatstone/shared";
 export function AgentChat() {
   const { agentRef = "" } = useParams<{ agentRef: string }>();
   const { selectedCompanyId } = useCompany();
-  const { enabled, loaded } = useAgentChatEnabled();
-  const { setBreadcrumbs } = useBreadcrumbs();
   const client = useQueryClient();
   const agents = useQuery({
     queryKey: queryKeys.agents.list(selectedCompanyId!),
@@ -38,16 +33,16 @@ export function AgentChat() {
   const chat = useQuery({
     queryKey: chatKey,
     queryFn: () => agentChatsApi.get(selectedCompanyId!, agent!.id),
-    enabled: enabled && !!agent && session.isFetched,
+    enabled: !!agent && session.isFetched,
   });
   const creating = useRef<Promise<Issue> | null>(null);
   useEffect(() => {
     creating.current = null;
   }, [selectedCompanyId, userId, agent?.id]);
   useEffect(() => {
-    if (enabled && agent && session.isFetched)
+    if (agent && session.isFetched)
       recordAgentChatVisit(agent.companyId, userId, agent.id);
-  }, [enabled, agent?.id, agent?.companyId, userId, session.isFetched]);
+  }, [agent?.id, agent?.companyId, userId, session.isFetched]);
   const ensureIssue = useCallback(async () => {
     if (!agent || !selectedCompanyId) throw new Error("Agent not found");
     if (chat.data) return chat.data;
@@ -65,30 +60,9 @@ export function AgentChat() {
       throw error;
     }
   }, [agent, selectedCompanyId, chat.data, client, userId]);
-  const disabled = loaded && !enabled && !chat.data;
-  const agentName = agent?.name ?? (agents.isPending ? null : agentRef);
-  // The chat surface sets its own header; when it is not shown, keep the
-  // normal Agents header so a phone still gets a title and a back arrow.
-  useEffect(() => {
-    if (disabled && agentName)
-      setBreadcrumbs([{ label: "Agents", href: "/agents" }, { label: agentName }]);
-  }, [disabled, agentName, setBreadcrumbs]);
-  if (!loaded || agents.isPending || session.isPending)
+  if (agents.isPending || session.isPending)
     return (
       <p className="text-sm text-muted-foreground">Loading conversation…</p>
-    );
-  if (!enabled && !chat.data)
-    return (
-      <p className="text-sm text-muted-foreground">
-        Agent Chat is disabled. Enable it in{" "}
-        <Link
-          to={`${INSTANCE_SETTINGS_PATH_PREFIX}/experimental`}
-          className="font-medium text-foreground underline underline-offset-4"
-        >
-          Experimental settings
-        </Link>
-        . Existing history remains available through task links.
-      </p>
     );
   if (agents.error || chat.error)
     return (

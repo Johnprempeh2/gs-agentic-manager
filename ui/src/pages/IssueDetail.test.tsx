@@ -212,7 +212,8 @@ vi.mock("../api/decisions", () => ({
 }));
 
 const mockEmailApi = vi.hoisted(() => ({
-  thread: vi.fn(),
+  // Chat connectors are always on (GRE-1620), so every task asks for its email thread.
+  thread: vi.fn(async (_companyId: string, _issueId: string) => null),
 }));
 
 vi.mock("@/api/email", () => ({
@@ -4208,8 +4209,9 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("hides the plan decomposition panel by default", async () => {
+  it("loads plan decompositions even when an old stored setting says off (graduated, GRE-1621)", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableIssuePlanDecompositions: false });
 
     await act(async () => {
       root.render(
@@ -4222,34 +4224,14 @@ describe("IssueDetail", () => {
     await flushReact();
     await flushReact();
 
-    expect(container.textContent).not.toContain("Plan decomposition");
-    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).toHaveBeenCalledWith("issue-1");
   });
 
-  it("hides file viewer entry points by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(
-      container.querySelector('[aria-label="Open file in this issue"]'),
-    ).toBeNull();
-  });
-
-  it("shows file viewer entry points when the experimental flag is enabled", async () => {
+  it("shows file viewer entry points even with the old flag stored off (GRE-1623)", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIssuePlanDecompositions: false,
-      enableExperimentalFileViewer: true,
+      enableExperimentalFileViewer: false,
     });
 
     await act(async () => {

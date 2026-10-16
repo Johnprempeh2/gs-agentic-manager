@@ -80,7 +80,6 @@ import { SidebarStarredPipelines } from "./SidebarStarredPipelines";
 import { SidebarAgentChats } from "./SidebarAgentChats";
 import { SidebarTeamChats } from "./SidebarTeamChats";
 import { useTeamChatEnabled } from "@/hooks/useTeamChatEnabled";
-import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { SidebarRecentTasks } from "./SidebarRecentTasks";
 import { useDialogActions } from "../context/DialogContext";
 import { useCompany } from "../context/CompanyContext";
@@ -327,7 +326,6 @@ function CustomiseActionRow({
 export function Sidebar({ children }: { children?: ReactNode }) {
   const location = useLocation();
   const { openNewIssue } = useDialogActions();
-  const { enabled: agentChatEnabled } = useAgentChatEnabled();
   const { enabled: teamChatEnabled } = useTeamChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { collapsed, peeking } = useSidebar();
@@ -357,15 +355,15 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showIntelligence = experimentalSettings?.enableIntelligence === true;
-  const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
   // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
   const myTasksCount = useMyTasksCount(selectedCompanyId);
+  // GRE-1622: Cases ignores the stored switch, but a client plan can still turn it off.
   const showCases = experimentalSettings?.enableCases === true;
   // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
-  const showAgentChats = agentChatEnabled && !children;
+  const showAgentChats = !children;
   const showTeamChats = teamChatEnabled && !children;
 
   const pluginContext = {
@@ -446,14 +444,15 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     "weekly-report": link("/weekly-report", "This week", Newspaper),
     // Greatstone (GRE-1624): Conference Room Chat graduated from Experimental; always shown.
     "conference-room": link("/board-chat", "Conference Room", MessagesSquare),
-    status: gated(showStatusCards, link("/status", "Status", LayoutGrid, { textBadge: "beta" })),
+    // Greatstone (GRE-1622): Status Cards graduated from Experimental; always shown.
+    status: link("/status", "Status", LayoutGrid),
     skills: link("/skills", "Skills", Boxes),
     connectors: link("/apps", "Connectors", Unplug),
     routines: link("/routines", "Routines", Repeat),
     workflows: link("/workflows", "Workflows", Workflow),
     workspaces: gated(showWorkspacesLink, link("/workspaces", "Workspaces", GitBranch)),
     artifacts: link("/artifacts", "Artifacts", Package),
-    cases: gated(showCases, link("/cases", "Cases", Layers, { textBadge: "beta" })),
+    cases: gated(showCases, link("/cases", "Cases", Layers)),
     website: gated(showWebsite, link("/website", "Website", Globe)),
     activity: link("/activity", "Audit", History),
     releases: gated(canRelease, link("/releases", "Releases", Rocket)),

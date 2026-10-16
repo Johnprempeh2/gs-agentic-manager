@@ -1,15 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { MEMORY_CONNECTOR_IDS, isMemoryConnectorId } from "./memory-connectors.js";
 import { getConnectableAppDefinition, credentialConfigPath } from "./app-definitions.js";
-import { INSTANCE_FEATURE_CATALOG } from "./feature-catalog.js";
+import { INSTANCE_FEATURE_CATALOG, isGraduatedInstanceFeatureKey } from "./feature-catalog.js";
 import { instanceExperimentalSettingsSchema, patchInstanceExperimentalSettingsSchema } from "./validators/instance.js";
 
-describe("experimental memory connectors", () => {
-  it("defaults off and preserves patch semantics", () => {
-    expect(instanceExperimentalSettingsSchema.parse({}).enableMemoryConnectors).toBe(false);
+describe("memory connectors", () => {
+  it("is graduated: defaults on and still parses the compatibility key (GRE-1620)", () => {
+    expect(instanceExperimentalSettingsSchema.parse({}).enableMemoryConnectors).toBe(true);
     expect(patchInstanceExperimentalSettingsSchema.parse({})).not.toHaveProperty("enableMemoryConnectors");
-    expect(patchInstanceExperimentalSettingsSchema.parse({ enableMemoryConnectors: true })).toEqual({ enableMemoryConnectors: true });
-    expect(INSTANCE_FEATURE_CATALOG.enableMemoryConnectors).toMatchObject({ tier: "managed", selfHostedDefault: false, cloudDefault: false });
+    expect(patchInstanceExperimentalSettingsSchema.parse({ enableMemoryConnectors: false })).toEqual({ enableMemoryConnectors: false });
+    expect(INSTANCE_FEATURE_CATALOG.enableMemoryConnectors).toMatchObject({ tier: "managed", selfHostedDefault: true, cloudDefault: true });
+    expect(isGraduatedInstanceFeatureKey("enableMemoryConnectors")).toBe(true);
     expect(isMemoryConnectorId("notion")).toBe(false);
   });
   it.each(MEMORY_CONNECTOR_IDS)("has a supported, branded %s setup method", (slug) => {

@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Clock3, FileDiff, GitCommit, type LucideIcon } from "lucide-react";
 import { healthApi, type HealthStatus } from "@/api/health";
-import { instanceSettingsApi } from "@/api/instanceSettings";
 import { queryKeys } from "@/lib/queryKeys";
 
 function formatTimestamp(value: string | null | undefined): string {
@@ -78,15 +77,10 @@ function ServerInfoRow({
 }
 
 export function SidebarServerInfo() {
-  const experimentalQuery = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
-  const enabled = experimentalQuery.data?.enableServerInfoDebugView === true;
+  // Graduated out of Experimental (GRE-1623): the Server section always shows.
   const healthQuery = useQuery({
     queryKey: queryKeys.health,
     queryFn: () => healthApi.get(),
-    enabled,
     // The drawer only mounts while the account popover is open, so it cannot
     // rely on Layout's background health poll (which is itself gated on
     // devServer.enabled). Always refetch on open and poll while open so a server
@@ -97,8 +91,6 @@ export function SidebarServerInfo() {
       return data?.devServer?.enabled ? 2000 : false;
     },
   });
-
-  if (!enabled) return null;
 
   const health = healthQuery.data;
   const isWaitingForHealth = healthQuery.isLoading && !health;

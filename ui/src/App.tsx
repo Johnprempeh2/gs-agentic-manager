@@ -7,7 +7,6 @@ import { Layout } from "./components/Layout";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
-import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
 import { IsolatedWorkspacesRouteGate } from "./components/IsolatedWorkspacesRouteGate";
@@ -21,8 +20,6 @@ import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
-import { ChatConnectorsExperimentalGate } from "./components/ChatConnectorsExperimentalGate";
-import { useChatConnectorsEnabled } from "./hooks/useChatConnectorsEnabled";
 import { canEnterAppsConnect } from "./pages/apps/app-connect-policy";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
@@ -222,13 +219,13 @@ function boardRoutes() {
       />
       <Route path="apps/connect" element={<AppsConnectEntryRoute />} />
       <Route path="apps/chat/connect" element={
-        <ChatConnectorsExperimentalGate><ChatEndpointSetup /></ChatConnectorsExperimentalGate>
+        <ChatEndpointSetup />
       } />
       <Route path="apps/chat/:endpointId" element={
-        <ChatConnectorsExperimentalGate><Navigate to="settings" replace /></ChatConnectorsExperimentalGate>
+        <Navigate to="settings" replace />
       } />
       <Route path="apps/chat/:endpointId/:tab" element={
-        <ChatConnectorsExperimentalGate><ChatEndpointDetail /></ChatConnectorsExperimentalGate>
+        <ChatEndpointDetail />
       } />
       <Route path="apps/connect/:appKey" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connect/:appKey/:stage" element={<Navigate to="/apps" replace />} />
@@ -339,14 +336,8 @@ function boardRoutes() {
         path="deep-dive"
         element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
       />
-      <Route
-        path="status"
-        element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
-      />
-      <Route
-        path="status/:cardId"
-        element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
-      />
+      <Route path="status" element={<StatusCards />} />
+      <Route path="status/:cardId" element={<StatusCards />} />
       {/* Back-compat: the board lived at /status-cards before PAP-15223. */}
       <Route path="status-cards" element={<StatusCardsLegacyRedirect />} />
       <Route path="status-cards/:cardId" element={<StatusCardsLegacyRedirect />} />
@@ -492,8 +483,7 @@ function AppsConnectEntryRoute({
 } = {}) {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
-  return canEnterAppsConnect(searchParams, { chatConnectorsEnabled })
+  return canEnterAppsConnect(searchParams)
     ? <AppsConnect credentialSource={credentialSource} />
     : <Navigate to="/apps" replace />;
 }

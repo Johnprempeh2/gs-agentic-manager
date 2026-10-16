@@ -812,14 +812,12 @@ describeEmbeddedPostgres("tool access service", () => {
       process.env.GSAM_TOOL_ACCESS_TEST_DATABASE_URL?.trim();
     if (externalDatabaseUrl) {
       db = createDb(externalDatabaseUrl);
-      await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: true });
       return;
     }
     tempDb = await startEmbeddedPostgresTestDatabase(
       "paperclip-tool-access-service-",
     );
     db = createDb(tempDb.connectionString);
-    await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: true });
   }, 20_000);
 
   afterEach(async () => {
@@ -11724,38 +11722,27 @@ describeEmbeddedPostgres("tool access service", () => {
     );
   });
 
-  it.each(["mem0", "zep", "supermemory", "cognee", "honcho"])("rejects %s setup before creating credentials when memory connectors are disabled", async (provider) => {
+  it.each(["mem0", "zep", "supermemory", "cognee", "honcho"])("offers %s setup with the graduated switch stored off (GRE-1620)", async (provider) => {
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: false });
-    try {
-      const response = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
-      expect(response.body.apps.some((app: { slug: string }) => app.slug === provider)).toBe(false);
-      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "not_entitled", feature: "enableMemoryConnectors" } });
-      expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toHaveLength(0);
-      expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toHaveLength(0);
-    } finally {
-      await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: true });
-    }
+    const response = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
+    expect(response.body.apps.some((app: { slug: string }) => app.slug === provider)).toBe(true);
   });
 
-  it("rotates an existing Mem0 key while new memory setup is disabled", async () => {
+  it("sets up and rotates a Mem0 key with the graduated switch stored off (GRE-1620)", async () => {
     const company = await createCompany(db);
     const service = createTestToolAccessService(db);
     mockToolsList([{ name: "search_memories", annotations: { readOnlyHint: true } }]);
+    await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: false });
     const connected = await service.connectGalleryApp(company.id, {
       galleryKey: "mem0", credentialValues: { "credentials.authorization": "old-key" },
     });
     await db.update(toolConnections).set({ status: "active" }).where(eq(toolConnections.id, connected.connectionId));
-    await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: false });
-    try {
-      const result = await service.reconnectGalleryApp(connected.connectionId, company.id,
-        { credentialValues: { "credentials.authorization": "new-key" } });
-      expect(result.connection.id).toBe(connected.connectionId);
-      expect(result.connection.healthStatus).toBe("ok");
-    } finally {
-      await instanceSettingsService(db).updateExperimental({ enableMemoryConnectors: true });
-    }
+    const result = await service.reconnectGalleryApp(connected.connectionId, company.id,
+      { credentialValues: { "credentials.authorization": "new-key" } });
+    expect(result.connection.id).toBe(connected.connectionId);
+    expect(result.connection.healthStatus).toBe("ok");
   });
 
   it("keeps active Cognee tools available during a transient Cloud probe outage", async () => {

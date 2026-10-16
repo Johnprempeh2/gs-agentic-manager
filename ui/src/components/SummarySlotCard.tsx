@@ -12,7 +12,6 @@ import { Bot, Clock3, History, Loader2, RefreshCw, Sparkles } from "lucide-react
 
 import { agentsApi } from "@/api/agents";
 import { builtInAgentsApi, type BuiltInAgentState } from "@/api/builtInAgents";
-import { instanceSettingsApi } from "@/api/instanceSettings";
 import { summarySlotsApi, type SummarySlotSelector } from "@/api/summarySlots";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { ConfigureBuiltInAgentModal } from "@/components/ConfigureBuiltInAgentModal";
@@ -149,17 +148,10 @@ export function SummarySlotCard({
     ? { companyId, scopeKind, scopeId, slotKey }
     : null;
 
-  const experimentalQuery = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: () => instanceSettingsApi.getExperimental(),
-  });
-  const summariesEnabled = experimentalQuery.data?.enableSummaries === true;
-  const builtInAgentsEnabled = experimentalQuery.data?.enableBuiltInAgents === true;
-
   const builtInAgentsQuery = useQuery({
     queryKey: queryKeys.builtInAgents.list(companyId ?? "__none__"),
     queryFn: () => builtInAgentsApi.list(companyId!),
-    enabled: Boolean(companyId && summariesEnabled && builtInAgentsEnabled),
+    enabled: Boolean(companyId),
     retry: false,
   });
 
@@ -178,7 +170,7 @@ export function SummarySlotCard({
   const slotQuery = useQuery({
     queryKey: slotQueryKey,
     queryFn: () => summarySlotsApi.get(selector!),
-    enabled: Boolean(selector && summariesEnabled),
+    enabled: Boolean(selector),
     retry: false,
     refetchInterval: (query) => query.state.data?.slot?.status === "generating" ? 3_000 : false,
   });
@@ -186,7 +178,7 @@ export function SummarySlotCard({
   const revisionsQuery = useQuery({
     queryKey: revisionsQueryKey,
     queryFn: () => summarySlotsApi.revisions(selector!),
-    enabled: Boolean(selector && summariesEnabled && slotQuery.data?.document),
+    enabled: Boolean(selector && slotQuery.data?.document),
     retry: false,
   });
 
@@ -246,8 +238,6 @@ export function SummarySlotCard({
     && !TERMINAL_ISSUE_STATUSES.has(generatingIssue.status);
   const generationFailed = slotQuery.data?.slot?.status === "failed";
   const canGenerateFirstSummary = summarizerState?.status === "ready";
-
-  if (experimentalQuery.isLoading || !summariesEnabled) return null;
 
   const startGeneration = () => {
     if (!selector || generateMutation.isPending) return;

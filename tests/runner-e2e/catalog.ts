@@ -983,12 +983,12 @@ export const runnerSuites: readonly RunnerSuiteFixture[] = [
   },
   {
     id: "agent-chat-stories", label: "Agent Chat Setup and Interruptions", manualOnly: true,
-    description: "Experimental settings lifecycle and user follow-ups during active native work.",
+    description: "User follow-ups and revised instructions during active native work.",
     groups: ["chat", "native"],
     profiles: runnerProfiles.filter(profile => ["runner-codex", "runner-acpx-claude"].includes(profile.id))
       .map(profile => productionStoryProfile(defaultPermissionProfile(profile))),
-    environments: [localEnvironment], tasks: chatStoryTasks, expectedMatrixSize: 6,
-    definitionMetadata: { version: 3, setup: "configured-native-agent", permissions: "production-defaults", interruptionBoundary: "provider-file-wait-in-agent-workspace", grading: "persisted-comments-and-plan-run-attributed", scheduling: "explicit-only" },
+    environments: [localEnvironment], tasks: chatStoryTasks, expectedMatrixSize: 4,
+    definitionMetadata: { version: 4, setup: "configured-native-agent", permissions: "production-defaults", interruptionBoundary: "provider-file-wait-in-agent-workspace", grading: "persisted-comments-and-plan-run-attributed", scheduling: "explicit-only" },
   },
   {
     id: "agent-chat-qualification", label: "Agent Chat Remaining Qualification", manualOnly: true,

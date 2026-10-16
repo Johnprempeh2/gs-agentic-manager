@@ -27,7 +27,7 @@ export async function setup(request: APIRequestContext) {
   );
   await json(
     await request.patch("/api/instance/settings/experimental", {
-      data: { enableAgentChat: true, enableClassicTaskInterface: false },
+      data: { enableClassicTaskInterface: false },
     }),
   );
   const agents = [];
@@ -123,7 +123,6 @@ export async function setup(request: APIRequestContext) {
         await json(
           await request.patch("/api/instance/settings/experimental", {
             data: {
-              enableAgentChat: original.enableAgentChat,
               enableClassicTaskInterface: original.enableClassicTaskInterface,
             },
           }),

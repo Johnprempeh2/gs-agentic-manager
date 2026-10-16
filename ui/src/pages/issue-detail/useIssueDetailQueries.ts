@@ -279,14 +279,15 @@ export function useIssueDetailQueries({
     retry: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;
-  // Experimental Cases: linkify `PAP-C7` chips in this issue's comment bodies.
+  // Cases: linkify `PAP-C7` chips in this issue's comment bodies. A stored
+  // switch is ignored (GRE-1622); a client plan can still turn Cases off.
   const casesChipsEnabled = instanceExperimentalSettings?.enableCases === true;
   const feedbackDataSharingPreference =
     instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
-  const showPlanDecompositionsSection =
-    instanceExperimentalSettings?.enableIssuePlanDecompositions === true;
-  const fileViewerEnabled =
-    instanceExperimentalSettings?.enableExperimentalFileViewer === true;
+  // Task Plan Decomposition graduated out of Experimental (GRE-1621): always shown.
+  const showPlanDecompositionsSection = true;
+  // The file viewer graduated out of Experimental (GRE-1623): always on.
+  const fileViewerEnabled = true;
   const { orderedProjects } = useProjectOrder({
     projects: projects ?? [],
     companyId: selectedCompanyId,

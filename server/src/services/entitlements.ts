@@ -72,36 +72,24 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableStatusCards: {
-    kind: "api",
-    probes: [
-      { method: "get", path: `${COMPANY}/status-cards` },
-      { method: "post", path: `${COMPANY}/status-cards` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableSummaries: {
-    kind: "api",
-    probes: [{ method: "get", path: `${COMPANY}/summary-slots/project/status` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableBuiltInAgents: {
-    kind: "api",
-    probes: [{ method: "get", path: `${COMPANY}/built-in-agents` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableChatConnectors: {
-    kind: "api",
-    probes: [
-      { method: "get", path: "/chat-identity-links/preview?token=x" },
-      { method: "post", path: "/chat-identity-links/confirm" },
-      { method: "post", path: "/chat-identity-links/request-access" },
-      { method: "get", path: "/slack/search/callback" },
-      { method: "get", path: `${COMPANY}/slack/endpoints/${ID}/search` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
   },
   enableAgentChat: {
-    kind: "api",
-    probes: [
-      { method: "get", path: `${COMPANY}/chats/agent` },
-      { method: "post", path: `${COMPANY}/chats/agent` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableTeamChat: {
     kind: "api",
@@ -114,8 +102,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableMemoryConnectors: {
-    kind: "api",
-    probes: [{ method: "get", path: `${COMPANY}/tools/apps/mem0/preflight` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
   },
   enableExternalObjects: {
     kind: "api",
@@ -128,8 +116,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableIssuePlanDecompositions: {
-    kind: "api",
-    probes: [{ method: "get", path: `/issues/${ID}/accepted-plan-decompositions` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1621): always on; stored and managed values are ignored.",
   },
   enableStrategy: {
     kind: "api",

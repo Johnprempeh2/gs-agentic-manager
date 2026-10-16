@@ -54,15 +54,12 @@ function fixture(
 }
 
 describe("chat identity-link preview authority", () => {
-  it.each([false, undefined])("blocks every identity API when chat rollout is disabled (%s)", async (enabled) => {
+  it.each([false, undefined])("serves identity APIs whatever the graduated switch says (%s, GRE-1620)", async (enabled) => {
     settings.getExperimental.mockResolvedValue({ enableChatConnectors: enabled });
-    const f = fixture();
-    await request(f.app).get("/api/chat-identity-links/preview").query({ token }).expect(403);
-    await request(f.app).post("/api/chat-identity-links/confirm").send({ token }).expect(403);
-    await request(f.app).post("/api/chat-identity-links/request-access").send({ token }).expect(403);
-    expect(f.previewIdentityLink).not.toHaveBeenCalled();
-    expect(f.confirmIdentityLink).not.toHaveBeenCalled();
-    expect(f.requestIdentityAccess).not.toHaveBeenCalled();
+    const { app, previewIdentityLink } = fixture();
+    const response = await request(app).get("/api/chat-identity-links/preview").query({ token });
+    expect(response.status).toBe(200);
+    expect(previewIdentityLink).toHaveBeenCalledExactlyOnceWith(token, "viewer");
   });
 
   it("returns the preview to a Board member of its exact company", async () => {

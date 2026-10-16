@@ -19,7 +19,7 @@ export interface StatusCardDryRun {
 }
 
 /**
- * Client for the experimental status-cards API (gated by `enableStatusCards`).
+ * Client for the status-cards API.
  * Covers CRUD + archive, the updates ledger, summary revision history,
  * manual refresh/recompile, and live dry-run matching.
  */

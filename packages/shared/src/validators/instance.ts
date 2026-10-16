@@ -79,7 +79,9 @@ export const patchInstanceGeneralSettingsSchema = z
   .strict();
 
 export const instanceExperimentalSettingsSchema = z.object({
-  enableEnvironments: z.boolean().default(false),
+  // Greatstone (GRE-1623): compatibility only. Environments are always on;
+  // old stored values must still parse. A managed config can still pin it off.
+  enableEnvironments: z.boolean().default(true),
   enableNativeRunner: z.boolean().default(true),
   enableManagedSandboxOnly: z.boolean().default(false),
   // Greatstone (GRE-1437): compatibility only. Isolated workspaces are always
@@ -94,13 +96,19 @@ export const instanceExperimentalSettingsSchema = z.object({
   // always enabled; this remains accepted so older stored rows and managed
   // configs continue to load during upgrades.
   enableApps: z.boolean().default(true),
-  enableChatConnectors: z.boolean().default(false),
+  // Greatstone (GRE-1620): compatibility only. Chat connectors are always
+  // on; old stored and managed values must still parse.
+  enableChatConnectors: z.boolean().default(true),
   // Compatibility only: old stored and managed values must still parse.
   enableMcpAggregators: z.boolean().default(true),
-  enableMemoryConnectors: z.boolean().default(false),
+  // Greatstone (GRE-1620): compatibility only. Memory connectors are always
+  // on; old stored and managed values must still parse.
+  enableMemoryConnectors: z.boolean().default(true),
   enablePipelines: z.boolean().default(false),
-  enableCases: z.boolean().default(false),
-  // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.
+  // Greatstone (GRE-1622): compatibility only. Cases are always on; old
+  // stored and managed values must still parse.
+  enableCases: z.boolean().default(true),
+  // Greatstone: Deep Dive record (Book V), stored as Cases.
   enableDeepDive: z.boolean().default(false),
   // Greatstone: Strategy module (GRE-1382): the KPI cascade and KPI readings.
   // On for self-hosted so existing instances keep their plan; client editions
@@ -116,26 +124,36 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableWebsiteView: z.boolean().default(false),
   // Greatstone: the Intelligence page (Daily Pulse and AI Intelligence Hub, written by an agent).
   enableIntelligence: z.boolean().default(false),
-  enableAgentChat: z.boolean().default(false),
+  // Greatstone (GRE-1621): compatibility only. Agent Chat is always on; old
+  // stored and managed values must still parse.
+  enableAgentChat: z.boolean().default(true),
   // Greatstone: direct messages and group chats of people and agents.
   enableTeamChat: z.boolean().default(false),
   // Greatstone (GRE-1624): compatibility only. Conference Room Chat is always
   // on; old stored and managed values must still parse.
   enableConferenceRoomChat: z.boolean().default(true),
   enableClassicTaskInterface: z.boolean().default(false),
-  enableIssuePlanDecompositions: z.boolean().default(false),
-  enableExperimentalFileViewer: z.boolean().default(false),
-  enableExternalObjects: z.boolean().default(false),
+  // Greatstone (GRE-1621): compatibility only; Task Plan Decomposition is always on.
+  enableIssuePlanDecompositions: z.boolean().default(true),
+  // Greatstone (GRE-1623): compatibility only; the file viewer is always on.
+  enableExperimentalFileViewer: z.boolean().default(true),
+  // Greatstone (GRE-1622): compatibility only; External Objects are always on.
+  enableExternalObjects: z.boolean().default(true),
   enableSmokeLab: z.boolean().default(false),
-  enableBuiltInAgents: z.boolean().default(false),
-  enableBetaSkills: z.boolean().default(false),
-  enableSummaries: z.boolean().default(false),
-  enableStatusCards: z.boolean().default(false),
+  // Greatstone (GRE-1621): compatibility only; Built-in Agents and Beta skills are always on.
+  enableBuiltInAgents: z.boolean().default(true),
+  enableBetaSkills: z.boolean().default(true),
+  // Greatstone (GRE-1622): compatibility only; Summaries and Status Cards
+  // are always on.
+  enableSummaries: z.boolean().default(true),
+  enableStatusCards: z.boolean().default(true),
   enableDecisions: z.boolean().default(true),
   enableGoalsSidebarLink: z.boolean().default(false),
-  enableServerInfoDebugView: z.boolean().default(false),
+  // Greatstone (GRE-1623): compatibility only; the Server section always shows.
+  enableServerInfoDebugView: z.boolean().default(true),
   enablePaperclipDeveloperMode: z.boolean().default(false),
-  enableSimplifiedEnglishInteractions: z.boolean().default(false),
+  // Greatstone (GRE-1621): compatibility only; Simplified English Interactions is always on.
+  enableSimplifiedEnglishInteractions: z.boolean().default(true),
   enableFirstTaskPlanProposal: z.boolean().default(false),
   autoRestartDevServerWhenIdle: z.boolean().default(false),
   enableWorkspaceBranchReconcileForward: z.boolean().default(true),

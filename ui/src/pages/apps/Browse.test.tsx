@@ -233,23 +233,14 @@ describe("Connectors landing page", () => {
     expect(container.textContent).not.toContain("Paused");
   });
 
-  it("hides cached memory connectors until enabled and preserves saved MCP connections", async () => {
+  it("shows memory connectors whatever the graduated switch says (GRE-1620)", async () => {
     const providers = ["mem0", "zep", "supermemory", "cognee", "honcho"];
     listGalleryMock.mockResolvedValue({ apps: [...providers, "notion"].map(getAppStoreDefinition) });
     const client = await renderBrowse();
-    for (const slug of providers) expect(container.querySelector(`[data-app-slug="${slug}"]`)).toBeNull();
-    expect(container.querySelector('[data-app-slug="notion"]')).not.toBeNull();
-    await act(() => { client.setQueryData(queryKeys.instance.experimentalSettings, { enableMemoryConnectors: true }); });
+    for (const slug of [...providers, "notion"]) expect(container.querySelector(`[data-app-slug="${slug}"]`)).not.toBeNull();
+    await act(() => { client.setQueryData(queryKeys.instance.experimentalSettings, { enableMemoryConnectors: false }); });
     await flushReact();
     for (const slug of providers) expect(container.querySelector(`[data-app-slug="${slug}"]`)).not.toBeNull();
-    await act(() => {
-      client.setQueryData(queryKeys.tools.connections("company-1"), { connections: [connection({ id: "saved", applicationId: "saved-app", config: { sourceTemplateKey: "mem0", connectionMethodKey: "mcp" }, transport: "mcp_remote" })] });
-      client.setQueryData(queryKeys.tools.applications("company-1"), { applications: [application({ id: "saved-app", name: "Mem0", metadata: { sourceTemplateKey: "mem0" } })] });
-      client.setQueryData(queryKeys.instance.experimentalSettings, { enableMemoryConnectors: false });
-    });
-    await flushReact();
-    expect(container.textContent).toContain("Mem0");
-    for (const slug of ["zep", "supermemory", "cognee", "honcho"]) expect(container.querySelector(`[data-app-slug="${slug}"]`)).toBeNull();
   });
 
   it("shows all MCP aggregators by default and ignores cached legacy opt-outs", async () => {
@@ -262,25 +253,7 @@ describe("Connectors landing page", () => {
     for (const slug of providers) expect(container.querySelector(`[data-app-slug="${slug}"]`)).not.toBeNull();
   });
 
-  it("defaults to tools-only GitHub and hides chat-only catalog and existing chat accounts", async () => {
-    experimentalMock.mockResolvedValue({});
-    listGalleryMock.mockResolvedValue({ apps: ["github", "discord", "telegram", "microsoft-teams"].map(getAppStoreDefinition) });
-    listApplicationsMock.mockResolvedValue({ applications: [application({
-      id: "chat-app", type: "chat", name: "Private bot", applicationKey: "chat:github:endpoint-1", metadata: { purpose: "channel" },
-    })] });
-    await renderBrowse();
-    expect(chatListMock).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-app-slug="github"]')).not.toBeNull();
-    for (const slug of ["discord", "telegram", "microsoft-teams", "slack"]) {
-      expect(container.querySelector(`[data-app-slug="${slug}"]`)).toBeNull();
-    }
-    expect(container.textContent).not.toContain("Private bot");
-    expect(container.textContent).not.toContain("Chat with agents");
-    await act(() => void container.querySelector<HTMLButtonElement>('button[aria-label="Connect GitHub"]')!.click());
-    expect(navigateMock).toHaveBeenLastCalledWith("/apps/connect?source=github");
-  });
-
-  it("restores the GitHub intent chooser when enabled and hides cached chat rows immediately when disabled", async () => {
+  it("offers the GitHub intent chooser and chat rows whatever the graduated switch says (GRE-1620)", async () => {
     listGalleryMock.mockResolvedValue({ apps: [getAppStoreDefinition("github")] });
     chatListMock.mockResolvedValue([{ id: "endpoint-1", provider: "github", status: "active", assignedAgentName: "Chat agent", botLabel: "Chat bot", assignedAgentId: "agent-1" }]);
     const client = await renderBrowse();
@@ -292,11 +265,8 @@ describe("Connectors landing page", () => {
     expect(navigateMock).toHaveBeenLastCalledWith("/apps/chat/connect?provider=github&toolHref=%2Fapps%2Fconnect%3Fsource%3Dgithub");
     await act(() => { client.setQueryData(queryKeys.instance.experimentalSettings, { enableChatConnectors: false }); });
     await flushReact();
-    expect(container.querySelector('[data-app-slug="telegram"]')).toBeNull();
-    expect(container.textContent).not.toContain("Chat agent");
-    expect(container.querySelector('a[href*="/apps/chat/"]')).toBeNull();
-    await act(() => void container.querySelector<HTMLButtonElement>('button[aria-label="Connect GitHub"]')!.click());
-    expect(navigateMock).toHaveBeenLastCalledWith("/apps/connect?source=github");
+    expect(container.textContent).toContain("Chat agent");
+    expect(container.querySelector('[data-app-slug="telegram"]')).not.toBeNull();
   });
 
   it("with nothing connected shows the whole catalogue under the search header, without a toggle", async () => {

@@ -3,7 +3,6 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { sendChatMessage, type ChatFlowInput, type ChatIssue, type ChatRun } from "./chat-flow.js";
-import { setSettingsToggle } from "./settings-toggle.js";
 import { resolveDefaultAgentWorkspaceDir } from "../../server/src/home-paths.js";
 
 type Comment = { id: string; body: string; authorAgentId?: string; createdByRunId?: string };
@@ -11,19 +10,6 @@ type Context = {
   input: ChatFlowInput; marker: string; issue(): ChatIssue;
   idle(count: number): Promise<void>; allRuns(): Promise<ChatRun[]>; comments(): Promise<Comment[]>;
 };
-
-/** Seed only the disabled setting; the browser performs the user's opt-in. */
-export async function enableChatThroughSettings(input: ChatFlowInput) {
-  await input.api.patch("/api/instance/settings/experimental", { enableAgentChat: false, enableClassicTaskInterface: false });
-  await setChatEnabled(input, true);
-}
-
-async function setChatEnabled(input: ChatFlowInput, enabled: boolean) {
-  await input.page.goto(`/${input.fixtures.company.issuePrefix}/company/settings/instance/experimental`, { waitUntil: "domcontentloaded" });
-  const toggle = input.page.getByRole("switch", { name: "Toggle agent chat experimental setting" });
-  await setSettingsToggle(toggle, enabled);
-  await expect.poll(async () => (await input.api.get<{ enableAgentChat: boolean }>("/api/instance/settings/experimental")).enableAgentChat).toBe(enabled);
-}
 
 export function assertInterruptedChat(input: {
   first: string; followup: string; reference: string; marker: string; issueId: string;
@@ -127,34 +113,4 @@ export async function runChatInterruption(context: Context & { refreshIssue(): P
       plan: current && revise ? await input.api.get(`/api/issues/${current.id}/documents/plan`).catch(error => ({ readError: String(error) })) : null,
     });
   }
-}
-
-export async function runChatSettingsLifecycle(context: Context) {
-  const { input, idle, comments, allRuns, marker } = context;
-  const remembered = `REMEMBER${marker}`;
-  const route = `/${input.fixtures.company.issuePrefix}/chats/${input.fixtures.agent.id}`;
-  await sendChatMessage(input.page, `Remember ${remembered} in this conversation. Acknowledge only; no tasks or projects.`);
-  await idle(1);
-  const before = { issue: context.issue(), comments: await comments(), runs: await allRuns() };
-  await setChatEnabled(input, false);
-  // Full document navigation clears the client query cache. Unlike SPA
-  // navigation, this verifies the disabled entry page without cached history.
-  await input.page.goto(route, { waitUntil: "domcontentloaded" });
-  await expect(input.page.getByText(/Agent Chat is disabled/)).toBeVisible();
-  const blocked = await input.api.request.post(`/api/issues/${before.issue.id}/comments`, { data: { body: `DISABLED${marker}` } });
-  expect(blocked.status()).toBe(404);
-  expect(await comments()).toEqual(before.comments);
-  expect((await allRuns()).map(run => ({ id: run.id, status: run.status })))
-    .toEqual(before.runs.map(run => ({ id: run.id, status: run.status })));
-  await setChatEnabled(input, true);
-  await input.page.goto(route, { waitUntil: "domcontentloaded" });
-  await sendChatMessage(input.page, `What reference did I ask you to remember? Reply with it and ${marker}. No new work.`);
-  await idle(2);
-  expect(context.issue().id).toBe(before.issue.id);
-  expect(context.issue().conversationSessionGeneration).toBe(before.issue.conversationSessionGeneration);
-  const reply = (await comments()).filter(comment => comment.authorAgentId).at(-1)?.body ?? "";
-  expect(reply).toContain(remembered);
-  expect(reply).toContain(marker);
-  expect(await input.api.get(`/api/companies/${input.fixtures.company.id}/issues`)).toEqual([]);
-  await input.evidence("chat-settings-lifecycle.json", { before, after: { issue: context.issue(), comments: await comments(), runs: await allRuns() } });
 }

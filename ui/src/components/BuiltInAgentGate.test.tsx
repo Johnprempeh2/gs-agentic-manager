@@ -160,14 +160,14 @@ describe("BuiltInAgentGate (PAP-12978)", () => {
     expect(container.textContent).not.toContain("Set up the Briefs Agent");
   });
 
-  it("does not query built-in agents when the feature flag is off", async () => {
+  it("checks the built-in agent even when an old stored setting says off (graduated, GRE-1621)", async () => {
     getExperimentalMock.mockResolvedValue({ enableBuiltInAgents: false });
-    listMock.mockResolvedValue([makeState("ready")]);
+    listMock.mockResolvedValue([makeState("needs_setup")]);
 
     await renderGate();
 
-    expect(listMock).not.toHaveBeenCalled();
-    expect(container.querySelector('[data-testid="feature"]')).not.toBeNull();
+    expect(listMock).toHaveBeenCalled();
+    expect(container.textContent).toContain("Set up the Briefs Agent");
   });
 
   it("fails open to the feature when the key is unknown", async () => {

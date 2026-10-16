@@ -425,15 +425,13 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(finishAppMock).not.toHaveBeenCalled();
   });
 
-  it.each(["mem0", "zep", "supermemory", "cognee", "honcho"])("blocks direct %s setup while memory connectors are off", async (provider) => {
+  it.each(["mem0", "zep", "supermemory", "cognee", "honcho"])("opens direct %s setup with no memory switch to check (GRE-1620)", async (provider) => {
     mockSearch.value = `source=${provider}`;
     await render();
-    expect(container.textContent).toContain("Enable memory connectors");
-    expect(connectAppMock).not.toHaveBeenCalled();
-    expect(startOAuthMock).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain("Enable memory connectors");
   });
 
-  it("allows an existing memory connection to reconnect while setup is hidden", async () => {
+  it("allows an existing memory connection to reconnect", async () => {
     mockSearch.value = "source=mem0&reconnect=existing-memory";
     getConnectionMock.mockResolvedValue({ id: "existing-memory", status: "active", config: { sourceTemplateKey: "mem0" } });
     await render();
@@ -589,37 +587,29 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     expect(container.textContent).not.toContain("Does it need a key?");
   });
 
-  it.each([false, true])("gates chat-only cards in the embedded tool gallery without hiding GitHub (%s)", async (enabled) => {
+  it.each([false, true])("shows chat-only cards in the embedded tool gallery whatever the graduated switch says (%s, GRE-1620)", async (enabled) => {
     experimentalMock.mockResolvedValue({ enableChatConnectors: enabled });
     listGalleryMock.mockResolvedValue({ apps: [GITHUB, getAppStoreDefinition("discord"), getAppStoreDefinition("telegram")] });
     await render();
     expect(container.textContent).toContain("GitHub");
-    expect(container.textContent?.includes("Discord")).toBe(enabled);
-    expect(container.textContent?.includes("Telegram")).toBe(enabled);
+    expect(container.textContent).toContain("Discord");
+    expect(container.textContent).toContain("Telegram");
     expect(container.textContent).not.toContain("Chat with an agent");
   });
 
   it.each([
     ["telegram", "Telegram", "https://t.me/example_bot"],
     ["discord", "Discord", "https://discord.com/channels/example"],
-  ])("does not reveal hidden %s setup from a pasted link or its generic follow-up", async (slug, name, url) => {
+  ])("recognises %s from a pasted link now that chat connectors are always on (GRE-1620)", async (slug, name, url) => {
     listGalleryMock.mockResolvedValue({ apps: [GITHUB, getAppStoreDefinition(slug)] });
     await render();
     const input = container.querySelector<HTMLInputElement>('input[aria-label="MCP server URL"]')!;
     await act(async () => setInputValue(input, url));
     await flushReact();
-    expect(container.textContent).not.toContain(`This looks like ${name}`);
-    expect(buttonByText(`Use ${name}`)).toBeUndefined();
-    await act(async () => buttonByText("Continue")!.click());
-    await flushReact();
-    await passAccessStep();
-    expect(container.textContent).toContain("Connect your own MCP server");
-    expect(container.textContent).not.toContain(`guided setup for ${name}`);
-    expect(buttonByText(`Use ${name}`)).toBeUndefined();
-    expect(connectAppMock).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(`This looks like ${name}`);
   });
 
-  it("matches GitHub tool URLs independently of gallery search while chat connectors are hidden", async () => {
+  it("matches GitHub tool URLs independently of gallery search", async () => {
     await render();
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Search apps…"]')!, "no matching cards"));
     await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[aria-label="MCP server URL"]')!, "https://github.com/example/repository"));

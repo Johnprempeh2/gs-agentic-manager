@@ -181,12 +181,11 @@ describe("AgentMail durable email pipeline", () => {
     expect((await resolveConnectorAssignments(db, binding))[0].resources).toHaveLength(1);
   });
 
-  it("removes connector contributions when the experimental gate or credential access is revoked", async () => {
+  it("keeps connector contributions with the graduated switch stored off, and removes them when credential access is revoked", async () => {
     const f = await fixture();
     const binding = { companyId: f.companyId, agentId: f.agentId };
     await instanceSettingsService(db).updateExperimental({ enableChatConnectors: false });
-    try { expect(await resolveConnectorAssignments(db, binding)).toEqual([]); }
-    finally { await instanceSettingsService(db).updateExperimental({ enableChatConnectors: true }); }
+    expect(await resolveConnectorAssignments(db, binding)).not.toEqual([]);
     const endpoint = await f.service.getEndpoint(f.endpointId);
     await db.update(toolConnections).set({ enabled: false }).where(eq(toolConnections.id, endpoint.connectionId));
     expect(await resolveConnectorAssignments(db, binding)).toEqual([]);

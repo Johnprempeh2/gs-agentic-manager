@@ -1365,6 +1365,8 @@ async function startServerWithDatabaseTeardown(
   };
   const externalObjects = externalObjectService(db as any, {
     pluginWorkerManager,
+    // GRE-1622: the stored switch is ignored, but a managed config or the
+    // entitlement document can still turn External Objects off.
     enabled: async () => (await instanceSettingsService(db).getExperimental()).enableExternalObjects === true,
   });
   const scheduleExternalObjectRefreshSweep = (now = new Date()) => {
@@ -2012,8 +2014,6 @@ async function startServerWithDatabaseTeardown(
 
         if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork((async () => {
-          const experimental = await instanceSettingsService(db).getExperimental();
-          if (experimental.enableStatusCards !== true) return;
           const result = await statusCards.tickDueStatusCards(new Date());
           await Promise.all(result.enqueued.map(async ({ cardId, generatingIssue }) => {
             try {

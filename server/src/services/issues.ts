@@ -12581,14 +12581,11 @@ export function issueService(db: Db) {
 
       if (!issue) throw notFound("Issue not found");
 
-      if (issue.conversationAgentId && actor.userId) {
-        // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+      // A board question chat (GRE-1186) runs under the Strategy Board switch.
+      // Agent Chat graduated (GRE-1621) and has no switch.
+      if (issue.conversationAgentId && actor.userId && issue.originKind === "strategy_board_question") {
         const experimental = await instanceSettingsService(dbOrTx).getExperimental();
-        if (issue.originKind === "strategy_board_question") {
-          if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
-        } else if (!experimental.enableAgentChat) {
-          throw unprocessable("Agent Chat is disabled in Experimental settings");
-        }
+        if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
       }
       const currentUserRedactionOptions = {
         // Keep every read on the caller's transaction connection. Re-entering

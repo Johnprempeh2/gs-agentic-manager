@@ -3779,8 +3779,8 @@ export function issueRoutes(
   const agentsSvc = agentService(db);
   const boardChats = strategyBoardChatService(db);
   const teamChats = teamChatService(db);
-  // GRE-1090: refuse these feature routes while their managed switch is off,
-  // before validation. Agent Chat on existing conversations checks per route.
+  // GRE-1622: External Objects ignores the stored switch, but a managed config
+  // or the entitlement document can still turn it off.
   router.use(
     [
       "/issues/:id/external-objects",
@@ -3789,11 +3789,6 @@ export function issueRoutes(
     ],
     requireEntitlement(instanceSettings, "enableExternalObjects"),
   );
-  router.get(
-    "/issues/:id/accepted-plan-decompositions",
-    requireEntitlement(instanceSettings, "enableIssuePlanDecompositions"),
-  );
-  router.use("/companies/:companyId/chats", requireEntitlement(instanceSettings, "enableAgentChat"));
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
@@ -16681,11 +16676,8 @@ export function issueRoutes(
       if (!issue) return;
       const decision = await decideIssueAccess(req, issue, "issue:comment");
       if (!decision.allowed) throw forbidden(decision.explanation, authorizationDeniedDetails(decision));
-      if (issue.conversationAgentId) {
-        await assertEntitled(instanceSettings, "enableAgentChat");
-        if (req.actor.userId !== issue.conversationUserId) {
-          throw forbidden("Only the conversation owner can interrupt a chat to send queued messages");
-        }
+      if (issue.conversationAgentId && req.actor.userId !== issue.conversationUserId) {
+        throw forbidden("Only the conversation owner can interrupt a chat to send queued messages");
       }
       const actor = getActorInfo(req);
       const runToInterrupt = await db.transaction(async (tx) => {
@@ -18758,7 +18750,7 @@ export function issueRoutes(
       );
       if (!issue) return;
       if (issue.conversationAgentId && req.actor.type === "board") {
-        await assertEntitled(instanceSettings, isBoardQuestionChat(issue) ? "enableStrategyBoard" : "enableAgentChat");
+        if (isBoardQuestionChat(issue)) await assertEntitled(instanceSettings, "enableStrategyBoard");
         if (!req.actor.userId) throw forbidden("Board user access required");
         if (req.actor.userId !== issue.conversationUserId) throw forbidden("Only the conversation owner can send messages or start a new session");
         if (!req.body.clientRequestId) throw unprocessable("Chat messages require a clientRequestId for safe retries");
@@ -19996,9 +19988,6 @@ export function issueRoutes(
       if (issue.companyId !== companyId) {
         res.status(422).json({ error: "Issue does not belong to company" });
         return;
-      }
-      if (issue.conversationAgentId && req.actor.type === "board") {
-        await assertEntitled(instanceSettings, "enableAgentChat");
       }
       if (issue.conversationAgentId && req.actor.type === "board" && req.actor.userId !== issue.conversationUserId) {
         throw forbidden("Only the conversation owner can upload attachments");

@@ -254,7 +254,9 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
   const parsed = instanceExperimentalSettingsStorageSchema.safeParse(raw ?? {});
   if (parsed.success) {
     return {
-      enableEnvironments: parsed.data.enableEnvironments ?? false,
+      // Greatstone (GRE-1623): Environments graduated; a stored off value is
+      // ignored. A managed config can still pin it off (client editions do).
+      enableEnvironments: true,
       // Greatstone (GRE-1436): Runner graduated from Experimental. Ignore
       // stored off values but keep accepting the compatibility key.
       enableNativeRunner: true,
@@ -269,34 +271,48 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // continuing to accept the compatibility key in stored settings.
       enableApps: true,
       enableMcpAggregators: true,
-      enableChatConnectors: parsed.data.enableChatConnectors ?? false,
-      enableMemoryConnectors: parsed.data.enableMemoryConnectors ?? false,
+      // Greatstone (GRE-1620): Chat and Memory connectors graduated; a stored
+      // off value is ignored.
+      enableChatConnectors: true,
+      enableMemoryConnectors: true,
       enablePipelines: parsed.data.enablePipelines ?? false,
-      enableCases: parsed.data.enableCases ?? false,
+      // Greatstone (GRE-1622): Cases graduated; a stored off value is ignored.
+      // A managed config or the entitlement document can still pin it off.
+      enableCases: true,
       enableDeepDive: parsed.data.enableDeepDive ?? false,
       enableStrategy: parsed.data.enableStrategy ?? true,
       enableStrategyBoard: parsed.data.enableStrategyBoard ?? false,
       strategyBoardSecretaryAgentId: parsed.data.strategyBoardSecretaryAgentId ?? null,
       enableWebsiteView: parsed.data.enableWebsiteView ?? false,
       enableIntelligence: parsed.data.enableIntelligence ?? false,
-      enableAgentChat: parsed.data.enableAgentChat ?? false,
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      enableAgentChat: true,
       enableTeamChat: parsed.data.enableTeamChat ?? false,
       // Greatstone (GRE-1624): graduated; a stored off value is ignored.
       enableConferenceRoomChat: true,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
-      enableIssuePlanDecompositions: parsed.data.enableIssuePlanDecompositions ?? false,
-      enableExperimentalFileViewer: parsed.data.enableExperimentalFileViewer ?? false,
-      enableExternalObjects: parsed.data.enableExternalObjects ?? false,
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      enableIssuePlanDecompositions: true,
+      // Greatstone (GRE-1623): graduated; a stored off value is ignored.
+      enableExperimentalFileViewer: true,
+      // Greatstone (GRE-1622): graduated; a stored off value is ignored. A
+      // managed config or the entitlement document can still pin it off.
+      enableExternalObjects: true,
       enableSmokeLab: parsed.data.enableSmokeLab ?? false,
-      enableBuiltInAgents: parsed.data.enableBuiltInAgents ?? false,
-      enableBetaSkills: parsed.data.enableBetaSkills ?? false,
-      enableSummaries: parsed.data.enableSummaries ?? false,
-      enableStatusCards: parsed.data.enableStatusCards ?? false,
+      // Greatstone (GRE-1621): graduated; stored off values are ignored.
+      enableBuiltInAgents: true,
+      enableBetaSkills: true,
+      // Greatstone (GRE-1622): Summaries and Status Cards graduated; a stored
+      // off value is ignored.
+      enableSummaries: true,
+      enableStatusCards: true,
       enableDecisions: parsed.data.enableDecisions ?? true,
       enableGoalsSidebarLink: parsed.data.enableGoalsSidebarLink ?? false,
-      enableServerInfoDebugView: parsed.data.enableServerInfoDebugView ?? false,
+      // Greatstone (GRE-1623): graduated; a stored off value is ignored.
+      enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: parsed.data.enablePaperclipDeveloperMode ?? false,
-      enableSimplifiedEnglishInteractions: parsed.data.enableSimplifiedEnglishInteractions ?? false,
+      // Greatstone (GRE-1621): graduated; a stored off value is ignored.
+      enableSimplifiedEnglishInteractions: true,
       enableFirstTaskPlanProposal: parsed.data.enableFirstTaskPlanProposal ?? false,
       autoRestartDevServerWhenIdle: parsed.data.autoRestartDevServerWhenIdle ?? false,
       // Greatstone (GRE-1438): graduated; a stored off value is ignored.
@@ -313,7 +329,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     };
   }
   return {
-    enableEnvironments: false,
+    enableEnvironments: true,
     enableNativeRunner: true,
     enableManagedSandboxOnly: false,
     enableIsolatedWorkspaces: true,
@@ -322,33 +338,33 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableStreamlinedUi: true,
     enableApps: true,
     enableMcpAggregators: true,
-    enableChatConnectors: false,
-    enableMemoryConnectors: false,
+    enableChatConnectors: true,
+    enableMemoryConnectors: true,
     enablePipelines: false,
-    enableCases: false,
+    enableCases: true,
     enableDeepDive: false,
     enableStrategy: true,
     enableStrategyBoard: false,
     strategyBoardSecretaryAgentId: null,
     enableWebsiteView: false,
     enableIntelligence: false,
-    enableAgentChat: false,
+    enableAgentChat: true,
     enableTeamChat: false,
     enableConferenceRoomChat: true,
     enableClassicTaskInterface: false,
-    enableIssuePlanDecompositions: false,
-    enableExperimentalFileViewer: false,
-    enableExternalObjects: false,
+    enableIssuePlanDecompositions: true,
+    enableExperimentalFileViewer: true,
+    enableExternalObjects: true,
     enableSmokeLab: false,
-    enableBuiltInAgents: false,
-    enableBetaSkills: false,
-    enableSummaries: false,
-    enableStatusCards: false,
+    enableBuiltInAgents: true,
+    enableBetaSkills: true,
+    enableSummaries: true,
+    enableStatusCards: true,
     enableDecisions: true,
     enableGoalsSidebarLink: false,
-    enableServerInfoDebugView: false,
+    enableServerInfoDebugView: true,
     enablePaperclipDeveloperMode: false,
-    enableSimplifiedEnglishInteractions: false,
+    enableSimplifiedEnglishInteractions: true,
     enableFirstTaskPlanProposal: false,
     autoRestartDevServerWhenIdle: false,
     enableWorkspaceBranchReconcileForward: true,
@@ -397,6 +413,23 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.
     if (key === "enableIsolatedWorkspaces") continue;
+    // Greatstone (GRE-1620): Chat and Memory connectors are always on; a managed "off" is ignored.
+    if (key === "enableChatConnectors" || key === "enableMemoryConnectors") continue;
+    // Greatstone (GRE-1622): Summaries and Status Cards are always on; a
+    // managed "off" is ignored. Cases and External Objects keep the managed
+    // value: client editions pin them off and billing modules sell them.
+    if (key === "enableSummaries" || key === "enableStatusCards") continue;
+    // Greatstone (GRE-1621): Agent Chat, Task Plan Decomposition, Built-in
+    // Agents, Beta skills and Simplified English are always on; a managed "off" is ignored.
+    if (
+      key === "enableAgentChat" ||
+      key === "enableIssuePlanDecompositions" ||
+      key === "enableBuiltInAgents" ||
+      key === "enableBetaSkills" ||
+      key === "enableSimplifiedEnglishInteractions"
+    ) {
+      continue;
+    }
     // Greatstone (GRE-1624): Conference Room Chat is always on; a managed "off" is ignored.
     if (key === "enableConferenceRoomChat") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.

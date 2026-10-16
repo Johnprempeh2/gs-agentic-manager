@@ -24,7 +24,7 @@ import { useRecoveryActionHandlers } from "./useRecoveryActionHandlers";
 import { useThreadHandlers } from "./useThreadHandlers";
 import { useIssueDetailDerivedState } from "./useIssueDetailDerivedState";
 import { useIssueAndComments } from "./useIssueAndComments";
-import type { IssueThreadInteraction, InstanceExperimentalSettingsWithManaged, IssueAttachment, IssueWorkProduct, FeedbackVote, AskUserQuestionsInteraction } from "@greatstone/shared";
+import type { IssueThreadInteraction, IssueAttachment, IssueWorkProduct, FeedbackVote, AskUserQuestionsInteraction } from "@greatstone/shared";
 import type { CurrentBoardAccess } from "@/api/access";
 import type { JSX, RefObject, Dispatch, SetStateAction } from "react";
 import type { MentionOption } from "@/components/MarkdownEditor";
@@ -51,7 +51,6 @@ export type IssueDetailChatPanelProps = {
   retryDispositionRecovery: ReturnType<typeof useIssueMutations>["retryDispositionRecovery"];
   handleOpenSkill: (skillId: string, name: string) => void;
   taskChatThreadHeader: JSX.Element | undefined;
-  instanceExperimentalSettings: InstanceExperimentalSettingsWithManaged | undefined;
   updateIssue: ReturnType<typeof useIssueMutations>["updateIssue"];
   mentionOptions: MentionOption[];
   externalObjectsState: IssueExternalObjectsResult;
@@ -160,7 +159,6 @@ export function IssueDetailChatPanel({
   retryDispositionRecovery,
   handleOpenSkill,
   taskChatThreadHeader,
-  instanceExperimentalSettings,
   updateIssue,
   mentionOptions,
   externalObjectsState,
@@ -293,7 +291,7 @@ export function IssueDetailChatPanel({
         }}>
         <IssueDetailChatTab
           onOpenSkill={handleOpenSkill}
-          threadHeader={<>{taskChatThreadHeader}{instanceExperimentalSettings?.enableChatConnectors && <EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} />}</>}
+          threadHeader={<>{taskChatThreadHeader}<EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} /></>}
           issueBrief={
             // Suppress the seeded-description bubble for the onboarding first
             // task: its description is agent instructions, not something the
@@ -438,7 +436,7 @@ export function IssueDetailChatPanel({
             } : undefined,
             resumeHref: !activePauseHold.isRoot ? createIssueDetailPath(activePauseHoldRoot?.identifier ?? activePauseHold.rootIssueId) : undefined,
           } : null}
-          composerDisabledReason={issue.conversationAgentId && !questionsOnly && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is disabled in Experimental settings." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
+          composerDisabledReason={treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
           composerHint={composerHint}
           queuedCommentReason={queuedCommentReason}
           onVote={handleCommentVote}

@@ -113,6 +113,10 @@ export interface InstanceSystemMemory {
 }
 
 export interface InstanceExperimentalSettings {
+  /**
+   * Compatibility key (GRE-1623): Environments graduated and reads as true.
+   * A managed config or the entitlement document can still turn it off.
+   */
   enableEnvironments: boolean;
   /**
    * @deprecated Compatibility-only (GRE-1436). The GS Agentic Manager Runner
@@ -143,15 +147,19 @@ export interface InstanceExperimentalSettings {
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;
-  /** Exposes chat connector setup and Board surfaces; existing delivery continues when hidden. */
+  /** Compatibility key (GRE-1620): chat connectors are always on; reads as true. */
   enableChatConnectors: boolean;
   /** @deprecated Compatibility key only. MCP aggregators are always enabled. */
   enableMcpAggregators: boolean;
-  /** Show experimental memory connection setup. Existing connections remain usable. */
+  /** Compatibility key (GRE-1620): memory connectors are always on; reads as true. */
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Cases off.
+   */
   enableCases: boolean;
-  /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
+  /** Greatstone: the Deep Dive page (Book V streams and GIF), stored as Cases. */
   enableDeepDive: boolean;
   /** Greatstone: the Strategy module, the KPI cascade and KPI readings (GRE-1382). */
   enableStrategy: boolean;
@@ -166,30 +174,40 @@ export interface InstanceExperimentalSettings {
   enableWebsiteView: boolean;
   /** Greatstone: the Intelligence page (Daily Pulse and AI hub). Off = `403 not_entitled`. */
   enableIntelligence: boolean;
+  /** Compatibility key (GRE-1621): Agent Chat is always on; reads as true. */
   enableAgentChat: boolean;
   /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
   enableTeamChat: boolean;
   /** Compatibility key (GRE-1624): Conference Room Chat is always on; reads as true. */
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
+  /** Compatibility key (GRE-1621): Task Plan Decomposition is always on; reads as true. */
   enableIssuePlanDecompositions: boolean;
+  /** Compatibility key (GRE-1623): the task file viewer is always on; reads as true. */
   enableExperimentalFileViewer: boolean;
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn it off.
+   */
   enableExternalObjects: boolean;
   enableSmokeLab: boolean;
+  /** Compatibility key (GRE-1621): Built-in Agents are always on; reads as true. */
   enableBuiltInAgents: boolean;
+  /** Compatibility key (GRE-1621): Beta skill pins are always allowed; reads as true. */
   enableBetaSkills: boolean;
+  /** Compatibility key (GRE-1622): Summaries are always on; reads as true. */
   enableSummaries: boolean;
+  /** Compatibility key (GRE-1622): Status Cards are always on; reads as true. */
   enableStatusCards: boolean;
   enableDecisions: boolean;
   enableGoalsSidebarLink: boolean;
+  /** Compatibility key (GRE-1623): the account drawer Server section always shows; reads as true. */
   enableServerInfoDebugView: boolean;
   /** Shows internal GS Agentic Manager maintainer tools and observability links. */
   enablePaperclipDeveloperMode: boolean;
   /**
-   * Instructs agents to write user-interaction content (confirmations,
-   * questions, suggested tasks, checkbox prompts) in ASD-STE100 Simplified
-   * Technical English with brief decision context. Prompt-side only; no
-   * behavior change outside interaction wording.
+   * Compatibility key (GRE-1621): agents always write user-interaction content
+   * in ASD-STE100 Simplified Technical English; reads as true.
    */
   enableSimplifiedEnglishInteractions: boolean;
   /**

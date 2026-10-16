@@ -5,9 +5,8 @@ import {
 } from "./instance.js";
 
 describe("instance experimental settings validators", () => {
-  it("defaults chat connectors off independently of Apps and accepts only explicit boolean patches", () => {
-    expect(instanceExperimentalSettingsSchema.parse({}).enableChatConnectors).toBe(false);
-    expect(instanceExperimentalSettingsSchema.parse({ enableApps: true }).enableChatConnectors).toBe(false);
+  it("defaults the graduated chat connectors key on and still parses explicit boolean patches (GRE-1620)", () => {
+    expect(instanceExperimentalSettingsSchema.parse({}).enableChatConnectors).toBe(true);
     expect(patchInstanceExperimentalSettingsSchema.parse({ enableChatConnectors: true }))
       .toEqual({ enableChatConnectors: true });
     expect(patchInstanceExperimentalSettingsSchema.parse({ enableChatConnectors: false }))
@@ -21,10 +20,12 @@ describe("instance experimental settings validators", () => {
     ).toEqual({ enableStreamlinedUi: false });
   });
 
-  it("defaults the server info debug view off", () => {
+  it("defaults the graduated File Viewer, Server Info and Environments keys on (GRE-1623)", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
-    expect(settings.enableServerInfoDebugView).toBe(false);
+    expect(settings.enableServerInfoDebugView).toBe(true);
+    expect(settings.enableExperimentalFileViewer).toBe(true);
+    expect(settings.enableEnvironments).toBe(true);
   });
 
   it("defaults GS Agentic Manager developer mode off and accepts explicit patches", () => {
@@ -100,16 +101,16 @@ describe("instance experimental settings validators", () => {
     });
   });
 
-  it("defaults built-in agents off", () => {
+  it("defaults the GRE-1621 graduated compatibility keys on", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
-    expect(settings.enableBuiltInAgents).toBe(false);
-  });
-
-  it("defaults beta skills off", () => {
-    const settings = instanceExperimentalSettingsSchema.parse({});
-
-    expect(settings.enableBetaSkills).toBe(false);
+    expect(settings).toMatchObject({
+      enableAgentChat: true,
+      enableIssuePlanDecompositions: true,
+      enableBuiltInAgents: true,
+      enableBetaSkills: true,
+      enableSimplifiedEnglishInteractions: true,
+    });
   });
 
   it("defaults the retired Apps compatibility key on", () => {

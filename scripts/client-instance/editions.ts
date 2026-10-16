@@ -39,23 +39,15 @@ export const MANAGED_FEATURES_OFF = [
   "enableWebsiteView",
   // Intelligence page (Daily Pulse and AI hub): Greatstone internal for now.
   "enableIntelligence",
-  "enableAgentChat",
   "enableTeamChat",
   "enableConferenceRoomChat",
-  "enableSummaries",
-  "enableStatusCards",
-  "enableChatConnectors",
-  "enableMemoryConnectors",
   "enableExternalObjects",
-  "enableBuiltInAgents",
   "enableSmokeLab",
   "enableWorktreeRunExecution",
   "enableSandboxDuplexBridge",
   "enableNativeRunner",
   "enableEnvironments",
   "enableOwnerInstanceAdmin",
-  // GRE-575: beta history view on task pages; off by default, now pinned off.
-  "enableIssuePlanDecompositions",
   // GRE-1382: Strategy module (KPI cascade and readings). Off in Managed; it is
   // sold apart from basic goals (D2 rule 2 on GRE-1354).
   "enableStrategy",
@@ -74,6 +66,8 @@ export const MANAGED_FEATURES_OFF = [
 export const CLIENT_DEFAULT_OK = {
   enableApps: "Compatibility key; Apps is always on and the app ignores the value.",
   enableMcpAggregators: "Compatibility key; MCP aggregators are always on and the app ignores the value.",
+  enableChatConnectors: "Compatibility key; Chat connectors graduated (GRE-1620), are always on and the app ignores the value.",
+  enableMemoryConnectors: "Compatibility key; Memory connectors graduated (GRE-1620), are always on and the app ignores the value.",
   enableRunnerPreviewIngress: "Deprecated compatibility key; runner ingress follows the Runner setting.",
   enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
   enableClassicTaskInterface: "Off by default; clients use the chat task page.",
@@ -82,12 +76,22 @@ export const CLIENT_DEFAULT_OK = {
     "Compatibility key; branch reconcile forward graduated (GRE-1438), is always on and the app ignores the value.",
   enableWorkspaceDirtyQuarantineRepair:
     "Compatibility key; dirty quarantine repair graduated (GRE-1439), is always on and the app ignores the value.",
-  enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
+  enableExperimentalFileViewer:
+    "Compatibility key; the file viewer graduated (GRE-1623), is always on and the app ignores the value.",
+  enableSummaries: "Compatibility key; Summaries graduated (GRE-1622), is always on and the app ignores the value.",
+  enableStatusCards: "Compatibility key; Status Cards graduated (GRE-1622), is always on and the app ignores the value.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
-  enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",
-  enableBetaSkills: "Off by default; clients run released skills only.",
+  enableAgentChat: "Compatibility key; Agent Chat graduated (GRE-1621), is always on and the app ignores the value.",
+  enableBuiltInAgents:
+    "Compatibility key; Built-in Agents graduated (GRE-1621), is always on and the app ignores the value.",
+  enableIssuePlanDecompositions:
+    "Compatibility key; Task Plan Decomposition graduated (GRE-1621), is always on and the app ignores the value.",
+  enableSimplifiedEnglishInteractions:
+    "Compatibility key; Simplified English Interactions graduated (GRE-1621), is always on and the app ignores the value.",
+  enableBetaSkills: "Compatibility key; Beta skills graduated (GRE-1621), is always on and the app ignores the value.",
   enablePaperclipDeveloperMode: "Off by default; maintainer tools only.",
-  enableServerInfoDebugView: "Off by default; maintainer debug view only.",
+  enableServerInfoDebugView:
+    "Compatibility key; the Server Info view graduated (GRE-1623), is always on and the app ignores the value.",
   autoRestartDevServerWhenIdle: "Off by default; local development only.",
 } as const satisfies Partial<Record<InstanceFeatureKey, string>>;
 

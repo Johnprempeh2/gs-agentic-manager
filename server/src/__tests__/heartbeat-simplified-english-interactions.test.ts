@@ -22,7 +22,9 @@ const INTERACTION_DIRECTIVE = "ASD-STE100 Simplified Technical English";
 
 const support = await getEmbeddedPostgresTestSupport();
 const suite = support.supported ? describe : describe.skip;
-suite("enableSimplifiedEnglishInteractions reaches the agent run", () => {
+// Simplified English Interactions graduated (GRE-1621): every run carries the
+// directive, whatever the old stored setting says.
+suite("Simplified English Interactions reaches every agent run", () => {
   let database: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>>;
   let db: ReturnType<typeof createDb>;
   let root: string;
@@ -49,12 +51,11 @@ suite("enableSimplifiedEnglishInteractions reaches the agent run", () => {
   }, 60_000);
   afterEach(async () => {
     await drainHeartbeatRunsToQuiescence(db, heartbeat);
-    await instanceSettingsService(db).updateExperimental({ enableSimplifiedEnglishInteractions: false });
   });
 
-  it.each([true, false])("with the switch %s, the run prompt carries the interaction directive only when on", async (enabled) => {
+  it.each([true, false])("with the old setting stored %s, the run prompt carries the interaction directive", async (stored) => {
     const companyId = randomUUID(), agentId = randomUUID(), issueId = randomUUID();
-    await instanceSettingsService(db).updateExperimental({ enableSimplifiedEnglishInteractions: enabled });
+    await instanceSettingsService(db).updateExperimental({ enableSimplifiedEnglishInteractions: stored });
     await db.insert(companies).values({ id: companyId, name: "Plain words", issuePrefix: `S${companyId.slice(0, 6)}`, defaultResponsibleUserId: "responsible-user" });
     await db.insert(agents).values({ id: agentId, companyId, name: "Writer", role: "engineer", status: "idle", adapterType: "process", adapterConfig: {}, runtimeConfig: {}, permissions: {} });
     await db.insert(issues).values({ id: issueId, companyId, title: "Ask the user a question", status: "todo", assigneeAgentId: agentId });
@@ -67,9 +68,7 @@ suite("enableSimplifiedEnglishInteractions reaches the agent run", () => {
     expect(calls).toHaveLength(1);
     const wake = calls[0]![0].context.paperclipWake;
     expect(wake).toBeTruthy();
-    expect(wake.simplifiedEnglishInteractions).toBe(enabled);
-    const prompt = renderPaperclipWakePrompt(wake);
-    if (enabled) expect(prompt).toContain(INTERACTION_DIRECTIVE);
-    else expect(prompt).not.toContain("ASD-STE100");
+    expect(wake.simplifiedEnglishInteractions).toBe(true);
+    expect(renderPaperclipWakePrompt(wake)).toContain(INTERACTION_DIRECTIVE);
   }, 25_000);
 });

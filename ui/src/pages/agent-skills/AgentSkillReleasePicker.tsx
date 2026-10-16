@@ -57,8 +57,8 @@ export interface AgentSkillReleasePickerProps {
 }
 
 /**
- * Release picker for the paperclip core skill. Only rendered when the
- * `enableBetaSkills` experimental flag is on and the skill has seeded releases.
+ * Release picker for the paperclip core skill. Only rendered when the skill
+ * has seeded releases (Beta skills graduated, GRE-1621).
  * Selecting a release pins the agent to that frozen snapshot; "Default" clears
  * the pin and returns the agent to the live skill.
  */

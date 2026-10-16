@@ -7,7 +7,6 @@ import {
   LEGACY_DISPOSITION_REPAIR_INSTRUCTION, type LegacyDispositionEpisode,
 } from "./legacy-continuation.js";
 import { hasLiveLegacyController } from "../legacy-controller-lease.js";
-import { instanceSettingsService } from "../instance-settings.js";
 import { isWaitingConversation, settleConversationTurn, deliverConversationComments } from "../agent-conversations.js";
 import {
   and,
@@ -4822,10 +4821,7 @@ export function recoveryService(
             if (current) Object.assign(issue, current);
           }
         }
-        if (!(await instanceSettingsService(db).getExperimental()).enableAgentChat) { result.skipped += 1; continue; }
-        {
-          await deliverConversationComments(db, issue, deps.enqueueWakeup);
-        }
+        await deliverConversationComments(db, issue, deps.enqueueWakeup);
       }
       if (isWaitingConversation(issue)) { result.skipped += 1; continue; }
       const executionState = issue.status === "in_review"

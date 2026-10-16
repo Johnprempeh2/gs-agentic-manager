@@ -938,8 +938,9 @@ describe("Agents", () => {
     expect(container.querySelector('select[aria-label="Group agents"]')).toBeNull();
   });
 
-  it("hides built-in agent surfaces while the experimental flag is disabled", async () => {
+  it("shows built-in agent surfaces even when an old stored setting says off (graduated, GRE-1621)", async () => {
     mockRouterState.pathname = "/agents/builtin";
+    mockInstanceSettingsApi.get.mockResolvedValue(makeInstanceSettings({ enableBuiltInAgents: false }));
 
     root = createRoot(container);
     await act(async () => {
@@ -954,9 +955,9 @@ describe("Agents", () => {
     await flushReact();
     await flushReact();
 
-    expect(mockBuiltInAgentsApi.list).not.toHaveBeenCalled();
-    expect(container.textContent).not.toContain("Built-in");
-    expect(mockRouterState.navigate).toHaveBeenCalledWith("/agents/all", { replace: true });
+    expect(mockBuiltInAgentsApi.list).toHaveBeenCalled();
+    expect(container.textContent).toContain("Built-in");
+    expect(mockRouterState.navigate).not.toHaveBeenCalledWith("/agents/all", { replace: true });
   });
 
   it("shows and filters built-in agents when the experimental flag is enabled", async () => {
