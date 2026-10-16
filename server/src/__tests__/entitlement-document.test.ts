@@ -266,15 +266,17 @@ describe("entitlement runtime", () => {
     expect(applyEntitlementsToExperimental({ enableWebsiteView: false }, rt).enableWebsiteView).toBe(false);
   });
 
-  it("never turns off the graduated Cases, External Objects, Summaries or Status Cards (GRE-1622)", async () => {
+  it("never turns off the graduated Summaries or Status Cards, but still governs Cases and External Objects (GRE-1622)", async () => {
     const off = { enableCases: false, enableExternalObjects: false, enableSummaries: false, enableStatusCards: false };
     await fs.writeFile(paths.filePath, signedFile(documentFor({ features: off })));
     const rt = runtime();
     await rt.start();
     const on = { enableCases: true, enableExternalObjects: true, enableSummaries: true, enableStatusCards: true };
-    // A document that names them, and the base floor, both leave them on.
-    expect(applyEntitlementsToExperimental(on, rt)).toMatchObject(on);
-    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(expect.arrayContaining(Object.keys(on)));
+    // Summaries and Status Cards are not sold, so a document cannot turn them off.
+    // Cases (CRM) and External Objects (software development) are sold modules.
+    expect(applyEntitlementsToExperimental(on, rt)).toMatchObject({ ...on, enableCases: false, enableExternalObjects: false });
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).not.toEqual(expect.arrayContaining(["enableSummaries", "enableStatusCards"]));
+    expect(Object.keys(ENTITLEMENT_BASE_FLOOR)).toEqual(expect.arrayContaining(["enableCases", "enableExternalObjects"]));
   });
 
   it("passes settings through unchanged when entitlements are not configured", () => {

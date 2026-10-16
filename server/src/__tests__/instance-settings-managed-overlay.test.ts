@@ -165,15 +165,32 @@ describe("instanceSettingsService managed overlay", () => {
       experimental: { enableChatConnectors: true, enableMemoryConnectors: true },
     });
   });
-  it("keeps Cases, External Objects, Summaries and Status Cards on when stored and managed values say off (GRE-1622)", async () => {
-    const off = { enableCases: false, enableExternalObjects: false, enableSummaries: false, enableStatusCards: false };
-    const on = { enableCases: true, enableExternalObjects: true, enableSummaries: true, enableStatusCards: true };
+  it("keeps Summaries and Status Cards on when stored and managed values say off (GRE-1622)", async () => {
+    const off = { enableSummaries: false, enableStatusCards: false };
+    const on = { enableSummaries: true, enableStatusCards: true };
     const { db } = stubDb(settingsRow(off));
     const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
       v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
     })) });
     expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
     expect(await service.updateExperimental(off)).toMatchObject({ experimental: on });
+  });
+
+  it("ignores a stored Cases or External Objects off, but keeps a managed off for client editions (GRE-1622)", async () => {
+    const off = { enableCases: false, enableExternalObjects: false };
+    const stored = instanceSettingsService(stubDb(settingsRow(off)).db, { runtimeEnv: {} });
+    expect(await stored.getExperimental()).toMatchObject({ enableCases: true, enableExternalObjects: true });
+
+    const managed = instanceSettingsService(stubDb(settingsRow({})).db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    expect(await managed.getExperimental()).toMatchObject({
+      ...off,
+      managedKeys: {
+        enableCases: { managed: true, managedBy: "paperclip-cloud" },
+        enableExternalObjects: { managed: true, managedBy: "paperclip-cloud" },
+      },
+    });
   });
 
   it("fails closed at construction on a malformed managed config", () => {

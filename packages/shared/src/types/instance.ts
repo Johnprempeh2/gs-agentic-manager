@@ -145,7 +145,10 @@ export interface InstanceExperimentalSettings {
   /** Compatibility key (GRE-1620): memory connectors are always on; reads as true. */
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
-  /** Compatibility key (GRE-1622): Cases are always on; reads as true. */
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Cases off.
+   */
   enableCases: boolean;
   /** Greatstone: the Deep Dive page (Book V streams and GIF), stored as Cases. */
   enableDeepDive: boolean;
@@ -170,7 +173,10 @@ export interface InstanceExperimentalSettings {
   enableIssuePlanDecompositions: boolean;
   /** Compatibility key (GRE-1623): the task file viewer is always on; reads as true. */
   enableExperimentalFileViewer: boolean;
-  /** Compatibility key (GRE-1622): External Objects are always on; reads as true. */
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn it off.
+   */
   enableExternalObjects: boolean;
   enableSmokeLab: boolean;
   enableBuiltInAgents: boolean;

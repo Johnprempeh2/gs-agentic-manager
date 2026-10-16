@@ -65,8 +65,11 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableCases: {
-    kind: "runtime",
-    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
+    kind: "api",
+    probes: [
+      { method: "get", path: `${COMPANY}/cases` },
+      { method: "post", path: `${COMPANY}/cases` },
+    ],
   },
   enableStatusCards: {
     kind: "runtime",
@@ -110,8 +113,14 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
   },
   enableExternalObjects: {
-    kind: "runtime",
-    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
+    kind: "api",
+    probes: [
+      { method: "get", path: `/issues/${ID}/external-objects` },
+      { method: "post", path: `/issues/${ID}/external-objects/refresh` },
+      { method: "get", path: `/issues/${ID}/external-object-summary` },
+      { method: "post", path: `${COMPANY}/issues/external-object-summaries` },
+      { method: "get", path: `/projects/${ID}/external-object-summary` },
+    ],
   },
   enableIssuePlanDecompositions: {
     kind: "api",

@@ -33,6 +33,7 @@ export const MANAGED_FEATURES_ON = [
 export const MANAGED_FEATURES_OFF = [
   "enableManagedSandboxOnly",
   "enablePipelines",
+  "enableCases",
   "enableDeepDive",
   // GRE-1087: Website view; which edition gets it is Harbor and John's call.
   "enableWebsiteView",
@@ -42,6 +43,7 @@ export const MANAGED_FEATURES_OFF = [
   "enableTeamChat",
   "enableConferenceRoomChat",
   "enableBuiltInAgents",
+  "enableExternalObjects",
   "enableSmokeLab",
   "enableWorktreeRunExecution",
   "enableSandboxDuplexBridge",
@@ -80,9 +82,6 @@ export const CLIENT_DEFAULT_OK = {
     "Compatibility key; dirty quarantine repair graduated (GRE-1439), is always on and the app ignores the value.",
   enableExperimentalFileViewer:
     "Compatibility key; the file viewer graduated (GRE-1623), is always on and the app ignores the value.",
-  enableCases: "Compatibility key; Cases graduated (GRE-1622), is always on and the app ignores the value.",
-  enableExternalObjects:
-    "Compatibility key; External Objects graduated (GRE-1622), is always on and the app ignores the value.",
   enableSummaries: "Compatibility key; Summaries graduated (GRE-1622), is always on and the app ignores the value.",
   enableStatusCards: "Compatibility key; Status Cards graduated (GRE-1622), is always on and the app ignores the value.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",

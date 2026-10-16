@@ -658,7 +658,7 @@ describe("IssuesList", () => {
     }
   });
 
-  it("loads external-object summaries even when an old stored flag is off (GRE-1622)", async () => {
+  it("does not load external-object summaries when the experimental flag is disabled", async () => {
     const { root } = renderWithQueryClient(
       <IssuesList
         issues={[createIssue()]}
@@ -672,9 +672,10 @@ describe("IssuesList", () => {
     );
 
     await waitForAssertion(() => {
+      expect(mockInstanceSettingsApi.getExperimental).toHaveBeenCalled();
       expect(container.querySelector("[data-testid='issue-row']")).not.toBeNull();
-      expect(mockExternalObjectsApi.getIssueSummaries).toHaveBeenCalled();
     });
+    expect(mockExternalObjectsApi.getIssueSummaries).not.toHaveBeenCalled();
 
     act(() => {
       root.unmount();

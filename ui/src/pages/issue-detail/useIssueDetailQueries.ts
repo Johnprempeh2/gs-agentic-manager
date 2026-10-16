@@ -279,9 +279,9 @@ export function useIssueDetailQueries({
     retry: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;
-  // Cases graduated out of Experimental (GRE-1622): always linkify `PAP-C7`
-  // chips in this issue's comment bodies.
-  const casesChipsEnabled = true;
+  // Cases: linkify `PAP-C7` chips in this issue's comment bodies. A stored
+  // switch is ignored (GRE-1622); a client plan can still turn Cases off.
+  const casesChipsEnabled = instanceExperimentalSettings?.enableCases === true;
   const feedbackDataSharingPreference =
     instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
   const showPlanDecompositionsSection =

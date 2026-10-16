@@ -71,16 +71,17 @@ describe("IssueCasesPanel", () => {
     return root;
   }
 
-  it("renders linked cases even when an old stored Cases flag is off (GRE-1622)", async () => {
+  it("renders nothing when the Cases flag is off", async () => {
     mockInstanceApi.getExperimental.mockResolvedValue({ enableCases: false });
     mockCasesApi.listForIssue.mockResolvedValue(links);
     const root = await render();
-    expect(container.textContent).toContain("PAP-C7");
-    expect(mockCasesApi.listForIssue).toHaveBeenCalledWith("issue-1");
+    expect(container.textContent).toBe("");
+    expect(mockCasesApi.listForIssue).not.toHaveBeenCalled();
     act(() => root.unmount());
   });
 
-  it("renders linked cases with role + status", async () => {
+  it("renders linked cases with role + status when enabled", async () => {
+    mockInstanceApi.getExperimental.mockResolvedValue({ enableCases: true });
     mockCasesApi.listForIssue.mockResolvedValue(links);
     const root = await render();
     const text = container.textContent ?? "";
@@ -93,7 +94,8 @@ describe("IssueCasesPanel", () => {
     act(() => root.unmount());
   });
 
-  it("renders nothing when no cases are linked", async () => {
+  it("renders nothing when enabled but no cases are linked", async () => {
+    mockInstanceApi.getExperimental.mockResolvedValue({ enableCases: true });
     mockCasesApi.listForIssue.mockResolvedValue([]);
     const root = await render();
     expect(container.textContent).toBe("");

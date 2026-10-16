@@ -275,6 +275,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableMemoryConnectors: true,
       enablePipelines: parsed.data.enablePipelines ?? false,
       // Greatstone (GRE-1622): Cases graduated; a stored off value is ignored.
+      // A managed config or the entitlement document can still pin it off.
       enableCases: true,
       enableDeepDive: parsed.data.enableDeepDive ?? false,
       enableStrategy: parsed.data.enableStrategy ?? true,
@@ -289,7 +290,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableIssuePlanDecompositions: parsed.data.enableIssuePlanDecompositions ?? false,
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
       enableExperimentalFileViewer: true,
-      // Greatstone (GRE-1622): graduated; a stored off value is ignored.
+      // Greatstone (GRE-1622): graduated; a stored off value is ignored. A
+      // managed config or the entitlement document can still pin it off.
       enableExternalObjects: true,
       enableSmokeLab: parsed.data.enableSmokeLab ?? false,
       enableBuiltInAgents: parsed.data.enableBuiltInAgents ?? false,
@@ -406,16 +408,10 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableIsolatedWorkspaces") continue;
     // Greatstone (GRE-1620): Chat and Memory connectors are always on; a managed "off" is ignored.
     if (key === "enableChatConnectors" || key === "enableMemoryConnectors") continue;
-    // Greatstone (GRE-1622): Cases, External Objects, Summaries and Status
-    // Cards are always on; a managed "off" is ignored.
-    if (
-      key === "enableCases" ||
-      key === "enableExternalObjects" ||
-      key === "enableSummaries" ||
-      key === "enableStatusCards"
-    ) {
-      continue;
-    }
+    // Greatstone (GRE-1622): Summaries and Status Cards are always on; a
+    // managed "off" is ignored. Cases and External Objects keep the managed
+    // value: client editions pin them off and billing modules sell them.
+    if (key === "enableSummaries" || key === "enableStatusCards") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;

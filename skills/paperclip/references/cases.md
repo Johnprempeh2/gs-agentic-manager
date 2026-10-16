@@ -5,7 +5,9 @@ research packets, release notes, incidents, QA runs, or generated asset sets.
 They are company-scoped and live beside issues: issues coordinate work, while
 cases preserve the structured object an agent is producing.
 
-Cases are always on. Deep Dive case types (`deep_dive`, `deep_dive_stream`,
+Cases are on unless the instance's plan leaves them out; then case routes
+return `403 not_entitled` for `enableCases`, so stop and report that the
+operator's plan does not include Cases. Deep Dive case types (`deep_dive`, `deep_dive_stream`,
 `agent_team_blueprint`) still need `experimental.enableDeepDive`; if those return `403 not_entitled`,
 stop and report that the operator must enable Deep Dive.
 

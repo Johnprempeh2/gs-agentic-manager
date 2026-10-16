@@ -6,6 +6,7 @@ import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
 import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
+import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
@@ -324,8 +325,14 @@ function boardRoutes() {
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
       ) : null}
       <Route path="routines" element={<Routines />} />
-      <Route path="cases" element={<Cases />} />
-      <Route path="cases/:caseIdentifier" element={<CaseDetail />} />
+      <Route
+        path="cases"
+        element={<CasesExperimentalGate><Cases /></CasesExperimentalGate>}
+      />
+      <Route
+        path="cases/:caseIdentifier"
+        element={<CasesExperimentalGate><CaseDetail /></CasesExperimentalGate>}
+      />
       <Route
         path="deep-dive"
         element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}

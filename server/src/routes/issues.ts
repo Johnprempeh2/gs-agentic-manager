@@ -3779,6 +3779,16 @@ export function issueRoutes(
   const agentsSvc = agentService(db);
   const boardChats = strategyBoardChatService(db);
   const teamChats = teamChatService(db);
+  // GRE-1622: External Objects ignores the stored switch, but a managed config
+  // or the entitlement document can still turn it off.
+  router.use(
+    [
+      "/issues/:id/external-objects",
+      "/issues/:id/external-object-summary",
+      "/companies/:companyId/issues/external-object-summaries",
+    ],
+    requireEntitlement(instanceSettings, "enableExternalObjects"),
+  );
   // GRE-1090: refuse these feature routes while their managed switch is off,
   // before validation. Agent Chat on existing conversations checks per route.
   router.get(
@@ -4088,6 +4098,9 @@ export function issueRoutes(
     }) ?? noopTaskWatchdogService();
   const externalObjectsSvc = externalObjectService(db, {
     pluginWorkerManager: opts.pluginWorkerManager,
+    enabled: async (dbOrTx) =>
+      (await instanceSettings.getExperimental({ db: dbOrTx }))
+        .enableExternalObjects === true,
   });
   const queuedCommentQueue = createQueuedCommentQueue(db, {
     syncCommentReferences: (commentId, tx) => issueReferencesSvc.syncComment(commentId, tx),

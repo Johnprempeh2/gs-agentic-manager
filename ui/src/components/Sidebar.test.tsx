@@ -763,6 +763,7 @@ describe("Sidebar", () => {
     mockCanRelease.value = true;
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: true,
+      enableCases: true,
       enableDeepDive: true,
       enablePipelines: true,
       enableConferenceRoomChat: true,
@@ -825,15 +826,15 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows Deep Dive in Clients only while its flag is on", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDeepDive: true });
+  it("shows Deep Dive in Clients only while both flags are on", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
     expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "Images"]);
     flushSync(() => {
       root.unmount();
     });
 
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: false, enableDeepDive: false });
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: false, enableDeepDive: true });
     root = await renderSidebar();
     expect(container.textContent).not.toContain("Deep Dive");
     flushSync(() => {

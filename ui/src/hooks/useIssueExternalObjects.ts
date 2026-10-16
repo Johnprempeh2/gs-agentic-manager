@@ -10,6 +10,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { normalizeExternalObjectHref } from "../lib/external-object-href";
 import type { MarkdownExternalReferenceMap } from "../components/MarkdownBody";
 import type { ExternalObjectPillData } from "../components/ExternalObjectPill";
+import { instanceSettingsApi } from "../api/instanceSettings";
 
 export const EXTERNAL_OBJECT_SUMMARY_BATCH_SIZE = 500;
 
@@ -66,6 +67,18 @@ export interface IssueExternalObjectsResult {
   refetch: () => void;
 }
 
+function useExternalObjectsFeature() {
+  const query = useQuery({
+    queryKey: queryKeys.instance.experimentalSettings,
+    queryFn: () => instanceSettingsApi.getExperimental(),
+    retry: false,
+  });
+  return {
+    isEnabled: query.data?.enableExternalObjects === true,
+    isLoaded: query.data !== undefined || query.isError,
+  };
+}
+
 /**
  * Loads `external_objects` for an issue and produces both the per-group rows
  * (used by the property panel and related-work section) and the markdown URL
@@ -73,7 +86,8 @@ export interface IssueExternalObjectsResult {
  * surface reads from the same query result.
  */
 export function useIssueExternalObjects(issueId: string | null | undefined): IssueExternalObjectsResult {
-  const enabled = Boolean(issueId);
+  const externalObjectsFeature = useExternalObjectsFeature();
+  const enabled = externalObjectsFeature.isEnabled && Boolean(issueId);
   const query = useQuery({
     queryKey: queryKeys.externalObjects.byIssue(issueId ?? "__none__"),
     queryFn: () => externalObjectsApi.listForIssue(issueId!),
@@ -159,8 +173,7 @@ export function useIssueExternalObjects(issueId: string | null | undefined): Iss
   }, [query.refetch]);
 
   return {
-    // External Objects graduated out of Experimental (GRE-1622): always on.
-    isEnabled: true,
+    isEnabled: externalObjectsFeature.isEnabled,
     groups,
     markdownReferences,
     isLoading: enabled && query.isLoading,
@@ -173,7 +186,8 @@ export function useIssueExternalObjectSummary(issueId: string | null | undefined
   summary: ExternalObjectSummary | null;
   isLoading: boolean;
 } {
-  const enabled = Boolean(issueId);
+  const externalObjectsFeature = useExternalObjectsFeature();
+  const enabled = externalObjectsFeature.isEnabled && Boolean(issueId);
   const query = useQuery({
     queryKey: queryKeys.externalObjects.issueSummary(issueId ?? "__none__"),
     queryFn: () => externalObjectsApi.getIssueSummary(issueId!),
@@ -194,11 +208,12 @@ export function useIssueExternalObjectSummaries(
   isLoading: boolean;
   isReady: boolean;
 } {
+  const externalObjectsFeature = useExternalObjectsFeature();
   const normalizedIssueIds = useMemo(
     () => [...new Set(issueIds.filter((issueId) => issueId.length > 0))].sort(),
     [issueIds],
   );
-  const enabled = Boolean(companyId) && normalizedIssueIds.length > 0;
+  const enabled = externalObjectsFeature.isEnabled && Boolean(companyId) && normalizedIssueIds.length > 0;
   const query = useQuery({
     queryKey: queryKeys.externalObjects.issueSummaries(companyId ?? "__none__", normalizedIssueIds),
     queryFn: () => fetchIssueExternalObjectSummariesInBatches(companyId!, normalizedIssueIds),
@@ -212,7 +227,7 @@ export function useIssueExternalObjectSummaries(
   return {
     summaries,
     isLoading: enabled && query.isLoading,
-    isReady: !enabled || query.isSuccess,
+    isReady: externalObjectsFeature.isLoaded && (!enabled || query.isSuccess),
   };
 }
 
@@ -220,7 +235,8 @@ export function useProjectExternalObjectSummary(projectId: string | null | undef
   summary: ExternalObjectSummary | null;
   isLoading: boolean;
 } {
-  const enabled = Boolean(projectId);
+  const externalObjectsFeature = useExternalObjectsFeature();
+  const enabled = externalObjectsFeature.isEnabled && Boolean(projectId);
   const query = useQuery({
     queryKey: queryKeys.externalObjects.projectSummary(projectId ?? "__none__"),
     queryFn: () => externalObjectsApi.getProjectSummary(projectId!),

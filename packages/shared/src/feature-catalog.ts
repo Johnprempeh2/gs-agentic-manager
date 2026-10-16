@@ -139,7 +139,8 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   },
   enableCases: {
     title: "Cases (compatibility)",
-    description: "Deprecated compatibility key. Cases are always enabled (GRE-1622); stored and managed values are ignored.",
+    description:
+      "Deprecated compatibility key. Cases are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
@@ -243,7 +244,7 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
   enableExternalObjects: {
     title: "External Objects (compatibility)",
     description:
-      "Deprecated compatibility key. External object detection and status are always enabled (GRE-1622); stored and managed values are ignored.",
+      "Deprecated compatibility key. External object detection and status are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
     cloudDefault: true,
     selfHostedDefault: true,
