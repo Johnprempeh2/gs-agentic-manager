@@ -10,7 +10,13 @@ import { MemoryApps } from "./MemoryApps";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const graphApiMock = vi.hoisted(() => ({ scopes: vi.fn(), importEntries: vi.fn() }));
+const graphApiMock = vi.hoisted(() => ({
+  scopes: vi.fn(),
+  importEntries: vi.fn(),
+  connections: vi.fn(),
+  createConnection: vi.fn(),
+  revokeConnection: vi.fn(),
+}));
 
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: graphApiMock }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-kestrel" }) }));
@@ -72,6 +78,7 @@ beforeEach(() => {
   document.body.appendChild(container);
   root = createRoot(container);
   graphApiMock.scopes.mockResolvedValue(scopes);
+  graphApiMock.connections.mockResolvedValue([]);
   graphApiMock.importEntries.mockResolvedValue({ added: 2, alreadyImported: 0, heldBack: 0, entries: [] });
 });
 
@@ -109,5 +116,26 @@ describe("MemoryApps", () => {
     );
     expect(body()).toContain("2 added");
     expect(body()).toContain("Review");
+  });
+
+  it("connects Claude and shows the key once inside the setup text", async () => {
+    graphApiMock.createConnection.mockResolvedValue({
+      token: "tok_once",
+      connection: { agentId: "a-link", app: "claude", name: "Claude desktop app memory link", createdByUserId: "u1", canContribute: true, keys: [] },
+    });
+    await render();
+    await act(async () => button("Connect Claude desktop app").click());
+    await flush();
+    expect(graphApiMock.createConnection).toHaveBeenCalledWith("co-kestrel", { app: "claude", canContribute: true });
+    expect(body()).toContain("the key is shown only once");
+    expect(document.querySelector("pre")?.textContent).toContain("Bearer tok_once");
+  });
+
+  it("tells the person ChatGPT cannot connect yet", async () => {
+    await render();
+    const chatgpt = [...document.querySelectorAll('[aria-label="App to connect"] button')].find((el) => el.textContent?.includes("ChatGPT")) as HTMLButtonElement;
+    await act(async () => chatgpt.click());
+    expect(body()).toContain("GSAM does not offer one yet");
+    expect(button("Connect ChatGPT")).toBeUndefined();
   });
 });

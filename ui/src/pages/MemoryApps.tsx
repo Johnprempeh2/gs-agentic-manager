@@ -29,6 +29,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { MemoryConnectionsSection } from "../components/memory/MemoryConnectionsSection";
 import { MemoryPageHeader } from "../components/memory/MemoryPageHeader";
 import { isMemoryDisabled } from "./Memory";
 
@@ -380,6 +381,8 @@ export function MemoryApps() {
       ) : method === "paste" && pasted.trim() ? (
         <p className="text-sm text-muted-foreground">Nothing to add yet. Paste the answer with one item per line.</p>
       ) : null}
+
+      <MemoryConnectionsSection companyId={selectedCompanyId} />
     </div>
   );
 }
