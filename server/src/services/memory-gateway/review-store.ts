@@ -1,6 +1,6 @@
-import { and, eq, inArray, ne, or } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { memoryConflicts, memoryRecords, memoryRelationships, memoryReviewEvents } from "@greatstone/db";
+import { agents, companyMemberships, memoryConflicts, memoryRecords, memoryRelationships, memoryReviewEvents } from "@greatstone/db";
 import type { MemoryCallerApp, MemoryConflictLink, MemoryRecordStatus, MemoryReviewEventAction } from "@greatstone/shared";
 import { textConflictTerms } from "./text-conflict.js";
 
@@ -98,14 +98,66 @@ export async function loadEditChain(database: DbOrTransaction, companyId: string
   return chain;
 }
 
-/** Why this actor may not approve: they wrote the first version of the chain, or a later edit. */
+/**
+ * Who stands behind the app links that wrote a chain (GRE-1081, deck v7
+ * guard 2): a person's apps share that person's identity. `ownerUserId` is
+ * the company owner, who alone may confirm a card their own app proposed,
+ * in GSAM, so an owner-only card from their app is never stuck.
+ */
+export type ChainAuthorLinks = { people: Map<string, string>; ownerUserId: string | null };
+
+export async function loadChainAuthorLinks(
+  database: DbOrTransaction,
+  companyId: string,
+  chain: Array<Pick<RecordRow, "contributorAgentId">>,
+): Promise<ChainAuthorLinks> {
+  const agentIds = [...new Set(chain.map((version) => version.contributorAgentId).filter((id): id is string => id !== null))];
+  const people = new Map<string, string>();
+  if (agentIds.length > 0) {
+    const rows = await database
+      .select({ id: agents.id, metadata: agents.metadata })
+      .from(agents)
+      .where(and(eq(agents.companyId, companyId), inArray(agents.id, agentIds)));
+    for (const row of rows) {
+      const link = (row.metadata as { memoryConnection?: { createdByUserId?: unknown } } | null)?.memoryConnection;
+      if (typeof link?.createdByUserId === "string" && link.createdByUserId) people.set(row.id, link.createdByUserId);
+    }
+  }
+  if (people.size === 0) return { people, ownerUserId: null };
+  const ownerUserId = await database
+    .select({ id: companyMemberships.principalId })
+    .from(companyMemberships)
+    .where(
+      and(
+        eq(companyMemberships.companyId, companyId),
+        eq(companyMemberships.principalType, "user"),
+        eq(companyMemberships.membershipRole, "owner"),
+        eq(companyMemberships.status, "active"),
+      ),
+    )
+    .orderBy(asc(companyMemberships.createdAt))
+    .then((rows) => rows[0]?.id ?? null);
+  return { people, ownerUserId };
+}
+
+/**
+ * Why this actor may not approve: they wrote the first version of the chain,
+ * or a later edit, themselves or through one of their own apps.
+ */
 export function authorRefusal(
   actor: Pick<MemoryReviewActor, "agentId" | "userId">,
   chain: Array<Pick<RecordRow, "contributorAgentId" | "contributorUserId">>,
+  links: ChainAuthorLinks = { people: new Map(), ownerUserId: null },
 ): "own_proposal" | "own_edit" | null {
+  const viaOwnApp = (version: Pick<RecordRow, "contributorAgentId">) =>
+    actor.userId !== null &&
+    actor.userId !== links.ownerUserId &&
+    version.contributorAgentId !== null &&
+    links.people.get(version.contributorAgentId) === actor.userId;
   const wrote = (version: Pick<RecordRow, "contributorAgentId" | "contributorUserId">) =>
     (version.contributorAgentId !== null && version.contributorAgentId === actor.agentId) ||
-    (version.contributorUserId !== null && version.contributorUserId === actor.userId);
+    (version.contributorUserId !== null && version.contributorUserId === actor.userId) ||
+    viaOwnApp(version);
   const [first, ...edits] = chain;
   if (first && wrote(first)) return "own_proposal";
   if (edits.some(wrote)) return "own_edit";

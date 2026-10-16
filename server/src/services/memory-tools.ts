@@ -4,9 +4,12 @@ import {
   memoryLinkSchema,
   memoryRelatedToSchema,
   recallMemorySchema,
+  retireMemoryRecordSchema,
+  reviseMemoryRecordSchema,
   type MemoryRelationshipType,
 } from "@greatstone/shared";
 import { badRequest, HttpError, notFound } from "../errors.js";
+import type { MemoryCardService } from "./memory-gateway/card-writes.js";
 import type { MemoryCaller, MemoryGatewayService } from "./memory-gateway/service.js";
 import type { MemoryReviewService } from "./memory-gateway/review.js";
 
@@ -15,7 +18,26 @@ import type { MemoryReviewService } from "./memory-gateway/review.js";
 // caller. `memory_link` and `relatedTo` (memory linking, 6 Oct 2026) state a
 // relationship with the agent as author and the run as source.
 
-export const MEMORY_TOOL_NAMES = ["memory_recall", "memory_contribute", "memory_get", "memory_link"] as const;
+// Shared memory M2 (GRE-1081, deck v7 slide 22) adds revise, confirm, dispute,
+// retire and history. Every write but contribute and link sends the version
+// the caller saw; a card that changed since refuses the call. An app outside
+// GSAM (a memory key) reads and proposes only: it is not offered confirm,
+// dispute or retire, and the gateway refuses them if it calls them anyway.
+
+export const MEMORY_TOOL_NAMES = [
+  "memory_recall",
+  "memory_contribute",
+  "memory_get",
+  "memory_link",
+  "memory_history",
+  "memory_revise",
+  "memory_confirm",
+  "memory_dispute",
+  "memory_retire",
+] as const;
+
+/** Tools only a GSAM agent may be offered: confirm is a reviewer's step, never an outside app's. */
+const REVIEWER_TOOL_NAMES = new Set<string>(["memory_confirm", "memory_dispute", "memory_retire"]);
 
 /** Note on a link made through `relatedTo` without a reason of its own. */
 export const RELATED_TO_DEFAULT_REASON = "Linked by the contributor when this entry was saved";
@@ -35,11 +57,19 @@ const contributeToolSchema = contributeMemorySchema
 
 const getToolSchema = z.object({ recordId: z.string().guid() }).strict();
 
+const reviseToolSchema = reviseMemoryRecordSchema.extend({ recordId: z.string().guid() }).strict();
+const versionedToolSchema = retireMemoryRecordSchema.extend({ recordId: z.string().guid() }).strict();
+
+/** MCP tool hints: a write is marked so the app asks the person first. */
+const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+const CHANGE = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false };
+
 // Dates arrive as ISO strings; describe the input side of each schema.
 const toolInputSchema = (schema: z.ZodType) => z.toJSONSchema(schema, { io: "input", unrepresentable: "any" });
 
-export function memoryToolDefinitions() {
-  return [
+export function memoryToolDefinitions(options: { externalApp?: boolean } = {}) {
+  const tools = [
     {
       name: "memory_recall",
       description:
@@ -47,6 +77,7 @@ export function memoryToolDefinitions() {
         "`scopes` may hold `my_notes`, `organization` or scope ids; leave it out to search every scope you may read except client and restricted ones. " +
         "Each result's record id can be passed to `memory_link` or to `relatedTo` on `memory_contribute`.",
       inputSchema: toolInputSchema(recallToolSchema),
+      annotations: READ,
     },
     {
       name: "memory_contribute",
@@ -57,11 +88,13 @@ export function memoryToolDefinitions() {
         "`memory_recall`, list their ids in `relatedTo` (an id, or `{recordId, type, reason}`; type defaults to `same_subject`) " +
         "so they are linked as it is saved. Nothing is saved if one of them cannot be linked.",
       inputSchema: toolInputSchema(contributeToolSchema),
+      annotations: WRITE,
     },
     {
       name: "memory_get",
-      description: "Read one memory record by id, with its status, scope, contributor and source.",
+      description: "Read one memory record by id, with its status, scope, contributor, source and `version`.",
       inputSchema: toolInputSchema(getToolSchema),
+      annotations: READ,
     },
     {
       name: "memory_link",
@@ -73,8 +106,50 @@ export function memoryToolDefinitions() {
         "or restricted entry links only to entries in its own scope. `contradicts` against an approved entry in the same scope " +
         "opens a conflict for review.",
       inputSchema: toolInputSchema(memoryLinkSchema),
+      annotations: WRITE,
+    },
+    {
+      name: "memory_history",
+      description: "Who did what to one memory record, and when: every version and every review step, with the app each came through.",
+      inputSchema: toolInputSchema(getToolSchema),
+      annotations: READ,
+    },
+    {
+      name: "memory_revise",
+      description:
+        "Propose a new version of a card. Send `expectedVersion` (the `version` from `memory_get` or `memory_recall`), the new " +
+        "`content` and a `reason`. If the card changed since you read it, nothing is saved: read it again. The new version waits " +
+        "for review; a confirmed card stays in force until a person confirms the new one. A card still waiting for review can be " +
+        "revised only by whoever proposed it or a reviewer.",
+      inputSchema: toolInputSchema(reviseToolSchema),
+      annotations: WRITE,
+    },
+    {
+      name: "memory_confirm",
+      description:
+        "Confirm a card waiting for review. Needs the right to review its scope and class; nobody confirms a card they or their " +
+        "apps wrote. Send `expectedVersion` and a `reason`; a card that changed since you read it refuses the call.",
+      inputSchema: toolInputSchema(versionedToolSchema),
+      annotations: CHANGE,
+    },
+    {
+      name: "memory_dispute",
+      description:
+        "Reject a card waiting for review, or dispute a confirmed card, with a `reason`. Needs the right to review its scope. " +
+        "Send `expectedVersion`; a card that changed since you read it refuses the call.",
+      inputSchema: toolInputSchema(versionedToolSchema),
+      annotations: CHANGE,
+    },
+    {
+      name: "memory_retire",
+      description:
+        "Mark a confirmed or disputed card as no longer true. It stays readable as history and ranks last. Needs the right to " +
+        "review its scope. Send `expectedVersion` and a `reason`.",
+      inputSchema: toolInputSchema(versionedToolSchema),
+      annotations: CHANGE,
     },
   ];
+  return options.externalApp ? tools.filter((tool) => !REVIEWER_TOOL_NAMES.has(tool.name)) : tools;
 }
 
 function parseArguments<T>(schema: z.ZodType<T>, args: Record<string, unknown>): T {
@@ -105,8 +180,9 @@ export async function callMemoryTool(input: {
   caller: MemoryCaller;
   gateway: MemoryGatewayService;
   reviews: MemoryReviewService;
+  cards: MemoryCardService;
 }) {
-  const { caller, gateway, reviews } = input;
+  const { caller, gateway, reviews, cards } = input;
   /** A link an agent states names its run as the source. */
   const runSource = caller.runId ? { sourceKind: "run" as const, sourceId: caller.runId } : {};
 
@@ -174,6 +250,26 @@ export async function callMemoryTool(input: {
         { fromRecordId: args.fromRecordId, toRecordId: args.toRecordId, type: args.type, note: args.reason, ...runSource },
         { operation: "memory_link", via: "memory_link" },
       );
+    }
+    case "memory_history": {
+      const args = parseArguments(getToolSchema, input.arguments);
+      return reviews.history(caller, args.recordId);
+    }
+    case "memory_revise": {
+      const { recordId, ...args } = parseArguments(reviseToolSchema, input.arguments);
+      return cards.revise(caller, recordId, args);
+    }
+    case "memory_confirm": {
+      const { recordId, ...args } = parseArguments(versionedToolSchema, input.arguments);
+      return cards.confirm(caller, recordId, args);
+    }
+    case "memory_dispute": {
+      const { recordId, ...args } = parseArguments(versionedToolSchema, input.arguments);
+      return { record: await cards.dispute(caller, recordId, args) };
+    }
+    case "memory_retire": {
+      const { recordId, ...args } = parseArguments(versionedToolSchema, input.arguments);
+      return { record: await cards.retire(caller, recordId, args) };
     }
     default:
       throw notFound("Unknown memory tool");

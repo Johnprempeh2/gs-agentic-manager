@@ -15,6 +15,7 @@ export const memoryStatusMeta: Record<MemoryRecordStatus, { label: string; icon:
   approved: { label: "Approved", icon: CheckCircle2, hint: "A reviewer accepted it into shared memory. This is not independent verification." },
   disputed: { label: "Disputed", icon: AlertTriangle, hint: "A reviewer disputed it." },
   superseded: { label: "Superseded", icon: History, hint: "A newer entry replaces it." },
+  retired: { label: "Retired", icon: History, hint: "No longer true; kept as history." },
   deleted: { label: "Deleted", icon: Trash2, hint: "Removed; only the history is kept." },
 };
 

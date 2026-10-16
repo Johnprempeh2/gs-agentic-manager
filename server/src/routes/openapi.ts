@@ -120,6 +120,8 @@ import {
   dismissMemoryLinkLeadSchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
+  reviseMemoryRecordSchema,
+  retireMemoryRecordSchema,
   runMemoryRetentionSchema,
   supersedeMemoryRecordSchema,
   createMemoryScopeSchema,
@@ -5757,6 +5759,24 @@ registry.registerPath({
   tags: ["memory"],
   summary: "Supersede a record with a newer one in the same scope; the replacement becomes approved and the old record stays as history",
   request: { params: memoryRecordParams, body: jsonBody(supersedeMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/revise",
+  tags: ["memory"],
+  summary: "Propose a new version of a card at the version the caller saw; it waits for review and a changed card refuses the call (GRE-1081)",
+  request: { params: memoryRecordParams, body: jsonBody(reviseMemoryRecordSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/retire",
+  tags: ["memory"],
+  summary: "Mark a confirmed or disputed card as no longer true at the version the caller saw; it stays as history (GRE-1081)",
+  request: { params: memoryRecordParams, body: jsonBody(retireMemoryRecordSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 

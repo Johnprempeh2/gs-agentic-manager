@@ -11,8 +11,11 @@ export type MemoryScopeKind = (typeof MEMORY_SCOPE_KINDS)[number];
 /** Kinds that get their own engine bank. Org visibility never reaches them. */
 export const MEMORY_HARD_BOUNDARY_KINDS: readonly MemoryScopeKind[] = ["client", "restricted_project"];
 
-/** Review state of a record (GRE-886). Every contribution starts `unreviewed`. */
-export const MEMORY_RECORD_STATUSES = ["unreviewed", "approved", "disputed", "superseded", "deleted"] as const;
+/**
+ * Review state of a record (GRE-886). Every contribution starts `unreviewed`.
+ * `retired` (GRE-1081): no longer true, kept as history and ranked last.
+ */
+export const MEMORY_RECORD_STATUSES = ["unreviewed", "approved", "disputed", "superseded", "retired", "deleted"] as const;
 export type MemoryRecordStatus = (typeof MEMORY_RECORD_STATUSES)[number];
 
 /** What a contributor offers: a claim for shared knowledge, or something seen in work. */
@@ -45,6 +48,8 @@ export const MEMORY_REVIEW_EVENT_ACTIONS = [
   "edit",
   "reject",
   "merge",
+  // Shared memory M2 (GRE-1081).
+  "retire",
 ] as const;
 export type MemoryReviewEventAction = (typeof MEMORY_REVIEW_EVENT_ACTIONS)[number];
 
@@ -289,7 +294,8 @@ export interface MemoryConflict {
   id: string;
   scopeId: string;
   record: MemoryRecord;
-  origin: "contribution_check" | "relationship";
+  /** `revision`: a new version of a confirmed card, made with memory_revise (GRE-1081). */
+  origin: "contribution_check" | "relationship" | "revision";
   sharedTerms: string[];
   state: MemoryConflictState;
   resolution: string | null;
@@ -388,6 +394,8 @@ export const reviewMemoryRecordSchema = z
   .object({
     action: z.enum(MEMORY_REVIEW_ACTIONS),
     reason: memoryReason,
+    /** The version the reviewer saw (GRE-1081). When given, a changed card refuses the call. */
+    expectedVersion: z.number().int().optional(),
   })
   .strict();
 export type ReviewMemoryRecord = z.infer<typeof reviewMemoryRecordSchema>;
@@ -396,9 +404,35 @@ export const supersedeMemoryRecordSchema = z
   .object({
     replacementRecordId: z.string().guid(),
     reason: memoryReason,
+    /** The version of the record being replaced that the reviewer saw (GRE-1081). */
+    expectedVersion: z.number().int().optional(),
   })
   .strict();
 export type SupersedeMemoryRecord = z.infer<typeof supersedeMemoryRecordSchema>;
+
+/**
+ * Shared memory M2 (GRE-1081, deck v7 slide 22). Revise and retire send the
+ * version the caller saw; a card that changed since refuses the call.
+ */
+export const reviseMemoryRecordSchema = z
+  .object({
+    expectedVersion: z.number().int(),
+    title: z.string().trim().max(200).nullable().optional(),
+    content: z.string().trim().min(1).max(20_000),
+    reason: memoryReason,
+  })
+  .strict();
+export type ReviseMemoryRecord = z.infer<typeof reviseMemoryRecordSchema>;
+
+export const retireMemoryRecordSchema = z.object({ expectedVersion: z.number().int(), reason: memoryReason }).strict();
+export type RetireMemoryRecord = z.infer<typeof retireMemoryRecordSchema>;
+
+export interface MemoryReviseResult {
+  /** The card that was revised, as it is after the call. */
+  record: MemoryRecord;
+  /** The new version, waiting for review. */
+  newRecord: MemoryRecord;
+}
 
 export const deleteMemoryRecordSchema = z.object({ reason: memoryReason }).strict();
 export type DeleteMemoryRecord = z.infer<typeof deleteMemoryRecordSchema>;

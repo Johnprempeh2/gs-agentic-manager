@@ -9,6 +9,7 @@ const STATUS_DOT: Record<MemoryRecordStatus, string> = {
   approved: "bg-status-success",
   disputed: "bg-status-alert",
   superseded: "bg-muted-foreground opacity-70",
+  retired: "bg-muted-foreground opacity-70",
   deleted: "bg-muted-foreground",
 };
 

@@ -213,6 +213,33 @@ Read-only routes under `/api/companies/:id/memory`; types in `packages/shared/sr
   reason), which writes a stated relationship with the reviewer as author and keeps the basis, or dismisses it. A
   delete closes the record's open leads and clears their terms. Table `memory_link_leads` (migration 0298).
 
+## Per-person app connections and versioned writes (GRE-1081)
+
+- **One link per person and app.** Any person signed in to GSAM connects their own Claude Code, Codex or other MCP
+  app (Memory > Claude and ChatGPT). Each link is a paused agent that never runs, tagged with
+  `metadata.memoryConnection.createdByUserId`, holding its own `memory_only` key. A person sees and disconnects
+  their own links; an owner or admin sees and disconnects all. A `memory_only` key on an agent that is not a
+  person's link (the old shared key) is refused with `403 MEMORY_KEY_NOT_LINKED`, and no new one can be minted.
+- **Cut off on the next call.** The guard reads the link and its person on every call. Revoking the key gives `401`;
+  a person whose membership is no longer active gives `403 MEMORY_KEY_NOT_LINKED`.
+- **Read and propose only.** An app acts as its person, capped at what the link's own grants allow, never with an
+  admin bypass. It may recall, get, read history, contribute, link and revise. It is not offered `memory_confirm`,
+  `memory_dispute` or `memory_retire`, and the gateway refuses them (and delete, and every steward action) if it
+  calls them anyway. A person cannot confirm a card their own app wrote, except the company owner, so an owner-only
+  card is never stuck.
+- **Client and restricted scopes stay off.** An app reads organization memory as its person; any other scope needs
+  the link's own `memory:read` or `memory:contribute` grant naming it. Grants made from the connect button have a
+  null scope, which never covers a client or restricted scope.
+- **Version on every write.** `memory_revise`, `memory_confirm`, `memory_dispute` and `memory_retire` (and their REST
+  twins `.../records/:id/revise`, `.../retire`, `.../review` and `.../steward-action` with `expectedVersion`) send the
+  version the caller read. A card that moved on refuses the call with `409` and a `stale_version` row in
+  `memory_operations`. Approve, dispute, reject, confirm and retire move the version on; a confirmed replacement is
+  numbered after both cards, so it never returns to a version a caller already saw.
+- **Revise is a proposal.** Revising a card waiting for review replaces it as an edit. Revising a confirmed card adds
+  a new version that waits for review beside it (conflict origin `revision`); the confirmed card stays in force until
+  a reviewer confirms the new one. Retire (status `retired`) keeps the card as history and ranks it last in recall.
+- No migration: status, action and origin are text columns. ChatGPT and OAuth sign-in are M3.
+
 ## Steward daily review (GRE-887)
 
 - One pass a day reads records changed since a durable cursor (`memory_steward_cursors`) and writes findings to the

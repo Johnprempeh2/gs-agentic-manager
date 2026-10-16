@@ -127,6 +127,11 @@ describeEmbeddedPostgres("agent memory tools (MCP)", () => {
       "memory_contribute",
       "memory_get",
       "memory_link",
+      "memory_history",
+      "memory_revise",
+      "memory_confirm",
+      "memory_dispute",
+      "memory_retire",
     ]);
   });
 
