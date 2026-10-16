@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GENERATED_IMAGE_PROMPT_MIN_LENGTH, type GeneratedImage, type ImageAspectRatio } from "@greatstone/shared";
-import { AlertCircle, Check, ImageIcon, Loader2, Paperclip, RotateCcw, Wand2 } from "lucide-react";
+import { AlertCircle, Check, ImageIcon, Loader2, PaperclipIcon, RotateCcw, Wand2 } from "lucide-react";
 import { imagesApi } from "../api/images";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
@@ -218,7 +218,7 @@ export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attac
                   {attach.isPending ? (
                     <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
                   ) : (
-                    <Paperclip className="h-4 w-4" aria-hidden="true" />
+                    <PaperclipIcon className="h-4 w-4" aria-hidden="true" />
                   )}
                   Add to {attachLabel}
                 </Button>
