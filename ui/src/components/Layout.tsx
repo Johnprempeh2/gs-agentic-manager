@@ -28,6 +28,7 @@ import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
 import { AnnouncementWell } from "./AnnouncementWell";
 import { PluginAppShellOverlays } from "./PluginAppShellOverlays";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { AddToHomeScreen } from "./AddToHomeScreen";
 import { PullToRefresh } from "./PullToRefresh";
 import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
@@ -787,6 +788,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                 />
               ) : (
                 <RouteErrorBoundary>
+                  {isMobile && !isMobileChatRoute ? <AddToHomeScreen /> : null}
                   <Outlet />
                 </RouteErrorBoundary>
               )}

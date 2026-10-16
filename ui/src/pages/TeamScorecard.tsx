@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { TeamScorecardAgent } from "@greatstone/shared";
-import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Eye, Loader, MessageCircleQuestion, Trophy } from "lucide-react";
+import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Download, Eye, Loader, MessageCircleQuestion, Trophy } from "lucide-react";
 import { teamScorecardApi } from "../api/teamScorecard";
 import { costsApi } from "../api/costs";
 import { issuesApi } from "../api/issues";
@@ -13,7 +13,16 @@ import { deriveInitials } from "../components/Identity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
-import { STUCK_TASK_UPDATE_REQUEST, scorecardSentence, scorecardUpdateText, workValueLabel } from "../lib/team-scorecard";
+import {
+  STUCK_TASK_UPDATE_REQUEST,
+  scorecardCsvFileName,
+  scorecardSentence,
+  scorecardToCsv,
+  scorecardUpdateText,
+  workValueLabel,
+} from "../lib/team-scorecard";
+import { downloadTextFile } from "../lib/issues-csv";
+import { localToday } from "../lib/calendar";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { Button } from "@/components/ui/button";
 import { Link, useSearchParams } from "@/lib/router";
@@ -199,6 +208,12 @@ export function TeamScorecard() {
     },
   });
 
+  function downloadSpreadsheet() {
+    if (!data) return;
+    const csv = scorecardToCsv(data, (agentId) => valueByAgent.get(agentId));
+    downloadTextFile(scorecardCsvFileName(selectedCompany?.issuePrefix, data.days, localToday()), csv);
+  }
+
   async function copyUpdate() {
     if (!data) return;
     try {
@@ -234,6 +249,17 @@ export function TeamScorecard() {
               {askAll.isError ? "Try again" : `Ask about all ${stuckToAsk.length} stuck tasks`}
             </Button>
           ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!data || data.agents.length === 0}
+            title="Download each agent's numbers as a spreadsheet"
+            onClick={downloadSpreadsheet}
+          >
+            <Download className="size-4" />
+            <span className="hidden sm:inline">Download as spreadsheet</span>
+            <span className="sr-only sm:hidden">Download as spreadsheet</span>
+          </Button>
           <Button
             size="sm"
             variant="ghost"
