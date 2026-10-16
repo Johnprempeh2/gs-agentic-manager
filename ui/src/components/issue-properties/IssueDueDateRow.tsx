@@ -4,6 +4,8 @@ import { X } from "lucide-react";
 import { goalsApi } from "@/api/goals";
 import { Input } from "@/components/ui/input";
 import { queryKeys } from "@/lib/queryKeys";
+import { localToday, rescheduleOptions } from "@/lib/calendar";
+import { formatCalendarDay } from "@/lib/utils";
 import { PropertyRow } from "./primitives";
 
 /**
@@ -51,12 +53,17 @@ export function IssueDueDateRow({
   if (state === "read_only") {
     return (
       <PropertyRow label="Due date">
-        <span className="text-sm">{dueDate}</span>
+        <span className="text-sm" title={dueDate ?? undefined}>
+          {dueDate ? formatCalendarDay(dueDate, { includeYear: true }) : null}
+        </span>
+        {overdue ? <span className="text-xs font-medium text-status-danger">Overdue</span> : null}
       </PropertyRow>
     );
   }
+  // One click for the dates people pick most, so nobody has to open the date picker.
+  const shortcuts = status === "done" || status === "cancelled" ? [] : rescheduleOptions(dueDate ?? "", localToday());
   return (
-    <PropertyRow label="Due date">
+    <PropertyRow label="Due date" wrap={shortcuts.length > 0}>
       <div className="flex min-w-0 items-center gap-1.5">
         <Input
           type="date"
@@ -77,6 +84,21 @@ export function IssueDueDateRow({
         ) : null}
         {overdue ? <span className="text-xs font-medium text-status-danger">Overdue</span> : null}
       </div>
+      {shortcuts.length > 0 ? (
+        <div className="flex flex-wrap gap-1" aria-label="Quick due dates">
+          {shortcuts.map((option) => (
+            <button
+              key={option.label}
+              type="button"
+              className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+              title={`Set the due date to ${formatCalendarDay(option.date)}`}
+              onClick={() => onUpdate({ dueDate: option.date })}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </PropertyRow>
   );
 }
