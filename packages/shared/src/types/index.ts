@@ -77,6 +77,7 @@ export type {
   NeedsMe,
   NeedsMeTask,
   NeedsMeOverdueWait,
+  NeedsMeExpiredCard,
 } from "./decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./decisions-feed.js";
 export type {
