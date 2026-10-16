@@ -1595,6 +1595,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/tools/apps/{connectionId}/finalize-oauth-access",
   "POST /api/companies/{companyId}/tools/apps/{connectionId}/finish",
   "GET /api/companies/{companyId}/tools/apps/attention",
+  "GET /api/companies/{companyId}/tools/agent-access",
   "GET /api/companies/{companyId}/tools/action-requests",
   "GET /api/companies/{companyId}/tools/examples",
   "POST /api/companies/{companyId}/tools/examples/{id}/install",
@@ -12647,6 +12648,13 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/tools/apps/attention",
   tags: ["tool-access"],
   summary: "List tool apps needing attention",
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/tools/agent-access",
+  tags: ["tool-access"],
+  summary: "List what each agent can reach and what needs attention",
 });
 
 registerCurrentRoute({

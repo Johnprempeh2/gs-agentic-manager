@@ -12,6 +12,7 @@ import {
   Settings2,
   ShieldCheck,
   Sparkles,
+  Waypoints,
   Wrench,
 } from "lucide-react";
 import { agentsApi } from "@/api/agents";
@@ -38,6 +39,7 @@ const localIcons = {
   channels: MessageSquare,
   permissions: ShieldCheck,
   "api-keys": KeyRound,
+  access: Waypoints,
   revisions: History,
 } satisfies Record<AgentLocalDetailView, typeof Sparkles>;
 
