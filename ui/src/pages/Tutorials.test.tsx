@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FeatureTour } from "@/components/FeatureTour";
 import { CORE_TOURS, PIPELINE_BOARD_TOUR } from "@/lib/feature-tours";
 import { tourSeenKey } from "@/hooks/useTourSeen";
+import { GLOSSARY } from "@/lib/glossary";
 import { Tutorials } from "./Tutorials";
 
 const flags = vi.hoisted(() => ({
@@ -171,5 +172,12 @@ describe("Tutorials", () => {
     expect(localStorage.getItem(tourSeenKey({ id: "website", version: 1 }, "ama"))).toBeNull();
     expect(row("pipelines-list")!.textContent).toContain("Not seen yet");
     expect(container.textContent).toContain("Every tutorial will open again");
+  });
+  it("lists the words we use in plain words", async () => {
+    await render();
+    const words = document.getElementById("words")!;
+    const terms = [...words.querySelectorAll("dt")].map((el) => el.textContent);
+    expect(terms).toEqual(GLOSSARY.map((entry) => entry.term));
+    expect(words.querySelector("#word-routine")?.textContent).toContain("Work that repeats on a schedule");
   });
 });

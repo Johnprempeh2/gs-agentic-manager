@@ -13,8 +13,9 @@ import { useCompany } from "@/context/CompanyContext";
 import { useTourSeen } from "@/hooks/useTourSeen";
 import { CLIENT_CASE_TYPE } from "@/lib/client-case";
 import { ALL_TOURS, type TourDefinition } from "@/lib/feature-tours";
+import { GLOSSARY } from "@/lib/glossary";
 import { queryKeys } from "@/lib/queryKeys";
-import { useNavigate } from "@/lib/router";
+import { useLocation, useNavigate } from "@/lib/router";
 import { agentUrl } from "@/lib/utils";
 
 type StartTarget = { path: string } | { nothing: string };
@@ -74,9 +75,15 @@ export function Tutorials() {
   const [busy, setBusy] = useState<string | null>(null);
   const [resetState, setResetState] = useState<"idle" | "pending" | "done" | "failed">("idle");
 
+  const { hash } = useLocation();
+
   useEffect(() => {
     setBreadcrumbs([{ label: "Tutorials" }]);
   }, [setBreadcrumbs]);
+
+  useEffect(() => {
+    if (hash === "#words") document.getElementById("words")?.scrollIntoView({ block: "start" });
+  }, [hash]);
 
   const { data: settings, isFetched } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
@@ -167,6 +174,21 @@ export function Tutorials() {
           </section>
         ))
       )}
+      <section id="words" className="scroll-mt-4 space-y-2" aria-labelledby="words-title">
+        <div className="space-y-0.5">
+          <h2 id="words-title" className="text-sm font-semibold text-foreground">Words we use</h2>
+          <p className="text-sm text-muted-foreground">What each word means here, in plain words. Words with a dotted line elsewhere in the app link to these.</p>
+        </div>
+        <dl className="divide-y divide-border rounded-lg border border-border">
+          {GLOSSARY.map((entry) => (
+            <div key={entry.id} id={`word-${entry.id}`} className="space-y-1 p-4">
+              <dt className="text-sm font-semibold text-foreground">{entry.term}</dt>
+              <dd className="text-sm text-muted-foreground">{entry.plain}</dd>
+              {entry.example ? <dd className="text-sm text-muted-foreground">For example: {entry.example}</dd> : null}
+            </div>
+          ))}
+        </dl>
+      </section>
     </div>
   );
 }

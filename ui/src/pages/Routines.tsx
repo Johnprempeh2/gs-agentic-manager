@@ -18,6 +18,7 @@ import { groupBy } from "../lib/groupBy";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { EmptyState } from "../components/EmptyState";
+import { HelpTerm } from "../components/HelpTerm";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { InlineEntitySelector, type InlineEntityOption } from "../components/InlineEntitySelector";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "../components/MarkdownEditor";
@@ -751,7 +752,7 @@ export function Routines() {
         <div className="space-y-1">
           <h1 className="text-xl font-bold">Routines</h1>
           <p className="text-sm text-muted-foreground">
-            Work that repeats on a schedule, such as a weekly report. Each run makes a task you can follow.
+            Work that repeats on a schedule, such as a weekly report. Each <HelpTerm term="run" /> makes a <HelpTerm term="task" /> you can follow.
           </p>
         </div>
         <div className="flex items-center gap-2">
