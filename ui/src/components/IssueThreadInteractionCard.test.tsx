@@ -415,8 +415,8 @@ describe("IssueThreadInteractionCard", () => {
       onCancelInteraction: vi.fn(),
     });
 
-    expect(host.textContent).toContain("Questions expired by comment");
-    expect(host.textContent).toContain("A later board/user comment superseded this question request.");
+    expect(host.textContent).toContain("Questions replaced by a later comment");
+    expect(host.textContent).toContain("A later comment replaced this question.");
     expect(host.textContent).not.toContain("Send answers");
     expect(host.textContent).not.toContain("Cancel question");
 
@@ -440,8 +440,8 @@ describe("IssueThreadInteractionCard", () => {
       },
     });
 
-    expect(host.textContent).toContain("Question expired by comment");
-    expect(host.textContent).not.toContain("Questions expired by comment");
+    expect(host.textContent).toContain("Question replaced by a later comment");
+    expect(host.textContent).not.toContain("Questions replaced by a later comment");
   });
 
   it("renders withdrawn confirmations with the withdraw reason", () => {
@@ -469,8 +469,8 @@ describe("IssueThreadInteractionCard", () => {
       },
     });
 
-    expect(host.textContent).toContain("Expired · issue closed");
-    expect(host.textContent).toContain("This confirmation expired automatically when the issue reached a terminal state.");
+    expect(host.textContent).toContain("Closed with the task");
+    expect(host.textContent).toContain("The task was closed before anyone answered, so this request no longer needs a reply.");
     expect(host.textContent).not.toContain("Expired by target change");
   });
 
@@ -509,9 +509,9 @@ describe("IssueThreadInteractionCard", () => {
       },
     });
 
-    expect(host.textContent).toContain("Questions expired when the issue closed");
-    expect(host.textContent).toContain("This question request expired automatically when the issue reached a terminal state.");
-    expect(host.textContent).not.toContain("expired by comment");
+    expect(host.textContent).toContain("Questions closed with the task");
+    expect(host.textContent).toContain("The task was closed before anyone answered, so this question no longer needs a reply.");
+    expect(host.textContent).not.toContain("replaced by a later comment");
   });
 
   it("makes child tasks explicit in suggested task trees", () => {
@@ -1248,14 +1248,14 @@ describe("IssueThreadInteractionCard tool-action card", () => {
     });
 
     // Footer is trimmed to just the audit timestamp — the header status badge
-    // already carries the "Expired · issue closed" label, so the footer must
+    // already carries the "Closed with the task" label, so the footer must
     // not restate it.
     const footer = host.querySelector('[data-testid="interaction-issue-closed-footer"]');
     expect(footer?.textContent).toContain("20 Apr");
     expect(footer?.textContent).not.toContain("Expired when the issue closed");
-    // The "Expired · issue closed" label survives exactly once (the header
+    // The "Closed with the task" label survives exactly once (the header
     // status badge); the duplicate body eyebrow was dropped.
-    const label = "Expired · issue closed";
+    const label = "Closed with the task";
     const occurrences = (host.textContent ?? "").split(label).length - 1;
     expect(occurrences).toBe(1);
   });
