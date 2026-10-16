@@ -68,7 +68,7 @@ describe("IntegrationKeysPanel", () => {
       );
     });
     for (let i = 0; i < 5; i += 1) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
-    expect(container.textContent).toContain("3 integrations are waiting on you.");
+    expect(container.textContent).toContain("3 integrations are waiting on a key.");
     const link = container.querySelector<HTMLAnchorElement>('[data-testid="integration-key-link-higgsfield"]');
     expect(link?.getAttribute("href")).toBe("https://console.higgsfield.ai");
     expect(link?.getAttribute("target")).toBe("_blank");

@@ -99,16 +99,16 @@ export function RunAdmissionSettingsSection({
         }}
       >
         <div className="space-y-1.5">
-          <h2 className="text-sm font-semibold">Run limits</h2>
+          <h2 className="text-sm font-semibold">How much agents run at once</h2>
           <p className="max-w-2xl text-sm text-muted-foreground">
-            Limit how many agent runs this instance starts at once. Extra runs wait in the queue
-            and start when a slot, memory, or disk space frees up. They are never failed or cancelled.
+            Limit how many agents work at the same time so the computer that runs GSAM stays fast. Extra work waits
+            its turn and starts when there is room. Nothing is failed or cancelled. Most people can leave these as they are.
           </p>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-1.5">
-            <Label htmlFor={capId}>Run cap</Label>
+            <Label htmlFor={capId}>Most at once</Label>
             <Input
               id={capId}
               type="number"
@@ -129,7 +129,7 @@ export function RunAdmissionSettingsSection({
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={floorId}>RAM floor (MB)</Label>
+            <Label htmlFor={floorId}>Memory to keep free (MB)</Label>
             <Input
               id={floorId}
               type="number"
@@ -150,7 +150,7 @@ export function RunAdmissionSettingsSection({
             </p>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={diskId}>Disk floor (GB)</Label>
+            <Label htmlFor={diskId}>Disk space to keep free (GB)</Label>
             <Input
               id={diskId}
               type="number"
@@ -271,9 +271,9 @@ function UsageRecommendation({
   const matchesSaved =
     suggested.maxConcurrentRuns === savedCap && suggested.minAvailableMemoryMb === savedFloor;
   const rows = [
-    { label: "Run cap", current: String(savedCap), suggested: String(suggested.maxConcurrentRuns) },
+    { label: "Most at once", current: String(savedCap), suggested: String(suggested.maxConcurrentRuns) },
     {
-      label: "RAM floor",
+      label: "Memory to keep free",
       current: `${savedFloor} MB`,
       suggested: `${suggested.minAvailableMemoryMb} MB`,
     },

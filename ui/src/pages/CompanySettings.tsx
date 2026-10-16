@@ -470,12 +470,11 @@ export function CompanySettings() {
           {/* Danger Zone */}
           <div className="space-y-4">
             <div className="text-xs font-medium text-destructive uppercase tracking-wide">
-              Danger Zone
+              Archive
             </div>
             <div className="space-y-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-4">
               <p className="text-sm text-muted-foreground">
-                Archive this organization to hide it from the sidebar. This persists in
-                the database.
+                Archive this organisation to hide it from the sidebar. Nothing is deleted.
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -489,7 +488,7 @@ export function CompanySettings() {
                     if (!selectedCompanyId) return;
                     const confirmed = await confirmAction({
                       title: `Archive "${selectedCompany.name}"?`,
-                      description: "The organization will be hidden from the sidebar.",
+                      description: "The organisation will be hidden from the sidebar. Nothing is deleted.",
                       confirmLabel: "Archive",
                       tone: "destructive",
                     });

@@ -291,7 +291,7 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
     expect(container.textContent).toContain("AI feedback sharing");
     expect(container.textContent).not.toContain("Deployment and auth");
     expect(container.textContent).not.toContain("Censor username in logs");
-    expect(container.textContent).not.toContain("Run limits");
+    expect(container.textContent).not.toContain("How much agents run at once");
     expect(container.textContent).not.toContain("Sign out");
   });
 });
@@ -367,7 +367,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Run limits"));
+    await vi.waitFor(() => expect(container.textContent).toContain("How much agents run at once"));
   }
 
   function inputLabelled(label: string) {
@@ -392,8 +392,8 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
   it("shows the saved values, machine memory, and the suggested cap", async () => {
     await renderPage();
 
-    expect(inputLabelled("Run cap").value).toBe("4");
-    expect(inputLabelled("RAM floor (MB)").value).toBe("3072");
+    expect(inputLabelled("Most at once").value).toBe("4");
+    expect(inputLabelled("Memory to keep free (MB)").value).toBe("3072");
     await vi.waitFor(() => expect(container.textContent).toContain("Total RAM 16 GB"));
     expect(container.textContent).toContain("Available now 5 GB");
     // (16384 - 3072) / 500 = 26.6
@@ -407,7 +407,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
     const save = buttonNamed("Save run limits")!;
     expect(save.disabled).toBe(true);
 
-    typeInto(inputLabelled("Run cap"), "8");
+    typeInto(inputLabelled("Most at once"), "8");
     expect(save.disabled).toBe(false);
     flushSync(() => save.click());
 
@@ -420,7 +420,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
   it("sends every field when only the RAM floor changes", async () => {
     await renderPage();
 
-    typeInto(inputLabelled("RAM floor (MB)"), "0");
+    typeInto(inputLabelled("Memory to keep free (MB)"), "0");
     flushSync(() => buttonNamed("Save run limits")!.click());
 
     await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
@@ -431,9 +431,9 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
 
   it("edits the disk floor, defaulting to 20 GB, and 0 turns it off (GRE-207)", async () => {
     await renderPage();
-    expect(inputLabelled("Disk floor (GB)").value).toBe("20");
+    expect(inputLabelled("Disk space to keep free (GB)").value).toBe("20");
 
-    typeInto(inputLabelled("Disk floor (GB)"), "0");
+    typeInto(inputLabelled("Disk space to keep free (GB)"), "0");
     flushSync(() => buttonNamed("Save run limits")!.click());
 
     await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());
@@ -450,18 +450,18 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
       backupRetention: { dailyDays: 7, weeklyWeeks: 4, monthlyMonths: 1 },
     });
     await renderPage();
-    expect(inputLabelled("Run cap").value).toBe("6");
-    expect(inputLabelled("RAM floor (MB)").value).toBe("2048");
+    expect(inputLabelled("Most at once").value).toBe("6");
+    expect(inputLabelled("Memory to keep free (MB)").value).toBe("2048");
 
     await vi.waitFor(() => expect(buttonNamed("Use suggested")).toBeDefined());
     flushSync(() => buttonNamed("Use suggested")!.click());
-    expect(inputLabelled("Run cap").value).toBe("28");
+    expect(inputLabelled("Most at once").value).toBe("28");
   });
 
   it("blocks saving an out-of-range cap", async () => {
     await renderPage();
 
-    typeInto(inputLabelled("Run cap"), "0");
+    typeInto(inputLabelled("Most at once"), "0");
 
     expect(container.textContent).toContain("Enter a whole number from 1 to 1000.");
     expect(buttonNamed("Save run limits")!.disabled).toBe(true);
@@ -474,7 +474,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
     await vi.waitFor(() =>
       expect(container.textContent).toContain("Machine memory is not available, so no cap is suggested."),
     );
-    typeInto(inputLabelled("Run cap"), "3");
+    typeInto(inputLabelled("Most at once"), "3");
     expect(buttonNamed("Save run limits")!.disabled).toBe(false);
   });
 
@@ -496,7 +496,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
       );
     });
     await vi.waitFor(() => expect(container.textContent).toContain("Backup retention"));
-    expect(container.textContent).not.toContain("Run limits");
+    expect(container.textContent).not.toContain("How much agents run at once");
   });
 });
 
@@ -544,7 +544,7 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Run limits"));
+    await vi.waitFor(() => expect(container.textContent).toContain("How much agents run at once"));
   }
 
   function box() {
@@ -564,7 +564,7 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
     const text = box()!.textContent ?? "";
     expect(text).toContain("Recommended from your usage");
     const capRow = Array.from(box()!.querySelectorAll("tbody tr"))
-      .find((row) => row.querySelector("th")?.textContent === "Run cap");
+      .find((row) => row.querySelector("th")?.textContent === "Most at once");
     expect(Array.from(capRow!.querySelectorAll("td")).map((cell) => cell.textContent)).toEqual(["4", "5"]);
     expect(text).toContain("raise the cap by one to 5.");
     // The reasons carry the raw formula, so they sit behind a closed disclosure.
@@ -583,7 +583,7 @@ describe("InstanceGeneralSettings usage recommendation (GRE-117)", () => {
       runAdmission: { maxConcurrentRuns: 5, minAvailableMemoryMb: 3072, minFreeDiskGb: 20 },
     });
     const capLabel = Array.from(container.querySelectorAll("label"))
-      .find((el) => el.textContent === "Run cap");
+      .find((el) => el.textContent === "Most at once");
     expect(container.querySelector<HTMLInputElement>(`#${CSS.escape(capLabel!.getAttribute("for")!)}`)!.value)
       .toBe("5");
   });
