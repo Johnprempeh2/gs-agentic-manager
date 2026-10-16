@@ -20,8 +20,11 @@ describe("clipboard usage", () => {
   it("routes core and first-party plugin copy actions through shared helpers", () => {
     const coreSource = new URL("../", import.meta.url);
     const pluginSource = new URL("../../../packages/plugins/plugin-workspace-diff/src/ui/", import.meta.url);
+    // The two shared helpers are the only places allowed to write directly:
+    // plain text in lib/clipboard.ts, HTML plus text in lib/rich-clipboard.ts.
     const violations = [...sourceFiles(coreSource), ...sourceFiles(pluginSource)]
       .filter((file) => !file.replaceAll("\\", "/").endsWith("/lib/clipboard.ts"))
+      .filter((file) => !file.replaceAll("\\", "/").endsWith("/lib/rich-clipboard.ts"))
       .filter((file) => DIRECT_CLIPBOARD_WRITE.test(readFileSync(file, "utf8")));
 
     expect(violations).toEqual([]);
