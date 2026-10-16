@@ -7690,8 +7690,12 @@ export function issueService(db: Db) {
           .then((rows: Array<{ id: string }>) => rows.map((row) => row.id)),
       );
       const addedBlockerIds = deduped.filter((id) => !existingBlockerIds.has(id));
-      if ((await findCyclicBlockers(companyId, issueId, addedBlockerIds, dbOrTx)).length > 0) {
-        throw unprocessable("Blocking relations cannot contain cycles");
+      const addedCyclic = await findCyclicBlockers(companyId, issueId, addedBlockerIds, dbOrTx);
+      if (addedCyclic.length > 0) {
+        throw unprocessable("Blocking relations cannot contain cycles", {
+          issueId,
+          cyclicBlockerIssueIds: addedCyclic,
+        });
       }
       const keptBlockerIds = deduped.filter((id) => existingBlockerIds.has(id));
       const keptCyclic = await findCyclicBlockers(companyId, issueId, keptBlockerIds, dbOrTx);
@@ -8159,6 +8163,9 @@ export function issueService(db: Db) {
     clearExecutionRunIfTerminal,
     clearCheckoutRunIfTerminal,
     addStopRelayCommentIfNeeded,
+    /** The candidate blockers that would close a blocking loop if added to `issueId`. */
+    findCyclicBlockers: (companyId: string, issueId: string, blockerIssueIds: string[]) =>
+      findCyclicBlockers(companyId, issueId, blockerIssueIds),
 
     list: async (companyId: string, filters?: IssueFilters) => {
       if (filters?.sortField === "id" && filters.attention) {
