@@ -316,6 +316,23 @@ export function buildScoreboard<G extends GoalWithProgress>(
     .sort((a, b) => HEALTH_RANK[a.health] - HEALTH_RANK[b.health] || byAge(a.goal, b.goal));
 }
 
+const ATTENTION_HEALTH: ReadonlySet<GoalHealth> = new Set(["blocked", "at_risk"]);
+
+/**
+ * Only the goals that need someone to act: blocked or at risk (late goals
+ * count as at risk). A top-level goal stays when any of its sub-goals needs
+ * attention, and then keeps only those sub-goals.
+ */
+export function needsAttention<G extends GoalWithProgress>(
+  entries: readonly ScoreboardEntry<G>[],
+): ScoreboardEntry<G>[] {
+  return entries.flatMap((entry) => {
+    const subGoals = entry.subGoals.filter((sub) => ATTENTION_HEALTH.has(sub.health));
+    if (!ATTENTION_HEALTH.has(entry.health) && subGoals.length === 0) return [];
+    return [{ ...entry, subGoals }];
+  });
+}
+
 /** Mirrors the server: the oldest live agent that reports to no one. */
 export function leadAgentId(agents: readonly Agent[] | undefined): string | null {
   const live = (agents ?? []).filter((agent) => agent.status !== "terminated" && !agent.reportsTo);

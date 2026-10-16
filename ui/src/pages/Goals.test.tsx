@@ -96,4 +96,21 @@ describe("Goals page and the Strategy module (GRE-1382)", () => {
     await render();
     expect(container.textContent).toContain("One-page strategic plan");
   });
+
+  it("filters to the goals that need attention, and back", async () => {
+    api.goals.mockResolvedValue([
+      makeGoal({ id: "fine", title: "Ship the website", targetDate: "2099-12-31" }),
+      makeGoal({ id: "late", title: "Hire a designer", targetDate: "2020-01-01" }),
+    ]);
+    api.settings.mockResolvedValue({ enableStrategy: false });
+    await render();
+    const button = [...container.querySelectorAll("button")].find((b) => b.textContent === "Needs attention (1)");
+    expect(button).toBeTruthy();
+    flushSync(() => button!.click());
+    expect(container.textContent).toContain("Hire a designer");
+    expect(container.textContent).not.toContain("Ship the website");
+    const back = [...container.querySelectorAll("button")].find((b) => b.textContent === "Show every goal");
+    flushSync(() => back!.click());
+    expect(container.textContent).toContain("Ship the website");
+  });
 });
