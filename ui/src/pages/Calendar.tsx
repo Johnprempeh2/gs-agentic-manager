@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CompanyCalendar, CalendarItem, CalendarItemKind } from "@greatstone/shared";
-import { CalendarClock, CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
+import { CalendarClock, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, CircleCheck, ClipboardList, Repeat, Target } from "lucide-react";
 import { calendarApi } from "../api/calendar";
 import { issuesApi } from "../api/issues";
 import { useToastActions } from "../context/ToastContext";
@@ -13,6 +13,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import {
   CALENDAR_KIND_LABELS,
+  addDays,
   WEEKDAY_LABELS,
   calendarItemHref,
   canReschedule,
@@ -31,6 +32,8 @@ import {
   shiftMonth,
 } from "../lib/calendar";
 import { calendarIcsFileName, calendarToIcs } from "../lib/calendar-ics";
+import { weekAheadText } from "../lib/calendar-text";
+import { useCopyAction } from "../lib/use-copy-action";
 import { downloadTextFile } from "../lib/issues-csv";
 import { Link, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -291,6 +294,27 @@ export function Calendar() {
     downloadTextFile(calendarIcsFileName(prefix, month), ics, "text/calendar;charset=utf-8");
   }
 
+  const weekCopy = useCopyAction();
+  async function copyWeekAhead() {
+    const weekEnd = addDays(today, 6);
+    // Use the loaded month when it covers the week, so the copy stays inside the click.
+    const items =
+      data && from <= today && weekEnd <= to
+        ? data.items
+        : (
+            await queryClient.fetchQuery({
+              queryKey: queryKeys.calendar(selectedCompanyId!, today, weekEnd),
+              queryFn: () => calendarApi.get(selectedCompanyId!, today, weekEnd),
+            })
+          ).items;
+    await weekCopy.copy(
+      weekAheadText(
+        items.filter((item) => !hiddenKinds.has(item.kind)),
+        { from: today, timeZone: viewerTimeZone() },
+      ),
+    );
+  }
+
   function toggleKind(kind: CalendarItemKind) {
     const next = new Set(hiddenKinds);
     if (next.has(kind)) next.delete(kind);
@@ -321,6 +345,23 @@ export function Calendar() {
           >
             <CalendarPlus className="size-4" />
             <span className="hidden sm:inline">Add to my calendar</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!selectedCompanyId}
+            title="Copy the next 7 days as text to paste into an email or chat"
+            aria-label={weekCopy.copied ? "Copied" : "Copy the week ahead"}
+            onClick={() =>
+              void copyWeekAhead().catch((err) =>
+                pushToast({ title: "Could not load the week ahead", body: err instanceof Error ? err.message : undefined, tone: "error" }),
+              )
+            }
+          >
+            {weekCopy.copied ? <Check className="size-4" /> : <ClipboardList className="size-4" />}
+            <span className="hidden sm:inline">
+              {weekCopy.copied ? "Copied" : weekCopy.failed ? "Could not copy" : "Copy the week ahead"}
+            </span>
           </Button>
           <Button size="sm" variant="outline" onClick={() => update({ month: null, day: null })}>
             Today

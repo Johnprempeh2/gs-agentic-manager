@@ -311,6 +311,7 @@ export type {
   BlockedWorkRootCause,
   BlockedWorkTidyReason,
 } from "./types/blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./types/recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
