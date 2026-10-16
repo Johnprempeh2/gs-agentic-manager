@@ -88,6 +88,7 @@ export const ADAPTER_AGNOSTIC_KEYS = [
   "graceSec",
   "bootstrapPromptTemplate",
   "paperclipSkillSync",
+  "requiredCapabilities",
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
 

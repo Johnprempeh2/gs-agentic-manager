@@ -46,6 +46,13 @@ import { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-
 export { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
 import { buildExecutionContinuation, StaleExecutionContinuationError } from "./execution-continuation.js";
 import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
+import {
+  REQUIRED_CAPABILITY_MISSING_REASON,
+  RUN_CAPABILITY_CHECK_EVENT_TYPE,
+  checkRequiredRunCapabilities,
+  runCapabilityCheckEventPayload,
+  type RunCapabilityProbe,
+} from "./run-capability-check.js";
 import { rebrandRunLogText } from "@greatstone/adapter-utils/run-log-transcript";
 import { collectRunSecretValues, redactRunSecretValues } from "@greatstone/adapter-utils/run-secret-values";
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
@@ -9616,6 +9623,8 @@ export type HeartbeatEnvironmentRuntime = ReturnType<
 >;
 
 export interface HeartbeatServiceOptions {
+  /** Test seam for the required-tools check at run start. */
+  runCapabilityProbe?: RunCapabilityProbe;
   /** Test seam before the atomic native runtime handoff. */
   beforeNativeRuntimeSelection?: (runId: string) => Promise<void>;
   /** Test seam immediately before the durable chat-control admission check. */
@@ -24298,6 +24307,52 @@ export function heartbeatService(
         };
       } else {
         delete context.paperclipSecrets;
+      }
+      // Tools the agent declared it needs on this machine. Nothing declared
+      // means no check and no cost. A resumed native run already passed it.
+      if (!persistedNativeExecutionInput) {
+        const capabilityCheck = await checkRequiredRunCapabilities({
+          resolvedConfig,
+          environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
+          githubAccessProvidedByPlatform: githubSelection.configured,
+          baseEnv: runtimeEnv,
+          probe: options.runCapabilityProbe,
+        });
+        if (capabilityCheck.status !== "not_declared") {
+          const missing = capabilityCheck.status === "missing";
+          await appendRunEvent(run, {
+            eventType: RUN_CAPABILITY_CHECK_EVENT_TYPE,
+            stream: "system",
+            level: missing ? "error" : "info",
+            message:
+              capabilityCheck.status === "skipped"
+                ? "Skipped the check for required tools: this run does not use this machine."
+                : missing
+                  ? (capabilityCheck.message ?? "Some required tools are missing on this machine.")
+                  : "All required tools are available on this machine.",
+            payload: runCapabilityCheckEventPayload(capabilityCheck),
+          });
+          if (capabilityCheck.status === "missing") {
+            const missingCapabilities = [...capabilityCheck.report.missing].sort();
+            throw new ConfigurationIncompleteFailure(
+              capabilityCheck.message ?? "Some required tools are missing on this machine.",
+              {
+                configurationIncomplete: {
+                  reason: REQUIRED_CAPABILITY_MISSING_REASON,
+                  companyId: agent.companyId,
+                  agentId: agent.id,
+                  issueId: issueId ?? null,
+                  missingCapabilities,
+                  reasons: capabilityCheck.report.checks
+                    .filter((check) => !check.ok)
+                    .map((check) => ({ capability: check.capability, reason: check.reason })),
+                  actionUrl: `/agents/${agent.id}/configuration`,
+                  fingerprint: `capabilities:${agent.id}:${missingCapabilities.join(",")}`,
+                },
+              },
+            );
+          }
+        }
       }
       const effectiveResolvedConfig = applyRunScopedMentionedSkillKeys(
         resolvedConfig,

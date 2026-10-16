@@ -121,6 +121,22 @@ export function buildConfigurationIncompleteRecoveryNoticeSeed(
       tone: "danger",
     };
   }
+  if (readNonEmptyStringField(configurationIncomplete, "reason") === "required_capability_missing") {
+    const reasons = Array.isArray(configurationIncomplete?.reasons)
+      ? configurationIncomplete.reasons
+          .map((entry) => readNonEmptyStringField(entry as Record<string, unknown> | null, "reason"))
+          .filter((reason): reason is string => Boolean(reason))
+      : [];
+    return {
+      title: "A required tool is missing on this machine",
+      body:
+        "This task paused before the agent started because the machine that runs it is missing a tool the agent needs. " +
+        (reasons.length > 0 ? `${reasons.join(" ")} ` : "") +
+        "Moving it to `blocked` until the tool is available, then it can continue.",
+      nextAction: "Ask whoever runs the machine to install or start the missing tool, then continue the task.",
+      tone: "danger",
+    };
+  }
   if (readNonEmptyStringField(configurationIncomplete, "reason") === SANDBOX_PROVIDER_PLUGIN_NOT_READY_REASON) {
     const pluginKey = readNonEmptyStringField(configurationIncomplete, "pluginKey") ?? "the sandbox provider plugin";
     const pluginStatus = readNonEmptyStringField(configurationIncomplete, "pluginStatus") ?? "not ready";
