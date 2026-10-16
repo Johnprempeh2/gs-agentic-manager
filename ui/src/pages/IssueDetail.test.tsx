@@ -319,6 +319,9 @@ vi.mock("../context/ToastContext", () => ({
   useToastActions: () => ({
     pushToast: mockPushToast,
   }),
+  useOptionalToastActions: () => ({
+    pushToast: mockPushToast,
+  }),
 }));
 
 vi.mock("../hooks/useProjectOrder", () => ({

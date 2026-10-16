@@ -1002,6 +1002,13 @@ npx gsam asset content <asset-id> --out ./asset.bin
 ```
 
 ```sh
+npx gsam image status --company-id <company-id>
+npx gsam image generate --company-id <company-id> --prompt "..." [--shape square|wide|tall|landscape|portrait] [--issue-id <task-id>] [--out ./image.png] [--no-wait]
+npx gsam image get <image-id>
+npx gsam image list --company-id <company-id> [--limit 20]
+```
+
+```sh
 npx gsam skill list --company-id <company-id>
 npx gsam skill get <skill-id> --company-id <company-id>
 npx gsam skill file <skill-id> --company-id <company-id> [--path SKILL.md]

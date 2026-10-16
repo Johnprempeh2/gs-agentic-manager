@@ -44,6 +44,7 @@ import { Learnings, PipelineItemDetail, PipelineItemLegacyRedirect, Pipelines, R
 import { PipelineSettings } from "./pages/PipelineSettings";
 import { PipelineAccessOverview } from "./pages/PipelineAccessOverview";
 import { Organisations } from "./pages/Organisations";
+import { Integrations } from "./pages/Integrations";
 import { OrganisationPage } from "./pages/OrganisationPage";
 import { StatusCards } from "./pages/StatusCards";
 import { RoutineDetail } from "./pages/RoutineDetail";
@@ -54,6 +55,7 @@ import { WorkflowTemplates } from "./pages/WorkflowTemplates";
 import { Releases } from "./pages/Releases";
 import { Billing } from "./pages/Billing";
 import { Artifacts } from "./pages/Artifacts";
+import { Images } from "./pages/Images";
 import { Deliverables } from "./pages/Deliverables";
 import { Website } from "./pages/Website";
 import { Intelligence } from "./pages/Intelligence";
@@ -194,6 +196,7 @@ function boardRoutes() {
         path="company/settings/pipelines-access"
         element={<PipelinesExperimentalGate><PipelineAccessOverview /></PipelinesExperimentalGate>}
       />
+      <Route path="company/settings/integrations" element={<Integrations />} />
       <Route path="company/settings/tools" element={<LegacyToolsSettingsRedirect />} />
       <Route path="company/settings/tools/:tab" element={<LegacyToolsSettingsRedirect />} />
       <Route path="tools" element={<LegacyToolsRedirect />} />
@@ -406,6 +409,7 @@ function boardRoutes() {
         element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="images" element={<Images />} />
       <Route path="website" element={<Website />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
@@ -832,6 +836,7 @@ export function App() {
           <Route path="calendar" element={<UnprefixedBoardRedirect />} />
           <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
           <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
+          <Route path="images" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />

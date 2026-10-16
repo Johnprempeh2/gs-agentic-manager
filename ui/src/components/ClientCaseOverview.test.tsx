@@ -205,6 +205,7 @@ describe("client case page", () => {
 
     const titles = [...container.querySelectorAll("section > h2")].map((heading) => heading.textContent);
     expect(titles).toEqual([
+      "Where things stand",
       "Client record",
       "Contacts",
       "Evidence",

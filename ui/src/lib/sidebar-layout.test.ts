@@ -13,7 +13,7 @@ import { mergeSectionOrder } from "./sidebar-section-order";
 
 const EVERY_DESTINATION = [
   "needed", "decisions", "my-tasks", "inbox", "calendar", "chats",
-  "organisations", "pipelines", "deep-dive", "deliverables",
+  "organisations", "pipelines", "deep-dive", "deliverables", "images",
   "dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory",
   "agents", "scorecard", "weekly-report", "conference-room", "status",
   "skills", "connectors", "routines", "workflows", "workspaces", "artifacts", "cases",
@@ -66,7 +66,7 @@ describe("merging a saved layout with the defaults", () => {
       sections: { today: ["decisions", "deliverables"], clients: ["deliverables", "organisations"] },
     });
     expect(itemsOf(resolved, "today")).toEqual(["needed", "decisions", "my-tasks", "inbox", "calendar", "deliverables"]);
-    expect(itemsOf(resolved, "clients")).toEqual(["organisations", "pipelines", "deep-dive"]);
+    expect(itemsOf(resolved, "clients")).toEqual(["organisations", "pipelines", "deep-dive", "images"]);
   });
 
   it("respects hidden items and drops a pin on a hidden item", () => {
