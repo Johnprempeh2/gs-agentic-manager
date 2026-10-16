@@ -367,6 +367,8 @@ import {
   type IssueThreadInteractionResolverRestriction,
 } from "../services/issue-thread-interaction-resolution.js";
 import { resolveSelectedSuggestedTasks } from "../services/issue-thread-interactions.js";
+import { wakeMakersOfExpiredCards } from "../services/closed-card-wake.js";
+import type { IssueThreadInteraction } from "@greatstone/shared";
 import {
   asksToApproveVisualWork,
   issueHasApprovalEvidence,
@@ -5020,12 +5022,20 @@ export function issueRoutes(
   }
 
   async function logExpiredRequestConfirmations(input: {
-    issue: { id: string; companyId: string; identifier?: string | null };
+    issue: {
+      id: string;
+      companyId: string;
+      identifier?: string | null;
+      title?: string | null;
+      status?: string | null;
+      assigneeAgentId?: string | null;
+    };
     interactions: Array<{
       id: string;
       kind: string;
       status: string;
       result?: unknown;
+      createdByAgentId?: string | null;
     }>;
     actor: ReturnType<typeof getActorInfo>;
     source: string;
@@ -5051,6 +5061,15 @@ export function issueRoutes(
         },
       });
     }
+    // A card that expired on a task that is still open wakes the agent that
+    // made it, once, so the question is not silently dropped.
+    await wakeMakersOfExpiredCards(heartbeat, {
+      issue: input.issue,
+      interactions: input.interactions as IssueThreadInteraction[],
+      actorAgentId: input.actor.agentId ?? null,
+      source: input.source,
+      logger,
+    });
   }
 
   async function queueExpiredInteractionReviewPathRecovery(input: {
@@ -17729,6 +17748,16 @@ export function issueRoutes(
               : 0,
         },
       });
+      if (interaction.status === "expired") {
+        // The card went stale before it could be accepted: tell its maker.
+        await wakeMakersOfExpiredCards(heartbeat, {
+          issue,
+          interactions: [interaction],
+          actorAgentId: actor.agentId ?? null,
+          source: "issue.interaction.accept",
+          logger,
+        });
+      }
 
       if (continuationIssue) {
         await logActivity(db, {
@@ -17905,6 +17934,16 @@ export function issueRoutes(
                 : null,
         },
       });
+      if (interaction.status === "expired") {
+        // The card went stale before it could be rejected: tell its maker.
+        await wakeMakersOfExpiredCards(heartbeat, {
+          issue,
+          interactions: [interaction],
+          actorAgentId: actor.agentId ?? null,
+          source: "issue.interaction.reject",
+          logger,
+        });
+      }
 
       await queueResolvedInteractionContinuationWakeup({
         db,
@@ -18079,6 +18118,16 @@ export function issueRoutes(
               : false,
         },
       });
+      if (interaction.status === "expired") {
+        // The card went stale before the verdicts landed: tell its maker.
+        await wakeMakersOfExpiredCards(heartbeat, {
+          issue,
+          interactions: [interaction],
+          actorAgentId: actor.agentId ?? null,
+          source: "issue.interaction.verdicts",
+          logger,
+        });
+      }
 
       if (newlyResolvedItemIds.length > 0) {
         await queueResolvedInteractionContinuationWakeup({
