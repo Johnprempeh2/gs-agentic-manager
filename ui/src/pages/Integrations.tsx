@@ -96,6 +96,7 @@ export const INTEGRATIONS: IntegrationCardDef[] = [
     slug: "notion",
     name: "Notion",
     does: "Lets agents read and update your Notion pages and databases, such as client notes.",
+    extra: { label: "No Notion access? Import a Notion export", to: "/organisations" },
   },
   {
     slug: "slack",
@@ -136,6 +137,7 @@ const IMPORT_PARTS: Array<{ key: string; one: string; many: string }> = [
   { key: "contacts", one: "person", many: "people" },
   { key: "deals", one: "deal", many: "deals" },
   { key: "activities", one: "activity", many: "activities" },
+  { key: "tasks", one: "task", many: "tasks" },
 ];
 
 function joinWords(parts: string[]) {

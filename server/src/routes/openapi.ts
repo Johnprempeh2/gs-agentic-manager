@@ -376,6 +376,7 @@ import {
   inboundTaskSchema,
   updateInboundTaskHookSchema,
   importHubspotExportSchema,
+  importNotionSchema,
   importPipedriveExportSchema,
   listCrmSyncConflictsQuerySchema,
   listCrmSyncEventsQuerySchema,
@@ -1503,6 +1504,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/organisations/import/pipedrive",
   "POST /api/companies/{companyId}/organisations/import/pipedrive-export",
   "POST /api/companies/{companyId}/organisations/import/hubspot-export",
+  "POST /api/companies/{companyId}/organisations/import/notion",
   "GET /api/companies/{companyId}/inbound-task-hooks",
   "POST /api/companies/{companyId}/inbound-task-hooks",
   "PATCH /api/companies/{companyId}/inbound-task-hooks/{hookId}",
@@ -14158,6 +14160,22 @@ registerCurrentRoute({
   tags: ["organisations"],
   summary: "Import HubSpot export files (companies, contacts, deals) without an API key (company owners); 409 while an import runs",
   body: importHubspotExportSchema,
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/import/notion",
+  tags: ["organisations"],
+  summary: "Preview or import client notes from a Notion export's Markdown pages without a Notion key (company owners); 409 while an import runs",
+  body: importNotionSchema,
   responses: {
     200: r.ok(),
     400: r.badRequest,

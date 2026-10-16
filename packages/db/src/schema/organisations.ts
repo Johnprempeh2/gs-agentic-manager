@@ -36,7 +36,7 @@ export const organisations = pgTable(
       .on(table.companyId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
     statusCheck: check("organisations_status_check", sql`${table.status} in ('target', 'prospect', 'client', 'former')`),
-    sourceCheck: check("organisations_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot')`),
+    sourceCheck: check("organisations_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')`),
   }),
 );
 
@@ -64,6 +64,6 @@ export const organisationContacts = pgTable(
     externalUq: uniqueIndex("organisation_contacts_company_source_external_uq")
       .on(table.companyId, table.source, table.externalId)
       .where(sql`${table.externalId} is not null`),
-    sourceCheck: check("organisation_contacts_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot')`),
+    sourceCheck: check("organisation_contacts_source_check", sql`${table.source} in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')`),
   }),
 );
