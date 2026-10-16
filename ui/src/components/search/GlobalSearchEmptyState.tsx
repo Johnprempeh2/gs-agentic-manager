@@ -1,10 +1,11 @@
 import { useMemo } from "react";
-import { Clock, History, MessageCircle } from "lucide-react";
+import { Clock, History, MessageCircle, Pin, Star, X } from "lucide-react";
 import { CommandGroup, CommandItem, CommandSeparator } from "@/components/ui/command";
 import { getRecentTasksStorageKey, readRecentTasks } from "../../lib/recent-tasks";
 import { loadRecentSearches } from "../../lib/recent-searches";
 import { plainTaskStatus } from "../../lib/global-search";
 import { SUGGESTED_QUESTIONS } from "../../lib/ask-everest";
+import type { SavedSearchItem } from "../../lib/saved-searches";
 
 const RECENT_LIMIT = 5;
 
@@ -16,6 +17,8 @@ export function GlobalSearchEmptyState({
   companyId,
   userId,
   leadName,
+  saved = [],
+  onRemoveSaved,
   onGo,
   onSearch,
   onAsk,
@@ -23,6 +26,8 @@ export function GlobalSearchEmptyState({
   companyId: string;
   userId: string | null;
   leadName: string | null;
+  saved?: readonly SavedSearchItem[];
+  onRemoveSaved?: (id: string) => void;
   onGo: (path: string) => void;
   onSearch: (query: string) => void;
   onAsk: (question: string) => void;
@@ -35,6 +40,40 @@ export function GlobalSearchEmptyState({
 
   return (
     <>
+      {saved.length > 0 ? (
+        <>
+          <CommandGroup heading="Saved and pinned">
+            {saved.map((item) => (
+              <CommandItem
+                key={item.id}
+                value={`saved ${item.id} ${item.label}`}
+                onSelect={() => (item.kind === "search" ? onSearch(item.query) : onGo(item.path))}
+                data-testid="global-search-saved"
+              >
+                {item.kind === "search" ? <Star className="mr-2 h-4 w-4 shrink-0" /> : <Pin className="mr-2 h-4 w-4 shrink-0" />}
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                {onRemoveSaved ? (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${item.label}`}
+                    className="ml-2 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onRemoveSaved(item.id);
+                    }}
+                    data-testid="global-search-saved-remove"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                ) : null}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+          <CommandSeparator />
+        </>
+      ) : null}
       {recentTasks.length > 0 ? (
         <CommandGroup heading="Opened lately">
           {recentTasks.map((task) => (
