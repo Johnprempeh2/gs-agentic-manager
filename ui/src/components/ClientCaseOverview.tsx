@@ -151,7 +151,7 @@ export function ClientCaseOverview({
     <div className="space-y-8">
       <StageStrip stages={stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
 
-      <OverviewSection title="Where things stand">
+      <OverviewSection title="Where things stand" tour="client-status">
         <ClientJourneyOverview
           caseId={detail.case.id}
           ownerName={record.owner}
