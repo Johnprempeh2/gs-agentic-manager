@@ -96,7 +96,9 @@ import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
+  formatDealTotals,
   isDevtoolsCaseType,
+  sumDealValues,
   daysInStage,
   formatDaysInStage,
   readCardSummary,
@@ -1520,6 +1522,8 @@ function PipelineBoardColumn({
     ? groupCasesByBuiltFor(cases)
     : [{ key: "all", label: "", href: null, cases }];
   const sortableCaseIds = caseGroups.flatMap((group) => group.cases.map((entry) => entry.id));
+  // Deal values from a Pipedrive import, summed per stage as Pipedrive shows them.
+  const stageValue = formatDealTotals(sumDealValues(cases));
 
   return (
     <div
@@ -1547,6 +1551,7 @@ function PipelineBoardColumn({
         </div>
         <span className="ml-2 flex shrink-0 items-center gap-2 text-xs">
           <span>{cases.length} item{cases.length === 1 ? "" : "s"}</span>
+          {stageValue ? <span className="font-normal text-muted-foreground" data-testid="stage-deal-value">{stageValue}</span> : null}
           {warningCount ? (
             <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -1691,6 +1696,10 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     if (!pipeline?.stages) return [] as PipelineStage[];
     return [...pipeline.stages].sort((left, right) => left.position - right.position);
   }, [pipeline?.stages]);
+  const openDealValue = useMemo(() => {
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return formatDealTotals(sumDealValues(cases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
+  }, [cases, orderedStages]);
   const healthWarningsByStage = useMemo(
     () => groupWarningsByStage(healthQuery.data?.warnings ?? []),
     [healthQuery.data?.warnings],
@@ -1952,7 +1961,10 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
             )}
           </div>
           {pipeline.description ? <p className="mt-1 text-sm text-muted-foreground">{pipeline.description}</p> : null}
-          <p className="mt-1 text-xs text-muted-foreground">{cases.length} total item{cases.length === 1 ? "" : "s"}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {cases.length} total item{cases.length === 1 ? "" : "s"}
+            {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
+          </p>
           {fedByPipelines.length > 0 ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {fedByPipelines.map((source) => (

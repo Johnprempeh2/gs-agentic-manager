@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -34,5 +34,23 @@ describe("DevTools clients", () => {
       owner: "Ben",
       status: null,
     });
+  });
+});
+
+describe("deal value totals", () => {
+  it("sums deal and lead values per currency, largest first, and skips cases with none", () => {
+    const totals = sumDealValues([
+      { fields: { dealValue: 1000, dealCurrency: "GBP" } },
+      { fields: { dealValue: "2500.4", dealCurrency: "GBP" } },
+      { fields: { leadValue: 9000, leadCurrency: "USD" } },
+      { fields: { title: "No value" } },
+      { fields: null },
+    ]);
+    expect(totals).toEqual([
+      { currency: "USD", total: 9000 },
+      { currency: "GBP", total: 3500.4 },
+    ]);
+    expect(formatDealTotals(totals)).toBe("9,000 USD + 3,500 GBP");
+    expect(formatDealTotals(sumDealValues([{ fields: {} }]))).toBe("");
   });
 });

@@ -1,4 +1,5 @@
 import type { PipelineCaseEvent, PipelineStage } from "../api/pipelines";
+import { formatNumber } from "./utils";
 
 /** Pipeline key of the "Client journey" pipeline; its cases have type `client`. */
 export const CLIENT_CASE_TYPE = "client";
@@ -200,4 +201,27 @@ export function readDevtoolsDeal(fields: Record<string, unknown> | null | undefi
     lostReason: fieldText(record.lostReason),
     closedOn: status?.toLowerCase() === "won" ? fieldText(record.wonOn) : status?.toLowerCase() === "lost" ? fieldText(record.lostOn) : null,
   };
+}
+
+/** Deal value of one case, from a Pipedrive deal or lead; null when it has none. */
+export function caseDealValue(fields: Record<string, unknown> | null | undefined) {
+  const deal = readDevtoolsDeal(fields);
+  return deal.value == null ? null : { value: deal.value, currency: deal.currency ?? "" };
+}
+
+/** Deal values summed per currency, largest first, as Pipedrive shows under each stage. */
+export function sumDealValues(cases: Array<{ fields?: Record<string, unknown> | null }>) {
+  const totals = new Map<string, number>();
+  for (const item of cases) {
+    const deal = caseDealValue(item.fields);
+    if (!deal) continue;
+    totals.set(deal.currency, (totals.get(deal.currency) ?? 0) + deal.value);
+  }
+  return [...totals.entries()].map(([currency, total]) => ({ currency, total })).sort((a, b) => b.total - a.total);
+}
+
+export function formatDealTotals(totals: Array<{ currency: string; total: number }>) {
+  return totals
+    .map(({ currency, total }) => `${formatNumber(total, { maximumFractionDigits: 0 })}${currency ? ` ${currency}` : ""}`)
+    .join(" + ");
 }
