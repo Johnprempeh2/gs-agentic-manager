@@ -1,5 +1,11 @@
 import type { GoalWithProgress } from "@greatstone/shared";
-import { GOAL_HEALTH_LABEL, formatTargetDate, type GoalHealth, type ScoreboardEntry } from "./goal-journey";
+import {
+  GOAL_HEALTH_LABEL,
+  parseCalendarDate,
+  targetDateLabel,
+  type GoalHealth,
+  type ScoreboardEntry,
+} from "./goal-journey";
 import { csvCell } from "./issues-csv";
 import { formatCalendarDay } from "./utils";
 
@@ -14,7 +20,7 @@ function ownerName(goal: GoalWithProgress, lookups: GoalsTextLookups): string | 
   return null;
 }
 
-function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsTextLookups): string {
+function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsTextLookups, now: Date): string {
   const { progress } = goal;
   const owner = ownerName(goal, lookups);
   const details = [
@@ -22,7 +28,7 @@ function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsText
     progress.percent != null ? `${Math.round(progress.percent)}%` : null,
     progress.total > 0 ? `${progress.done} of ${progress.total} tasks done` : null,
     progress.blocked > 0 ? `${progress.blocked} blocked` : null,
-    goal.targetDate && formatTargetDate(goal.targetDate) ? `due ${formatTargetDate(goal.targetDate)}` : null,
+    targetDateLabel(goal.targetDate, health === "done", now)?.replace(/^Target /, "due ") ?? null,
     owner || null,
   ].filter(Boolean);
   return `${goal.title}: ${details.join(", ")}`;
@@ -35,6 +41,7 @@ function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsText
  *   Goals update, 16 Oct
  *
  *   • Win three new clients: At risk, 40%, 4 of 10 tasks done, 1 blocked, due 31 Dec, Ridge
+ *   • Launch the website: At risk, 80%, due 6 Oct, 10 days late
  *     ◦ Send the proposals: On track, 60%, 3 of 5 tasks done
  */
 export function goalsUpdateText(
@@ -43,10 +50,11 @@ export function goalsUpdateText(
   today: string,
 ): string {
   const header = `Goals update, ${formatCalendarDay(today)}`;
+  const now = parseCalendarDate(today) ?? new Date();
   if (entries.length === 0) return `${header}\n\nNo goals are open.`;
   const lines = entries.flatMap((entry) => [
-    `• ${goalLine(entry.goal, entry.health, lookups)}`,
-    ...entry.subGoals.map((sub) => `  ◦ ${goalLine(sub.goal, sub.health, lookups)}`),
+    `• ${goalLine(entry.goal, entry.health, lookups, now)}`,
+    ...entry.subGoals.map((sub) => `  ◦ ${goalLine(sub.goal, sub.health, lookups, now)}`),
   ]);
   return [header, "", ...lines].join("\n");
 }
