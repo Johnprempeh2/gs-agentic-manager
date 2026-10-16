@@ -75,12 +75,21 @@ export const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 /* ---- Primitive components ---- */
 
 export function HintIcon({ text, label }: { text: string; label?: string }) {
+  // Hover opens it on a computer; a tap opens it on a phone, which has no
+  // hover. Tapping anywhere else closes it.
+  const [open, setOpen] = useState(false);
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
           type="button"
+          data-hint-trigger=""
           aria-label={label ? `About ${label}` : "More info"}
+          onClick={(event) => {
+            // Radix closes a tooltip on click; keep it open so a tap shows it.
+            event.preventDefault();
+            setOpen(true);
+          }}
           className="inline-flex items-center justify-center text-subtle-foreground hover:text-muted-foreground transition-colors">
           <HelpCircle className="h-3 w-3" />
         </button>
