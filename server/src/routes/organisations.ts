@@ -231,15 +231,11 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
           details: {
             source: "pipedrive",
             connectionId: connection.id,
-            organisations: result.organisations,
-            contacts: result.contacts,
-            ...(result.pipelines ? { pipelines: result.pipelines } : {}),
-            ...(result.deals ? { deals: result.deals } : {}),
-            ...(result.activities ? { activities: result.activities } : {}),
-            ...(result.notes ? { notes: result.notes } : {}),
-            ...(result.calls ? { calls: result.calls } : {}),
-            ...(result.emails ? { emails: result.emails } : {}),
-            ...(result.stageChanges ? { stageChanges: result.stageChanges } : {}),
+            // Every count the run made, so Integrations can say what a re-import changed.
+            ...Object.fromEntries(Object.entries(result).filter(([, value]) => (
+              Boolean(value) && typeof value === "object" && !Array.isArray(value) && "created" in value
+            ))),
+            errorCount: result.errorSamples.length,
           },
         });
         res.json(result);

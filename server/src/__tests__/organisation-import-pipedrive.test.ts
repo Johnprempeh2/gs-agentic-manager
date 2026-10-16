@@ -310,6 +310,16 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
 
     const audit = await db.select().from(activityLog).where(eq(activityLog.action, "organisation.import_completed"));
     expect(audit).toHaveLength(3);
+    // Each run logs every count it made, so Integrations can say what a re-import changed.
+    const latest = audit.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0]!;
+    expect(latest.details).toMatchObject({
+      source: "pipedrive",
+      organisations: expect.objectContaining({ skipped: expect.any(Number) }),
+      contacts: expect.objectContaining({ created: expect.any(Number) }),
+      errorCount: expect.any(Number),
+    });
+    expect(latest.details).not.toHaveProperty("errorSamples");
+    expect(latest.details).not.toHaveProperty("startedAt");
   });
 
   it("links each organisation's Pipedrive owner to the GSAM member with the same email", async () => {
