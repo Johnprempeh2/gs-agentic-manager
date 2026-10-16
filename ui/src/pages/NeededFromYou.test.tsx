@@ -23,6 +23,7 @@ vi.mock("@/components/decisions-feed/DecisionFeedCard", () => ({
     <div data-testid="decision-card">{card.title} for {currentUserId}</div>
   ),
 }));
+vi.mock("@/components/AgentWorkDigest", () => ({ DashboardDigestCard: () => <div data-testid="digest">digest</div> }));
 vi.mock("@/components/BrandPageTitle", () => ({ BrandCaughtUpMark: () => null }));
 
 let root: Root | undefined;
@@ -62,6 +63,8 @@ describe("NeededFromYou", () => {
     await render();
     expect(container.textContent).toContain("Nothing needs you right now");
     expect(container.textContent).toContain("You are all caught up");
+    // Even when nothing waits, the page says what the agents did meanwhile.
+    expect(container.querySelector('[data-testid="needed-meanwhile"] [data-testid="digest"]')).not.toBeNull();
   });
 
   it("groups what waits, names who is waiting, and caps each group", async () => {

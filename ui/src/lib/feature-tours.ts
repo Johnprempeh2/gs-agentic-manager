@@ -295,7 +295,7 @@ export const NEEDED_TOUR: TourDefinition = {
   id: "needed",
   title: "Needed from you",
   description: "Everything the team is waiting on you for, on one page.",
-  version: 1,
+  version: 2,
   autoStart: false,
   route: { match: /^\/needed\/?$/, path: "/needed" },
   label: "Needed from you",
@@ -308,7 +308,12 @@ export const NEEDED_TOUR: TourDefinition = {
     {
       target: "needed-groups",
       title: "Grouped by what to do",
-      body: "Questions to answer, sign-offs, stuck work, logins to fix, your own tasks and clients waiting on you. Select a group to jump to it, then select an item to deal with it.",
+      body: "Questions to answer, sign-offs, stuck work, logins to fix, your own tasks and clients waiting on you. Select a group to jump to it. Select Act here to answer or approve without leaving the page.",
+    },
+    {
+      target: "needed-meanwhile",
+      title: "What the team did meanwhile",
+      body: "Below the list, see what each agent finished and started since you were last here.",
     },
     {
       title: "When it is empty",
