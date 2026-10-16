@@ -256,7 +256,7 @@ export const TEAM_CHAT_TOUR: TourDefinition = {
 /** The closing step on everyday tours: where help lives. */
 const HELP_EVERYWHERE: TourStep = {
   title: "Help on every page",
-  body: "Select Show me around at the top of any page to see this again. Tutorials, in your account menu, lists every tour.",
+  body: "Select Show me around at the top of any page to see its tour. Start each day on Needed from you, at the top of the sidebar.",
 };
 
 export const DASHBOARD_TOUR: TourDefinition = {
@@ -288,6 +288,32 @@ export const DASHBOARD_TOUR: TourDefinition = {
       body: "Select New Task and describe what you want in plain words. An agent picks it up and reports back in the task.",
     },
     HELP_EVERYWHERE,
+  ],
+};
+
+export const NEEDED_TOUR: TourDefinition = {
+  id: "needed",
+  title: "Needed from you",
+  description: "Everything the team is waiting on you for, on one page.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/needed\/?$/, path: "/needed" },
+  label: "Needed from you",
+  steps: [
+    {
+      target: "needed-summary",
+      title: "Start here each day",
+      body: "This page answers one question: what is the team waiting on me for? The first line says how many things and how long the oldest has waited.",
+    },
+    {
+      target: "needed-groups",
+      title: "Grouped by what to do",
+      body: "Questions to answer, sign-offs, stuck work, logins to fix, your own tasks and clients waiting on you. Select a group to jump to it, then select an item to deal with it.",
+    },
+    {
+      title: "When it is empty",
+      body: "Nothing here means the agents have all they need from you. Check back when the sidebar shows a new decision.",
+    },
   ],
 };
 
@@ -494,6 +520,7 @@ export const MEMORY_TOUR: TourDefinition = {
 
 /** Everyday pages: their tours live in the page bar. */
 export const CORE_TOURS: TourDefinition[] = [
+  NEEDED_TOUR,
   DASHBOARD_TOUR,
   DECISIONS_TOUR,
   MY_TASKS_TOUR,

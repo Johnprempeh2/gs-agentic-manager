@@ -75,6 +75,7 @@ import { TeamScorecard } from "./pages/TeamScorecard";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
+import { NeededFromYou } from "./pages/NeededFromYou";
 import { MyTasks } from "./pages/MyTasks";
 import { DecisionQueuePage } from "./pages/DecisionQueuePage";
 import { BoardChat } from "./pages/BoardChat";
@@ -442,6 +443,7 @@ function boardRoutes() {
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
+      <Route path="needed" element={<NeededFromYou />} />
       <Route path="decisions" element={<WhatNeedsMe />} />
       <Route path="my-tasks" element={<MyTasks />} />
       <Route path="decisions/queues/:key" element={<DecisionQueuePage />} />
