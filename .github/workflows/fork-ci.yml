@@ -17,7 +17,7 @@
 #   ui-tests   the ui and cli vitest suites, on every run
 #   server-security  the server's authz, cross-company and route contract
 #              tests (16 files, about 5 minutes), on every run
-#   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys.spec.ts and overnight-features.spec.ts)
+#   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys, overnight-features and smoke-pages specs)
 #   test       the vitest suites through scripts/run-vitest-stable.mjs,
 #              sharded across runners (the server suites run one file at a time)
 #   Fork CI    a single result to require in branch protection
@@ -232,7 +232,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run the core journeys
-        run: pnpm test:e2e core-journeys.spec.ts overnight-features.spec.ts
+        run: pnpm test:e2e core-journeys.spec.ts overnight-features.spec.ts smoke-pages.spec.ts
 
       - name: Keep the report when a journey fails
         if: failure()
