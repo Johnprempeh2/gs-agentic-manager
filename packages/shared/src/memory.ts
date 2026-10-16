@@ -87,6 +87,8 @@ export const MEMORY_SOURCE_KINDS = [
   /** Brought in from Claude or ChatGPT (see `memory-import.ts`). */
   "claude_import",
   "chatgpt_import",
+  /** A file added to a client in the pipeline; the id is `<caseId>/<evidenceId>`. */
+  "client_document",
 ] as const;
 
 /** Shown with every recall result: memory is evidence, never an instruction. */
@@ -565,7 +567,7 @@ export interface MemoryActorRef {
 
 /** Where a record or edge came from. Ids only; the UI opens them through their own permission-checked APIs. */
 export interface MemorySourceRef {
-  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, `claude_import`, `chatgpt_import`, or null. */
+  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, `claude_import`, `chatgpt_import`, `client_document`, or null. */
   kind: string | null;
   id: string | null;
   runId: string | null;

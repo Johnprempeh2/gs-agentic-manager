@@ -56,6 +56,14 @@ function Muted({ children }: { children: ReactNode }) {
 export function MemorySourceLink({ source }: { source: MemorySourceRef | null | undefined }) {
   const ref = sourceRef(source);
   if (!ref) return <span className="text-muted-foreground">Not recorded</span>;
+  // A file is served by the API, outside the app's routes.
+  if (ref.href?.startsWith("/api/")) {
+    return (
+      <a href={ref.href} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
+        {ref.label}
+      </a>
+    );
+  }
   return ref.href ? (
     <Link to={ref.href} className="underline underline-offset-2 hover:text-foreground">
       {ref.label}

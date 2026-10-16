@@ -14,6 +14,9 @@ import {
   issueDocuments,
   issues,
   issueWorkProducts,
+  memoryRecords,
+  memoryScopes,
+  memorySettings,
   pipelineCaseEvidence,
   pipelineStages,
   projects,
@@ -25,6 +28,7 @@ import {
 import { errorHandler } from "../middleware/error-handler.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { memoryGatewayService } from "../services/memory-gateway/service.js";
 import type { StorageService } from "../storage/types.js";
 
 // In-memory storage for uploads: object key to bytes.
@@ -416,6 +420,56 @@ describeEmbeddedPostgres("client files", () => {
     expect(storedObjects.size).toBe(0);
     await http.get(uploaded.body.contentPath).expect(404);
     expect(await db.select().from(assets).where(sql`${assets.originalFilename} = 'Executive discovery.pdf'`)).toEqual([]);
+  });
+
+  it("feeds a file added to a client into memory, waiting for review and linked back to the file", async () => {
+    const { company } = await seedCompany("Greatstone");
+    const caseId = await seedClientCase(company.id, "Indago");
+    await db.insert(memorySettings).values({ companyId: company.id, enabled: true, retainMode: "chunks" });
+    const http = request(app());
+
+    // No client memory named Indago yet: the entry goes to organisation memory, naming the client.
+    const notes = await http
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .field("note", "From the kickoff")
+      .attach("file", Buffer.from("Budget is 40k. Decision by March."), { filename: "Kickoff notes.txt", contentType: "text/plain" })
+      .expect(201);
+    const [orgEntry] = await db.select().from(memoryRecords).where(sql`${memoryRecords.sourceKind} = 'client_document'`);
+    expect(orgEntry).toMatchObject({
+      status: "unreviewed",
+      sourceId: `${caseId}/${notes.body.id}`,
+      title: "Indago: Kickoff notes.txt",
+      contributorUserId: "board-user",
+    });
+    expect(orgEntry!.content).toContain("Indago: Kickoff notes.txt was added to the client on");
+    expect(orgEntry!.content).toContain("Note: From the kickoff");
+    expect(orgEntry!.content).toContain("Budget is 40k. Decision by March.");
+    const [orgScope] = await db.select().from(memoryScopes).where(sql`${memoryScopes.id} = ${orgEntry!.scopeId}`);
+    expect(orgScope!.kind).toBe("organization");
+
+    // Once a client memory of the same name exists, the next file goes there; a PDF keeps no text.
+    const clientScope = await memoryGatewayService(db).createScope(
+      { companyId: company.id, actorType: "user", actorId: "board-user", agentId: null, userId: "board-user", runId: null, isBoardAdmin: true },
+      { kind: "client", name: "indago" },
+    );
+    await http
+      .post(`/api/cases/${caseId}/nda/signed`)
+      .attach("file", Buffer.from("%PDF-1.4 nda"), { filename: "NDA.pdf", contentType: "application/pdf" })
+      .expect(201);
+    const entries = await db.select().from(memoryRecords).where(sql`${memoryRecords.scopeId} = ${clientScope!.id}`);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.title).toBe("Indago: Signed NDA (NDA.pdf)");
+    expect(entries[0]!.content).not.toContain("%PDF");
+  });
+
+  it("still takes the file when memory is off", async () => {
+    const { company } = await seedCompany("Greatstone");
+    const caseId = await seedClientCase(company.id, "Indago");
+    await request(app())
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .attach("file", Buffer.from("hello"), { filename: "a.txt", contentType: "text/plain" })
+      .expect(201);
+    expect(await db.select().from(memoryRecords)).toHaveLength(0);
   });
 
   it("keeps a client's uploads inside its own company", async () => {
