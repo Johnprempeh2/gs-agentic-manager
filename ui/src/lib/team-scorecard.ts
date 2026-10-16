@@ -28,6 +28,10 @@ export function workValueLabel(cents: number): string {
   return `$${Math.round(cents / 100)}`;
 }
 
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 function taskLine(task: TeamScorecard["agents"][number]["recentlyFinished"][number]): string {
   return task.identifier ? `${task.identifier} ${task.title}` : task.title;
 }
@@ -35,12 +39,19 @@ function taskLine(task: TeamScorecard["agents"][number]["recentlyFinished"][numb
 /**
  * The scorecard as a short plain-text update to paste into an email or chat:
  * totals first, then one line per agent with what it finished and what is stuck.
+ * With the scorecard for twice as long, each finished count also says how it
+ * compares with the period before.
  */
-export function scorecardUpdateText(scorecard: TeamScorecard, organisationName?: string | null): string {
+export function scorecardUpdateText(
+  scorecard: TeamScorecard,
+  organisationName?: string | null,
+  overTwice?: TeamScorecard | null,
+): string {
   const period = scorecard.days === 7 ? "the last 7 days" : `the last ${scorecard.days} days`;
   const { totals } = scorecard;
   const lines = [`${organisationName ? `${organisationName} team` : "Team"} update for ${period}`, ""];
-  const summary = [`Finished ${count(totals.finished, "task", "tasks")}.`];
+  const totalTrend = overTwice ? finishedTrend(totals.finished, overTwice.totals.finished, scorecard.days) : null;
+  const summary = [`Finished ${count(totals.finished, "task", "tasks")}${totalTrend ? `, ${lowerFirst(totalTrend)}` : ""}.`];
   const now: string[] = [];
   if (totals.underWay) now.push(`${totals.underWay} under way`);
   if (totals.inReview) now.push(`${totals.inReview} waiting for review`);
@@ -49,7 +60,10 @@ export function scorecardUpdateText(scorecard: TeamScorecard, organisationName?:
   if (now.length) summary.push(`${now.join(", ")}.`);
   lines.push(summary.join(" "));
   for (const agent of scorecard.agents) {
-    lines.push("", `${agent.name}${agent.title ? ` (${agent.title})` : ""}: ${scorecardSentence(agent, scorecard.days)}`);
+    const before = overTwice?.agents.find((row) => row.agentId === agent.agentId)?.finished ?? agent.finished;
+    const agentTrend = overTwice ? finishedTrend(agent.finished, before, scorecard.days) : null;
+    const sentence = `${scorecardSentence(agent, scorecard.days)}${agentTrend ? ` Finished tasks: ${lowerFirst(agentTrend)}.` : ""}`;
+    lines.push("", `${agent.name}${agent.title ? ` (${agent.title})` : ""}: ${sentence}`);
     for (const task of agent.recentlyFinished) lines.push(`  - Finished: ${taskLine(task)}`);
     for (const task of agent.stuckTasks) lines.push(`  - Stuck: ${taskLine(task)}`);
   }
