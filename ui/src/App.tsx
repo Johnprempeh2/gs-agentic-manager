@@ -73,6 +73,7 @@ import { CompanyActivity } from "./pages/audit/CompanyActivity";
 import { SinceLastVisit } from "./pages/SinceLastVisit";
 import { Calendar } from "./pages/Calendar";
 import { TeamScorecard } from "./pages/TeamScorecard";
+import { WeeklyReport } from "./pages/WeeklyReport";
 import { NotificationSettings } from "./pages/NotificationSettings";
 import { MorningSummary } from "./pages/MorningSummary";
 import { AuditHub } from "./pages/audit/AuditHub";
@@ -422,6 +423,7 @@ function boardRoutes() {
       <Route path="since-last-visit" element={<SinceLastVisit />} />
       <Route path="calendar" element={<Calendar />} />
       <Route path="scorecard" element={<TeamScorecard />} />
+      <Route path="weekly-report" element={<WeeklyReport />} />
       <Route path="notifications" element={<NotificationSettings />} />
       <Route path="morning" element={<MorningSummary />} />
       <Route path="activity" element={<CompanyActivity />} />
@@ -829,6 +831,7 @@ export function App() {
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
           <Route path="calendar" element={<UnprefixedBoardRedirect />} />
           <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
+          <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />

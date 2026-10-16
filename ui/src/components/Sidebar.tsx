@@ -46,6 +46,7 @@ import {
   type LucideIcon,
   CalendarDays,
   Trophy,
+  Newspaper,
 } from "lucide-react";
 import {
   DndContext,
@@ -438,6 +439,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     memory: gated(memoryEnabled, link("/memory", "Memory", Brain)),
     agents: link("/agents", "Agents", Users),
     scorecard: link("/scorecard", "Scorecard", Trophy),
+    "weekly-report": link("/weekly-report", "This week", Newspaper),
     "conference-room": gated(conferenceRoomChatEnabled, link("/board-chat", "Conference Room", MessagesSquare)),
     status: gated(showStatusCards, link("/status", "Status", LayoutGrid, { textBadge: "beta" })),
     skills: link("/skills", "Skills", Boxes),
