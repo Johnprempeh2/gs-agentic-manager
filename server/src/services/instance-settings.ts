@@ -221,6 +221,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       teamCatalogFilter: parsed.data.teamCatalogFilter ?? "greatstone",
       teamCatalogAddMode: parsed.data.teamCatalogAddMode ?? "request",
       strategyBoardEmail: parsed.data.strategyBoardEmail ?? DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+      // Absent => "stop" (GRE-1365); only carry through an explicit choice.
+      ...(parsed.data.budgetHardStopMode ? { budgetHardStopMode: parsed.data.budgetHardStopMode } : {}),
     };
   }
   return {

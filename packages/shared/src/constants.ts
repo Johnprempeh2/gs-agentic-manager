@@ -1017,6 +1017,9 @@ export type WakeupTriggerDetail = (typeof WAKEUP_TRIGGER_DETAILS)[number];
 export const WAKEUP_REQUEST_STATUSES = [
   "queued",
   "deferred_issue_execution",
+  // Kept at a budget hard stop in hold mode (GRE-1365); released once per task.
+  "budget_held",
+  "budget_releasing",
   "claimed",
   "coalesced",
   "skipped",

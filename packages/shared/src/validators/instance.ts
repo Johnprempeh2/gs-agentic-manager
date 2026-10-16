@@ -8,6 +8,7 @@ import {
   TEAM_CATALOG_ADD_MODES,
   TEAM_CATALOG_FILTERS,
   DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  BUDGET_HARD_STOP_MODES,
 } from "../types/instance.js";
 import { feedbackDataSharingPreferenceSchema } from "./feedback.js";
 import { aiAccessRouteSchema } from "../ai-connections.js";
@@ -66,6 +67,10 @@ export const instanceGeneralSettingsSchema = z.object({
   // Which board emails go out (GRE-1187). Nothing is sent while
   // enableStrategyBoard is off or a company has no secretary inbox.
   strategyBoardEmail: strategyBoardEmailSettingsSchema.default(DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS),
+  // What a budget hard stop does with queued task work (GRE-1365). Absent =>
+  // "stop" (cancel it); "hold" keeps it and wakes each held task once after
+  // an approved raise. John decides the default (decision pack D-stop/queue).
+  budgetHardStopMode: z.enum(BUDGET_HARD_STOP_MODES).optional(),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z
