@@ -7,7 +7,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CalendarItem } from "@greatstone/shared";
-import { localToday, rescheduleOptions } from "../lib/calendar";
+import { addDays, localToday, monthKey, rescheduleOptions } from "../lib/calendar";
 import { Calendar } from "./Calendar";
 
 const api = vi.hoisted(() => ({ calendar: vi.fn(), update: vi.fn(), pushToast: vi.fn(), copy: vi.fn() }));
@@ -210,5 +210,47 @@ describe("Calendar drag to reschedule", () => {
     expect(chip("Task 5")).toBeDefined();
     expect(chip("Other week")).toBeUndefined();
     expect(container.querySelector('[aria-label="Next week"]')).not.toBeNull();
+  });
+
+  it("moves overdue tasks to today in one go, with an undo", async () => {
+    const today = localToday();
+    const late = addDays(today, -3);
+    api.calendar.mockResolvedValue({
+      from: addDays(today, -40),
+      to: addDays(today, 40),
+      items: [
+        item({ id: "late", date: late, title: "Late task" }),
+        item({ id: "done", date: late, title: "Done task", closed: true }),
+        item({ kind: "goal", id: "g1", date: late, title: "Late goal", identifier: null }),
+      ],
+    });
+    flushSync(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={[`/calendar?month=${monthKey(late)}&day=${late}`]}>
+            <Calendar />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await flushReact();
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (el) => el.textContent === "Move the overdue task to today",
+    );
+    expect(button).toBeDefined();
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(api.update).toHaveBeenCalledTimes(1);
+    expect(api.update).toHaveBeenCalledWith("late", { dueDate: today });
+    const toast = api.pushToast.mock.calls.at(-1)![0] as { title: string; action?: { label: string; onClick: () => void } };
+    expect(toast.title).toBe("1 overdue task now due today");
+    expect(toast.action?.label).toBe("Undo");
+    await act(async () => {
+      toast.action!.onClick();
+    });
+    await flushReact();
+    expect(api.update).toHaveBeenLastCalledWith("late", { dueDate: late });
   });
 });
