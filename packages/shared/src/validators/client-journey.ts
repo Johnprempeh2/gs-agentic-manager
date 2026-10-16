@@ -71,3 +71,20 @@ export const setCaseEngagementSchema = z.object({ status: engagementStatusSchema
 
 export type EngagementStatus = z.infer<typeof engagementStatusSchema>;
 export type SetCaseEngagement = z.infer<typeof setCaseEngagementSchema>;
+
+/**
+ * POST /api/client-acceptance/:token/accept: the client accepts the engagement
+ * pack online (no sign-in). They type their name and email and tick that they
+ * have read the pack and accept it for their organisation.
+ */
+export const acceptClientEngagementSchema = z.object({
+  name: z.string().trim().min(2).max(200),
+  role: z.string().trim().max(200).optional().nullable(),
+  email: z.string().trim().email().max(320),
+  agree: z.literal(true),
+}).strict();
+
+export type AcceptClientEngagement = z.infer<typeof acceptClientEngagementSchema>;
+
+/** How long a client acceptance link works for, in days. */
+export const CLIENT_ACCEPTANCE_LINK_DAYS = 30;

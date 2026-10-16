@@ -29,6 +29,7 @@ import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
+import { ClientAcceptancePage } from "./pages/ClientAcceptance";
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
@@ -805,6 +806,7 @@ export function App() {
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
+        <Route path="accept/:token" element={<ClientAcceptancePage />} />
         <Route element={<CloudAccessGate allowMembershipRequest />}>
           {/* The identity APIs enforce the chat rollout flag. Nonmembers cannot
               read experimental settings, but a private invitation may request membership. */}

@@ -60,6 +60,7 @@ import {
   updateDeliverableSchema,
   setCaseNdaSchema,
   setCaseEngagementSchema,
+  acceptClientEngagementSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -4687,6 +4688,57 @@ registry.registerPath({
     body: jsonBody(setCaseEngagementSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/online-link",
+  tags: ["issues"],
+  summary:
+    "Make the client's online acceptance link (board only). Returns the link once; a new link revokes the older " +
+    "one. Needs a cleared NDA and an uploaded pack (409)",
+  request: { params: z.object({ caseId: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/cases/{caseId}/engagement/online-link",
+  tags: ["issues"],
+  summary: "Stop the client's online acceptance link (board only). 404 when there is no open link",
+  request: { params: z.object({ caseId: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-acceptance/{token}",
+  tags: ["issues"],
+  summary:
+    "Public, no sign-in: what a client sees on their acceptance page (company and client names, the pack, the " +
+    "acceptance). 404 when the link is unknown, revoked or expired",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-acceptance/{token}/pack",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the engagement pack file behind an acceptance link",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-acceptance/{token}/accept",
+  tags: ["issues"],
+  summary:
+    "Public, no sign-in: the client accepts the engagement pack with their name, optional role and email. The " +
+    "client's engagement moves to accepted. 409 when already accepted",
+  request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

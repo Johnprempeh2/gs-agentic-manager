@@ -122,6 +122,48 @@ export interface ClientEngagement {
   changedAt: string | null;
   pack: ClientJourneyFileRef | null;
   acceptance: ClientJourneyFileRef | null;
+  /** The newest online acceptance link, or null when none was made or it was revoked. */
+  onlineLink?: ClientAcceptanceLinkSummary | null;
+}
+
+/**
+ * The online acceptance link for a client, as the board sees it. The link
+ * itself is shown only once, when it is made.
+ */
+export interface ClientAcceptanceLinkSummary {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  /** True once the expiry date has passed without an acceptance. */
+  expired: boolean;
+  acceptedAt: string | null;
+  acceptedName: string | null;
+  acceptedRole: string | null;
+  acceptedEmail: string | null;
+}
+
+/** POST /api/cases/:caseId/engagement/online-link: the new link, shown once. */
+export interface CreateClientAcceptanceLinkResponse {
+  /** Full address when the server knows its public URL, else the path to append to it. */
+  url: string;
+  path: string;
+  link: ClientAcceptanceLinkSummary;
+}
+
+/**
+ * GET /api/client-acceptance/:token: what the client sees on the public page.
+ * Only the names, the pack and the acceptance: nothing internal.
+ */
+export interface PublicClientAcceptance {
+  companyName: string;
+  clientName: string;
+  packTitle: string;
+  /** Public path that returns the pack file. */
+  packPath: string;
+  status: "open" | "accepted";
+  expiresAt: string;
+  acceptedAt: string | null;
+  acceptedName: string | null;
 }
 
 /** GET /api/cases/:caseId/journey — the internal, per-stage view of a client. */
