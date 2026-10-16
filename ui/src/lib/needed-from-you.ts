@@ -1,5 +1,6 @@
 import type { DecisionCard, DecisionCardKind, NeedsMe } from "@greatstone/shared";
 import type { PipelineAttentionFeed } from "@/api/pipelines";
+import { formatShortDate } from "@/lib/utils";
 
 /** The kinds of thing the team can need from a person, in the order the page shows them. */
 export type NeededGroupId = "answer" | "sign-off" | "unblock" | "fix" | "overdue" | "tasks" | "clients";
@@ -224,4 +225,28 @@ export function withoutPutAway(
   return groups
     .map((group) => ({ ...group, items: group.items.filter((item) => !away.has(neededLaterKey(item.id))) }))
     .filter((group) => group.items.length > 0);
+}
+
+/**
+ * "Copy as a list" on Needed from you: every row, grouped as on the page,
+ * with who is waiting, for how long and a link, ready to paste into notes or
+ * a message to an assistant.
+ */
+export function neededListText(groups: NeededGroup[], origin = "", now = Date.now()): string {
+  const day = formatShortDate(new Date(now));
+  const lines = [`What needs me, ${day}`, neededSummary(groups, now)];
+  for (const group of groups) {
+    if (group.items.length === 0) continue;
+    lines.push("", group.title);
+    for (const item of group.items) {
+      const who = [
+        item.waiting,
+        item.since ? `waiting ${waitedFor(now - new Date(item.since).getTime())}` : null,
+      ].filter(Boolean);
+      const detail = item.reason ? `: ${item.reason}` : "";
+      const tail = who.length > 0 ? ` (${who.join(", ")})` : "";
+      lines.push(`• ${item.title}${detail}${tail}${origin ? ` ${origin}${item.href}` : ""}`);
+    }
+  }
+  return lines.join("\n");
 }

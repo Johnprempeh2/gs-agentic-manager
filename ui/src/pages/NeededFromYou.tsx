@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ArrowRight,
   Ban,
+  Check,
   CheckCircle2,
+  ClipboardList,
   Clock,
   Handshake,
   MessageCircleQuestion,
@@ -34,6 +36,7 @@ import { inboxSnoozeUntilTomorrow } from "@/lib/inbox";
 import {
   buildNeededFromYou,
   neededLaterKey,
+  neededListText,
   neededSummary,
   waitedFor,
   withoutPutAway,
@@ -43,6 +46,7 @@ import {
 } from "@/lib/needed-from-you";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
+import { useCopyAction } from "@/lib/use-copy-action";
 
 /** Rows shown per group before "and N more". */
 export const NEEDED_ROWS_PER_GROUP = 3;
@@ -145,6 +149,8 @@ export function NeededFromYou() {
     [pushToast, restore, snooze],
   );
 
+  const listCopy = useCopyAction();
+
   if (!selectedCompanyId) {
     return <p className="text-sm text-muted-foreground">Select an organisation first.</p>;
   }
@@ -156,7 +162,20 @@ export function NeededFromYou() {
       <header className="space-y-1" data-tour="needed-summary">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Needed from you</p>
         <h1 className="text-xl font-bold">What we need from you</h1>
-        <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups)}</p>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="text-sm text-muted-foreground" data-testid="needed-summary">{neededSummary(groups)}</p>
+          {groups.length > 0 ? (
+            <Button
+              variant="outline"
+              size="sm"
+              title="Copy everything here as a list with links, ready to paste"
+              onClick={() => void listCopy.copy(neededListText(groups, window.location.origin))}
+            >
+              {listCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              {listCopy.copied ? "Copied" : listCopy.failed ? "Could not copy" : "Copy as a list"}
+            </Button>
+          ) : null}
+        </div>
         {groups.length > 1 ? (
           <nav aria-label="Jump to" className="flex flex-wrap gap-2 pt-2" data-tour="needed-groups">
             {groups.map((group) => {
