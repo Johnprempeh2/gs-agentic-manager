@@ -2745,6 +2745,11 @@ export function Inbox() {
                 ? "No recent inbox items."
                 : "No inbox items match these filters."
           }
+          description={
+            !searchQuery.trim() && tab === "mine"
+              ? "New activity on tasks you are part of lands here. Anything that needs your answer is in Decisions."
+              : undefined
+          }
         />
       )}
 

@@ -69,6 +69,8 @@ import { Approvals } from "./pages/Approvals";
 import { ApprovalDetail } from "./pages/ApprovalDetail";
 import { CompanyActivity } from "./pages/audit/CompanyActivity";
 import { SinceLastVisit } from "./pages/SinceLastVisit";
+import { Calendar } from "./pages/Calendar";
+import { TeamScorecard } from "./pages/TeamScorecard";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
@@ -409,6 +411,8 @@ function boardRoutes() {
       <Route path="approvals/all" element={<Approvals />} />
       <Route path="approvals/:approvalId" element={<ApprovalDetail />} />
       <Route path="since-last-visit" element={<SinceLastVisit />} />
+      <Route path="calendar" element={<Calendar />} />
+      <Route path="scorecard" element={<TeamScorecard />} />
       <Route path="activity" element={<CompanyActivity />} />
       <Route path="activity/runs" element={<AuditHub section="runs" />} />
       <Route path="activity/costs" element={<AuditHub section="costs" />} />
@@ -811,6 +815,8 @@ export function App() {
           <Route path="pipelines/:pipelineId/cases/:caseId" element={<UnprefixedBoardRedirect />} />
           <Route path="artifacts" element={<UnprefixedBoardRedirect />} />
           <Route path="deliverables" element={<UnprefixedBoardRedirect />} />
+          <Route path="calendar" element={<UnprefixedBoardRedirect />} />
+          <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />

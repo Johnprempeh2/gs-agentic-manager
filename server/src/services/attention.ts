@@ -44,6 +44,7 @@ import {
   deriveProjectUrlKey,
   readAiCredentialRecord,
 } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import type {
   AttentionDecisionVerb,
   AttentionFeed,
@@ -716,6 +717,24 @@ function interactionLabel(kind: string) {
   }
 }
 
+function readAskTypeCopy(payload: Record<string, unknown>) {
+  const askType = readAskType(payload);
+  return askType ? ASK_TYPE_COPY[askType] : null;
+}
+
+/**
+ * What the card asks, in the agent's words. A confirmation with no title is
+ * named by its prompt, so Decisions never shows "Confirmation requested"
+ * under a card already labelled Confirmation.
+ */
+function interactionSubjectTitle(interaction: { kind: string; title: string | null; summary: string | null }, payload: Record<string, unknown>) {
+  if (interaction.title ?? interaction.summary) return interaction.title ?? interaction.summary;
+  if (interaction.kind === "request_confirmation" && typeof payload.prompt === "string" && payload.prompt.trim()) {
+    return payload.prompt.trim();
+  }
+  return interactionLabel(interaction.kind);
+}
+
 function interactionVerbs(kind: string, payload: Record<string, unknown>) {
   if (kind === "ask_user_questions") {
     return decisionVerbs({
@@ -725,12 +744,13 @@ function interactionVerbs(kind: string, payload: Record<string, unknown>) {
     });
   }
   if (kind === "request_confirmation") {
+    const askCopy = readAskTypeCopy(payload);
     const acceptLabel = typeof payload.acceptLabel === "string" && payload.acceptLabel.trim()
       ? payload.acceptLabel.trim()
-      : "Confirm";
+      : askCopy?.acceptLabel ?? "Confirm";
     const rejectLabel = typeof payload.rejectLabel === "string" && payload.rejectLabel.trim()
       ? payload.rejectLabel.trim()
-      : "Decline";
+      : askCopy?.rejectLabel ?? "Decline";
     return decisionVerbs(
       {
         id: "accept",
@@ -1475,7 +1495,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
             kind: "interaction",
             id: interaction.id,
             companyId,
-            title: isPlanTarget && issue ? `Plan approval - ${issue.title}` : interaction.title ?? interaction.summary ?? interactionLabel(interaction.kind),
+            title: isPlanTarget && issue ? `Plan approval - ${issue.title}` : interactionSubjectTitle(interaction, payload),
             identifier: null,
             status: interaction.status,
             href: issue ? `${issueHref(prefix, issue)}#interaction-${interaction.id}` : null,
@@ -1483,6 +1503,7 @@ export function attentionService(db: Db, serviceOptions: AttentionServiceOptions
               kind: interaction.kind,
               issueId: interaction.issueId,
               createdByAgentId: interaction.createdByAgentId,
+              askType: interaction.kind === "request_confirmation" ? readAskType(payload) : null,
               isPlanTarget,
               targetDocumentKey: isPlanTarget ? "plan" : null,
             },

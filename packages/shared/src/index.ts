@@ -300,6 +300,8 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./types/agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./types/calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./types/team-scorecard.js";
 export type {
   BlockedWorkIssueRef,
   BlockedWorkItem,
@@ -3106,3 +3108,4 @@ export * from "./types/pipeline-fields.js";
 export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
 export * from "./partner-branding.js";
+export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";

@@ -37,6 +37,8 @@ const BOARD_ROUTE_ROOTS = new Set([
   "settings",
   "timeline",
   "since-last-visit",
+  "calendar",
+  "scorecard",
   // Every root mounted under /:companyPrefix must be listed, or a link to it is
   // mistaken for an already-prefixed path and left bare (GRE: /strategy-board
   // became the "STRATEGY-BOARD" company and broke every sidebar link after it).

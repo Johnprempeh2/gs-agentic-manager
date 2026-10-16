@@ -9,6 +9,8 @@ import { BreadcrumbBar } from "./BreadcrumbBar";
 const viewport = vi.hoisted(() => ({ isMobile: false }));
 
 const navigateMock = vi.hoisted(() => vi.fn());
+vi.mock("./PageTourButton", () => ({ PageTourButton: () => null }));
+
 vi.mock("@/lib/router", () => ({
   Link: ({ children, className, to }: { children: ReactNode; className?: string; to: string }) => (
     <a className={className} href={to}>{children}</a>

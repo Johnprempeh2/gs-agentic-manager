@@ -155,6 +155,7 @@
   --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
+  --color-field: var(--field);
   --color-ring: var(--ring);
   --color-field-halo: var(--gs-field-halo);
   --color-chart-1: var(--chart-1);
@@ -163,6 +164,9 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-brand-emerald: var(--brand-emerald);
+  /* Brand lime as a fill under ink, in both themes (greatstone-glass.css). */
+  --color-highlight: var(--gs-highlight);
+  --color-highlight-foreground: var(--gs-highlight-foreground);
   --color-status-success: var(--status-success);
   --color-status-success-foreground: var(--status-success-foreground);
   --color-status-success-soft: var(--status-success-soft);
@@ -214,36 +218,41 @@
 }
 
 :root {
-  /* Greatstone light: paper #f7f8f4, ink #121512, emerald #1b5039 as the
-     readable primary (lime fails as text on paper). Contrast audited: every
-     text pair AA; focus ring #0b2a1c clears 3:1 at the /50 outline. */
+  /* Greatstone daylight: a sage-stone canvas #f2f4ee under white cards, ink
+     #121512, emerald #1b5039 as the readable primary (lime fails as text on
+     paper, so lime only ever appears as a fill under ink, see --gs-highlight).
+     Depth comes from the canvas/card step, the sage sidebar and layered
+     shadows rather than from extra borders. Contrast audited: every text pair
+     AA on canvas, card, muted and sidebar (muted-foreground 6.0:1 at worst,
+     subtle-foreground 4.8:1); focus ring #0b2a1c clears 3:1 at the /50 outline. */
   --brand-mark: #1b5039;              /* stone mark on paper: emerald (lime is 1.15:1 here) */
   --brand-build-cycle: 2.4s;          /* BrandLoading: one build-and-clear loop */
   --brand-build-stagger: 160ms;       /* delay between successive slabs */
   --brand-thinking-cycle: 1.2s;       /* BrandThinkingIcon pulse loop */
   color-scheme: light;
   --radius: 0.625rem;
-  --background: #f7f8f4;
+  --background: #f2f4ee;
   --foreground: #121512;
-  --card: #f7f8f4;
+  --card: #ffffff;
   --card-foreground: #121512;
   --popover: #ffffff;
   --popover-foreground: #121512;
   --primary: #1b5039;
   --primary-foreground: #f5f7f2;
-  --secondary: #eceee8;
+  --secondary: #e4e8de;
   --secondary-foreground: #1b2a21;
-  --muted: #eceee8;
+  --muted: #e4e8de;
   --muted-foreground: #4f5750;
   --subtle-foreground: #5d655e; /* third text tier: de-emphasis as a colour step, never alpha (AA on every light surface) */
-  --accent: color-mix(in oklab, #1b5039 9%, #f7f8f4);
+  --accent: color-mix(in oklab, #1b5039 8%, #ffffff);
   --accent-foreground: #121512;
-  --destructive: oklch(0.55 0.235 27.325); /* darkened from 0.577 so it clears AA on paper (was 4.47:1) */
-  --destructive-foreground: oklch(0.55 0.235 27.325);
-  --border: #dfe3da;
-  --input: #d3d9ce;
+  --destructive: #b9262c; /* daylight: a deep brick rather than signal red, so Reject sits beside Approve without shouting; 6.2:1 on card, 5.2:1 on muted */
+  --destructive-foreground: #b9262c;
+  --border: #dadfd3;
+  --input: #cbd3c5;
+  --field: #ffffff; /* daylight: text fields are white wells, so they read as fillable on the sage canvas and on cards */
   --ring: #0b2a1c;
-  --scrollbar-thumb: #bcc3b9;
+  --scrollbar-thumb: #b8c0b4;
   --scrollbar-thumb-hover: #9aa396;
   --scrollbar-size: 8px;
   --scrollbar-radius: 999px;
@@ -254,13 +263,13 @@
   --chart-5: #6f8f00;
   --brand-emerald: var(--chart-1); /* Greatstone emerald in BOTH modes (--primary turns lime on the void): run-chart success and skill tiles. */
   --brand-emerald-soft: color-mix(in oklab, var(--brand-emerald) 60%, var(--background)); /* runs that succeeded on retry; 3.3:1 on paper */
-  --sidebar: #eff1eb;
+  --sidebar: #e8ece3;
   --sidebar-foreground: #121512;
   --sidebar-primary: #1b5039;
   --sidebar-primary-foreground: #f5f7f2;
-  --sidebar-accent: color-mix(in oklab, #1b5039 10%, #eff1eb);
+  --sidebar-accent: #ffffff; /* daylight: the active and hovered row is a white pill raised off the sage rail */
   --sidebar-accent-foreground: #121512;
-  --sidebar-border: #dfe3da;
+  --sidebar-border: #d6dccf;
   --sidebar-ring: #0b2a1c;
   --chip-match-title-bg: oklch(0.97 0.02 265);
   --chip-match-title-fg: oklch(0.4 0.13 265);
@@ -330,7 +339,7 @@
   --status-agent-error: var(--color-red-600);
   /* Dashboard agent card: translucent running treatment from the Paper design. */
   --dashboard-run-accent: #1b5039; /* Greatstone: a live run glows emerald on paper, lime on the void */
-  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
+  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 5%, var(--card)); /* daylight: a white card with an emerald wash, not a grey film over the canvas */
   --dashboard-run-border: color-mix(in oklab, var(--dashboard-run-accent) 25%, transparent);
   --dashboard-list-leading-width: calc(var(--spacing) * 6);
   --dashboard-list-id-width: calc(var(--spacing) * 20);
@@ -579,6 +588,7 @@
      from the brand ramp. Contrast audited: every text pair AA. */
   --brand-mark: #c8ff00;
   --dashboard-run-accent: #c8ff00;
+  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
   --background: #121212;
   --foreground: #f5f5f5;
   --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
@@ -602,6 +612,7 @@
   --destructive-foreground: oklch(0.985 0 0);
   --border: rgb(255 255 255 / 8%);
   --input: rgb(255 255 255 / 14%);
+  --field: transparent; /* the void keeps its dark:bg-input/30 wells */
   --ring: #c8ff00;
   --scrollbar-thumb: #343a34;
   --scrollbar-thumb-hover: #474e47;
@@ -3304,7 +3315,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   > :nth-child(n + 3) {
   @apply sm:col-span-2;
 }
-.agent-settings-overview section,
+.agent-settings-overview section.border,
 .agent-settings-permissions .rounded-lg,
 .agent-settings-api-keys .rounded-lg,
 .agent-settings-revisions .rounded-md {

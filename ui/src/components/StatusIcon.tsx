@@ -57,6 +57,8 @@ export function blockedAttentionLabel(blockerAttention: IssueBlockerAttention | 
 
   if (blockerAttention.reason === "attention_required") {
     const count = blockerAttention.attentionBlockerCount || blockerAttention.unresolvedBlockerCount;
+    // Marked blocked by hand with no blocking task: "0 blockers" reads as a fault.
+    if (count === 0) return "Blocked · no reason given";
     // One blocker: name it, so the owner knows which task to open.
     const leaf = blockerAttention.terminalBlocker?.identifier ?? blockerAttention.sampleBlockerIdentifier;
     const attentionCopy = count === 1 && leaf

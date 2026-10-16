@@ -43,6 +43,8 @@ import {
   SlidersHorizontal,
   FolderInput,
   type LucideIcon,
+  CalendarDays,
+  Trophy,
 } from "lucide-react";
 import {
   DndContext,
@@ -395,6 +397,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
         </>
       ) : null,
     },
+    calendar: link("/calendar", "Calendar", CalendarDays),
     // GRE-1477: CRM organisations, part of the pipelines module.
     organisations: gated(showPipelines, link("/organisations", "Organisations", Building2)),
     pipelines: gated(showPipelines, {
@@ -431,6 +434,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     intelligence: gated(showIntelligence, link("/intelligence", "Intelligence", Radar, { textBadge: "beta" })),
     memory: gated(memoryEnabled, link("/memory", "Memory", Brain)),
     agents: link("/agents", "Agents", Users),
+    scorecard: link("/scorecard", "Scorecard", Trophy),
     "conference-room": gated(conferenceRoomChatEnabled, link("/board-chat", "Conference Room", MessagesSquare)),
     status: gated(showStatusCards, link("/status", "Status", LayoutGrid, { textBadge: "beta" })),
     skills: link("/skills", "Skills", Boxes),
@@ -566,6 +570,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <button
                 onClick={() => openNewIssue()}
                 data-slot="icon-button"
+                data-tour="new-task"
                 aria-label={rail ? "New Task" : undefined}
                 className={cn(
                   "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",

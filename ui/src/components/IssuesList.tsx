@@ -76,8 +76,9 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, List, ListTree, User, Search, CircleSlash2, ChevronsDownUp, PanelTopClose, RotateCcw, ListCollapse,
-  SquareKanban,
+  SquareKanban, Download,
 } from "lucide-react";
+import { downloadTextFile, issuesCsvFileName, issuesToCsv } from "../lib/issues-csv";
 import {
   KanbanBoard,
   KANBAN_BOARD_HIGH_VOLUME_THRESHOLD,
@@ -830,7 +831,7 @@ export function IssuesList({
     // null, so continuous hovering triggers no re-render.
     setSelectedNavKey((prev) => (prev === null ? prev : null));
   }, []);
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewIssue } = useDialogActions();
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
@@ -1289,6 +1290,21 @@ export function IssuesList({
     liveIssueIds,
     issueFilterContext,
   ]);
+
+  const downloadSpreadsheet = useCallback(() => {
+    const agentNames = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
+    const prefix = selectedCompany?.issuePrefix ?? "";
+    const csv = issuesToCsv(filtered, {
+      statusLabel: (status) => issueStatusLabels[status] ?? status,
+      agentName: (agentId) => agentNames.get(agentId),
+      userLabel: (userId) => companyUserLabelMap.get(userId),
+      projectName: (id) => projectById.get(id)?.name,
+      taskUrl: (issue) => `${window.location.origin}/${prefix}/issues/${issue.identifier ?? issue.id}`,
+    });
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    downloadTextFile(issuesCsvFileName(prefix, today), csv);
+  }, [agents, companyUserLabelMap, filtered, projectById, selectedCompany?.issuePrefix]);
 
   const progressSummary = useMemo(
     () => shouldRenderSubIssueProgressSummary(showProgressSummary, issues.length)
@@ -2090,6 +2106,18 @@ export function IssuesList({
               </PopoverContent>
             </Popover>
           )}
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            title={`Download ${filtered.length === 1 ? "this task" : `these ${filtered.length} tasks`} as a spreadsheet`}
+            aria-label="Download as spreadsheet"
+            disabled={filtered.length === 0}
+            onClick={downloadSpreadsheet}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </Button>
           </>
         )}
       />

@@ -17,40 +17,57 @@
    layer can sit on, not just the flat page colour. */
 
 :root {
-  /* Atmosphere: paper with a soft emerald wash top-left and teal bottom-right. */
+  /* Atmosphere (daylight): two emerald washes, a lime glint where the light
+     comes in (top right) and a teal pool bottom left of centre. Strong enough
+     to read as a lit room behind the white cards, never behind body copy at a
+     strength that moves a contrast pair (every wash stays under 16%). */
   --gs-atmosphere:
-    radial-gradient(60% 55% at 82% -10%, rgb(27 80 57 / 0.12), transparent 70%),
-    radial-gradient(50% 60% at -6% 28%, rgb(27 80 57 / 0.09), transparent 70%),
-    radial-gradient(55% 45% at 58% 118%, rgb(78 205 196 / 0.12), transparent 70%);
-  --gs-grain-opacity: 0.025;
+    radial-gradient(42% 38% at 92% -6%, rgb(200 255 0 / 0.16), transparent 72%),
+    radial-gradient(60% 55% at 78% -12%, rgb(27 80 57 / 0.14), transparent 70%),
+    radial-gradient(50% 60% at -6% 28%, rgb(27 80 57 / 0.1), transparent 70%),
+    radial-gradient(55% 45% at 58% 118%, rgb(78 205 196 / 0.14), transparent 70%);
+  --gs-grain-opacity: 0.03;
 
+  /* Cards are near-solid white on the sage canvas: the canvas/card step does
+     the separating, the border only sharpens the edge and the shadow is a
+     tight contact shadow plus a soft emerald-tinted fall-off. */
   --glass-card-bg:
-    linear-gradient(158deg, rgb(255 255 255 / 0.8), rgb(255 255 255 / 0.58) 58%, rgb(255 255 255 / 0.68)),
-    rgb(247 248 244 / 0.4);
-  --glass-card-border: rgb(18 21 18 / 0.08);
-  --glass-card-border-hover: rgb(27 80 57 / 0.28);
-  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 0.9);
-  --glass-shadow: 0 1px 2px rgb(18 21 18 / 0.04), 0 14px 34px -20px rgb(27 80 57 / 0.3);
-  --glass-shadow-hover: 0 1px 2px rgb(18 21 18 / 0.05), 0 20px 44px -22px rgb(27 80 57 / 0.42);
+    linear-gradient(180deg, rgb(255 255 255 / 0.97), rgb(255 255 255 / 0.9)),
+    rgb(255 255 255 / 0.5);
+  --glass-card-border: rgb(18 21 18 / 0.09);
+  --glass-card-border-hover: rgb(27 80 57 / 0.3);
+  --glass-highlight: inset 0 1px 0 rgb(255 255 255 / 1);
+  --glass-shadow: 0 1px 2px rgb(18 21 18 / 0.05), 0 2px 6px -2px rgb(18 21 18 / 0.04), 0 18px 36px -24px rgb(27 80 57 / 0.3);
+  --glass-shadow-hover: 0 1px 2px rgb(18 21 18 / 0.06), 0 4px 10px -4px rgb(18 21 18 / 0.06), 0 24px 48px -24px rgb(27 80 57 / 0.42);
 
   --glass-float-bg:
-    linear-gradient(158deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0.1)),
-    rgb(251 252 249 / 0.88);
-  --glass-float-shadow: 0 28px 64px -24px rgb(18 21 18 / 0.3), 0 2px 8px rgb(18 21 18 / 0.06);
+    linear-gradient(158deg, rgb(255 255 255 / 0.6), rgb(255 255 255 / 0.2)),
+    rgb(255 255 255 / 0.9);
+  --glass-float-shadow: 0 28px 64px -24px rgb(18 32 24 / 0.32), 0 2px 8px rgb(18 21 18 / 0.07), 0 0 0 1px rgb(18 21 18 / 0.04);
 
-  --glass-chrome-bg: rgb(239 241 235 / 0.74);
-  --glass-chrome-bar-bg: rgb(247 248 244 / 0.7);
+  --glass-chrome-bg: rgb(232 236 227 / 0.82);
+  --glass-chrome-bar-bg: rgb(242 244 238 / 0.74);
   --glass-blur: 22px;
   --glass-saturate: 165%;
 
   /* The liquid rim: bright where light enters (top-left), gone by mid-edge. */
   --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.2) 38%, transparent 60%, rgb(27 80 57 / 0.14));
-  --glass-scrim: rgb(18 21 18 / 0.26);
-  --glass-scrim-blur: 6px;
+  --glass-scrim: rgb(11 42 28 / 0.2); /* daylight: an emerald-ink veil, so the page dims without turning to grey mud */
+  --glass-scrim-blur: 4px;
 
   /* Active nav marker: emerald on paper (lime is 1.15:1 here). */
   --gs-nav-marker: #1b5039;
-  --gs-selection: rgb(27 80 57 / 0.18);
+  /* The active nav row: a raised white pill on the sage rail (daylight); on
+     the void it stays the quiet glass highlight. */
+  --gs-nav-active-shadow: inset 0 1px 0 rgb(255 255 255 / 1), 0 1px 2px rgb(18 21 18 / 0.06), 0 6px 14px -8px rgb(27 80 57 / 0.35);
+  /* Lime as a fill, never as text: ink on lime is 15.6:1, so the brand's
+     signature colour can carry selection, the page-title gem and highlights
+     in daylight too. */
+  --gs-highlight: #c8ff00;
+  --gs-highlight-foreground: #0e1611;
+  --gs-selection: rgb(200 255 0 / 0.5);
+  --gs-title-gem: var(--gs-highlight);
+  --gs-title-gem-ring: 0 0 0 1px rgb(27 80 57 / 0.55), 0 0 10px rgb(200 255 0 / 0.55);
 
   /* Motion. Primitives express the house feel; everything else references them. */
   --motion-ease-emphasized: var(--motion-ease-out-expo);
@@ -66,7 +83,10 @@
   --motion-bar-stagger: 28ms;
 
   --gs-btn-primary-glow: 0 10px 24px -10px rgb(27 80 57 / 0.55);
-  --gs-panel-bg: rgb(251 252 249 / 0.7);
+  /* Daylight primary: a faint top-lit gloss over the emerald so it reads as
+     a pressable stone rather than a flat swatch. */
+  --gs-btn-primary-gloss: linear-gradient(180deg, rgb(255 255 255 / 0.12), transparent 60%);
+  --gs-panel-bg: rgb(255 255 255 / 0.74);
   /* Hero ground for onboarding and sign-in: the atmosphere plus a glow seated
      behind the form. Emerald only; lime never sits behind copy. */
   --gs-onboarding-glow: rgb(27 80 57 / 0.09);
@@ -77,7 +97,7 @@
   --gs-human-bubble-bg: linear-gradient(160deg, #22604a, #1b5039 58%, #174632);
   --gs-human-bubble-fg: #f5f7f2;
   --gs-human-bubble-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 10px 26px -16px rgb(27 80 57 / 0.75);
-  --gs-hairline: linear-gradient(90deg, transparent, rgb(27 80 57 / 0.22) 18%, rgb(78 205 196 / 0.18) 50%, rgb(27 80 57 / 0.22) 82%, transparent);
+  --gs-hairline: linear-gradient(90deg, transparent, rgb(27 80 57 / 0.26) 18%, rgb(140 200 0 / 0.32) 50%, rgb(27 80 57 / 0.26) 82%, transparent);
   --gs-glow: rgb(27 80 57 / 0.14);
   --gs-glow-strong: rgb(27 80 57 / 0.35);
   /* Key data (headline numbers): the brand accent, readable on each theme. */
@@ -91,7 +111,7 @@
   --motion-skeleton-sweep: 1.7s;
   --gs-skeleton-bg: rgb(27 80 57 / 0.07);
   --gs-skeleton-sheen: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.75) 50%, transparent 80%);
-  --gs-tab-pill-bg: rgb(255 255 255 / 0.92);
+  --gs-tab-pill-bg: rgb(255 255 255 / 1);
   --gs-tab-pill-border: rgb(18 21 18 / 0.06);
   --gs-tab-pill-shadow: inset 0 1px 0 rgb(255 255 255 / 1), 0 1px 2px rgb(18 21 18 / 0.06), 0 6px 16px -8px rgb(27 80 57 / 0.35);
   --gs-switch-on-glow: 0 0 0 3px rgb(27 80 57 / 0.1);
@@ -144,9 +164,14 @@
 
   --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.05) 38%, transparent 60%, rgb(200 255 0 / 0.1));
   --glass-scrim: rgb(5 7 5 / 0.55);
+  --glass-scrim-blur: 6px;
 
   --gs-nav-marker: #c8ff00;
+  --gs-nav-active-shadow: var(--glass-highlight);
   --gs-selection: rgb(200 255 0 / 0.22);
+  --gs-title-gem: var(--gs-nav-marker);
+  --gs-title-gem-ring: 0 0 10px var(--gs-glow-strong);
+  --gs-btn-primary-gloss: none;
 
   --gs-btn-primary-glow: 0 10px 28px -10px rgb(200 255 0 / 0.55);
   --gs-key-data: #c8ff00;
@@ -231,6 +256,17 @@
     color: var(--gs-key-data);
   }
 
+  /* Daylight panels. Hundreds of list and settings panels are drawn as a
+     bare bordered box (`rounded-* border border-border`, no fill) because on
+     the old paper canvas transparent and card were the same colour. On the
+     sage canvas a bare box reads as a grey hole, so in daylight it takes the
+     card fill. Inside a white card this changes nothing; any explicit bg-*
+     utility still wins (it is excluded, and utilities outrank this layer).
+     The void keeps its transparent panels. */
+  html:not(.dark) :is(.rounded-md, .rounded-lg, .rounded-xl).border.border-border:not([class*="bg-"]) {
+    background-color: var(--card);
+  }
+
   .gs-glass-card-interactive {
     transition-property: transform, box-shadow, border-color;
     transition-duration: var(--motion-hover-lift);
@@ -292,6 +328,7 @@
     transform: scale(0.97);
   }
   .gs-btn-primary {
+    background-image: var(--gs-btn-primary-gloss);
     box-shadow: var(--gs-btn-primary-sheen);
   }
   .gs-btn-primary:hover:not(:disabled) {
@@ -323,7 +360,7 @@
     transition: transform var(--motion-float-enter) var(--motion-ease-spring);
   }
   .gs-nav-item-active {
-    box-shadow: var(--glass-highlight);
+    box-shadow: var(--gs-nav-active-shadow);
   }
   .gs-nav-item-active::before {
     transform: translateY(-50%) scaleY(1);
@@ -496,8 +533,8 @@
     vertical-align: 0.12em;
     border-radius: 2px;
     transform: rotate(45deg);
-    background: var(--gs-nav-marker);
-    box-shadow: 0 0 10px var(--gs-glow-strong);
+    background: var(--gs-title-gem);
+    box-shadow: var(--gs-title-gem-ring);
   }
 
   /* Empty states: the icon on a glass tile with a soft brand glow, rising in once. */

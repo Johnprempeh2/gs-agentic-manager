@@ -42,6 +42,7 @@ export type {
   SuggestTasksResult,
   SuggestTasksResultCreatedTask,
 } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import type {
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
@@ -208,7 +209,7 @@ export function buildIssueThreadInteractionSummary(
     : null;
   if (administrativeOutcome === "skipped") return "Skipped interaction";
   if (administrativeOutcome === "withdrawn") return "Withdrawn interaction";
-  if (administrativeOutcome === "issue_closed") return "Expired when issue closed";
+  if (administrativeOutcome === "issue_closed") return "Expired when the task was closed";
   if (administrativeOutcome === "addressee_deleted") return "Cancelled when addressee was deleted";
   if (interaction.kind === "suggest_tasks") {
     const count = interaction.payload.tasks.length;
@@ -227,11 +228,17 @@ export function buildIssueThreadInteractionSummary(
   }
 
   if (interaction.kind === "request_confirmation") {
-    if (interaction.status === "accepted") return "Confirmed request";
+    const askType = readAskType(interaction.payload);
+    const askCopy = askType ? ASK_TYPE_COPY[askType] : null;
+    if (interaction.status === "accepted") {
+      const acceptLabel = interaction.payload.acceptLabel?.trim() || askCopy?.acceptLabel;
+      return acceptLabel ? `Answered “${acceptLabel}”` : "Confirmed request";
+    }
     if (interaction.status === "rejected") {
-      const rejectLabel = interaction.payload.rejectLabel?.trim();
+      const rejectLabel = interaction.payload.rejectLabel?.trim() || askCopy?.rejectLabel;
       return rejectLabel ? `Selected “${rejectLabel}”` : "Declined request";
     }
+    if (askCopy && interaction.status === "pending") return askCopy.label;
     if (interaction.status === "expired") {
       const outcome = interaction.result?.outcome;
       if (outcome === "superseded_by_comment") return "Confirmation expired after comment";

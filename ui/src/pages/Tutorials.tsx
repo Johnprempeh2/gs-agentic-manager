@@ -17,7 +17,9 @@ import { useNavigate } from "@/lib/router";
 type StartTarget = { path: string } | { nothing: string };
 
 /** Where each tour runs. Tours about one item open the first one there is. */
-async function resolveStart(tourId: string, companyId: string): Promise<StartTarget> {
+async function resolveStart(tour: TourDefinition, companyId: string): Promise<StartTarget> {
+  if (tour.route) return { path: tour.route.path };
+  const tourId = tour.id;
   switch (tourId) {
     case "pipelines-list":
       return { path: "/pipelines" };
@@ -69,14 +71,14 @@ export function Tutorials() {
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
-  const tours = ALL_TOURS.filter((tour) => settings?.[tour.flag] === true);
+  const tours = ALL_TOURS.filter((tour) => !tour.flag || settings?.[tour.flag] === true);
 
   async function start(tour: TourDefinition) {
     if (!selectedCompanyId) return;
     setBusy(tour.id);
     setNotes((current) => ({ ...current, [tour.id]: "" }));
     try {
-      const target = await resolveStart(tour.id, selectedCompanyId);
+      const target = await resolveStart(tour, selectedCompanyId);
       if ("path" in target) navigate(`${target.path}?tour=${tour.id}`);
       else setNotes((current) => ({ ...current, [tour.id]: target.nothing }));
     } catch {
@@ -101,7 +103,7 @@ export function Tutorials() {
       <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <h1 className="text-xl font-bold">Tutorials</h1>
-          <p className="text-sm text-muted-foreground">Short guided tours of each feature. Start one at any time.</p>
+          <p className="text-sm text-muted-foreground">Short guided tours of each page. Start one at any time, or select Show me around at the top of a page.</p>
         </div>
         {tours.length > 0 ? (
           <Button type="button" variant="outline" size="sm" onClick={reset} disabled={resetState === "pending"}>
@@ -116,32 +118,43 @@ export function Tutorials() {
       {isFetched && tours.length === 0 ? (
         <p className="text-sm text-muted-foreground">No tutorials yet. They appear here when their features are switched on.</p>
       ) : (
-        <ul className="divide-y divide-border rounded-lg border border-border" aria-label="Tutorials">
-          {tours.map((tour) => {
-            const seen = isSeen(tour);
-            return (
-              <li key={tour.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`tutorial-${tour.id}`}>
-                <div className="min-w-0 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-sm font-semibold text-foreground">{tour.title}</h2>
-                    {loading ? null : <Badge variant={seen ? "secondary" : "outline"}>{seen ? "Seen" : "Not seen yet"}</Badge>}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{tour.description}</p>
-                  <p role="status" className="text-sm text-foreground empty:hidden">{notes[tour.id]}</p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => start(tour)}
-                  disabled={busy !== null || !selectedCompanyId}
-                  aria-label={`Start the ${tour.title} tutorial`}
-                >
-                  Start
-                </Button>
-              </li>
-            );
-          })}
-        </ul>
+        [
+          { label: "Everyday pages", note: "Start here if you are new. Each one takes under a minute.", list: tours.filter((tour) => tour.route) },
+          { label: "Features", note: "Tours of the features your organisation has switched on.", list: tours.filter((tour) => !tour.route) },
+        ].filter((group) => group.list.length > 0).map((group) => (
+          <section key={group.label} className="space-y-2" aria-label={group.label}>
+            <div className="space-y-0.5">
+              <h2 className="text-sm font-semibold text-foreground">{group.label}</h2>
+              <p className="text-sm text-muted-foreground">{group.note}</p>
+            </div>
+            <ul className="divide-y divide-border rounded-lg border border-border" aria-label={`${group.label} tutorials`}>
+              {group.list.map((tour) => {
+                const seen = isSeen(tour);
+                return (
+                  <li key={tour.id} className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between" data-testid={`tutorial-${tour.id}`}>
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-foreground">{tour.title}</h3>
+                        {loading ? null : <Badge variant={seen ? "secondary" : "outline"}>{seen ? "Seen" : "Not seen yet"}</Badge>}
+                      </div>
+                      <p className="text-sm text-muted-foreground">{tour.description}</p>
+                      <p role="status" className="text-sm text-foreground empty:hidden">{notes[tour.id]}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => start(tour)}
+                      disabled={busy !== null || !selectedCompanyId}
+                      aria-label={`Start the ${tour.title} tutorial`}
+                    >
+                      Start
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ))
       )}
     </div>
   );

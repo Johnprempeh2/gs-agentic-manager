@@ -364,7 +364,8 @@ export function IssueRow({
             <span
               data-slot="task-row-title"
               className={cn(
-                "min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:truncate sm:line-clamp-none",
+                // sm:min-w-24 keeps a few words of the title visible when badges crowd a narrow row.
+                "min-w-0 line-clamp-2 text-sm max-sm:basis-full sm:min-w-24 sm:truncate sm:line-clamp-none",
                 isUnread && "font-semibold",
                 titleClassName,
               )}
@@ -373,8 +374,14 @@ export function IssueRow({
             </span>
             {ownerLabel}
             {strategicBadge}
-            {blockedNote}
-            {recoveryIndicator}
+            {/* In a narrow card (the dashboard column) these notes crowd the title out;
+                the status glyph still shows the task is blocked. */}
+            {blockedNote || recoveryIndicator ? (
+              <span className="contents @max-xl:hidden">
+                {blockedNote}
+                {recoveryIndicator}
+              </span>
+            ) : null}
             {mobileTitleMeta ? (
               <span className="ml-auto shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground sm:hidden">
                 {mobileTitleMeta}
