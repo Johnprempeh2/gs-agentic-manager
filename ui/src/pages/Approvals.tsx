@@ -15,6 +15,7 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
+import { HelpTerm } from "../components/HelpTerm";
 
 type StatusFilter = "pending" | "all";
 
@@ -106,6 +107,10 @@ export function Approvals() {
           ]} />
         </Tabs>
       </div>
+      <p className="text-sm text-muted-foreground" data-testid="approvals-intro">
+        Each card is a <HelpTerm term="approval">sign-off</HelpTerm> an <HelpTerm term="agent" /> needs before it can go
+        ahead, such as hiring another agent or spending more.
+      </p>
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
