@@ -19,6 +19,8 @@ const mockPipelinesApi = vi.hoisted(() => ({
   deleteCaseContact: vi.fn(),
   getCaseCrmSyncStatus: vi.fn(),
   getCaseCrmHistory: vi.fn(),
+  transitionCase: vi.fn(),
+  updateCase: vi.fn(),
   getCaseFiles: vi.fn(),
   listCaseEvidenceCandidates: vi.fn(),
   addCaseEvidence: vi.fn(),
@@ -273,6 +275,74 @@ describe("client case page", () => {
     expect(container.textContent).not.toContain("What the client sees on the portal");
     expect(mockPipelinesApi.getCaseJourney).not.toHaveBeenCalled();
     expect(mockPipelinesApi.getCasePortal).not.toHaveBeenCalled();
+  });
+
+  it("marks a DevTools deal lost with a reason, moving it to Lost and recording the outcome", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    mockPipelinesApi.transitionCase.mockResolvedValue({});
+    mockPipelinesApi.updateCase.mockResolvedValue({});
+    const devtoolsStages = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
+      { id: "pd-lost", pipelineId: "pipe-pd", key: "lost", name: "Lost", kind: "cancelled", position: 3 },
+    ] as PipelineStage[];
+    const detail = caseDetail({ dealStatus: "Open", dealValue: 500 }, "pd-1");
+    detail.case.version = 4;
+
+    await render(<ClientCaseOverview detail={detail} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
+
+    const outcome = container.querySelector('[data-testid="deal-outcome"]')!;
+    click([...outcome.querySelectorAll("button")].find((button) => button.textContent === "Lost") ?? null);
+    const reason = container.querySelector("#deal-lost-reason") as HTMLTextAreaElement;
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    flushSync(() => {
+      setter.call(reason, "Chose an in-house tool");
+      reason.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    click([...container.querySelectorAll('[data-testid="deal-outcome"] button')].find((button) => button.textContent === "Mark lost") ?? null);
+    await flushReact();
+
+    expect(mockPipelinesApi.transitionCase).toHaveBeenCalledWith("case-1", expect.objectContaining({ toStageKey: "lost", expectedVersion: 4, force: true }));
+    expect(mockPipelinesApi.updateCase).toHaveBeenCalledWith("case-1", {
+      fields: expect.objectContaining({ dealStatus: "Lost", dealValue: 500, lostReason: "Chose an in-house tool", lostOn: expect.any(String) }),
+    });
+  });
+
+  it("hides Won and Lost once the deal is closed", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    const devtoolsStages = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
+    ] as PipelineStage[];
+    await render(<ClientCaseOverview detail={caseDetail({ dealStatus: "Won" }, "pd-won")} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
+    expect(container.querySelector('[data-testid="deal-outcome"]')).toBeNull();
+  });
+
+  it("shows field changes and kinds it does not know yet without breaking", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    const base = {
+      source: "pipedrive", activityType: null, body: null, occurredAt: "2026-09-01T10:00:00Z", durationMinutes: null,
+      done: null, ownerName: null, contactId: null, contactName: null, caseId: "case-1", caseTitle: "Client A", details: {},
+    };
+    mockPipelinesApi.getCaseCrmHistory.mockResolvedValue({
+      caseId: "case-1",
+      timeline: [
+        { ...base, id: "f1", kind: "field_change", subject: "Value: 10000 → 12000" },
+        { ...base, id: "f2", kind: "field_change", subject: null },
+        { ...base, id: "u1", kind: "something_new", subject: "Brand new kind" },
+        { ...base, id: "n1", kind: "note", subject: null, body: "A note" },
+      ],
+      files: [],
+      truncated: false,
+    });
+
+    await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);
+
+    const section = container.querySelector('[data-testid="case-crm-history"]')!;
+    expect(section.textContent).toContain("Value: 10000 → 12000");
+    expect(section.textContent).toContain("Field change");
+    expect(section.textContent).toContain("Brand new kind");
+    expect([...section.querySelectorAll("button")].some((button) => button.textContent?.startsWith("Field changes (2)"))).toBe(true);
   });
 
   it("leaves the CRM history out when the case has none", async () => {

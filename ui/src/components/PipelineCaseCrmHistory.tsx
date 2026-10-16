@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, CalendarClock, FileText, Mail, Phone, StickyNote } from "lucide-react";
+import { ArrowRightLeft, CalendarClock, FileText, Mail, Pencil, Phone, StickyNote } from "lucide-react";
 import type { CrmFile, CrmTimelineEntry } from "@greatstone/shared";
 import { pipelinesApi } from "../api/pipelines";
 import { formatBytes } from "../lib/issue-output";
@@ -13,14 +13,17 @@ import { Button } from "./ui/button";
 // on the deal, and the deal's files, so nobody has to open Pipedrive to see
 // what happened with a client. Hidden when the case has none.
 
-type Kind = CrmTimelineEntry["kind"];
+// Kinds are plain strings here so a kind the import adds later still renders
+// (with the activity icon and no filter of its own) instead of breaking the page.
+type Kind = string;
 
-const KIND_ICONS: Record<Kind, typeof CalendarClock> = {
+const KIND_ICONS: Partial<Record<Kind, typeof CalendarClock>> = {
   activity: CalendarClock,
   note: StickyNote,
   call: Phone,
   email: Mail,
   stage_change: ArrowRightLeft,
+  field_change: Pencil,
 };
 
 const KIND_FILTERS: Array<{ kind: Kind; label: string }> = [
@@ -29,6 +32,7 @@ const KIND_FILTERS: Array<{ kind: Kind; label: string }> = [
   { kind: "call", label: "Calls" },
   { kind: "email", label: "Emails" },
   { kind: "stage_change", label: "Stage changes" },
+  { kind: "field_change", label: "Field changes" },
 ];
 
 /** How many entries show before "Show all". */
@@ -42,6 +46,7 @@ export function crmSourceName(source: string | undefined) {
 
 export function timelineTitle(entry: CrmTimelineEntry) {
   if (entry.subject) return entry.subject;
+  if ((entry.kind as string) === "field_change") return "Field change";
   if (entry.kind === "note") return "Note";
   if (entry.kind === "call") return "Call";
   if (entry.kind === "email") return "Email";
