@@ -11,7 +11,10 @@ import { WeeklyReport, weeklyReportText } from "./WeeklyReport";
 
 const api = vi.hoisted(() => ({ get: vi.fn() }));
 
+const memoryApi = vi.hoisted(() => ({ activityCounts: vi.fn(), activity: vi.fn() }));
+
 vi.mock("../api/weeklyReport", () => ({ weeklyReportApi: { get: api.get } }));
+vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: memoryApi }));
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "c1", selectedCompany: { id: "c1", name: "Greatstone", issuePrefix: "GRE" } }),
 }));
@@ -31,6 +34,8 @@ describe("WeeklyReport", () => {
     document.body.append(container);
     root = createRoot(container);
     api.get.mockResolvedValue(WEEKLY_REPORT_FIXTURE);
+    memoryApi.activityCounts.mockRejectedValue(new Error("Memory is off"));
+    memoryApi.activity.mockRejectedValue(new Error("Memory is off"));
   });
 
   afterEach(() => {
@@ -63,6 +68,30 @@ describe("WeeklyReport", () => {
     expect(container.querySelector("[data-testid='weekly-report-stuck']")?.textContent).toContain("stuck for 9 days, with Ridge");
     expect(container.querySelector("[data-testid='weekly-report-pipeline']")?.textContent).toContain("Acme: Proposal to Won (Client journey)");
     expect(container.querySelector("[data-testid='weekly-report-costs']")?.textContent).toContain("$13.00");
+    expect(container.querySelector("[data-testid='weekly-report-memory']")).toBeNull();
+  });
+
+  it("says what GSAM learned this week", async () => {
+    const status = (approved: number, unreviewed: number) => ({ approved, unreviewed, disputed: 0, superseded: 0, deleted: 0 });
+    memoryApi.activityCounts.mockResolvedValue({
+      note: "",
+      contributors: [
+        { contributor: {}, contributionCount: 3, contributionCountByStatus: status(2, 1), relationshipsStatedCount: 0, reviewActionCount: 0 },
+        { contributor: {}, contributionCount: 1, contributionCountByStatus: status(1, 0), relationshipsStatedCount: 0, reviewActionCount: 0 },
+      ],
+    });
+    memoryApi.activity.mockResolvedValue({
+      items: [{ record: { id: "m1", title: null, content: "Acme pays within 30 days.", deletedAt: null }, scopeName: "Acme" }],
+      nextCursor: null,
+    });
+    await render();
+    expect(memoryApi.activityCounts).toHaveBeenCalledWith("c1", { from: "2026-10-12T07:00:00.000Z" });
+    expect(memoryApi.activity).toHaveBeenCalledWith("c1", { from: "2026-10-12T07:00:00.000Z", status: "approved" });
+    const section = container.querySelector("[data-testid='weekly-report-memory']")!;
+    expect(section.textContent).toContain("4 new entries this week. 3 confirmed, 1 waiting for review.");
+    expect(section.textContent).toContain("Acme pays within 30 days.");
+    expect([...section.querySelectorAll("a")].map((a) => a.getAttribute("href"))).toContain("/GRE/memory?node=m1");
+    expect(section.textContent).toContain("Review 1 waiting");
   });
 
   it("copies as plain text for an email", () => {

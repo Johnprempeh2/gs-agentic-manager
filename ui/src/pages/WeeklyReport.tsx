@@ -6,6 +6,7 @@ import { weeklyReportApi } from "../api/weeklyReport";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
+import { WeeklyMemorySection } from "../components/memory/WeeklyMemorySection";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
@@ -159,6 +160,8 @@ export function WeeklyReportView({ report }: { report: WeeklyReportData }) {
         ) : null}
       </Section>
 
+      <WeeklyMemorySection companyId={report.companyId} since={report.since} />
+
       <Section icon={Coins} title="Cost by agent" testId="weekly-report-costs">
         {report.costs.agents.length === 0 ? (
           <Quiet>No spend was recorded this week.</Quiet>
@@ -222,7 +225,7 @@ export function WeeklyReport() {
         <div className="space-y-1">
           <h1 className="text-xl font-semibold">This week at {data?.companyName || "your company"}</h1>
           <p className="text-sm text-muted-foreground">
-            {data ? `${weekRangeLabel(data)}. ` : ""}What the agents finished, what is stuck, how the pipeline moved and what needs you.
+            {data ? `${weekRangeLabel(data)}. ` : ""}What the agents finished, what is stuck, how the pipeline moved, what GSAM learned and what needs you.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
