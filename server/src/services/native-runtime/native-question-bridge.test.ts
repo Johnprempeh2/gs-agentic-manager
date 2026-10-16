@@ -388,7 +388,12 @@ describeEmbeddedPostgres("native question bridge", () => {
       expect(runInsideTransaction?.status).toBe("running");
     });
 
-    expect(postCommitActions).toHaveLength(1);
+    // The close also expires the card the agent made, and a close by no person
+    // wakes that agent to ask again elsewhere (closed-card-wake.ts).
+    expect(postCommitActions.map((action) => action.type).sort()).toEqual([
+      "cancel_native_question_run",
+      "wake_closed_card_maker",
+    ]);
     await executeIssuePostCommitActions(db, postCommitActions);
     const [persistedRun] = await db.select({ status: heartbeatRuns.status })
       .from(heartbeatRuns)
