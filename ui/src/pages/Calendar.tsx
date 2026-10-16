@@ -30,6 +30,8 @@ import {
   monthTitle,
   routineTimesLabel,
   shiftMonth,
+  weekOf,
+  weekTitle,
 } from "../lib/calendar";
 import { calendarIcsFileName, calendarToIcs } from "../lib/calendar-ics";
 import { weekAheadText } from "../lib/calendar-text";
@@ -208,7 +210,11 @@ export function Calendar() {
   const selectedDay = isIsoDate(dayParam) ? dayParam : monthKey(today) === month ? today : `${month}-01`;
   const hiddenKinds = new Set((searchParams.get("hide") ?? "").split(",").filter(Boolean));
 
+  // Week view shows one row with every item; phones keep the month list.
+  const view = searchParams.get("view") === "week" ? "week" : "month";
   const weeks = useMemo(() => monthGrid(month), [month]);
+  const selectedWeek = useMemo(() => weekOf(selectedDay), [selectedDay]);
+  const gridWeeks = view === "week" ? [selectedWeek] : weeks;
   const from = weeks[0]![0]!;
   const to = weeks.at(-1)![6]!;
 
@@ -270,6 +276,7 @@ export function Calendar() {
   const byDate = useMemo(() => groupByDate(visibleItems), [visibleItems]);
   const overdueCount = visibleItems.filter((item) => isOverdue(item, today)).length;
   const monthItemCount = visibleItems.filter((item) => monthKey(item.date) === month).length;
+  const weekItemCount = visibleItems.filter((item) => selectedWeek.includes(item.date)).length;
   const monthDays = [...byDate.entries()].filter(([date]) => monthKey(date) === month);
   // Earlier days fold away on phones, except those still holding overdue work.
   const earlierDays = monthDays.filter(([date, items]) => date < today && !items.some((item) => isOverdue(item, today)));
@@ -313,6 +320,11 @@ export function Calendar() {
         { from: today, timeZone: viewerTimeZone() },
       ),
     );
+  }
+
+  function moveWeek(days: number) {
+    const day = addDays(selectedDay, days);
+    update({ day, month: monthKey(day) });
   }
 
   function toggleKind(kind: CalendarItemKind) {
@@ -366,24 +378,41 @@ export function Calendar() {
           <Button size="sm" variant="outline" onClick={() => update({ month: null, day: null })}>
             Today
           </Button>
+          <div className="hidden rounded-md border border-border bg-card p-0.5 md:inline-flex" role="group" aria-label="View">
+            {(["month", "week"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={view === option}
+                onClick={() => update({ view: option === "month" ? null : option })}
+                className={cn(
+                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                  view === option ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {option === "month" ? "Month" : "Week"}
+              </button>
+            ))}
+          </div>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Previous month"
-            onClick={() => update({ month: shiftMonth(month, -1), day: null })}
+            aria-label={view === "week" ? "Previous week" : "Previous month"}
+            onClick={() => (view === "week" ? moveWeek(-7) : update({ month: shiftMonth(month, -1), day: null }))}
           >
             <ChevronLeft className="size-4" />
           </Button>
           <Button
             size="icon-sm"
             variant="ghost"
-            aria-label="Next month"
-            onClick={() => update({ month: shiftMonth(month, 1), day: null })}
+            aria-label={view === "week" ? "Next week" : "Next month"}
+            onClick={() => (view === "week" ? moveWeek(7) : update({ month: shiftMonth(month, 1), day: null }))}
           >
             <ChevronRight className="size-4" />
           </Button>
           <h2 className="ml-1 min-w-32 text-base font-semibold" aria-live="polite">
-            {monthTitle(month)}
+            <span className={cn(view === "week" && "md:hidden")}>{monthTitle(month)}</span>
+            {view === "week" ? <span className="hidden md:inline">{weekTitle(selectedWeek)}</span> : null}
           </h2>
         </div>
       </header>
@@ -410,7 +439,14 @@ export function Calendar() {
         })}
         {data ? (
           <span className="text-xs text-muted-foreground">
-            {monthItemCount === 0 ? "Nothing this month" : `${monthItemCount} this month`}
+            <span className={cn(view === "week" && "md:hidden")}>
+              {monthItemCount === 0 ? "Nothing this month" : `${monthItemCount} this month`}
+            </span>
+            {view === "week" ? (
+              <span className="hidden md:inline">
+                {weekItemCount === 0 ? "Nothing this week" : `${weekItemCount} this week`}
+              </span>
+            ) : null}
             {overdueCount > 0 ? (
               <span className="text-status-danger">{` · ${overdueCount} overdue`}</span>
             ) : null}
@@ -432,13 +468,14 @@ export function Calendar() {
                 </div>
               ))}
             </div>
-            {weeks.map((week) => (
+            {gridWeeks.map((week) => (
               <div key={week[0]} className="grid grid-cols-7 border-b border-border last:border-b-0">
                 {week.map((date) => {
                   const items = byDate.get(date) ?? [];
                   const inMonth = monthKey(date) === month;
                   const selected = date === selectedDay;
-                  const extra = items.length - CELL_LIMIT;
+                  const limit = view === "week" ? items.length : CELL_LIMIT;
+                  const extra = items.length - limit;
                   return (
                     <div
                       key={date}
@@ -451,8 +488,9 @@ export function Calendar() {
                       onDragLeave={() => setDropDate((current) => (current === date ? null : current))}
                       onDrop={(event) => dropTask(event, date)}
                       className={cn(
-                        "min-h-24 min-w-0 border-r border-border p-1 last:border-r-0",
-                        !inMonth && "bg-muted/30",
+                        "min-w-0 border-r border-border p-1 last:border-r-0",
+                        view === "week" ? "min-h-48" : "min-h-24",
+                        view === "month" && !inMonth && "bg-muted/30",
                         selected && "bg-accent",
                         dropDate === date && "bg-accent ring-2 ring-inset ring-primary",
                       )}
@@ -471,7 +509,7 @@ export function Calendar() {
                         {dayOfMonth(date)}
                       </button>
                       <div className="space-y-0.5">
-                        {items.slice(0, CELL_LIMIT).map((item) => (
+                        {items.slice(0, limit).map((item) => (
                           <CalendarChip key={`${item.kind}:${item.id}`} item={item} today={today} />
                         ))}
                         {extra > 0 ? (

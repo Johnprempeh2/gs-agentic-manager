@@ -67,6 +67,24 @@ export function monthTitle(month: string): string {
   return `${MONTH_NAMES[m - 1]} ${year}`;
 }
 
+/** The Monday to Sunday week that holds `date`. */
+export function weekOf(date: string): string[] {
+  const start = addDays(date, -((toUtc(date).getUTCDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, index) => addDays(start, index));
+}
+
+/** "12 to 18 October 2026", or "28 September to 4 October 2026" across a month end. */
+export function weekTitle(week: readonly string[]): string {
+  const first = toUtc(week[0]!);
+  const last = toUtc(week.at(-1)!);
+  const end = `${last.getUTCDate()} ${MONTH_NAMES[last.getUTCMonth()]} ${last.getUTCFullYear()}`;
+  if (first.getUTCFullYear() !== last.getUTCFullYear()) {
+    return `${first.getUTCDate()} ${MONTH_NAMES[first.getUTCMonth()]} ${first.getUTCFullYear()} to ${end}`;
+  }
+  if (first.getUTCMonth() !== last.getUTCMonth()) return `${first.getUTCDate()} ${MONTH_NAMES[first.getUTCMonth()]} to ${end}`;
+  return `${first.getUTCDate()} to ${end}`;
+}
+
 /** "Tuesday 20 October" */
 export function dayTitle(date: string): string {
   const d = toUtc(date);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CalendarItem } from "@greatstone/shared";
-import { calendarItemHref, canReschedule, rescheduleOptions, dayTitle, isOverdue, monthGrid, monthTitle, routineTimesLabel, shiftMonth } from "./calendar";
+import { calendarItemHref, canReschedule, rescheduleOptions, weekOf, weekTitle, dayTitle, isOverdue, monthGrid, monthTitle, routineTimesLabel, shiftMonth } from "./calendar";
 
 function item(overrides: Partial<CalendarItem>): CalendarItem {
   return {
@@ -21,6 +21,23 @@ function item(overrides: Partial<CalendarItem>): CalendarItem {
 }
 
 describe("calendar helpers", () => {
+  it("finds the Monday to Sunday week of a day and names it", () => {
+    expect(weekOf("2026-10-16")).toEqual([
+      "2026-10-12",
+      "2026-10-13",
+      "2026-10-14",
+      "2026-10-15",
+      "2026-10-16",
+      "2026-10-17",
+      "2026-10-18",
+    ]);
+    expect(weekOf("2026-10-12")[0]).toBe("2026-10-12");
+    expect(weekOf("2026-10-18")[0]).toBe("2026-10-12");
+    expect(weekTitle(weekOf("2026-10-16"))).toBe("12 to 18 October 2026");
+    expect(weekTitle(weekOf("2026-10-01"))).toBe("28 September to 4 October 2026");
+    expect(weekTitle(weekOf("2026-12-31"))).toBe("28 December 2026 to 3 January 2027");
+  });
+
   it("offers today, tomorrow and next Monday, without the current day", () => {
     // 2026-10-16 is a Friday.
     expect(rescheduleOptions("2026-10-10", "2026-10-16")).toEqual([

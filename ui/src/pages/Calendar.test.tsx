@@ -182,4 +182,33 @@ describe("Calendar drag to reschedule", () => {
     expect(text).toContain("Due: ACM-1 Due today");
     expect(container.querySelector('[aria-label="Copied"]')).not.toBeNull();
   });
+
+  it("shows one week with every item in week view", async () => {
+    api.calendar.mockResolvedValue({
+      from: "2026-09-28",
+      to: "2026-11-01",
+      items: [
+        ...[1, 2, 3, 4, 5].map((n) => item({ id: `t${n}`, title: `Task ${n}`, identifier: `ACM-${n}` })),
+        item({ id: "other", date: "2026-10-05", title: "Other week" }),
+      ],
+    });
+    flushSync(() =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <MemoryRouter initialEntries={["/calendar?month=2026-10&day=2026-10-20&view=week"]}>
+            <Calendar />
+          </MemoryRouter>
+        </QueryClientProvider>,
+      ),
+    );
+    await flushReact();
+    const text = container.textContent ?? "";
+    expect(text).toContain("19 to 25 October 2026");
+    expect(text).toContain("5 this week");
+    // No "+N more": all five tasks on the 20th show in the grid.
+    expect(text).not.toContain("more");
+    expect(chip("Task 5")).toBeDefined();
+    expect(chip("Other week")).toBeUndefined();
+    expect(container.querySelector('[aria-label="Next week"]')).not.toBeNull();
+  });
 });
