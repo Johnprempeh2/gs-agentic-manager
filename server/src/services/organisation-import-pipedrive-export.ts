@@ -21,6 +21,7 @@ import {
   newImportResult,
   pipedriveRecordWriter,
 } from "./organisation-import-pipedrive.js";
+import { findOrCreateOrganisation, loadOrganisationNameIndex } from "./organisation-match.js";
 import type { OrganisationActor } from "./organisations.js";
 import {
   PipedriveExportError,
@@ -197,6 +198,7 @@ function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
         .where(and(eq(organisations.companyId, companyId), isNull(organisations.archivedAt)));
       const orgByName = new Map(companyOrgs.map((row) => [nameKey(row.name), row]));
       for (const row of writer.orgByExternalId.values()) orgByName.set(nameKey(row.name), row);
+      let nameIndex: Map<string, string> | undefined;
       const findOrganisation = (externalId: string | null, name: string | null) =>
         (externalId ? writer.orgByExternalId.get(externalId) : undefined) ?? (name ? orgByName.get(nameKey(name)) : undefined);
 
@@ -267,7 +269,7 @@ function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
           deals.skipped += 1;
           continue;
         }
-        const organisation = findOrganisation(deal.organisationExternalId, deal.organisationName);
+        const known = findOrganisation(deal.organisationExternalId, deal.organisationName);
         const allActivities = activitiesByDeal.get(deal.externalId) ?? [];
         const dealActivities = newestActivities(allActivities);
         activities.skipped += allActivities.length - dealActivities.length;
@@ -281,6 +283,13 @@ function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
         };
         if (dealActivities.length > 0) fields[labels.activitiesField] = dealActivities.map(activityEntry);
         try {
+          // Every card needs an organisation (GRE-1538): one not in the files is found or added by name.
+          if (!known) nameIndex ??= await loadOrganisationNameIndex(db, companyId);
+          const organisationId = known?.id ?? (await findOrCreateOrganisation(db, {
+            companyId,
+            name: deal.organisationName?.trim() || deal.title,
+            status: "prospect",
+          }, nameIndex))?.id ?? null;
           const ingested = await pipelines.ingestCase({
             companyId,
             pipelineId: files.pipelineId,
@@ -289,7 +298,7 @@ function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
             summary: dealSummary(deal, labels.app),
             fields,
             stageKey: stageKeyByName.get(nameKey(deal.stageName)) ?? null,
-            organisationId: organisation?.id ?? null,
+            organisationId,
             actor: pipelineActor,
           });
           const changed = ingested.created
@@ -298,7 +307,7 @@ function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
               title: deal.title,
               summary: dealSummary(deal, labels.app),
               fields,
-              organisationId: organisation?.id ?? null,
+              organisationId,
             });
           if (ingested.created) deals.created += 1;
           else if (changed) deals.updated += 1;
