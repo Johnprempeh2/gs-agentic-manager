@@ -7,6 +7,7 @@ import { healthApi } from "@/api/health";
 import { queryKeys } from "@/lib/queryKeys";
 import { BootstrapPendingPage } from "@/components/BootstrapPendingPage";
 import { BrandLoading } from "@/components/BrandLoading";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 function NoBoardAccessPage() {
@@ -21,6 +22,33 @@ function NoBoardAccessPage() {
         <p className="mt-2 text-sm text-muted-foreground">
           Use an organization invite or sign in with an account that already belongs to this org.
         </p>
+      </Card>
+    </div>
+  );
+}
+
+/**
+ * A refetch that could not reach the server keeps what was already loaded on
+ * screen (the connection notice says so) instead of replacing the app with an
+ * error. Any other failure, or one before anything loaded, still stops here.
+ */
+function blockingError(query: { error: unknown; data: unknown }): Error | null {
+  if (!query.error) return null;
+  if (query.data !== undefined && query.error instanceof TypeError) return null;
+  return query.error instanceof Error ? query.error : new Error("Failed to load app state");
+}
+
+function NotAnsweringPage({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="mx-auto max-w-xl py-10">
+      <Card className="block p-6">
+        <h1 className="text-xl font-semibold">GSAM is not answering</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This device may be offline, or the computer that runs GSAM may be asleep or restarting.
+        </p>
+        <Button type="button" className="mt-4" onClick={onRetry}>
+          Try again
+        </Button>
       </Card>
     </div>
   );
@@ -78,15 +106,20 @@ export function CloudAccessGate({ allowMembershipRequest = false }: { allowMembe
     return <BrandLoading />;
   }
 
-  if (healthQuery.error || boardAccessQuery.error) {
+  const gateError = blockingError(healthQuery) ?? blockingError(boardAccessQuery);
+  if (gateError) {
+    if (gateError instanceof TypeError) {
+      return (
+        <NotAnsweringPage
+          onRetry={() => {
+            void healthQuery.refetch();
+            if (boardAccessQuery.error) void boardAccessQuery.refetch();
+          }}
+        />
+      );
+    }
     return (
-      <div className="mx-auto max-w-xl py-10 text-sm text-destructive">
-        {healthQuery.error instanceof Error
-          ? healthQuery.error.message
-          : boardAccessQuery.error instanceof Error
-            ? boardAccessQuery.error.message
-            : "Failed to load app state"}
-      </div>
+      <div className="mx-auto max-w-xl py-10 text-sm text-destructive">{gateError.message}</div>
     );
   }
 
