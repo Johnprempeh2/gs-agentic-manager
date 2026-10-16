@@ -123,6 +123,45 @@ export const BLOCKED_SORT_OPTIONS: readonly [BlockedInboxSort, string][] = [
   ["longest_stopped", "Longest stopped"],
 ];
 
+const BLOCKED_GROUP_BY_KEY = "gsam:inbox:blocked-group-by";
+const BLOCKED_SORT_BY_KEY = "gsam:inbox:blocked-sort-by";
+
+/** The Blocked tab's last Group choice, so "Root blocker" stays on between visits. */
+export function loadBlockedInboxGroupBy(): BlockedInboxGroupBy {
+  try {
+    const raw = localStorage.getItem(BLOCKED_GROUP_BY_KEY);
+    return BLOCKED_GROUP_OPTIONS.some(([value]) => value === raw) ? (raw as BlockedInboxGroupBy) : "none";
+  } catch {
+    return "none";
+  }
+}
+
+export function saveBlockedInboxGroupBy(groupBy: BlockedInboxGroupBy) {
+  try {
+    localStorage.setItem(BLOCKED_GROUP_BY_KEY, groupBy);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+/** The Blocked tab's last Sort choice. */
+export function loadBlockedInboxSortBy(): BlockedInboxSort {
+  try {
+    const raw = localStorage.getItem(BLOCKED_SORT_BY_KEY);
+    return BLOCKED_SORT_OPTIONS.some(([value]) => value === raw) ? (raw as BlockedInboxSort) : "most_recent";
+  } catch {
+    return "most_recent";
+  }
+}
+
+export function saveBlockedInboxSortBy(sortBy: BlockedInboxSort) {
+  try {
+    localStorage.setItem(BLOCKED_SORT_BY_KEY, sortBy);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
 export interface BlockedInboxGroup {
   /** Stable id for React keys, collapse state and test ids. */
   key: string;
