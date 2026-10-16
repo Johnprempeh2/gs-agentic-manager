@@ -147,7 +147,12 @@ export function ApprovalDetail() {
   });
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (!approval) return <p className="text-sm text-muted-foreground">Approval not found.</p>;
+  if (!approval) return (
+      <p className="text-sm text-muted-foreground">
+        This request could not be found. It may have been withdrawn.{" "}
+        <Link to="/approvals" className="underline underline-offset-2">Back to approvals</Link>
+      </p>
+    );
 
   const payload = approval.payload as Record<string, unknown>;
   const linkedAgentId = typeof payload.agentId === "string" ? payload.agentId : null;
@@ -250,7 +255,7 @@ export function ApprovalDetail() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         {linkedIssues && linkedIssues.length > 0 && (
           <div className="pt-2 border-t border-border/60">
-            <p className="text-xs text-muted-foreground mb-1.5">Linked Tasks</p>
+            <p className="text-xs text-muted-foreground mb-1.5">Linked tasks</p>
             <div className="space-y-1.5">
               {linkedIssues.map((issue) => (
                 <Link
