@@ -47,6 +47,11 @@ import {
   SANDBOX_STARTUP_SPAN_ATTRS,
 } from "./startup-timing.js";
 
+// These cases assert exact registry commands, and the fake sandbox runner
+// executes the remote process-session bridge with local runChildProcess. The
+// agent secret shield has its own suite (local-process-secret-shield.test.ts).
+process.env.GSAM_AGENT_SECRET_SHIELD = "off";
+
 
 const tempRoots: string[] = [];
 

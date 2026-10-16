@@ -330,7 +330,7 @@ import {
 } from "./agent-task-run-telemetry.js";
 import { reportRunFailure } from "./run-failure-report.js";
 import { companySkillService } from "./company-skills.js";
-import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
+import { BUDGET_HELD_WAKE_STATUSES, budgetService, type BudgetEnforcementScope } from "./budgets.js";
 import { secretService, type MissingRuntimeBinding } from "./secrets.js";
 import {
   resolveDefaultAgentWorkspaceDir,
@@ -9963,6 +9963,7 @@ export function heartbeatService(
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
     noticeHardStop: noticeBudgetHardStop,
+    releaseHeldWorkForScope: releaseBudgetHeldWorkForScope,
   };
   const budgets = budgetService(db, budgetHooks);
   const recovery = recoveryService(db, {
@@ -29270,9 +29271,27 @@ export function heartbeatService(
       },
     );
     if (budgetBlock) {
-      await writeSkippedRequest("budget.blocked", { error: budgetBlock.reason }, {
-        scopeType: budgetBlock.scopeType, scopeId: budgetBlock.scopeId,
-      });
+      // Hold mode (GRE-1365): a task wake that arrives while the scope is
+      // stopped is held too, and wakes the task once after the raise.
+      if (issueId && isUuidLike(issueId) && !executionWaitRequestId && !durableRequest && (await budgetHardStopHolds())) {
+        await recordBudgetHeldTask({
+          companyId: agent.companyId,
+          agentId,
+          issueId,
+          scope: { companyId: agent.companyId, scopeType: budgetBlock.scopeType, scopeId: budgetBlock.scopeId },
+          source,
+          triggerDetail,
+          reason,
+          payload,
+          requestedByActorType: opts.requestedByActorType ?? null,
+          requestedByActorId: opts.requestedByActorId ?? null,
+          idempotencyKey: opts.idempotencyKey ?? null,
+        });
+      } else {
+        await writeSkippedRequest("budget.blocked", { error: budgetBlock.reason }, {
+          scopeType: budgetBlock.scopeType, scopeId: budgetBlock.scopeId,
+        });
+      }
       throw conflict(budgetBlock.reason, {
         scopeType: budgetBlock.scopeType,
         scopeId: budgetBlock.scopeId,
@@ -31419,7 +31438,8 @@ export function heartbeatService(
       .where(
         and(
           eq(agentWakeupRequests.companyId, companyId),
-          inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution"]),
+          // Work held at a budget stop (GRE-1365) goes too: no catch-up on resume.
+          inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution", ...BUDGET_HELD_WAKE_STATUSES]),
           sql`${agentWakeupRequests.runId} is null`,
         ),
       )
@@ -31432,6 +31452,25 @@ export function heartbeatService(
     scope: BudgetEnforcementScope,
   ) {
     const now = new Date();
+    const wakeupIds = await listPendingWakeupIdsForBudgetScope(scope);
+    if (wakeupIds.length === 0) return 0;
+
+    await db
+      .update(agentWakeupRequests)
+      .set({
+        status: "cancelled",
+        finishedAt: now,
+        error: "Cancelled due to budget pause",
+        updatedAt: now,
+      })
+      .where(inArray(agentWakeupRequests.id, wakeupIds));
+
+    return wakeupIds.length;
+  }
+
+  async function listPendingWakeupIdsForBudgetScope(
+    scope: BudgetEnforcementScope,
+  ) {
     let wakeupIds: string[] = [];
 
     if (scope.scopeType === "company") {
@@ -31471,20 +31510,348 @@ export function heartbeatService(
         scope.scopeId,
       );
     }
+    return wakeupIds;
+  }
 
-    if (wakeupIds.length === 0) return 0;
+  // ---- Hold at a budget hard stop (GRE-1365) ----
+  // With `budgetHardStopMode: "hold"`, a hard stop keeps the scope's task work
+  // as `budget_held` wakes instead of cancelling it. When the scope resumes
+  // (an approved raise), each held task gets exactly one fresh wake through
+  // the normal wake path, so the run admission guards (RAM, disk, run caps)
+  // still apply. "Keep paused" leaves the scope blocked, so the work stays
+  // held and the Costs overview counts it.
 
+  /** A release that died mid-way is retried after this long. */
+  const BUDGET_HOLD_RELEASE_LEASE_MS = 5 * 60 * 1000;
+  /** Failed wake attempts before a held task is given up and logged. */
+  const BUDGET_HOLD_MAX_RELEASE_ATTEMPTS = 3;
+
+  async function budgetHardStopHolds() {
+    return (await instanceSettings.getGeneral()).budgetHardStopMode === "hold";
+  }
+
+  function budgetHoldMarker(scope: BudgetEnforcementScope, heldAt: Date) {
+    return { scopeType: scope.scopeType, scopeId: scope.scopeId, heldAt: heldAt.toISOString() };
+  }
+
+  /** Hold one task for an agent: one `budget_held` row per agent and task; repeats only count. */
+  async function recordBudgetHeldTask(input: {
+    companyId: string;
+    agentId: string;
+    issueId: string;
+    scope: BudgetEnforcementScope;
+    source: string;
+    triggerDetail: string | null;
+    reason: string | null;
+    payload: Record<string, unknown> | null;
+    requestedByActorType?: string | null;
+    requestedByActorId?: string | null;
+    idempotencyKey?: string | null;
+  }) {
+    const now = new Date();
+    const [existing] = await db
+      .select({ id: agentWakeupRequests.id })
+      .from(agentWakeupRequests)
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, input.companyId),
+          eq(agentWakeupRequests.agentId, input.agentId),
+          eq(agentWakeupRequests.status, "budget_held"),
+          sql`${agentWakeupRequests.payload} ->> 'issueId' = ${input.issueId}`,
+        ),
+      )
+      .limit(1);
+    if (existing) {
+      await db
+        .update(agentWakeupRequests)
+        .set({ coalescedCount: sql`${agentWakeupRequests.coalescedCount} + 1`, updatedAt: now })
+        .where(eq(agentWakeupRequests.id, existing.id));
+      return;
+    }
+    await db
+      .insert(agentWakeupRequests)
+      .values({
+        companyId: input.companyId,
+        agentId: input.agentId,
+        source: input.source,
+        triggerDetail: input.triggerDetail,
+        reason: input.reason,
+        payload: { ...(input.payload ?? {}), issueId: input.issueId, budgetHold: budgetHoldMarker(input.scope, now) },
+        status: "budget_held",
+        requestedByActorType: input.requestedByActorType ?? null,
+        requestedByActorId: input.requestedByActorId ?? null,
+        idempotencyKey: input.idempotencyKey ?? null,
+      })
+      .onConflictDoNothing();
+  }
+
+  /** The task (agent and issue) of each live run in the scope, before it is cancelled. */
+  async function listBudgetScopeRunTasks(scope: BudgetEnforcementScope) {
+    const runIssueId = sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+    const projectRunIds = scope.scopeType === "project"
+      ? await listProjectScopedRunIds(scope.companyId, scope.scopeId)
+      : [];
+    if (scope.scopeType === "project" && projectRunIds.length === 0) return [];
+    const scopeCondition =
+      scope.scopeType === "agent"
+        ? eq(heartbeatRuns.agentId, scope.scopeId)
+        : scope.scopeType === "project"
+          ? inArray(heartbeatRuns.id, projectRunIds)
+          : undefined;
+    const rows = await db
+      .selectDistinct({ agentId: heartbeatRuns.agentId, issueId: runIssueId })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, scope.companyId),
+          inArray(heartbeatRuns.status, [...CANCELLABLE_HEARTBEAT_RUN_STATUSES]),
+          sql`${runIssueId} is not null`,
+          scopeCondition,
+        ),
+      );
+    return rows.filter((row): row is { agentId: string; issueId: string } => isUuidLike(row.issueId ?? ""));
+  }
+
+  /**
+   * Hold mode: queued task wakes become `budget_held` and each cancelled run's
+   * task is held too, so it resumes after the raise. A wake with no task has
+   * nothing to resume (timers wake the agent again) and is cancelled as in
+   * stop mode.
+   */
+  async function holdBudgetScopeWork(
+    scope: BudgetEnforcementScope,
+    runTasks: Array<{ agentId: string; issueId: string }>,
+  ) {
+    const now = new Date();
+    const pendingIds = await listPendingWakeupIdsForBudgetScope(scope);
+    const stillPending = and(
+      inArray(agentWakeupRequests.id, pendingIds),
+      inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution"]),
+      sql`${agentWakeupRequests.runId} is null`,
+    );
+    const held = pendingIds.length === 0 ? [] : await db
+      .update(agentWakeupRequests)
+      .set({
+        status: "budget_held",
+        payload: sql`coalesce(${agentWakeupRequests.payload}, '{}'::jsonb) || ${JSON.stringify({
+          budgetHold: budgetHoldMarker(scope, now),
+        })}::jsonb`,
+        updatedAt: now,
+      })
+      .where(and(stillPending, sql`${agentWakeupRequests.payload} ->> 'issueId' is not null`))
+      .returning({ id: agentWakeupRequests.id });
+    if (pendingIds.length > 0) {
+      await db
+        .update(agentWakeupRequests)
+        .set({ status: "cancelled", finishedAt: now, error: "Cancelled due to budget pause", updatedAt: now })
+        .where(stillPending);
+    }
+    for (const task of runTasks) {
+      await recordBudgetHeldTask({
+        companyId: scope.companyId,
+        agentId: task.agentId,
+        issueId: task.issueId,
+        scope,
+        source: "automation",
+        triggerDetail: "system",
+        reason: "budget_hold",
+        payload: null,
+        requestedByActorType: "system",
+        requestedByActorId: "budget_service",
+      });
+    }
+    if (held.length + runTasks.length > 0) {
+      await logActivity(db, {
+        companyId: scope.companyId,
+        actorType: "system",
+        actorId: "budget_service",
+        action: "budget.work_held",
+        entityType: scope.scopeType === "agent" ? "agent" : scope.scopeType === "project" ? "project" : "company",
+        entityId: scope.scopeId,
+        details: { scopeType: scope.scopeType, heldWakeCount: held.length, heldRunTaskCount: runTasks.length },
+      });
+    }
+  }
+
+  /**
+   * Wake one held task once, if nothing stops it now. The guarded claim
+   * (held -> releasing) lets one caller win; the wake's idempotency key comes
+   * from the oldest held row, so a release that died after waking is not
+   * woken twice when its lease runs out.
+   */
+  async function releaseBudgetHeldTask(
+    group: { companyId: string; agentId: string; issueId: string },
+    now: Date,
+  ): Promise<"released" | "held" | "dropped" | "raced" | "failed"> {
+    const staleBefore = new Date(now.getTime() - BUDGET_HOLD_RELEASE_LEASE_MS);
+    const inGroup = and(
+      eq(agentWakeupRequests.companyId, group.companyId),
+      eq(agentWakeupRequests.agentId, group.agentId),
+      sql`${agentWakeupRequests.payload} ->> 'issueId' = ${group.issueId}`,
+    );
+    const claimable = or(
+      eq(agentWakeupRequests.status, "budget_held"),
+      and(eq(agentWakeupRequests.status, "budget_releasing"), lt(agentWakeupRequests.claimedAt, staleBefore)),
+    );
+    const issue = await db
+      .select({ status: issues.status, projectId: issues.projectId })
+      .from(issues)
+      .where(and(eq(issues.companyId, group.companyId), eq(issues.id, group.issueId)))
+      .then((rows) => rows[0] ?? null);
+    if (!issue || issue.status === "done" || issue.status === "cancelled") {
+      // Finished while held: nothing left to pick up. A task handed on is
+      // still woken; the wake may be a reviewer's or a mention, not the owner's.
+      await db
+        .update(agentWakeupRequests)
+        .set({ status: "cancelled", finishedAt: now, error: "Held task was finished while held", updatedAt: now })
+        .where(and(inGroup, claimable));
+      return "dropped";
+    }
+    const block = await budgets.getInvocationBlock(group.companyId, group.agentId, {
+      issueId: group.issueId,
+      projectId: issue.projectId,
+    });
+    if (block) return "held";
+
+    const claimed = await db
+      .update(agentWakeupRequests)
+      .set({ status: "budget_releasing", claimedAt: now, updatedAt: now })
+      .where(and(inGroup, claimable))
+      .returning({
+        id: agentWakeupRequests.id,
+        createdAt: agentWakeupRequests.createdAt,
+        coalescedCount: agentWakeupRequests.coalescedCount,
+        payload: agentWakeupRequests.payload,
+      });
+    if (claimed.length === 0) return "raced";
+    const claimedIds = claimed.map((row) => row.id);
+    const oldest = [...claimed].sort(
+      (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || a.id.localeCompare(b.id),
+    )[0]!;
+    const idempotencyKey = `budget-hold-release:${oldest.id}`;
+    const mine = and(inArray(agentWakeupRequests.id, claimedIds), eq(agentWakeupRequests.status, "budget_releasing"));
+
+    const alreadyWoken = await db
+      .select({ id: agentWakeupRequests.id })
+      .from(agentWakeupRequests)
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, group.companyId),
+          eq(agentWakeupRequests.idempotencyKey, idempotencyKey),
+          notInArray(agentWakeupRequests.status, ["skipped", "failed", "cancelled", ...BUDGET_HELD_WAKE_STATUSES]),
+        ),
+      )
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+    if (!alreadyWoken) {
+      try {
+        await enqueueWakeup(group.agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "budget_hold_released",
+          payload: {
+            issueId: group.issueId,
+            budgetHoldRelease: {
+              heldWakeupIds: claimedIds,
+              heldWakeCount: claimed.reduce((sum, row) => sum + 1 + row.coalescedCount, 0),
+            },
+          },
+          contextSnapshot: {
+            issueId: group.issueId,
+            wakeReason: "budget_hold_released",
+            source: "budget.hold_released",
+          },
+          requestedByActorType: "system",
+          requestedByActorId: "budget_service",
+          idempotencyKey,
+        });
+      } catch (err) {
+        const attempts = Math.max(
+          ...claimed.map((row) => Number(parseObject(parseObject(row.payload).budgetHold).releaseAttempts ?? 0)),
+        ) + 1;
+        const giveUp = attempts >= BUDGET_HOLD_MAX_RELEASE_ATTEMPTS;
+        const message = err instanceof Error ? err.message : String(err);
+        await db
+          .update(agentWakeupRequests)
+          .set({
+            status: giveUp ? "failed" : "budget_held",
+            claimedAt: null,
+            finishedAt: giveUp ? now : null,
+            error: giveUp ? `Held task could not be woken after the raise: ${message}` : null,
+            payload: sql`jsonb_set(coalesce(${agentWakeupRequests.payload}, '{}'::jsonb), '{budgetHold,releaseAttempts}', ${String(attempts)}::jsonb)`,
+            updatedAt: now,
+          })
+          .where(mine);
+        if (giveUp) {
+          await logActivity(db, {
+            companyId: group.companyId,
+            actorType: "system",
+            actorId: "budget_service",
+            action: "budget.held_work_release_failed",
+            entityType: "issue",
+            entityId: group.issueId,
+            details: { agentId: group.agentId, attempts, error: message },
+          });
+          return "failed";
+        }
+        throw err;
+      }
+    }
     await db
       .update(agentWakeupRequests)
       .set({
-        status: "cancelled",
+        status: "coalesced",
         finishedAt: now,
-        error: "Cancelled due to budget pause",
+        payload: sql`jsonb_set(coalesce(${agentWakeupRequests.payload}, '{}'::jsonb), '{budgetHold,releasedBy}', ${JSON.stringify(idempotencyKey)}::jsonb)`,
         updatedAt: now,
       })
-      .where(inArray(agentWakeupRequests.id, wakeupIds));
+      .where(mine);
+    return "released";
+  }
 
-    return wakeupIds.length;
+  /**
+   * Release held budget work whose scope no longer stops it. Runs after each
+   * budget resume and from the scheduler, so a resume path without hooks, a
+   * crash or a failed wake is picked up later. Safe to run twice or in parallel.
+   */
+  async function releaseBudgetHeldWork(filter: { companyId?: string } = {}) {
+    const now = new Date();
+    const staleBefore = new Date(now.getTime() - BUDGET_HOLD_RELEASE_LEASE_MS);
+    const heldIssueId = sql<string>`${agentWakeupRequests.payload} ->> 'issueId'`;
+    const companyIds = filter.companyId
+      ? [filter.companyId]
+      : await db.select({ id: companies.id }).from(companies).then((rows) => rows.map((row) => row.id));
+    const result = { released: 0, held: 0, dropped: 0, failed: 0 };
+    for (const companyId of companyIds) {
+      const groups = await db
+        .selectDistinct({ agentId: agentWakeupRequests.agentId, issueId: heldIssueId })
+        .from(agentWakeupRequests)
+        .where(
+          and(
+            eq(agentWakeupRequests.companyId, companyId),
+            or(
+              eq(agentWakeupRequests.status, "budget_held"),
+              and(eq(agentWakeupRequests.status, "budget_releasing"), lt(agentWakeupRequests.claimedAt, staleBefore)),
+            ),
+            sql`${heldIssueId} is not null`,
+          ),
+        )
+        .limit(200);
+      for (const group of groups) {
+        if (!isUuidLike(group.issueId)) continue;
+        try {
+          const outcome = await releaseBudgetHeldTask({ companyId, ...group }, now);
+          if (outcome !== "raced") result[outcome] += 1;
+        } catch (err) {
+          logger.warn({ err, companyId, ...group }, "held budget task not woken yet; the next sweep retries");
+        }
+      }
+    }
+    return result;
+  }
+
+  async function releaseBudgetHeldWorkForScope(scope: BudgetEnforcementScope) {
+    await releaseBudgetHeldWork({ companyId: scope.companyId });
   }
 
   type CancelRunOptions = {
@@ -32101,12 +32468,16 @@ export function heartbeatService(
   }
 
   async function cancelBudgetScopeWork(scope: BudgetEnforcementScope) {
+    const hold = await budgetHardStopHolds();
+    const heldRunTasks = hold ? await listBudgetScopeRunTasks(scope) : [];
+    const settlePendingWork = () =>
+      hold ? holdBudgetScopeWork(scope, heldRunTasks) : cancelPendingWakeupsForBudgetScope(scope);
     if (scope.scopeType === "agent") {
       await cancelActiveForAgentInternal(
         scope.scopeId,
         "Cancelled due to budget pause",
       );
-      await cancelPendingWakeupsForBudgetScope(scope);
+      await settlePendingWork();
       return;
     }
 
@@ -32130,7 +32501,7 @@ export function heartbeatService(
       await cancelRunInternal(runId, "Cancelled due to budget pause");
     }
 
-    await cancelPendingWakeupsForBudgetScope(scope);
+    await settlePendingWork();
   }
 
   /**
@@ -32151,11 +32522,14 @@ export function heartbeatService(
           inArray(issues.status, ["todo", "in_progress"]),
         ),
       );
+    const hold = await budgetHardStopHolds();
     for (const issue of openIssues) {
       await issuesSvc.addComment(
         issue.id,
         `Stopped: agent ${agent.name} reached its monthly budget and is paused. ` +
-          "It keeps this task and does no more work on it. " +
+          (hold
+            ? "It keeps this task and its queued work is held. When the budget is raised, it picks the task up again once. "
+            : "It keeps this task and does no more work on it. ") +
           "To continue, a board member raises the agent's budget on the Costs page or gives the task to another agent.",
         {},
         { authorType: "system" },
@@ -32676,6 +33050,7 @@ export function heartbeatService(
       cancelInvocationsForAgentsInternal(agentIds, reason),
 
     cancelBudgetScopeWork,
+    releaseBudgetHeldWork,
     cancelCompanyPauseWork,
     noticeBudgetHardStop,
 

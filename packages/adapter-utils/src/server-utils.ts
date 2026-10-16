@@ -16,6 +16,7 @@ import { CONNECTION_INTENT_AGENT_GUIDANCE } from "@greatstone/shared";
 import { sanitizeRemoteExecutionEnv } from "./remote-execution-env.js";
 import {
   buildLocalProcessSandboxSpawnTarget,
+  wrapWithAgentSecretShield,
   type LocalProcessSandboxOptions,
 } from "./local-process-sandbox.js";
 import { buildSshSpawnTarget, type SshRemoteExecutionSpec } from "./ssh.js";
@@ -3687,6 +3688,7 @@ async function resolveSpawnTarget(
     remoteExecution?: RemoteExecutionSpec | null;
     remoteEnv?: Record<string, string> | null;
     localProcessSandbox?: LocalProcessSandboxOptions | null;
+    secretShield?: boolean;
   } = {},
 ): Promise<SpawnTarget> {
   const remote = options.remoteExecution ?? null;
@@ -3739,6 +3741,13 @@ async function resolveSpawnTarget(
       options: options.localProcessSandbox,
     });
     return { ...sandboxTarget, command: sandboxCommand };
+  }
+
+  if (process.platform === "linux" && options.secretShield !== false && resolved) {
+    // No --die-with-parent: it would kill the run when the server restarts,
+    // and adoption needs it alive. Stops signal the whole process group.
+    const wrapped = await wrapWithAgentSecretShield({ command: executable, args, dieWithParent: false });
+    return { command: wrapped.command, args: wrapped.args };
   }
 
   if (process.platform !== "win32") {
@@ -4825,6 +4834,9 @@ export async function runChildProcess(
     stdin?: string;
     remoteExecution?: RemoteExecutionSpec | null;
     localProcessSandbox?: LocalProcessSandboxOptions | null;
+    // Local spawns run inside the agent secret shield (bwrap) by default.
+    // Pass false only for processes that are not agent runs.
+    secretShield?: boolean;
     // Write stdout/stderr to append-only files under `dir` instead of pipes,
     // so the output outlives this server (hot-restart adoption). Local,
     // unsandboxed children only; `GSAM_CHILD_OUTPUT_FILES=0` turns it off.
@@ -4866,6 +4878,7 @@ export async function runChildProcess(
       remoteExecution: opts.remoteExecution ?? null,
       remoteEnv: opts.remoteExecution ? agentEnv : null,
       localProcessSandbox: opts.localProcessSandbox ?? null,
+      secretShield: opts.secretShield,
     })
       .then((target) => {
         // Re-alias after the spawn target's overrides (a sandbox bridge swaps in
@@ -5122,7 +5135,15 @@ export async function runChildProcess(
           "close",
           (code: number | null, signal: NodeJS.Signals | null) => {
             if (timeout) clearTimeout(timeout);
-            clearTerminalCleanupTimers();
+            if (terminalCleanupKillTimer && processGroupId) {
+              // A sandboxed run's bwrap parent dies on SIGTERM before the agent
+              // inside it does. Keep the group SIGKILL armed so an agent that
+              // ignores SIGTERM cannot outlive the run (GRE-1094).
+              if (terminalCleanupTimer) clearTimeout(terminalCleanupTimer);
+              terminalCleanupTimer = null;
+            } else {
+              clearTerminalCleanupTimers();
+            }
             runningProcesses.delete(runId);
             void finishCapture()
               .then(() => logChain)

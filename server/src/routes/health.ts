@@ -12,6 +12,11 @@ import {
   writeDevServerRestartRequest,
 } from "../dev-server-status.js";
 import { logger } from "../middleware/logger.js";
+import {
+  describeAgentSecretShieldWarning,
+  resolveAgentSecretShield,
+  type AgentSecretShieldStatus,
+} from "@greatstone/adapter-utils/local-process-sandbox";
 import { getServerInfoSnapshot, type ServerInfoSnapshot } from "../server-info.js";
 import {
   getCloudStackContext,
@@ -98,6 +103,22 @@ function redactedDatabaseBackupHealth(databaseBackup: DatabaseBackupHealthStatus
     status: databaseBackup.status,
     warnings: databaseBackup.warnings.map(redactedDatabaseBackupWarning),
   };
+}
+
+// GRE-1094: local agent runs fall back to unwrapped when bwrap is missing or
+// broken, so the instance health check is where an operator sees it.
+async function inspectAgentSandboxHealth(): Promise<{
+  status: AgentSecretShieldStatus | { state: "unknown"; reason: string };
+  warnings: { code: "agent_sandbox_unavailable"; message: string }[];
+}> {
+  try {
+    const status = await resolveAgentSecretShield();
+    const message = describeAgentSecretShieldWarning(status);
+    return { status, warnings: message ? [{ code: "agent_sandbox_unavailable", message }] : [] };
+  } catch (error) {
+    logger.warn({ err: error }, "agent sandbox health probe failed");
+    return { status: { state: "unknown", reason: "probe failed" }, warnings: [] };
+  }
 }
 
 function getCloudHealthStatus(env: CloudInstanceEnv) {
@@ -404,7 +425,9 @@ export function healthRoutes(
     const databaseBackup = opts.databaseBackupHealth
       ? inspectDatabaseBackupHealth(opts.databaseBackupHealth)
       : undefined;
-    const warnings = databaseBackup?.warnings.length ? databaseBackup.warnings : undefined;
+    const agentSandbox = exposeFullDetails ? await inspectAgentSandboxHealth() : null;
+    const allWarnings = [...(databaseBackup?.warnings ?? []), ...(agentSandbox?.warnings ?? [])];
+    const warnings = allWarnings.length ? allWarnings : undefined;
     const nativeRecovery = exposeFullDetails
       ? await nativeRestartRecoverySummary(db).catch((error) => {
           logger.warn({ err: error }, "native recovery health summary failed");
@@ -459,6 +482,7 @@ export function healthRoutes(
       startupRecovery,
       nativeRecovery,
       ...(databaseBackup ? { databaseBackup } : {}),
+      ...(agentSandbox ? { agentSandbox: agentSandbox.status } : {}),
       ...(warnings ? { warnings } : {}),
       ...(devServer ? { devServer } : {}),
       ...(workspaceReadiness ? { workspace: workspaceReadiness } : {}),

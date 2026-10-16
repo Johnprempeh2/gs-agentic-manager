@@ -221,6 +221,8 @@ function normalizeGeneralSettings(raw: unknown): InstanceGeneralSettings {
       teamCatalogFilter: parsed.data.teamCatalogFilter ?? "greatstone",
       teamCatalogAddMode: parsed.data.teamCatalogAddMode ?? "request",
       strategyBoardEmail: parsed.data.strategyBoardEmail ?? DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+      // Absent => "stop" (GRE-1365); only carry through an explicit choice.
+      ...(parsed.data.budgetHardStopMode ? { budgetHardStopMode: parsed.data.budgetHardStopMode } : {}),
     };
   }
   return {
@@ -286,7 +288,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // Greatstone (GRE-1621): graduated; a stored off value is ignored.
       enableAgentChat: true,
       enableTeamChat: parsed.data.enableTeamChat ?? false,
-      enableConferenceRoomChat: parsed.data.enableConferenceRoomChat ?? false,
+      // Greatstone (GRE-1624): graduated; a stored off value is ignored.
+      enableConferenceRoomChat: true,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
       // Greatstone (GRE-1621): graduated; a stored off value is ignored.
       enableIssuePlanDecompositions: true,
@@ -347,7 +350,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableIntelligence: false,
     enableAgentChat: true,
     enableTeamChat: false,
-    enableConferenceRoomChat: false,
+    enableConferenceRoomChat: true,
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: true,
     enableExperimentalFileViewer: true,
@@ -427,6 +430,8 @@ export function applyManagedExperimentalOverlay(
     ) {
       continue;
     }
+    // Greatstone (GRE-1624): Conference Room Chat is always on; a managed "off" is ignored.
+    if (key === "enableConferenceRoomChat") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;

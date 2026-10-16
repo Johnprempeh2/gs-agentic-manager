@@ -363,8 +363,6 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   const showCases = experimentalSettings?.enableCases === true;
   // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
   const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
-  // Conference Room Chat flag (PAP-136/PAP-137): hidden entirely while the flag is off.
-  const conferenceRoomChatEnabled = experimentalSettings?.enableConferenceRoomChat === true;
   const showAgentChats = !children;
   const showTeamChats = teamChatEnabled && !children;
 
@@ -444,7 +442,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     agents: link("/agents", "Agents", Users),
     scorecard: link("/scorecard", "Scorecard", Trophy),
     "weekly-report": link("/weekly-report", "This week", Newspaper),
-    "conference-room": gated(conferenceRoomChatEnabled, link("/board-chat", "Conference Room", MessagesSquare)),
+    // Greatstone (GRE-1624): Conference Room Chat graduated from Experimental; always shown.
+    "conference-room": link("/board-chat", "Conference Room", MessagesSquare),
     // Greatstone (GRE-1622): Status Cards graduated from Experimental; always shown.
     status: link("/status", "Status", LayoutGrid),
     skills: link("/skills", "Skills", Boxes),

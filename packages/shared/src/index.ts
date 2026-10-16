@@ -2016,6 +2016,8 @@ export {
   TEAM_CATALOG_FILTERS,
   type TeamCatalogAddMode,
   type TeamCatalogFilter,
+  BUDGET_HARD_STOP_MODES,
+  type BudgetHardStopMode,
 } from "./types/instance.js";
 
 export type {

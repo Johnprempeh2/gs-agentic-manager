@@ -76,6 +76,7 @@ import {
   type PaperclipSkillEntry,
 } from "@greatstone/adapter-utils/server-utils";
 import { shellQuote } from "@greatstone/adapter-utils/ssh";
+import { wrapWithAgentSecretShield } from "../local-process-sandbox.js";
 import { createEphemeralSessionEnvironmentStore } from "./ephemeral-session-environment.js";
 import {
   createAcpRuntime,
@@ -874,6 +875,20 @@ async function resolveBuiltInAgentCommand(input: {
   }
   const resolved = (await findAncestorBin(packageRootDir, binName)) ?? binName;
   return { command: resolved, shellCommand: shellQuote(resolved) };
+}
+
+/**
+ * Prefix a local ACP agent command line with the agent secret shield (bwrap).
+ * The ACP child talks over stdio and cannot outlive the server, so the sandbox
+ * dies with its bwrap parent; a single-PID kill then reaps the whole tree.
+ * The fingerprint keeps the bare command, so warm sessions survive a change
+ * in shield state.
+ */
+export async function wrapLocalAcpAgentCommand(agentCommand: string): Promise<string> {
+  const wrapped = await wrapWithAgentSecretShield({ command: agentCommand, args: [], dieWithParent: true });
+  if (wrapped.status.state !== "active") return agentCommand;
+  const prefix = [wrapped.command, ...wrapped.args.slice(0, -1)].map((part) => JSON.stringify(part)).join(" ");
+  return `${prefix} ${agentCommand}`;
 }
 
 const execFileAsync = promisify(execFile);
@@ -2513,7 +2528,9 @@ async function buildRuntime(input: {
   const overrideCommand = processSessionBridge?.agentCommand
     ? [process.execPath, processSessionBridge.agentCommand]
       .map((part) => JSON.stringify(part.replaceAll("\\", "/"))).join(" ")
-    : agentCommand;
+    : agentCommand && !executionTargetIsRemote
+      ? await wrapLocalAcpAgentCommand(agentCommand)
+      : agentCommand;
   const overrides = overrideCommand ? { [acpxAgent]: overrideCommand } : undefined;
   const agentRegistry = createAgentRegistry({ overrides });
   const loggedEnv = buildInvocationEnvForLogs(env, {

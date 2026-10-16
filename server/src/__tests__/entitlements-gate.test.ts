@@ -27,8 +27,6 @@ const fakeDb = {} as never;
 const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> = {
   enablePipelines: async () => (await import("../routes/pipelines.js")).pipelineRoutes(fakeDb),
   enableCases: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
-  enableConferenceRoomChat: async () =>
-    (await import("../routes/board-chat.js")).boardChatRoutes(fakeDb, { deploymentMode: "local_trusted" }),
   enableExternalObjects: async () =>
     Router()
       .use(await issueRouter())
