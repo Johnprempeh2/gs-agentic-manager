@@ -30,7 +30,7 @@ export const AGENT_DETAIL_NAVIGATION: ReadonlyArray<{
   {
     label: "Runtime",
     items: [
-      { value: "runtime", label: "Harness / Runtime" },
+      { value: "runtime", label: "How it runs" },
       { value: "secrets", label: "Secrets" },
       { value: "tools", label: "Tools" },
       { value: "channels", label: "Channels" },

@@ -476,7 +476,7 @@ const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
         setDraftValue(nextValue);
         onChange(nextValue);
       }}
-      placeholder="What should the agent do? Say what a good result looks like and anything it needs to know."
+      placeholder="What should the agent do, and what does a good result look like?"
       bordered={false}
       mentions={mentions}
       contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-(--sz-220px)" : "min-h-(--sz-120px)")}
@@ -1637,7 +1637,12 @@ export function NewIssueDialog() {
                       <span className="truncate">{option.label}</span>
                     )
                   ) : (
-                    <span className="text-muted-foreground">Assignee</span>
+                    <span
+                      className="text-muted-foreground"
+                      title="Pick the agent or person who should do this. With no one chosen, the task waits in the backlog."
+                    >
+                      Choose who
+                    </span>
                   )
                 }
                 renderOption={(option) => {

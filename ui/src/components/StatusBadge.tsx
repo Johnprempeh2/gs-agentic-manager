@@ -17,7 +17,7 @@ function scStyle(cssVar: string): CSSProperties {
 }
 
 /** "in_review" → "In review" (sentence case). */
-function sentenceCaseStatus(status: string): string {
+export function sentenceCaseStatus(status: string): string {
   const s = status.replace(/_/g, " ");
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

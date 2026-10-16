@@ -63,7 +63,7 @@ describe("AgentContextualSidebar", () => {
     expect(markup).toContain('href="/agents/codexcoder/api-keys"');
     expect(markup).toContain('href="/activity?mode=agents&amp;agentId=agent-1"');
     expect(markup).toContain('href="/activity/runs?agentId=agent-1"');
-    expect(markup).toContain("Harness / Runtime");
+    expect(markup).toContain("How it runs");
     expect(markup).toContain("Permissions / Trust");
   });
 });
