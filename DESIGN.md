@@ -129,6 +129,8 @@ the brand colour comes from the charcoal rail, the lime and teal light in
 - **Brand washes.** `--accent` (hover, selected rows, the active item in a
   settings nav, selected segmented controls) is a soft lime wash in light
   mode, so interaction carries the brand colour. Text on it stays ink.
+- **Card rim.** Glass cards carry `--glass-rim`: in light mode a lime to teal
+  brand edge (lime top left, teal bottom right). It is decoration only.
 - **Eyebrows.** Uppercase section labels (`h2` to `h4` with `uppercase
   text-muted-foreground`) render in `--eyebrow-foreground` (brand emerald)
   in light mode through one rule in `index.css`; keep writing them as
