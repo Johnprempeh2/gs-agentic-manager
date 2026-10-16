@@ -203,6 +203,33 @@ describeEmbeddedPostgres("memory import from Claude and ChatGPT", () => {
     expect(activity.filter((row) => row.action === "memory.imported")).toHaveLength(2);
   });
 
+  it("flags entries already imported or with much the same words, and writes nothing", async () => {
+    const { board, base } = await setup("ImportCheck");
+    await enable(board, base);
+    const org = await scopeOf(board, base, "organization");
+    await request(board).post(`${base}/import`).send({
+      scopeId: org.id,
+      app: "claude",
+      via: "paste",
+      entries: [{ sourceId: "paste:bbbb0001", content: "Greatstone prices discovery workshops per day for new clients." }],
+    });
+    const before = (await ctx.db.select().from(memoryRecords)).length;
+
+    const check = await request(board).post(`${base}/import/check`).send({
+      scopeId: org.id,
+      app: "claude",
+      entries: [
+        { sourceId: "paste:bbbb0001", content: "anything" },
+        { sourceId: "paste:bbbb0002", content: "Greatstone prices discovery workshops per day, for new clients" },
+        { sourceId: "paste:bbbb0003", content: "Ben prefers short written updates." },
+      ],
+    });
+    expect(check.status).toBe(200);
+    expect(check.body.entries.map((entry: { match: string | null }) => entry.match)).toEqual(["already_imported", "similar", null]);
+    expect(check.body.entries[1].existing).toMatchObject({ status: "unreviewed" });
+    expect((await ctx.db.select().from(memoryRecords)).length).toBe(before);
+  });
+
   it("answers 404 for a scope the caller cannot see and validates the body", async () => {
     const { board, base, asAgent, companyId } = await setup("ImportScope");
     await enable(board, base);

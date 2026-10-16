@@ -13,6 +13,7 @@ import { MemoryApps } from "./MemoryApps";
 const graphApiMock = vi.hoisted(() => ({
   scopes: vi.fn(),
   importEntries: vi.fn(),
+  checkImport: vi.fn(),
   connections: vi.fn(),
   createConnection: vi.fn(),
   revokeConnection: vi.fn(),
@@ -81,6 +82,9 @@ beforeEach(() => {
   graphApiMock.scopes.mockResolvedValue(scopes);
   graphApiMock.connections.mockResolvedValue([]);
   graphApiMock.connectionActivity.mockResolvedValue({ lastUsedAt: null, operations: [], contributions: [] });
+  graphApiMock.checkImport.mockImplementation(async (_companyId: string, body: { entries: Array<{ sourceId: string }> }) => ({
+    entries: body.entries.map((entry) => ({ sourceId: entry.sourceId, match: null, existing: null })),
+  }));
   graphApiMock.importEntries.mockResolvedValue({ added: 2, alreadyImported: 0, heldBack: 0, entries: [] });
 });
 
@@ -118,6 +122,29 @@ describe("MemoryApps", () => {
     );
     expect(body()).toContain("2 added");
     expect(body()).toContain("Review");
+  });
+
+  it("unticks entries memory already has and says why", async () => {
+    graphApiMock.checkImport.mockImplementation(async (_companyId: string, body: { entries: Array<{ sourceId: string }> }) => ({
+      entries: body.entries.map((entry, index) =>
+        index === 0
+          ? { sourceId: entry.sourceId, match: "already_imported", existing: { recordId: "r1", title: null, status: "unreviewed" } }
+          : index === 1
+            ? { sourceId: entry.sourceId, match: "similar", existing: { recordId: "r2", title: "Language", status: "accepted" } }
+            : { sourceId: entry.sourceId, match: null, existing: null },
+      ),
+    }));
+    await render();
+    typeInto(document.querySelector("textarea")!, "- Runs Greatstone International\n- Prefers British English\n- Based in London\n");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    });
+    await flush();
+    expect(graphApiMock.checkImport).toHaveBeenCalledWith("co-kestrel", expect.objectContaining({ scopeId: "scope-org", app: "chatgpt" }));
+    expect(body()).toContain("1 of 3 ticked");
+    expect(body()).toContain("Already in memory, so it is unticked.");
+    expect(body()).toContain('Looks like an entry already in memory: "Language"');
+    expect(body()).toContain("2 look like things memory already has");
   });
 
   it("connects Claude and shows the key once inside the setup text", async () => {

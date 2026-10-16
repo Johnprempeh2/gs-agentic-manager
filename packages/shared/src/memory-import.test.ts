@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { importMemorySchema, parseAssistantExport, parsePastedMemories } from "./memory-import.js";
+import {
+  importMemorySchema,
+  memoryTextSimilarity,
+  memoryTextWords,
+  mergeImportResults,
+  parseAssistantExport,
+  parsePastedMemories,
+} from "./memory-import.js";
 
 describe("parsePastedMemories", () => {
   it("drops bullets, headings and repeats and keeps stable ids", () => {
@@ -77,5 +84,40 @@ describe("parseAssistantExport", () => {
     const scopeId = "00000000-0000-4000-8000-000000000000";
     expect(importMemorySchema.safeParse({ scopeId, app: "claude", via: "paste", entries: [{ sourceId: "p:1", content: "x" }] }).success).toBe(true);
     expect(importMemorySchema.safeParse({ scopeId, app: "gemini", via: "paste", entries: [{ sourceId: "p:1", content: "x" }] }).success).toBe(false);
+  });
+});
+
+describe("real export details", () => {
+  it("skips hidden context and tool output in ChatGPT exports", () => {
+    const chatgpt = [
+      {
+        id: "c1",
+        title: "With hidden bits",
+        current_node: "c",
+        mapping: {
+          a: { parent: null, message: { author: { role: "user" }, metadata: { is_visually_hidden_from_conversation: true }, content: { content_type: "user_editable_context", parts: ["About me"] } } },
+          b: { parent: "a", message: { author: { role: "user" }, content: { content_type: "multimodal_text", parts: [{ asset_pointer: "file-1" }, "What is in this photo?"] } } },
+          c: { parent: "b", message: { author: { role: "assistant" }, content: { content_type: "thoughts", parts: ["thinking"] } } },
+        },
+      },
+    ];
+    const result = parseAssistantExport(JSON.stringify(chatgpt));
+    expect(result.ok && result.candidates[0].content).toBe("Me: What is in this photo?");
+  });
+
+  it("merges several export files, counting repeats once", () => {
+    const one = parseAssistantExport(JSON.stringify([{ uuid: "u1", name: "A", created_at: "2026-10-01T00:00:00Z", chat_messages: [{ sender: "human", text: "hi there" }] }]));
+    const two = parseAssistantExport(JSON.stringify([
+      { uuid: "u1", name: "A", created_at: "2026-10-01T00:00:00Z", chat_messages: [{ sender: "human", text: "hi there" }] },
+      { uuid: "u2", name: "B", created_at: "2026-10-02T00:00:00Z", chat_messages: [{ sender: "human", text: "second" }] },
+    ]));
+    const merged = mergeImportResults([one, two]);
+    expect(merged.ok && merged.candidates.map((c) => c.sourceId)).toEqual(["conversation:u2", "conversation:u1"]);
+  });
+
+  it("scores near repeats high and different text low", () => {
+    const a = memoryTextWords("Greatstone prices discovery workshops per day");
+    expect(memoryTextSimilarity(a, memoryTextWords("Greatstone prices discovery workshops per day."))).toBe(1);
+    expect(memoryTextSimilarity(a, memoryTextWords("Ben likes short updates"))).toBe(0);
   });
 });

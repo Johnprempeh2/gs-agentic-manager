@@ -143,6 +143,10 @@ function chatGptTurns(conversation: Record<string, unknown>): Turn[] {
     if (!message) continue;
     const role = asRecord(message.author)?.role;
     if (role !== "user" && role !== "assistant") continue;
+    // Custom instructions and other context ChatGPT injects but never shows.
+    if (asRecord(message.metadata)?.is_visually_hidden_from_conversation === true) continue;
+    const contentType = asRecord(message.content)?.content_type;
+    if (contentType && !["text", "multimodal_text", "code"].includes(String(contentType))) continue;
     const text = chatGptPartsText(asRecord(message.content));
     if (text) turns.push({ role: role === "user" ? "me" : "assistant", text });
   }
@@ -271,6 +275,62 @@ export function parseAssistantExport(fileText: string): MemoryImportParseResult 
 
 function newestFirst(candidates: MemoryImportCandidate[]) {
   return [...candidates].sort((a, b) => (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""));
+}
+
+/** Several export files (ChatGPT can split large exports) read as one list, repeats counted once. */
+export function mergeImportResults(results: MemoryImportParseResult[]): MemoryImportParseResult {
+  const ok = results.filter((result): result is Extract<MemoryImportParseResult, { ok: true }> => result.ok);
+  if (ok.length === 0) return results[0] ?? { ok: false, error: "No file chosen." };
+  const seen = new Set<string>();
+  const candidates: MemoryImportCandidate[] = [];
+  for (const result of ok) {
+    for (const candidate of result.candidates) {
+      if (seen.has(candidate.sourceId)) continue;
+      seen.add(candidate.sourceId);
+      candidates.push(candidate);
+    }
+  }
+  return { ok: true, app: ok[0].app, kind: ok[0].kind, candidates: newestFirst(candidates) };
+}
+
+/** Lower-case words of three letters or more, for comparing two entries. */
+export function memoryTextWords(text: string): Set<string> {
+  return new Set(text.toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) ?? []);
+}
+
+/**
+ * How alike two texts are, from 0 to 1, by shared words (Jaccard). Cheap and
+ * fallible: it flags likely repeats for a person to decide, nothing more.
+ */
+export function memoryTextSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let shared = 0;
+  for (const word of a) if (b.has(word)) shared += 1;
+  return shared / (a.size + b.size - shared);
+}
+
+/** At or above this, an entry is shown as probably already in memory. */
+export const MEMORY_IMPORT_SIMILAR_THRESHOLD = 0.7;
+
+export const checkMemoryImportSchema = z
+  .object({
+    scopeId: z.string().guid(),
+    app: z.enum(MEMORY_IMPORT_APPS),
+    entries: z
+      .array(z.object({ sourceId: z.string().trim().min(1).max(200), content: z.string().trim().min(1).max(20_000) }).strict())
+      .min(1)
+      .max(500),
+  })
+  .strict();
+export type CheckMemoryImport = z.infer<typeof checkMemoryImportSchema>;
+
+export interface MemoryImportCheckResult {
+  entries: Array<{
+    sourceId: string;
+    /** `already_imported`: this exact line or chat was added before. `similar`: an entry with much the same words exists. */
+    match: "already_imported" | "similar" | null;
+    existing: { recordId: string; title: string | null; status: string } | null;
+  }>;
 }
 
 export const importMemoryEntrySchema = z
