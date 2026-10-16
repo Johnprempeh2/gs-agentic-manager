@@ -15,7 +15,7 @@ import { InlineBanner } from "@/components/InlineBanner";
 import { PageSkeleton } from "@/components/PageSkeleton";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useBillingAccount } from "@/hooks/useBillingAccount";
-import { cn } from "@/lib/utils";
+import { cn, formatCalendarDay } from "@/lib/utils";
 
 /**
  * Client Billing page (GRE-1370, B1 on GRE-1357). Read-only: the hosting
@@ -32,12 +32,7 @@ export function formatMoney(cents: number, currency: string) {
 
 /** Billing dates are UTC days ("YYYY-MM-DD"); show them without a timezone shift. */
 export function formatBillingDay(day: string) {
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString("en-GB", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+  return formatCalendarDay(day, { includeYear: true });
 }
 
 function formatPercent(value: number) {

@@ -104,7 +104,7 @@ export function PackKpiDraftsDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl" data-testid="pack-kpi-drafts-dialog">
+      <DialogContent className="max-h-(--sz-90vh) overflow-y-auto sm:max-w-2xl" data-testid="pack-kpi-drafts-dialog">
         <DialogHeader>
           <DialogTitle>Pre-fill KPIs from a research pack</DialogTitle>
           <DialogDescription>

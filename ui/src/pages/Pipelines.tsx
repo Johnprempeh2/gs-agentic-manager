@@ -687,7 +687,7 @@ export function PipelineStageDistribution({ pipeline }: { pipeline: Pick<Pipelin
   );
 }
 
-const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-[minmax(0,1fr)_11rem_5rem_6rem_7.5rem] lg:items-start lg:gap-x-6";
+const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-(--gtc-72) lg:items-start lg:gap-x-6";
 
 interface PipelinesIndexTableProps {
   pipelines: PipelineListItem[];

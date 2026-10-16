@@ -24,7 +24,7 @@ export function SidebarBrandSignature({ rail = false }: { rail?: boolean }) {
       ) : (
         <>
           <BrandLockup className="h-4 text-xs text-subtle-foreground" />
-          <PoweredByGreatstone className="text-[11px]" />
+          <PoweredByGreatstone className="text-(length:--text-micro)" />
         </>
       )}
     </div>

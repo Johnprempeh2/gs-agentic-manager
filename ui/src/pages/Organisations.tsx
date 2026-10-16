@@ -274,7 +274,7 @@ export function OrganisationDialogContent({
   );
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+    <DialogContent className="max-h-(--sz-90vh) overflow-y-auto sm:max-w-lg">
       <DialogHeader>
         <DialogTitle>{organisation ? "Edit organisation" : "Add organisation"}</DialogTitle>
         <DialogDescription>Only the name is required.</DialogDescription>

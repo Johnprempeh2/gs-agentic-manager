@@ -244,7 +244,7 @@ function FleetCard({ instance }: { instance: FleetInstanceView }) {
         </div>
       </div>
       <StateBlock instance={instance} />
-      <dl className="grid grid-cols-[6.5rem_1fr] gap-x-3 gap-y-2 border-t border-border pt-3">
+      <dl className="grid grid-cols-(--gtc-71) gap-x-3 gap-y-2 border-t border-border pt-3">
         {details.map(([label, value]) => (
           <div key={label} className="contents">
             <dt className="text-xs text-muted-foreground">{label}</dt>

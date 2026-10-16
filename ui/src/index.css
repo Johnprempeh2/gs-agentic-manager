@@ -2690,6 +2690,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   z-index: var(--z-index-popover) !important;
 }
 
+/* Mobile chat composer dock (task chat and team chat). Sits above the mobile
+   nav (--tc-composer-bottom, which Layout raises on the shell) and above the
+   part of the page the iPhone keyboard hides (--vv-bottom-inset). A class, not
+   a :root token, so it reads --tc-composer-bottom from the element's own scope. */
+.tc-composer-dock-bottom {
+  bottom: max(var(--tc-composer-bottom), calc(var(--vv-bottom-inset) + 0.25rem));
+}
+
 /* Status chip/fill helpers.
    Each consumer sets a local `--sc` to the status' base hue (e.g.
    `--sc: var(--status-task-in_progress)`); these rules derive the rendered
@@ -2966,6 +2974,7 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --mobile-ptr-top: calc(var(--sz-safe-top) + var(--sz-60px)); /* phone pull-to-refresh sits just under the sticky header */
   --sz-calc-16: min(calc(100dvh - 2rem),46rem); /* Extracted from ui/src/components/NewAgentDialog.tsx (max-h-[min(calc(100dvh-2rem),46rem)]). */
   --sz-24rem: 24rem; /* Extracted from ui/src/components/NewAgentDialog.tsx (h-[24rem]). */
+  --sz-90vh: 90vh; /* Tall dialogs: Organisations, strategy board and KPI draft dialogs (max-h-[90vh]). */
   --sz-50vh: 50vh; /* Extracted from ui/src/components/NewGoalDialog.tsx (max-h-[50vh]). */
   --sz-8_5rem: 8.5rem; /* Extracted from ui/src/components/NewIssueDialog.tsx (min-w-[8.5rem]). */
   --sz-160px: 160px; /* Extracted from ui/src/components/NewProjectDialog.tsx (max-w-[160px]). */
@@ -3175,6 +3184,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtc-68: 1fr 1.3fr; /* Goal scoreboard hero. */
   --gtc-69: repeat(auto-fill,minmax(13rem,1fr)); /* Goal scoreboard tiles. */
   --gtc-70: repeat(auto-fill,minmax(20rem,1fr)); /* Goal scoreboard cards. */
+  --gtc-71: 6.5rem 1fr; /* Fleet instance detail list. */
+  --gtc-72: minmax(0,1fr) 11rem 5rem 6rem 7.5rem; /* Pipelines desktop row. */
   --gtc-runner-inspector-stage: 1.25rem minmax(0,1fr);
   --gtc-runner-inspector-filters: minmax(14rem,1fr) repeat(5,minmax(8rem,auto));
   --gtc-runner-inspector-pipeline: 21rem minmax(0,1fr);
@@ -3184,6 +3195,8 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   --gtr-1: auto auto; /* Extracted from ui/src/components/ui/card.tsx (grid-rows-[auto_auto]). */
   --gtr-2: 1fr; /* Extracted from ui/src/pages/CompanySkills.tsx (grid-rows-[1fr]). */
   --gtr-3: 0fr; /* Extracted from ui/src/pages/CompanySkills.tsx (grid-rows-[0fr]). */
+  --gtr-4: auto minmax(0,1fr); /* Header plus scrolling body, strategy board dialogs. */
+  --flex-kpi-title: 1 1 10rem; /* Strategy board KPI title: grows, wraps below 10rem. */
   --tp-background-color-border-color: background-color,border-color; /* Extracted from ui/src/components/ActivityFeed.tsx (transition-[background-color,border-color]). */
   --tp-width-background-color: width,background-color; /* Extracted from ui/src/components/BudgetPolicyCard.tsx (transition-[width,background-color]). */
   --tp-width: width; /* Extracted from ui/src/components/ClaudeSubscriptionPanel.tsx (transition-[width]). */
@@ -3290,6 +3303,14 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
    * allow ui/src/pages/ProjectWorkspaceDetail.test.tsx — mock project color fixture
    * allow ui/src/pages/Projects.test.tsx — mock project color fixture
    * allow ui/src/pages/Routines.test.tsx — mock routine/label color fixtures
+   * allow ui/src/components/AgentTeamsDialog.test.tsx — mock team color fixtures
+   * allow ui/src/components/BrandLockup.test.tsx — mock partner brand colours (persisted brand settings data)
+   * allow ui/src/components/Sidebar.test.tsx — "#NNN" pull-request reference in a test name, not a color literal
+   * allow ui/src/components/decisions-feed/DecisionFeedCard.test.tsx — "#NNN" pull-request reference in fixture text, not a color literal
+   * allow ui/src/pages/Agents.test.tsx — mock team color fixture
+   * allow ui/src/pages/OrgChart.test.tsx — mock team color fixtures
+   * allow ui/src/components/ui/dialog.test.tsx — asserts the grid-rows class that the allowlisted dialog.tsx renders
+   * allow ui/src/components/EmailHtmlPreview.tsx — base style of the sandboxed email iframe document (srcdoc), which mimics a mail client's white page; app tokens do not exist inside that document
    ── end allowlist ── */
 
 /* Agent settings composition, shared with Storybook. */

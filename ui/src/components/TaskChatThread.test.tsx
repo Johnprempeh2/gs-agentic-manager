@@ -3426,8 +3426,9 @@ describe("TaskChatThread mobile composer dock (PAP-495)", () => {
     // height while the nav is on screen) — NOT the raw safe-area dock, which is
     // what let the nav occlude the action row before PAP-495. It also clears
     // the part of the page the iPhone keyboard hides.
-    expect(dock?.className).toContain("var(--tc-composer-bottom)");
-    expect(dock?.className).toContain("var(--vv-bottom-inset)");
+    // .tc-composer-dock-bottom (index.css) is max(--tc-composer-bottom,
+    // --vv-bottom-inset + 0.25rem).
+    expect(dock?.className).toContain("tc-composer-dock-bottom");
     expect(dock?.className).not.toContain("bottom-(--sz-calc-8)");
   });
 });
