@@ -18,6 +18,7 @@ import type {
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
+import { pipedriveTimelineImportService } from "./pipedrive-timeline-import.js";
 import {
   ORGANISATION_COLUMN_KEYS,
   PERSON_COLUMN_KEYS,
@@ -185,6 +186,7 @@ export function pipedriveRecordWriter(
 
   return {
     orgByExternalId,
+    contactByExternalId,
     recordError,
 
     async loadOrganisations() {
@@ -384,12 +386,26 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       }
 
       // Pipelines, stages and every deal, linked to the organisations above.
-      await pipedriveDealImportService(db).run({
+      const organisationIdByExternalId = new Map([...writer.orgByExternalId].map(([externalId, row]) => [externalId, row.id]));
+      const deals = await pipedriveDealImportService(db).run({
         companyId,
         client,
         actor,
-        organisationIdByExternalId: new Map([...writer.orgByExternalId].map(([externalId, row]) => [externalId, row.id])),
+        organisationIdByExternalId,
         result,
+      });
+
+      // Activities, notes and call logs, linked to the records above.
+      await pipedriveTimelineImportService(db, { now }).run({
+        companyId,
+        client,
+        result,
+        links: {
+          organisationIdByExternalId,
+          contactIdByExternalId: new Map([...writer.contactByExternalId].map(([externalId, row]) => [externalId, row.id])),
+          caseIdByDealId: deals.caseIdByDealId,
+          users,
+        },
       });
 
       result.finishedAt = now().toISOString();

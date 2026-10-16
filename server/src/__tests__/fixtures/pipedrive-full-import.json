@@ -1,5 +1,5 @@
 {
-  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented.",
+  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages.",
   "pipelines": {
     "success": true,
     "data": [
@@ -343,6 +343,105 @@
         "status": "open",
         "stage_id": 99,
         "pipeline_id": 99
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "activitiesPage": {
+    "success": true,
+    "data": [
+      {
+        "id": 9001,
+        "type": "meeting",
+        "subject": "DevTools demo",
+        "note": "<p>Showed the CLI &amp; SDK.</p>",
+        "due_date": "2026-09-20",
+        "due_time": "10:30",
+        "duration": "00:45",
+        "done": true,
+        "user_id": 9001,
+        "org_id": 101,
+        "person_id": 501,
+        "deal_id": 701,
+        "location": "Accra office",
+        "marked_as_done_time": "2026-09-20 11:20:00",
+        "add_time": "2026-09-18 08:00:00"
+      },
+      {
+        "id": 9002,
+        "type": "call",
+        "subject": "Trial check-in",
+        "note": null,
+        "due_date": "2099-01-10",
+        "due_time": "",
+        "duration": "",
+        "done": false,
+        "user_id": 9002,
+        "org_id": null,
+        "person_id": null,
+        "deal_id": 701,
+        "add_time": "2026-10-01 08:00:00"
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "notesPage": {
+    "success": true,
+    "data": [
+      {
+        "id": 7001,
+        "content": "<b>Wants</b> a trial licence<br>for 25 seats.",
+        "add_time": "2026-09-19 14:00:00",
+        "user_id": 9001,
+        "org_id": 101,
+        "person_id": null,
+        "deal_id": null,
+        "pinned_to_organization_flag": true
+      },
+      {
+        "id": 7002,
+        "content": "   ",
+        "add_time": "2026-09-19 14:00:00",
+        "user_id": 9001,
+        "org_id": 101
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "callLogsPage": {
+    "success": true,
+    "data": [
+      {
+        "id": "cl-1",
+        "subject": "Intro call",
+        "note": "Keen on the SDK.",
+        "start_time": "2026-09-15 09:00:00",
+        "end_time": "2026-09-15 09:12:00",
+        "duration": "720",
+        "outcome": "connected",
+        "user_id": 9001,
+        "person_id": 502,
+        "org_id": 102,
+        "deal_id": 702,
+        "to_phone_number": "+233200000000"
       }
     ],
     "additional_data": {

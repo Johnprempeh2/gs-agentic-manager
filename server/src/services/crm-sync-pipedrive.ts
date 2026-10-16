@@ -214,14 +214,17 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
   const get = (path: string, query: Record<string, string | number | undefined>) => send("GET", path, query);
 
   /** One page of a v1 list. `nextStart` is null on the last page. */
-  async function listV1Page<T>(path: string, start: number, limit: number) {
-    const body = await get(path, { start, limit });
+  async function listV1Page<T>(path: string, start: number, limit: number, extra: Record<string, string | number> = {}) {
+    const body = await get(path, { ...extra, start, limit });
     const items = Array.isArray(body.data) ? body.data as T[] : [];
     const pagination = (body.additional_data as { pagination?: { more_items_in_collection?: boolean; next_start?: number } } | undefined)
       ?.pagination;
-    const nextStart = pagination?.more_items_in_collection && typeof pagination.next_start === "number"
-      ? pagination.next_start
-      : null;
+    // Some lists (call logs) say there is more without giving next_start.
+    const nextStart = !pagination?.more_items_in_collection || items.length === 0
+      ? null
+      : typeof pagination.next_start === "number"
+        ? pagination.next_start
+        : start + items.length;
     return { items, nextStart };
   }
 
@@ -265,6 +268,21 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
         start = page.nextStart;
       }
       return fields;
+    },
+
+    /** One page of every activity of every user, done or not (API v1, read only). */
+    async listActivitiesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/activities", input.start ?? 0, V1_LIST_PAGE_SIZE, { user_id: 0 });
+    },
+
+    /** One page of every note (API v1, read only). */
+    async listNotesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/notes", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** One page of call logs (API v1, read only; Pipedrive allows 50 a page). */
+    async listCallLogsPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/callLogs", input.start ?? 0, 50);
     },
 
     /** Every pipeline (API v1, read only). Used by the full deal import. */

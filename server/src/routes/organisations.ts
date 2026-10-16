@@ -227,6 +227,9 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             contacts: result.contacts,
             ...(result.pipelines ? { pipelines: result.pipelines } : {}),
             ...(result.deals ? { deals: result.deals } : {}),
+            ...(result.activities ? { activities: result.activities } : {}),
+            ...(result.notes ? { notes: result.notes } : {}),
+            ...(result.calls ? { calls: result.calls } : {}),
           },
         });
         res.json(result);

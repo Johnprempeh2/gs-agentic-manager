@@ -5,6 +5,7 @@ import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  crmTimelineEntries,
   activityLog,
   companies,
   companyMemberships,
@@ -60,6 +61,9 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/users": { 0: recorded.users },
   "/api/v1/dealFields": { 0: recorded.dealFields },
   "/api/v1/deals": { 0: recorded.dealsPage1, 2: recorded.dealsPage2 },
+  "/api/v1/activities": { 0: recorded.activitiesPage },
+  "/api/v1/notes": { 0: recorded.notesPage },
+  "/api/v1/callLogs": { 0: recorded.callLogsPage },
 });
 
 function fakePipedrive(pages: () => Pages) {
@@ -188,6 +192,7 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
 
   afterEach(async () => {
     await db.delete(activityLog);
+    await db.delete(crmTimelineEntries);
     await db.delete(pipelines);
     await db.delete(organisations);
     await db.delete(toolConnections);
@@ -361,6 +366,80 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     cases = await casesByKey(companyId);
     expect(cases.get("pipedrive-701")).toMatchObject({ stageKey: "won" });
     expect(await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId))).toHaveLength(3);
+  }, 60_000);
+
+  it("brings activities, notes and calls across, linked to the organisation, person and deal", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    let pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+
+    const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    expect(first.body.activities).toEqual({ created: 2, updated: 0, skipped: 0, errors: 0 });
+    // The empty note is skipped, not stored.
+    expect(first.body.notes).toEqual({ created: 1, updated: 0, skipped: 1, errors: 0 });
+    expect(first.body.calls).toEqual({ created: 1, updated: 0, skipped: 0, errors: 0 });
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+    expect(pipedrive.calls.some((call) => call.url.includes("/v1/activities") && call.url.includes("user_id=0"))).toBe(true);
+
+    const northwind = await db.select().from(organisations)
+      .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "101")))
+      .then((rows) => rows[0]!);
+    const history = await request(app(actor, pipedrive.fetch)).get(`/api/companies/${companyId}/organisations/${northwind.id}/history`);
+    expect(history.status).toBe(200);
+    const timeline = history.body.timeline as Array<Record<string, unknown>>;
+    // The demo (org, person and deal), the planned check-in (deal only) and the note (org only).
+    expect(timeline.map((entry) => entry.subject ?? entry.kind)).toEqual(["Trial check-in", "DevTools demo", "note"]);
+    expect(timeline[1]).toMatchObject({
+      kind: "activity",
+      activityType: "meeting",
+      body: "Showed the CLI & SDK.",
+      occurredAt: "2026-09-20T10:30:00.000Z",
+      durationMinutes: 45,
+      done: true,
+      ownerName: "Ama Owusu",
+      contactName: "Esi Boateng",
+      caseTitle: "Northwind CLI trial",
+      details: expect.objectContaining({ location: "Accra office" }),
+    });
+    expect(timeline[0]).toMatchObject({ done: false, caseTitle: "Northwind CLI trial", contactName: null });
+    expect(timeline[2]).toMatchObject({ kind: "note", body: "Wants a trial licence\nfor 25 seats.", details: { pinned: true } });
+    // A planned activity does not count as contact.
+    expect(history.body.lastContactAt.startsWith("2099")).toBe(false);
+
+    const blueHarbour = await db.select().from(organisations)
+      .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "102")))
+      .then((rows) => rows[0]!);
+    const blue = await request(app(actor, pipedrive.fetch)).get(`/api/companies/${companyId}/organisations/${blueHarbour.id}/history`);
+    expect(blue.body.timeline).toEqual([expect.objectContaining({
+      kind: "call",
+      subject: "Intro call",
+      durationMinutes: 12,
+      contactName: "Tunde Bakare",
+      details: expect.objectContaining({ outcome: "connected" }),
+    })]);
+
+    // A rerun changes nothing; an edit in Pipedrive updates in place.
+    const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.activities).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
+    expect(rerun.body.notes).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
+    pages = recordedPages();
+    pages["/api/v1/activities"][0].data[1].done = true;
+    const third = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(third.body.activities).toEqual({ created: 0, updated: 1, skipped: 1, errors: 0 });
+    expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(4);
+  }, 60_000);
+
+  it("still imports everything else when the account cannot read call logs", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    const pages = recordedPages();
+    delete pages["/api/v1/callLogs"];
+    const pipedrive = fakePipedrive(() => pages);
+    const res = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(res.status).toBe(200);
+    expect(res.body.activities.created).toBe(2);
+    expect(res.body.calls).toEqual({ created: 0, updated: 0, skipped: 0, errors: 1 });
+    expect(res.body.errorSamples).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "call" })]));
   }, 60_000);
 
   it("keeps every organisation and person field on the record, and a rerun changes nothing", async () => {

@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, History, Mail, Pencil, Phone, Star } from "lucide-react";
+import { Building2, CalendarClock, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
   type CrmRecordField,
+  type CrmTimelineEntry,
   type OrganisationContact,
   type OrganisationHistoryCase,
   type OrganisationHistoryStageChange,
@@ -169,6 +170,15 @@ export function OrganisationPage() {
         )}
       </section>
 
+      {history.data?.timeline?.length ? (
+        <section aria-label="Activities and notes" className="space-y-2">
+          <h2 className="text-sm font-semibold">Activities and notes</h2>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {history.data.timeline.map((entry) => <TimelineRow key={entry.id} entry={entry} />)}
+          </ul>
+        </section>
+      ) : null}
+
       <Dialog open={editing} onOpenChange={setEditing}>
         {editing && selectedCompanyId ? (
           <OrganisationDialogContent
@@ -179,6 +189,46 @@ export function OrganisationPage() {
         ) : null}
       </Dialog>
     </div>
+  );
+}
+
+const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone } as const;
+
+function timelineTitle(entry: CrmTimelineEntry) {
+  if (entry.subject) return entry.subject;
+  if (entry.kind === "note") return "Note";
+  if (entry.kind === "call") return "Call";
+  return entry.activityType ? entry.activityType.charAt(0).toUpperCase() + entry.activityType.slice(1) : "Activity";
+}
+
+function timelineMeta(entry: CrmTimelineEntry) {
+  const parts: string[] = [];
+  if (entry.occurredAt) parts.push(formatDateTime(entry.occurredAt));
+  if (entry.kind === "activity") {
+    if (entry.activityType) parts.push(entry.activityType);
+    parts.push(entry.done ? "Done" : "Planned");
+  }
+  if (entry.durationMinutes) parts.push(`${entry.durationMinutes} min`);
+  if (entry.ownerName) parts.push(entry.ownerName);
+  if (entry.contactName) parts.push(`with ${entry.contactName}`);
+  return parts.join(" · ");
+}
+
+/** One imported activity, note or call. */
+function TimelineRow({ entry }: { entry: CrmTimelineEntry }) {
+  const Icon = TIMELINE_ICONS[entry.kind] ?? CalendarClock;
+  return (
+    <li className="flex gap-2 px-3 py-2 text-sm">
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="font-medium">{timelineTitle(entry)}</span>
+          {entry.caseId && entry.caseTitle ? <span className="text-xs text-muted-foreground">{entry.caseTitle}</span> : null}
+        </div>
+        <p className="text-xs text-muted-foreground">{timelineMeta(entry)}</p>
+        {entry.body ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{entry.body}</p> : null}
+      </div>
+    </li>
   );
 }
 
