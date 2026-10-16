@@ -3,7 +3,8 @@ import type { Deliverable } from "./deliverable.js";
 // Client files (GRE-1311): each client page has an Evidence list (the
 // client's own material) and a Deliverables list (what we made for them).
 
-export const CLIENT_EVIDENCE_KINDS = ["attachment", "document", "link"] as const;
+// An upload is a file put straight onto the client (not via a task).
+export const CLIENT_EVIDENCE_KINDS = ["attachment", "document", "link", "upload"] as const;
 export type ClientEvidenceKind = (typeof CLIENT_EVIDENCE_KINDS)[number];
 
 export interface ClientFileSourceIssue {
@@ -34,6 +35,11 @@ export interface ClientEvidenceItem {
   attachmentId: string | null;
   documentId: string | null;
   documentKey: string | null;
+  /** The stored file behind an upload. Null for every other kind. */
+  assetId: string | null;
+  /** The journey stage this item is filed under; null for the client as a whole. */
+  stageId: string | null;
+  stageName: string | null;
   /** External address for links. Never set for files. */
   url: string | null;
   /** In-app API path that returns the file or document body. Null for links. */
@@ -48,7 +54,7 @@ export interface ClientEvidenceItem {
 
 /** A task attachment or document in the client's scope that is not yet in Evidence. */
 export interface ClientEvidenceCandidate {
-  kind: Exclude<ClientEvidenceKind, "link">;
+  kind: Exclude<ClientEvidenceKind, "link" | "upload">;
   attachmentId: string | null;
   documentId: string | null;
   title: string;

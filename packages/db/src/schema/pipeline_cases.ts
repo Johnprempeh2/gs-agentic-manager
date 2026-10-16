@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { agents } from "./agents.js";
+import { assets } from "./assets.js";
 import { companies } from "./companies.js";
 import { documents } from "./documents.js";
 import { issueAttachments } from "./issue_attachments.js";
@@ -173,6 +174,9 @@ export const pipelineCaseContacts = pgTable(
 // Evidence on a client (or any other case): the client's own material, such
 // as files attached to a task, documents on a task, or links (GRE-1311). Files
 // stay where they were uploaded; a row points at them so they are easy to find.
+// An upload (kind 'upload') is a file put straight onto the client, held as an
+// asset that belongs to this row. stage_id files it under one stage of the
+// client's journey; null means the client as a whole.
 export const pipelineCaseEvidence = pgTable(
   "pipeline_case_evidence",
   {
@@ -185,6 +189,8 @@ export const pipelineCaseEvidence = pgTable(
     attachmentId: uuid("attachment_id").references(() => issueAttachments.id, { onDelete: "cascade" }),
     documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }),
     url: text("url"),
+    assetId: uuid("asset_id").references(() => assets.id, { onDelete: "cascade" }),
+    stageId: uuid("stage_id").references(() => pipelineStages.id, { onDelete: "set null" }),
     sourceIssueId: uuid("source_issue_id").references(() => issues.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
@@ -193,6 +199,10 @@ export const pipelineCaseEvidence = pgTable(
   },
   (table) => ({
     companyCaseIdx: index("pipeline_case_evidence_company_case_idx").on(table.companyId, table.caseId),
+    stageIdx: index("pipeline_case_evidence_stage_idx").on(table.stageId),
+    assetUq: uniqueIndex("pipeline_case_evidence_asset_uq")
+      .on(table.assetId)
+      .where(sql`${table.assetId} is not null`),
     caseAttachmentUq: uniqueIndex("pipeline_case_evidence_case_attachment_uq")
       .on(table.caseId, table.attachmentId)
       .where(sql`${table.attachmentId} is not null`),
@@ -206,7 +216,8 @@ export const pipelineCaseEvidence = pgTable(
       "pipeline_case_evidence_kind_check",
       sql`(${table.kind} = 'attachment' and ${table.attachmentId} is not null)
         or (${table.kind} = 'document' and ${table.documentId} is not null)
-        or (${table.kind} = 'link' and ${table.url} is not null)`,
+        or (${table.kind} = 'link' and ${table.url} is not null)
+        or (${table.kind} = 'upload' and ${table.assetId} is not null)`,
     ),
   }),
 );

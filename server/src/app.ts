@@ -826,7 +826,7 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db));
+  api.use(pipelineRoutes(db, { storage: opts.storageService }));
   api.use(crmSyncRoutes(db));
   api.use(organisationRoutes(db));
   api.use(

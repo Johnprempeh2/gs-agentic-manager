@@ -20,6 +20,7 @@ const mockPipelinesApi = vi.hoisted(() => ({
   getCaseFiles: vi.fn(),
   listCaseEvidenceCandidates: vi.fn(),
   addCaseEvidence: vi.fn(),
+  uploadCaseEvidence: vi.fn(),
   removeCaseEvidence: vi.fn(),
   getCaseJourney: vi.fn(),
   getCasePortal: vi.fn(),
@@ -438,9 +439,9 @@ describe("client case page", () => {
     mockPipelinesApi.addCaseEvidence.mockResolvedValue({});
 
     await render(<PipelineCaseEvidence caseId="case-1" />);
-    expect(container.textContent).toContain("No evidence yet");
+    expect(container.textContent).toContain("No files yet");
 
-    click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Add evidence")) ?? null);
+    click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Add from tasks or a link")) ?? null);
     await flushReact();
     click([...container.querySelectorAll("button")].find((button) => button.textContent === "Add") ?? null);
     await flushReact();
@@ -491,5 +492,68 @@ describe("client case page", () => {
     click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === "Remove") ?? null);
     await flushReact();
     expect(mockPipelinesApi.removeCaseEvidence).toHaveBeenCalledWith("case-1", "ev-1");
+  });
+  it("uploads dropped or chosen files straight onto the client", async () => {
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({ evidence: [], deliverables: [] });
+    mockPipelinesApi.uploadCaseEvidence.mockResolvedValue({ id: "ev-up" });
+
+    await render(<PipelineCaseEvidence caseId="case-1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const nda = new File(["%PDF"], "Signed NDA.pdf", { type: "application/pdf" });
+    const deck = new File(["deck"], "GITA.pptx", { type: "application/vnd.ms-powerpoint" });
+    Object.defineProperty(input, "files", { value: [nda, deck], configurable: true });
+    flushSync(() => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenCalledTimes(2);
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenNthCalledWith(1, "case-1", nda, { stageId: undefined });
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenNthCalledWith(2, "case-1", deck, { stageId: undefined });
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "2 files uploaded" }));
+  });
+
+  it("shows an upload's size and stage, and says it will be deleted", async () => {
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({
+      evidence: [
+        {
+          id: "ev-2",
+          caseId: "case-1",
+          kind: "upload",
+          title: "Executive discovery.pdf",
+          typeLabel: "PDF",
+          note: null,
+          contentType: "application/pdf",
+          byteSize: 2_516_582,
+          originalFilename: "Executive discovery.pdf",
+          attachmentId: null,
+          documentId: null,
+          documentKey: null,
+          assetId: "asset-1",
+          stageId: "stage-1",
+          stageName: "Executive discovery",
+          url: null,
+          contentPath: "/api/cases/case-1/evidence/ev-2/content",
+          downloadPath: "/api/cases/case-1/evidence/ev-2/content?download=1",
+          openPath: "/api/cases/case-1/evidence/ev-2/content",
+          sourceIssue: null,
+          addedBy: null,
+          createdAt: "2026-10-15T10:00:00Z",
+        },
+      ],
+      deliverables: [],
+    });
+    mockPipelinesApi.removeCaseEvidence.mockResolvedValue({});
+
+    await render(<PipelineCaseEvidence caseId="case-1" />);
+    expect(container.textContent).toContain("2.4 MB");
+    expect(container.textContent).toContain("Stage: Executive discovery");
+    expect(container.querySelector('a[href="/api/cases/case-1/evidence/ev-2/content"]')).not.toBeNull();
+    click(document.querySelector('button[aria-label="Remove Executive discovery.pdf from evidence"]'));
+    await flushReact();
+    expect(document.body.textContent).toContain("so it will be deleted");
+    click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === "Delete") ?? null);
+    await flushReact();
+    expect(mockPipelinesApi.removeCaseEvidence).toHaveBeenCalledWith("case-1", "ev-2");
   });
 });

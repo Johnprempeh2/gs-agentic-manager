@@ -1,6 +1,6 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FileText, Link2, Package, PaperclipIcon, Plus, Trash2 } from "lucide-react";
+import { FileText, FileUp, Link2, Package, PaperclipIcon, Plus, Trash2 } from "lucide-react";
 import type {
   ClientEvidenceCandidate,
   ClientEvidenceItem,
@@ -13,7 +13,7 @@ import { useToastActions } from "../context/ToastContext";
 import { Link } from "@/lib/router";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
 import { queryKeys } from "../lib/queryKeys";
-import { formatDate } from "../lib/utils";
+import { cn, formatDate } from "../lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,6 +26,20 @@ import {
 } from "./ui/alert-dialog";
 import { Button, buttonVariants } from "./ui/button";
 import { Input } from "./ui/input";
+
+/** "2.4 MB", "830 KB", for a file's size in the list. */
+export function formatFileSize(bytes: number | null): string | null {
+  if (bytes === null || !Number.isFinite(bytes) || bytes <= 0) return null;
+  if (bytes < 1024) return `${bytes} bytes`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 ? Math.round(value) : Math.round(value * 10) / 10} ${units[unit]}`;
+}
 
 function formatDay(value: string) {
   const date = new Date(value);
@@ -49,6 +63,7 @@ function KindIcon({ kind }: { kind: ClientEvidenceItem["kind"] | "deliverable" }
   if (kind === "link") return <Link2 className={className} aria-hidden="true" />;
   if (kind === "document") return <FileText className={className} aria-hidden="true" />;
   if (kind === "deliverable") return <Package className={className} aria-hidden="true" />;
+  if (kind === "upload") return <FileUp className={className} aria-hidden="true" />;
   return <PaperclipIcon className={className} aria-hidden="true" />;
 }
 
@@ -99,6 +114,8 @@ function EvidenceRow({ item, busy, onRemove }: { item: ClientEvidenceItem; busy:
         <Meta
           parts={[
             item.typeLabel,
+            item.kind === "upload" ? formatFileSize(item.byteSize) : null,
+            item.stageName ? `Stage: ${item.stageName}` : null,
             formatDay(item.createdAt),
             addedBy ? `Added by ${addedBy}` : null,
             item.sourceIssue ? <SourceTask issue={item.sourceIssue} /> : null,
@@ -202,6 +219,108 @@ function AddEvidencePanel({
   );
 }
 
+/**
+ * Upload files straight onto the client (Ben, 12 and 13 Oct): drop them on the
+ * box or pick them. Each file uploads on its own, so one refused file does not
+ * stop the rest.
+ */
+export function ClientUploadZone({
+  caseId,
+  stageId,
+  label = "Upload files",
+  hint = "Drop files here, or choose them. PDFs, decks, documents and images up to the size limit.",
+  onUploaded,
+}: {
+  caseId: string;
+  stageId?: string | null;
+  label?: string;
+  hint?: string;
+  onUploaded?: (item: ClientEvidenceItem) => void;
+}) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
+
+  const uploadAll = async (files: File[]) => {
+    if (files.length === 0) return;
+    let done = 0;
+    for (const file of files) {
+      setUploading(files.length > 1 ? `Uploading ${done + 1} of ${files.length}: ${file.name}` : `Uploading ${file.name}`);
+      try {
+        const item = await pipelinesApi.uploadCaseEvidence(caseId, file, { stageId });
+        done += 1;
+        onUploaded?.(item);
+      } catch (error) {
+        pushToast({
+          title: `Could not upload ${file.name}`,
+          body: error instanceof Error ? error.message : undefined,
+          tone: "error",
+        });
+      }
+    }
+    setUploading(null);
+    if (done > 0) {
+      pushToast({ title: done === 1 ? "File uploaded" : `${done} files uploaded`, tone: "success" });
+    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseFiles(caseId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseEvents(caseId) }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseJourney(caseId) }),
+    ]);
+  };
+
+  const onDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setDragging(false);
+    if (uploading) return;
+    void uploadAll(Array.from(event.dataTransfer.files ?? []));
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col items-start gap-2 rounded-md border border-dashed border-border p-3 transition-colors sm:flex-row sm:items-center",
+        dragging && "border-primary bg-accent",
+      )}
+      onDragOver={(event) => {
+        event.preventDefault();
+        if (!dragging) setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={onDrop}
+      data-testid="client-upload-zone"
+    >
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        disabled={uploading !== null}
+        onClick={() => inputRef.current?.click()}
+      >
+        <FileUp className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+        {label}
+      </Button>
+      <p className="min-w-0 text-xs text-muted-foreground" aria-live="polite">
+        {uploading ?? hint}
+      </p>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        className="hidden"
+        aria-label={label}
+        onChange={(event) => {
+          const files = Array.from(event.target.files ?? []);
+          event.target.value = "";
+          void uploadAll(files);
+        }}
+      />
+    </div>
+  );
+}
+
 function useCaseFiles(caseId: string) {
   return useQuery({
     queryKey: queryKeys.pipelines.caseFiles(caseId),
@@ -255,8 +374,11 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-muted-foreground">No evidence yet. Add the client's files, documents and links here.</p>
+        <p className="text-sm text-muted-foreground">
+          No files yet. Upload the client's documents here, or add files and links from their tasks.
+        </p>
       )}
+      <ClientUploadZone caseId={caseId} />
       {adding ? (
         <AddEvidencePanel
           caseId={caseId}
@@ -267,7 +389,7 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
       ) : (
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => setAdding(true)}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add evidence
+          Add from tasks or a link
         </Button>
       )}
       <AlertDialog open={removing !== null} onOpenChange={(open) => (open ? null : setRemoving(null))}>
@@ -277,6 +399,8 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
             <AlertDialogDescription>
               {removing?.kind === "link"
                 ? `"${removing?.title}" will no longer be listed for this client.`
+                : removing?.kind === "upload"
+                  ? `"${removing?.title}" was uploaded to this client only, so it will be deleted.`
                 : `"${removing?.title}" will no longer be listed for this client. The file stays on its task, so you can add it again.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -289,7 +413,7 @@ export function PipelineCaseEvidence({ caseId }: { caseId: string }) {
                 setRemoving(null);
               }}
             >
-              Remove
+              {removing?.kind === "upload" ? "Delete" : "Remove"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

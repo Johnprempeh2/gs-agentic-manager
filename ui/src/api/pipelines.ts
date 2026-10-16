@@ -715,6 +715,16 @@ export const pipelinesApi = {
     api.get<ClientEvidenceCandidatesResponse>(`/cases/${caseId}/evidence/candidates`),
   addCaseEvidence: (caseId: string, input: CreateClientEvidence) =>
     api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
+  /** Upload a file straight onto the client, optionally filed under a journey stage. */
+  uploadCaseEvidence: (caseId: string, file: File, input: { title?: string; note?: string; stageId?: string | null } = {}) => {
+    const form = new FormData();
+    if (input.title) form.append("title", input.title);
+    if (input.note) form.append("note", input.note);
+    if (input.stageId) form.append("stageId", input.stageId);
+    // The file goes last so the text fields are parsed before it.
+    form.append("file", file);
+    return api.postForm<ClientEvidenceItem>(`/cases/${caseId}/evidence/upload`, form);
+  },
   removeCaseEvidence: (caseId: string, evidenceId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
   getCaseJourney: (caseId: string) =>

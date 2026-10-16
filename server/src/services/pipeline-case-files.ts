@@ -1,4 +1,5 @@
 import { and, desc, eq, ilike, inArray, isNull, ne, notInArray, or, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import {
   agents,
@@ -13,6 +14,7 @@ import {
   pipelineCaseIssueLinks,
   pipelineCaseProjectLinks,
   pipelineCases,
+  pipelineStages,
 } from "@greatstone/db";
 import {
   DELIVERABLES_MAX_LIMIT,
@@ -30,7 +32,9 @@ import { visibleIssueCondition } from "./issue-visibility.js";
 
 // Client files (GRE-1311). Evidence rows point at a task attachment, a task
 // document or a link; the files themselves stay on their task and are served
-// by the existing, access-checked attachment and document routes. Deliverables
+// by the existing, access-checked attachment and document routes. An upload
+// is a file put straight onto the client: its asset belongs to the evidence
+// row and is served by the case's own access-checked content route. Deliverables
 // are not stored here: they are the registered deliverables on the client's
 // linked tasks and on tasks in its projects.
 
@@ -53,6 +57,7 @@ export type ClientEvidenceSourceIssue = {
 
 type ResolvedSource = {
   kind: CreateClientEvidence["kind"];
+  stageId: string | null;
   title: string;
   attachmentId: string | null;
   documentId: string | null;
@@ -91,6 +96,22 @@ function issuePath(prefix: string, issue: { id: string; identifier: string | nul
 function attachmentContentPath(attachmentId: string) {
   return `/api/attachments/${attachmentId}/content`;
 }
+
+function uploadContentPath(caseId: string, evidenceId: string) {
+  return `/api/cases/${caseId}/evidence/${evidenceId}/content`;
+}
+
+/** The stored file for a new upload, as StorageService.putFile returned it. */
+export type ClientUploadFile = {
+  provider: string;
+  objectKey: string;
+  contentType: string;
+  byteSize: number;
+  sha256: string;
+  originalFilename: string | null;
+};
+
+const uploadAssets = alias(assets, "upload_assets");
 
 export function pipelineCaseFilesService(db: Db) {
   async function companyPrefix(companyId: string) {
@@ -141,6 +162,7 @@ export function pipelineCaseFilesService(db: Db) {
       conditions.push(or(
         ilike(pipelineCaseEvidence.title, pattern),
         ilike(assets.originalFilename, pattern),
+        ilike(uploadAssets.originalFilename, pattern),
         ilike(documents.title, pattern),
       )!);
     }
@@ -150,6 +172,10 @@ export function pipelineCaseFilesService(db: Db) {
         contentType: assets.contentType,
         byteSize: assets.byteSize,
         originalFilename: assets.originalFilename,
+        uploadContentType: uploadAssets.contentType,
+        uploadByteSize: uploadAssets.byteSize,
+        uploadFilename: uploadAssets.originalFilename,
+        stageName: pipelineStages.name,
         documentKey: issueDocuments.key,
         documentIssueId: issueDocuments.issueId,
         issueId: issues.id,
@@ -164,6 +190,11 @@ export function pipelineCaseFilesService(db: Db) {
         eq(issueAttachments.companyId, pipelineCaseEvidence.companyId),
       ))
       .leftJoin(assets, and(eq(assets.id, issueAttachments.assetId), eq(assets.companyId, issueAttachments.companyId)))
+      .leftJoin(uploadAssets, and(
+        eq(uploadAssets.id, pipelineCaseEvidence.assetId),
+        eq(uploadAssets.companyId, pipelineCaseEvidence.companyId),
+      ))
+      .leftJoin(pipelineStages, eq(pipelineStages.id, pipelineCaseEvidence.stageId))
       .leftJoin(documents, and(
         eq(documents.id, pipelineCaseEvidence.documentId),
         eq(documents.companyId, pipelineCaseEvidence.companyId),
@@ -206,10 +237,29 @@ export function pipelineCaseFilesService(db: Db) {
         note: evidence.note,
         attachmentId: evidence.attachmentId,
         documentId: evidence.documentId,
+        assetId: evidence.assetId,
+        stageId: evidence.stageId,
+        stageName: evidence.stageId ? row.stageName : null,
         sourceIssue,
         addedBy,
         createdAt: evidence.createdAt.toISOString(),
       };
+      if (evidence.kind === "upload" && evidence.assetId) {
+        const contentPath = uploadContentPath(evidence.caseId, evidence.id);
+        return {
+          ...base,
+          kind: "upload",
+          typeLabel: fileTypeLabel(row.uploadContentType, row.uploadFilename),
+          contentType: row.uploadContentType,
+          byteSize: row.uploadByteSize,
+          originalFilename: row.uploadFilename,
+          documentKey: null,
+          url: null,
+          contentPath,
+          downloadPath: `${contentPath}?download=1`,
+          openPath: contentPath,
+        };
+      }
       if (evidence.kind === "attachment" && evidence.attachmentId) {
         const contentPath = attachmentContentPath(evidence.attachmentId);
         return {
@@ -433,6 +483,7 @@ export function pipelineCaseFilesService(db: Db) {
         if (!row) throw notFound("Attachment not found");
         return {
           kind: "attachment",
+          stageId: input.stageId ?? null,
           title: input.title ?? row.filename ?? "Attachment",
           attachmentId: row.id,
           documentId: null,
@@ -450,6 +501,7 @@ export function pipelineCaseFilesService(db: Db) {
         if (!row) throw notFound("Document not found");
         return {
           kind: "document",
+          stageId: input.stageId ?? null,
           title: input.title ?? row.title ?? row.key,
           attachmentId: null,
           documentId: row.documentId,
@@ -462,7 +514,15 @@ export function pipelineCaseFilesService(db: Db) {
         sourceIssue = await getIssueForAccess(companyId, input.sourceIssueId);
         if (!sourceIssue) throw notFound("Issue not found");
       }
-      return { kind: "link", title: input.title, attachmentId: null, documentId: null, url: input.url, sourceIssue };
+      return {
+        kind: "link",
+        stageId: input.stageId ?? null,
+        title: input.title,
+        attachmentId: null,
+        documentId: null,
+        url: input.url,
+        sourceIssue,
+      };
     },
 
     addEvidence: async (
@@ -484,6 +544,7 @@ export function pipelineCaseFilesService(db: Db) {
             attachmentId: source.attachmentId,
             documentId: source.documentId,
             url: source.url,
+            stageId: source.stageId,
             sourceIssueId: source.sourceIssue?.id ?? null,
             createdByAgentId: actor.type === "agent" ? actor.agentId : null,
             createdByUserId: actor.type === "user" ? actor.userId : null,
@@ -501,16 +562,118 @@ export function pipelineCaseFilesService(db: Db) {
       }
     },
 
-    removeEvidence: async (companyId: string, caseId: string, evidenceId: string) => {
-      const [row] = await db
-        .delete(pipelineCaseEvidence)
+    /**
+     * Throws unless the stage belongs to this case's pipeline, so evidence is
+     * never filed under another pipeline's stage.
+     */
+    assertStageOnCase: async (companyId: string, caseId: string, stageId: string) => {
+      const row = await db
+        .select({ id: pipelineStages.id })
+        .from(pipelineStages)
+        .innerJoin(pipelineCases, eq(pipelineCases.pipelineId, pipelineStages.pipelineId))
+        .where(and(
+          eq(pipelineStages.id, stageId),
+          eq(pipelineCases.id, caseId),
+          eq(pipelineCases.companyId, companyId),
+        ))
+        .then((rows) => rows[0] ?? null);
+      if (!row) throw notFound("Stage not found on this client's pipeline");
+    },
+
+    /** File a stored upload on the client: the asset and its evidence row in one step. */
+    addUpload: async (
+      companyId: string,
+      caseId: string,
+      file: ClientUploadFile,
+      input: { title?: string | null; note?: string | null; stageId?: string | null },
+      actor: ClientEvidenceActor,
+    ) => {
+      const evidenceId = await db.transaction(async (tx) => {
+        const [asset] = await tx
+          .insert(assets)
+          .values({
+            companyId,
+            provider: file.provider,
+            objectKey: file.objectKey,
+            contentType: file.contentType,
+            byteSize: file.byteSize,
+            sha256: file.sha256,
+            originalFilename: file.originalFilename,
+            createdByAgentId: actor.type === "agent" ? actor.agentId : null,
+            createdByUserId: actor.type === "user" ? actor.userId : null,
+          })
+          .returning({ id: assets.id });
+        const [row] = await tx
+          .insert(pipelineCaseEvidence)
+          .values({
+            companyId,
+            caseId,
+            kind: "upload",
+            title: input.title ?? file.originalFilename ?? "Upload",
+            note: input.note ?? null,
+            assetId: asset!.id,
+            stageId: input.stageId ?? null,
+            createdByAgentId: actor.type === "agent" ? actor.agentId : null,
+            createdByUserId: actor.type === "user" ? actor.userId : null,
+          })
+          .returning({ id: pipelineCaseEvidence.id });
+        return row!.id;
+      });
+      const items = await listEvidence(companyId, [caseId]);
+      const created = items.find((item) => item.id === evidenceId);
+      if (!created) throw notFound("Evidence not found");
+      return created;
+    },
+
+    /** The stored file behind an upload on this case, or null. */
+    getUpload: async (companyId: string, caseId: string, evidenceId: string) => {
+      return db
+        .select({
+          companyId: assets.companyId,
+          objectKey: assets.objectKey,
+          contentType: assets.contentType,
+          byteSize: assets.byteSize,
+          originalFilename: assets.originalFilename,
+        })
+        .from(pipelineCaseEvidence)
+        .innerJoin(assets, and(
+          eq(assets.id, pipelineCaseEvidence.assetId),
+          eq(assets.companyId, pipelineCaseEvidence.companyId),
+        ))
         .where(and(
           eq(pipelineCaseEvidence.companyId, companyId),
           eq(pipelineCaseEvidence.caseId, caseId),
           eq(pipelineCaseEvidence.id, evidenceId),
+          eq(pipelineCaseEvidence.kind, "upload"),
         ))
-        .returning();
-      return row ?? null;
+        .then((rows) => rows[0] ?? null);
+    },
+
+    /**
+     * Remove an evidence row. An upload's asset goes with it (the file was only
+     * ever on this client); the caller deletes the stored object.
+     */
+    removeEvidence: async (companyId: string, caseId: string, evidenceId: string) => {
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .delete(pipelineCaseEvidence)
+          .where(and(
+            eq(pipelineCaseEvidence.companyId, companyId),
+            eq(pipelineCaseEvidence.caseId, caseId),
+            eq(pipelineCaseEvidence.id, evidenceId),
+          ))
+          .returning();
+        if (!row) return null;
+        let removedObjectKey: string | null = null;
+        if (row.kind === "upload" && row.assetId) {
+          const [asset] = await tx
+            .delete(assets)
+            .where(and(eq(assets.id, row.assetId), eq(assets.companyId, companyId)))
+            .returning({ objectKey: assets.objectKey });
+          removedObjectKey = asset?.objectKey ?? null;
+        }
+        return { ...row, removedObjectKey };
+      });
     },
   };
 }
