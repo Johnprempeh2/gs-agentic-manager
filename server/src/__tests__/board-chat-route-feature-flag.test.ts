@@ -45,31 +45,35 @@ async function createApp(deploymentMode: "local_trusted" | "authenticated" = "lo
   return app;
 }
 
-describe("POST /api/board/chat/stream feature flag guard (PAP-137)", () => {
+describe("POST /api/board/chat/stream guards (graduated, GRE-1624)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("returns 403 not_entitled when enableConferenceRoomChat is off", async () => {
+  it("serves the stream even when a stored enableConferenceRoomChat is false", async () => {
     mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: false });
     const app = await createApp();
 
-    const res = await request(app)
-      .post("/api/board/chat/stream")
-      .send({ companyId: "company-1", message: "hello" });
+    // Omit the body so the request stops at validation — proves no flag
+    // guard refused it, without spawning the chat subprocess.
+    const res = await request(app).post("/api/board/chat/stream").send({});
 
-    expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({
-      code: "not_entitled",
-      feature: "enableConferenceRoomChat",
-    });
-    // The guard must fire before anything is persisted.
-    expect(mockIssueService.addComment).not.toHaveBeenCalled();
-    expect(mockIssueService.create).not.toHaveBeenCalled();
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "companyId and message are required" });
+    expect(mockGetExperimental).not.toHaveBeenCalled();
   });
 
-  it("returns 403 DEPLOYMENT_MODE_UNSUPPORTED outside local_trusted even with the flag on", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
+  it("serves the board issue even when a stored enableConferenceRoomChat is false", async () => {
+    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: false });
+    const app = await createApp();
+
+    const res = await request(app).post("/api/board/chat/issue").send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: "companyId is required" });
+  });
+
+  it("returns 403 DEPLOYMENT_MODE_UNSUPPORTED outside local_trusted", async () => {
     const app = await createApp("authenticated");
 
     const res = await request(app)
@@ -79,18 +83,6 @@ describe("POST /api/board/chat/stream feature flag guard (PAP-137)", () => {
     expect(res.status).toBe(403);
     expect(res.body.code).toBe("DEPLOYMENT_MODE_UNSUPPORTED");
     expect(mockIssueService.addComment).not.toHaveBeenCalled();
-  });
-
-  it("lets requests past the guard when the flag is on (400 on missing body, not 403)", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
-    const app = await createApp();
-
-    // Omit the body so the request stops at validation — proves the guard
-    // admitted it without spawning the chat subprocess.
-    const res = await request(app).post("/api/board/chat/stream").send({});
-
-    expect(res.status).toBe(400);
-    expect(res.body).toEqual({ error: "companyId and message are required" });
   });
 });
 
@@ -109,7 +101,6 @@ describe("board-chat client disconnect", () => {
   }
 
   it("kills the spawned subprocess when the client disconnects mid-stream", async () => {
-    mockGetExperimental.mockResolvedValue({ enableConferenceRoomChat: true });
     mockIssueService.list.mockResolvedValue([
       { id: "issue-1", title: "Board Operations", status: "todo" },
     ]);

@@ -114,7 +114,9 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableAgentChat: z.boolean().default(false),
   // Greatstone: direct messages and group chats of people and agents.
   enableTeamChat: z.boolean().default(false),
-  enableConferenceRoomChat: z.boolean().default(false),
+  // Greatstone (GRE-1624): compatibility only. Conference Room Chat is always
+  // on; old stored and managed values must still parse.
+  enableConferenceRoomChat: z.boolean().default(true),
   enableClassicTaskInterface: z.boolean().default(false),
   enableIssuePlanDecompositions: z.boolean().default(false),
   enableExperimentalFileViewer: z.boolean().default(false),

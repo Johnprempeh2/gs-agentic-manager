@@ -53,7 +53,7 @@ describe("instance settings service", () => {
       enableAgentChat: false,
       enableChatConnectors: false,
       enableMemoryConnectors: false,
-      enableConferenceRoomChat: false,
+      enableConferenceRoomChat: true,
       enableClassicTaskInterface: false,
       enableExternalObjects: false,
       enableSmokeLab: false,
@@ -131,13 +131,22 @@ describe("instance settings service", () => {
     ).toBe(true);
   });
 
-  it("defaults enableConferenceRoomChat to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableConferenceRoomChat).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableConferenceRoomChat).toBe(false);
-    // Rows persisted before the flag existed (PAP-137) must normalize to off.
+  it("keeps Conference Room Chat on for empty, legacy, patched, invalid, and managed-off settings (GRE-1624)", () => {
+    expect(normalizeExperimentalSettings(undefined).enableConferenceRoomChat).toBe(true);
+    expect(normalizeExperimentalSettings({}).enableConferenceRoomChat).toBe(true);
+    expect(normalizeExperimentalSettings({ enableConferenceRoomChat: false }).enableConferenceRoomChat).toBe(true);
+    expect(normalizeExperimentalSettings({ enableConferenceRoomChat: "yes" }).enableConferenceRoomChat).toBe(true);
     expect(
-      normalizeExperimentalSettings({ enableStreamlinedLeftNavigation: true }).enableConferenceRoomChat,
-    ).toBe(false);
+      applyExperimentalSettingsPatch({}, { enableConferenceRoomChat: false }).enableConferenceRoomChat,
+    ).toBe(true);
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(
+      normalizeExperimentalSettings({}),
+      { features: { enableConferenceRoomChat: false } } as unknown as Parameters<
+        typeof applyManagedExperimentalOverlay
+      >[1],
+    );
+    expect(experimental.enableConferenceRoomChat).toBe(true);
+    expect(managedKeys.enableConferenceRoomChat).toBeUndefined();
   });
 
   it("defaults enableClassicTaskInterface to false for empty and legacy stored settings", () => {
@@ -251,25 +260,6 @@ describe("instance settings service", () => {
       normalizeExperimentalSettings({ enableWorkspaceBranchReconcileForward: false })
         .enableWorkspaceDirtyQuarantineRepair,
     ).toBe(true);
-  });
-
-  it("round-trips an enableConferenceRoomChat patch through the update merge", () => {
-    // updateExperimental merges `{ ...normalize(current), ...patch }` and
-    // re-normalizes; emulate that to prove the flag survives the roundtrip
-    // without disturbing other settings.
-    const current = normalizeExperimentalSettings({});
-    const enabled = normalizeExperimentalSettings({ ...current, enableConferenceRoomChat: true });
-    expect(enabled.enableConferenceRoomChat).toBe(true);
-    expect(enabled.enableStreamlinedLeftNavigation).toBe(true);
-
-    const disabled = normalizeExperimentalSettings({ ...enabled, enableConferenceRoomChat: false });
-    expect(disabled).toEqual(current);
-  });
-
-  it("rejects non-boolean enableConferenceRoomChat values back to the default", () => {
-    expect(
-      normalizeExperimentalSettings({ enableConferenceRoomChat: "yes" }).enableConferenceRoomChat,
-    ).toBe(false);
   });
 
   it("defaults enableBuiltInAgents to false for empty and legacy stored settings", () => {

@@ -8324,7 +8324,7 @@ registry.registerPath({
   path: "/api/board/chat/stream",
   tags: ["instance"],
   summary:
-    "Stream a board-level chat response (requires enableConferenceRoomChat)",
+    "Stream a board-level chat response",
   request: {
     body: jsonBody(
       z.object({
@@ -8349,7 +8349,7 @@ registry.registerPath({
   path: "/api/board/chat/issue",
   tags: ["instance"],
   summary:
-    "Find or create the board conversation's issue, so files can be attached before the first message (requires enableConferenceRoomChat)",
+    "Find or create the board conversation's issue, so files can be attached before the first message",
   request: { body: jsonBody(z.object({ companyId: z.string() })) },
   responses: {
     200: r.ok(z.object({ issueId: z.string() })),

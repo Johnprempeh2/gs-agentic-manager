@@ -907,10 +907,10 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows the Conference Room nav item when conference room chat is enabled (PAP-137)", async () => {
+  it("shows the Conference Room nav item even when a stored flag is off (graduated, GRE-1624)", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: false,
-      enableConferenceRoomChat: true,
+      enableConferenceRoomChat: false,
     });
     const root = await renderSidebar();
 
@@ -924,25 +924,11 @@ describe("Sidebar", () => {
     });
   });
 
-  it("hides the Conference Room nav item when conference room chat is off (PAP-137)", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableIsolatedWorkspaces: false,
-      enableConferenceRoomChat: false,
-    });
-    const root = await renderSidebar();
-
-    expect(container.textContent).not.toContain("Conference Room");
-
-    flushSync(() => {
-      root.unmount();
-    });
-  });
-
-  it("does not flash the Conference Room item while experimental settings are loading (PAP-137)", async () => {
+  it("shows the Conference Room nav item while experimental settings are loading (GRE-1624)", async () => {
     mockInstanceSettingsApi.getExperimental.mockImplementation(() => new Promise(() => {}));
     const root = await renderSidebar();
 
-    expect(container.textContent).not.toContain("Conference Room");
+    expect(container.textContent).toContain("Conference Room");
 
     flushSync(() => {
       root.unmount();

@@ -46,8 +46,8 @@ async function flushReact() {
   flushSync(() => {});
 }
 
-const CONFERENCE_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle conference room chat experimental setting"]';
+const TEAM_CHAT_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle team chat experimental setting"]';
 const TASK_WATCHDOGS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle task watchdogs experimental setting"]';
 const CLASSIC_TASK_INTERFACE_TOGGLE_SELECTOR =
@@ -235,7 +235,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
       },
       features: {
         enableBuiltInAgents: { entitled: false, effective: false, pendingRestart: false },
-        enableConferenceRoomChat: { entitled: true, effective: false, pendingRestart: true },
+        enableTeamChat: { entitled: true, effective: false, pendingRestart: true },
       },
       limits: {},
       ignoredFeatureKeys: [],
@@ -250,7 +250,7 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.textContent).toContain("Not in your plan");
     expect(container.textContent).toContain("Pending restart");
     expect(container.querySelector<HTMLButtonElement>(BUILT_IN_AGENTS_TOGGLE_SELECTOR)?.disabled).toBe(true);
-    expect(container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR)?.disabled).toBe(false);
+    expect(container.querySelector<HTMLButtonElement>(TEAM_CHAT_TOGGLE_SELECTOR)?.disabled).toBe(false);
 
     const syncButton = [...container.querySelectorAll("button")].find((button) => button.textContent === "Sync now");
     await act(() => syncButton!.click());
@@ -298,12 +298,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     }
   });
 
-  it("renders the Conference Room Chat toggle off by default (GRE-230)", async () => {
+  it("no longer shows a Conference Room Chat toggle (graduated, GRE-1624)", async () => {
     await renderPage();
 
-    const titles = [...container.querySelectorAll("h3")].map((h) => h.textContent);
-    expect(titles).toContain("Conference Room Chat");
-    expect(container.querySelector(CONFERENCE_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
+    expect(container.textContent).not.toContain("Conference Room Chat");
+    expect(
+      container.querySelector('button[aria-label="Toggle conference room chat experimental setting"]'),
+    ).toBeNull();
   });
 
   it("does not render the Pipelines experimental setting for now", async () => {
@@ -312,28 +313,6 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     const headings = [...container.querySelectorAll("section h2")].map((h) => h.textContent);
     expect(headings).not.toContain("Pipelines");
     expect(container.querySelector('button[aria-label="Toggle pipelines experimental setting"]')).toBeNull();
-  });
-
-  it("reflects a stored Conference Room Chat value and saves it off and on (GRE-230)", async () => {
-    currentExperimentalSettings = {
-      ...currentExperimentalSettings,
-      enableConferenceRoomChat: true,
-    };
-    await renderPage();
-
-    const toggle = container.querySelector<HTMLButtonElement>(CONFERENCE_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-
-    for (const enabled of [false, true]) {
-      await act(() => toggle?.click());
-      await flushReact();
-      expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenLastCalledWith({
-        enableConferenceRoomChat: enabled,
-      });
-      expect(toggle?.getAttribute("aria-checked")).toBe(String(enabled));
-      expect(currentExperimentalSettings.enableConferenceRoomChat).toBe(enabled);
-    }
   });
 
   it("no longer shows a Streamlined UI toggle (graduated, GRE-1441)", async () => {
