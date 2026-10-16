@@ -6,6 +6,7 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  issueMatchesDueFilter,
   normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
   searchIssueFilterOptions,
@@ -291,5 +292,35 @@ describe("work filter (GRE-1144)", () => {
     expect(normalizeIssueFilterState({ work: "day_to_day" }).work).toBe("day_to_day");
     expect(normalizeIssueFilterState({ work: "urgent" }).work).toBeNull();
     expect(normalizeIssueFilterState({}).work).toBeNull();
+  });
+});
+
+describe("due date filter", () => {
+  const today = "2026-10-16";
+  const open = (dueDate: string | null) => ({ dueDate, status: "todo" as const });
+
+  it("finds past due open work only", () => {
+    expect(issueMatchesDueFilter(open("2026-10-15"), "overdue", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-16"), "overdue", today)).toBe(false);
+    expect(issueMatchesDueFilter({ dueDate: "2026-10-01", status: "done" }, "overdue", today)).toBe(false);
+    expect(issueMatchesDueFilter(open(null), "overdue", today)).toBe(false);
+  });
+
+  it("finds work due today and in the next six days", () => {
+    expect(issueMatchesDueFilter(open("2026-10-16"), "next_7_days", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-22"), "next_7_days", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-23"), "next_7_days", today)).toBe(false);
+    expect(issueMatchesDueFilter(open("2026-10-15"), "next_7_days", today)).toBe(false);
+  });
+
+  it("finds tasks with no due date", () => {
+    expect(issueMatchesDueFilter(open(null), "no_due_date", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-20"), "no_due_date", today)).toBe(false);
+  });
+
+  it("keeps a saved due filter and drops an unknown one", () => {
+    expect(normalizeIssueFilterState({ due: "overdue" }).due).toBe("overdue");
+    expect(normalizeIssueFilterState({ due: "someday" }).due).toBeNull();
+    expect(countActiveIssueFilters({ ...defaultIssueFilterState, due: "overdue" })).toBe(1);
   });
 });
