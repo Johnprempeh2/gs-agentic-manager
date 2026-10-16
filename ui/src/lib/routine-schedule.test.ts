@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lastRunLabel, nextRunLabel, nextScheduledRun } from "./routine-schedule";
+import { lastRunLabel, nextRunLabel, nextScheduledRun, routinesScheduleText } from "./routine-schedule";
 
 const NOW = new Date(2026, 9, 16, 14, 0);
 
@@ -34,5 +34,29 @@ describe("lastRunLabel", () => {
   it("says never run when there is no run", () => {
     expect(lastRunLabel(null)).toBe("Never run yet");
     expect(lastRunLabel(new Date(Date.now() - 2 * 3_600_000))).toBe("Last run 2h ago");
+  });
+});
+
+describe("routinesScheduleText", () => {
+  it("lists each routine with its schedule, next run and agent", () => {
+    const text = routinesScheduleText(
+      [
+        {
+          title: "Weekly report",
+          status: "active",
+          assigneeAgentId: "a1",
+          triggers: [{ kind: "schedule", enabled: true, cronExpression: "0 9 * * 1", nextRunAt: new Date(2026, 9, 17, 9, 0) }],
+        },
+        { title: "Daily check", status: "paused", assigneeAgentId: null, triggers: [] },
+        { title: "Old", status: "archived", assigneeAgentId: null, triggers: [] },
+      ],
+      (id) => (id === "a1" ? "Ridge" : null),
+      NOW,
+    );
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("Routines, 16 Oct");
+    expect(lines[1]).toBe("2 routines: 1 on, 1 paused.");
+    expect(lines[3]).toMatch(/^• Weekly report: Every Monday at 09:00, next run tomorrow at 09:00, Ridge$/);
+    expect(lines[4]).toBe("• Daily check: Paused");
   });
 });

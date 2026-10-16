@@ -2,7 +2,7 @@ import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, Navigate, useNavigate, useSearchParams } from "@/lib/router";
-import { ArrowUpDown, Check, ChevronDown, ChevronRight, Layers, Plus, Repeat } from "lucide-react";
+import { ArrowUpDown, Check, ChevronDown, ChevronRight, ClipboardList, Layers, Plus, Repeat } from "lucide-react";
 import { routinesApi } from "../api/routines";
 import { foldersApi } from "../api/folders";
 import { agentsApi } from "../api/agents";
@@ -15,6 +15,8 @@ import { buildMarkdownMentionOptions } from "../lib/company-members";
 import { cn } from "../lib/utils";
 import { queryKeys } from "../lib/queryKeys";
 import { groupBy } from "../lib/groupBy";
+import { routinesScheduleText } from "../lib/routine-schedule";
+import { useCopyAction } from "../lib/use-copy-action";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { EmptyState } from "../components/EmptyState";
@@ -604,6 +606,7 @@ export function Routines() {
     () => new Map((agents ?? []).map((agent) => [agent.id, agent])),
     [agents],
   );
+  const scheduleCopy = useCopyAction();
   const projectById = useMemo(
     () => new Map((projects ?? []).map((project) => [project.id, project])),
     [projects],
@@ -757,6 +760,18 @@ export function Routines() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {(routines?.length ?? 0) > 0 ? (
+            <Button
+              variant="outline"
+              onClick={() => {
+                void scheduleCopy.copy(routinesScheduleText(routines ?? [], (id) => agentById.get(id)?.name));
+              }}
+              title="Copy every routine, when it runs next and who does it, ready to paste"
+            >
+              {scheduleCopy.copied ? <Check className="mr-2 h-4 w-4" /> : <ClipboardList className="mr-2 h-4 w-4" />}
+              {scheduleCopy.copied ? "Copied" : scheduleCopy.failed ? "Could not copy" : "Copy the schedule"}
+            </Button>
+          ) : null}
           <Button variant="outline" asChild>
             <Link to={auditSectionHref("runs", {})}>View all runs</Link>
           </Button>
