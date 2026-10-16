@@ -7,7 +7,8 @@
 # they either fail or act on infrastructure we do not own.
 # scripts/check-fork-workflows.mjs keeps it that way after upstream merges.
 #
-#   guard      the rebrand is complete and no upstream workflow came back
+#   guard      the rebrand is complete, no upstream workflow came back and the
+#              ui token gates pass
 #   typecheck  pnpm typecheck: every workspace, including the runner's
 #              cargo fmt --check and cargo check
 #   build      pnpm build: every workspace, including the runner's release
@@ -70,6 +71,10 @@ jobs:
 
       - name: Every company page route is registered
         run: node scripts/check-company-routes.mjs
+
+      # DESIGN.md: ui colours, sizes and date formats come from the token layer.
+      - name: UI token gates
+        run: npm run --silent check:token-gates
 
       - name: Only fork-owned workflows
         run: node scripts/check-fork-workflows.mjs
