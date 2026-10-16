@@ -518,6 +518,63 @@ export const MEMORY_TOUR: TourDefinition = {
   ],
 };
 
+export const TASK_DETAIL_TOUR: TourDefinition = {
+  id: "task-detail",
+  title: "A task",
+  description: "Reading a task's conversation, replying and changing who does it.",
+  version: 1,
+  autoStart: false,
+  // Opened from Tutorials on the Tasks list: a task tour needs a task on screen.
+  route: { match: /^\/issues\/[^/]+\/?$/, path: "/issues" },
+  label: "this task",
+  steps: [
+    {
+      title: "The conversation",
+      body: "A task reads like a chat. The agent posts what it did, what it found and any question it has. Newest is at the bottom.",
+    },
+    {
+      title: "Reply in plain words",
+      body: "Write a reply at the bottom to give a steer, add detail or attach a file. The agent picks it up the next time it works on the task.",
+    },
+    {
+      title: "Status and owner",
+      body: "The status says where the task is: to do, in progress, in review, blocked or done. Change the owner to hand it to another agent or to a person.",
+    },
+    {
+      title: "When it is waiting on you",
+      body: "If the agent needs you, the task also appears on Needed from you and in Decisions, so you never have to hunt for it.",
+    },
+  ],
+};
+
+export const AGENT_DETAIL_TOUR: TourDefinition = {
+  id: "agent-detail",
+  title: "An agent",
+  description: "What an agent is doing, its instructions and how to pause it.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/agents\/(?!(all|active|paused|error|builtin|new)\/?$)[^/]+(\/[^/]+)?\/?$/, path: "/agents/all" },
+  label: "this agent",
+  steps: [
+    {
+      title: "Overview",
+      body: "What the agent is working on now, its recent work and what it has cost. Start here to see if it is doing its job.",
+    },
+    {
+      title: "Instructions",
+      body: "The agent's job description in plain words. Edit them to change how it works.",
+    },
+    {
+      title: "Skills and tools",
+      body: "Skills are the know-how it can use, such as writing a proposal. Tools are the apps it can reach, such as email or a calendar.",
+    },
+    {
+      title: "Pause when unsure",
+      body: "Pausing stops all its work and spending at once, and nothing is lost. Resume when you are ready.",
+    },
+  ],
+};
+
 /** Everyday pages: their tours live in the page bar. */
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
@@ -531,6 +588,8 @@ export const CORE_TOURS: TourDefinition[] = [
   ROUTINES_TOUR,
   APPROVALS_TOUR,
   MEMORY_TOUR,
+  TASK_DETAIL_TOUR,
+  AGENT_DETAIL_TOUR,
 ];
 
 /** The everyday tour for a company relative path, if there is one. */

@@ -16,6 +16,7 @@ const graphApiMock = vi.hoisted(() => ({
   connections: vi.fn(),
   createConnection: vi.fn(),
   revokeConnection: vi.fn(),
+  connectionActivity: vi.fn(),
 }));
 
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: graphApiMock }));
@@ -79,6 +80,7 @@ beforeEach(() => {
   root = createRoot(container);
   graphApiMock.scopes.mockResolvedValue(scopes);
   graphApiMock.connections.mockResolvedValue([]);
+  graphApiMock.connectionActivity.mockResolvedValue({ lastUsedAt: null, operations: [], contributions: [] });
   graphApiMock.importEntries.mockResolvedValue({ added: 2, alreadyImported: 0, heldBack: 0, entries: [] });
 });
 
@@ -129,6 +131,24 @@ describe("MemoryApps", () => {
     expect(graphApiMock.createConnection).toHaveBeenCalledWith("co-kestrel", { app: "claude", canContribute: true });
     expect(body()).toContain("the key is shown only once");
     expect(document.querySelector("pre")?.textContent).toContain("Bearer tok_once");
+    expect(body()).toContain("Waiting for Claude desktop app to use memory");
+  });
+
+  it("says it works once the app has searched memory", async () => {
+    graphApiMock.createConnection.mockResolvedValue({
+      token: "tok_once",
+      connection: { agentId: "a-link", app: "claude", name: "Claude desktop app memory link", createdByUserId: "u1", canContribute: true, keys: [] },
+    });
+    graphApiMock.connectionActivity.mockResolvedValue({
+      lastUsedAt: "2026-10-16T00:41:00Z",
+      operations: [{ id: "op1", operation: "recall", outcome: "ok", recordId: null, createdAt: "2026-10-16T00:41:00Z" }],
+      contributions: [],
+    });
+    await render();
+    await act(async () => button("Connect Claude desktop app").click());
+    await flush();
+    expect(body()).toContain("It works.");
+    expect(body()).toContain("searched memory");
   });
 
   it("tells the person ChatGPT cannot connect yet", async () => {

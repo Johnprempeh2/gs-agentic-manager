@@ -38,6 +38,8 @@ vi.mock("@/api/pipelines", () => ({
     listCases: async () => [],
   },
 }));
+vi.mock("@/api/issues", () => ({ issuesApi: { list: async () => [{ id: "i1", identifier: "GRE-7" }] } }));
+vi.mock("@/api/agents", () => ({ agentsApi: { list: async () => [] } }));
 vi.mock("@/api/tools", () => ({ toolsApi: { listConnections: async () => ({ connections: [] }) } }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1", selectedCompany: null }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
@@ -124,6 +126,16 @@ describe("Tutorials", () => {
     expect(document.querySelector('section[aria-label="Features"]')).toBeNull();
     expect(document.querySelector('section[aria-label="Everyday pages"]')).not.toBeNull();
     flags.enableWebsiteView = true;
+  });
+
+  it("Start on the task tour opens the newest task, and says so when there are no agents", async () => {
+    await render();
+    await act(async () => startButton("agent-detail").click());
+    await flush();
+    expect(row("agent-detail")!.textContent).toContain("There are no agents yet");
+    await act(async () => startButton("task-detail").click());
+    await flush();
+    expect(pathname).toBe("/issues/GRE-7");
   });
 
   it("Start on an everyday page opens that page with its tour", async () => {

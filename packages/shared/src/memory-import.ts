@@ -341,3 +341,10 @@ export interface CreatedMemoryConnection {
   /** Shown once. GSAM keeps only its hash. */
   token: string;
 }
+
+/** What a linked app has done, newest first, for the owner's "check it works" view. */
+export interface MemoryConnectionActivity {
+  lastUsedAt: Date | string | null;
+  operations: Array<{ id: string; operation: string; outcome: string; recordId: string | null; createdAt: Date | string }>;
+  contributions: Array<{ id: string; title: string | null; status: string; createdAt: Date | string }>;
+}

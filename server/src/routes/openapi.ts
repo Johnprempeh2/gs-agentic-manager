@@ -5525,6 +5525,15 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/connections/{agentId}/activity",
+  tags: ["memory"],
+  summary: "A linked app's recent memory calls and the entries it suggested; owner or admin signed in as a person",
+  request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
   method: "delete",
   path: "/api/companies/{companyId}/memory/connections/{agentId}",
   tags: ["memory"],
@@ -13800,6 +13809,16 @@ registerCurrentRoute({
   tags: ["pipelines"],
   summary: "Get the file behind an uploaded evidence item; ?download=1 asks for a download",
   responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/nda/signed",
+  tags: ["pipelines"],
+  summary:
+    "Upload a client's signed NDA (board only). multipart/form-data: a `file` field. The file is filed in the " +
+    "client's evidence and the NDA is marked accepted",
+  responses: pipelineCreateResponses,
 });
 
 registerCurrentRoute({

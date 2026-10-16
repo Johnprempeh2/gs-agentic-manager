@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, Loader2, MessageCircle, Send, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, MessageCircle, Mic, MicOff, Send, Sparkles } from "lucide-react";
 import type { Agent, IssueComment } from "@greatstone/shared";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { teamScorecardApi } from "../api/teamScorecard";
 import { agentChatsApi } from "../api/agentChats";
 import { queryKeys } from "../lib/queryKeys";
 import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
+import { useDictation } from "../hooks/useDictation";
 import {
   SUGGESTED_QUESTIONS,
   answerAgent,
@@ -128,8 +129,20 @@ function AskEverestBody({
     ...(exampleAgent ? [`What did ${exampleAgent.name} do today?`] : []),
   ];
 
+  // Speak the question where the browser supports it (Chrome, Safari, Edge).
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const dictation = useDictation({
+    onFinal: (text) => {
+      const heard = text.trim();
+      if (!heard) return;
+      setDraft(draftRef.current.trim() ? `${draftRef.current.trim()} ${heard}` : heard);
+    },
+  });
+
   function submit(event: FormEvent) {
     event.preventDefault();
+    if (dictation.listening) dictation.stop();
     const text = draft.trim();
     if (text) onAsk(text);
   }
@@ -180,10 +193,26 @@ function AskEverestBody({
           ref={inputRef}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
-          placeholder={question ? "Ask something else" : "What is stuck on the Indago work?"}
+          placeholder={dictation.listening
+            ? (dictation.interim || "Listening…")
+            : question ? "Ask something else" : "What is stuck on the Indago work?"}
           aria-label={`Ask ${leadName} a question`}
           className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
         />
+        {dictation.available ? (
+          <Button
+            type="button"
+            variant={dictation.listening ? "default" : "ghost"}
+            size="sm"
+            onClick={dictation.toggle}
+            aria-pressed={dictation.listening}
+            aria-label={dictation.listening ? "Stop listening" : "Speak your question"}
+            title={dictation.listening ? "Stop listening" : "Speak your question"}
+            data-testid="ask-everest-mic"
+          >
+            {dictation.listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+          </Button>
+        ) : null}
         <Button type="submit" size="sm" disabled={!draft.trim()} aria-label="Ask">
           <Send className="h-4 w-4" />
         </Button>

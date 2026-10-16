@@ -439,4 +439,46 @@ describeEmbeddedPostgres("client files", () => {
     }));
     await agentOfB.get(`/api/cases/${caseOfA}/evidence/${uploaded.body.id}/content`).expect(404);
   });
+  it("takes the signed NDA as an upload and marks the NDA accepted", async () => {
+    const { company, agent } = await seedCompany("Greatstone");
+    const caseId = await seedClientCase(company.id, "Omni Group");
+    const http = request(app());
+    const signed = Buffer.from("%PDF-1.4 signed");
+
+    const result = await http
+      .post(`/api/cases/${caseId}/nda/signed`)
+      .attach("file", signed, { filename: "Omni NDA signed.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(result.body.nda).toMatchObject({
+      status: "accepted",
+      signedDocument: {
+        evidenceId: result.body.evidence.id,
+        title: "Signed NDA (Omni NDA signed.pdf)",
+        contentPath: `/api/cases/${caseId}/evidence/${result.body.evidence.id}/content`,
+      },
+    });
+    const journey = await http.get(`/api/cases/${caseId}/journey`).expect(200);
+    expect(journey.body.nda.signedDocument.evidenceId).toBe(result.body.evidence.id);
+    const content = await http.get(journey.body.nda.signedDocument.contentPath).buffer(true).expect(200);
+    expect(Buffer.from(content.body).toString()).toBe(signed.toString());
+
+    // Agents cannot record an NDA.
+    const agentHttp = request(app({
+      type: "agent",
+      agentId: agent.id,
+      companyId: company.id,
+      runId: randomUUID(),
+      source: "agent_key",
+    }));
+    await agentHttp
+      .post(`/api/cases/${caseId}/nda/signed`)
+      .attach("file", signed, { filename: "x.pdf", contentType: "application/pdf" })
+      .expect(403);
+
+    // Back to required drops the link but keeps the file in the client's evidence.
+    const cleared = await http.put(`/api/cases/${caseId}/nda`).send({ status: "required" }).expect(200);
+    expect(cleared.body.nda.signedDocument).toBeNull();
+    const files = await http.get(`/api/cases/${caseId}/evidence`).expect(200);
+    expect(files.body.evidence.map((item: { id: string }) => item.id)).toContain(result.body.evidence.id);
+  });
 });

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { instanceSettingsApi } from "@/api/instanceSettings";
+import { agentsApi } from "@/api/agents";
+import { issuesApi } from "@/api/issues";
 import { pipelinesApi } from "@/api/pipelines";
 import { teamChatsApi } from "@/api/teamChats";
 import { toolsApi } from "@/api/tools";
@@ -13,11 +15,20 @@ import { CLIENT_CASE_TYPE } from "@/lib/client-case";
 import { ALL_TOURS, type TourDefinition } from "@/lib/feature-tours";
 import { queryKeys } from "@/lib/queryKeys";
 import { useNavigate } from "@/lib/router";
+import { agentUrl } from "@/lib/utils";
 
 type StartTarget = { path: string } | { nothing: string };
 
 /** Where each tour runs. Tours about one item open the first one there is. */
 async function resolveStart(tour: TourDefinition, companyId: string): Promise<StartTarget> {
+  if (tour.id === "task-detail") {
+    const [first] = await issuesApi.list(companyId, { limit: 1 });
+    return first ? { path: `/issues/${first.identifier ?? first.id}` } : { nothing: "There are no tasks yet. Start one with New Task first." };
+  }
+  if (tour.id === "agent-detail") {
+    const [first] = await agentsApi.list(companyId);
+    return first ? { path: agentUrl(first) } : { nothing: "There are no agents yet. Hire one first." };
+  }
   if (tour.route) return { path: tour.route.path };
   const tourId = tour.id;
   switch (tourId) {

@@ -386,7 +386,7 @@
      alert); neutral rides --subtle-foreground. Contrast (WCAG 2.1, GRE-304):
      strong on paper/void and foreground on soft are all ≥ 4.5:1. */
   --status-success: var(--color-green-700);
-  --status-success-foreground: var(--color-green-700);
+  --status-success-foreground: var(--color-green-800); /* 800, not 700: the retuned green-700 is 4.49:1 on the daylight canvas */
   --status-success-soft: var(--color-green-100);
   --status-warning: var(--color-amber-700);
   --status-warning-foreground: var(--color-amber-700);
@@ -2707,7 +2707,9 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 }
 .dark .status-chip {
   background-color: color-mix(in srgb, var(--sc) 22%, transparent);
-  color: color-mix(in srgb, var(--sc) 80%, white);
+  /* 65% (was 80%): the live and error chips measured 4.2 to 4.3:1 on the dark
+     canvas at 80%; 65% lifts every status past AA and keeps its hue. */
+  color: color-mix(in srgb, var(--sc) 65%, white);
   border-color: color-mix(in srgb, var(--sc) 48%, transparent);
 }
 .status-fill {

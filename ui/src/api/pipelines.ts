@@ -737,6 +737,12 @@ export const pipelinesApi = {
     api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
   removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
+  /** Upload the client's signed NDA; it is filed in their evidence and the NDA is marked accepted. */
+  uploadSignedNda: (caseId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<{ nda: ClientNda; evidence: ClientEvidenceItem }>(`/cases/${caseId}/nda/signed`, form);
+  },
   setCaseNda: (caseId: string, input: { status: NdaStatus; reason?: string | null }) =>
     api.put<{ ndaAcceptedAt: string | null; nda: ClientNda }>(`/cases/${caseId}/nda`, input),
   createIssueLink: (

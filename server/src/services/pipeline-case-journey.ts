@@ -7,6 +7,7 @@ import {
   pipelineCases,
   pipelineCaseStageDeliverables,
   pipelineStages,
+  pipelineCaseEvidence,
 } from "@greatstone/db";
 import {
   DELIVERABLES_MAX_LIMIT,
@@ -70,6 +71,10 @@ function ndaOf(row: {
   ndaSuspendedReason: string | null;
   ndaStatusChangedAt: Date | null;
   ndaChangedBy: string | null;
+  ndaEvidenceId?: string | null;
+  ndaEvidenceTitle?: string | null;
+  ndaEvidenceCreatedAt?: Date | null;
+  id?: string;
 }): ClientNda {
   const status: NdaStatus = row.ndaStatus === "accepted" || row.ndaStatus === "suspended" ? row.ndaStatus : "required";
   return {
@@ -78,6 +83,14 @@ function ndaOf(row: {
     suspendedReason: status === "suspended" ? row.ndaSuspendedReason : null,
     changedBy: row.ndaChangedBy,
     changedAt: row.ndaStatusChangedAt?.toISOString() ?? null,
+    signedDocument: row.ndaEvidenceId && row.id
+      ? {
+        evidenceId: row.ndaEvidenceId,
+        title: row.ndaEvidenceTitle ?? "Signed NDA",
+        contentPath: `/api/cases/${row.id}/evidence/${row.ndaEvidenceId}/content`,
+        uploadedAt: row.ndaEvidenceCreatedAt?.toISOString() ?? new Date(0).toISOString(),
+      }
+      : null,
   };
 }
 
@@ -96,9 +109,16 @@ export function pipelineCaseJourneyService(db: Db) {
         ndaSuspendedReason: pipelineCases.ndaSuspendedReason,
         ndaStatusChangedAt: pipelineCases.ndaStatusChangedAt,
         ndaChangedBy: authUsers.name,
+        ndaEvidenceId: pipelineCaseEvidence.id,
+        ndaEvidenceTitle: pipelineCaseEvidence.title,
+        ndaEvidenceCreatedAt: pipelineCaseEvidence.createdAt,
       })
       .from(pipelineCases)
       .leftJoin(authUsers, eq(authUsers.id, pipelineCases.ndaStatusChangedByUserId))
+      .leftJoin(pipelineCaseEvidence, and(
+        eq(pipelineCaseEvidence.id, pipelineCases.ndaEvidenceId),
+        eq(pipelineCaseEvidence.caseId, pipelineCases.id),
+      ))
       .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId), isNull(pipelineCases.retiredAt)))
       .then((rows) => rows[0] ?? null);
     if (!row) throw notFound("Pipeline case not found");
@@ -255,7 +275,7 @@ export function pipelineCaseJourneyService(db: Db) {
     setNda: async (
       companyId: string,
       caseId: string,
-      input: { status: NdaStatus; reason: string | null },
+      input: { status: NdaStatus; reason: string | null; signedEvidenceId?: string | null },
       userId: string | null,
     ): Promise<{ ndaAcceptedAt: string | null; nda: ClientNda }> => {
       const current = await loadCase(companyId, caseId);
@@ -271,6 +291,12 @@ export function pipelineCaseJourneyService(db: Db) {
           ndaSuspendedReason: input.status === "suspended" ? input.reason!.trim() : null,
           ndaStatusChangedAt: now,
           ndaStatusChangedByUserId: userId,
+          // A new signed copy replaces the link; going back to required drops it.
+          ...(input.signedEvidenceId
+            ? { ndaEvidenceId: input.signedEvidenceId }
+            : input.status === "required"
+              ? { ndaEvidenceId: null }
+              : {}),
           updatedAt: now,
         })
         .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.id, caseId)));

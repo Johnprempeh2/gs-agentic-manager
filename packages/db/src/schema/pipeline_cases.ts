@@ -78,6 +78,9 @@ export const pipelineCases = pgTable(
     ndaSuspendedReason: text("nda_suspended_reason"),
     ndaStatusChangedAt: timestamp("nda_status_changed_at", { withTimezone: true }),
     ndaStatusChangedByUserId: text("nda_status_changed_by_user_id"),
+    // The signed NDA uploaded onto the client (Ben, 8 Oct): the evidence row
+    // that holds the file. Cleared when the NDA goes back to required.
+    ndaEvidenceId: uuid("nda_evidence_id").references((): AnyPgColumn => pipelineCaseEvidence.id, { onDelete: "set null" }),
     childCount: integer("child_count").notNull().default(0),
     terminalChildCount: integer("terminal_child_count").notNull().default(0),
     createdByUserId: text("created_by_user_id"),

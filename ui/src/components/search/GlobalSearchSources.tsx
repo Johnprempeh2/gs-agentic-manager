@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Brain, Briefcase, FileText, Repeat } from "lucide-react";
+import { Brain, Briefcase, FileText, MessageSquareText, Repeat } from "lucide-react";
 import { CommandGroup, CommandItem, CommandSeparator } from "@/components/ui/command";
 import { searchApi } from "../../api/search";
 import { pipelinesApi } from "../../api/pipelines";
@@ -21,10 +21,13 @@ export function GlobalSearchSources({
   companyId,
   query,
   onGo,
+  excludeIssueIds,
 }: {
   companyId: string;
   query: string;
   onGo: (path: string) => void;
+  /** Tasks already listed by title, so they are not repeated here. */
+  excludeIssueIds?: ReadonlySet<string>;
 }) {
   const q = query.trim();
   const active = q.length >= 2;
@@ -74,6 +77,41 @@ export function GlobalSearchSources({
     retry: false,
   });
   const documentResults = documents?.results.filter((result) => result.type === "artifact") ?? [];
+
+  // Words inside comments and document text, not only titles. Tasks whose
+  // title already matches are left to the Tasks group above.
+  const { data: insideComments } = useQuery({
+    queryKey: ["global-search", companyId, "comments", q],
+    queryFn: () => searchApi.search(companyId, { q, scope: "comments", limit: PER_GROUP }),
+    enabled: active,
+    retry: false,
+  });
+  const { data: insideDocuments } = useQuery({
+    queryKey: ["global-search", companyId, "document-text", q],
+    queryFn: () => searchApi.search(companyId, { q, scope: "documents", limit: PER_GROUP }),
+    enabled: active,
+    retry: false,
+  });
+  const insideMatches = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: Array<{ id: string; title: string; href: string; identifier: string | null; label: string; text: string }> = [];
+    for (const result of [...(insideComments?.results ?? []), ...(insideDocuments?.results ?? [])]) {
+      if (result.type !== "issue" || seen.has(result.id)) continue;
+      if (excludeIssueIds?.has(result.issue?.id ?? result.id)) continue;
+      const snippet = result.snippets.find((entry) => entry.field === "comment" || entry.field === "document");
+      if (!snippet) continue;
+      seen.add(result.id);
+      rows.push({
+        id: result.id,
+        title: result.title,
+        href: result.href,
+        identifier: result.issue?.identifier ?? null,
+        label: snippet.field === "comment" ? "Comment" : snippet.label,
+        text: snippet.text,
+      });
+    }
+    return rows.slice(0, PER_GROUP);
+  }, [insideComments, insideDocuments, excludeIssueIds]);
 
   const { data: routines = [] } = useQuery({
     queryKey: queryKeys.routines.list(companyId),
@@ -138,6 +176,35 @@ export function GlobalSearchSources({
                     in {result.artifact.issueTitle}
                   </span>
                 ) : null}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </>
+      ) : null}
+
+      {insideMatches.length > 0 ? (
+        <>
+          <CommandSeparator />
+          <CommandGroup heading="Mentioned in comments and documents">
+            {insideMatches.map((row) => (
+              <CommandItem
+                key={row.id}
+                value={`${q} inside ${row.id} ${row.title}`}
+                onSelect={() => onGo(row.href)}
+                data-testid="global-search-inside"
+              >
+                <MessageSquareText className="mr-2 h-4 w-4 shrink-0 self-start" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {row.identifier ? (
+                      <span className="mr-2 font-mono text-xs text-muted-foreground">{row.identifier}</span>
+                    ) : null}
+                    {row.title}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {row.label}: {row.text}
+                  </span>
+                </span>
               </CommandItem>
             ))}
           </CommandGroup>

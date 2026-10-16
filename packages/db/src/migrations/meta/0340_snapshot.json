@@ -1,5 +1,5 @@
 {
-  "id": "416b077e-0019-4c19-a511-970e3930a529",
+  "id": "1ded8aec-fbfa-44a4-8edb-21f6a98d0d58",
   "prevId": "2d8ba2c8-5726-4298-87cc-38b28a17c688",
   "version": "7",
   "dialect": "postgresql",
@@ -38957,148 +38957,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.notification_preferences": {
-      "name": "notification_preferences",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "decisions": {
-          "name": "decisions",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "assigned_tasks": {
-          "name": "assigned_tasks",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "team_chat": {
-          "name": "team_chat",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "morning_summary": {
-          "name": "morning_summary",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "morning_summary_hour": {
-          "name": "morning_summary_hour",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 8
-        },
-        "quiet_hours_start": {
-          "name": "quiet_hours_start",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "quiet_hours_end": {
-          "name": "quiet_hours_end",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "time_zone": {
-          "name": "time_zone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'Europe/London'"
-        },
-        "last_morning_summary_on": {
-          "name": "last_morning_summary_on",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "notification_preferences_company_user_uq": {
-          "name": "notification_preferences_company_user_uq",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "notification_preferences_company_id_companies_id_fk": {
-          "name": "notification_preferences_company_id_companies_id_fk",
-          "tableFrom": "notification_preferences",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.organisation_contacts": {
       "name": "organisation_contacts",
       "schema": "",
@@ -41581,6 +41439,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "nda_evidence_id": {
+          "name": "nda_evidence_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "child_count": {
           "name": "child_count",
           "type": "integer",
@@ -41869,6 +41733,19 @@
           "tableTo": "agents",
           "columnsFrom": [
             "lease_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "pipeline_cases_nda_evidence_id_pipeline_case_evidence_id_fk": {
+          "name": "pipeline_cases_nda_evidence_id_pipeline_case_evidence_id_fk",
+          "tableFrom": "pipeline_cases",
+          "tableTo": "pipeline_case_evidence",
+          "columnsFrom": [
+            "nda_evidence_id"
           ],
           "columnsTo": [
             "id"
