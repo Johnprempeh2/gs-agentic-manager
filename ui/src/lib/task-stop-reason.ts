@@ -1,5 +1,12 @@
-import type { Issue, IssueUnblockOwner } from "@greatstone/shared";
+import {
+  isUnblockExpectedByPassed,
+  type Issue,
+  type IssueUnblockDescriptor,
+  type IssueUnblockOwner,
+  type IssueUnblockWaitingOn,
+} from "@greatstone/shared";
 import { formatUserLabel } from "./assignees";
+import { formatCalendarDay } from "./utils";
 
 /**
  * One plain line for a task that is blocked or whose last run failed: what
@@ -14,6 +21,36 @@ export interface TaskStopReason {
   who: string | null;
   /** "Waiting for you to reconnect Claude", "Ridge will try again at 11:40". */
   next: string;
+  /** True when the date the task expected to hear back by has passed. */
+  datePassed?: boolean;
+}
+
+/** Plain labels for who a blocked task waits on. */
+export const UNBLOCK_WAITING_ON_LABELS: Record<IssueUnblockWaitingOn, string> = {
+  client: "A client",
+  board: "You (the board)",
+  outside: "Someone outside the company",
+};
+
+const UNBLOCK_WAITING_ON_PHRASES: Record<IssueUnblockWaitingOn, string> = {
+  client: "a client",
+  board: "you (the board)",
+  outside: "someone outside the company",
+};
+
+/**
+ * "Waiting on a client until 20 Oct", "Waiting on a client" or "Waiting until
+ * 20 Oct". Null when the descriptor says neither who nor when.
+ */
+export function describeUnblockWaiting(
+  descriptor: Pick<IssueUnblockDescriptor, "waitingOn" | "expectedBy"> | null | undefined,
+): string | null {
+  const who = descriptor?.waitingOn ? UNBLOCK_WAITING_ON_PHRASES[descriptor.waitingOn] : null;
+  const until = descriptor?.expectedBy ? formatCalendarDay(descriptor.expectedBy) : null;
+  if (who && until) return `Waiting on ${who} until ${until}`;
+  if (who) return `Waiting on ${who}`;
+  if (until) return `Waiting until ${until}`;
+  return null;
 }
 
 type Actor = "you" | "owner" | "nobody";
@@ -227,6 +264,8 @@ export interface TaskStopReasonInput {
   userLabels?: ReadonlyMap<string, string> | null;
   /** Clock time for "will try again at 11:40"; injectable for tests. */
   formatTime?: (date: Date) => string;
+  /** Today, for "Date passed"; injectable for tests. */
+  now?: Date;
 }
 
 type Principal = { agentId?: string | null; userId?: string | null };
@@ -319,10 +358,12 @@ export function describeTaskStopReason(input: TaskStopReasonInput): TaskStopReas
     const descriptor = issue.unblockDescriptor;
     if (descriptor) {
       const who = unblockOwnerName(descriptor.owner, input);
+      const waiting = describeUnblockWaiting(descriptor);
       return {
-        stopped: lastRunStopped ? wordingFor(input.lastRun?.errorCode).stopped : "Marked blocked",
+        stopped: waiting ?? (lastRunStopped ? wordingFor(input.lastRun?.errorCode).stopped : "Marked blocked"),
         who,
         next: descriptor.action.trim() ? descriptor.action.trim() : `Waiting for ${who ?? "someone"} to act`,
+        ...(isUnblockExpectedByPassed(descriptor, input.now ?? new Date()) ? { datePassed: true } : {}),
       };
     }
     if (lastRunStopped) return describeRunError(input.lastRun?.errorCode, input);
@@ -344,8 +385,11 @@ export function taskStopReasonWhoLabel(reason: TaskStopReason): string {
 }
 
 export function formatTaskStopReason(reason: TaskStopReason): string {
-  return `${reason.stopped} · ${taskStopReasonWhoLabel(reason)} · ${reason.next}`;
+  const passed = reason.datePassed ? ` · ${TASK_STOP_REASON_DATE_PASSED}` : "";
+  return `${reason.stopped}${passed} · ${taskStopReasonWhoLabel(reason)} · ${reason.next}`;
 }
+
+export const TASK_STOP_REASON_DATE_PASSED = "Date passed";
 
 export type TaskStopReasonRowContext = Pick<TaskStopReasonInput, "currentUserId" | "agentNames" | "userLabels">;
 

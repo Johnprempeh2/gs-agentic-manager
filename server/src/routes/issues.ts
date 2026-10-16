@@ -1502,6 +1502,7 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "process_lost_retry",
   "pull_request_merged",
   "run_liveness_continuation",
+  "waiting_date_passed",
   "heartbeat.disabled",
   "heartbeat.timer.no_actionable_work",
   "heartbeat.timer.nothing_changed",

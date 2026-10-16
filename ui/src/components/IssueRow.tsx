@@ -28,6 +28,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   describeIssueRowStopReason,
   formatTaskStopReason,
+  TASK_STOP_REASON_DATE_PASSED,
   taskStopReasonWhoLabel,
   type TaskStopReasonRowContext,
 } from "../lib/task-stop-reason";
@@ -189,6 +190,12 @@ export function IssueRow({
       title={formatTaskStopReason(stopReason)}
     >
       <span className="font-medium text-foreground">{stopReason.stopped}</span>
+      {stopReason.datePassed ? (
+        <span data-slot="task-row-date-passed" className="font-medium text-destructive">
+          {" · "}
+          {TASK_STOP_REASON_DATE_PASSED}
+        </span>
+      ) : null}
       {" · "}
       {taskStopReasonWhoLabel(stopReason)}
     </span>
