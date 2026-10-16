@@ -7024,6 +7024,15 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/morning-summary",
+  tags: ["inbox"],
+  summary: "The caller's morning summary: what needs them, what finished in the last 24 hours, what is stuck",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/notification-preferences",
   tags: ["inbox"],
   summary: "The caller's notification choices in this company (defaults when never set)",

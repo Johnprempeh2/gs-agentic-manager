@@ -3110,7 +3110,7 @@ export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
 export * from "./partner-branding.js";
 export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
-export type { NotificationPreferences } from "./types/notification-preferences.js";
+export type { MorningSummary, MorningSummaryTask, NotificationPreferences } from "./types/notification-preferences.js";
 export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
 export {
   updateNotificationPreferencesSchema,

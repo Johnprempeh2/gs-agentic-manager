@@ -108,6 +108,7 @@ describe("Tutorials", () => {
     // Board and Share with agents are hidden: their switches are off.
     expect(ids).toEqual([
       ...CORE_TOURS.map((tour) => `tutorial-${tour.id}`),
+      "tutorial-search-ask",
       "tutorial-pipelines-list",
       "tutorial-pipeline-board",
       "tutorial-client-case",

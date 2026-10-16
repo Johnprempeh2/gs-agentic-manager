@@ -20,6 +20,7 @@ import { pipelinesApi } from "@/api/pipelines";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { BrandCaughtUpMark } from "@/components/BrandPageTitle";
+import { DashboardDigestCard } from "@/components/AgentWorkDigest";
 import { ErrorState } from "@/components/ErrorState";
 import { DecisionFeedCard } from "@/components/decisions-feed/DecisionFeedCard";
 import { PageSkeleton } from "@/components/PageSkeleton";
@@ -152,6 +153,11 @@ export function NeededFromYou() {
           {groups.map((group) => <NeededGroupCard key={group.id} group={group} decide={decide} />)}
         </div>
       )}
+
+      <section aria-label="Meanwhile" className="space-y-2" data-testid="needed-meanwhile" data-tour="needed-meanwhile">
+        <h2 className="text-sm font-semibold text-muted-foreground">Meanwhile, the team got on with</h2>
+        <DashboardDigestCard companyId={selectedCompanyId} />
+      </section>
     </div>
   );
 }

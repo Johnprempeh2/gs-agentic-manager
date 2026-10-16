@@ -27,6 +27,7 @@ const indagoStuck = [
     title: "Indago deep dive kick-off pack",
     status: "blocked",
     assigneeAgentId: "agent-codex",
+    updatedAt: iso(180),
     blockedBy: [{ id: "issue-fee", identifier: "GRE-1354", title: "Agree the Indago fee model", status: "in_review", priority: "high", assigneeAgentId: null, assigneeUserId: "user-board" }],
   },
   {
@@ -43,7 +44,35 @@ const indagoStuck = [
 let askedAt: string | null = null;
 const CHAT_ID = "11111111-1111-4111-8111-111111111111";
 
+const awayDigest = {
+  companyId: "company-storybook",
+  since: iso(9 * 60),
+  sinceSource: "last_visit",
+  generatedAt: iso(0),
+  counts: { tasksFinished: 3, tasksStarted: 2, decisionsRaised: 1, failures: 0 },
+  agents: [{
+    agentId: "agent-codex",
+    agentName: "Mason",
+    counts: { tasksFinished: 3, tasksStarted: 2, decisionsRaised: 1, failures: 0 },
+    items: [
+      { kind: "task_finished", label: "Finished GRE-1349: Indago pricing page", at: iso(60), issueId: "issue-a", issueIdentifier: "GRE-1349", runId: null },
+      { kind: "task_finished", label: "Finished GRE-1350: Ben's onboarding checklist", at: iso(200), issueId: "issue-b", issueIdentifier: "GRE-1350", runId: null },
+    ],
+  }],
+};
+
+const awayNeedsMe = {
+  count: 1,
+  decisionCount: 1,
+  assignedTaskCount: 0,
+  overdueWaits: [],
+  assignedTasks: [],
+  decisions: [{ id: "task:issue-fee", title: "Agree the Indago fee model", reason: "Fixed fee or day rate", task: { id: "issue-fee", identifier: "GRE-1354" } }],
+};
+
 const responses: Array<[string, RegExp, (url: URL) => unknown]> = [
+  ["GET", /\/api\/companies\/[^/]+\/agent-work-digest$/, () => awayDigest],
+  ["GET", /\/api\/companies\/[^/]+\/needs-me$/, () => awayNeedsMe],
   ["GET", /\/api\/companies\/[^/]+\/agents$/, () => agents],
   ["GET", /\/api\/companies\/[^/]+\/issues$/, (url) => (url.searchParams.get("status") === "blocked" ? indagoStuck : [])],
   ["POST", /\/api\/companies\/[^/]+\/chats\/[^/]+$/, () => ({ ...storybookIssues[0]!, id: CHAT_ID })],
@@ -116,3 +145,6 @@ type Story = StoryObj<typeof OpenPanel>;
 export const StuckOnIndago: Story = { args: { question: "What is stuck on the Indago work?" } };
 
 export const EverestReplies: Story = { args: { question: "What is stuck on the Indago work?", askLive: true } };
+
+/** The first suggested question: what finished, what got stuck, what needs you. */
+export const SinceYouWereAway: Story = { args: { question: "What happened since I was last here?" } };

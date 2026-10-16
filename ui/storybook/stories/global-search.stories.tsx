@@ -121,6 +121,10 @@ export const EmptyBox: Story = {
   args: { query: "" },
   beforeEach: () => {
     window.localStorage.setItem("paperclip:recent-searches:company-storybook", JSON.stringify(["indago fee", "booking module"]));
+    window.localStorage.setItem("gsam:saved-searches:company-storybook:user-board", JSON.stringify([
+      { id: "view-1", kind: "view", label: "Tasks / Stuck", path: "/issues?status=blocked" },
+      { id: "search-1", kind: "search", label: "Indago", query: "Indago" },
+    ]));
   },
 };
 

@@ -199,7 +199,7 @@ export const runningLabelText = "text-[#1D4ED8] dark:text-[#60A5FA]";
  * (translucent blue fill + border + blue text). One source of truth so every
  * live/running indicator reads as the same blue.
  */
-export const liveBlueBadge = "bg-status-running/10 border-status-running/30 text-status-running";
+export const liveBlueBadge = "bg-status-running/10 border-status-running/30 text-status-running-foreground";
 
 /**
  * Issue/task status → brand colour name (PAP-75). `in_progress` is blue

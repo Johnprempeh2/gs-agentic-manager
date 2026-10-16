@@ -4,12 +4,14 @@
  * history). This is the instant answer; the panel can also pass the
  * question to Everest itself, whose reply arrives in its chat.
  */
-import type { Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import { timeAgo } from "./timeAgo";
 import { plainTaskStatus } from "./global-search";
 
 export type AskWindow = "today" | "week";
 
 export type AskIntent =
+  | { kind: "away" }
   | { kind: "decide" }
   | { kind: "stuck"; subject: string | null }
   | { kind: "agent"; agentId: string; agentName: string; window: AskWindow }
@@ -36,7 +38,10 @@ export interface AskAnswer {
 }
 
 /** Questions offered as one-tap chips before anything is typed. */
+export const AWAY_QUESTION = "What happened since I was last here?";
+
 export const SUGGESTED_QUESTIONS = [
+  AWAY_QUESTION,
   "What do I need to decide?",
   "What is stuck?",
   "How is the team doing this week?",
@@ -55,6 +60,7 @@ const STOP_WORDS = new Set([
   "much", "many", "far", "doing", "lately", "recently", "last", "past", "days", "day",
 ]);
 
+const AWAY_RE = /\b(since (i|we) (was|were|last) ?(last )?(here|away|gone|in|on)|since my last (visit|login|look)|while i was (away|out|gone|asleep|sleeping|off)|what did i miss|catch me up|overnight|what happened since)\b/i;
 const DECIDE_RE = /\b(decide|decision|decisions|approve|approval|approvals|sign[- ]?off|required from (me|us)|need(s)? (from )?(me|us)|waiting (on|for) (me|us)|needs me|my attention|what do i (need|have) to)\b/i;
 const STUCK_RE = /\b(stuck|blocked|blocking|blockers?|held up|on hold|behind|late|overdue)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
@@ -94,6 +100,7 @@ function mentionedAgent(question: string, agents: readonly AskAgentRef[]): AskAg
 
 export function classifyQuestion(question: string, agents: readonly AskAgentRef[]): AskIntent {
   const trimmed = question.trim();
+  if (AWAY_RE.test(trimmed)) return { kind: "away" };
   if (DECIDE_RE.test(trimmed)) return { kind: "decide" };
   const agent = mentionedAgent(trimmed, agents.filter((candidate) => candidate.status !== "terminated"));
   if (agent && !STUCK_RE.test(trimmed)) {
@@ -255,4 +262,61 @@ export function answerOverview(scorecard: TeamScorecard | null, needsMe: NeedsMe
     lines.unshift({ text: `${plural(needsMe.count, "thing")} need${needsMe.count === 1 ? "s" : ""} you`, href: "/decisions" });
   }
   return { headline, lines, more: { label: "Open the scorecard", href: "/scorecard" } };
+}
+
+/** "Since your last visit, 9h ago" or "In the last 24 hours". */
+export function awaySinceLabel(digest: Pick<AgentWorkDigest, "since" | "sinceSource">): string {
+  if (digest.sinceSource === "last_visit") return `Since your last visit, ${timeAgo(digest.since)}`;
+  if (digest.sinceSource === "default_window") return "In the last 24 hours";
+  return `Since ${timeAgo(digest.since)}`;
+}
+
+/** Stuck tasks that became stuck (or changed while stuck) inside the window. */
+export function newlyStuck(blocked: readonly Issue[], since: string): Issue[] {
+  const from = new Date(since).getTime();
+  return blocked.filter((issue) => issue.status === "blocked" && new Date(issue.updatedAt).getTime() >= from);
+}
+
+/**
+ * "Since you were away": what finished, what got stuck and what now needs
+ * you, from the agent work digest, stuck tasks and Needs you.
+ */
+export function answerAway(digest: AgentWorkDigest, blocked: readonly Issue[], needsMe: NeedsMe | null): AskAnswer {
+  const stuck = newlyStuck(blocked, digest.since);
+  const finished = digest.agents
+    .flatMap((agent) => agent.items.filter((item) => item.kind === "task_finished").map((item) => ({ item, agent: agent.agentName })))
+    .sort((a, b) => new Date(b.item.at).getTime() - new Date(a.item.at).getTime());
+  const needs = needsMe?.count ?? 0;
+  const parts = [
+    `${plural(digest.counts.tasksFinished, "task")} finished`,
+    `${stuck.length} got stuck`,
+    `${plural(needs, "thing")} need${needs === 1 ? "s" : ""} you`,
+  ];
+  if (digest.counts.failures > 0) parts.push(`${plural(digest.counts.failures, "run")} failed`);
+  const lines: AnswerLine[] = [];
+  for (const decision of needsMe?.decisions.slice(0, 3) ?? []) {
+    lines.push({
+      text: decision.title,
+      detail: `Needs you: ${decision.reason}`,
+      href: decision.task ? taskHref({ id: decision.task.id, identifier: decision.task.identifier ?? null }) : "/decisions",
+    });
+  }
+  for (const issue of stuck.slice(0, 3)) {
+    lines.push({ text: issue.title, detail: "Got stuck", href: taskHref(issue) });
+  }
+  for (const { item, agent } of finished.slice(0, 3)) {
+    lines.push({
+      text: item.label,
+      detail: `Finished by ${agent}`,
+      href: item.issueId ? taskHref({ id: item.issueId, identifier: item.issueIdentifier }) : undefined,
+    });
+  }
+  const quiet = digest.counts.tasksFinished === 0 && stuck.length === 0 && needs === 0 && digest.counts.failures === 0;
+  return {
+    headline: quiet
+      ? `${awaySinceLabel(digest)}: nothing new. Nothing finished, nothing got stuck and nothing needs you.`
+      : `${awaySinceLabel(digest)}: ${parts.join(", ")}.`,
+    lines,
+    more: { label: "See everything that happened", href: "/since-last-visit" },
+  };
 }

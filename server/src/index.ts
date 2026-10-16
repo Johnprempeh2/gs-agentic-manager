@@ -126,6 +126,7 @@ import {
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { pushNotificationService } from "./services/push-notifications.js";
+import { morningSummaryService } from "./services/morning-summary.js";
 import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
@@ -2159,6 +2160,7 @@ async function startServerWithDatabaseTeardown(
   // users who turned notifications on, so it costs nothing until someone does.
   // A self-rescheduling timer: a slow round never overlaps the next.
   const decisionPushes = pushNotificationService(db as any);
+  const morningSummaries = morningSummaryService(db as any);
   let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
   let decisionPushStopped = false;
   const scheduleDecisionPushRound = () => {
@@ -2167,6 +2169,9 @@ async function startServerWithDatabaseTeardown(
       void decisionPushes
         .notifyNewDecisions()
         .catch((err) => logger.warn({ err }, "decision push round failed"))
+        // The morning summary rides the same round: each person's chosen hour, once a day.
+        .then(() => morningSummaries.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "morning summary round failed"))
         .finally(scheduleDecisionPushRound);
     }, DECISION_PUSH_INTERVAL_MS);
     decisionPushTimer.unref?.();
