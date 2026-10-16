@@ -86,7 +86,7 @@ function SaveIndicator({ state }: { state: ProjectFieldSaveState }) {
   }
   if (state === "saved") {
     return (
-      <span className="inline-flex items-center gap-1 text-(length:--text-micro) text-green-600 dark:text-green-400">
+      <span className="inline-flex items-center gap-1 text-(length:--text-micro) text-status-success-foreground">
         <Check className="h-3 w-3" />
         Saved
       </span>
@@ -582,9 +582,9 @@ export function ProjectProperties({ project, repositories, onUpdate, onFieldUpda
                           className={cn(
                             "px-1.5 text-(length:--text-nano) uppercase tracking-wide",
                             service.status === "running"
-                              ? "bg-green-500/15 text-green-700 dark:text-green-300"
+                              ? "bg-status-success-soft text-status-success-foreground"
                               : service.status === "failed"
-                                ? "bg-red-500/15 text-red-700 dark:text-red-300"
+                                ? "bg-status-danger-soft text-status-danger-foreground"
                                 : "bg-muted text-muted-foreground",
                           )}
                         >
