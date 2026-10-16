@@ -14,7 +14,8 @@ import { buildScoreboard } from "../lib/goal-journey";
 import { buildStrategyCascade, hasStrategyGoals } from "../lib/goal-cascade";
 import { buildCompanyUserProfileMap } from "../lib/company-members";
 import { relativeTime } from "../lib/utils";
-import { goalsUpdateText } from "../lib/goals-text";
+import { goalsCsvFileName, goalsToCsv, goalsUpdateText } from "../lib/goals-text";
+import { downloadTextFile } from "../lib/issues-csv";
 import { localToday } from "../lib/calendar";
 import { useCopyAction } from "../lib/use-copy-action";
 import { EmptyState } from "../components/EmptyState";
@@ -23,7 +24,7 @@ import { GoalHealthLegend } from "../components/goals/GoalHealth";
 import { GoalScoreboardView, GoalsEmptyState, type AgentsById } from "../components/goals/GoalScoreboard";
 import { StrategyCascadeView } from "../components/goals/StrategyCascade";
 import { Button } from "@/components/ui/button";
-import { Target, Plus, Network, Check, ClipboardList } from "lucide-react";
+import { Target, Plus, Network, Check, ClipboardList, Download } from "lucide-react";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
 
@@ -43,7 +44,7 @@ export function scoreboardLede(goals: readonly GoalWithProgress[], shown: number
 }
 
 export function Goals() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewGoal } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
@@ -106,17 +107,15 @@ export function Goals() {
     [plainGoals, showAchieved],
   );
   const hasAchieved = plainGoals.some((goal) => goal.status === "achieved");
+  const nameLookups = {
+    agentName: (id: string) => agentsById.get(id)?.name,
+    userName: (id: string) => usersById.get(id)?.label,
+  };
   const copyGoalsUpdate = () => {
-    void goalsCopy.copy(
-      goalsUpdateText(
-        entries,
-        {
-          agentName: (id) => agentsById.get(id)?.name,
-          userName: (id) => usersById.get(id)?.label,
-        },
-        localToday(),
-      ),
-    );
+    void goalsCopy.copy(goalsUpdateText(entries, nameLookups, localToday()));
+  };
+  const downloadGoals = () => {
+    downloadTextFile(goalsCsvFileName(selectedCompany?.issuePrefix, localToday()), goalsToCsv(entries, nameLookups));
   };
 
   if (!selectedCompanyId) {
@@ -176,6 +175,18 @@ export function Goals() {
               >
                 {goalsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
                 {goalsCopy.copied ? "Copied" : goalsCopy.failed ? "Could not copy" : "Copy as an update"}
+              </Button>
+            ) : null}
+            {entries.length > 0 ? (
+              <Button
+                size="sm"
+                variant="outline"
+                title="Download every goal as a spreadsheet that opens in Excel or Google Sheets"
+                onClick={downloadGoals}
+              >
+                <Download className="size-3.5" />
+                <span className="hidden sm:inline">Download as spreadsheet</span>
+                <span className="sr-only sm:hidden">Download as spreadsheet</span>
               </Button>
             ) : null}
             {goals.length > 0 ? (
