@@ -41,8 +41,10 @@ import {
   ExternalLink,
   ChevronRight,
   MessageCircle,
+  Keyboard,
 } from "lucide-react";
 import { Identity } from "./Identity";
+import { openShortcutsSheet } from "./KeyboardShortcutsCheatsheet";
 import { agentUrl, projectUrl } from "../lib/utils";
 import {
   SEARCH_OPERATOR_QUICK_FILTERS,
@@ -579,6 +581,18 @@ export function CommandPalette() {
           <CommandItem onSelect={() => go("/projects")}>
             <Plus className="mr-2 h-4 w-4" />
             Create new project
+          </CommandItem>
+          <CommandItem
+            value="keyboard shortcuts help keys"
+            onSelect={() => {
+              setOpen(false);
+              openShortcutsSheet();
+            }}
+            data-testid="command-shortcuts"
+          >
+            <Keyboard className="mr-2 h-4 w-4" />
+            Keyboard shortcuts
+            <span className="ml-auto text-xs text-muted-foreground">?</span>
           </CommandItem>
         </CommandGroup>
 
