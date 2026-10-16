@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { useImageCovers } from "./ImageCoverControls";
 import { startTransition, useDeferredValue, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import type { ReactNode } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1010,6 +1011,7 @@ export function IssuesList({
       placeholderData: (previousData: Issue[] | undefined) => previousData,
     })),
   });
+  const issueCovers = useImageCovers(viewState.viewMode === "board" ? selectedCompanyId : null);
   const { data: executionWorkspaces = [] } = useQuery({
     queryKey: selectedCompanyId
       ? queryKeys.executionWorkspaces.summaryList(selectedCompanyId)
@@ -2184,6 +2186,7 @@ export function IssuesList({
           issues={filtered}
           agents={agents}
           ownerContext={{ currentUserId, userLabels: companyUserLabelMap }}
+          issueCovers={issueCovers.data?.issues}
           liveIssueIds={liveIssueIds}
           compactCards={boardCompactCards}
           collapsedStatuses={boardCollapsedStatuses}

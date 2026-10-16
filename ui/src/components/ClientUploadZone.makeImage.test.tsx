@@ -35,6 +35,8 @@ const image: GeneratedImage = {
   issue: null,
   organisation: { id: "org-1", name: "Acme" },
   altText: "Proposal cover with a skyline",
+  issueCover: false,
+  organisationCover: false,
   createdAt: new Date().toISOString(),
   completedAt: new Date().toISOString(),
 };

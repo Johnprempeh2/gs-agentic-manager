@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, index, boolean } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { assets } from "./assets.js";
@@ -27,6 +27,10 @@ export const generatedImages = pgTable(
     createdByUserId: text("created_by_user_id"),
     issueId: uuid("issue_id").references(() => issues.id, { onDelete: "set null" }),
     organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
+    /** Shown on the linked task's card; at most one per task. */
+    issueCover: boolean("issue_cover").notNull().default(false),
+    /** Shown on the linked client's card; at most one per client. */
+    organisationCover: boolean("organisation_cover").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),

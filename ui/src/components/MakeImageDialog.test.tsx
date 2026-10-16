@@ -36,6 +36,8 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     issue: null,
     organisation: null,
     altText: "A test image",
+    issueCover: false,
+    organisationCover: false,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,

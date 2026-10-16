@@ -171,6 +171,48 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(badStyle.status).toBe(400);
   });
 
+  it("uses an image as the cover of its task or client, one cover each", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images covers");
+    const [task] = await ctx.db.insert(issues).values({ companyId, title: "Launch deck" }).returning();
+    const [client] = await ctx.db.insert(organisations).values({ companyId, name: "Acme" }).returning();
+    const { storage } = memoryStorage();
+    const server = app(actor, storage, () =>
+      provider(async () => ({ image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null })),
+    );
+    const make = async (prompt: string, links: Record<string, string>) =>
+      (await request(server).post(`/api/companies/${companyId}/generated-images`).send({ prompt, ...links })).body as GeneratedImage;
+    const first = await make("Rocket on a launch pad, no text", { issueId: task!.id, organisationId: client!.id });
+    const second = await make("Rocket in orbit", { issueId: task!.id });
+    const loose = await make("Office plants", {});
+    await waitForGeneratedImageJobs();
+
+    const setFirst = await request(server).patch(`/api/generated-images/${first.id}/cover`).send({ issueCover: true, organisationCover: true });
+    expect(setFirst.status).toBe(200);
+    expect(setFirst.body).toMatchObject({ issueCover: true, organisationCover: true });
+
+    const swap = await request(server).patch(`/api/generated-images/${second.id}/cover`).send({ issueCover: true });
+    expect(swap.status).toBe(200);
+    const covers = await request(server).get(`/api/companies/${companyId}/generated-images/covers`);
+    expect(covers.status).toBe(200);
+    expect(covers.body.issues[task!.id]).toMatchObject({ imageId: second.id, altText: "Rocket in orbit" });
+    expect(covers.body.organisations[client!.id]).toMatchObject({ imageId: first.id, altText: "Rocket on a launch pad" });
+    const refetched = await request(server).get(`/api/generated-images/${first.id}`);
+    expect(refetched.body).toMatchObject({ issueCover: false, organisationCover: true });
+
+    const noLink = await request(server).patch(`/api/generated-images/${loose.id}/cover`).send({ issueCover: true });
+    expect(noLink.status).toBe(422);
+    expect(noLink.body.details.code).toBe("generated_image_no_task");
+    const empty = await request(server).patch(`/api/generated-images/${loose.id}/cover`).send({});
+    expect(empty.status).toBe(400);
+
+    const cleared = await request(server).patch(`/api/generated-images/${first.id}/cover`).send({ organisationCover: false });
+    expect(cleared.body.organisationCover).toBe(false);
+    const after = await request(server).get(`/api/companies/${companyId}/generated-images/covers`);
+    expect(after.body.organisations).toEqual({});
+    const logged = await ctx.db.select().from(activityLog).where(eq(activityLog.action, "generated_image.cover_changed"));
+    expect(logged).toHaveLength(3);
+  });
+
   it("records a plain reason when the provider fails", async () => {
     const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images fail");
     const { storage } = memoryStorage();

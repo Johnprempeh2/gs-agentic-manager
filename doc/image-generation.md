@@ -51,6 +51,13 @@ with directions such as "no text" or "4k" left out. The UI uses it for the
 `alt` attribute so screen readers have plain words for the picture. It is
 worked out from the prompt, not by a language model, so it costs nothing.
 
+A finished image linked to a task or a client can be that task's or client's
+cover: `PATCH /api/generated-images/{id}/cover` with `issueCover` and/or
+`organisationCover` (true or false). Each task and client has at most one
+cover, so setting a new one clears the last. The board cards read every cover
+in one call, `GET /api/companies/{companyId}/generated-images/covers`. In the
+gallery, open an image and press **Use as cover for ...**.
+
 At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart
 is marked failed after ten minutes. Requests, completions, failures and

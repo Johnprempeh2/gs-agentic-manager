@@ -195,6 +195,24 @@ export const generatedImagesQuerySchema = z.object({
 });
 export type GeneratedImagesQuery = z.infer<typeof generatedImagesQuerySchema>;
 
+/** Show (or stop showing) a finished image on the card of the task or client it is linked to. */
+export const updateGeneratedImageCoverSchema = z
+  .object({
+    issueCover: z.boolean().optional(),
+    organisationCover: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => value.issueCover !== undefined || value.organisationCover !== undefined, {
+    message: "Say issueCover or organisationCover",
+  });
+export type UpdateGeneratedImageCover = z.infer<typeof updateGeneratedImageCoverSchema>;
+
+/** Cover pictures by task id and by client id, each the image's contentPath and alt text. */
+export interface GeneratedImageCovers {
+  issues: Record<string, { imageId: string; contentPath: string; altText: string }>;
+  organisations: Record<string, { imageId: string; contentPath: string; altText: string }>;
+}
+
 export interface GeneratedImage {
   id: string;
   companyId: string;
@@ -217,6 +235,10 @@ export interface GeneratedImage {
   organisation: { id: string; name: string } | null;
   /** Short plain description for screen readers and search, written from the prompt. */
   altText: string;
+  /** True when this image shows on its task's card. */
+  issueCover: boolean;
+  /** True when this image shows on its client's card. */
+  organisationCover: boolean;
   createdAt: string;
   completedAt: string | null;
 }

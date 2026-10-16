@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ImageCoverControls } from "../components/ImageCoverControls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
@@ -453,6 +454,7 @@ export function Images() {
                   .join(" · ")}
               </p>
               <ImageLinks image={opened} />
+              <ImageCoverControls image={opened} />
               <DialogFooter className="gap-2 sm:justify-between">
                 <Button variant="ghost" onClick={() => setConfirmDeleteId(opened.id)}>
                   <Trash2 className="h-4 w-4" aria-hidden="true" />

@@ -1,8 +1,10 @@
 import type {
   CreateGeneratedImage,
   GeneratedImage,
+  GeneratedImageCovers,
   GeneratedImagesResponse,
   ImageGenerationStatus,
+  UpdateGeneratedImageCover,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -25,4 +27,7 @@ export const imagesApi = {
     api.post<GeneratedImage>(`/companies/${companyId}/generated-images`, body),
   get: (id: string) => api.get<GeneratedImage>(`/generated-images/${id}`),
   remove: (id: string) => api.delete<void>(`/generated-images/${id}`),
+  covers: (companyId: string) => api.get<GeneratedImageCovers>(`/companies/${companyId}/generated-images/covers`),
+  setCover: (id: string, body: UpdateGeneratedImageCover) =>
+    api.patch<GeneratedImage>(`/generated-images/${id}/cover`, body),
 };
