@@ -1,4 +1,5 @@
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
+import { SEARCH_ASK_TOUR } from "./search-ask-tour";
 
 /**
  * One stop on a tour: the element with `data-tour="<target>"`, a title and a
@@ -600,6 +601,7 @@ export function coreTourForPath(pathname: string): TourDefinition | null {
 /** Every tour, in the order the Tutorials list shows them. */
 export const ALL_TOURS: TourDefinition[] = [
   ...CORE_TOURS,
+  SEARCH_ASK_TOUR,
   PIPELINES_LIST_TOUR,
   PIPELINE_BOARD_TOUR,
   CLIENT_CASE_TOUR,
