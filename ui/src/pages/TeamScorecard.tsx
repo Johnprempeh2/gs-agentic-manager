@@ -157,7 +157,7 @@ function AgentCard({
               {agent.name}
             </Link>
             {workCents != null && workCents > 0 ? (
-              <span className="text-xs tabular-nums text-muted-foreground" title="What this agent's work would cost on the API">
+              <span className="text-xs tabular-nums text-muted-foreground" title="What this agent's work would cost if it were paid for task by task">
                 {workValueLabel(workCents)} of work
               </span>
             ) : null}
