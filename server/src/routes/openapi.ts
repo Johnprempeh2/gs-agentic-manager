@@ -13781,6 +13781,16 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/nda/signed",
+  tags: ["pipelines"],
+  summary:
+    "Upload a client's signed NDA (board only). multipart/form-data: a `file` field. The file is filed in the " +
+    "client's evidence and the NDA is marked accepted",
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
   method: "delete",
   path: "/api/cases/{caseId}/evidence/{evidenceId}",
   tags: ["pipelines"],
