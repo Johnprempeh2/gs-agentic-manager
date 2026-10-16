@@ -30,6 +30,7 @@ import type {
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { DraftReviewCard } from "@/components/DraftReviewCard";
+import { AgentQuestionCard } from "@/components/AgentQuestionCard";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
 import {
@@ -129,6 +130,11 @@ const KIND_COPY = {
     fallbackTitle: "Review draft",
     label: "Draft",
     icon: PenLine,
+  },
+  ask_agent: {
+    fallbackTitle: "Question for an agent",
+    label: "Question",
+    icon: CircleHelp,
   },
 } as const;
 
@@ -546,6 +552,12 @@ function ReceiptDisclosure({
       <p className="whitespace-pre-wrap break-words text-sm text-foreground">
         {interaction.result?.draft?.finalBody ?? interaction.payload.body}
       </p>
+    );
+  } else if (interaction.kind === "ask_agent") {
+    request = (
+      <MarkdownBody className="text-sm text-foreground">
+        {interaction.payload.question}
+      </MarkdownBody>
     );
   } else {
     request = (
@@ -2131,6 +2143,8 @@ export function TaskChatCompactInteractionCard({
           errorMessage={errorMessage}
           draftKey={draftKey}
         />
+      ) : interaction.kind === "ask_agent" ? (
+        <AgentQuestionCard interaction={interaction} agentMap={agentMap} />
       ) : (
         <ItemVerdictsCard
           interaction={interaction}

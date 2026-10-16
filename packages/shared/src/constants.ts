@@ -269,8 +269,12 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_item_verdicts",
   "connection_intent",
   "request_draft_review",
+  "ask_agent",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
+
+/** Most questions one task may have waiting on other agents at once. */
+export const AGENT_QUESTION_MAX_OPEN_PER_ISSUE = 3;
 
 export const ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES = [
   "anyone",

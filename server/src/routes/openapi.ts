@@ -261,6 +261,8 @@ import {
   createAcceptedPlanDecompositionSchema,
   resolveIssueRecoveryActionSchema,
   cancelIssueThreadInteractionSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   // Secret provider configs and remote import
   createSecretProviderConfigSchema,
   updateSecretProviderConfigSchema,
@@ -1830,6 +1832,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/issues",
   "POST /api/issues/{id}/children",
   "POST /api/issues/{id}/interactions",
+  "POST /api/issues/{id}/agent-questions",
   "POST /api/issues/{id}/comments",
   "POST /api/companies/{companyId}/issues/{issueId}/attachments",
   "POST /api/companies/{companyId}/projects",
@@ -12422,6 +12425,22 @@ registerCurrentRoute({
   tags: ["issues"],
   summary: "Withdraw a pending issue thread interaction",
   body: withdrawIssueThreadInteractionSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/agent-questions",
+  tags: ["issues"],
+  summary: "Ask another agent in the same company a question on this task",
+  body: createAgentQuestionSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/agent-questions/{interactionId}/answer",
+  tags: ["issues"],
+  summary: "Answer a question another agent asked you on its task",
+  body: answerAgentQuestionSchema,
 });
 
 for (const route of [

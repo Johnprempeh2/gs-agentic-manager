@@ -8216,6 +8216,48 @@ export async function buildPaperclipWakePayload(input: {
   const checkboxSelection = parseObject(
     input.contextSnapshot.checkboxSelection,
   );
+  // A question one agent asked another: carry the question (and answer, once
+  // given) so both agents see it without fetching the asking task.
+  const agentQuestion =
+    interactionId && interactionKind === "ask_agent" && issueId
+      ? await input.db
+          .select({
+            id: issueThreadInteractions.id,
+            status: issueThreadInteractions.status,
+            payload: issueThreadInteractions.payload,
+            result: issueThreadInteractions.result,
+            askedByName: agents.name,
+          })
+          .from(issueThreadInteractions)
+          .leftJoin(
+            agents,
+            and(
+              eq(agents.id, issueThreadInteractions.createdByAgentId),
+              eq(agents.companyId, input.companyId),
+            ),
+          )
+          .where(
+            and(
+              eq(issueThreadInteractions.id, interactionId),
+              eq(issueThreadInteractions.companyId, input.companyId),
+              eq(issueThreadInteractions.issueId, issueId),
+              eq(issueThreadInteractions.kind, "ask_agent"),
+            ),
+          )
+          .then((rows) => {
+            const row = rows[0];
+            if (!row) return null;
+            const payload = parseObject(row.payload);
+            const result = parseObject(row.result);
+            return {
+              interactionId: row.id,
+              status: row.status,
+              askedByAgentName: row.askedByName ?? null,
+              question: readNonEmptyString(payload.question),
+              answer: readNonEmptyString(result.answer),
+            };
+          })
+      : null;
   // A resolved plan review is new user input, including in chat. Ordinary chat
   // wakes must still exclude historical plan context across /new boundaries.
   const resolvedPlanInteraction = interactionId && interactionKind === "request_confirmation" &&
@@ -8411,6 +8453,7 @@ export async function buildPaperclipWakePayload(input: {
     interactionKind,
     interactionStatus,
     interactionId,
+    agentQuestion,
     sourceRunId: readNonEmptyString(input.contextSnapshot.sourceRunId),
     externalChatQuestionResponse: externalChatProvider
       ? (input.contextSnapshot[EXTERNAL_CHAT_QUESTION_RESPONSE_KEY] ?? null)
