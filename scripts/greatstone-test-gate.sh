@@ -23,6 +23,18 @@
 #   $GSAM_ROOT/test-gate/logs/<commit>/    one log per lane, kept for both outcomes
 #   $GSAM_ROOT/test-gate/overrides.log     releases that skipped the gate (greatstone-release.sh --skip-test-gate)
 set -euo pipefail
+# An agent run puts its managed git and gh launchers
+# (<tmp>/paperclip-github-runtime/<run>) first on PATH. They stay out of the
+# gate's own git calls and of every lane, or each test that runs git gets the
+# launcher instead of git (GRE-1605: git-credentials, github-launcher,
+# git-workspace-sync).
+GATE_PATH=""
+IFS=: read -r -a PATH_ENTRIES <<<"$PATH"
+for entry in "${PATH_ENTRIES[@]}"; do
+  case "$entry" in */paperclip-github-runtime/*) continue ;; esac
+  GATE_PATH="${GATE_PATH:+$GATE_PATH:}$entry"
+done
+export PATH="$GATE_PATH"
 source "$(dirname "${BASH_SOURCE[0]}")/greatstone-common.sh"
 
 die() { printf 'test-gate: %s\n' "$*" >&2; exit 1; }
@@ -70,7 +82,8 @@ say "Test gate for $TAG ($COMMIT): code $CODE_DIR, logs $LOG_DIR"
 # The lane environment: the account home (agent runs set HOME to a temp
 # folder), the PATH that has node and pnpm, plus ~/.cargo/bin (a non-login
 # shell such as ssh or an agent run does not have it, and the native runner
-# suite builds with cargo), and CI=true as on GitHub.
+# suite builds with cargo), and CI=true as on GitHub. PATH has no agent git
+# launcher (see the top).
 LANE_HOME="${GS_USER_HOME:-$HOME}"
 LANE_PATH="$PATH"
 [ ! -d "$LANE_HOME/.cargo/bin" ] || LANE_PATH="$LANE_HOME/.cargo/bin:$LANE_PATH"

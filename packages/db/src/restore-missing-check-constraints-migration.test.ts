@@ -17,18 +17,32 @@ const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
 
 type Snapshot = {
-  tables: Record<string, { name: string; checkConstraints?: Record<string, { name: string }> }>;
+  tables: Record<string, { name: string; checkConstraints?: Record<string, { name: string; value?: string }> }>;
 };
+
+function snapshotChecks(file: string): Map<string, string | undefined> {
+  const snapshot = JSON.parse(fs.readFileSync(path.join(migrationsDir, "meta", file), "utf8")) as Snapshot;
+  return new Map(Object.values(snapshot.tables)
+    .flatMap((table) => Object.values(table.checkConstraints ?? {}))
+    .map((check) => [check.name, check.value]));
+}
 
 // Every named check in the schema as of 0329. Pinned to this migration's snapshot, not the
 // newest one, so a later migration that adds a check does not change what 0329 must restore.
 function schemaCheckNames(): string[] {
-  const snapshot = JSON.parse(
-    fs.readFileSync(path.join(migrationsDir, "meta", "0329_snapshot.json"), "utf8"),
-  ) as Snapshot;
-  return Object.values(snapshot.tables)
-    .flatMap((table) => Object.values(table.checkConstraints ?? {}).map((check) => check.name))
-    .sort();
+  return [...snapshotChecks("0329_snapshot.json").keys()].sort();
+}
+
+// Checks a later migration rewrote (0339 added the upload kind). 0329 restores the form it
+// knew, so the test database, migrated to the newest schema, holds a different definition.
+function checksRewrittenAfter0329(): Set<string> {
+  const newest = fs.readdirSync(path.join(migrationsDir, "meta"))
+    .filter((file) => file.endsWith("_snapshot.json"))
+    .sort()
+    .at(-1)!;
+  const at0329 = snapshotChecks("0329_snapshot.json");
+  const now = snapshotChecks(newest);
+  return new Set([...at0329].filter(([name, value]) => now.get(name) !== value).map(([name]) => name));
 }
 
 function migrationHash() {
@@ -96,9 +110,10 @@ describeEmbeddedPostgres("restore missing check constraints executable migration
       await expect(applyPendingMigrations(database.connectionString)).resolves.toBeUndefined();
 
       const restored = await checks();
-      expect(restored.map((row) => [row.table_name, row.name, row.definition.replace(/ NOT VALID$/, "")])).toEqual(
-        fresh.map((row) => [row.table_name, row.name, row.definition]),
-      );
+      const rewritten = checksRewrittenAfter0329();
+      const comparable = (row: { table_name: string; name: string; definition: string }) =>
+        [row.table_name, row.name, rewritten.has(row.name) ? "(rewritten after 0329)" : row.definition.replace(/ NOT VALID$/, "")];
+      expect(restored.map(comparable)).toEqual(fresh.map(comparable));
       expect(restored.every((row) => !row.validated && row.definition.endsWith(" NOT VALID"))).toBe(true);
 
       // A restored check rejects new rows that break it.
