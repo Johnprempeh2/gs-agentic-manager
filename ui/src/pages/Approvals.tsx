@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { ErrorState } from "../components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import { HelpTerm } from "../components/HelpTerm";
+import { pendingSummary } from "../lib/approval-wait";
 
 type StatusFilter = "pending" | "all";
 
@@ -72,7 +73,13 @@ export function Approvals() {
     .filter(
       (a) => statusFilter === "all" || a.status === "pending" || a.status === "revision_requested",
     )
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Pending: the request that has waited longest comes first. All: newest first.
+    .sort((a, b) =>
+      statusFilter === "pending"
+        ? new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+  const waitingSummary = statusFilter === "pending" ? pendingSummary(data ?? []) : null;
 
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
@@ -111,6 +118,11 @@ export function Approvals() {
         Each card is a <HelpTerm term="approval">sign-off</HelpTerm> an <HelpTerm term="agent" /> needs before it can go
         ahead, such as hiring another agent or spending more.
       </p>
+      {waitingSummary ? (
+        <p className="text-sm font-medium text-foreground" data-testid="approvals-waiting-summary">
+          {waitingSummary}
+        </p>
+      ) : null}
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
