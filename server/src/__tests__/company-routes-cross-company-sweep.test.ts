@@ -89,6 +89,7 @@ const ID_ROUTE = /^\/api\/(?!companies\/:companyId(?:\/|$))[^?]*\/:/;
 // they are checked instead.
 const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/invites/:token": "Public invite link, the token is the credential.",
+  "/api/client-acceptance/:token": "Public client acceptance link, the 256-bit token is the credential and reaches one client's pack only.",
   "/api/board-claim/:token": "Public board-claim link, the token is the credential.",
   "/api/join-requests/:requestId": "Only POST .../claim-api-key, which a joining agent calls before it has a key; "
     + "the claim secret in the body is the credential, not a session. Company join-request routes are swept above.",
