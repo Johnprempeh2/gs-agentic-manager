@@ -92,6 +92,7 @@ import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
+import { clientAcceptancePublicRoutes } from "./routes/client-acceptance-public.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
 import { organisationRoutes } from "./routes/organisations.js";
 import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
@@ -838,7 +839,8 @@ export async function createApp(
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
   const memoryEngine = memoryEngineFromGatewayConfig();
-  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine }));
+  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(clientAcceptancePublicRoutes(db, opts.storageService));
   api.use(crmSyncRoutes(db));
   api.use(organisationRoutes(db));
   api.use(

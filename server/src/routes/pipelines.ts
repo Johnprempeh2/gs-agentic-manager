@@ -123,6 +123,7 @@ import {
   setCaseNdaSchema,
   setCaseEngagementSchema,
   type SetCaseEngagement,
+  type CreateClientAcceptanceLinkResponse,
   type SetCaseNda,
   updateClientJourneyDeliverableSchema,
   type CreateClientEvidence,
@@ -146,6 +147,7 @@ import {
 } from "@greatstone/shared";
 import { documentAnnotationService } from "../services/document-annotations.js";
 import { logActivity } from "../services/activity-log.js";
+import { clientAcceptanceService } from "../services/client-acceptance.js";
 import { pipelineAccessRoutes } from "./pipeline-access.js";
 import {
   createPipelineFieldDefinition,
@@ -971,15 +973,21 @@ function singleEvidenceUpload(req: Request, res: Response) {
 
 export function pipelineRoutes(
   db: Db,
-  options: Parameters<typeof pipelineService>[1] & { storage?: StorageService; memoryEngine?: MemoryEngine } = {},
+  options: Parameters<typeof pipelineService>[1] & {
+    storage?: StorageService;
+    memoryEngine?: MemoryEngine;
+    /** The server's public address, for the client acceptance link. */
+    publicBaseUrl?: string;
+  } = {},
 ) {
   const router = Router();
-  const { storage, memoryEngine, ...serviceOptions } = options;
+  const { storage, memoryEngine, publicBaseUrl, ...serviceOptions } = options;
   const svc = pipelineService(db, serviceOptions);
   const memorySvc = memoryGatewayService(db, { engine: memoryEngine });
   const outputsSvc = pipelineCaseOutputsService(db);
   const filesSvc = pipelineCaseFilesService(db);
   const journeySvc = pipelineCaseJourneyService(db);
+  const acceptanceSvc = clientAcceptanceService(db);
   const requestsSvc = pipelineCaseDocumentRequestsService(db);
   const access = accessService(db);
   const issuesSvc = issueService(db);
@@ -3174,6 +3182,42 @@ export function pipelineRoutes(
 
   router.post("/cases/:caseId/engagement/pack", (req, res) => receiveEngagementFile(req, res, "pack"));
   router.post("/cases/:caseId/engagement/acceptance", (req, res) => receiveEngagementFile(req, res, "acceptance"));
+
+  // The online acceptance link (John's yes, 16 Oct): a page the client opens
+  // without signing in to read the pack and accept it. Board only. The link is
+  // returned once; a new one revokes the old.
+  router.post("/cases/:caseId/engagement/online-link", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can share a client's engagement pack");
+    const created = await acceptanceSvc.create(companyId, caseId, req.actor.userId ?? null);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: "engagement_online_link_created", linkId: created.link.id },
+    });
+    const base = (publicBaseUrl?.trim() || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
+    const body: CreateClientAcceptanceLinkResponse = { url: `${base}${created.path}`, path: created.path, link: created.link };
+    res.status(201).json(body);
+  });
+
+  router.delete("/cases/:caseId/engagement/online-link", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can share a client's engagement pack");
+    const revoked = await acceptanceSvc.revoke(companyId, caseId);
+    if (!revoked) throw notFound("No open link for this client");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: "engagement_online_link_revoked" },
+    });
+    res.status(204).end();
+  });
 
   router.post("/cases/:caseId/journey/deliverables", validate(createClientJourneyDeliverableSchema), async (req, res) => {
     const caseId = req.params.caseId as string;

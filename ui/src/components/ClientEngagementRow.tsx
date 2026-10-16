@@ -1,9 +1,10 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FileCheck2, FileUp } from "lucide-react";
-import type { ClientEngagement, ClientJourneyFileRef, EngagementStatus } from "@greatstone/shared";
+import { Copy, FileCheck2, FileUp, Link2 } from "lucide-react";
+import type { ClientAcceptanceLinkSummary, ClientEngagement, ClientJourneyFileRef, EngagementStatus } from "@greatstone/shared";
 import { pipelinesApi } from "../api/pipelines";
 import { useToastActions } from "../context/ToastContext";
+import { copyTextToClipboard } from "../lib/clipboard";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDate } from "../lib/utils";
 import { Button } from "./ui/button";
@@ -56,6 +57,112 @@ function FileLine({ file, label }: { file: ClientJourneyFileRef; label: string }
       </a>
       <span className="text-muted-foreground">Uploaded {day(file.uploadedAt)}</span>
     </p>
+  );
+}
+
+/** One line on the client's online link: who accepted, or whether it still works. */
+export function onlineLinkSummary(link: ClientAcceptanceLinkSummary) {
+  if (link.acceptedAt) {
+    const who = [link.acceptedName, link.acceptedRole].filter(Boolean).join(", ");
+    return `Accepted online by ${who}${link.acceptedEmail ? ` (${link.acceptedEmail})` : ""} on ${day(link.acceptedAt)}.`;
+  }
+  if (link.expired) return `The online link expired on ${day(link.expiresAt)}. Make a new one to send.`;
+  return `An online link was made on ${day(link.createdAt)} and works until ${day(link.expiresAt)}.`;
+}
+
+/**
+ * The online acceptance link (John's yes, 16 Oct): the client opens it without
+ * signing in, reads the pack and accepts. The link shows once, when made.
+ */
+function OnlineAcceptance({
+  caseId,
+  engagement,
+  refresh,
+}: {
+  caseId: string;
+  engagement: ClientEngagement;
+  refresh: () => Promise<unknown>;
+}) {
+  const { pushToast } = useToastActions();
+  const [fresh, setFresh] = useState<string | null>(null);
+  const link = engagement.onlineLink ?? null;
+  const copy = async (url: string) => {
+    try {
+      await copyTextToClipboard(url);
+      pushToast({ title: "Link copied", body: "Paste it into your email to the client.", tone: "success" });
+    } catch {
+      pushToast({ title: "Could not copy the link", body: "Select it and copy it by hand.", tone: "error" });
+    }
+  };
+  const create = useMutation({
+    mutationFn: () => pipelinesApi.createEngagementLink(caseId),
+    onSuccess: async (result) => {
+      setFresh(result.url);
+      await refresh();
+    },
+    onError: (error) =>
+      pushToast({ title: "Could not make the link", body: error instanceof Error ? error.message : "Please try again.", tone: "error" }),
+  });
+  const revoke = useMutation({
+    mutationFn: () => pipelinesApi.revokeEngagementLink(caseId),
+    onSuccess: async () => {
+      setFresh(null);
+      pushToast({ title: "Link stopped", body: "The client can no longer open it.", tone: "success" });
+      await refresh();
+    },
+    onError: (error) =>
+      pushToast({ title: "Could not stop the link", body: error instanceof Error ? error.message : "Please try again.", tone: "error" }),
+  });
+  const busy = create.isPending || revoke.isPending;
+
+  if (link?.acceptedAt) {
+    return (
+      <p className="flex flex-wrap items-center gap-x-2 text-xs" data-testid="journey-engagement-online">
+        <FileCheck2 className="h-3.5 w-3.5 shrink-0 text-status-success" aria-hidden="true" />
+        <span>{onlineLinkSummary(link)}</span>
+      </p>
+    );
+  }
+  if (engagement.status === "accepted" || !engagement.pack) return null;
+
+  return (
+    <div className="space-y-2 rounded-md border border-border p-3" data-testid="journey-engagement-online">
+      <p className="text-xs text-muted-foreground">
+        {link
+          ? onlineLinkSummary(link)
+          : "Let the client accept online: make a link, paste it into your email, and they read the pack and accept it without signing in."}
+      </p>
+      {fresh ? (
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={fresh}
+            aria-label="Online acceptance link"
+            onFocus={(event) => event.currentTarget.select()}
+            className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-1 text-xs"
+            data-testid="journey-engagement-online-url"
+          />
+          <Button type="button" size="sm" variant="outline" onClick={() => copy(fresh)}>
+            <Copy className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+            Copy
+          </Button>
+        </div>
+      ) : null}
+      {fresh ? (
+        <p className="text-xs text-muted-foreground">Copy it now: for safety the link is shown only once.</p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => create.mutate()}>
+          <Link2 className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          {link ? "Make a new link" : "Make an acceptance link"}
+        </Button>
+        {link && !link.expired ? (
+          <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => revoke.mutate()}>
+            Stop the link
+          </Button>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -156,6 +263,7 @@ export function ClientEngagementRow({
       </p>
       {engagement.pack ? <FileLine file={engagement.pack} label="Pack" /> : null}
       {engagement.acceptance ? <FileLine file={engagement.acceptance} label="Signed acceptance" /> : null}
+      {ndaCleared ? <OnlineAcceptance caseId={caseId} engagement={engagement} refresh={refresh} /> : null}
       {ndaCleared ? (
         <FileDropArea
           label={status === "not_sent" ? "Drop or paste the engagement pack here" : "Drop or paste the signed acceptance here"}

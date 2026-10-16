@@ -94,6 +94,7 @@ export {
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export { clientAcceptanceLinks } from "./client_acceptance_links.js";
 export {
   crmSyncBindings,
   crmSyncFieldMaps,

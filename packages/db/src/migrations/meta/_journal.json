@@ -2472,6 +2472,13 @@
       "when": 1792131160100,
       "tag": "0354_agent_daily_digests",
       "breakpoints": true
+    },
+    {
+      "idx": 355,
+      "version": "7",
+      "when": 1792137642975,
+      "tag": "0355_client_acceptance_links",
+      "breakpoints": true
     }
   ]
 }
