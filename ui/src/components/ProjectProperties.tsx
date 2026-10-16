@@ -148,55 +148,32 @@ function ArchiveDangerZone({
   onArchive: (archived: boolean) => void;
   archivePending?: boolean;
 }) {
-  const [confirming, setConfirming] = useState(false);
   const isArchive = !project.archivedAt;
   const action = isArchive ? "Archive" : "Unarchive";
 
+  // Archiving is undoable from the toast that follows, so it takes one click.
   return (
     <div className="space-y-3 rounded-md border border-destructive/40 bg-destructive/5 px-4 py-4">
       <p className="text-sm text-muted-foreground">
         {isArchive
-          ? "Archive this project to hide it from the sidebar and project selectors."
-          : "Unarchive this project to restore it in the sidebar and project selectors."}
+          ? "Archiving hides this project from the sidebar and project pickers. Its tasks and history are kept, and you can bring it back at any time."
+          : "This project is archived. Bring it back to show it in the sidebar and project pickers again."}
       </p>
       {archivePending ? (
         <Button size="sm" variant="destructive" disabled>
           <Loader2 className="h-3 w-3 animate-spin mr-1" />
-          {isArchive ? "Archiving..." : "Unarchiving..."}
+          {isArchive ? "Archiving..." : "Bringing back..."}
         </Button>
-      ) : confirming ? (
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-destructive font-medium">
-            {action} &ldquo;{project.name}&rdquo;?
-          </span>
-          <Button
-            size="sm"
-            variant="destructive"
-            onClick={() => {
-              setConfirming(false);
-              onArchive(isArchive);
-            }}
-          >
-            Confirm
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setConfirming(false)}
-          >
-            Cancel
-          </Button>
-        </div>
       ) : (
         <Button
           size="sm"
-          variant="destructive"
-          onClick={() => setConfirming(true)}
+          variant={isArchive ? "destructive" : "outline"}
+          onClick={() => onArchive(isArchive)}
         >
           {isArchive ? (
             <><Archive className="h-3 w-3 mr-1" />{action} project</>
           ) : (
-            <><ArchiveRestore className="h-3 w-3 mr-1" />{action} project</>
+            <><ArchiveRestore className="h-3 w-3 mr-1" />Bring project back</>
           )}
         </Button>
       )}
