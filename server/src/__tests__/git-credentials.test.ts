@@ -353,7 +353,6 @@ describe("credential helper execution (real git, no network)", () => {
   // the release test gate runs) keeps PATH but drops GSAM_GITHUB_LAUNCHER_DIR.
   function isGitHubLauncherDir(entry: string) {
     return entry === process.env.GSAM_GITHUB_LAUNCHER_DIR
-      || entry === process.env.PAPERCLIP_GITHUB_LAUNCHER_DIR
       || path.basename(path.dirname(entry)) === "paperclip-github-runtime";
   }
 
