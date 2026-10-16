@@ -795,6 +795,64 @@ export const MORNING_TOUR: TourDefinition = {
   ],
 };
 
+export const ORGANISATIONS_TOUR: TourDefinition = {
+  id: "organisations",
+  title: "Organisations",
+  description: "Every company you work with in one list, and bringing them in from Pipedrive, HubSpot or Notion.",
+  version: 1,
+  flag: "enablePipelines",
+  autoStart: false,
+  route: { match: /^\/organisations\/?$/, path: "/organisations" },
+  label: "Organisations",
+  steps: [
+    {
+      title: "Everyone you work with",
+      body: "Targets, prospects, clients and former clients, each with their contacts, owner and country. Open one to see its timeline and cases.",
+    },
+    {
+      target: "organisations-import",
+      title: "Bring in your CRM",
+      body: "Select Import from Pipedrive to copy your organisations, people, deals, notes and files across. You see a preview first, and running it again updates rather than duplicates. HubSpot and Notion work the same way.",
+    },
+    {
+      target: "organisations-search",
+      title: "Find one fast",
+      body: "Search by name, industry, country or contact, or pick a status such as Client to narrow the list.",
+    },
+  ],
+};
+
+export const SEARCH_PAGE_TOUR: TourDefinition = {
+  id: "search",
+  title: "Search",
+  description: "Find any task, comment, document or agent, and narrow the results.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/search\/?$/, path: "/search" },
+  label: "Search",
+  steps: [
+    {
+      target: "search-page-input",
+      title: "Type anything",
+      body: "A client, a task number or a few words from a document. Results update as you type.",
+    },
+    {
+      target: "search-filters",
+      title: "Narrow the results",
+      body: "When there are too many results, use the filters and the sort order to narrow the list.",
+    },
+    {
+      target: "search-results",
+      title: "Open what you need",
+      body: "The best matches come first. Select a result to open it.",
+    },
+    {
+      title: "From any page",
+      body: "Press Cmd or Ctrl and K to search from anywhere, or Cmd or Ctrl and J to ask Everest a question in plain words.",
+    },
+  ],
+};
+
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
   DASHBOARD_TOUR,
@@ -812,6 +870,8 @@ export const CORE_TOURS: TourDefinition[] = [
   WEEKLY_REPORT_TOUR,
   SCORECARD_TOUR,
   BLOCKED_TOUR,
+  ORGANISATIONS_TOUR,
+  SEARCH_PAGE_TOUR,
   IMAGES_TOUR,
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,

@@ -103,7 +103,7 @@ export function Organisations() {
             Every company you work with: targets, prospects, clients and former clients.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2" data-tour="organisations-import">
           {selectedCompanyId ? <PipedriveImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <HubspotImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <NotionImport companyId={selectedCompanyId} /> : null}
@@ -115,7 +115,7 @@ export function Organisations() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
+      <div className="flex flex-col gap-2 sm:flex-row" data-tour="organisations-search">
         <Input
           aria-label="Search organisations"
           placeholder="Search name, industry, country or contact"
