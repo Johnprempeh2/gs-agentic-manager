@@ -129,6 +129,7 @@ export function OrganisationPage() {
               statusLabel: ORGANISATION_STATUS_LABELS[organisation.status],
               contacts,
               deals: history.data?.cases ?? [],
+              history: history.data?.timeline ?? [],
             }))}
           >
             <Sparkles />
