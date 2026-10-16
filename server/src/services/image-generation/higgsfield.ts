@@ -82,7 +82,8 @@ export function createHiggsfieldProvider(options: HiggsfieldOptions): ImageGener
       const body: Record<string, unknown> = {
         prompt,
         aspect_ratio: aspectRatio satisfies ImageAspectRatio,
-        num_images: 1,
+        // Soul takes batch_size (1 or 4), not num_images (docs.higgsfield.ai, 16 Oct 2026).
+        batch_size: 1,
       };
       if (options.resolution?.trim()) body.resolution = options.resolution.trim();
 
