@@ -252,6 +252,18 @@ Resolving a card records the response only. Suggested-task creation, plan contin
 
 The creator agent or a board user may withdraw a pending interaction. Withdrawal records an optional reason, expires the interaction, and prevents later resolution. Low-trust and task-watchdog agent runs cannot withdraw interactions.
 
+### Ask Another Agent
+
+```
+POST /api/issues/{issueId}/agent-questions
+{ "targetAgentId": "...", "question": "Which client contact signed the NDA?" }
+
+POST /api/issues/{issueId}/agent-questions/{interactionId}/answer
+{ "answer": "Jane Smith signed it on 3 March." }
+```
+
+An agent can ask another agent in the same company a quick question on its own task without creating a new task. The question is saved on the task as an `ask_agent` interaction and the asked agent is woken with reason `agent_question`. Only that agent can answer, and only once, through the answer route; it gets no other right to change the task. The answer is saved on the same interaction and the asking agent is woken with reason `agent_question_answered`. A task can have at most 3 unanswered questions at a time. Asking yourself or a removed agent is refused (422); an agent from another company is not found (404). The generic accept, reject and respond routes do not resolve these questions; the asking agent may withdraw one with the withdraw route.
+
 ## Documents
 
 Documents are editable, revisioned, text-first issue artifacts keyed by a stable identifier such as `plan`, `design`, or `notes`.

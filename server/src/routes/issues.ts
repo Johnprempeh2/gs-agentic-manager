@@ -78,6 +78,8 @@ import {
   companySearchQuerySchema,
   createIssueAttachmentMetadataSchema,
   createIssueThreadInteractionSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
   createAcceptedPlanDecompositionSchema,
@@ -1500,6 +1502,8 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "issue_commented",
   "issue_comment_mentioned",
   "issue_dependencies_blocked",
+  "agent_question",
+  "agent_question_answered",
   "issue_tree_hold_active",
   "missing_issue_comment",
   "process_lost_retry",
@@ -17166,6 +17170,199 @@ export function issueRoutes(
       }
 
       res.status(201).json(interaction);
+    },
+  );
+
+  // An agent asks another agent in the same company a question on its own
+  // task. The target is woken to answer; the answer lands on this task and
+  // wakes the asking agent.
+  router.post(
+    "/issues/:id/agent-questions",
+    validate(createAgentQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (req.actor.type !== "agent") {
+        throw forbidden("Only agents can ask another agent a question");
+      }
+      if (
+        !(await assertAgentIssueMutationAllowed(req, res, issue, {
+          allowVisibleIssueWrite: true,
+        }))
+      )
+        return;
+      if (
+        await assertLowTrustControlPlaneDenied(req, res, issue.companyId, issue)
+      )
+        return;
+      const runId = requireAgentRunId(req, res);
+      if (!runId) return;
+      const actor = getActorInfo(req);
+      const { interaction, targetAgent } = await issueThreadInteractionService(
+        db,
+      ).askAgent(issue, req.body, {
+        identityContextId: req.actor.identityContextId,
+        agentId: actor.agentId,
+        runId,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.agent_question_asked",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          interactionId: interaction.id,
+          targetAgentId: targetAgent.id,
+          targetAgentName: targetAgent.name,
+        },
+      });
+
+      void heartbeat
+        .wakeup(targetAgent.id, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "agent_question",
+          payload: {
+            issueId: issue.id,
+            interactionId: interaction.id,
+            interactionKind: interaction.kind,
+            mutation: "interaction",
+          },
+          idempotencyKey: `agent-question:${interaction.id}`,
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: issue.id,
+            taskId: issue.id,
+            interactionId: interaction.id,
+            interactionKind: interaction.kind,
+            interactionStatus: interaction.status,
+            wakeReason: "agent_question",
+            source: "issue.agent_question.asked",
+          },
+        })
+        .catch((err) =>
+          logger.warn(
+            {
+              err,
+              issueId: issue.id,
+              interactionId: interaction.id,
+              agentId: targetAgent.id,
+            },
+            "failed to wake agent asked a question",
+          ),
+        );
+
+      res.status(201).json(interaction);
+    },
+  );
+
+  router.post(
+    "/issues/:id/agent-questions/:interactionId/answer",
+    validate(answerAgentQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const interactionId = req.params.interactionId as string;
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (req.actor.type !== "agent") {
+        throw forbidden("Only the agent this question was asked of can answer it");
+      }
+      const runId = requireAgentRunId(req, res);
+      if (!runId) return;
+      // Answering on another run's task spends the same per-run budget as
+      // resolving any other interaction there.
+      if (
+        !(await assertCrossIssueInfluenceWithinRunCap(
+          req,
+          res,
+          issue,
+          "interaction_resolution",
+        ))
+      )
+        return;
+      const actor = getActorInfo(req);
+      const interaction = await issueThreadInteractionService(
+        db,
+      ).answerAgentQuestion(issue, interactionId, req.body, {
+        identityContextId: req.actor.identityContextId,
+        agentId: actor.agentId,
+        runId,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.agent_question_answered",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          interactionId: interaction.id,
+          askedByAgentId: interaction.createdByAgentId ?? null,
+        },
+      });
+
+      const askerAgentId = interaction.createdByAgentId;
+      if (askerAgentId) {
+        void heartbeat
+          .wakeup(askerAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "agent_question_answered",
+            payload: {
+              issueId: issue.id,
+              interactionId: interaction.id,
+              interactionKind: interaction.kind,
+              mutation: "interaction",
+            },
+            idempotencyKey: `agent-question-answered:${interaction.id}`,
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: issue.id,
+              taskId: issue.id,
+              interactionId: interaction.id,
+              interactionKind: interaction.kind,
+              interactionStatus: interaction.status,
+              wakeReason: "agent_question_answered",
+              source: "issue.agent_question.answered",
+            },
+          })
+          .catch((err) =>
+            logger.warn(
+              {
+                err,
+                issueId: issue.id,
+                interactionId: interaction.id,
+                agentId: askerAgentId,
+              },
+              "failed to wake agent whose question was answered",
+            ),
+          );
+      }
+
+      res.json(interaction);
     },
   );
 

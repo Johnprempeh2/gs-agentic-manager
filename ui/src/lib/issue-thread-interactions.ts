@@ -1,4 +1,5 @@
 export type {
+  AskAgentInteraction,
   AskUserQuestionsAnswer,
   AskUserQuestionsInteraction,
   AskUserQuestionsPayload,
@@ -97,6 +98,7 @@ export function isIssueThreadInteraction(
       || candidate.kind === "request_item_verdicts"
       || candidate.kind === "connection_intent"
       || candidate.kind === "request_draft_review"
+      || candidate.kind === "ask_agent"
     );
 }
 
@@ -292,6 +294,12 @@ export function buildIssueThreadInteractionSummary(
         : `${interaction.payload.serviceName} request expired`;
     }
     return `Connect ${interaction.payload.serviceName}`;
+  }
+
+  if (interaction.kind === "ask_agent") {
+    if (interaction.status === "answered") return "Question answered by another agent";
+    if (interaction.status === "pending") return "Question waiting for another agent";
+    return "Question closed without an answer";
   }
 
   const count = interaction.payload.questions.length;
