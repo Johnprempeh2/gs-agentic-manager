@@ -8,10 +8,16 @@ import { api } from "./client";
 
 export const imagesApi = {
   status: (companyId: string) => api.get<ImageGenerationStatus>(`/companies/${companyId}/image-generation`),
-  list: (companyId: string, params: { limit?: number; offset?: number } = {}) => {
+  list: (
+    companyId: string,
+    params: { limit?: number; offset?: number; q?: string; issueId?: string; organisationId?: string } = {},
+  ) => {
     const search = new URLSearchParams();
     if (params.limit) search.set("limit", String(params.limit));
     if (params.offset) search.set("offset", String(params.offset));
+    if (params.q?.trim()) search.set("q", params.q.trim());
+    if (params.issueId) search.set("issueId", params.issueId);
+    if (params.organisationId) search.set("organisationId", params.organisationId);
     const query = search.toString();
     return api.get<GeneratedImagesResponse>(`/companies/${companyId}/generated-images${query ? `?${query}` : ""}`);
   },
