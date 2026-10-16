@@ -15,7 +15,7 @@ import { StarToggle } from "../components/StarToggle";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { formatDate, formatNumber, formatProjectBudget, projectUrl } from "../lib/utils";
-import { projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "../lib/projects-text";
+import { isProjectLate, projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "../lib/projects-text";
 import { downloadTextFile } from "../lib/issues-csv";
 import { exportFileName, localToday } from "../lib/spreadsheet-export";
 import { useCopyAction } from "../lib/use-copy-action";
@@ -27,7 +27,7 @@ import {
 } from "../hooks/useResourceMemberships";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowUpDown, Check, ClipboardList, Download, Hexagon, Plus } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, Check, ClipboardList, Download, Hexagon, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
@@ -89,6 +89,7 @@ export function Projects() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [sortField, setSortField] = useState<ProjectSortField>("name");
   const [sortDir, setSortDir] = useState<ProjectSortDir>("asc");
+  const [lateOnly, setLateOnly] = useState(false);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Projects" }]);
@@ -111,9 +112,11 @@ export function Projects() {
     () => allProjects ?? [],
     [allProjects],
   );
+  const lateCount = useMemo(() => projects.filter((project) => isProjectLate(project)).length, [projects]);
+  const showLateOnly = lateOnly && lateCount > 0;
   const sortedProjects = useMemo(
-    () => sortProjects(projects, sortField, sortDir),
-    [projects, sortDir, sortField],
+    () => sortProjects(showLateOnly ? projects.filter((project) => isProjectLate(project)) : projects, sortField, sortDir),
+    [projects, showLateOnly, sortDir, sortField],
   );
   const groupedProjects = useMemo(() => {
     const groups = {
@@ -198,6 +201,18 @@ export function Projects() {
           </PopoverContent>
         </Popover>
         <div className="flex flex-wrap items-center gap-2">
+          {lateCount > 0 ? (
+            <Button
+              size="sm"
+              variant={showLateOnly ? "secondary" : "outline"}
+              aria-pressed={showLateOnly}
+              title={showLateOnly ? "Show every project again" : "Show only open projects past their target date"}
+              onClick={() => setLateOnly((current) => !current)}
+            >
+              <AlertTriangle className="h-4 w-4 mr-1" />
+              {showLateOnly ? "Show every project" : `Late (${lateCount})`}
+            </Button>
+          ) : null}
           {hasLiveProjects ? (
             <Button
               size="sm"

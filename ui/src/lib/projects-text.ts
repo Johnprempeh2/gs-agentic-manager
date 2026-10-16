@@ -1,5 +1,5 @@
 import type { Project, ProjectStatus } from "@greatstone/shared";
-import { parseCalendarDate, targetDateLabel } from "./goal-journey";
+import { daysToTarget, parseCalendarDate, targetDateLabel } from "./goal-journey";
 import { sheetToCsv, type Sheet } from "./spreadsheet-export";
 import { formatCalendarDay } from "./utils";
 
@@ -35,6 +35,13 @@ export function projectsForUpdate(projects: readonly Project[]): Project[] {
         target(a) - target(b) ||
         a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
+}
+
+/** Open (not completed, cancelled or archived) and past its target date. */
+export function isProjectLate(project: Pick<Project, "targetDate" | "status" | "archivedAt">, now: Date = new Date()): boolean {
+  if (project.status === "completed" || project.status === "cancelled" || project.archivedAt) return false;
+  const days = daysToTarget(project.targetDate, now);
+  return days != null && days < 0;
 }
 
 /** "6 Oct, 10 days late" or "20 Oct, 4 days to go"; completed projects show the date only. */
