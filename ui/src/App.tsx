@@ -17,7 +17,7 @@ import {
   UnprefixedExecutionWorkspaceRedirect,
 } from "./components/UnprefixedExecutionWorkspaceRedirect";
 import { useHiddenSettings } from "./hooks/useHiddenSettings";
-import { OnboardingWizardVariant } from "./components/OnboardingWizardVariant";
+import { OnDemandOnboarding } from "./components/OnDemandDialogs";
 import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
@@ -905,7 +905,7 @@ export function App() {
         </Route>
       </Routes>
       </Suspense>
-      <OnboardingWizardVariant />
+      <OnDemandOnboarding />
     </>
   );
 }
