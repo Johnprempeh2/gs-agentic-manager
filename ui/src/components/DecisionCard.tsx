@@ -8,7 +8,7 @@ import {
   ExternalLink,
   Loader2,
   MinusCircle,
-  Paperclip,
+  PaperclipIcon,
   ShieldAlert,
   XCircle,
 } from "lucide-react";
@@ -314,7 +314,7 @@ function DecisionInputField({
             {uploading > 0 ? (
               <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
             ) : (
-              <Paperclip className="mr-1 h-3.5 w-3.5" aria-hidden />
+              <PaperclipIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
             )}
             {uploading > 0 ? "Attaching" : "Attach a file"}
           </Button>
