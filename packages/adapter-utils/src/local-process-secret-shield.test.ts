@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { accessSync, constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,8 +19,27 @@ import { runChildProcess, runningProcesses, signalRunningProcess } from "./serve
 // GRE-1094: local agent runs must not read ~/gs-memory/secrets or the
 // server's /proc/<pid>/environ. The bwrap cases need a working bubblewrap:
 // set GSAM_TEST_BWRAP to a binary, or have bwrap on PATH.
+// Returns an absolute path, as the shield does, so command prefixes compare equal.
+function resolveOnPath(command: string): string | null {
+  if (path.isAbsolute(command)) return command;
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, command);
+    try {
+      accessSync(candidate, fsConstants.X_OK);
+      return candidate;
+    } catch {
+      // not in this PATH entry
+    }
+  }
+  return null;
+}
+
 function findBwrap(): string | null {
-  const candidates = [process.env.GSAM_TEST_BWRAP, "bwrap"].filter((value): value is string => Boolean(value));
+  const candidates = [process.env.GSAM_TEST_BWRAP, "bwrap"]
+    .filter((value): value is string => Boolean(value))
+    .map(resolveOnPath)
+    .filter((value): value is string => value !== null);
   for (const candidate of candidates) {
     try {
       execFileSync(candidate, ["--dev-bind", "/", "/", "--unshare-pid", "--proc", "/proc", "--", "true"], { stdio: "ignore" });
