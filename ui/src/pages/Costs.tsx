@@ -18,6 +18,7 @@ import { BillerSpendCard } from "../components/BillerSpendCard";
 import { BudgetIncidentCard } from "../components/BudgetIncidentCard";
 import { BudgetPolicyCard } from "../components/BudgetPolicyCard";
 import { EmptyState } from "../components/EmptyState";
+import { HelpTerm } from "../components/HelpTerm";
 import { FinanceBillerCard } from "../components/FinanceBillerCard";
 import { FinanceKindCard } from "../components/FinanceKindCard";
 import { FinanceTimelineCard } from "../components/FinanceTimelineCard";
@@ -583,7 +584,8 @@ export function Costs({
                 <h1 className="text-3xl font-semibold tracking-tight">Costs</h1>
               )}
               <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-                Inference spend, platform fees, credits, and live quota windows.
+                What the agents have spent on AI, fees and credits. Each agent has a{" "}
+                <HelpTerm term="budget" /> it cannot go past without your say.
               </p>
             </div>
 
