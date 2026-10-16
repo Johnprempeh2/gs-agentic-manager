@@ -3160,7 +3160,16 @@ export type {
   WeeklyReport,
   WeeklyReportAgentCost,
   WeeklyReportAgentWork,
+  WeeklyReportDay,
   WeeklyReportPipelineMove,
   WeeklyReportStuckTask,
   WeeklyReportTask,
 } from "./types/weekly-report.js";
+export type {
+  AgentDailyDigest,
+  AgentDailyDigestAgent,
+  AgentDailyDigestCounts,
+  AgentDailyDigestItem,
+  AgentDailyDigestMove,
+  AgentDailyDigestPayload,
+} from "./types/agent-daily-digest.js";

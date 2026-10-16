@@ -384,6 +384,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "strategy_board_question",
   // A direct message or group chat of people and agents (enableTeamChat).
   "team_chat",
+  // The lead agent's standing "Daily digest" task. originId: the company id.
+  "agent_daily_digest",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;

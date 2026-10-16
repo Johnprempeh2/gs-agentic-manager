@@ -128,6 +128,7 @@ import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-sh
 import { pushNotificationService } from "./services/push-notifications.js";
 import { morningSummaryService } from "./services/morning-summary.js";
 import { weeklyReportService } from "./services/weekly-report.js";
+import { agentDailyDigestService } from "./services/agent-daily-digest.js";
 import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
@@ -2189,6 +2190,31 @@ async function startServerWithDatabaseTeardown(
   };
   scheduleDecisionPushRound();
 
+  /** How often the nightly digest checks whether yesterday (UTC) still needs one. */
+  const AGENT_DAILY_DIGEST_INTERVAL_MS = 10 * 60_000;
+  // The nightly digest of what each agent did, with cost, for the lead agent.
+  // Each round stores yesterday's digest for every company that has none yet,
+  // so it goes out shortly after midnight UTC, once: the stored row per company
+  // and day is the marker, so a restart never sends it twice. It writes a
+  // document and wakes no one.
+  const agentDailyDigests = agentDailyDigestService(db as any);
+  let agentDailyDigestTimer: ReturnType<typeof setTimeout> | null = null;
+  let agentDailyDigestStopped = false;
+  const scheduleAgentDailyDigestRound = (delayMs = AGENT_DAILY_DIGEST_INTERVAL_MS) => {
+    if (agentDailyDigestStopped) return;
+    agentDailyDigestTimer = setTimeout(() => {
+      void agentDailyDigests
+        .runDue()
+        .then((result) => {
+          if (result.delivered > 0 || result.skipped > 0) logger.info(result, "nightly agent digests stored");
+        })
+        .catch((err) => logger.warn({ err }, "nightly agent digest round failed"))
+        .finally(() => scheduleAgentDailyDigestRound());
+    }, delayMs);
+    agentDailyDigestTimer.unref?.();
+  };
+  scheduleAgentDailyDigestRound(60_000);
+
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
 
@@ -2286,6 +2312,8 @@ async function startServerWithDatabaseTeardown(
     entitlementRuntime?.stop();
     decisionPushStopped = true;
     if (decisionPushTimer) clearTimeout(decisionPushTimer);
+    agentDailyDigestStopped = true;
+    if (agentDailyDigestTimer) clearTimeout(agentDailyDigestTimer);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;

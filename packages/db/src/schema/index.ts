@@ -263,3 +263,4 @@ export { clientSupportTickets, clientSupportReplies, clientSupportAttachments } 
 export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";
 export { billingAccounts, billingInvoices } from "./billing_accounts.js";
+export { agentDailyDigests } from "./agent_daily_digests.js";

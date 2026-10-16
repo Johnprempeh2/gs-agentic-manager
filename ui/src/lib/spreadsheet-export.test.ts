@@ -39,6 +39,7 @@ const report: WeeklyReport = {
   pipeline: { added: 3, moved: 5, won: 1, lost: 0, moves: [] },
   needsYou: { count: 4, items: [] },
   costs: { totalCents: 12345, agents: [{ agentId: "a1", name: "Everest", cents: 12345 }] },
+  daily: [],
 };
 
 describe("spreadsheet export", () => {
