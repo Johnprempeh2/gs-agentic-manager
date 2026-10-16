@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   listMailboxes: vi.fn(),
   listActivity: vi.fn(),
   listHooks: vi.fn(),
+  feedStatus: vi.fn(),
 }));
 
 vi.mock("@/api/tools", () => ({ toolsApi: { listConnections: mocks.listConnections } }));
@@ -22,6 +23,11 @@ vi.mock("@/api/inboundTaskHooks", () => ({ inboundTaskHooksApi: { list: mocks.li
 vi.mock("@/components/InboundTaskHooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/InboundTaskHooks")>()),
   InboundTaskHooksDialog: () => null,
+}));
+vi.mock("@/api/calendar", () => ({ calendarApi: { feedStatus: mocks.feedStatus } }));
+vi.mock("@/components/CalendarFeed", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/CalendarFeed")>()),
+  CalendarFeedDialog: () => null,
 }));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
@@ -54,6 +60,7 @@ describe("Integrations", () => {
     mocks.listActivity.mockReset();
     mocks.listActivity.mockResolvedValue([]);
     mocks.listHooks.mockResolvedValue([]);
+    mocks.feedStatus.mockResolvedValue({ enabled: false, lastFetchedAt: null });
   });
 
   afterEach(() => {
@@ -174,6 +181,14 @@ describe("Integrations", () => {
     expect(webhookState([hook({ enabled: false })] as never)).toBe("off");
     expect(webhookState([hook({ lastErrorAt: "2026-10-16T02:00:00Z" })] as never)).toBe("attention");
     expect(webhookState([hook({ lastErrorAt: "2026-10-16T01:00:00Z", lastUsedAt: "2026-10-16T02:00:00Z" })] as never)).toBe("connected");
+  });
+
+  it("shows the deadlines calendar feed as off until turned on", async () => {
+    mocks.listConnections.mockResolvedValue({ connections: [] });
+    mocks.listMailboxes.mockResolvedValue([]);
+    await render();
+    expect(card("calendar-feed").textContent).toContain("Turned off");
+    expect(card("calendar-feed").textContent).toContain("Turn on");
   });
 
   it("works out states from connection and mailbox health", () => {

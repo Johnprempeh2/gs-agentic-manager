@@ -1506,6 +1506,9 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/inbound-task-hooks/{hookId}",
   "POST /api/companies/{companyId}/inbound-task-hooks/{hookId}/rotate",
   "DELETE /api/companies/{companyId}/inbound-task-hooks/{hookId}",
+  "GET /api/companies/{companyId}/calendar-feed",
+  "POST /api/companies/{companyId}/calendar-feed",
+  "DELETE /api/companies/{companyId}/calendar-feed",
   "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
   "POST /api/companies/{companyId}/website/properties",
   "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
@@ -14623,6 +14626,38 @@ registerCurrentRoute({
   summary: "Turn agent email drafts on or off for a mailbox (connection managers). Off by default.",
   body: mailboxDraftsSettingSchema,
   responses: mailboxResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/calendar-feed",
+  tags: ["calendar"],
+  summary: "Whether the company's subscribed calendar feed of deadlines is on, and when a calendar app last fetched it",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/calendar-feed",
+  tags: ["calendar"],
+  summary: "Turn on the calendar feed with a new secret URL, replacing any earlier one; the URL is returned this once (connection managers)",
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/calendar-feed",
+  tags: ["calendar"],
+  summary: "Turn off the calendar feed; its URL stops working (connection managers)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/calendar-feeds/{file}",
+  tags: ["calendar"],
+  summary: "iCalendar feed of task due dates and goal dates, for Google Calendar, Outlook or Apple Calendar. The secret token in the file name is the credential.",
+  responses: { 200: r.ok(), 404: r.notFound },
 });
 
 const inboundHookResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };

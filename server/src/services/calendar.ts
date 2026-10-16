@@ -192,6 +192,12 @@ export function calendarService(db: Db) {
   }
 
   return {
+    /** Task due dates and goal target dates in a window of any length, for the subscribed calendar feed. */
+    async deadlines(companyId: string, from: string, to: string): Promise<CalendarItem[]> {
+      const [tasks, goalRows] = await Promise.all([taskItems(companyId, from, to), goalItems(companyId, from, to)]);
+      return [...goalRows, ...tasks].sort((a, b) => a.date.localeCompare(b.date));
+    },
+
     async build(companyId: string, from: string, to: string): Promise<CompanyCalendar> {
       const [tasks, goalRows, routineRows] = await Promise.all([
         taskItems(companyId, from, to),

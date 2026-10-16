@@ -4,9 +4,11 @@ import { Plug } from "lucide-react";
 import type { ActivityEvent, InboundTaskHookSummary, MailboxSummary, ToolConnection } from "@greatstone/shared";
 import { isToolConnectionAttentionHealth } from "@greatstone/shared";
 import { activityApi } from "@/api/activity";
+import { calendarApi } from "@/api/calendar";
 import { inboundTaskHooksApi } from "@/api/inboundTaskHooks";
 import { mailboxesApi } from "@/api/mailboxes";
 import { toolsApi } from "@/api/tools";
+import { CalendarFeedDialog, calendarFeedKey, calendarFeedStatusLine } from "@/components/CalendarFeed";
 import { InboundTaskHooksDialog, hookStatusLine, inboundHooksKey } from "@/components/InboundTaskHooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -206,6 +208,12 @@ const WEBHOOK_DEF: IntegrationCardDef = {
   does: "Lets a form, Zapier, Make or any outside tool create a task here, with files attached, by posting to a private address.",
 };
 
+const CALENDAR_FEED_DEF: IntegrationCardDef = {
+  slug: "calendar-feed",
+  name: "Deadlines in your calendar",
+  does: "Shows task due dates and goal dates in Google Calendar, Outlook or Apple Calendar through a private subscription address. No Google or Microsoft keys needed.",
+};
+
 function IntegrationCard({
   def,
   state,
@@ -305,6 +313,12 @@ export function Integrations() {
     queryFn: () => inboundTaskHooksApi.list(companyId),
     enabled: Boolean(selectedCompanyId),
   });
+  const [feedOpen, setFeedOpen] = useState(false);
+  const feed = useQuery({
+    queryKey: calendarFeedKey(companyId),
+    queryFn: () => calendarApi.feedStatus(companyId),
+    enabled: Boolean(selectedCompanyId),
+  });
 
   if (!selectedCompanyId) {
     return <div className="p-6 text-sm text-muted-foreground">Choose an organisation to see its integrations.</div>;
@@ -390,8 +404,16 @@ export function Integrations() {
           status={(hooks.data ?? []).slice(0, 2).map((hook) => `${hook.name}: ${hookStatusLine(hook)}`)}
           primary={{ label: hooks.data?.length ? "Manage" : "Set up", onClick: () => setHooksOpen(true) }}
         />
+        <IntegrationCard
+          def={CALENDAR_FEED_DEF}
+          state={feed.isLoading || feed.error ? null : feed.data?.enabled ? "connected" : "off"}
+          detail={null}
+          status={[calendarFeedStatusLine(feed.data)].filter((line): line is string => Boolean(line))}
+          primary={{ label: feed.data?.enabled ? "Manage" : "Turn on", onClick: () => setFeedOpen(true) }}
+        />
       </ul>
       <InboundTaskHooksDialog companyId={companyId} open={hooksOpen} onOpenChange={setHooksOpen} />
+      <CalendarFeedDialog companyId={companyId} open={feedOpen} onOpenChange={setFeedOpen} />
 
       <p className="text-sm text-muted-foreground">
         Looking for something else? <Link to="/apps" className="underline underline-offset-2">Browse every app</Link>.
