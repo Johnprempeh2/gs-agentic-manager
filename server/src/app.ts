@@ -5,6 +5,7 @@ import { projectToolRoutes } from "./routes/project-tools.js";
 import { emailChannelService } from "./services/email-channels.js";
 import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
 import { mailboxRoutes } from "./routes/mailboxes.js";
+import { inboundTaskHookRoutes } from "./routes/inbound-task-hooks.js";
 import { toolActionDeliveryService } from "./services/tool-action-delivery.js";
 import { registerAssignedMcpGateway } from "./services/native-runtime/assigned-mcp-tools.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -849,6 +850,7 @@ export async function createApp(
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
   api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(inboundTaskHookRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));

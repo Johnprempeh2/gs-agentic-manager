@@ -6,16 +6,23 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { Integrations, connectionState, describeImport, mailboxState } from "./Integrations";
+import { webhookState } from "./Integrations";
 
 const mocks = vi.hoisted(() => ({
   listConnections: vi.fn(),
   listMailboxes: vi.fn(),
   listActivity: vi.fn(),
+  listHooks: vi.fn(),
 }));
 
 vi.mock("@/api/tools", () => ({ toolsApi: { listConnections: mocks.listConnections } }));
 vi.mock("@/api/activity", () => ({ activityApi: { list: mocks.listActivity } }));
 vi.mock("@/api/mailboxes", () => ({ mailboxesApi: { list: mocks.listMailboxes } }));
+vi.mock("@/api/inboundTaskHooks", () => ({ inboundTaskHooksApi: { list: mocks.listHooks } }));
+vi.mock("@/components/InboundTaskHooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/components/InboundTaskHooks")>()),
+  InboundTaskHooksDialog: () => null,
+}));
 vi.mock("@/context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
 vi.mock("@/context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: () => {} }) }));
 vi.mock("@/pages/apps/AppLogo", () => ({ AppLogo: () => null }));
@@ -46,6 +53,7 @@ describe("Integrations", () => {
     mocks.listMailboxes.mockReset();
     mocks.listActivity.mockReset();
     mocks.listActivity.mockResolvedValue([]);
+    mocks.listHooks.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -146,6 +154,26 @@ describe("Integrations", () => {
       "Last import 5 minutes ago: 2 organisations and 1 deal added; 1 organisation and 4 people updated. 1 row could not be imported.",
     );
     expect(describeImport({ createdAt: new Date(), details: {} }, "today")).toBe("Last import today: nothing new.");
+  });
+
+  it("shows the incoming webhook with what came in", async () => {
+    mocks.listConnections.mockResolvedValue({ connections: [] });
+    mocks.listMailboxes.mockResolvedValue([]);
+    mocks.listHooks.mockResolvedValue([
+      { id: "h1", name: "Website form", path: "/api/inbound/tasks/ith_1", enabled: true, useCount: 3, lastUsedAt: new Date().toISOString(), lastError: null, lastErrorAt: null },
+    ]);
+    await render();
+    expect(card("webhook").textContent).toContain("Connected");
+    expect(card("webhook").textContent).toContain("Website form: 3 tasks created");
+    expect(card("webhook").textContent).toContain("Manage");
+  });
+
+  it("works out the webhook state", () => {
+    const hook = (values: Record<string, unknown>) => ({ enabled: true, lastUsedAt: null, lastErrorAt: null, ...values });
+    expect(webhookState([])).toBe("not_connected");
+    expect(webhookState([hook({ enabled: false })] as never)).toBe("off");
+    expect(webhookState([hook({ lastErrorAt: "2026-10-16T02:00:00Z" })] as never)).toBe("attention");
+    expect(webhookState([hook({ lastErrorAt: "2026-10-16T01:00:00Z", lastUsedAt: "2026-10-16T02:00:00Z" })] as never)).toBe("connected");
   });
 
   it("works out states from connection and mailbox health", () => {
