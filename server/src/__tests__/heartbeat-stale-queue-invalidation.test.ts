@@ -28,6 +28,7 @@ import {
   heartbeatService,
 } from "../services/heartbeat.ts";
 import { runningProcesses } from "../adapters/index.ts";
+import { readTimerWakeNews } from "../services/timer-wake-news.ts";
 import { recoveryService } from "../services/recovery/service.ts";
 import { withQueuedCommentIdsInWakePayload } from "../services/issue-queued-comment-queue.ts";
 
@@ -486,11 +487,13 @@ describeEmbeddedPostgres("heartbeat stale queued-run invalidation", () => {
       .where(eq(agentWakeupRequests.agentId, agentId));
     expect(skipped).toMatchObject({ status: "skipped", reason: "heartbeat.timer.nothing_changed" });
 
-    // A comment from someone else is news: the next timer wake runs.
+    // A comment from someone else is news, so the next timer wake would run.
+    // Checked through the news reader so this test starts no real run.
     await db.insert(issueComments).values({ companyId, issueId, body: "Any update?", authorUserId: "user-1" });
-    const woken = await heartbeat.wakeup(agentId, { source: "timer", triggerDetail: "schedule" });
-    expect(woken).not.toBeNull();
-    await heartbeat.drainActiveRunExecutions();
+    await expect(readTimerWakeNews(db, { id: agentId, companyId })).resolves.toMatchObject({
+      hasNews: true,
+      reason: "new_comment",
+    });
   });
 
   it("checks guarded issue status and assignee under the enqueue lock", async () => {
