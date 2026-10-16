@@ -291,6 +291,9 @@ vi.mock("../services/index.js", () => ({
   attentionService: vi.fn(() => ({
     list: vi.fn(async () => ({ items: [], nextCursor: null })),
   })),
+  budgetService: vi.fn(() => ({
+    applyDueChanges: vi.fn(async () => undefined),
+  })),
   decisionService: vi.fn(() => ({
     sweepExpired: vi.fn(async () => ({ expired: 0 })),
   })),
