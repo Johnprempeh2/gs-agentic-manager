@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Issue } from "@greatstone/shared";
-import { issuesToPlainList } from "./issues-text";
+import { issuesToPlainList, issueToUpdate } from "./issues-text";
 
 const lookups = {
   statusLabel: (status: Issue["status"]) => (status === "in_progress" ? "In progress" : "To do"),
@@ -27,5 +27,22 @@ describe("issuesToPlainList", () => {
 
   it("leaves out a responsible name it cannot find", () => {
     expect(issuesToPlainList([issue({ assigneeAgentId: "gone" })], lookups)).toBe("• GRE-12 Send the proposal (To do)");
+  });
+});
+
+describe("issueToUpdate", () => {
+  it("writes the task, its status, who, the due date and a link", () => {
+    expect(
+      issueToUpdate(issue({ status: "in_review", dueDate: "2026-10-20" }), {
+        responsible: "Ridge",
+        link: "https://gsam.test/GRE/issues/GRE-12",
+      }),
+    ).toBe(
+      "GRE-12 Send the proposal\nStatus: Waiting for review\nResponsible: Ridge\nDue: 20 Oct\nLink: https://gsam.test/GRE/issues/GRE-12",
+    );
+  });
+
+  it("leaves out the lines it has nothing for", () => {
+    expect(issueToUpdate(issue({ identifier: null }), {})).toBe("Send the proposal\nStatus: To do");
   });
 });
