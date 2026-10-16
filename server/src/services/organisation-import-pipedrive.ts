@@ -408,10 +408,16 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       // Owners link to the GSAM member with the same email.
       await writer.loadMembers();
 
+      // Records with emails, whose own history is read later for emails not on a deal.
+      const hasEmails = (record: object) => Number((record as { email_messages_count?: unknown }).email_messages_count ?? 0) > 0;
+      const organisationIdsWithEmail: string[] = [];
+      const personIdsWithEmail: string[] = [];
+
       let start: number | null = 0;
       while (start !== null) {
         const page: Awaited<ReturnType<PipedriveClient["listOrganizationsPage"]>> = await client.listOrganizationsPage({ start });
         for (const org of page.items) {
+          if (hasEmails(org)) organisationIdsWithEmail.push(String(org.id));
           const mapped = mapPipedriveOrganization(org, industries, orgContext);
           if (!mapped) {
             result.organisations.skipped += 1;
@@ -429,6 +435,7 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       while (start !== null) {
         const page: Awaited<ReturnType<PipedriveClient["listPersonsPage"]>> = await client.listPersonsPage({ start });
         for (const person of page.items) {
+          if (hasEmails(person)) personIdsWithEmail.push(String(person.id));
           const mapped = mapPipedrivePerson(person, personContext);
           if (!mapped) {
             result.contacts.skipped += 1;
@@ -514,6 +521,8 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
           caseIdByDealId: deals.caseIdByDealId,
           caseIdByLeadId: leads.caseIdByLeadId,
           users,
+          personIdsWithEmail,
+          organisationIdsWithEmail,
         },
       });
 
