@@ -15,7 +15,7 @@
 #              binary built with cargo
 #   runner     the runner's Rust tests (the rebrand edits Rust sources)
 #   ui-tests   the ui and cli vitest suites, on every run
-#   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys.spec.ts)
+#   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys.spec.ts and overnight-features.spec.ts)
 #   test       the vitest suites through scripts/run-vitest-stable.mjs,
 #              sharded across runners (the server suites run one file at a time)
 #   Fork CI    a single result to require in branch protection
@@ -204,7 +204,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run the core journeys
-        run: pnpm test:e2e core-journeys.spec.ts
+        run: pnpm test:e2e core-journeys.spec.ts overnight-features.spec.ts
 
       - name: Keep the report when a journey fails
         if: failure()
