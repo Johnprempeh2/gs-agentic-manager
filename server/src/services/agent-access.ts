@@ -224,7 +224,9 @@ function connectionItem(
     return result("missing", "No sign-in set up for this agent");
   }
   if (connection.credentialPolicy === "per_user" && grants.length === 0) {
-    return result("missing", "No sign-in shared with this agent");
+    // At run time a personal app uses the sign-in of the person responsible
+    // for the work, which this summary cannot see, so it is not called missing.
+    return result("unchecked", "Uses the sign-in of the person responsible for the work");
   }
   if (activeGrants.length === 0 && grants.length > 0) {
     const preferred = grants.find((grant) => grant.isDefault) ?? grants[0]!;

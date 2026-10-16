@@ -109,12 +109,15 @@ describe("deriveAgentAccess", () => {
     expect(itemsFor(summary, "agent-2")[0]).toMatchObject({ state: "ok" });
   });
 
-  it("treats a personal-only app as missing unless shared with the agent", () => {
+  it("does not call a personal-only app missing, since the responsible person signs in", () => {
     const base = {
       connections: [connection({ id: "drive", credentialPolicy: "per_user" as const })],
       installs: [{ connectionId: "drive", targetType: "company", targetId: "c" }],
     };
-    expect(itemsFor(deriveAgentAccess(input(base)))[0]!.state).toBe("missing");
+    expect(itemsFor(deriveAgentAccess(input(base)))[0]).toMatchObject({
+      state: "unchecked",
+      reason: "Uses the sign-in of the person responsible for the work",
+    });
     const delegated = deriveAgentAccess(input({
       ...base,
       grants: [grant({ id: "user-grant", connectionId: "drive", kind: "user" })],
