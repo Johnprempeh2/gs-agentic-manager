@@ -584,6 +584,18 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(lines[0]!.productId).toBe(catalogue[0]!.id);
     expect(lines[0]!.details).toMatchObject({ taxMethod: "exclusive", billingFrequency: "annually" });
 
+    // The catalogue reads back with the deals each product is on.
+    const listed = await request(app(actor, pipedrive.fetch)).get(`/api/companies/${companyId}/crm-products`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.map((product: { name: string }) => product.name)).toEqual(["Onboarding workshop", "Team seat"]);
+    const seat = listed.body.find((product: { name: string }) => product.name === "Team seat");
+    expect(seat.prices).toHaveLength(2);
+    expect(seat.fields).toContainEqual({ key: "category", label: "Category", value: "Licences" });
+    expect(seat.deals.map((deal: { caseId: string; quantity: number; sum: number; currency: string }) => [deal.caseId, deal.quantity, deal.sum, deal.currency]).sort()).toEqual([
+      [cases.get("pipedrive-701")!.id, 20, 10800, "GBP"],
+      [cases.get("pipedrive-702")!.id, 40, 30000, "USD"],
+    ].sort());
+
     // Same answers again: nothing changes.
     const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(rerun.body.products).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });

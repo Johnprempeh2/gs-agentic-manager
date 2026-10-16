@@ -195,3 +195,37 @@ export interface CrmTimelineEntry {
   /** Location, participants, outcome and anything else the CRM held. */
   details: Record<string, unknown>;
 }
+
+/** One price of a CRM product in one currency. */
+export interface CrmProductPriceView {
+  currency: string;
+  price: number | null;
+  cost: number | null;
+  overheadCost: number | null;
+}
+
+/** A deal that includes a product, with what was sold on it. */
+export interface CrmProductDeal {
+  caseId: string;
+  pipelineId: string;
+  title: string;
+  quantity: number | null;
+  sum: number | null;
+  currency: string | null;
+}
+
+/** A product from the CRM's catalogue, with the deals it is on (Pipedrive import). */
+export interface CrmProduct {
+  id: string;
+  source: string;
+  name: string;
+  code: string | null;
+  unit: string | null;
+  description: string | null;
+  tax: number | null;
+  active: boolean;
+  ownerName: string | null;
+  prices: CrmProductPriceView[];
+  fields: CrmRecordField[];
+  deals: CrmProductDeal[];
+}

@@ -14,6 +14,7 @@ import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
+import { CrmProductCatalogue } from "@/components/CrmProductCatalogue";
 import { ClientsExportButton } from "@/components/DataExport";
 import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
@@ -214,6 +215,7 @@ export function Organisations() {
       )}
 
       {selectedCompanyId ? <UnassignedPeople companyId={selectedCompanyId} /> : null}
+      {selectedCompanyId ? <CrmProductCatalogue companyId={selectedCompanyId} /> : null}
 
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         {editing !== null && selectedCompanyId ? (

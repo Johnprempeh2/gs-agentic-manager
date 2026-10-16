@@ -29,6 +29,7 @@ import {
   type PipedriveFetch,
 } from "../services/crm-sync-pipedrive.js";
 import { requireEntitlement } from "../services/entitlements.js";
+import { crmProductService } from "../services/crm-products.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
 import { notionImportService } from "../services/organisation-import-notion.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
@@ -79,10 +80,12 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const hubspotImporter = hubspotExportImportService(db);
   const notionImporter = notionImportService(db);
   const history = organisationHistoryService(db);
+  const products = crmProductService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
   router.use("/companies/:companyId/crm-files", requireEntitlement(db, "enablePipelines"));
+  router.use("/companies/:companyId/crm-products", requireEntitlement(db, "enablePipelines"));
 
   async function assertCrmWriter(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -397,6 +400,13 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     res.json(await svc.listUnassignedContacts(companyId));
+  });
+
+  /** The CRM product catalogue with the deals each product is on. Reads need company access only. */
+  router.get("/companies/:companyId/crm-products", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await products.list(companyId));
   });
 
   // A file copied from a CRM import, served like a case upload: inline only when safe.
