@@ -149,6 +149,7 @@ import {
   getRecentTouchedIssues,
   activeSnoozedInboxIssueIds,
   inboxSnoozeUntilTomorrow,
+  inboxSnoozeUntilNextWeek,
   isInboxEntityDismissed,
   isMineInboxTab,
   loadCollapsedInboxGroupKeys,
@@ -1872,6 +1873,29 @@ export function Inbox() {
         title: "Back tomorrow at 08:00",
         body: issue.title,
         tone: "info",
+        secondaryAction: {
+          label: "Next week",
+          onClick: () => {
+            snoozeInboxItem(itemKey, inboxSnoozeUntilNextWeek().toISOString());
+            pushToast({
+              id: `inbox-later-week-${issue.id}`,
+              title: "Back Monday at 08:00",
+              body: issue.title,
+              tone: "info",
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  setLaterIssueIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(issue.id);
+                    return next;
+                  });
+                  restoreInboxItem(itemKey);
+                },
+              },
+            });
+          },
+        },
         action: {
           label: "Undo",
           onClick: () => {

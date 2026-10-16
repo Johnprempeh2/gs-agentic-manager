@@ -32,7 +32,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { useToastActions } from "@/context/ToastContext";
 import { useDecisionsFeed, useNeedsMe } from "@/hooks/useDecisionsFeed";
 import { useInboxDismissals } from "@/hooks/useInboxBadge";
-import { inboxSnoozeUntilTomorrow } from "@/lib/inbox";
+import { inboxSnoozeUntilNextWeek, inboxSnoozeUntilTomorrow } from "@/lib/inbox";
 import {
   buildNeededFromYou,
   neededLaterKey,
@@ -134,6 +134,29 @@ export function NeededFromYou() {
         title: "Back tomorrow at 08:00",
         body: item.title,
         tone: "info",
+        secondaryAction: {
+          label: "Next week",
+          onClick: () => {
+            snooze(itemKey, inboxSnoozeUntilNextWeek().toISOString());
+            pushToast({
+              id: `needed-later-week-${item.id}`,
+              title: "Back Monday at 08:00",
+              body: item.title,
+              tone: "info",
+              action: {
+                label: "Undo",
+                onClick: () => {
+                  setLaterIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(item.id);
+                    return next;
+                  });
+                  restore(itemKey);
+                },
+              },
+            });
+          },
+        },
         action: {
           label: "Undo",
           onClick: () => {

@@ -4,10 +4,10 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { eq } from "drizzle-orm";
-import { createDb, companies, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import { createDb, companies, issues, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type DecisionCard, type NotificationPreferences } from "@greatstone/shared";
-import { assignedTaskPushMessage, decisionPushMessage, pushNotificationService, type DecisionPushMessage } from "../services/push-notifications.js";
+import { assignedTaskPushMessage, decisionPushMessage, finishedTaskPushMessage, pushNotificationService, type DecisionPushMessage, type FinishedTask } from "../services/push-notifications.js";
 import { loadOrCreateVapidKeys } from "../services/push-keys.js";
 import { generateVapidKeys, type PushSendResult, type PushTarget } from "../services/web-push.js";
 
@@ -22,6 +22,7 @@ const phone = (n: number) => ({ endpoint: `https://web.push.apple.com/device-${n
 
 let feedCards: DecisionCard[] = [];
 let assignedTasks: Array<{ id: string; title: string }> = [];
+let finishedTasks: FinishedTask[] = [];
 let prefs: NotificationPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES };
 let clock = new Date("2026-10-16T12:00:00Z");
 let sent: Array<{ target: PushTarget; message: DecisionPushMessage }> = [];
@@ -31,6 +32,7 @@ function service() {
   return pushNotificationService(db, {
     keys: () => keys,
     buildFeed: async () => ({ cards: feedCards, count: feedCards.length, assignedTasks }),
+    finished: async () => finishedTasks,
     preferences: async () => prefs,
     now: () => clock,
     send: async (target, message) => {
@@ -55,6 +57,7 @@ beforeEach(async () => {
   await db.delete(pushSubscriptions);
   feedCards = [];
   assignedTasks = [];
+  finishedTasks = [];
   prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
   clock = new Date("2026-10-16T12:00:00Z");
   sent = [];
@@ -151,6 +154,55 @@ describe("notification choices", () => {
     expect(await service().notifyNewDecisions()).toBe(0);
   });
 
+  it("tells the user once when a task they asked for is done, opening that task", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    finishedTasks = [{ id: "i9", identifier: "PSH-9", title: "Draft the Indago one-pager" }];
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(sent[0]!.message).toEqual({
+      title: "Done: a task you asked for",
+      body: "Draft the Indago one-pager",
+      url: "/PSH/issues/PSH-9",
+      tag: "finished:i9",
+      badge: 0,
+    });
+    expect(await service().notifyNewDecisions()).toBe(0);
+  });
+
+  it("finds tasks the user created that someone else finished in the last half hour", async () => {
+    const real = () => pushNotificationService(db, {
+      keys: () => keys,
+      buildFeed: async () => ({ cards: [], count: 0, assignedTasks: [] }),
+      preferences: async () => prefs,
+      now: () => clock,
+      send: async (target, message) => {
+        sent.push({ target, message });
+        return sendResult;
+      },
+    });
+    await real().subscribe(companyId, "john", phone(1));
+    const minutesAgo = (n: number) => new Date(clock.getTime() - n * 60 * 1000);
+    await db.insert(issues).values([
+      { companyId, title: "Agent finished this", status: "done", createdByUserId: "john", completedAt: minutesAgo(5) },
+      { companyId, title: "John finished it himself", status: "done", createdByUserId: "john", assigneeUserId: "john", completedAt: minutesAgo(5) },
+      { companyId, title: "Someone else asked", status: "done", createdByUserId: "ben", completedAt: minutesAgo(5) },
+      { companyId, title: "Long ago", status: "done", createdByUserId: "john", completedAt: minutesAgo(90) },
+      { companyId, title: "Still open", status: "in_progress", createdByUserId: "john" },
+    ]);
+    expect(await real().notifyNewDecisions()).toBe(1);
+    expect(sent.map((item) => item.message.body)).toEqual(["Agent finished this"]);
+    await db.delete(issues);
+  });
+
+  it("never sends finished work from before notifications were turned on, nor when switched off", async () => {
+    finishedTasks = [{ id: "i1", identifier: "PSH-1", title: "Old work" }];
+    await service().subscribe(companyId, "john", phone(1));
+    expect(await service().notifyNewDecisions()).toBe(0);
+    prefs = { ...prefs, finishedWork: false };
+    finishedTasks = [...finishedTasks, { id: "i2", identifier: "PSH-2", title: "New work" }];
+    expect(await service().notifyNewDecisions()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
   it("never sends the tasks already assigned when notifications are turned on", async () => {
     assignedTasks = [{ id: "i1", title: "Old task" }];
     await service().subscribe(companyId, "john", phone(1));
@@ -188,6 +240,15 @@ describe("notification choices", () => {
     expect(await service().sendToUser(companyId, "john", message)).toEqual({ targets: 0, delivered: 0 });
     prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
     expect((await service().sendToUser(companyId, "john", message)).delivered).toBe(1);
+  });
+
+  it("summarises several finished tasks into one notification for Today", () => {
+    const message = finishedTaskPushMessage(
+      [{ id: "a", identifier: "PSH-1", title: "One" }, { id: "b", identifier: null, title: "Two" }],
+      3,
+      "PSH",
+    );
+    expect(message).toEqual({ title: "2 tasks you asked for are done", body: "One and 1 more", url: "/PSH/today", tag: "finished-tasks", badge: 3 });
   });
 
   it("summarises several tasks given at once", () => {

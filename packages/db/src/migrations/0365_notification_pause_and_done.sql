@@ -1,0 +1,2 @@
+ALTER TABLE "notification_preferences" ADD COLUMN "finished_work" boolean DEFAULT true NOT NULL;--> statement-breakpoint
+ALTER TABLE "notification_preferences" ADD COLUMN "paused_until" timestamp with time zone;

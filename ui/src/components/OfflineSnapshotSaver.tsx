@@ -22,14 +22,28 @@ export function OfflineSnapshotSaver() {
     let timer: number | undefined;
     const schedule = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => saveSnapshot(queryClient, page), SAVE_DELAY_MS);
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        saveSnapshot(queryClient, page);
+      }, SAVE_DELAY_MS);
     };
     const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
       if (event.type === "updated" && event.action.type === "success") schedule();
     });
     schedule();
-    return () => {
+    // Leaving or reloading inside the wait would otherwise keep the copy from
+    // before a change just saved (a pause, an archive), and it would come back.
+    const saveNow = () => {
+      if (timer === undefined) return;
       window.clearTimeout(timer);
+      timer = undefined;
+      saveSnapshot(queryClient, page);
+    };
+    window.addEventListener("pagehide", saveNow);
+    return () => {
+      // Moving to another page saves nothing: its lists may already be gone.
+      window.clearTimeout(timer);
+      window.removeEventListener("pagehide", saveNow);
       unsubscribe();
     };
   }, [page, queryClient]);

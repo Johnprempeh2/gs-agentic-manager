@@ -8,7 +8,7 @@ import {
 } from "@greatstone/shared";
 
 /** The kinds of notification a person can switch off. */
-export type NotificationTopic = "decisions" | "assignedTasks" | "teamChat" | "morningSummary" | "weeklyReport";
+export type NotificationTopic = "decisions" | "assignedTasks" | "teamChat" | "finishedWork" | "morningSummary" | "weeklyReport";
 
 /** Local hour (0 to 23) and date (YYYY-MM-DD) in a time zone. Falls back to London on a bad zone. */
 export function localClock(timeZone: string, now: Date): { hour: number; date: string } {
@@ -37,9 +37,19 @@ export function isQuietHour(prefs: Pick<NotificationPreferences, "quietHoursStar
   return start < end ? hour >= start && hour < end : hour >= start || hour < end;
 }
 
+/** True while the person has paused notifications ("Pause for an hour"). */
+export function isPaused(prefs: Pick<NotificationPreferences, "pausedUntil">, now: Date): boolean {
+  return prefs.pausedUntil != null && Date.parse(prefs.pausedUntil) > now.getTime();
+}
+
+/** True when nothing should go to the phone now: quiet hours or a pause. What arrives is held for later. */
+export function isHeld(prefs: NotificationPreferences, now: Date): boolean {
+  return isQuietHour(prefs, now) || isPaused(prefs, now);
+}
+
 /** Whether a notification on this topic may go out now. */
 export function mayNotify(prefs: NotificationPreferences, topic: NotificationTopic, now: Date): boolean {
-  return prefs[topic] && !isQuietHour(prefs, now);
+  return prefs[topic] && !isHeld(prefs, now);
 }
 
 type Row = typeof notificationPreferences.$inferSelect;
@@ -50,12 +60,14 @@ function fromRow(row: Row | undefined): NotificationPreferences {
     decisions: row.decisions,
     assignedTasks: row.assignedTasks,
     teamChat: row.teamChat,
+    finishedWork: row.finishedWork,
     morningSummary: row.morningSummary,
     morningSummaryHour: row.morningSummaryHour,
     weeklyReport: row.weeklyReport,
     quietHoursStart: row.quietHoursStart,
     quietHoursEnd: row.quietHoursEnd,
     timeZone: row.timeZone,
+    pausedUntil: row.pausedUntil ? row.pausedUntil.toISOString() : null,
   };
 }
 
@@ -72,8 +84,13 @@ export function notificationPreferencesService(db: Db) {
   return {
     get: async (companyId: string, userId: string) => fromRow(await row(companyId, userId)),
 
-    async update(companyId: string, userId: string, patch: UpdateNotificationPreferences): Promise<NotificationPreferences> {
+    async update(companyId: string, userId: string, input: UpdateNotificationPreferences): Promise<NotificationPreferences> {
       const now = new Date();
+      const { pausedUntil, ...rest } = input;
+      const patch = {
+        ...rest,
+        ...(pausedUntil !== undefined ? { pausedUntil: pausedUntil === null ? null : new Date(pausedUntil) } : {}),
+      };
       const [saved] = await db
         .insert(notificationPreferences)
         .values({ companyId, userId, ...patch })
