@@ -10,7 +10,7 @@ import type { CalendarItem } from "@greatstone/shared";
 import { localToday, rescheduleOptions } from "../lib/calendar";
 import { Calendar } from "./Calendar";
 
-const api = vi.hoisted(() => ({ calendar: vi.fn(), update: vi.fn(), pushToast: vi.fn() }));
+const api = vi.hoisted(() => ({ calendar: vi.fn(), update: vi.fn(), pushToast: vi.fn(), copy: vi.fn() }));
 
 vi.mock("../api/calendar", () => ({ calendarApi: { get: api.calendar } }));
 vi.mock("../api/issues", () => ({ issuesApi: { update: api.update } }));
@@ -18,6 +18,7 @@ vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "c1", selectedCompany: { id: "c1", name: "Acme", issuePrefix: "ACM" } }),
 }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
+vi.mock("../lib/clipboard", () => ({ copyTextToClipboard: api.copy }));
 vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: api.pushToast }) }));
 
 function item(overrides: Partial<CalendarItem>): CalendarItem {
@@ -162,5 +163,23 @@ describe("Calendar drag to reschedule", () => {
     await act(async () => pointerClick(item!));
     await flushReact();
     expect(api.update).toHaveBeenCalledWith("t1", { dueDate: first.date });
+  });
+
+  it("copies the week ahead as text", async () => {
+    const today = localToday();
+    api.calendar.mockResolvedValue({ from: today, to: today, items: [item({ date: today, title: "Due today" })] });
+    api.copy.mockResolvedValue(undefined);
+    await render();
+    const button = container.querySelector('[aria-label="Copy the week ahead"]');
+    expect(button).not.toBeNull();
+    await act(async () => {
+      button!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(api.copy).toHaveBeenCalledTimes(1);
+    const text = api.copy.mock.calls[0]![0] as string;
+    expect(text).toMatch(/^The week ahead, /);
+    expect(text).toContain("Due: ACM-1 Due today");
+    expect(container.querySelector('[aria-label="Copied"]')).not.toBeNull();
   });
 });
