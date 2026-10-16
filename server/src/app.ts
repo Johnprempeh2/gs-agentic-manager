@@ -859,7 +859,7 @@ export async function createApp(
   api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
+  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode, storage: opts.storageService }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));
   api.use(managedAgentProfileRoutes(db));
