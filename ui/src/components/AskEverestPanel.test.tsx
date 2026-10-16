@@ -33,6 +33,13 @@ vi.mock("@/lib/router", () => ({
   Link: ({ to, children, onClick }: { to: string; children: ReactNode; onClick?: () => void }) =>
     createElement("a", { href: to, onClick }, children),
 }));
+const dictationState = vi.hoisted(() => ({ onFinal: null as null | ((text: string) => void) }));
+vi.mock("../hooks/useDictation", () => ({
+  useDictation: ({ onFinal }: { onFinal: (text: string) => void }) => {
+    dictationState.onFinal = onFinal;
+    return { available: true, listening: false, interim: "", start: vi.fn(), stop: vi.fn(), toggle: vi.fn() };
+  },
+}));
 vi.mock("./AgentAvatar", () => ({ AgentAvatar: () => null }));
 vi.mock("./MarkdownBody", () => ({ MarkdownBody: ({ children }: { children: string }) => createElement("div", null, children) }));
 vi.mock("@/components/ui/sheet", () => ({
@@ -133,6 +140,18 @@ describe("AskEverestPanel", () => {
     });
     expect(mocks.ensureChat).toHaveBeenCalledWith("company-1", "everest");
     expect(mocks.addComment).toHaveBeenCalledWith("chat-1", "What do I need to decide?", true, undefined, undefined, expect.any(String));
+  });
+
+  it("puts spoken words into the question box", async () => {
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", ctrlKey: true, bubbles: true }));
+    });
+    await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-mic"]')).not.toBeNull());
+    act(() => dictationState.onFinal?.("what is stuck"));
+    await waitFor(() => {
+      const input = container.querySelector("input") as HTMLInputElement;
+      expect(input.value).toBe("what is stuck");
+    });
   });
 });
 

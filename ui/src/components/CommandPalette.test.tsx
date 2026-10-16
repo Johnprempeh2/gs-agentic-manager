@@ -596,4 +596,31 @@ describe("CommandPalette", () => {
       root.unmount();
     });
   });
+
+  it("offers recent searches and questions for the lead agent before anything is typed", async () => {
+    window.localStorage.setItem("paperclip:recent-searches:company-1", JSON.stringify(["indago fee"]));
+    const agents = [{ id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null }];
+    const asked = vi.fn();
+    window.addEventListener("gsam:open-ask-everest", asked);
+    const { root } = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.agents.list("company-1"), agents);
+    });
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("indago fee");
+      expect(container.querySelector('[data-testid="global-search-ask-suggestion"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="global-search-ask-suggestion"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(asked).toHaveBeenCalledTimes(1);
+    window.removeEventListener("gsam:open-ask-everest", asked);
+    window.localStorage.removeItem("paperclip:recent-searches:company-1");
+    act(() => {
+      root.unmount();
+    });
+  });
 });
