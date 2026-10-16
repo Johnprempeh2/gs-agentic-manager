@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getClientCardFlags, isClientCard, readLastContactDate } from "./client-card-flags";
+import { getClientCardFlags, getDealNextStepFlag, isClientCard, readLastContactDate } from "./client-card-flags";
 
 const now = new Date("2026-10-09T12:00:00Z");
 
@@ -46,5 +46,17 @@ describe("client card flags", () => {
     for (const key of ["lastContact", "last_contact", "lastContactAt", "last_contact_date", "Last contact"]) {
       expect(readLastContactDate({ [key]: "2026-09-01" })?.toISOString()).toBe("2026-09-01T00:00:00.000Z");
     }
+  });
+
+  it("reads the next step on a Pipedrive deal", () => {
+    expect(getDealNextStepFlag({ fields: { dealStatus: "Open" } }, now)).toEqual({ kind: "none" });
+    expect(getDealNextStepFlag({ fields: { dealStatus: "" , nextActivityDate: "not a date" } }, now)).toEqual({ kind: "none" });
+    expect(getDealNextStepFlag({ fields: { dealStatus: "Open", nextActivityDate: "2026-10-01" } }, now)).toEqual({
+      kind: "overdue",
+      days: 8,
+    });
+    expect(getDealNextStepFlag({ fields: { dealStatus: "Open", nextActivityDate: "2026-10-09" } }, now)).toBeNull();
+    expect(getDealNextStepFlag({ fields: { dealStatus: "Lost" } }, now)).toBeNull();
+    expect(getDealNextStepFlag({ fields: { lastContact: "2026-10-01" } }, now)).toBeNull();
   });
 });

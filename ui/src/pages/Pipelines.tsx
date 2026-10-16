@@ -157,6 +157,7 @@ import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
+import { getDealNextStepFlag } from "@/lib/client-card-flags";
 import { CardCover, useImageCovers } from "@/components/ImageCoverControls";
 import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
 import { OrganisationPicker } from "@/components/OrganisationPicker";
@@ -1732,6 +1733,10 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return formatDealTotals(sumDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
   }, [visibleCases, orderedStages]);
+  const dealsNeedingNextStep = useMemo(() => {
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null).length;
+  }, [visibleCases, orderedStages]);
   const healthWarningsByStage = useMemo(
     () => groupWarningsByStage(healthQuery.data?.warnings ?? []),
     [healthQuery.data?.warnings],
@@ -2000,6 +2005,11 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               ? `${cases.length} total item${cases.length === 1 ? "" : "s"}`
               : `${visibleCases.length} of ${cases.length} items, owned by ${selectedOwner}`}
             {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
+            {dealsNeedingNextStep > 0 ? (
+              <span data-testid="pipeline-deals-needing-next-step">
+                {" "}· {dealsNeedingNextStep} {dealsNeedingNextStep === 1 ? "deal needs" : "deals need"} a next step
+              </span>
+            ) : null}
           </p>
           {fedByPipelines.length > 0 ? (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
