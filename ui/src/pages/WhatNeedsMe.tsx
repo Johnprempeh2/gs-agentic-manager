@@ -20,6 +20,7 @@ import { AttentionQueueRow } from "../components/AttentionQueueRow";
 import { Curtain } from "../components/DecisionShelf";
 import { DecisionQueueRail } from "../components/DecisionQueueRail";
 import { DecisionResolver } from "../components/DecisionResolver";
+import { HelpTerm } from "../components/HelpTerm";
 import { DecisionsFocusView } from "../components/decisions-focus/DecisionsFocusView";
 import { DecisionFeedCard } from "../components/decisions-feed/DecisionFeedCard";
 import { TabledList, useTabledIssues } from "../components/decisions-feed/TabledList";
@@ -198,29 +199,34 @@ export function WhatNeedsMe() {
     />
   );
   const header = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <BrandPageTitle
-        trailing={
-          <span className="text-base font-semibold tabular-nums text-muted-foreground" aria-label={`${count} waiting`}>
-            {count}
-          </span>
-        }
-      >
-        Decisions
-      </BrandPageTitle>
-      <div className="flex flex-wrap items-center gap-4">
-        {view === "focus" ? (
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <ToggleSwitch
-              checked={focusPrefs.autoRead}
-              onCheckedChange={(autoRead) => updateFocusPrefs({ ...focusPrefs, autoRead })}
-              aria-label="Read each question aloud"
-            />
-            Read each question aloud
-          </label>
-        ) : null}
-        {viewSwitch}
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <BrandPageTitle
+          trailing={
+            <span className="text-base font-semibold tabular-nums text-muted-foreground" aria-label={`${count} waiting`}>
+              {count}
+            </span>
+          }
+        >
+          Decisions
+        </BrandPageTitle>
+        <div className="flex flex-wrap items-center gap-4">
+          {view === "focus" ? (
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <ToggleSwitch
+                checked={focusPrefs.autoRead}
+                onCheckedChange={(autoRead) => updateFocusPrefs({ ...focusPrefs, autoRead })}
+                aria-label="Read each question aloud"
+              />
+              Read each question aloud
+            </label>
+          ) : null}
+          {viewSwitch}
+        </div>
       </div>
+      <p className="text-sm text-muted-foreground" data-testid="decisions-intro">
+        Each card is a <HelpTerm term="decision" /> an <HelpTerm term="agent" /> cannot make without you. Act on it and the work carries on.
+      </p>
     </div>
   );
 
