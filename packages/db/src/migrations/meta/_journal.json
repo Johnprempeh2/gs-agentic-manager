@@ -2402,6 +2402,13 @@
       "when": 1792115857395,
       "tag": "0344_generated_images",
       "breakpoints": true
+    },
+    {
+      "idx": 345,
+      "version": "7",
+      "when": 1792119139275,
+      "tag": "0345_weekly_report_notifications",
+      "breakpoints": true
     }
   ]
 }

@@ -87,6 +87,16 @@ describe("NotificationSettings", () => {
     expect(container.textContent).toContain("From 22:00 to 07:00, your time.");
   });
 
+  it("offers the weekly report on Monday mornings, off until chosen", async () => {
+    await render();
+    const label = "Send me the weekly report on Monday mornings";
+    expect(toggle(label).getAttribute("aria-checked")).toBe("false");
+    await act(async () => { toggle(label).click(); });
+    await flush();
+    expect(server.patches).toEqual([{ weeklyReport: true }]);
+    expect(container.textContent).toContain("Every Monday at 08:00, your time.");
+  });
+
   it("formats hours as a 24 hour clock", () => {
     expect(hourLabel(7)).toBe("07:00");
     expect(hourLabel(22)).toBe("22:00");

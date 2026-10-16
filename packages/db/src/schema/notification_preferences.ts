@@ -17,6 +17,8 @@ export const notificationPreferences = pgTable(
     morningSummary: boolean("morning_summary").notNull().default(true),
     /** Local hour (0 to 23) the morning summary goes out. */
     morningSummaryHour: integer("morning_summary_hour").notNull().default(8),
+    /** The weekly report on Monday mornings, at the morning summary hour. Off until chosen. */
+    weeklyReport: boolean("weekly_report").notNull().default(false),
     /** Local quiet hours, start inclusive and end exclusive; both null means none. */
     quietHoursStart: integer("quiet_hours_start"),
     quietHoursEnd: integer("quiet_hours_end"),
@@ -24,6 +26,8 @@ export const notificationPreferences = pgTable(
     timeZone: text("time_zone").notNull().default("Europe/London"),
     /** Local date (YYYY-MM-DD) of the last morning summary sent, so it goes once a day. */
     lastMorningSummaryOn: text("last_morning_summary_on"),
+    /** Local date (YYYY-MM-DD) of the last weekly report sent, so it goes once a week. */
+    lastWeeklyReportOn: text("last_weekly_report_on"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

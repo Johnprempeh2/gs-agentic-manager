@@ -10,6 +10,8 @@ export interface NotificationPreferences {
   morningSummary: boolean;
   /** Local hour (0 to 23) the morning summary goes out. */
   morningSummaryHour: number;
+  /** "This week at ..." on Monday mornings, at the morning summary hour. */
+  weeklyReport: boolean;
   /** Quiet hours, start inclusive and end exclusive. Both null means none. */
   quietHoursStart: number | null;
   quietHoursEnd: number | null;
@@ -23,6 +25,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   teamChat: true,
   morningSummary: true,
   morningSummaryHour: 8,
+  weeklyReport: false,
   quietHoursStart: null,
   quietHoursEnd: null,
   timeZone: "Europe/London",

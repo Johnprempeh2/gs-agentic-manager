@@ -1,12 +1,15 @@
 import { and, desc, eq, gte, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
-import { agents, companies, costEvents, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines } from "@greatstone/db";
-import type { NeedsMe, WeeklyReport, WeeklyReportAgentWork } from "@greatstone/shared";
+import { agents, companies, costEvents, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
+import type { NeedsMe, NotificationPreferences, WeeklyReport, WeeklyReportAgentWork } from "@greatstone/shared";
+import { logger } from "../middleware/logger.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
 import { needsYouItems } from "./morning-summary.js";
 import { needsMeService } from "./needs-me.js";
+import { isQuietHour, localClock, notificationPreferencesService } from "./notification-preferences.js";
+import type { DecisionPushMessage } from "./push-notifications.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const AGENT_ITEM_LIMIT = 3;
@@ -14,6 +17,50 @@ const STUCK_LIMIT = 10;
 const MOVE_LIMIT = 8;
 const NEEDS_YOU_LIMIT = 5;
 const STAGE_MOVE_TYPES = ["transitioned", "transition_forced"];
+/** Hours after the chosen hour in which a missed Monday report still goes out. */
+const CATCH_UP_HOURS = 3;
+
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+
+/** Monday (1) to Sunday (7) for a local YYYY-MM-DD date. */
+function isoWeekday(localDate: string): number {
+  const day = new Date(`${localDate}T12:00:00Z`).getUTCDay();
+  return day === 0 ? 7 : day;
+}
+
+/** True when this round should send this week's report: Monday, at the morning summary hour, once. */
+export function weeklyReportDue(
+  prefs: NotificationPreferences,
+  lastSentOn: string | null,
+  now: Date,
+): { due: boolean; localDate: string } {
+  const { hour, date } = localClock(prefs.timeZone, now);
+  if (!prefs.weeklyReport || lastSentOn === date || isoWeekday(date) !== 1) return { due: false, localDate: date };
+  const sinceChosen = hour - prefs.morningSummaryHour;
+  if (sinceChosen < 0 || sinceChosen > CATCH_UP_HOURS) return { due: false, localDate: date };
+  return { due: !isQuietHour(prefs, now), localDate: date };
+}
+
+/** The phone message: the week in one line; tapping it opens the full report. */
+export function weeklyReportMessage(report: WeeklyReport, prefix: string): DecisionPushMessage {
+  const parts = [
+    `${plural(report.finished.count, "task", "tasks")} finished.`,
+    report.stuck.count === 0 ? "Nothing stuck." : `${report.stuck.count} stuck.`,
+  ];
+  if (report.pipeline.moved > 0 || report.pipeline.added > 0) {
+    parts.push(`Pipeline: ${report.pipeline.added} new, ${plural(report.pipeline.moved, "move", "moves")}.`);
+  }
+  parts.push(report.needsYou.count === 0 ? "Nothing needs you." : `${plural(report.needsYou.count, "thing needs", "things need")} you.`);
+  return {
+    title: `Your week at ${report.companyName || "the company"}`,
+    body: parts.join(" "),
+    url: `/${prefix}/weekly-report`,
+    tag: "weekly-report",
+    badge: report.needsYou.count,
+  };
+}
+
+type Deliver = (companyId: string, userId: string, message: DecisionPushMessage) => Promise<{ targets: number; delivered: number }>;
 
 /** Work the user asked for: not a task the platform opened for itself. */
 function userWork() {
@@ -164,5 +211,34 @@ export function weeklyReportService(db: Db, options: { buildNeedsMe?: (companyId
     };
   }
 
-  return { build };
+  const preferences = notificationPreferencesService(db);
+
+  return {
+    build,
+
+    /** One round: send this week's report to each person who chose it, with a phone registered, on Monday morning. */
+    async sendDue(deliver: Deliver, now = new Date()): Promise<number> {
+      const audiences = await db
+        .selectDistinct({ companyId: pushSubscriptions.companyId, userId: pushSubscriptions.userId, prefix: companies.issuePrefix })
+        .from(pushSubscriptions)
+        .innerJoin(companies, eq(companies.id, pushSubscriptions.companyId));
+      let sent = 0;
+      for (const { companyId, userId, prefix } of audiences) {
+        try {
+          const prefs = await preferences.get(companyId, userId);
+          if (!prefs.weeklyReport) continue;
+          const { due, localDate } = weeklyReportDue(prefs, await preferences.lastWeeklyReportOn(companyId, userId), now);
+          if (!due) continue;
+          // Mark first: a slow or failing push service never sends it twice.
+          await preferences.markWeeklyReportSent(companyId, userId, localDate);
+          const report = await build(companyId, userId, now);
+          const { delivered } = await deliver(companyId, userId, weeklyReportMessage(report, prefix));
+          sent += delivered;
+        } catch (error) {
+          logger.warn({ err: error, companyId }, "weekly report failed for one user");
+        }
+      }
+      return sent;
+    },
+  };
 }

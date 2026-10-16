@@ -240,6 +240,16 @@ export function NotificationSettings() {
         ) : null}
       </Section>
 
+      <Section title="Weekly report" description="This week at a glance: what the agents finished, what is stuck, how the client pipeline moved and what needs you.">
+        <ChoiceRow
+          label="Send me the weekly report on Monday mornings"
+          description={prefs.weeklyReport ? `Every Monday at ${hourLabel(prefs.morningSummaryHour)}, your time. Tap it to open the full report and its PDF.` : "Off."}
+          checked={prefs.weeklyReport}
+          onChange={(weeklyReport) => change({ weeklyReport })}
+        />
+        <Link to="/weekly-report" className="inline-flex min-h-9 items-center text-sm font-medium text-primary hover:underline">See this week's report</Link>
+      </Section>
+
       <Section title="Quiet hours" description="Nothing is sent in these hours. Anything that came in goes out once they end.">
         <ChoiceRow
           label="Use quiet hours"
