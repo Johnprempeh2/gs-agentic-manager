@@ -748,6 +748,16 @@ function applyIssueExecutionStageTransition(input: TransitionInput): TransitionR
   }
 
   if (existingState?.currentStageId && !currentStage) {
+    // A replacement policy can orphan a live review stage. Do not let the
+    // same request claim completion without that review taking place.
+    const hasLiveReviewCycle =
+      existingState.status === PENDING_STATUS || existingState.status === CHANGES_REQUESTED_STATUS;
+    if (hasLiveReviewCycle && requestedStatus === "done") {
+      throw unprocessable(
+        "This issue has an unexecuted review stage from a live review cycle. Resolve the review before marking it done.",
+        { code: "unexecuted_review_stage" },
+      );
+    }
     clearExecutionStatePatch({
       patch,
       issueStatus: input.issue.status,
