@@ -32,6 +32,7 @@ import {
   taskStopReasonWhoLabel,
   type TaskStopReasonRowContext,
 } from "../lib/task-stop-reason";
+import { formatWhyBlocked, type WhyBlocked } from "../lib/why-blocked";
 
 export type IssueRowUnreadState = "hidden" | "visible" | "fading";
 export type IssueRowPresentation = "legacy" | "task";
@@ -76,6 +77,11 @@ export interface IssueRowProps {
    * failed or blocked rows. Without it the row keeps the short blocked note.
    */
   stopReasonContext?: TaskStopReasonRowContext;
+  /**
+   * Why the task is blocked, in plain words (see explainWhyBlocked). Wins over
+   * the stop reason so the row says the same thing as the task page.
+   */
+  whyBlocked?: WhyBlocked | null;
   titleClassName?: string;
   checklistStepNumber?: number | string | null;
   checklistCurrentStep?: boolean;
@@ -157,6 +163,7 @@ export function IssueRow({
   titleSuffix,
   ownerLabel,
   stopReasonContext,
+  whyBlocked = null,
   titleClassName,
   checklistStepNumber = null,
   checklistCurrentStep = false,
@@ -182,8 +189,18 @@ export function IssueRow({
   // Why a blocked task is stuck, in words: the icon's label was screen-reader only.
   const blockedLabel = issue.status === "blocked" ? blockedAttentionLabel(issue.blockerAttention) : null;
   const blockedReason = blockedLabel?.startsWith("Blocked · ") ? blockedLabel.slice("Blocked · ".length) : null;
-  const stopReason = stopReasonContext ? describeIssueRowStopReason(issue, stopReasonContext) : null;
-  const blockedNote = stopReason ? (
+  const stopReason = stopReasonContext && !whyBlocked ? describeIssueRowStopReason(issue, stopReasonContext) : null;
+  const blockedNote = whyBlocked ? (
+    <span
+      data-slot="task-row-why-blocked"
+      className="min-w-0 shrink truncate text-xs text-muted-foreground max-sm:basis-full sm:max-w-96"
+      title={formatWhyBlocked(whyBlocked)}
+    >
+      <span className="font-medium text-foreground">{whyBlocked.headline}</span>
+      {" "}
+      Who can clear it: {whyBlocked.whoCanUnblock}.
+    </span>
+  ) : stopReason ? (
     <span
       data-slot="task-row-stop-reason"
       className="min-w-0 shrink truncate text-xs text-muted-foreground max-sm:basis-full sm:max-w-80"
