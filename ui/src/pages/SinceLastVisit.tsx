@@ -90,7 +90,7 @@ export function SinceLastVisit() {
       {digest.agents.length === 0 ? (
         <EmptyState icon={History} message="Nothing new since your last visit." description="When agents finish or update work, a summary shows here." />
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-6" data-tour="since-last-visit-agents">
           {digest.agents.map((agent) => (
             <DigestAgentSection key={agent.agentId} agent={agent} />
           ))}

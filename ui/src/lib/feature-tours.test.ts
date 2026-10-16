@@ -14,6 +14,9 @@ describe("everyday page tours", () => {
     expect(coreTourForPath("/morning")?.id).toBe("morning");
     expect(coreTourForPath("/organisations")?.id).toBe("organisations");
     expect(coreTourForPath("/search")?.id).toBe("search");
+    expect(coreTourForPath("/today")?.id).toBe("morning");
+    expect(coreTourForPath("/deliverables")?.id).toBe("deliverables");
+    expect(coreTourForPath("/since-last-visit")?.id).toBe("since-last-visit");
     expect(coreTourForPath("/inbox/mine")).toBeNull();
   });
 

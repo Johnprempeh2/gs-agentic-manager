@@ -780,7 +780,7 @@ export const MORNING_TOUR: TourDefinition = {
   description: "One page each morning: what needs you, what is due and what the team did.",
   version: 1,
   autoStart: false,
-  route: { match: /^\/morning\/?$/, path: "/morning" },
+  route: { match: /^\/(morning|today)\/?$/, path: "/today" },
   label: "Morning summary",
   steps: [
     {
@@ -868,6 +868,72 @@ export const SEARCH_PAGE_TOUR: TourDefinition = {
   ],
 };
 
+export const DELIVERABLES_TOUR: TourDefinition = {
+  id: "deliverables",
+  title: "Deliverables",
+  description: "Every finished document and site the agents made, in one place.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/deliverables\/?$/, path: "/deliverables" },
+  label: "Deliverables",
+  steps: [
+    {
+      title: "Finished work lives here",
+      body: "When an agent finishes a document, a deck or a website, it lands on this page. Open any card to read it or download it.",
+    },
+    {
+      target: "deliverables-search",
+      title: "Find anything",
+      body: "Type a title, a client or a few words from inside a document. Press / to jump here from anywhere on the page.",
+    },
+    {
+      target: "deliverable-audience",
+      title: "Who it is for",
+      body: "Switch between work made for your clients and work made for your own team.",
+    },
+    {
+      target: "deliverables-kind",
+      title: "Pick a kind",
+      body: "Show only documents, sites or another kind of work.",
+    },
+    {
+      target: "deliverable-sort",
+      title: "Sort and group",
+      body: "Put the newest first, or group the work by project or client.",
+    },
+    {
+      target: "deliverables-live-previews",
+      title: "Live sites",
+      body: "Websites the agents are building show a live preview here, so you can check them without leaving the page.",
+    },
+  ],
+};
+
+export const SINCE_LAST_VISIT_TOUR: TourDefinition = {
+  id: "since-last-visit",
+  title: "Since you were last here",
+  description: "A catch-up on what each agent did while you were away.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/since-last-visit\/?$/, path: "/since-last-visit" },
+  label: "Since you were last here",
+  steps: [
+    {
+      title: "Catch up in a minute",
+      body: "This page shows what changed since your last visit, so you do not need to read every update.",
+    },
+    {
+      target: "since-last-visit-agents",
+      title: "One section per agent",
+      body: "Each agent lists what it finished and what it moved on. Open a task to see the detail.",
+    },
+    {
+      title: "Need everything?",
+      body: "The link at the bottom opens the full Audit log with every event.",
+    },
+  ],
+};
+
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
   DASHBOARD_TOUR,
@@ -887,6 +953,8 @@ export const CORE_TOURS: TourDefinition[] = [
   BLOCKED_TOUR,
   ORGANISATIONS_TOUR,
   SEARCH_PAGE_TOUR,
+  DELIVERABLES_TOUR,
+  SINCE_LAST_VISIT_TOUR,
   IMAGES_TOUR,
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,

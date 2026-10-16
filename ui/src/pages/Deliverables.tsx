@@ -427,7 +427,7 @@ export function Deliverables() {
       </header>
 
       <div className="space-y-3">
-        <div className="relative w-full max-w-2xl">
+        <div className="relative w-full max-w-2xl" data-tour="deliverables-search">
           <Search className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <input
             ref={searchRef}
@@ -486,7 +486,7 @@ export function Deliverables() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by kind">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Filter by kind" data-tour="deliverables-kind">
             {[{ value: null, label: "All" }, ...KIND_OPTIONS].map((option) => {
               const active = kind === option.value;
               return (
