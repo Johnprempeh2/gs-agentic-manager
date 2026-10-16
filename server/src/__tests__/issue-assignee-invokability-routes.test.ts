@@ -42,6 +42,13 @@ const mockHeartbeatService = vi.hoisted(() => ({
 
 const mockObserveCrossIssueInfluence = vi.hoisted(() => vi.fn(async () => null));
 
+const mockIsAgentInSubtree = vi.hoisted(() => vi.fn(async () => false));
+
+vi.mock("../services/authorization.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../services/authorization.js")>(),
+  isAgentInSubtree: mockIsAgentInSubtree,
+}));
+
 vi.mock("../services/cross-issue-influence-limit.js", async (importOriginal) => ({
   ...await importOriginal<typeof import("../services/cross-issue-influence-limit.js")>(),
   observeCrossIssueInfluence: mockObserveCrossIssueInfluence,
@@ -284,6 +291,8 @@ describe("agent delegation cycle guard", () => {
     mockIssueService.findOpenAncestorCreatedByAgent.mockResolvedValue(null);
     mockIssueService.create.mockReset();
     mockIssueService.createChild.mockReset();
+    mockIsAgentInSubtree.mockReset();
+    mockIsAgentInSubtree.mockResolvedValue(false);
   });
 
   it("refuses an agent child assigned to the creator of an open ancestor", async () => {
@@ -310,6 +319,35 @@ describe("agent delegation cycle guard", () => {
     expect(res.body.details).toMatchObject({ code: "delegation_cycle" });
     expect(mockIssueService.createChild).not.toHaveBeenCalled();
     expect(mockIssueService.findOpenAncestorCreatedByAgent).toHaveBeenCalledWith(parent.id, IDLE_AGENT_ID);
+  });
+
+  it("never refuses handing work up to the agent's own manager", async () => {
+    const parent = makeIssue();
+    mockIssueService.getById.mockResolvedValue(parent);
+    mockIssueService.findOpenAncestorCreatedByAgent.mockResolvedValue({
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      identifier: "PAP-100",
+      parentId: null,
+      createdByAgentId: IDLE_AGENT_ID,
+      status: "in_progress",
+    });
+    mockIsAgentInSubtree.mockResolvedValue(true);
+    mockIssueService.createChild.mockResolvedValue({
+      issue: makeIssue({ id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", parentId: parent.id, assigneeAgentId: IDLE_AGENT_ID }),
+      parentBlockerAdded: false,
+    });
+
+    const res = await request(createApp(agentActor()))
+      .post(`/api/issues/${parent.id}/children`)
+      .send({
+        title: "Escalate to my manager",
+        description: "I cannot finish this without a decision",
+        assigneeAgentId: IDLE_AGENT_ID,
+      });
+
+    expect(res.status).toBe(201);
+    expect(mockIsAgentInSubtree).toHaveBeenCalledWith(expect.anything(), "company-1", IDLE_AGENT_ID, AGENT_ACTOR_ID);
+    expect(mockIssueService.createChild).toHaveBeenCalled();
   });
 
   it("allows the same child when no open ancestor was created by the assignee", async () => {
