@@ -508,6 +508,7 @@ const RECORD_LABELS: Record<CompanySearchRecordKind, string> = {
   client: "Client",
   product: "Product",
   image: "Image",
+  activity: "Note or activity",
 };
 
 function recordResult(row: RecordSearchRow, prefix: string, normalizedQuery: string, tokens: string[]): CompanySearchResult {
@@ -1239,7 +1240,8 @@ export function companySearchService(db: Db) {
         return textCount + altCount;
       }
 
-      // --- records: organisations, people, clients (deals and leads), products, images ---
+      // --- records: organisations, people, clients (deals and leads), products, images,
+      // and imported CRM notes, calls, meetings and emails ---
       function recordMatch(fields: string) {
         return sql`concat_ws(' ', ${sql.raw(fields)}) ILIKE ALL(${tokenPatternArray})`;
       }
@@ -1300,6 +1302,20 @@ export function companySearchService(db: Db) {
             WHERE gi.company_id = ${companyId} AND gi.status = 'completed' AND gi.asset_id IS NOT NULL
               AND ${recordMatch("gi.prompt, gi.style")}
             ORDER BY gi.created_at DESC ${cap})`,
+          sql`(SELECT 'activity' AS kind, te.id,
+              coalesce(nullif(te.subject, ''), CASE WHEN length(te.body) > 80 THEN left(te.body, 79) || '…' ELSE te.body END, initcap(te.kind)) AS title,
+              nullif(concat_ws(', ', initcap(replace(coalesce(te.activity_type, te.kind), '_', ' ')), coalesce(tc.title, torg.name), to_char(te.occurred_at, 'FMDD Mon YYYY')), '') AS subtitle,
+              te.body AS body,
+              CASE WHEN tc.id IS NOT NULL THEN 'pipelines/' || tc.pipeline_id || '/items/' || tc.id
+                WHEN torg.id IS NOT NULL THEN 'organisations/' || torg.id
+                ELSE 'organisations' END AS path,
+              NULL::text AS "previewImageUrl", te.created_at AS "createdAt", coalesce(te.occurred_at, te.updated_at) AS "updatedAt"
+            FROM crm_timeline_entries te
+            LEFT JOIN pipeline_cases tc ON tc.id = te.case_id AND tc.retired_at IS NULL
+            LEFT JOIN organisations torg ON torg.id = te.organisation_id AND torg.archived_at IS NULL
+            WHERE te.company_id = ${companyId} AND te.kind <> 'stage_change'
+              AND ${recordMatch("te.subject, te.body, te.activity_type, te.owner_name")}
+            ORDER BY coalesce(te.occurred_at, te.updated_at) DESC ${cap})`,
         ];
       }
 

@@ -59,8 +59,8 @@ export interface CompanySearchArtifactSummary {
 }
 
 /** An uploaded file whose words matched: a PDF, Word file or text file, or an image by its alt text. */
-/** Kinds of business record search finds outside tasks: imported CRM data and generated images. */
-export const COMPANY_SEARCH_RECORD_KINDS = ["organisation", "person", "client", "product", "image"] as const;
+/** Kinds of business record search finds outside tasks: imported CRM data (including notes, calls, meetings and emails) and generated images. */
+export const COMPANY_SEARCH_RECORD_KINDS = ["organisation", "person", "client", "product", "image", "activity"] as const;
 export type CompanySearchRecordKind = (typeof COMPANY_SEARCH_RECORD_KINDS)[number];
 
 export interface CompanySearchRecordSummary {
