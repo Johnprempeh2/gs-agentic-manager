@@ -52,7 +52,9 @@
   --glass-saturate: 165%;
 
   /* The liquid rim: bright where light enters (top-left), gone by mid-edge. */
-  --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.2) 38%, transparent 60%, rgb(27 80 57 / 0.14));
+  /* daylight rim: a brand edge on every glass card, lime catching the light
+     top left and teal bottom right (decorative, never carries text) */
+  --glass-rim: linear-gradient(135deg, rgb(140 200 0 / 0.75), rgb(200 255 0 / 0.25) 30%, transparent 55%, rgb(78 205 196 / 0.55));
   --glass-scrim: rgb(11 42 28 / 0.2); /* daylight: an emerald-ink veil, so the page dims without turning to grey mud */
   --glass-scrim-blur: 4px;
 
@@ -99,7 +101,10 @@
   --gs-human-bubble-fg: #f5f7f2;
   --gs-human-bubble-shadow: inset 0 1px 0 rgb(255 255 255 / 0.14), 0 10px 26px -16px rgb(27 80 57 / 0.75);
   --gs-hairline: linear-gradient(90deg, transparent, rgb(27 80 57 / 0.26) 18%, rgb(140 200 0 / 0.32) 50%, rgb(27 80 57 / 0.26) 82%, transparent);
-  --gs-glow: rgb(27 80 57 / 0.14);
+  --gs-glow: rgb(140 200 0 / 0.26); /* daylight: empty-state tiles glow brand lime */
+  /* Page bar wash (daylight only): a teal to lime band behind every page
+     title, so each page opens on the brand colour. Text on it stays ink. */
+  --gs-page-bar-wash: linear-gradient(90deg, rgb(78 205 196 / 0.12), rgb(200 255 0 / 0.16) 60%, rgb(200 255 0 / 0.08));
   --gs-glow-strong: rgb(27 80 57 / 0.35);
   /* Key data (headline numbers): the brand accent, readable on each theme. */
   --gs-key-data: #1b5039;
@@ -182,6 +187,7 @@
   --gs-human-bubble-shadow: inset 0 1px 0 rgb(200 255 0 / 0.16), 0 12px 30px -16px rgb(0 0 0 / 0.7);
   --gs-hairline: linear-gradient(90deg, transparent, rgb(200 255 0 / 0.2) 18%, rgb(78 205 196 / 0.14) 50%, rgb(200 255 0 / 0.2) 82%, transparent);
   --gs-glow: rgb(200 255 0 / 0.12);
+  --gs-page-bar-wash: none;
   --gs-glow-strong: rgb(200 255 0 / 0.45);
   --gs-btn-primary-sheen: inset 0 1px 0 rgb(255 255 255 / 0.45);
 
@@ -513,6 +519,7 @@
      gem marker leading the page title. */
   .gs-page-bar {
     position: relative;
+    background-image: var(--gs-page-bar-wash);
   }
   .gs-page-bar::after {
     content: "";

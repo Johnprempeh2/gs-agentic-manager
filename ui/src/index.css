@@ -244,7 +244,8 @@
   --muted: #e4e8de;
   --muted-foreground: #4f5750;
   --subtle-foreground: #5d655e; /* third text tier: de-emphasis as a colour step, never alpha (AA on every light surface) */
-  --accent: color-mix(in oklab, #1b5039 8%, #ffffff);
+  --accent: color-mix(in oklab, #c8ff00 22%, #ffffff); /* daylight: hovered and selected rows carry a soft brand lime wash, never lime text */
+  --eyebrow-foreground: #1b5039; /* daylight: uppercase section labels in brand emerald (8:1 on the stone canvas) */
   --accent-foreground: #121512;
   --destructive: #b9262c; /* daylight: a deep brick rather than signal red, so Reject sits beside Approve without shouting; 6.2:1 on card, 5.2:1 on muted */
   --destructive-foreground: #b9262c;
@@ -1347,6 +1348,18 @@
   --sidebar-accent: color-mix(in oklab, #c8ff00 8%, #252525);
   --sidebar-border: rgb(255 255 255 / 8%);
   --glass-card-border: rgb(255 255 255 / 8%);
+}
+/* Section eyebrows: the uppercase h2 to h4 labels that head page sections
+   ("Agents", "Open tasks") take brand emerald in daylight instead of grey.
+   Night keeps the muted grey; the charcoal rail is night-side so it is
+   excluded. */
+:root:not(.dark) :is(h2, h3, h4).uppercase.text-muted-foreground:not(.dark *) {
+  color: var(--eyebrow-foreground);
+}
+/* Heading icons (an icon as the first child of a page or card heading) take
+   the same brand emerald in daylight. */
+:root:not(.dark) :is(h1, h2, h3, h4) > svg.text-muted-foreground:not(.dark *) {
+  color: var(--eyebrow-foreground);
 }
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));
