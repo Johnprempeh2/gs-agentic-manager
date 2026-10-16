@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CheckCircle2, Circle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { agentsApi } from "@/api/agents";
@@ -17,6 +18,9 @@ import { GLOSSARY } from "@/lib/glossary";
 import { queryKeys } from "@/lib/queryKeys";
 import { useLocation, useNavigate } from "@/lib/router";
 import { agentUrl } from "@/lib/utils";
+
+/** The four tours a new person should take first, in order. */
+export const START_HERE_TOUR_IDS = ["needed", "decisions", "tasks", "agents"] as const;
 
 type StartTarget = { path: string } | { nothing: string };
 
@@ -133,11 +137,53 @@ export function Tutorials() {
         {resetState === "done" ? "Every tutorial will open again the next time you visit its page." : null}
         {resetState === "failed" ? "Could not reset your tutorials. Try again in a moment." : null}
       </p>
+      {(() => {
+        const firstSteps = START_HERE_TOUR_IDS
+          .map((id) => tours.find((tour) => tour.id === id))
+          .filter((tour): tour is TourDefinition => !!tour);
+        if (loading || firstSteps.length === 0) return null;
+        const done = firstSteps.filter((tour) => isSeen(tour)).length;
+        const next = firstSteps.find((tour) => !isSeen(tour));
+        return (
+          <section className="space-y-3 rounded-lg border border-border bg-card p-4" aria-labelledby="start-here-title" data-testid="tutorials-start-here">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div className="space-y-0.5">
+                <h2 id="start-here-title" className="text-sm font-semibold text-foreground">Start here</h2>
+                <p className="text-sm text-muted-foreground">
+                  {next
+                    ? `Four short tours cover the everyday pages. ${done} of ${firstSteps.length} done.`
+                    : "You have taken the first four tours. The rest are below whenever you need them."}
+                </p>
+              </div>
+              {next ? (
+                <Button type="button" size="sm" onClick={() => start(next)} disabled={busy !== null || !selectedCompanyId}>
+                  {done === 0 ? `Begin with ${next.title}` : `Next: ${next.title}`}
+                </Button>
+              ) : null}
+            </div>
+            <ol className="grid gap-2 sm:grid-cols-2" aria-label="First tours">
+              {firstSteps.map((tour, index) => {
+                const seen = isSeen(tour) === true;
+                const Icon = seen ? CheckCircle2 : Circle;
+                return (
+                  <li key={tour.id} className="flex items-center gap-2 text-sm">
+                    <Icon className={seen ? "size-4 shrink-0 text-foreground" : "size-4 shrink-0 text-muted-foreground"} aria-hidden="true" />
+                    <span className={seen ? "text-muted-foreground" : "text-foreground"}>
+                      {index + 1}. {tour.title}
+                    </span>
+                    <span className="sr-only">{seen ? "(done)" : "(not done yet)"}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </section>
+        );
+      })()}
       {isFetched && tours.length === 0 ? (
         <p className="text-sm text-muted-foreground">No tutorials yet. They appear here when their features are switched on.</p>
       ) : (
         [
-          { label: "Everyday pages", note: "Start here if you are new. Each one takes under a minute.", list: tours.filter((tour) => tour.route) },
+          { label: "Everyday pages", note: "Short tours of the pages you will use most. Each one takes under a minute.", list: tours.filter((tour) => tour.route) },
           { label: "Features", note: "Tours of the features your organisation has switched on.", list: tours.filter((tour) => !tour.route) },
         ].filter((group) => group.list.length > 0).map((group) => (
           <section key={group.label} className="space-y-2" aria-label={group.label}>
