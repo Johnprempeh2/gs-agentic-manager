@@ -10,7 +10,7 @@ import type {
   FinanceEvent,
   QuotaWindow,
 } from "@greatstone/shared";
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, DollarSign, Download, ReceiptText } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Check, ChevronDown, ChevronRight, ClipboardList, Coins, DollarSign, Download, ReceiptText } from "lucide-react";
 import { budgetsApi } from "../api/budgets";
 import { costsApi } from "../api/costs";
 import { ApiEquivalentCard } from "../components/ApiEquivalentCard";
@@ -33,7 +33,8 @@ import { useCompany } from "../context/CompanyContext";
 import { useDateRange, PRESET_KEYS, PRESET_LABELS } from "../hooks/useDateRange";
 import { queryKeys } from "../lib/queryKeys";
 import { billingTypeDisplayName, cn, formatCents, formatTokens, providerDisplayName } from "../lib/utils";
-import { costsByAgentSheet, costsByProjectSheet, costsFileName } from "../lib/costs-export";
+import { costsByAgentSheet, costsByProjectSheet, costsFileName, costsUpdateText } from "../lib/costs-export";
+import { useCopyAction } from "../lib/use-copy-action";
 import { downloadBytes, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -256,6 +257,7 @@ export function Costs({
     onSuccess: invalidateBudgetViews,
   });
 
+  const costsCopy = useCopyAction();
   const { data: spendData, isLoading: spendLoading, error: spendError } = useQuery({
     queryKey: queryKeys.costs(companyId, from || undefined, to || undefined),
     queryFn: async () => {
@@ -607,6 +609,21 @@ export function Costs({
                 >
                   <Download className="size-3.5" />
                   Download as spreadsheet
+                </Button>
+              ) : null}
+              {spendData ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy spend against budget and the top agents and projects, ready to paste"
+                  onClick={() =>
+                    void costsCopy.copy(
+                      costsUpdateText(spendData, preset === "custom" && from && to ? `${from} to ${to}` : PRESET_LABELS[preset]),
+                    )
+                  }
+                >
+                  {costsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                  {costsCopy.copied ? "Copied" : costsCopy.failed ? "Could not copy" : "Copy as an update"}
                 </Button>
               ) : null}
               {PRESET_KEYS.map((key) => (

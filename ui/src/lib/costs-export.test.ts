@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { CostByAgent, CostByProject } from "@greatstone/shared";
-import { costsByAgentSheet, costsByProjectSheet, costsFileName } from "./costs-export";
+import { costsByAgentSheet, costsByProjectSheet, costsFileName, costsUpdateText } from "./costs-export";
 
 const agent = (overrides: Partial<CostByAgent>): CostByAgent => ({
   agentId: "a1",
@@ -46,5 +46,33 @@ describe("costsFileName", () => {
       "gre-costs-2026-10-01-to-2026-10-16.xlsx",
     );
     expect(costsFileName(null, undefined, undefined, "2026-10-16")).toBe("costs-all-time-2026-10-16.xlsx");
+  });
+});
+
+describe("costsUpdateText", () => {
+  it("gives spend against budget, then the top agents and projects", () => {
+    const text = costsUpdateText(
+      {
+        summary: { companyId: "c", spendCents: 12345, budgetCents: 50000, utilizationPercent: 25 },
+        byAgent: [
+          agent({ agentName: "Ridge", costCents: 8000, apiRunCount: 40 }),
+          agent({ agentId: "a2", agentName: "Idle", costCents: 0 }),
+          agent({ agentId: "a3", agentName: "Keystone", costCents: 4345, apiRunCount: 1 }),
+        ],
+        byProject: [{ projectId: null, projectName: null, costCents: 12345, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 }],
+      },
+      "Month to Date",
+    );
+    expect(text.split("\n")).toEqual([
+      "Spend, month to date",
+      "$123.45 of $500.00 budget (25%).",
+      "",
+      "Top agents",
+      "• Ridge: $80.00, 40 runs",
+      "• Keystone: $43.45, 1 run",
+      "",
+      "Top projects",
+      "• No project: $123.45",
+    ]);
   });
 });
