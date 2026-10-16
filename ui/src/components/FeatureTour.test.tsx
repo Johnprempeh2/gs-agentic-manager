@@ -77,7 +77,7 @@ function LocationProbe() {
 }
 
 /** A fresh render with a fresh query cache: a new page load (or another device, after localStorage.clear()). */
-async function render(url = "/page", onClose?: () => void) {
+async function render(url = "/page", onClose?: () => void, shown: TourDefinition = tour) {
   if (root) await act(async () => root?.unmount());
   container?.remove();
   container = document.createElement("div");
@@ -91,7 +91,7 @@ async function render(url = "/page", onClose?: () => void) {
             <>
               <div data-tour="one">one</div>
               <div data-tour="two">two</div>
-              <FeatureTour tour={tour} onClose={onClose} />
+              <FeatureTour tour={shown} onClose={onClose} />
               <LocationProbe />
             </>
           )} />
@@ -225,5 +225,54 @@ describe("FeatureTour", () => {
     await press("Escape");
     expect(card()).toBeNull();
     expect(document.activeElement?.textContent).toContain("Show me around");
+  });
+
+  describe("everyday page tours", () => {
+    const everyday: TourDefinition = {
+      id: "dashboard",
+      version: 1,
+      autoStart: false,
+      label: "Home",
+      title: "Home",
+      description: "An everyday page.",
+      steps: [
+        { title: "About this page", body: "General." },
+        { target: "one", title: "First", body: "One." },
+        { target: "missing", title: "Missing", body: "Not on the page." },
+      ],
+    };
+    const dot = () => document.querySelector('[data-testid="feature-tour-new-dot"]');
+
+    it("never opens by itself, and marks the button with a dot until seen", async () => {
+      flags.enablePipelines = false; // No switch: always on.
+      await render("/page", undefined, everyday);
+      expect(card()).toBeNull();
+      expect(dot()).not.toBeNull();
+      expect(button("Show me around")?.getAttribute("aria-label")).toContain("not seen yet");
+
+      await act(async () => button("Show me around")!.click());
+      expect(card()?.textContent).toContain("Step 1 of 2");
+      expect(card()?.textContent).toContain("About this page");
+      expect(document.querySelector("[data-tour-active]")).toBeNull(); // A general card points at nothing.
+      await act(async () => button("Next")!.click());
+      expect(document.querySelector('[data-tour="one"]')?.hasAttribute("data-tour-active")).toBe(true);
+      await act(async () => button("Done")!.click());
+      await flush();
+      expect(dot()).toBeNull();
+      expect(server.rows.map((row) => row.tourKey)).toEqual(["dashboard"]);
+    });
+
+    it("still starts from ?tour= on an everyday page", async () => {
+      await render("/page?tour=dashboard", undefined, everyday);
+      expect(card()?.textContent).toContain("About this page");
+      expect(search).toBe("");
+    });
+
+    it("shows the general cards when asked even if none of the page's elements are there", async () => {
+      const bare: TourDefinition = { ...everyday, steps: [everyday.steps[0], everyday.steps[2]] };
+      await render("/page", undefined, bare);
+      await act(async () => button("Show me around")!.click());
+      expect(card()?.textContent).toContain("Step 1 of 1");
+    });
   });
 });
