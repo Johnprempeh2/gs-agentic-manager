@@ -74,7 +74,7 @@ describe("gsam image", () => {
     }));
 
     const run = createProgram().parseAsync(
-      ["image", "generate", "--prompt", "A lighthouse at dawn", "--shape", "wide", "--issue-id", ISSUE_ID,
+      ["image", "generate", "--prompt", "A lighthouse at dawn", "--shape", "wide", "--style", "Social post", "--issue-id", ISSUE_ID,
         "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "agent-token"],
       { from: "user" },
     );
@@ -82,7 +82,12 @@ describe("gsam image", () => {
     await run;
 
     const create = calls[0]!;
-    expect(JSON.parse(String(create.init?.body))).toEqual({ prompt: "A lighthouse at dawn", aspectRatio: "16:9" });
+    expect(JSON.parse(String(create.init?.body))).toEqual({
+      prompt: "A lighthouse at dawn",
+      aspectRatio: "16:9",
+      style: "social-post",
+      issueId: ISSUE_ID,
+    });
     const upload = calls.find((call) => call.url.endsWith("/attachments"))!;
     expect(upload.init?.method).toBe("POST");
     expect((upload.init?.headers as Record<string, string>)["x-paperclip-run-id"]).toBe("run-1");

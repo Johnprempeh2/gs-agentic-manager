@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GENERATED_IMAGE_PROMPT_MIN_LENGTH, type GeneratedImage, type ImageAspectRatio } from "@greatstone/shared";
+import {
+  GENERATED_IMAGE_PROMPT_MIN_LENGTH,
+  type GeneratedImage,
+  type ImageAspectRatio,
+  type ImageStylePresetId,
+} from "@greatstone/shared";
 import { AlertCircle, Check, ImageIcon, Loader2, PaperclipIcon, RotateCcw, Wand2 } from "lucide-react";
 import { imagesApi } from "../api/images";
 import { ApiError } from "../api/client";
@@ -48,6 +53,8 @@ interface MakeImageDialogProps {
   onAttach: (file: File) => Promise<unknown>;
   /** Names the place, for the button and the copy: "this task". */
   attachLabel?: string;
+  /** Links the image to this task, so the gallery can show where it came from. */
+  issueId?: string | null;
 }
 
 type Step = "compose" | "making" | "ready" | "failed" | "attached";
@@ -56,11 +63,19 @@ type Step = "compose" | "making" | "ready" | "failed" | "attached";
  * Make an image without leaving the page: describe it, wait, then add it to the
  * task. The image is also kept in Images, so nothing is lost if the dialog closes.
  */
-export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attachLabel = "this task" }: MakeImageDialogProps) {
+export function MakeImageDialog({
+  companyId,
+  open,
+  onOpenChange,
+  onAttach,
+  attachLabel = "this task",
+  issueId = null,
+}: MakeImageDialogProps) {
   const queryClient = useQueryClient();
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("16:9");
+  const [style, setStyle] = useState<ImageStylePresetId | null>(null);
   const [imageId, setImageId] = useState<string | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attached, setAttached] = useState(false);
@@ -80,7 +95,13 @@ export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attac
   });
 
   const create = useMutation({
-    mutationFn: () => imagesApi.create(companyId, { prompt: prompt.trim(), aspectRatio }),
+    mutationFn: () =>
+      imagesApi.create(companyId, {
+        prompt: prompt.trim(),
+        aspectRatio,
+        ...(style ? { style } : {}),
+        ...(issueId ? { issueId } : {}),
+      }),
     onSuccess: (image) => {
       setImageId(image.id);
       queryClient.setQueryData(queryKeys.images.detail(image.id), image);
@@ -139,6 +160,8 @@ export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attac
               onPromptChange={setPrompt}
               aspectRatio={aspectRatio}
               onAspectRatioChange={setAspectRatio}
+              style={style}
+              onStyleChange={setStyle}
               onSubmitShortcut={submit}
               compact
             />
@@ -237,11 +260,13 @@ export function MakeImageButton({
   onAttach,
   attachLabel,
   disabled,
+  issueId,
 }: {
   companyId: string;
   onAttach: (file: File) => Promise<unknown>;
   attachLabel?: string;
   disabled?: boolean;
+  issueId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const status = useQuery({
@@ -265,7 +290,14 @@ export function MakeImageButton({
         <span className="hidden sm:inline">Make an image</span>
         <span className="sm:hidden">Image</span>
       </Button>
-      <MakeImageDialog companyId={companyId} open={open} onOpenChange={setOpen} onAttach={onAttach} attachLabel={attachLabel} />
+      <MakeImageDialog
+        companyId={companyId}
+        open={open}
+        onOpenChange={setOpen}
+        onAttach={onAttach}
+        attachLabel={attachLabel}
+        issueId={issueId}
+      />
     </>
   );
 }

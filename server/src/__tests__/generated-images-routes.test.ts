@@ -1,8 +1,8 @@
 import request from "supertest";
 import { eq } from "drizzle-orm";
-import { activityLog, assets, generatedImages } from "@greatstone/db";
+import { activityLog, assets, generatedImages, issues, organisations } from "@greatstone/db";
 import { expect, it } from "vitest";
-import type { GeneratedImage, GeneratedImagesResponse } from "@greatstone/shared";
+import { IMAGE_STYLE_PRESETS, type GeneratedImage, type GeneratedImagesResponse } from "@greatstone/shared";
 import { generatedImageRoutes } from "../routes/generated-images.js";
 import { waitForGeneratedImageJobs } from "../services/generated-images.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "../services/image-generation/types.js";
@@ -116,6 +116,59 @@ describeEmbeddedPostgres("generated images routes", () => {
     expect(removed.status).toBe(204);
     expect(objects.size).toBe(0);
     expect(await ctx.db.select().from(assets)).toHaveLength(0);
+  });
+
+  it("adds the style guidance for the provider, links the task and client, and searches", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images styled");
+    const other = await seedCompanyWithBoardAccess(ctx.db, "Images other");
+    const [task] = await ctx.db.insert(issues).values({ companyId, title: "Spring campaign deck" }).returning();
+    const [client] = await ctx.db.insert(organisations).values({ companyId, name: "Ethical Quest" }).returning();
+    const [otherTask] = await ctx.db.insert(issues).values({ companyId: other.companyId, title: "Not yours" }).returning();
+    const { storage } = memoryStorage();
+    const seen: string[] = [];
+    const server = app(actor, storage, () =>
+      provider(async (input) => {
+        seen.push(input.prompt);
+        return { image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null };
+      }),
+    );
+
+    const styled = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A mountain path at sunrise", style: "greatstone-brand", issueId: task!.id, organisationId: client!.id });
+    expect(styled.status).toBe(202);
+    expect(styled.body).toMatchObject({
+      prompt: "A mountain path at sunrise",
+      style: "greatstone-brand",
+      issue: { id: task!.id, title: "Spring campaign deck" },
+      organisation: { id: client!.id, name: "Ethical Quest" },
+    });
+    await request(server).post(`/api/companies/${companyId}/generated-images`).send({ prompt: "Office plants by a window" });
+    await waitForGeneratedImageJobs();
+
+    const brand = IMAGE_STYLE_PRESETS.find((preset) => preset.id === "greatstone-brand")!;
+    expect(seen).toContain(`A mountain path at sunrise. ${brand.guidance}`);
+    expect(seen).toContain("Office plants by a window");
+
+    const search = await request(server).get(`/api/companies/${companyId}/generated-images?q=MOUNTAIN`);
+    expect((search.body as GeneratedImagesResponse).images.map((image) => image.prompt)).toEqual(["A mountain path at sunrise"]);
+    const byTask = await request(server).get(`/api/companies/${companyId}/generated-images?issueId=${task!.id}`);
+    expect((byTask.body as GeneratedImagesResponse).total).toBe(1);
+    const byClient = await request(server).get(`/api/companies/${companyId}/generated-images?organisationId=${client!.id}`);
+    expect((byClient.body as GeneratedImagesResponse).images[0]?.organisation?.name).toBe("Ethical Quest");
+    const wildcard = await request(server).get(`/api/companies/${companyId}/generated-images?q=%25`);
+    expect((wildcard.body as GeneratedImagesResponse).total).toBe(0);
+
+    const foreign = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "Sneaky", issueId: otherTask!.id });
+    expect(foreign.status).toBe(422);
+    expect(foreign.body.details.code).toBe("generated_image_issue_not_found");
+
+    const badStyle = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "Anything", style: "neon-cyberpunk" });
+    expect(badStyle.status).toBe(400);
   });
 
   it("records a plain reason when the provider fails", async () => {

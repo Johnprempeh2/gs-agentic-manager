@@ -21,6 +21,7 @@ task comment and ask the board to set one up; do not try other services.
 gsam image generate \
   --prompt "Flat illustration of a lighthouse at dawn, warm colours, no text" \
   --shape wide \
+  --style greatstone-brand \
   --issue-id "$GSAM_TASK_ID"
 ```
 
@@ -30,6 +31,12 @@ task. Shapes: `square` (1:1, social posts), `wide` (16:9, slides and banners),
 posters). Add `--out ./image.png` to keep a local copy, for example to put it
 in a document you are building.
 
+`--style` is optional and adds tested wording for a look: `greatstone-brand`
+(charcoal and neon lime, for Greatstone's own material), `client-proposal`,
+`social-post`, `photo` or `illustration`. Leave it out to use only your words.
+`--issue-id` also links the image to the task, so the board sees it in Images
+next to that task.
+
 ## With curl
 
 1. Ask for the image. The reply is `202` with `status: "pending"`:
@@ -38,8 +45,10 @@ in a document you are building.
    curl -sS -X POST "$GSAM_API_URL/api/companies/$GSAM_COMPANY_ID/generated-images" \
      -H "Authorization: Bearer $GSAM_API_KEY" \
      -H "Content-Type: application/json" \
-     -d '{"prompt": "Flat illustration of a lighthouse at dawn", "aspectRatio": "16:9"}'
+     -d '{"prompt": "Flat illustration of a lighthouse at dawn", "aspectRatio": "16:9", "style": "illustration", "issueId": "'"$GSAM_TASK_ID"'"}'
    ```
+
+   `style`, `issueId` and `organisationId` (the client) are optional.
 
 2. Poll `GET /api/generated-images/{id}` every few seconds until `status` is
    `completed` (then `contentPath` is `/api/assets/{assetId}/content`) or
