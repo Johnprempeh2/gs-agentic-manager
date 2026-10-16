@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "@/api/auth";
 import { navigateTopLevel } from "@/lib/browserNavigation";
+import { clearSnapshots } from "@/lib/offline-snapshot";
 import { queryKeys } from "@/lib/queryKeys";
 import { useCloudInstance } from "./useCloudInstance";
 
@@ -46,6 +47,8 @@ export function useSignOut({ onSignedOut }: UseSignOutOptions = {}) {
 
   return useMutation({
     mutationFn: async () => {
+      // Lists saved for offline use belong to this account: gone before anything else.
+      clearSnapshots();
       if (cloud) {
         onSignedOut?.();
         navigateTopLevel(CLOUD_SIGN_OUT_PATH);

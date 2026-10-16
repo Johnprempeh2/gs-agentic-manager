@@ -35,6 +35,7 @@ import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { ConnectionNotice } from "./ConnectionNotice";
 import { NeedsYouAlert } from "./NeedsYouAlert";
+import { OfflineSnapshotSaver } from "./OfflineSnapshotSaver";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
@@ -657,6 +658,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <DevRestartBanner devServer={health?.devServer} />
       <ConnectionNotice />
       <NeedsYouAlert />
+      <OfflineSnapshotSaver />
       <div className={cn("min-h-0 flex-1 print:block print:overflow-visible", isMobile ? "w-full" : "flex overflow-clip")}>
         {isMobile && sidebarOpen && (
           <button
