@@ -31,6 +31,9 @@ function workflowEnv(envOverrides = {}) {
   if (!("GITHUB_WORKFLOW" in envOverrides)) {
     delete env.GITHUB_WORKFLOW;
   }
+  if (!("GSAM_SKIP_NATIVE_RUNNER_SUITE" in envOverrides)) {
+    delete env.GSAM_SKIP_NATIVE_RUNNER_SUITE;
+  }
   return env;
 }
 
@@ -292,6 +295,23 @@ test("12 PR without-chat shards plus the dedicated chat and native-runner lanes 
   assert.equal(new Set(files).size, files.length);
   const defaultRun = dryRunJson([], prEnv);
   assert.ok(defaultRun.generalServerSuiteCount === full.generalServerSuiteCount);
+});
+
+// Mirrors fork-ci.yml's server-tests lane: no Rust toolchain, so it sets
+// GSAM_SKIP_NATIVE_RUNNER_SUITE=1 and the native-runner suite stays in the
+// manual full run.
+test("3 fork CI server shards with the native-runner suite skipped cover the server group with chat and native runner", () => {
+  const forkEnv = { GSAM_SKIP_NATIVE_RUNNER_SUITE: "1" };
+  const full = dryRunJson(["--mode", "general", "--group", "general-server", "--shard-index", "0", "--shard-count", "1"], forkEnv);
+  const shards = Array.from({ length: 3 }, (_, index) => dryRunJson([
+    "--mode", "general", "--group", "general-server-without-chat",
+    "--shard-index", String(index), "--shard-count", "3",
+  ], forkEnv));
+  const files = shards.flatMap((shard) => shard.selectedGeneralServerSuites);
+  assert.ok(!files.includes(chatSuitePath));
+  assert.ok(!files.includes(nativeRunnerSuitePath));
+  assert.deepEqual([...files, chatSuitePath, nativeRunnerSuitePath].sort(), full.selectedGeneralServerSuites.sort());
+  assert.equal(new Set(files).size, files.length);
 });
 
 // Mirrors release-verify.yml (10 shards, called by the Release and Cloud
