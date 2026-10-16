@@ -25,6 +25,7 @@ import {
   agentSkillSyncSchema,
   agentMineInboxQuerySchema,
   ADAPTER_AGNOSTIC_KEYS,
+  pickAgentAccessGrants,
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   createAgentKeySchema,
   createAgentHireSchema,
@@ -5429,6 +5430,12 @@ export function agentRoutes(
             rawEffectiveAdapterConfig = { ...rawEffectiveAdapterConfig, [key]: existingAdapterConfig[key] };
           }
         }
+        // `access.<ALIAS>` secret grants are agent-level too (GRE-1609); dropping
+        // them here deleted the agent's binding rows on every adapter switch.
+        rawEffectiveAdapterConfig = {
+          ...pickAgentAccessGrants(existingAdapterConfig),
+          ...rawEffectiveAdapterConfig,
+        };
         rawEffectiveAdapterConfig = preserveInstructionsBundleConfig(
           existingAdapterConfig,
           rawEffectiveAdapterConfig,

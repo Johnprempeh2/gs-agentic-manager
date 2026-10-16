@@ -1,4 +1,4 @@
-import { ADAPTER_AGNOSTIC_KEYS, type Agent } from "@greatstone/shared";
+import { ADAPTER_AGNOSTIC_KEYS, pickAgentAccessGrants, type Agent } from "@greatstone/shared";
 
 export interface AgentConfigOverlay {
   identity: Record<string, unknown>;
@@ -36,6 +36,7 @@ export function buildAgentUpdatePatch(agent: Agent, overlay: AgentConfigOverlay)
                 .filter((key) => existing[key] !== undefined)
                 .map((key) => [key, existing[key]]),
             ),
+            ...pickAgentAccessGrants(existing),
             ...overlay.adapterConfig,
           }
         : {

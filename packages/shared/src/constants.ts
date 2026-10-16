@@ -92,6 +92,18 @@ export const ADAPTER_AGNOSTIC_KEYS = [
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
 
+// Top-level `access.<ALIAS>` adapterConfig keys are the agent's API-only secret
+// grants. They belong to the agent, not one adapter, so they survive adapter swaps.
+export const AGENT_ACCESS_CONFIG_PATH_PREFIX = "access.";
+
+export function pickAgentAccessGrants(adapterConfig: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(adapterConfig).filter(
+      ([key, value]) => key.startsWith(AGENT_ACCESS_CONFIG_PATH_PREFIX) && value !== undefined,
+    ),
+  );
+}
+
 export const AGENT_ICON_NAMES = [
   "bot",
   "cpu",
