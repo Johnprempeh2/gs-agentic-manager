@@ -28,6 +28,10 @@ import {
   testClaudeAcpEnvironment,
 } from "./acp.js";
 
+// The stand-in sandbox runner below uses local runChildProcess; a real
+// provider runs these commands remotely, outside the agent secret shield.
+process.env.GSAM_AGENT_SECRET_SHIELD = "off";
+
 // A local stand-in for a sandbox runner: runs the managed-runtime staging
 // scripts (mkdir/tar/find) as real child processes so the remote ACP lane can
 // be exercised end-to-end against the host filesystem.

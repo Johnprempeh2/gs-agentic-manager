@@ -1,6 +1,7 @@
 import { and, desc, eq, gte, inArray, isNotNull, lt, lte, ne, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
+  agentWakeupRequests,
   agents,
   approvals,
   budgetIncidents,
@@ -47,7 +48,40 @@ export type BudgetServiceHooks = {
   cancelWorkForScope?: (scope: BudgetEnforcementScope) => Promise<void>;
   /** Once per hard incident, after the scope is paused: tell the open work why it stopped. */
   noticeHardStop?: (scope: BudgetEnforcementScope) => Promise<void>;
+  /** After the scope resumes: wake each task its hard stop held, once (GRE-1365). */
+  releaseHeldWorkForScope?: (scope: BudgetEnforcementScope) => Promise<void>;
 };
+
+/**
+ * Wake statuses of task work kept at a budget hard stop in hold mode
+ * (GRE-1365). `budget_releasing` is a release in flight; it still counts.
+ */
+export const BUDGET_HELD_WAKE_STATUSES = ["budget_held", "budget_releasing"] as const;
+
+/** Tasks held at a hard stop, by scope: one per agent and task, however many wakes. */
+async function countHeldTasks(db: Db, companyId: string, scope?: { scopeType: BudgetScopeType; scopeId: string }) {
+  const heldIssueId = sql`${agentWakeupRequests.payload} ->> 'issueId'`;
+  const conditions = [
+    eq(agentWakeupRequests.companyId, companyId),
+    inArray(agentWakeupRequests.status, [...BUDGET_HELD_WAKE_STATUSES]),
+  ];
+  if (scope?.scopeType === "agent") conditions.push(eq(agentWakeupRequests.agentId, scope.scopeId));
+  if (scope?.scopeType === "project") {
+    conditions.push(sql`exists (
+      select 1 from issues held_issue
+      where held_issue.company_id = ${companyId}
+        and held_issue.id::text = ${heldIssueId}
+        and held_issue.project_id = ${scope.scopeId}
+    )`);
+  }
+  const [row] = await db
+    .select({
+      count: sql<number>`count(distinct (${agentWakeupRequests.agentId}::text || ':' || coalesce(${heldIssueId}, '')))::int`,
+    })
+    .from(agentWakeupRequests)
+    .where(and(...conditions));
+  return Number(row?.count ?? 0);
+}
 
 function currentUtcMonthWindow(now = new Date()) {
   const year = now.getUTCFullYear();
@@ -289,6 +323,22 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
   }
 
   async function resumeScopeFromBudget(policy: PolicyRow) {
+    await resumeScopeRowsFromBudget(policy);
+    // Hold mode (GRE-1365): the release checks each held task's gate again, so
+    // a task another budget still stops stays held. It never fails the raise;
+    // the heartbeat sweep releases anything this call missed.
+    try {
+      await hooks.releaseHeldWorkForScope?.({
+        companyId: policy.companyId,
+        scopeType: policy.scopeType as BudgetScopeType,
+        scopeId: policy.scopeId,
+      });
+    } catch (err) {
+      logger.warn({ err, policyId: policy.id }, "held budget work not released yet; the sweep retries");
+    }
+  }
+
+  async function resumeScopeRowsFromBudget(policy: PolicyRow) {
     const now = new Date();
     if (policy.scopeType === "agent") {
       await db
@@ -378,6 +428,10 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
       windowEnd: end,
       pendingAmount: pending?.amount ?? null,
       pendingEffectiveFrom: pending ? storedPolicy.pendingEffectiveFrom : null,
+      heldTaskCount: await countHeldTasks(db, policy.companyId, {
+        scopeType: policy.scopeType as BudgetScopeType,
+        scopeId: policy.scopeId,
+      }),
     };
   }
 
@@ -827,6 +881,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         pausedAgentCount: policies.filter((policy) => policy.scopeType === "agent" && policy.paused).length,
         pausedProjectCount: policies.filter((policy) => policy.scopeType === "project" && policy.paused).length,
         pendingApprovalCount: activeIncidents.filter((incident) => incident.approvalStatus === "pending").length,
+        heldTaskCount: await countHeldTasks(db, companyId),
       };
     },
 

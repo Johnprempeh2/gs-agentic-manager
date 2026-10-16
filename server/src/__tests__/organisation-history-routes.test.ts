@@ -220,7 +220,7 @@ describeEmbeddedPostgres("organisation history route (GRE-1480)", () => {
     const acme = await seedOrganisation(companyId, "Acme Mining");
     const res = await request(app()).get(`/api/companies/${companyId}/organisations/${acme.id}/history`);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ organisationId: acme.id, lastContactAt: null, cases: [], timeline: [] });
+    expect(res.body).toEqual({ organisationId: acme.id, lastContactAt: null, cases: [], timeline: [], files: [] });
   });
 
   it("keeps each company's history to itself", async () => {

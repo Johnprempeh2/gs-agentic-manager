@@ -40,6 +40,11 @@ import {
   WATCHDOG_DEFAULT_MANDATE,
 } from "./server-utils.js";
 
+// These cases assert host-visible child PIDs, which a bwrap PID namespace
+// hides. The wrapped behaviour has its own suite in
+// local-process-secret-shield.test.ts.
+process.env.GSAM_AGENT_SECRET_SHIELD = "off";
+
 describe("runtime connection tool delivery", () => {
   const access = {
     version: 1 as const,

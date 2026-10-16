@@ -1315,7 +1315,13 @@ async function startServerWithDatabaseTeardown(
   // (started in app.ts) delivers them on its own tick.
   const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
   const budgets = budgetService(db, heartbeat
-    ? { cancelWorkForScope: heartbeat.cancelBudgetScopeWork, noticeHardStop: heartbeat.noticeBudgetHardStop }
+    ? {
+        cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
+        noticeHardStop: heartbeat.noticeBudgetHardStop,
+        // A dated raise (GRE-1363) releases held work (GRE-1365) when it applies.
+        releaseHeldWorkForScope: (scope: { companyId: string }) =>
+          heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
+      }
     : {});
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
@@ -1517,6 +1523,25 @@ async function startServerWithDatabaseTeardown(
           logger.error({ err }, "deliverable link check failed");
         })
         .finally(() => { deliverableLinkCheckInFlight = false; }));
+    };
+    // Hold at a budget hard stop (GRE-1365): wake each held task once its
+    // scope resumes. The resume itself releases at once; this catches a
+    // resume path without the release hook, a crash or a failed wake.
+    let budgetHoldReleaseInFlight = false;
+    const scheduleBudgetHoldReleaseSweep = () => {
+      if (heartbeatSchedulerStopped || budgetHoldReleaseInFlight) return;
+      budgetHoldReleaseInFlight = true;
+      trackHeartbeatSchedulerWork(heartbeat
+        .releaseBudgetHeldWork()
+        .then((result) => {
+          if (result.released + result.dropped + result.failed > 0) {
+            logger.info(result, "budget hold sweep released held tasks");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "budget hold sweep failed");
+        })
+        .finally(() => { budgetHoldReleaseInFlight = false; }));
     };
     const scheduleSupportClockSweep = () => {
       if (heartbeatSchedulerStopped) return;
@@ -1796,18 +1821,36 @@ async function startServerWithDatabaseTeardown(
           return;
         }
 
-        const promotion = await heartbeat.promoteDueScheduledRetries();
-        await heartbeat.resumeQueuedRuns();
-        await recoverSessionGoals("startup");
-        const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
+        // Each recovery step stands alone: one that fails is logged and the
+        // rest still run, and the server keeps starting. The periodic recovery
+        // retries them on its next tick. A failure here once stopped live from
+        // starting at all (16 Oct 2026).
+        const recoveryStep = async <T>(step: string, run: () => Promise<T>): Promise<T | null> => {
+          try {
+            return await run();
+          } catch (err) {
+            logger.error({ err, step }, "startup heartbeat recovery step failed; continuing startup");
+            return null;
+          }
+        };
+
+        const promotion = (await recoveryStep("promoteDueScheduledRetries", () =>
+          heartbeat.promoteDueScheduledRetries(),
+        )) ?? { promoted: 0, runIds: [] };
+        await recoveryStep("resumeQueuedRuns", () => heartbeat.resumeQueuedRuns());
+        await recoveryStep("recoverSessionGoals", () => recoverSessionGoals("startup"));
+        const reconciled = await recoveryStep("reconcileStrandedAssignedIssues", () =>
+          heartbeat.reconcileStrandedAssignedIssues(),
+        );
         if (
           promotion.promoted > 0 ||
-          reconciled.assignmentDispatched > 0 ||
-          reconciled.dispatchRequeued > 0 ||
-          reconciled.continuationRequeued > 0 ||
-          reconciled.successfulRunHandoffEscalated > 0 ||
-          reconciled.successfulRunHandoffRetried > 0 ||
-          reconciled.escalated > 0
+          (reconciled !== null &&
+            (reconciled.assignmentDispatched > 0 ||
+              reconciled.dispatchRequeued > 0 ||
+              reconciled.continuationRequeued > 0 ||
+              reconciled.successfulRunHandoffEscalated > 0 ||
+              reconciled.successfulRunHandoffRetried > 0 ||
+              reconciled.escalated > 0))
         ) {
           logger.warn(
             { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds, ...reconciled },
@@ -1815,29 +1858,33 @@ async function startServerWithDatabaseTeardown(
           );
         }
 
-        const dependencyWakesReconciled = await heartbeat.reconcileResolvedDependencyWakes();
-        if (dependencyWakesReconciled.healed > 0) {
+        const dependencyWakesReconciled = await recoveryStep("reconcileResolvedDependencyWakes", () =>
+          heartbeat.reconcileResolvedDependencyWakes(),
+        );
+        if (dependencyWakesReconciled && dependencyWakesReconciled.healed > 0) {
           logger.warn(
             { ...dependencyWakesReconciled },
             "startup dependency-wake reconciliation restored task execution paths",
           );
         }
 
-        const taskWatchdogsReconciled = await heartbeat.reconcileTaskWatchdogs();
-        if (taskWatchdogsReconciled.triggered > 0) {
+        const taskWatchdogsReconciled = await recoveryStep("reconcileTaskWatchdogs", () =>
+          heartbeat.reconcileTaskWatchdogs(),
+        );
+        if (taskWatchdogsReconciled && taskWatchdogsReconciled.triggered > 0) {
           logger.warn(
             { ...taskWatchdogsReconciled },
             "startup task-watchdog reconciliation triggered watchdog work",
           );
         }
 
-        const scanned = await heartbeat.scanSilentActiveRuns();
-        if (scanned.created > 0 || scanned.escalated > 0 || (scanned.silentStops?.stopped ?? 0) > 0) {
+        const scanned = await recoveryStep("scanSilentActiveRuns", () => heartbeat.scanSilentActiveRuns());
+        if (scanned && (scanned.created > 0 || scanned.escalated > 0 || (scanned.silentStops?.stopped ?? 0) > 0)) {
           logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
         }
 
-        const swept = await heartbeat.sweepStaleIssueLocks();
-        if (swept.cleared > 0) {
+        const swept = await recoveryStep("sweepStaleIssueLocks", () => heartbeat.sweepStaleIssueLocks());
+        if (swept && swept.cleared > 0) {
           logger.warn({ ...swept }, "startup stale-lock sweeper cleared issue locks");
         }
       })().catch((err) => {
@@ -1943,6 +1990,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
         scheduleSupportClockSweep();
+        scheduleBudgetHoldReleaseSweep();
         scheduleDeliverableLinkCheck();
         scheduleUnrecordedWorktreeSweep();
         scheduleRunProcessSweep();

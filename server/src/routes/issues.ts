@@ -7226,6 +7226,8 @@ export function issueRoutes(
       Awaited<ReturnType<typeof recoveryActionsSvc.getActiveForIssue>>
     >;
     dbOrTx?: Db;
+    /** The resolution keeps the task in review, so a pending review stage is expected. */
+    keepsPendingReviewStage?: boolean;
   }) {
     const dbOrTx = input.dbOrTx ?? db;
     const returnOwnerAgentId = input.recoveryAction.returnOwnerAgentId;
@@ -7264,6 +7266,7 @@ export function issueRoutes(
       );
     }
     if (
+      !input.keepsPendingReviewStage &&
       parseIssueExecutionState(input.issue.executionState)?.status === "pending"
     ) {
       throw conflict(
@@ -9690,6 +9693,15 @@ export function issueRoutes(
 
       const actor = getActorInfo(req);
       const actionStatus = outcome === "cancelled" ? "cancelled" : "resolved";
+      // A held task that is in review keeps its review. Clearing the hold
+      // records what the stopped run did and leaves the review stage pending,
+      // so the reviewer picks it up again. It never moves the task back to
+      // todo, which would bypass the review (GRE-1190, 16 Oct 2026).
+      const keepsPendingReview = (issue: { status: string; executionState?: unknown }) =>
+        outcome === "restored" &&
+        sourceIssueStatus === "in_review" &&
+        issue.status === "in_review" &&
+        parseIssueExecutionState(issue.executionState)?.status === "pending";
       const postCommitActivityPublications: ActivityPublication[] = [];
       const postCommitIssueActions: IssuePostCommitAction[] = [];
       // Every read in this transaction goes through `tx`. A read through the
@@ -9750,7 +9762,7 @@ export function issueRoutes(
               );
               if (
                 activeRecoveryAction ||
-                sourceIssueStatus !== "todo" ||
+                (sourceIssueStatus !== "todo" && !keepsPendingReview(lockedIssue)) ||
                 outcome !== "restored"
               ) {
                 throw conflict(
@@ -9847,8 +9859,22 @@ export function issueRoutes(
           }
         }
 
+        const reconcilesInReview =
+          keepsPendingReview(lockedIssue) &&
+          requiresExecutionReconciliation(activeRecoveryAction.cause);
+        if (reconcilesInReview) {
+          // The same gates as a hand-back to todo, except the pending review
+          // stage, which this resolution keeps instead of bypassing.
+          await assertSafeRecoveryHandBackGates({
+            req,
+            issue: lockedIssue,
+            recoveryAction: activeRecoveryAction,
+            dbOrTx: tx as unknown as Db,
+            keepsPendingReviewStage: true,
+          });
+        }
         if (
-          sourceIssueStatus === "todo" &&
+          (sourceIssueStatus === "todo" || reconcilesInReview) &&
           requiresExecutionReconciliation(activeRecoveryAction.cause)
         ) {
           await assertBoardOrManagerOfAgentOnlyTask(

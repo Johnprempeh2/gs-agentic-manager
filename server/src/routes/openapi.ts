@@ -8359,7 +8359,7 @@ registry.registerPath({
   path: "/api/board/chat/stream",
   tags: ["instance"],
   summary:
-    "Stream a board-level chat response (requires enableConferenceRoomChat)",
+    "Stream a board-level chat response",
   request: {
     body: jsonBody(
       z.object({
@@ -8384,7 +8384,7 @@ registry.registerPath({
   path: "/api/board/chat/issue",
   tags: ["instance"],
   summary:
-    "Find or create the board conversation's issue, so files can be attached before the first message (requires enableConferenceRoomChat)",
+    "Find or create the board conversation's issue, so files can be attached before the first message",
   request: { body: jsonBody(z.object({ companyId: z.string() })) },
   responses: {
     200: r.ok(z.object({ issueId: z.string() })),
@@ -14380,6 +14380,22 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/organisations/{organisationId}/history",
   tags: ["organisations"],
   summary: "Get an organisation's change history",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts/unassigned",
+  tags: ["organisations"],
+  summary: "List people with no organisation (CRM imports)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-files/{fileId}/content",
+  tags: ["organisations"],
+  summary: "Download a file copied from a CRM import",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 

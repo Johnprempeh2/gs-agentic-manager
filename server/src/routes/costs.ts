@@ -79,6 +79,8 @@ export function costRoutes(
   const budgetHooks = {
     cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
     noticeHardStop: heartbeat.noticeBudgetHardStop,
+    releaseHeldWorkForScope: (scope: { companyId: string }) =>
+      heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
   };
   const costs = costService(db, budgetHooks);
   const ledger = costLedgerService(db);

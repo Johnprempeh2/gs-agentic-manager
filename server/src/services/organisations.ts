@@ -191,6 +191,7 @@ export function organisationService(db: Db) {
         .orderBy(desc(organisationContacts.isKeyContact), asc(organisationContacts.name));
       const byOrganisation = new Map<string, ContactRow[]>();
       for (const contact of contacts) {
+        if (!contact.organisationId) continue;
         const list = byOrganisation.get(contact.organisationId) ?? [];
         list.push(contact);
         byOrganisation.set(contact.organisationId, list);
@@ -206,6 +207,20 @@ export function organisationService(db: Db) {
           contactCount: own.length,
         };
       });
+    },
+
+    /** People with no organisation (imported from a CRM that held them on their own), by name. */
+    async listUnassignedContacts(companyId: string): Promise<OrganisationContact[]> {
+      const rows = await db
+        .select()
+        .from(organisationContacts)
+        .where(and(
+          eq(organisationContacts.companyId, companyId),
+          isNull(organisationContacts.organisationId),
+          isNull(organisationContacts.archivedAt),
+        ))
+        .orderBy(asc(organisationContacts.name));
+      return rows.map(toContact);
     },
 
     async getDetail(companyId: string, id: string): Promise<OrganisationDetail | null> {

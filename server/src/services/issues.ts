@@ -7594,13 +7594,14 @@ export function issueService(db: Db) {
     }));
   }
 
-  async function assertNoBlockingCycles(
+  /** The blockers in `blockerIssueIds` that `issueId` already blocks, directly or through other tasks. */
+  async function findCyclicBlockers(
     companyId: string,
     issueId: string,
     blockerIssueIds: string[],
     dbOrTx: DbReader = db,
-  ) {
-    if (blockerIssueIds.length === 0) return;
+  ): Promise<string[]> {
+    if (blockerIssueIds.length === 0) return [];
 
     const rows = await dbOrTx
       .select({
@@ -7622,19 +7623,22 @@ export function issueService(db: Db) {
       adjacency.set(row.blockerIssueId, list);
     }
 
+    const cyclic: string[] = [];
     for (const blockerIssueId of blockerIssueIds) {
       const queue = [...(adjacency.get(issueId) ?? [])];
       const visited = new Set<string>([issueId]);
       while (queue.length > 0) {
         const current = queue.shift()!;
         if (current === blockerIssueId) {
-          throw unprocessable("Blocking relations cannot contain cycles");
+          cyclic.push(blockerIssueId);
+          break;
         }
         if (visited.has(current)) continue;
         visited.add(current);
         queue.push(...(adjacency.get(current) ?? []));
       }
     }
+    return cyclic;
   }
 
   async function syncBlockedByIssueIds(
@@ -7668,7 +7672,39 @@ export function issueService(db: Db) {
           "Blocked-by issues must belong to the same company",
         );
       }
-      await assertNoBlockingCycles(companyId, issueId, deduped, dbOrTx);
+      // Only a blocker this write adds can be refused for making a cycle.
+      // Re-saving blockers the task already has (recovery does this on every
+      // startup) must not fail on a cycle that is already in the data, or one
+      // bad pair of tasks stops the server from starting (16 Oct 2026).
+      const existingBlockerIds = new Set<string>(
+        await dbOrTx
+          .select({ id: issueRelations.issueId })
+          .from(issueRelations)
+          .where(
+            and(
+              eq(issueRelations.companyId, companyId),
+              eq(issueRelations.relatedIssueId, issueId),
+              eq(issueRelations.type, "blocks"),
+            ),
+          )
+          .then((rows: Array<{ id: string }>) => rows.map((row) => row.id)),
+      );
+      const addedBlockerIds = deduped.filter((id) => !existingBlockerIds.has(id));
+      const addedCyclic = await findCyclicBlockers(companyId, issueId, addedBlockerIds, dbOrTx);
+      if (addedCyclic.length > 0) {
+        throw unprocessable("Blocking relations cannot contain cycles", {
+          issueId,
+          cyclicBlockerIssueIds: addedCyclic,
+        });
+      }
+      const keptBlockerIds = deduped.filter((id) => existingBlockerIds.has(id));
+      const keptCyclic = await findCyclicBlockers(companyId, issueId, keptBlockerIds, dbOrTx);
+      if (keptCyclic.length > 0) {
+        logger.warn(
+          { companyId, issueId, cyclicBlockerIssueIds: keptCyclic },
+          "task keeps blockers that already form a cycle; remove one of these blocked-by links to repair it",
+        );
+      }
     }
 
     await dbOrTx
@@ -8127,6 +8163,9 @@ export function issueService(db: Db) {
     clearExecutionRunIfTerminal,
     clearCheckoutRunIfTerminal,
     addStopRelayCommentIfNeeded,
+    /** The candidate blockers that would close a blocking loop if added to `issueId`. */
+    findCyclicBlockers: (companyId: string, issueId: string, blockerIssueIds: string[]) =>
+      findCyclicBlockers(companyId, issueId, blockerIssueIds),
 
     list: async (companyId: string, filters?: IssueFilters) => {
       if (filters?.sortField === "id" && filters.attention) {

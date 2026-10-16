@@ -7,8 +7,7 @@ import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import type { Db } from "@greatstone/db";
 import type { DeploymentMode } from "@greatstone/shared";
-import { instanceSettingsService, issueService } from "../services/index.js";
-import { assertEntitled } from "../services/entitlements.js";
+import { issueService } from "../services/index.js";
 import {
   boardChatClaudeEnv,
   resolveBoardChatClaudeCredential,
@@ -143,9 +142,8 @@ export function boardChatRoutes(
     return created.id;
   }
 
-  /** The same gates as the stream: the flag, a local single-operator instance. */
-  async function boardChatAllowed(res: import("express").Response) {
-    await assertEntitled(instanceSettingsService(db), "enableConferenceRoomChat");
+  /** The same gate as the stream: a local single-operator instance. */
+  function boardChatAllowed(res: import("express").Response) {
     if (opts.deploymentMode !== "local_trusted") {
       res.status(403).json({
         error: "Board chat is only available on local single-operator instances",
@@ -159,7 +157,7 @@ export function boardChatRoutes(
   // The board conversation's issue, so the UI can attach files before the
   // first message (files are issue attachments on it).
   router.post("/board/chat/issue", async (req, res) => {
-    if (!(await boardChatAllowed(res))) return;
+    if (!boardChatAllowed(res)) return;
     const { companyId } = req.body as { companyId?: string };
     if (!companyId) {
       res.status(400).json({ error: "companyId is required" });
@@ -171,11 +169,6 @@ export function boardChatRoutes(
   });
 
   router.post("/board/chat/stream", async (req, res) => {
-    // Conference Room Chat is an experimental surface (PAP-136/PAP-137): the
-    // API is gated alongside the UI so the endpoint is inert while the flag
-    // is off, not just hidden.
-    await assertEntitled(instanceSettingsService(db), "enableConferenceRoomChat");
-
     // The relay spawns the operator's local `claude` CLI with permissions
     // skipped (it must run headless), so it is only safe where the requester
     // IS the machine operator: local_trusted is loopback-only single-operator

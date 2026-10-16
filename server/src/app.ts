@@ -842,7 +842,7 @@ export async function createApp(
   api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(clientAcceptancePublicRoutes(db, opts.storageService));
   api.use(crmSyncRoutes(db));
-  api.use(organisationRoutes(db));
+  api.use(organisationRoutes(db, { storage: opts.storageService }));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,

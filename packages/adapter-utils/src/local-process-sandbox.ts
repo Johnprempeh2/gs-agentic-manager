@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
@@ -70,6 +71,199 @@ const PROXY_ENV_KEYS = ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", 
 const SANDBOX_PROXY_PORT = 31_337;
 const UNIX_SOCKET_PATH_MAX_BYTES = 107;
 const NETWORK_PROXY_TEMP_PREFIX = "paperclip-network-sandbox-";
+
+// Secret shield (GRE-1094): every local agent spawn runs in bwrap with the
+// normal view of `/`, a tmpfs over host secret directories, and a fresh PID
+// namespace and `/proc`. The fresh `/proc` matters as much as the tmpfs: Yama
+// ptrace scope 1 blocks attach but not same-uid reads of the server's
+// `/proc/<pid>/environ`. Without a working bwrap the spawn runs unwrapped and
+// warns, so a missing package never stops agents.
+export const AGENT_SECRET_SHIELD_ENV = "GSAM_AGENT_SECRET_SHIELD";
+export const AGENT_SECRET_SHIELD_HIDDEN_PATHS_ENV = "GSAM_AGENT_SECRET_SHIELD_HIDDEN_PATHS";
+export const AGENT_SECRET_SHIELD_COMMAND_ENV = "GSAM_AGENT_SECRET_SHIELD_BWRAP";
+const DEFAULT_SECRET_DIRS = [path.join("gs-memory", "secrets")] as const;
+const SECRET_SHIELD_PROBE_TIMEOUT_MS = 5_000;
+const SECRET_SHIELD_RETRY_AFTER_MS = 5 * 60_000;
+
+export type AgentSecretShieldStatus =
+  | { state: "active"; command: string; hiddenPaths: string[] }
+  | { state: "disabled"; reason: string; hiddenPaths: string[] }
+  | { state: "unavailable"; reason: string; command: string | null; hiddenPaths: string[] };
+
+let secretShieldCache: { key: string; status: AgentSecretShieldStatus; checkedAt: number } | null = null;
+
+/** The host directories a wrapped agent sees as empty: `~/gs-memory/secrets` plus the env list. */
+export function resolveAgentSecretShieldHiddenPaths(env: NodeJS.ProcessEnv = process.env): string[] {
+  const homes = new Set<string>();
+  for (const candidate of [os.homedir(), safeUserInfoHome()]) {
+    if (candidate && path.isAbsolute(candidate)) homes.add(path.resolve(candidate));
+  }
+  const paths = new Set<string>();
+  for (const home of homes) for (const dir of DEFAULT_SECRET_DIRS) paths.add(path.join(home, dir));
+  for (const entry of (env[AGENT_SECRET_SHIELD_HIDDEN_PATHS_ENV] ?? "").split(path.delimiter)) {
+    const trimmed = entry.trim();
+    if (trimmed && path.isAbsolute(trimmed)) paths.add(path.resolve(trimmed));
+  }
+  return Array.from(paths);
+}
+
+function safeUserInfoHome(): string | null {
+  try {
+    return os.userInfo().homedir;
+  } catch {
+    return null;
+  }
+}
+
+/** Existing hidden paths and their real paths; bwrap cannot mount over a missing path without creating it. */
+async function existingHiddenPaths(hiddenPaths: string[]): Promise<string[]> {
+  const result = new Set<string>();
+  for (const candidate of hiddenPaths) {
+    const stat = await fs.stat(candidate).catch(() => null);
+    if (!stat?.isDirectory()) continue;
+    result.add(candidate);
+    const real = await fs.realpath(candidate).catch(() => candidate);
+    result.add(real);
+  }
+  return Array.from(result);
+}
+
+/**
+ * bwrap arguments up to and including `--`. `dieWithParent` also kills the
+ * sandbox when its spawner exits, so leave it off for children that must
+ * outlive a server restart (hot-restart adoption).
+ */
+export function buildAgentSecretShieldArgs(input: { hiddenPaths: string[]; dieWithParent: boolean }): string[] {
+  const args = ["--dev-bind", "/", "/", "--unshare-pid", "--proc", "/proc"];
+  if (input.dieWithParent) args.push("--die-with-parent");
+  for (const hidden of input.hiddenPaths) args.push("--tmpfs", hidden);
+  args.push("--");
+  return args;
+}
+
+async function resolveExecutableOnPath(command: string, env: NodeJS.ProcessEnv): Promise<string | null> {
+  if (path.isAbsolute(command)) {
+    return fs.access(command, fs.constants.X_OK).then(() => command).catch(() => null);
+  }
+  for (const dir of (env.PATH ?? "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, command);
+    if (await fs.access(candidate, fs.constants.X_OK).then(() => true).catch(() => false)) return candidate;
+  }
+  return null;
+}
+
+function probeSecretShield(command: string, hiddenPaths: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    let stderr = "";
+    let settled = false;
+    const finish = (error: string | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(error);
+    };
+    const child = spawn(command, [...buildAgentSecretShieldArgs({ hiddenPaths, dieWithParent: true }), "true"], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(`probe timed out after ${SECRET_SHIELD_PROBE_TIMEOUT_MS}ms`);
+    }, SECRET_SHIELD_PROBE_TIMEOUT_MS);
+    child.stderr?.on("data", (chunk: Buffer) => {
+      if (stderr.length < 2_000) stderr += chunk.toString("utf8");
+    });
+    child.on("error", (error) => finish(error.message));
+    child.on("close", (code, signal) => {
+      if (code === 0) finish(null);
+      else finish(stderr.trim() || `probe exited with ${signal ?? `code ${code}`}`);
+    });
+  });
+}
+
+/**
+ * Whether local agent spawns can be wrapped. A working result is cached for
+ * the process lifetime; a failed one is re-checked after five minutes, so
+ * installing bubblewrap takes effect without a restart.
+ */
+export async function resolveAgentSecretShield(
+  opts: { env?: NodeJS.ProcessEnv; platform?: NodeJS.Platform; refresh?: boolean } = {},
+): Promise<AgentSecretShieldStatus> {
+  const env = opts.env ?? process.env;
+  const platform = opts.platform ?? process.platform;
+  const hiddenPaths = resolveAgentSecretShieldHiddenPaths(env);
+  const toggle = (env[AGENT_SECRET_SHIELD_ENV] ?? "").trim().toLowerCase();
+  if (["0", "off", "false", "disabled"].includes(toggle)) {
+    return { state: "disabled", reason: `${AGENT_SECRET_SHIELD_ENV}=${toggle}`, hiddenPaths };
+  }
+  if (platform !== "linux") {
+    return { state: "disabled", reason: `not supported on ${platform}`, hiddenPaths };
+  }
+  const requested = env[AGENT_SECRET_SHIELD_COMMAND_ENV]?.trim() || "bwrap";
+  const key = JSON.stringify([requested, env.PATH ?? "", hiddenPaths]);
+  const now = Date.now();
+  if (!opts.refresh && secretShieldCache?.key === key) {
+    const cached = secretShieldCache;
+    if (cached.status.state === "active" || now - cached.checkedAt < SECRET_SHIELD_RETRY_AFTER_MS) return cached.status;
+  }
+  const command = await resolveExecutableOnPath(requested, env);
+  let status: AgentSecretShieldStatus;
+  if (!command) {
+    status = {
+      state: "unavailable",
+      reason: `"${requested}" was not found on PATH; install bubblewrap`,
+      command: null,
+      hiddenPaths,
+    };
+  } else {
+    const failure = await probeSecretShield(command, await existingHiddenPaths(hiddenPaths));
+    status = failure
+      ? { state: "unavailable", reason: `${command} failed to start a sandbox: ${failure}`, command, hiddenPaths }
+      : { state: "active", command, hiddenPaths };
+  }
+  secretShieldCache = { key, status, checkedAt: now };
+  return status;
+}
+
+export function resetAgentSecretShieldCacheForTests(): void {
+  secretShieldCache = null;
+}
+
+export function describeAgentSecretShieldWarning(status: AgentSecretShieldStatus): string | null {
+  if (status.state !== "unavailable") return null;
+  return `Agent secret sandbox is OFF: ${status.reason}. Local agent runs start unwrapped and can read ${status.hiddenPaths.join(", ")}.`;
+}
+
+export interface AgentSecretShieldWrap {
+  command: string;
+  args: string[];
+  status: AgentSecretShieldStatus;
+}
+
+/**
+ * Wrap one local agent spawn. Returns the original command and args when the
+ * shield is disabled or unavailable; the unavailable case logs one warning.
+ */
+export async function wrapWithAgentSecretShield(input: {
+  command: string;
+  args: string[];
+  dieWithParent: boolean;
+  env?: NodeJS.ProcessEnv;
+  warn?: (message: string) => void;
+}): Promise<AgentSecretShieldWrap> {
+  const status = await resolveAgentSecretShield({ env: input.env });
+  if (status.state !== "active") {
+    const warning = describeAgentSecretShieldWarning(status);
+    if (warning) (input.warn ?? ((message) => console.warn(`[gsam] ${message}`)))(warning);
+    return { command: input.command, args: input.args, status };
+  }
+  const hidden = await existingHiddenPaths(status.hiddenPaths);
+  return {
+    command: status.command,
+    args: [...buildAgentSecretShieldArgs({ hiddenPaths: hidden, dieWithParent: input.dieWithParent }), input.command, ...input.args],
+    status,
+  };
+}
 
 function normalizeAbsolutePath(candidate: string, label: string): string {
   const trimmed = candidate.trim();
@@ -449,7 +643,12 @@ export async function buildLocalProcessSandboxSpawnTarget(input: {
       };
     }
   } else {
-    args.push("--bind", "/", "/");
+    // The normal view of `/` would otherwise expose host secrets and, through
+    // the inherited `/proc`, the server's environment (GRE-1094).
+    args.push("--dev-bind", "/", "/", "--proc", "/proc");
+    for (const hidden of await existingHiddenPaths(resolveAgentSecretShieldHiddenPaths())) {
+      args.push("--tmpfs", hidden);
+    }
     if (networkScope === "allowlist") {
       const tempDir = await createNetworkProxyTempDir();
       const socketPath = path.join(tempDir, "proxy.sock");

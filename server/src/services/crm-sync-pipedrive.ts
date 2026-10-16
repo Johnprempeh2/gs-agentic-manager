@@ -24,6 +24,8 @@ export type PipedriveFetch = (url: string, init: {
   status: number;
   headers: { get(name: string): string | null };
   json(): Promise<unknown>;
+  /** The raw body, for file downloads. */
+  arrayBuffer?(): Promise<ArrayBuffer>;
 }>;
 
 /** Pipedrive answered 429 on every try. `retryAfterMs` is how long it asked us to wait. */
@@ -70,7 +72,7 @@ export interface PipedriveDealField {
 }
 
 /** A linked record in a v1 answer: `owner_id` and `org_id` come back as objects or bare ids. */
-export type PipedriveLink = number | { id?: number; value?: number; name?: string | null } | null;
+export type PipedriveLink = number | { id?: number; value?: number; name?: string | null; email?: string | null } | null;
 
 /** One organisation from the v1 list (GRE-1479). Only the fields the import reads are typed. */
 export interface PipedriveOrganization {
@@ -169,7 +171,8 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
     ? { Authorization: `Bearer ${options.token}`, Accept: "application/json" }
     : { "x-api-token": options.token, Accept: "application/json" };
 
-  async function send(
+  /** One request with retries on 429; throws on any answer that is not 2xx. */
+  async function fetchOk(
     method: "GET" | "PATCH",
     path: string,
     query: Record<string, string | number | undefined>,
@@ -203,12 +206,22 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
           response.status,
         );
       }
-      const body = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
-      if (!body || body.success === false) {
-        throw new PipedriveApiError(`Pipedrive returned an error for ${path}: ${body?.error ?? "no body"}`, response.status);
-      }
-      return body as Record<string, unknown>;
+      return response;
     }
+  }
+
+  async function send(
+    method: "GET" | "PATCH",
+    path: string,
+    query: Record<string, string | number | undefined>,
+    payload?: Record<string, unknown>,
+  ) {
+    const response = await fetchOk(method, path, query, payload);
+    const body = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
+    if (!body || body.success === false) {
+      throw new PipedriveApiError(`Pipedrive returned an error for ${path}: ${body?.error ?? "no body"}`, response.status);
+    }
+    return body as Record<string, unknown>;
   }
 
   const get = (path: string, query: Record<string, string | number | undefined>) => send("GET", path, query);
@@ -285,9 +298,84 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/flow`, input.start ?? 0, 100);
     },
 
+    /** One page of a person's history, which holds emails not linked to a deal (API v1, read only). */
+    async listPersonFlowPage(input: { personId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/persons/${encodeURIComponent(input.personId)}/flow`, input.start ?? 0, 100);
+    },
+
+    /** One page of an organisation's history, which holds emails not linked to a deal (API v1, read only). */
+    async listOrganizationFlowPage(input: { organizationId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/organizations/${encodeURIComponent(input.organizationId)}/flow`, input.start ?? 0, 100);
+    },
+
     /** One page of call logs (API v1, read only; Pipedrive allows 50 a page). */
     async listCallLogsPage(input: { start?: number } = {}) {
       return listV1Page<Record<string, unknown>>("/api/v1/callLogs", input.start ?? 0, 50);
+    },
+
+    /** One page of the product catalogue (API v1, read only). */
+    async listProductsPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/products", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** Every product field, so custom product fields keep their names. */
+    async listProductFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/productFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
+    /** One page of the products on one deal, with quantity, price and discount (read only). */
+    async listDealProductsPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/products`, input.start ?? 0, 100);
+    },
+
+    /** One page of the people on a deal, its main contact included (API v1, read only). */
+    async listDealParticipantsPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/participants`, input.start ?? 0, 100);
+    },
+
+    /** One page of the users following a deal (API v1, read only). */
+    async listDealFollowersPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/followers`, input.start ?? 0, 100);
+    },
+
+    /**
+     * One page of every lead, archived ones included (API v1, read only). The
+     * leads list answers its paging at the top of `additional_data`.
+     */
+    async listLeadsPage(input: { start?: number } = {}) {
+      const start = input.start ?? 0;
+      const body = await get("/api/v1/leads", { start, limit: V1_LIST_PAGE_SIZE, archived_status: "all" });
+      const items = Array.isArray(body.data) ? body.data as Record<string, unknown>[] : [];
+      const extra = body.additional_data as { more_items_in_collection?: boolean; pagination?: { more_items_in_collection?: boolean } } | undefined;
+      const more = extra?.more_items_in_collection ?? extra?.pagination?.more_items_in_collection ?? false;
+      return { items, nextStart: more && items.length > 0 ? start + items.length : null };
+    },
+
+    /** One page of every file: uploads on deals, people, organisations, activities and notes (read only). */
+    async listFilesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/files", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** The bytes of one file (read only). */
+    async downloadFile(fileId: string) {
+      const path = `/api/v1/files/${encodeURIComponent(fileId)}/download`;
+      const response = await fetchOk("GET", path, {});
+      if (!response.arrayBuffer) throw new PipedriveApiError(`Pipedrive sent no file body for ${path}`, response.status);
+      return { body: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type") };
+    },
+
+    /** Every lead label, so leads show label names. */
+    async listLeadLabels() {
+      const body = await get("/api/v1/leadLabels", {});
+      return Array.isArray(body.data) ? body.data as Array<{ id: string; name?: string | null }> : [];
     },
 
     /** Every pipeline (API v1, read only). Used by the full deal import. */

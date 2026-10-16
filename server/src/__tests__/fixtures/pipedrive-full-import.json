@@ -1,5 +1,5 @@
 {
-  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703.",
+  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703. Also /api/v1/productFields, /api/v1/products and /api/v1/deals/{id}/products pages for deals 701 and 702. Also /api/v1/leadLabels and /api/v1/leads pages. Also an /api/v1/files page.",
   "pipelines": {
     "success": true,
     "data": [
@@ -284,7 +284,10 @@
         "d1b2c3d4e5f60718293a4b5c6d7e8f9012345678_currency": "GBP",
         "e1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "2026-09-15",
         "f1b2c3d4e5f60718293a4b5c6d7e8f9012345678": 9002,
-        "0ab2c3d4e5f60718293a4b5c6d7e8f9012345678": "Uses the SDK in CI."
+        "0ab2c3d4e5f60718293a4b5c6d7e8f9012345678": "Uses the SDK in CI.",
+        "products_count": 2,
+        "participants_count": 3,
+        "followers_count": 2
       },
       {
         "id": 702,
@@ -304,7 +307,10 @@
         "close_time": "2026-08-30 15:00:00",
         "label": null,
         "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "99",
-        "c1b2c3d4e5f60718293a4b5c6d7e8f9012345678": null
+        "c1b2c3d4e5f60718293a4b5c6d7e8f9012345678": null,
+        "products_count": 1,
+        "participants_count": 0,
+        "followers_count": 1
       }
     ],
     "additional_data": {
@@ -335,7 +341,10 @@
         "org_id": null,
         "lost_reason": "Chose an in-house build",
         "lost_time": "2026-07-04 10:00:00",
-        "close_time": "2026-07-04 10:00:00"
+        "close_time": "2026-07-04 10:00:00",
+        "products_count": 0,
+        "participants_count": 0,
+        "followers_count": 0
       },
       {
         "id": 704,
@@ -562,6 +571,481 @@
   "dealFlowEmpty": {
     "success": true,
     "data": [],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "productFields": {
+    "success": true,
+    "data": [
+      {
+        "key": "id",
+        "name": "ID",
+        "field_type": "int"
+      },
+      {
+        "key": "name",
+        "name": "Name",
+        "field_type": "varchar"
+      },
+      {
+        "key": "code",
+        "name": "Product code",
+        "field_type": "varchar"
+      },
+      {
+        "key": "unit",
+        "name": "Unit",
+        "field_type": "varchar"
+      },
+      {
+        "key": "tax",
+        "name": "Tax",
+        "field_type": "double"
+      },
+      {
+        "key": "category",
+        "name": "Category",
+        "field_type": "enum",
+        "options": [
+          {
+            "id": 31,
+            "label": "Licences"
+          },
+          {
+            "id": 32,
+            "label": "Services"
+          }
+        ]
+      },
+      {
+        "key": "owner_id",
+        "name": "Owner",
+        "field_type": "user"
+      },
+      {
+        "key": "prices",
+        "name": "Unit prices",
+        "field_type": "price"
+      },
+      {
+        "key": "billing_frequency",
+        "name": "Billing frequency",
+        "field_type": "varchar"
+      },
+      {
+        "key": "9ab2c3d4e5f60718293a4b5c6d7e8f9012345678",
+        "name": "SKU family",
+        "edit_flag": true,
+        "field_type": "varchar"
+      }
+    ]
+  },
+  "productsPage": {
+    "success": true,
+    "data": [
+      {
+        "id": 801,
+        "name": "Team seat",
+        "code": "SEAT-T",
+        "unit": "seat",
+        "tax": 20,
+        "active_flag": true,
+        "category": "31",
+        "owner_id": {
+          "id": 9001,
+          "name": "Ama Owusu",
+          "value": 9001
+        },
+        "prices": [
+          {
+            "id": 1,
+            "product_id": 801,
+            "price": 600,
+            "currency": "GBP",
+            "cost": 120,
+            "overhead_cost": null
+          },
+          {
+            "id": 2,
+            "product_id": 801,
+            "price": 750,
+            "currency": "USD",
+            "cost": 150,
+            "overhead_cost": 10
+          }
+        ],
+        "billing_frequency": "annually",
+        "9ab2c3d4e5f60718293a4b5c6d7e8f9012345678": "DevTools"
+      },
+      {
+        "id": 802,
+        "name": "Onboarding workshop",
+        "code": null,
+        "unit": "day",
+        "tax": 0,
+        "active_flag": false,
+        "category": "32",
+        "owner_id": 9002,
+        "prices": [
+          {
+            "id": 3,
+            "product_id": 802,
+            "price": 1500,
+            "currency": "GBP",
+            "cost": null,
+            "overhead_cost": null
+          }
+        ]
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealProducts701": {
+    "success": true,
+    "data": [
+      {
+        "id": 9101,
+        "deal_id": 701,
+        "order_nr": 1,
+        "product_id": 801,
+        "name": "Team seat",
+        "item_price": 600,
+        "quantity": 20,
+        "discount": 10,
+        "discount_type": "percentage",
+        "sum": 10800,
+        "currency": "GBP",
+        "tax": 20,
+        "tax_method": "exclusive",
+        "comments": "Annual, billed upfront",
+        "duration": 1,
+        "duration_unit": null,
+        "enabled_flag": true,
+        "billing_frequency": "annually",
+        "add_time": "2026-09-02 10:00:00"
+      },
+      {
+        "id": 9102,
+        "deal_id": 701,
+        "order_nr": 2,
+        "product_id": 802,
+        "name": "Onboarding workshop",
+        "item_price": 1500,
+        "quantity": 1,
+        "discount": 200,
+        "discount_type": "amount",
+        "sum": 1300,
+        "currency": "GBP",
+        "tax": 0,
+        "comments": null,
+        "enabled_flag": true
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealProducts702": {
+    "success": true,
+    "data": [
+      {
+        "id": 9201,
+        "deal_id": 702,
+        "order_nr": 1,
+        "product_id": 801,
+        "name": "Team seat",
+        "item_price": 750,
+        "quantity": 40,
+        "discount_percentage": 0,
+        "sum": 30000,
+        "currency": "USD",
+        "tax": 0,
+        "enabled_flag": true
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "leadLabels": {
+    "success": true,
+    "data": [
+      {
+        "id": "f0a1b2c3-0000-4000-8000-000000000001",
+        "name": "Hot",
+        "color": "red"
+      },
+      {
+        "id": "f0a1b2c3-0000-4000-8000-000000000002",
+        "name": "From the SDK docs",
+        "color": "blue"
+      }
+    ]
+  },
+  "leadsPage": {
+    "success": true,
+    "data": [
+      {
+        "id": "adf21080-0e10-11eb-879b-05d71fb426ec",
+        "title": "Tunde Bakare CLI enquiry",
+        "owner_id": 9001,
+        "creator_id": 9002,
+        "label_ids": [
+          "f0a1b2c3-0000-4000-8000-000000000001",
+          "f0a1b2c3-0000-4000-8000-000000000002"
+        ],
+        "person_id": 502,
+        "organization_id": 102,
+        "source_name": "Web forms",
+        "origin": "WebForms",
+        "channel": null,
+        "channel_id": null,
+        "is_archived": false,
+        "was_seen": true,
+        "value": {
+          "amount": 5000,
+          "currency": "GBP"
+        },
+        "expected_close_date": "2026-11-30",
+        "add_time": "2026-10-02T09:00:00.000Z",
+        "update_time": "2026-10-05T10:00:00.000Z",
+        "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678": "31"
+      },
+      {
+        "id": "bdf21080-0e10-11eb-879b-05d71fb426ec",
+        "title": "Old conference contact",
+        "owner_id": 9002,
+        "label_ids": [],
+        "person_id": null,
+        "organization_id": null,
+        "source_name": "Manually created",
+        "is_archived": true,
+        "was_seen": false,
+        "value": null,
+        "add_time": "2026-03-01T09:00:00.000Z",
+        "update_time": "2026-04-01T09:00:00.000Z"
+      }
+    ],
+    "additional_data": {
+      "start": 0,
+      "limit": 500,
+      "more_items_in_collection": false
+    }
+  },
+  "filesPage": {
+    "success": true,
+    "data": [
+      {
+        "id": 6001,
+        "name": "Northwind order form.pdf",
+        "file_name": "northwind_order_form_6001.pdf",
+        "file_type": "pdf",
+        "file_size": 21,
+        "user_id": 9001,
+        "deal_id": 701,
+        "org_id": 101,
+        "person_id": 501,
+        "remote_location": "s3",
+        "active_flag": true,
+        "add_time": "2026-09-25 09:00:00",
+        "description": "Signed copy",
+        "url": "https://greatstone.pipedrive.com/files/6001",
+        "deal_name": "Northwind CLI trial"
+      },
+      {
+        "id": 6002,
+        "name": "Northwind logo.png",
+        "file_name": "logo_6002.png",
+        "file_type": "png",
+        "file_size": 8,
+        "user_id": 9002,
+        "deal_id": null,
+        "org_id": 101,
+        "person_id": null,
+        "remote_location": "s3",
+        "active_flag": true,
+        "add_time": "2026-09-10 09:00:00"
+      },
+      {
+        "id": 6003,
+        "name": "Proposal deck",
+        "file_type": "gslides",
+        "file_size": 0,
+        "user_id": 9001,
+        "org_id": 101,
+        "remote_location": "googledrive",
+        "remote_id": "1AbC",
+        "active_flag": true,
+        "add_time": "2026-09-12 09:00:00",
+        "url": "https://docs.google.com/presentation/d/1AbC"
+      },
+      {
+        "id": 6004,
+        "name": "Deleted file.txt",
+        "file_type": "txt",
+        "file_size": 4,
+        "org_id": 101,
+        "remote_location": "s3",
+        "active_flag": false
+      },
+      {
+        "id": 6005,
+        "name": "Enquiry notes.txt",
+        "file_name": "enquiry_6005.txt",
+        "file_type": "txt",
+        "file_size": 11,
+        "user_id": 9001,
+        "lead_id": "adf21080-0e10-11eb-879b-05d71fb426ec",
+        "org_id": 102,
+        "remote_location": "s3",
+        "active_flag": true,
+        "add_time": "2026-10-03 11:00:00"
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealParticipants701": {
+    "success": true,
+    "data": [
+      {
+        "id": 31,
+        "person_id": {
+          "name": "Tunde Bakare",
+          "email": [
+            {
+              "value": "tunde@example.test",
+              "primary": true
+            }
+          ],
+          "phone": [],
+          "value": 502
+        },
+        "add_time": "2026-09-02 10:00:00",
+        "active_flag": true
+      },
+      {
+        "id": 30,
+        "person_id": {
+          "name": "Esi Boateng",
+          "email": [
+            {
+              "value": "esi@example.test",
+              "primary": true
+            }
+          ],
+          "phone": [
+            {
+              "value": "+233 20 000 0001",
+              "primary": true
+            }
+          ],
+          "value": 501
+        },
+        "add_time": "2026-09-01 10:00:00",
+        "active_flag": true
+      },
+      {
+        "id": 32,
+        "person_id": {
+          "name": "Kwame Ofori",
+          "email": [
+            {
+              "label": "work",
+              "value": "",
+              "primary": true
+            },
+            {
+              "label": "other",
+              "value": "kwame@example.test",
+              "primary": false
+            }
+          ],
+          "phone": [
+            {
+              "value": "+233 24 555 0102",
+              "primary": true
+            }
+          ],
+          "value": 599
+        },
+        "add_time": "2026-09-03 10:00:00",
+        "active_flag": true
+      },
+      {
+        "id": 33,
+        "person_id": {
+          "name": "Removed Person",
+          "value": 598
+        },
+        "active_flag": false
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealFollowers701": {
+    "success": true,
+    "data": [
+      {
+        "id": 41,
+        "user_id": 9001,
+        "deal_id": 701,
+        "add_time": "2026-09-01 10:00:00"
+      },
+      {
+        "id": 42,
+        "user_id": 9002,
+        "deal_id": 701,
+        "add_time": "2026-09-05 10:00:00"
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 100,
+        "more_items_in_collection": false
+      }
+    }
+  },
+  "dealFollowers702": {
+    "success": true,
+    "data": [
+      {
+        "id": 43,
+        "user_id": 9002,
+        "deal_id": 702
+      }
+    ],
     "additional_data": {
       "pagination": {
         "start": 0,

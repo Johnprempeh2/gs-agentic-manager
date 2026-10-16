@@ -54,6 +54,8 @@ export interface BudgetPolicySummary {
   /** A dated change not yet in force (GRE-1363). */
   pendingAmount?: number | null;
   pendingEffectiveFrom?: Date | null;
+  /** Tasks whose queued work this scope's hard stop holds (GRE-1365). Absent = 0. */
+  heldTaskCount?: number;
 }
 
 export interface BudgetIncident {
@@ -85,6 +87,8 @@ export interface BudgetOverview {
   pausedAgentCount: number;
   pausedProjectCount: number;
   pendingApprovalCount: number;
+  /** Tasks held at a budget hard stop in this company (GRE-1365). Absent = 0. */
+  heldTaskCount?: number;
 }
 
 export interface BudgetPolicyUpsertInput {

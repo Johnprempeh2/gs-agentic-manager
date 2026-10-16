@@ -24,7 +24,12 @@ export interface TimelineLinks {
   organisationIdByExternalId: Map<string, string>;
   contactIdByExternalId: Map<string, string>;
   caseIdByDealId: Map<string, string>;
+  /** GSAM case id of every imported lead, by Pipedrive lead id. */
+  caseIdByLeadId?: Map<string, string>;
   users: Map<string, string>;
+  /** Pipedrive people and organisations with emails, whose own history is read for emails not on a deal. */
+  personIdsWithEmail?: string[];
+  organisationIdsWithEmail?: string[];
 }
 
 function str(value: unknown): string | null {
@@ -97,10 +102,12 @@ function links(record: Record<string, unknown>, map: TimelineLinks) {
   const orgId = idOf(record.org_id);
   const personId = idOf(record.person_id);
   const dealId = idOf(record.deal_id);
+  const leadId = idOf(record.lead_id);
   return {
     organisationId: orgId ? map.organisationIdByExternalId.get(orgId) ?? null : null,
     contactId: personId ? map.contactIdByExternalId.get(personId) ?? null : null,
-    caseId: dealId ? map.caseIdByDealId.get(dealId) ?? null : null,
+    // An activity or note on a lead links to the lead's case.
+    caseId: (dealId ? map.caseIdByDealId.get(dealId) : undefined) ?? (leadId ? map.caseIdByLeadId?.get(leadId) : undefined) ?? null,
   };
 }
 
@@ -372,6 +379,7 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
       }
 
       // Each deal's history holds its emails and its stage changes; one read per deal.
+      const seenEmails = new Set<string>();
       flow: for (const dealId of input.links.caseIdByDealId.keys()) {
         let start: number | null = 0;
         while (start !== null) {
@@ -401,6 +409,49 @@ export function pipedriveTimelineImportService(db: Db, deps: { now?: () => Date 
             // Field changes other than stage, pipeline and status are not history entries.
             if (!values && kind === "stage_change") continue;
             await write(kind, values, kind === "email" ? counts.emails : counts.stageChanges);
+            if (kind === "email" && values) seenEmails.add(values.externalId);
+          }
+          start = page.nextStart;
+        }
+      }
+
+      // Emails on a person or organisation but not on a deal, from their own history.
+      const records: Array<["person" | "organisation", string]> = [
+        ...(input.links.personIdsWithEmail ?? []).map((id) => ["person", id] as ["person", string]),
+        ...(input.links.organisationIdsWithEmail ?? []).map((id) => ["organisation", id] as ["organisation", string]),
+      ];
+      const emailError = (externalId: string, message: string) => {
+        counts.emails.errors += 1;
+        if (result.errorSamples.length < MAX_ERROR_SAMPLES) result.errorSamples.push({ kind: "email", externalId, message });
+      };
+      people: for (const [kind, id] of records) {
+        let start: number | null = 0;
+        while (start !== null) {
+          let page: Awaited<ReturnType<PipedriveClient["listPersonFlowPage"]>>;
+          try {
+            page = kind === "person"
+              ? await client.listPersonFlowPage({ personId: id, start })
+              : await client.listOrganizationFlowPage({ organizationId: id, start });
+          } catch (error) {
+            if (error instanceof PipedriveAuthError) {
+              // The token cannot read this history at all; stop asking for every record.
+              emailError(id, `Pipedrive did not share ${kind} history: ${error.message}`);
+              break people;
+            }
+            if (!(error instanceof PipedriveApiError)) throw error;
+            emailError(id, `Could not read the ${kind}'s history: ${error.message}`);
+            break;
+          }
+          for (const item of page.items) {
+            if (item.object !== "mailMessage") continue;
+            const data = (item.data ?? {}) as Record<string, unknown>;
+            const values = mapPipedriveFlowItem(item, str(data.deal_id) ?? "", input.links);
+            // An email already on a deal, or met on another record, is written once.
+            if (!values || seenEmails.has(values.externalId) || existing.get(`email:${values.externalId}`)?.caseId) continue;
+            seenEmails.add(values.externalId);
+            if (kind === "person") values.contactId = input.links.contactIdByExternalId.get(id) ?? null;
+            else values.organisationId = input.links.organisationIdByExternalId.get(id) ?? null;
+            await write("email", values, counts.emails);
           }
           start = page.nextStart;
         }

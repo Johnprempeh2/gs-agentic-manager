@@ -31,7 +31,6 @@ export const ENTITLEMENT_FEATURE_KEYS = [
   "enableBuiltInAgents",
   "enableCases",
   "enableChatConnectors",
-  "enableConferenceRoomChat",
   "enableDeepDive",
   "enableEnvironments",
   "enableExternalObjects",

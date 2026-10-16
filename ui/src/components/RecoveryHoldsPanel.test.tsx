@@ -112,6 +112,26 @@ describe("RecoveryHoldsPanel", () => {
     );
   });
 
+  it("keeps a task in review in review when its hold is cleared", async () => {
+    mockRecoveryHoldsApi.list.mockResolvedValue({
+      holds: [hold({ issue: { id: "issue-2", identifier: "GRE-1190", title: "Strategy Board F12", status: "in_review" } })],
+    });
+    mockIssuesApi.resolveRecoveryAction.mockResolvedValue({});
+    render();
+    await flush();
+
+    flushSync(() => buttonWithText("Clear and wake")!.click());
+    await flush();
+    flushSync(() => buttonWithText("It finished the step")!.click());
+    flushSync(() => buttonWithText("Clear and wake Ridge")!.click());
+    await flush();
+
+    expect(mockIssuesApi.resolveRecoveryAction).toHaveBeenCalledWith(
+      "issue-2",
+      expect.objectContaining({ outcome: "restored", sourceIssueStatus: "in_review" }),
+    );
+  });
+
   it("asks for a workspace note before clearing a hold whose files are unsafe", async () => {
     mockRecoveryHoldsApi.list.mockResolvedValue({ holds: [hold({ needsWorkspaceRepair: true })] });
     render();

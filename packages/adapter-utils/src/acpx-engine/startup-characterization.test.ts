@@ -26,6 +26,11 @@ vi.mock("@greatstone/adapter-utils/execution-target", async (importActual) => {
 import { createAcpxEngineExecutor, type AcpxEngineExecutorOptions } from "./execute.js";
 import { runChildProcess } from "../server-utils.js";
 
+// The fake sandbox runner below executes the remote process-session bridge
+// with local runChildProcess. A real provider runs it remotely, unwrapped by
+// the agent secret shield, so keep the shield out of these lanes.
+process.env.GSAM_AGENT_SECRET_SHIELD = "off";
+
 const tempRoots: string[] = [];
 
 async function makeTempRoot() {

@@ -4,7 +4,6 @@ import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, u
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
-import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
@@ -457,15 +456,10 @@ function boardRoutes() {
       <Route path="runs" element={<AuditCompatibilityRedirect to="/activity/runs" />} />
       <Route path="costs" element={<AuditCompatibilityRedirect to="/activity/costs" />} />
       <Route path="budgets" element={<AuditCompatibilityRedirect to="/activity/budgets" />} />
-      {/* Conference Room Chat surfaces (PAP-136/PAP-137): routes stay
-          registered but redirect to the company home while the experimental
-          flag is off. The board-level `artifacts` mount below is the new
-          conference-room one; the master-level mount above it still serves
-          `/artifacts` in both modes. */}
-      <Route element={<ConferenceRoomChatGate />}>
-        <Route path="board-chat" element={<BoardChat />} />
-        <Route path="artifacts" element={<Artifacts />} />
-      </Route>
+      {/* Conference Room Chat (PAP-136/PAP-137) graduated from Experimental
+          (GRE-1624), so its route is no longer gated. `artifacts` is already
+          mounted above. */}
+      <Route path="board-chat" element={<BoardChat />} />
       {/* Task chat dev harness — dev builds only. */}
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
