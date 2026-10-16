@@ -152,7 +152,14 @@ export function ClientCaseOverview({
       <StageStrip stages={stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
 
       <OverviewSection title="Where things stand">
-        <ClientJourneyOverview caseId={detail.case.id} ownerName={record.owner} />
+        <ClientJourneyOverview
+          caseId={detail.case.id}
+          ownerName={record.owner}
+          companyId={detail.case.companyId ?? null}
+          clientName={detail.case.title}
+          stageEnteredAt={detail.stageEnteredAt}
+          nextAction={record.nextAction}
+        />
       </OverviewSection>
 
       <OverviewSection title="Client record">
