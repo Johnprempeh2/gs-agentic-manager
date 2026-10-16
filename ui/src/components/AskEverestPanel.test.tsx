@@ -72,6 +72,18 @@ async function waitFor(assertion: () => void, attempts = 60) {
   throw lastError;
 }
 
+function typeQuestion(text: string) {
+  const input = document.querySelector('input[aria-label^="Ask"]') as HTMLInputElement;
+  const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+  act(() => {
+    setValue.call(input, text);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  act(() => {
+    (document.querySelector('button[aria-label="Ask"]') as HTMLButtonElement).click();
+  });
+}
+
 const agents = [
   { id: "everest", name: "Everest", role: "ceo", status: "idle", reportsTo: null, urlKey: "everest" },
   { id: "mason", name: "Mason", role: "engineer", status: "idle", reportsTo: "everest", urlKey: "mason" },
@@ -182,6 +194,58 @@ describe("AskEverestPanel", () => {
     expect(body).toBe("Please take a look at these files.");
     expect(attachmentIds).toHaveLength(2);
     expect(attachmentIds).toContain("att-brief.pdf");
+  });
+
+  it("answers a follow-up from the last answer without restating it", async () => {
+    mocks.issuesList.mockResolvedValue([
+      { id: "i1", identifier: "GRE-1", title: "Send the Indago contract", status: "blocked", assigneeAgentId: "mason", dueDate: "2020-01-02", updatedAt: "2026-10-15T09:00:00Z" },
+      { id: "i2", identifier: "GRE-2", title: "Book the venue", status: "blocked", assigneeAgentId: null, dueDate: null, updatedAt: "2026-10-15T09:00:00Z" },
+    ]);
+    act(() => openAskEverest("What is stuck?"));
+    await waitFor(() => expect(container.textContent).toContain("2 tasks are stuck."));
+    await waitFor(() => {
+      const input = container.querySelector("input") as HTMLInputElement;
+      expect(input.placeholder).toContain("follow-up");
+    });
+
+    typeQuestion("and which of those are overdue?");
+    await waitFor(() => expect(container.textContent).toContain("1 of those 2 stuck tasks is overdue."));
+    const turns = container.querySelectorAll('[data-testid="ask-everest-turn"]');
+    expect(turns).toHaveLength(2);
+    expect(turns[1]!.textContent).toContain("Send the Indago contract");
+    expect(turns[1]!.textContent).not.toContain("Book the venue");
+    expect(mocks.issuesList).toHaveBeenCalledTimes(1);
+
+    typeQuestion("and which are with Mason?");
+    await waitFor(() => expect(container.querySelectorAll('[data-testid="ask-everest-turn"]')).toHaveLength(3));
+    await waitFor(() => expect(container.textContent).toContain("That task is with Mason."));
+  });
+
+  it("asks about the page it was opened from and sends that context to Everest", async () => {
+    mocks.issuesList.mockResolvedValue([]);
+    mocks.ensureChat.mockResolvedValue({ id: "chat-1" });
+    mocks.addComment.mockResolvedValue({ id: "c1", createdAt: "2026-10-16T09:00:00Z" });
+    mocks.listComments.mockResolvedValue([]);
+    act(() => openAskEverest(undefined, {
+      label: "Acme Ltd",
+      subject: "Acme Ltd",
+      summary: "The client \"Acme Ltd\". Stage: Proposal.",
+      suggestions: ["What is next for Acme Ltd?"],
+    }));
+    await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-context"]')?.textContent).toContain("Acme Ltd"));
+    expect(container.querySelector('[data-testid="ask-everest-suggestions"]')?.textContent).toContain("What is next for Acme Ltd?");
+
+    typeQuestion("What is happening?");
+    await waitFor(() => expect(mocks.issuesList).toHaveBeenCalledWith("company-1", { q: "Acme Ltd", limit: 50 }));
+    await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-live"]')).not.toBeNull());
+    act(() => {
+      (container.querySelector('[data-testid="ask-everest-live"]') as HTMLButtonElement).click();
+    });
+    await waitFor(() => expect(mocks.addComment).toHaveBeenCalled());
+    const [, body] = mocks.addComment.mock.calls[0]!;
+    expect(body).toContain("What is happening?");
+    expect(body).toContain("Asked from Acme Ltd:");
+    expect(body).toContain("Stage: Proposal.");
   });
 
   it("puts spoken words into the question box", async () => {
