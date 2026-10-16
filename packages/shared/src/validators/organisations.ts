@@ -129,3 +129,21 @@ export const importPipedriveExportSchema = z
     message: "Choose at least one Pipedrive export file",
   });
 export type ImportPipedriveExport = z.infer<typeof importPipedriveExportSchema>;
+
+/**
+ * Body of POST .../organisations/import/hubspot-export: the CSV text of HubSpot's
+ * companies, contacts and deals exports, any of them optional but at least one.
+ * Open deals become client cases only when a pipeline is chosen.
+ */
+export const importHubspotExportSchema = z
+  .object({
+    companies: exportFile.optional(),
+    contacts: exportFile.optional(),
+    deals: exportFile.optional(),
+    pipelineId: z.string().guid().optional(),
+  })
+  .strict()
+  .refine((body) => Boolean(body.companies || body.contacts || body.deals), {
+    message: "Choose at least one HubSpot export file",
+  });
+export type ImportHubspotExport = z.infer<typeof importHubspotExportSchema>;

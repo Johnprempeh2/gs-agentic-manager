@@ -1,6 +1,7 @@
 import type {
   CreateOrganisation,
   CreateOrganisationContact,
+  ImportHubspotExport,
   ImportPipedriveExport,
   Organisation,
   OrganisationContact,
@@ -48,6 +49,8 @@ export const organisationsApi = {
     api.post<OrganisationImportResult>(`${base(companyId)}/import/pipedrive`, { connectionId }),
   importFromPipedriveExport: (companyId: string, body: ImportPipedriveExport) =>
     api.post<OrganisationImportResult>(`${base(companyId)}/import/pipedrive-export`, body),
+  importFromHubspotExport: (companyId: string, body: ImportHubspotExport) =>
+    api.post<OrganisationImportResult>(`${base(companyId)}/import/hubspot-export`, body),
   archiveContact: (companyId: string, organisationId: string, contactId: string) =>
     api.post<OrganisationContact>(
       `${base(companyId)}/${encodeURIComponent(organisationId)}/contacts/${encodeURIComponent(contactId)}/archive`,

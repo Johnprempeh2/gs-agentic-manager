@@ -32,6 +32,12 @@ import {
   readPeopleExport,
 } from "../services/pipedrive-export.js";
 import { pipelineService } from "../services/pipelines.js";
+import {
+  hubspotDealStatus,
+  readHubspotCompaniesExport,
+  readHubspotContactsExport,
+  readHubspotDealsExport,
+} from "../services/hubspot-export.js";
 
 // Headers as Pipedrive's list view export writes them, with the record type in front.
 const ORGS_CSV = [
@@ -62,6 +68,44 @@ const ACTIVITIES_CSV = [
   "Send proposal,task,2026-10-20,To do,,9001",
   "Chase invoice,task,2026-10-05,Done,,",
 ].join("\n");
+
+// Headers as HubSpot's "Export view" writes them.
+const HS_COMPANIES_CSV = [
+  "Record ID,Company name,Company Domain Name,Industry,Country/Region,Company owner,Lifecycle Stage",
+  "3001,Northwind Minerals,northwind.test,MINING_AND_METALS,Ghana,Ama Owusu,customer",
+  "3002,Kente Logistics,kente.test,,Ghana,,lead",
+].join("\n");
+
+const HS_CONTACTS_CSV = [
+  "Record ID,First Name,Last Name,Email,Phone Number,Job Title,Associated Company IDs (Primary),Associated Company (Primary)",
+  "4001,Esi,Boateng,esi@example.test,+233 20 000 0001,CFO,3001,Northwind Minerals",
+  "4002,,,kofi@example.test,,,,Kente Logistics",
+].join("\n");
+
+const HS_DEALS_CSV = [
+  "Record ID,Deal Name,Deal Stage,Amount,Close Date,Deal owner,Associated Company IDs (Primary),Associated Company (Primary)",
+  "5001,Kente fleet audit,Proposal made,8000,2026-12-01,Ben,,Kente Logistics",
+  "5002,Northwind retainer,Closed won,4000,,Ben,3001,Northwind Minerals",
+].join("\n");
+
+describe("HubSpot export parsing", () => {
+  it("maps companies, contacts and deals from HubSpot headers", () => {
+    expect(readHubspotCompaniesExport(HS_COMPANIES_CSV).records[0]).toMatchObject({
+      externalId: "3001",
+      name: "Northwind Minerals",
+      country: "Ghana",
+      status: "client",
+    });
+    const contacts = readHubspotContactsExport(HS_CONTACTS_CSV).records;
+    expect(contacts[0]).toMatchObject({ name: "Esi Boateng", organisationExternalId: "3001", role: "CFO" });
+    // No name: the email stands in, so the person is not lost.
+    expect(contacts[1]).toMatchObject({ name: "kofi@example.test", organisationName: "Kente Logistics" });
+    const deals = readHubspotDealsExport(HS_DEALS_CSV).records;
+    expect(deals.map((deal) => deal.status)).toEqual(["open", "won"]);
+    expect(hubspotDealStatus("closedlost")).toBe("lost");
+    expect(() => readHubspotCompaniesExport("Company name\nAcme")).toThrow(/In HubSpot, add the column/);
+  });
+});
 
 describe("Pipedrive export parsing", () => {
   it("parses quoted commas, doubled quotes, line breaks and semicolons", () => {
@@ -288,5 +332,35 @@ describeEmbeddedPostgres("Pipedrive export import route", () => {
     expect(denied.status).toBe(403);
     const empty = await request(app(owner)).post(importPath(companyId)).send({});
     expect(empty.status).toBe(400);
+  });
+
+  it("imports HubSpot export files into their own rows and cases", async () => {
+    const companyId = await seedCompany();
+    const owner = await seedMember(companyId, "owner");
+    const pipeline = await seedPipeline(companyId);
+    const body = { companies: HS_COMPANIES_CSV, contacts: HS_CONTACTS_CSV, deals: HS_DEALS_CSV, pipelineId: pipeline.id };
+    const path = `/api/companies/${companyId}/organisations/import/hubspot-export`;
+
+    const first = await request(app(owner)).post(path).send(body);
+    expect(first.status).toBe(200);
+    expect(first.body.source).toBe("hubspot");
+    expect(first.body.organisations).toMatchObject({ created: 2, errors: 0 });
+    expect(first.body.contacts).toMatchObject({ created: 2, errors: 0 });
+    expect(first.body.deals).toEqual({ created: 1, updated: 0, skipped: 1, errors: 0 });
+
+    const orgs = await db.select().from(organisations).where(eq(organisations.companyId, companyId));
+    expect(orgs.map((row) => [row.externalId, row.status, row.source]).sort()).toEqual([
+      ["3001", "client", "hubspot"],
+      ["3002", "prospect", "hubspot"],
+    ]);
+    const [caseRow] = await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId));
+    expect(caseRow).toMatchObject({ caseKey: "hubspot-5001", title: "Kente fleet audit" });
+    expect(caseRow!.fields).toMatchObject({ hubspotDealId: "5001", hubspotStage: "Proposal made", dealValue: 8000 });
+
+    const second = await request(app(owner)).post(path).send(body);
+    expect(second.body.organisations).toMatchObject({ created: 0, updated: 0 });
+    expect(await db.select().from(pipelineCases).where(eq(pipelineCases.companyId, companyId))).toHaveLength(1);
+    const log = await db.select().from(activityLog).where(eq(activityLog.companyId, companyId));
+    expect(log.filter((row) => (row.details as { source?: string } | null)?.source === "hubspot")).toHaveLength(2);
   });
 });

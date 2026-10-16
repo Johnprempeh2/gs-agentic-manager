@@ -18,6 +18,9 @@ import type {
 import type { OrganisationActor } from "./organisations.js";
 
 const SOURCE = "pipedrive";
+
+/** The CRM an import reads from; it is also the rows' `source`, so each CRM keeps its own ids. */
+export type CrmImportSource = OrganisationImportResult["source"];
 const MAX_ERROR_SAMPLES = 20;
 
 export interface MappedPipedriveOrganisation {
@@ -125,6 +128,7 @@ export function pipedriveRecordWriter(
   actor: OrganisationActor,
   result: OrganisationImportResult,
   now: () => Date,
+  source: CrmImportSource = SOURCE,
 ) {
   const orgByExternalId = new Map<string, OrganisationRow>();
   const contactByExternalId = new Map<string, ContactRow>();
@@ -144,7 +148,7 @@ export function pipedriveRecordWriter(
       const rows = await db
         .select()
         .from(organisations)
-        .where(and(eq(organisations.companyId, companyId), eq(organisations.source, SOURCE), isNotNull(organisations.externalId)));
+        .where(and(eq(organisations.companyId, companyId), eq(organisations.source, source), isNotNull(organisations.externalId)));
       for (const row of rows) orgByExternalId.set(row.externalId!, row);
     },
 
@@ -155,7 +159,7 @@ export function pipedriveRecordWriter(
         .where(
           and(
             eq(organisationContacts.companyId, companyId),
-            eq(organisationContacts.source, SOURCE),
+            eq(organisationContacts.source, source),
             isNotNull(organisationContacts.externalId),
           ),
         );
@@ -175,7 +179,7 @@ export function pipedriveRecordWriter(
               country: mapped.country,
               countryOwner: mapped.countryOwner,
               status: mapped.status,
-              source: SOURCE,
+              source,
               externalId: mapped.externalId,
               createdByUserId: actor.userId,
               createdByAgentId: actor.agentId,
@@ -228,7 +232,7 @@ export function pipedriveRecordWriter(
             .values({
               companyId,
               ...fields,
-              source: SOURCE,
+              source,
               externalId: mapped.externalId,
               createdByUserId: actor.userId,
               createdByAgentId: actor.agentId,
@@ -262,9 +266,9 @@ export function pipedriveRecordWriter(
   };
 }
 
-export function newImportResult(startedAt: Date): OrganisationImportResult {
+export function newImportResult(startedAt: Date, source: CrmImportSource = SOURCE): OrganisationImportResult {
   return {
-    source: SOURCE,
+    source,
     organisations: emptyImportCounts(),
     contacts: emptyImportCounts(),
     errorSamples: [],

@@ -91,6 +91,8 @@ describe("Integrations", () => {
     await render();
     expect(mocks.listActivity).toHaveBeenCalledWith("company-1", { action: ["organisation.import_completed"], limit: 20 });
     expect(card("pipedrive").textContent).toContain("3 organisations and 1 person added");
+    expect(card("hubspot").textContent).toContain("Not connected");
+    expect(card("hubspot").querySelector("a[href='/organisations']")?.textContent).toBe("Upload export");
 
     expect(card("pipedrive").textContent).toContain("Connected");
     expect(card("pipedrive").querySelector("a[href='/apps/conn-pipedrive']")?.textContent).toBe("Manage");
@@ -107,6 +109,17 @@ describe("Integrations", () => {
 
     expect(card("mailboxes").textContent).toContain("1 inbox: ben@example.test");
     expect(card("mailboxes").querySelector("a[href='/apps/mailboxes']")?.textContent).toBe("Manage");
+  });
+
+  it("shows a HubSpot file import as imported, with what came in", async () => {
+    mocks.listConnections.mockResolvedValue({ connections: [] });
+    mocks.listMailboxes.mockResolvedValue([]);
+    mocks.listActivity.mockResolvedValue([
+      { id: "a2", action: "organisation.import_completed", createdAt: new Date().toISOString(), details: { source: "hubspot", deals: { created: 2 } } },
+    ]);
+    await render();
+    expect(card("hubspot").textContent).toContain("Imported from a file");
+    expect(card("hubspot").textContent).toContain("2 deals added");
   });
 
   it("shows a connection's problem in words", async () => {

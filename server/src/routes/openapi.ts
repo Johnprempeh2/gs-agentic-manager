@@ -370,6 +370,7 @@ import {
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
+  importHubspotExportSchema,
   importPipedriveExportSchema,
   listCrmSyncConflictsQuerySchema,
   listCrmSyncEventsQuerySchema,
@@ -1496,6 +1497,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/mailboxes/{mailboxId}/test",
   "POST /api/companies/{companyId}/organisations/import/pipedrive",
   "POST /api/companies/{companyId}/organisations/import/pipedrive-export",
+  "POST /api/companies/{companyId}/organisations/import/hubspot-export",
   "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
   "POST /api/companies/{companyId}/website/properties",
   "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
@@ -14104,6 +14106,22 @@ registerCurrentRoute({
   tags: ["organisations"],
   summary: "Import Pipedrive export files (organisations, people, deals, activities) without an API key (company owners); 409 while an import runs",
   body: importPipedriveExportSchema,
+  responses: {
+    200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    409: r.conflict,
+    422: r.unprocessable,
+  },
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/organisations/import/hubspot-export",
+  tags: ["organisations"],
+  summary: "Import HubSpot export files (companies, contacts, deals) without an API key (company owners); 409 while an import runs",
+  body: importHubspotExportSchema,
   responses: {
     200: r.ok(),
     400: r.badRequest,

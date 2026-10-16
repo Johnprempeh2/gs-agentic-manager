@@ -50,14 +50,32 @@ const SAMPLE_LABELS: Record<OrganisationImportResult["errorSamples"][number]["ki
   activity: "Activity",
 };
 
-type ExportKind = "organisations" | "people" | "deals" | "activities";
+/** One CRM's export files and where they go, so the upload form serves Pipedrive and HubSpot alike. */
+export interface CrmExportSpec {
+  /** Prefix for input ids, such as `pipedrive-export`. */
+  idPrefix: string;
+  instructions: string;
+  files: Array<{ kind: string; label: string; hint: string }>;
+  /** The file kind that holds deals, which needs a pipeline. */
+  dealsKind: string;
+  submit: (companyId: string, body: Record<string, string>) => Promise<OrganisationImportResult>;
+}
 
-const EXPORT_FILES: Array<{ kind: ExportKind; label: string; hint: string }> = [
+const EXPORT_FILES: CrmExportSpec["files"] = [
   { kind: "organisations", label: "Organisations", hint: "Becomes your organisations list." },
   { kind: "people", label: "People", hint: "Added to the organisation they work for." },
   { kind: "deals", label: "Deals", hint: "Open deals become client cases; won deals mark the organisation as a client." },
   { kind: "activities", label: "Activities", hint: "Calls, meetings and tasks, attached to their deal." },
 ];
+
+const PIPEDRIVE_EXPORT: CrmExportSpec = {
+  idPrefix: "pipedrive-export",
+  instructions:
+    "In Pipedrive, open each list, choose the three dots menu, then Export as CSV. Add the files you have; you can add the rest later.",
+  files: EXPORT_FILES,
+  dealsKind: "deals",
+  submit: (companyId, body) => organisationsApi.importFromPipedriveExport(companyId, body as ImportPipedriveExport),
+};
 
 /**
  * "Import from Pipedrive" on Organisations (GRE-1479). Owners only. Two ways
@@ -86,7 +104,7 @@ export function PipedriveImport({ companyId }: { companyId: string }) {
   );
 }
 
-function ImportResultSummary({ result }: { result: OrganisationImportResult }) {
+export function ImportResultSummary({ result }: { result: OrganisationImportResult }) {
   return (
     <div className="space-y-2 text-sm" role="status">
       <p className="font-medium">Import finished.</p>
@@ -144,25 +162,34 @@ function PipedriveImportDialogContent({ companyId, onClose }: { companyId: strin
   );
 }
 
-function ExportFileImport({ companyId, onClose }: { companyId: string; onClose: () => void }) {
+export function ExportFileImport({
+  companyId,
+  onClose,
+  spec = PIPEDRIVE_EXPORT,
+}: {
+  companyId: string;
+  onClose: () => void;
+  spec?: CrmExportSpec;
+}) {
   const queryClient = useQueryClient();
-  const [files, setFiles] = useState<Partial<Record<ExportKind, File>>>({});
+  const [files, setFiles] = useState<Record<string, File | undefined>>({});
+  const dealsFile = files[spec.dealsKind];
   const [pipelineId, setPipelineId] = useState("");
   const pipelines = useQuery({
     queryKey: queryKeys.pipelines.list(companyId),
     queryFn: () => pipelinesApi.list(companyId),
-    enabled: Boolean(files.deals),
+    enabled: Boolean(dealsFile),
   });
   const livePipelines = (pipelines.data ?? []).filter((pipeline) => !pipeline.archivedAt);
   const run = useMutation<OrganisationImportResult, Error>({
     mutationFn: async () => {
-      const body: ImportPipedriveExport = {};
-      for (const { kind } of EXPORT_FILES) {
+      const body: Record<string, string> = {};
+      for (const { kind } of spec.files) {
         const file = files[kind];
         if (file) body[kind] = await file.text();
       }
       if (pipelineId) body.pipelineId = pipelineId;
-      return organisationsApi.importFromPipedriveExport(companyId, body);
+      return spec.submit(companyId, body);
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.organisations.all(companyId) });
@@ -170,7 +197,7 @@ function ExportFileImport({ companyId, onClose }: { companyId: string; onClose: 
     },
   });
   const hasFile = Object.values(files).some(Boolean);
-  const needsPipeline = Boolean(files.deals) && !pipelineId;
+  const needsPipeline = Boolean(dealsFile) && !pipelineId;
 
   return (
     <>
@@ -183,15 +210,12 @@ function ExportFileImport({ companyId, onClose }: { companyId: string; onClose: 
         <ImportResultSummary result={run.data} />
       ) : (
         <div className="space-y-3 text-sm">
-          <p className="text-muted-foreground">
-            In Pipedrive, open each list, choose the three dots menu, then Export as CSV. Add the files you have; you can
-            add the rest later.
-          </p>
-          {EXPORT_FILES.map(({ kind, label, hint }) => (
+          <p className="text-muted-foreground">{spec.instructions}</p>
+          {spec.files.map(({ kind, label, hint }) => (
             <div key={kind} className="space-y-1">
-              <Label htmlFor={`pipedrive-export-${kind}`}>{label}</Label>
+              <Label htmlFor={`${spec.idPrefix}-${kind}`}>{label}</Label>
               <Input
-                id={`pipedrive-export-${kind}`}
+                id={`${spec.idPrefix}-${kind}`}
                 type="file"
                 accept=".csv,text/csv"
                 onChange={(event) => {
@@ -202,10 +226,10 @@ function ExportFileImport({ companyId, onClose }: { companyId: string; onClose: 
               <p className="text-xs text-muted-foreground">{hint}</p>
             </div>
           ))}
-          {files.deals ? (
+          {dealsFile ? (
             <div className="space-y-1">
-              <Label htmlFor="pipedrive-export-pipeline">Pipeline for open deals</Label>
-              <NativeSelect id="pipedrive-export-pipeline" value={pipelineId} onChange={(event) => setPipelineId(event.target.value)}>
+              <Label htmlFor={`${spec.idPrefix}-pipeline`}>Pipeline for open deals</Label>
+              <NativeSelect id={`${spec.idPrefix}-pipeline`} value={pipelineId} onChange={(event) => setPipelineId(event.target.value)}>
                 <option value="">Choose a pipeline</option>
                 {livePipelines.map((pipeline) => (
                   <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>

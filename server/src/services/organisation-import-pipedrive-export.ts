@@ -8,10 +8,16 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { organisations, pipelineCases } from "@greatstone/db";
-import type { ImportPipedriveExport, OrganisationImportResult } from "@greatstone/shared";
+import type { ImportHubspotExport, ImportPipedriveExport, OrganisationImportResult } from "@greatstone/shared";
 import { unprocessable } from "../errors.js";
 import {
+  readHubspotCompaniesExport,
+  readHubspotContactsExport,
+  readHubspotDealsExport,
+} from "./hubspot-export.js";
+import {
   emptyImportCounts,
+  type CrmImportSource,
   newImportResult,
   pipedriveRecordWriter,
 } from "./organisation-import-pipedrive.js";
@@ -23,7 +29,10 @@ import {
   readOrganisationsExport,
   readPeopleExport,
   type ExportActivity,
+  type ExportContact,
   type ExportDeal,
+  type ExportOrganisation,
+  type ParsedRows,
 } from "./pipedrive-export.js";
 import { pipelineService, type PipelineActor } from "./pipelines.js";
 
@@ -37,12 +46,30 @@ export function caseKeyForPipedriveDeal(externalId: string) {
   return `pipedrive-${externalId}`;
 }
 
+/** Case keys and field names for each CRM, so a deal from one never overwrites a deal from another. */
+const CRM_LABELS: Record<CrmImportSource, { app: string; dealIdField: string; stageField: string; activitiesField: string }> = {
+  pipedrive: { app: "Pipedrive", dealIdField: "pipedriveDealId", stageField: "pipedriveStage", activitiesField: "pipedriveActivities" },
+  hubspot: { app: "HubSpot", dealIdField: "hubspotDealId", stageField: "hubspotStage", activitiesField: "hubspotActivities" },
+};
+
+export function caseKeyForCrmDeal(source: CrmImportSource, externalId: string) {
+  return `${source}-${externalId}`;
+}
+
+/** Export rows from one CRM, already read from its CSV files. */
+export interface ParsedCrmExport {
+  organisations: ParsedRows<ExportOrganisation> | null;
+  people: ParsedRows<ExportContact> | null;
+  deals: ParsedRows<ExportDeal> | null;
+  activities: ParsedRows<ExportActivity> | null;
+}
+
 function nameKey(value: string | null | undefined) {
   return value ? value.trim().toLowerCase().replace(/\s+/g, " ") : "";
 }
 
-function dealSummary(deal: ExportDeal) {
-  const parts = ["Imported from a Pipedrive export."];
+function dealSummary(deal: ExportDeal, app = "Pipedrive") {
+  const parts = [`Imported from a ${app} export.`];
   if (deal.value !== null) parts.push(`Value ${deal.currency ? `${deal.currency} ` : ""}${deal.value.toLocaleString("en-GB")}.`);
   if (deal.expectedCloseDate) parts.push(`Expected close ${deal.expectedCloseDate}.`);
   if (deal.owner) parts.push(`Owner ${deal.owner}.`);
@@ -64,23 +91,67 @@ function activityEntry(activity: ExportActivity) {
   };
 }
 
+/** Reads every file before anything is written, so a bad file changes nothing. */
+function readAll(read: () => ParsedCrmExport, code: string) {
+  try {
+    return read();
+  } catch (error) {
+    if (error instanceof PipedriveExportError) throw unprocessable(error.message, { code });
+    throw error;
+  }
+}
+
 export function pipedriveExportImportService(db: Db, deps: { now?: () => Date } = {}) {
+  const importer = crmExportImporter(db, deps);
+  return {
+    run(companyId: string, files: ImportPipedriveExport, actor: OrganisationActor): Promise<OrganisationImportResult> {
+      const parsed = readAll(() => ({
+        organisations: files.organisations ? readOrganisationsExport(files.organisations) : null,
+        people: files.people ? readPeopleExport(files.people) : null,
+        deals: files.deals ? readDealsExport(files.deals) : null,
+        activities: files.activities ? readActivitiesExport(files.activities) : null,
+      }), "pipedrive_export_invalid");
+      return importer.run(companyId, "pipedrive", parsed, files.pipelineId ?? null, actor);
+    },
+  };
+}
+
+/**
+ * Import of the CSV files HubSpot exports. Companies and contacts keep source
+ * "hubspot" and the HubSpot record id; open deals become cases keyed
+ * "hubspot-<id>". Closed won and closed lost deals only set the company status.
+ */
+export function hubspotExportImportService(db: Db, deps: { now?: () => Date } = {}) {
+  const importer = crmExportImporter(db, deps);
+  return {
+    run(companyId: string, files: ImportHubspotExport, actor: OrganisationActor): Promise<OrganisationImportResult> {
+      const parsed = readAll(() => ({
+        organisations: files.companies ? readHubspotCompaniesExport(files.companies) : null,
+        people: files.contacts ? readHubspotContactsExport(files.contacts) : null,
+        deals: files.deals ? readHubspotDealsExport(files.deals) : null,
+        activities: null,
+      }), "hubspot_export_invalid");
+      return importer.run(companyId, "hubspot", parsed, files.pipelineId ?? null, actor);
+    },
+  };
+}
+
+function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
   const now = deps.now ?? (() => new Date());
   const pipelines = pipelineService(db);
 
   return {
-    async run(companyId: string, files: ImportPipedriveExport, actor: OrganisationActor): Promise<OrganisationImportResult> {
-      // Read every file before writing anything, so a bad file changes nothing.
-      let orgRows, peopleRows, dealRows, activityRows;
-      try {
-        orgRows = files.organisations ? readOrganisationsExport(files.organisations) : null;
-        peopleRows = files.people ? readPeopleExport(files.people) : null;
-        dealRows = files.deals ? readDealsExport(files.deals) : null;
-        activityRows = files.activities ? readActivitiesExport(files.activities) : null;
-      } catch (error) {
-        if (error instanceof PipedriveExportError) throw unprocessable(error.message, { code: "pipedrive_export_invalid" });
-        throw error;
-      }
+    async run(
+      companyId: string,
+      source: CrmImportSource,
+      parsed: ParsedCrmExport,
+      pipelineId: string | null,
+      actor: OrganisationActor,
+    ): Promise<OrganisationImportResult> {
+      const labels = CRM_LABELS[source];
+      const caseKeyFor = (externalId: string) => caseKeyForCrmDeal(source, externalId);
+      const files = { pipelineId };
+      const { organisations: orgRows, people: peopleRows, deals: dealRows, activities: activityRows } = parsed;
       if (dealRows && !files.pipelineId && dealRows.records.some((deal) => deal.status === "open" || deal.status === null)) {
         throw unprocessable("Choose the pipeline your open deals should go into.", { code: "pipeline_required" });
       }
@@ -90,8 +161,8 @@ export function pipedriveExportImportService(db: Db, deps: { now?: () => Date } 
         stages.filter((stage) => STARTABLE_STAGE_KINDS.has(stage.kind)).map((stage) => [nameKey(stage.name), stage.key]),
       );
 
-      const result = newImportResult(now());
-      const writer = pipedriveRecordWriter(db, companyId, actor, result, now);
+      const result = newImportResult(now(), source);
+      const writer = pipedriveRecordWriter(db, companyId, actor, result, now, source);
       const pushError = (kind: "deal" | "activity", externalId: string, error: unknown) => {
         if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
           result.errorSamples.push({ kind, externalId, message: error instanceof Error ? error.message : String(error) });
@@ -201,21 +272,21 @@ export function pipedriveExportImportService(db: Db, deps: { now?: () => Date } 
         const dealActivities = newestActivities(allActivities);
         activities.skipped += allActivities.length - dealActivities.length;
         const fields: Record<string, unknown> = {
-          pipedriveDealId: deal.externalId,
+          [labels.dealIdField]: deal.externalId,
           dealValue: deal.value,
           dealCurrency: deal.currency,
           expectedCloseDate: deal.expectedCloseDate,
           dealOwner: deal.owner,
-          pipedriveStage: deal.stageName,
+          [labels.stageField]: deal.stageName,
         };
-        if (dealActivities.length > 0) fields.pipedriveActivities = dealActivities.map(activityEntry);
+        if (dealActivities.length > 0) fields[labels.activitiesField] = dealActivities.map(activityEntry);
         try {
           const ingested = await pipelines.ingestCase({
             companyId,
             pipelineId: files.pipelineId,
-            caseKey: caseKeyForPipedriveDeal(deal.externalId),
+            caseKey: caseKeyFor(deal.externalId),
             title: deal.title,
-            summary: dealSummary(deal),
+            summary: dealSummary(deal, labels.app),
             fields,
             stageKey: stageKeyByName.get(nameKey(deal.stageName)) ?? null,
             organisationId: organisation?.id ?? null,
@@ -225,7 +296,7 @@ export function pipedriveExportImportService(db: Db, deps: { now?: () => Date } 
             ? true
             : await patchDealCase(ingested.case, {
               title: deal.title,
-              summary: dealSummary(deal),
+              summary: dealSummary(deal, labels.app),
               fields,
               organisationId: organisation?.id ?? null,
             });
@@ -250,13 +321,13 @@ export function pipedriveExportImportService(db: Db, deps: { now?: () => Date } 
           .from(pipelineCases)
           .where(and(
             eq(pipelineCases.companyId, companyId),
-            inArray(pipelineCases.caseKey, laterDealIds.map(caseKeyForPipedriveDeal)),
+            inArray(pipelineCases.caseKey, laterDealIds.map(caseKeyFor)),
             isNull(pipelineCases.retiredAt),
           ));
       const caseByKey = new Map(existingCases.map((row) => [row.caseKey, row]));
       for (const dealId of laterDealIds) {
         const list = activitiesByDeal.get(dealId)!;
-        const caseRow = caseByKey.get(caseKeyForPipedriveDeal(dealId));
+        const caseRow = caseByKey.get(caseKeyFor(dealId));
         if (!caseRow) {
           activities.skipped += list.length;
           continue;
@@ -264,7 +335,7 @@ export function pipedriveExportImportService(db: Db, deps: { now?: () => Date } 
         const entries = newestActivities(list);
         try {
           const changed = await patchDealCase(caseRow, {
-            fields: { ...(caseRow.fields ?? {}), pipedriveActivities: entries.map(activityEntry) },
+            fields: { ...(caseRow.fields ?? {}), [labels.activitiesField]: entries.map(activityEntry) },
           });
           if (changed) activities.created += entries.length;
           else activities.skipped += entries.length;

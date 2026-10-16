@@ -60,7 +60,7 @@ export interface OrganisationImportCounts {
  * Nothing is written to Pipedrive.
  */
 export interface OrganisationImportResult {
-  source: "pipedrive";
+  source: "pipedrive" | "hubspot";
   organisations: OrganisationImportCounts;
   contacts: OrganisationImportCounts;
   /** Export import only: deals added as client cases in the chosen pipeline. */
