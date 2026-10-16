@@ -226,7 +226,7 @@ function SearchResultRowImpl({
           <div className="flex min-w-0 flex-wrap items-baseline gap-x-2.5 gap-y-1">
             <span className="truncate text-sm font-medium text-foreground">{result.title}</span>
             <span className="truncate text-xs text-muted-foreground">
-              {file.owner.kind === "client" ? "Client: " : ""}{file.owner.label}
+              {file.owner.kind === "client" ? "Client: " : file.owner.kind === "organisation" ? "Organisation: " : ""}{file.owner.label}
             </span>
           </div>
           {result.snippet ? (

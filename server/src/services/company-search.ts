@@ -408,6 +408,8 @@ type FileSearchRow = {
   caseId: string | null;
   casePipelineId: string | null;
   caseTitle: string | null;
+  organisationId?: string | null;
+  organisationName?: string | null;
   altText?: string | null;
 };
 
@@ -433,7 +435,9 @@ function fileResult(row: FileSearchRow, prefix: string, normalizedQuery: string,
     ? { kind: "client", label: row.caseTitle ?? "Client", href: `/${prefix}/pipelines/${encodeURIComponent(row.casePipelineId)}/items/${encodeURIComponent(row.caseId)}` }
     : row.issueId
       ? { kind: "task", label: [row.issueIdentifier, row.issueTitle].filter(Boolean).join(" "), href: issueHref(prefix, { id: row.issueId, identifier: row.issueIdentifier }) }
-      : null;
+      : row.organisationId
+        ? { kind: "organisation", label: row.organisationName ?? "Organisation", href: `/${prefix}/organisations/${encodeURIComponent(row.organisationId)}` }
+        : null;
   if (!owner) return null;
   const terms = matchTerms(normalizedQuery, tokens);
   const title = row.filename?.trim() || "File";
@@ -1146,22 +1150,25 @@ export function companySearchService(db: Db) {
         LEFT JOIN issues i ON i.id = ia.issue_id AND i.company_id = a.company_id AND ${sql.raw(visibleIssueSql("i"))}
         LEFT JOIN pipeline_case_evidence e ON e.company_id = a.company_id
           AND (e.asset_id = a.id OR (ia.id IS NOT NULL AND e.attachment_id = ia.id))
-        LEFT JOIN pipeline_cases pc ON pc.id = e.case_id AND pc.retired_at IS NULL
+        LEFT JOIN crm_files cf ON cf.asset_id = a.id AND cf.company_id = a.company_id
+        LEFT JOIN pipeline_cases pc ON pc.id = coalesce(e.case_id, cf.case_id) AND pc.retired_at IS NULL
+        LEFT JOIN organisations org ON org.id = cf.organisation_id AND org.archived_at IS NULL
         WHERE t.company_id = ${companyId} AND t.status = 'indexed' AND ${fileTextMatch}
-          AND (i.id IS NOT NULL OR pc.id IS NOT NULL)`;
+          AND (i.id IS NOT NULL OR pc.id IS NOT NULL OR org.id IS NOT NULL)`;
 
       async function fetchFileTextRows(): Promise<FileSearchRow[]> {
         const firstToken = (tokens[0] ?? normalizedQuery).toLowerCase();
         const result = await db.execute(sql`
           SELECT * FROM (
             SELECT DISTINCT ON (a.id)
-              a.id AS "assetId", a.original_filename AS "filename", a.content_type AS "contentType",
+              a.id AS "assetId", coalesce(a.original_filename, cf.name) AS "filename", a.content_type AS "contentType",
               a.created_at AS "createdAt",
               substring(t.text FROM greatest(1, strpos(lower(t.text), ${firstToken}) - 300) FOR 700) AS "excerpt",
               ia.id AS "attachmentId", i.id AS "issueId", i.identifier AS "issueIdentifier", i.title AS "issueTitle",
-              pc.id AS "caseId", pc.pipeline_id AS "casePipelineId", pc.title AS "caseTitle"
+              pc.id AS "caseId", pc.pipeline_id AS "casePipelineId", pc.title AS "caseTitle",
+              org.id AS "organisationId", org.name AS "organisationName"
             ${fileFrom}
-            ORDER BY a.id, (pc.id IS NULL), (i.id IS NULL)
+            ORDER BY a.id, (pc.id IS NULL), (i.id IS NULL), (org.id IS NULL)
           ) files
           ORDER BY "createdAt" DESC
           LIMIT ${fetchLimit}`) as unknown as FileSearchRow[];

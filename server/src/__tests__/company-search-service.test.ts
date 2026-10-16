@@ -8,6 +8,7 @@ import {
   companies,
   createDb,
   crmDealProducts,
+  crmFiles,
   crmProducts,
   generatedImages,
   organisationContacts,
@@ -95,6 +96,7 @@ describeEmbeddedPostgres("companySearchService", () => {
   }, 20_000);
 
   afterEach(async () => {
+    await db.delete(crmFiles);
     await db.delete(crmDealProducts);
     await db.delete(crmProducts);
     await db.delete(generatedImages);
@@ -239,6 +241,23 @@ describeEmbeddedPostgres("companySearchService", () => {
 
     const all = await svc.search(companyId, companySearchQuerySchema.parse({ q: "retainer confidential" }));
     expect(all.results.filter((row) => row.type === "file").map((row) => row.title)).toEqual(["nda.docx"]);
+  });
+
+  it("finds words in files imported from the CRM, under their organisation", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Osprey plc" });
+    const assetId = await createAsset(companyId, null as unknown as string, "application/pdf", "Board minutes\nOsprey agreed the warranty terms");
+    await db.insert(crmFiles).values({ companyId, source: "pipedrive", externalId: "f1", name: "minutes.pdf", assetId, organisationId: orgId });
+
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "warranty", scope: "files" }));
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0]).toMatchObject({
+      title: "minutes.pdf",
+      href: expect.stringContaining(`/organisations/${orgId}`),
+      snippet: "Osprey agreed the warranty terms",
+      file: expect.objectContaining({ owner: expect.objectContaining({ kind: "organisation", label: "Osprey plc" }) }),
+    });
   });
 
   it("finds images by their alt text, and hides files on hidden tasks", async () => {

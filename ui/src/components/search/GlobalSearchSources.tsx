@@ -216,7 +216,7 @@ export function GlobalSearchSources({
                     <span className="block truncate">
                       {result.title}
                       <span className="ml-2 text-xs text-muted-foreground">
-                        {file.owner.kind === "client" ? "Client: " : "in "}{file.owner.label}
+                        {file.owner.kind === "client" ? "Client: " : file.owner.kind === "organisation" ? "Organisation: " : "in "}{file.owner.label}
                       </span>
                     </span>
                     {result.snippet ? (

@@ -76,7 +76,7 @@ export interface CompanySearchFileSummary {
   mediaKind: "image" | "document";
   /** Where the file lives: a task (or chat) or a client in a pipeline. */
   owner: {
-    kind: "task" | "client";
+    kind: "task" | "client" | "organisation";
     label: string;
     href: string;
   };
