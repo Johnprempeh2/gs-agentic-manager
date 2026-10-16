@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, Loader2 } from "lucide-react";
-import type { OrganisationImportCounts, OrganisationImportResult, ToolConnection } from "@greatstone/shared";
+import type { ImportPipedriveExport, OrganisationImportCounts, OrganisationImportResult, ToolConnection } from "@greatstone/shared";
 import { accessApi, type CurrentBoardAccess } from "@/api/access";
 import { organisationsApi } from "@/api/organisations";
+import { pipelinesApi } from "@/api/pipelines";
 import { toolsApi } from "@/api/tools";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { appSourceConnectHref } from "@/pages/apps/app-connect-policy";
 import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
@@ -39,10 +43,26 @@ function countsText(label: string, counts: OrganisationImportCounts) {
   return `${label}: ${counts.created} added, ${counts.updated} updated, ${counts.skipped} skipped, ${counts.errors} failed`;
 }
 
+const SAMPLE_LABELS: Record<OrganisationImportResult["errorSamples"][number]["kind"], string> = {
+  organisation: "Organisation",
+  contact: "Person",
+  deal: "Deal",
+  activity: "Activity",
+};
+
+type ExportKind = "organisations" | "people" | "deals" | "activities";
+
+const EXPORT_FILES: Array<{ kind: ExportKind; label: string; hint: string }> = [
+  { kind: "organisations", label: "Organisations", hint: "Becomes your organisations list." },
+  { kind: "people", label: "People", hint: "Added to the organisation they work for." },
+  { kind: "deals", label: "Deals", hint: "Open deals become client cases; won deals mark the organisation as a client." },
+  { kind: "activities", label: "Activities", hint: "Calls, meetings and tasks, attached to their deal." },
+];
+
 /**
- * "Import from Pipedrive" on Organisations (GRE-1479). Owners only. Without a
- * working Pipedrive connection it points to the Apps setup; with one it runs
- * the read-only import and shows what changed.
+ * "Import from Pipedrive" on Organisations (GRE-1479). Owners only. Two ways
+ * in: upload the CSV files Pipedrive exports (no API key needed), or run the
+ * read-only import through a working Pipedrive connection from Apps.
  */
 export function PipedriveImport({ companyId }: { companyId: string }) {
   const [open, setOpen] = useState(false);
@@ -66,13 +86,163 @@ export function PipedriveImport({ companyId }: { companyId: string }) {
   );
 }
 
+function ImportResultSummary({ result }: { result: OrganisationImportResult }) {
+  return (
+    <div className="space-y-2 text-sm" role="status">
+      <p className="font-medium">Import finished.</p>
+      <ul className="space-y-1">
+        <li>{countsText("Organisations", result.organisations)}</li>
+        <li>{countsText("People", result.contacts)}</li>
+        {result.deals ? <li>{countsText("Deals", result.deals)}</li> : null}
+        {result.activities ? <li>{countsText("Activities", result.activities)}</li> : null}
+      </ul>
+      {result.errorSamples.length > 0 ? (
+        <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2 text-xs text-muted-foreground" aria-label="Import errors">
+          {result.errorSamples.map((sample) => (
+            <li key={`${sample.kind}-${sample.externalId}`}>
+              {SAMPLE_LABELS[sample.kind]} {sample.externalId}: {sample.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function PipedriveImportDialogContent({ companyId, onClose }: { companyId: string; onClose: () => void }) {
-  const queryClient = useQueryClient();
   const connections = useQuery({
     queryKey: queryKeys.tools.connections(companyId),
     queryFn: () => toolsApi.listConnections(companyId),
   });
   const connection = activePipedriveConnection(connections.data?.connections ?? []);
+  const [chosenMode, setMode] = useState<"file" | "api" | null>(null);
+  const mode = chosenMode ?? (connection ? "api" : "file");
+
+  return (
+    <DialogContent className="sm:max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Import from Pipedrive</DialogTitle>
+        <DialogDescription>
+          Brings your Pipedrive organisations, people, deals and activities into GSAM. Nothing is written to Pipedrive,
+          and running it again updates what it imported before instead of adding duplicates.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="flex gap-2" role="group" aria-label="How to import">
+        <Button type="button" size="sm" variant={mode === "file" ? "default" : "outline"} aria-pressed={mode === "file"} onClick={() => setMode("file")}>
+          Upload export files
+        </Button>
+        <Button type="button" size="sm" variant={mode === "api" ? "default" : "outline"} aria-pressed={mode === "api"} onClick={() => setMode("api")}>
+          Use my Pipedrive connection
+        </Button>
+      </div>
+      {mode === "file" ? (
+        <ExportFileImport companyId={companyId} onClose={onClose} />
+      ) : (
+        <ConnectionImport companyId={companyId} onClose={onClose} connections={connections} connection={connection} />
+      )}
+    </DialogContent>
+  );
+}
+
+function ExportFileImport({ companyId, onClose }: { companyId: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [files, setFiles] = useState<Partial<Record<ExportKind, File>>>({});
+  const [pipelineId, setPipelineId] = useState("");
+  const pipelines = useQuery({
+    queryKey: queryKeys.pipelines.list(companyId),
+    queryFn: () => pipelinesApi.list(companyId),
+    enabled: Boolean(files.deals),
+  });
+  const livePipelines = (pipelines.data ?? []).filter((pipeline) => !pipeline.archivedAt);
+  const run = useMutation<OrganisationImportResult, Error>({
+    mutationFn: async () => {
+      const body: ImportPipedriveExport = {};
+      for (const { kind } of EXPORT_FILES) {
+        const file = files[kind];
+        if (file) body[kind] = await file.text();
+      }
+      if (pipelineId) body.pipelineId = pipelineId;
+      return organisationsApi.importFromPipedriveExport(companyId, body);
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.organisations.all(companyId) });
+      void queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+    },
+  });
+  const hasFile = Object.values(files).some(Boolean);
+  const needsPipeline = Boolean(files.deals) && !pipelineId;
+
+  return (
+    <>
+      {run.isPending ? (
+        <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Importing your files.
+        </p>
+      ) : run.data ? (
+        <ImportResultSummary result={run.data} />
+      ) : (
+        <div className="space-y-3 text-sm">
+          <p className="text-muted-foreground">
+            In Pipedrive, open each list, choose the three dots menu, then Export as CSV. Add the files you have; you can
+            add the rest later.
+          </p>
+          {EXPORT_FILES.map(({ kind, label, hint }) => (
+            <div key={kind} className="space-y-1">
+              <Label htmlFor={`pipedrive-export-${kind}`}>{label}</Label>
+              <Input
+                id={`pipedrive-export-${kind}`}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  setFiles((current) => ({ ...current, [kind]: file }));
+                }}
+              />
+              <p className="text-xs text-muted-foreground">{hint}</p>
+            </div>
+          ))}
+          {files.deals ? (
+            <div className="space-y-1">
+              <Label htmlFor="pipedrive-export-pipeline">Pipeline for open deals</Label>
+              <NativeSelect id="pipedrive-export-pipeline" value={pipelineId} onChange={(event) => setPipelineId(event.target.value)}>
+                <option value="">Choose a pipeline</option>
+                {livePipelines.map((pipeline) => (
+                  <option key={pipeline.id} value={pipeline.id}>{pipeline.name}</option>
+                ))}
+              </NativeSelect>
+              <p className="text-xs text-muted-foreground">Deals land in the stage with the same name, or the first stage.</p>
+            </div>
+          ) : null}
+        </div>
+      )}
+
+      {run.error ? <p className="text-sm text-destructive" role="alert">{run.error.message}</p> : null}
+
+      <DialogFooter className="gap-2">
+        <Button type="button" variant="ghost" onClick={onClose}>{run.data ? "Done" : "Cancel"}</Button>
+        {run.data ? null : (
+          <Button type="button" disabled={!hasFile || needsPipeline || run.isPending} onClick={() => run.mutate()}>
+            {run.isPending ? "Importing…" : "Import files"}
+          </Button>
+        )}
+      </DialogFooter>
+    </>
+  );
+}
+
+function ConnectionImport({
+  companyId,
+  onClose,
+  connections,
+  connection,
+}: {
+  companyId: string;
+  onClose: () => void;
+  connections: { isLoading: boolean; error: Error | null };
+  connection: ToolConnection | null;
+}) {
+  const queryClient = useQueryClient();
   const run = useMutation<OrganisationImportResult, Error>({
     mutationFn: () => organisationsApi.importFromPipedrive(companyId, connection!.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.organisations.all(companyId) }),
@@ -80,15 +250,7 @@ function PipedriveImportDialogContent({ companyId, onClose }: { companyId: strin
   const result = run.data;
 
   return (
-    <DialogContent className="sm:max-w-lg">
-      <DialogHeader>
-        <DialogTitle>Import from Pipedrive</DialogTitle>
-        <DialogDescription>
-          Reads every organisation and person in Pipedrive. Nothing is written to Pipedrive, and running it again
-          updates what it imported before instead of adding duplicates.
-        </DialogDescription>
-      </DialogHeader>
-
+    <>
       {connections.isLoading ? (
         <p className="text-sm text-muted-foreground">Checking for a Pipedrive connection…</p>
       ) : connections.error ? (
@@ -96,6 +258,7 @@ function PipedriveImportDialogContent({ companyId, onClose }: { companyId: strin
       ) : !connection ? (
         <p className="text-sm">
           Connect Pipedrive in Apps first, using the personal API token from Settings &gt; Personal preferences &gt; API in Pipedrive.
+          Until then, upload export files instead.
         </p>
       ) : run.isPending ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground" role="status">
@@ -103,24 +266,11 @@ function PipedriveImportDialogContent({ companyId, onClose }: { companyId: strin
           Importing from Pipedrive. Large accounts can take a minute.
         </p>
       ) : result ? (
-        <div className="space-y-2 text-sm" role="status">
-          <p className="font-medium">Import finished.</p>
-          <ul className="space-y-1">
-            <li>{countsText("Organisations", result.organisations)}</li>
-            <li>{countsText("People", result.contacts)}</li>
-          </ul>
-          {result.errorSamples.length > 0 ? (
-            <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2 text-xs text-muted-foreground" aria-label="Import errors">
-              {result.errorSamples.map((sample) => (
-                <li key={`${sample.kind}-${sample.externalId}`}>
-                  {sample.kind === "organisation" ? "Organisation" : "Person"} {sample.externalId}: {sample.message}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
+        <ImportResultSummary result={result} />
       ) : (
-        <p className="text-sm text-muted-foreground">Using the connection “{connection.name}”.</p>
+        <p className="text-sm text-muted-foreground">
+          Reads every organisation and person using the connection “{connection.name}”. Deals follow through CRM sync on the pipeline.
+        </p>
       )}
 
       {run.error ? <p className="text-sm text-destructive" role="alert">{run.error.message}</p> : null}
@@ -137,6 +287,6 @@ function PipedriveImportDialogContent({ companyId, onClose }: { companyId: strin
           </Button>
         )}
       </DialogFooter>
-    </DialogContent>
+    </>
   );
 }
