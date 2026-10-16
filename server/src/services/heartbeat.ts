@@ -21611,14 +21611,17 @@ export function heartbeatService(
 
       // Reserve in the same tick as the check so concurrent start gates for
       // other agents see these slots as taken, then shrink to what the
-      // per-agent limit allows.
+      // per-agent limit allows. Never reserve more than the agent may run:
+      // a one-run agent that took every free slot made a concurrent start
+      // for another agent read the cap as full and hold its run (GRE-1605).
+      const policy = parseHeartbeatPolicy(agent);
       let reservedSlots = Math.min(
         admission.slots,
+        policy.maxConcurrentRuns,
         startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
       );
       runAdmissionReservedSlots += reservedSlots;
       try {
-        const policy = parseHeartbeatPolicy(agent);
         const runningCount = await countRunningRunsForAgent(agentId);
         const availableSlots = Math.min(
           Math.max(0, policy.maxConcurrentRuns - runningCount),
