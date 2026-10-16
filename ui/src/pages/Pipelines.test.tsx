@@ -6,12 +6,25 @@ import {
 } from "../lib/pipeline-stage-presentation";
 import {
   groupCasesByBuiltFor,
+  listCardOwners,
   normalizePipelineConversationComments,
   pipelineBoardGroupByStorageKey,
   readStoredPipelineBoardGroupBy,
   readPipelineStageAutomationAssigneeAgentId,
   writeStoredPipelineBoardGroupBy,
 } from "./Pipelines";
+
+describe("listCardOwners", () => {
+  it("lists each card owner once, sorted, from client and Pipedrive fields", () => {
+    expect(listCardOwners([
+      { fields: { dealOwner: "Ben" } },
+      { fields: { ownerPerson: "Amara" } },
+      { fields: { dealOwner: "Ben" } },
+      { fields: { title: "No owner" } },
+      { fields: null },
+    ])).toEqual(["Amara", "Ben"]);
+  });
+});
 
 describe("groupCasesByBuiltFor", () => {
   it("groups items by the parent case shown as Built for", () => {

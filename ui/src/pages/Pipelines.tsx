@@ -21,7 +21,7 @@ import type {
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
 } from "@greatstone/shared";
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, UserRound, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { pipelineItemAskContext } from "../lib/ask-everest";
 import {
@@ -1190,6 +1190,17 @@ type PipelineTransitionEdge = { fromStageId: string; toStageId: string; label?: 
 type PipelineBoardGroupBy = "none" | "builtFor";
 
 const PIPELINE_BOARD_UNGROUPED_KEY = "__ungrouped";
+const ALL_OWNERS = "__all_owners";
+
+/** Distinct card owners on a board, sorted by name. */
+export function listCardOwners(cases: Array<{ fields?: Record<string, unknown> | null }>) {
+  const owners = new Set<string>();
+  for (const item of cases) {
+    const owner = readCardSummary(item.fields).owner;
+    if (owner) owners.add(owner);
+  }
+  return [...owners].sort((left, right) => left.localeCompare(right));
+}
 const PIPELINE_BOARD_GROUP_BY_STORAGE_PREFIX = "paperclip.pipelineBoard.groupBy.";
 
 function asText(value: unknown): string | null {
@@ -1642,6 +1653,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const navigate = useNavigate();
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
+  // Owner filter (Pipedrive's "my deals"), per pipeline; ALL_OWNERS shows everyone's.
+  const [ownerFilter, setOwnerFilter] = useState<{ pipelineId: string; owner: string }>({ pipelineId, owner: ALL_OWNERS });
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -1699,14 +1712,21 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     [casesQuery.data],
   );
 
+  const boardOwners = useMemo(() => listCardOwners(cases), [cases]);
+  const selectedOwner = ownerFilter.pipelineId === pipelineId && boardOwners.includes(ownerFilter.owner) ? ownerFilter.owner : ALL_OWNERS;
+  const visibleCases = useMemo(
+    () => (selectedOwner === ALL_OWNERS ? cases : cases.filter((item) => readCardSummary(item.fields).owner === selectedOwner)),
+    [cases, selectedOwner],
+  );
+
   const orderedStages = useMemo(() => {
     if (!pipeline?.stages) return [] as PipelineStage[];
     return [...pipeline.stages].sort((left, right) => left.position - right.position);
   }, [pipeline?.stages]);
   const openDealValue = useMemo(() => {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
-    return formatDealTotals(sumDealValues(cases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
-  }, [cases, orderedStages]);
+    return formatDealTotals(sumDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
+  }, [visibleCases, orderedStages]);
   const healthWarningsByStage = useMemo(
     () => groupWarningsByStage(healthQuery.data?.warnings ?? []),
     [healthQuery.data?.warnings],
@@ -1724,7 +1744,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     const unassigned: BoardCase[] = [];
-    for (const caseItem of cases) {
+    for (const caseItem of visibleCases) {
       const stageId = caseItem.stageId && stageIds.has(caseItem.stageId) ? caseItem.stageId : UNASSIGNED_STAGE_ID;
       if (stageId === UNASSIGNED_STAGE_ID) {
         unassigned.push(caseItem);
@@ -1742,7 +1762,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     return { columns, byStage, caseToColumn, caseById };
-  }, [orderedStages, cases, stageIds, pipelineId]);
+  }, [orderedStages, visibleCases, stageIds, pipelineId]);
 
   const transitions = useMemo<PipelineTransitionEdge[]>(
     () => pipeline?.transitions ?? [],
@@ -1969,7 +1989,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           </div>
           {pipeline.description ? <p className="mt-1 text-sm text-muted-foreground">{pipeline.description}</p> : null}
           <p className="mt-1 text-xs text-muted-foreground">
-            {cases.length} total item{cases.length === 1 ? "" : "s"}
+            {selectedOwner === ALL_OWNERS
+              ? `${cases.length} total item${cases.length === 1 ? "" : "s"}`
+              : `${visibleCases.length} of ${cases.length} items, owned by ${selectedOwner}`}
             {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
           </p>
           {fedByPipelines.length > 0 ? (
@@ -1990,6 +2012,20 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <FeatureTour tour={PIPELINE_BOARD_TOUR} />
+          {boardOwners.length > 1 ? (
+            <Select value={selectedOwner} onValueChange={(owner) => setOwnerFilter({ pipelineId, owner })}>
+              <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Owner" title="Owner">
+                <UserRound className="h-4 w-4 text-muted-foreground" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_OWNERS}>All owners</SelectItem>
+                {boardOwners.map((owner) => (
+                  <SelectItem key={owner} value={owner}>{owner}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Select value={groupBy} onValueChange={handleGroupByChange}>
             <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
               <Layers className="h-4 w-4 text-muted-foreground" />
