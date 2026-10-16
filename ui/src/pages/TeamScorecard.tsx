@@ -136,11 +136,14 @@ function AgentCard({
   days,
   workCents,
   askedTasks,
+  trend,
 }: {
   agent: TeamScorecardAgent;
   days: number;
   workCents: number | null;
   askedTasks: AskedTasks;
+  /** Finished tasks compared with the period before, such as "Up from 2 the week before". */
+  trend?: string | null;
 }) {
   return (
     <li className="space-y-3 rounded-lg border border-border bg-card p-4">
@@ -161,6 +164,9 @@ function AgentCard({
           </div>
           {agent.title ? <div className="text-xs text-muted-foreground">{agent.title}</div> : null}
           <p className="mt-1 text-sm">{scorecardSentence(agent, days)}</p>
+          {trend ? (
+            <p className="text-xs text-muted-foreground">{`Finished tasks: ${trend.charAt(0).toLowerCase()}${trend.slice(1)}.`}</p>
+          ) : null}
         </div>
       </div>
       {agent.recentlyFinished.length > 0 || agent.stuckTasks.length > 0 ? (
@@ -341,6 +347,15 @@ export function TeamScorecard() {
                   days={data.days}
                   workCents={valueByAgent.get(agent.agentId) ?? null}
                   askedTasks={askedTasks}
+                  trend={
+                    twice
+                      ? finishedTrend(
+                          agent.finished,
+                          twice.agents.find((row) => row.agentId === agent.agentId)?.finished ?? agent.finished,
+                          data.days,
+                        )
+                      : null
+                  }
                 />
               ))}
             </ul>
