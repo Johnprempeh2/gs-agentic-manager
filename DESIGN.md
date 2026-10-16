@@ -106,8 +106,20 @@ tokenize motion. Principles — reasoning only; values live in `ui/src/index.css
 
 ## Daylight (light mode) surfaces
 
-Light mode is a sage-stone canvas (`--background`) under white surfaces
-(`--card`). Depth comes from that step plus layered shadows, not extra borders.
+Light mode is a warm stone canvas (`--background`, `#e9ede3`) under white
+surfaces (`--card`), beside a charcoal navigation rail. Depth comes from that
+step plus layered shadows, not extra borders. Light mode is never plain white:
+the brand colour comes from the charcoal rail, the lime and teal light in
+`--gs-atmosphere` and the emerald `--primary`.
+
+- **Charcoal rail.** The navigation rail is night-side in both themes.
+  `Layout.tsx` puts `gs-rail dark` on the rail wrappers (desktop
+  `SidebarShell` and the phone drawer), so everything inside reads the dark
+  tokens and `dark:` utilities. In light mode `:root:not(.dark) .gs-rail`
+  (`index.css`) sets the rail to brand charcoal `#252525` with an 8% lime
+  active row. Do not add light-only colours inside the rail; style rail
+  content for dark mode and it is right in both. Popovers and menus opened
+  from the rail portal out and follow the page theme.
 
 - **Surfaces.** Use `bg-card` (or the `Card` component, `gs-glass-card`) for
   anything that holds content. A bare `rounded-* border border-border` box with
