@@ -10,6 +10,7 @@ import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
 import { decisionsFeedApi } from "../api/decisionsFeed";
 import { teamScorecardApi } from "../api/teamScorecard";
+import { agentWorkDigestApi } from "../api/agentWorkDigest";
 import { agentChatsApi } from "../api/agentChats";
 import { queryKeys } from "../lib/queryKeys";
 import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
@@ -17,6 +18,7 @@ import { useDictation } from "../hooks/useDictation";
 import {
   SUGGESTED_QUESTIONS,
   answerAgent,
+  answerAway,
   answerDecide,
   answerOverview,
   answerStuck,
@@ -302,7 +304,12 @@ function AnswerCard({ answer, onNavigate }: { answer: AskAnswer; onNavigate: () 
 }
 
 function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly PanelAgent[]) {
-  const needsNeedsMe = intent.kind === "decide" || intent.kind === "overview";
+  const needsNeedsMe = intent.kind === "decide" || intent.kind === "overview" || intent.kind === "away";
+  const digest = useQuery({
+    queryKey: queryKeys.agentWorkDigest(companyId),
+    queryFn: () => agentWorkDigestApi.get(companyId),
+    enabled: intent.kind === "away",
+  });
   const needsScorecard = intent.kind === "agent" || intent.kind === "overview";
   const needsMe = useQuery({
     queryKey: queryKeys.decisionsFeed.needsMe(companyId),
@@ -318,6 +325,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
   const issues = useQuery({
     queryKey: ["ask-everest", companyId, "issues", intent],
     queryFn: () => {
+      if (intent.kind === "away") return issuesApi.list(companyId, { status: "blocked", sortField: "updated", limit: 50 });
       if (intent.kind === "stuck") {
         return issuesApi.list(companyId, { status: "blocked", q: intent.subject ?? undefined, includeBlockedBy: true, limit: 50 });
       }
@@ -327,18 +335,21 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       if (intent.kind === "subject") return issuesApi.list(companyId, { q: intent.subject, limit: 50 });
       return Promise.resolve([]);
     },
-    enabled: intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject",
+    enabled: intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away",
   });
 
   const agentName = (id: string | null) => (id ? agents.find((agent) => agent.id === id)?.name ?? null : null);
   const pending = (needsNeedsMe && needsMe.isPending)
     || (intent.kind === "agent" && scorecard.isPending && !scorecard.isError)
-    || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject") && issues.isPending);
-  const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error) || issues.error;
+    || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
+    || (intent.kind === "away" && digest.isPending);
+  const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error) || (intent.kind === "away" && digest.error) || issues.error;
   if (pending) return { loading: true as const };
   if (error) return { error: error instanceof Error ? error.message : "Unknown error" };
 
   switch (intent.kind) {
+    case "away":
+      return { value: answerAway(digest.data!, issues.data ?? [], needsMe.data ?? null) };
     case "decide":
       return { value: answerDecide(needsMe.data!) };
     case "stuck":

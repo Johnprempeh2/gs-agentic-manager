@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import type { Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
 import {
+  answerAway,
   answerAgent,
   answerDecide,
   answerStuck,
@@ -119,5 +120,53 @@ describe("answers", () => {
     ]);
     expect(answer.headline).toBe("3 tasks about indago: 2 open, 1 stuck, 1 done.");
     expect(answer.lines[0]?.text).toBe("Kick-off pack");
+  });
+});
+
+describe("since you were away", () => {
+  it("spots catch-up questions before decision questions", () => {
+    expect(classifyQuestion("What happened since I was last here?", agents)).toEqual({ kind: "away" });
+    expect(classifyQuestion("what did I miss", agents)).toEqual({ kind: "away" });
+    expect(classifyQuestion("catch me up on what needs me", agents)).toEqual({ kind: "away" });
+  });
+
+  const since = "2026-10-16T01:00:00Z";
+  const digest = {
+    companyId: "c1",
+    since,
+    sinceSource: "default_window",
+    generatedAt: "2026-10-16T09:00:00Z",
+    counts: { tasksFinished: 2, tasksStarted: 0, decisionsRaised: 0, failures: 1 },
+    agents: [{
+      agentId: "mason",
+      agentName: "Mason",
+      counts: { tasksFinished: 2, tasksStarted: 0, decisionsRaised: 0, failures: 1 },
+      items: [
+        { kind: "task_finished", label: "Finished GRE-4: Indago pack", at: "2026-10-16T05:00:00Z", issueId: "i4", issueIdentifier: "GRE-4", runId: null },
+        { kind: "run_failed", label: "Run failed", at: "2026-10-16T04:00:00Z", issueId: null, issueIdentifier: null, runId: "r1" },
+      ],
+    }],
+  } as AgentWorkDigest;
+
+  it("says what finished, what got stuck and what needs you", () => {
+    const blocked = [
+      issue({ id: "b1", identifier: "GRE-8", title: "Chase fee", status: "blocked", updatedAt: new Date("2026-10-16T03:00:00Z") }),
+      issue({ id: "b2", identifier: "GRE-2", title: "Old block", status: "blocked", updatedAt: new Date("2026-10-15T03:00:00Z") }),
+    ];
+    const needsMe = {
+      count: 1, decisionCount: 1, assignedTaskCount: 0, overdueWaits: [], assignedTasks: [],
+      decisions: [{ id: "d1", title: "Approve the fee", reason: "Fixed or day rate", task: { id: "i9", identifier: "GRE-9" } }],
+    } as unknown as NeedsMe;
+    const answer = answerAway(digest, blocked, needsMe);
+    expect(answer.headline).toBe("In the last 24 hours: 2 tasks finished, 1 got stuck, 1 thing needs you, 1 run failed.");
+    expect(answer.lines.map((line) => line.text)).toEqual(["Approve the fee", "Chase fee", "Finished GRE-4: Indago pack"]);
+    expect(answer.more?.href).toBe("/since-last-visit");
+  });
+
+  it("says plainly when nothing happened", () => {
+    const quiet = { ...digest, counts: { tasksFinished: 0, tasksStarted: 0, decisionsRaised: 0, failures: 0 }, agents: [] };
+    expect(answerAway(quiet, [], null).headline).toBe(
+      "In the last 24 hours: nothing new. Nothing finished, nothing got stuck and nothing needs you.",
+    );
   });
 });
