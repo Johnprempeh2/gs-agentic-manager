@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MorningSummaryTask } from "@greatstone/shared";
-import { AlertTriangle, CalendarClock, CircleCheck, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -11,6 +11,9 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
+import { morningSummaryText } from "@/lib/morning-summary-text";
+import { useCopyAction } from "@/lib/use-copy-action";
+import { Button } from "@/components/ui/button";
 
 /** "Good morning", "Good afternoon" or "Good evening" by the person's own clock. */
 export function greeting(now: Date) {
@@ -100,6 +103,7 @@ function Section({
 export function MorningSummary() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const dayCopy = useCopyAction();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Today" }]);
@@ -122,7 +126,18 @@ export function MorningSummary() {
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold">{greeting(now)}</h1>
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl font-semibold">{greeting(now)}</h1>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Copy today as text, ready to paste into a message"
+            onClick={() => void dayCopy.copy(morningSummaryText(data, localToday(now)))}
+          >
+            {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+            {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground">
           {data.needsYou.count === 0
             ? "Nothing needs you right now. Here is what the team did since yesterday."
