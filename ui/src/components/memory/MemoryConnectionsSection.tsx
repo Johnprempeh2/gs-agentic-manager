@@ -14,6 +14,7 @@ import { formatDate } from "@/lib/utils";
 import { ApiError } from "../../api/client";
 import { memoryGraphApi } from "../../api/memoryGraph";
 import { queryKeys } from "../../lib/queryKeys";
+import { MemoryConnectionCheck, MemoryConnectionHistory } from "./MemoryConnectionActivity";
 import { memoryConnectionSetup, memoryMcpUrl } from "./memoryConnectionSetup";
 
 const APP_OPTIONS: Array<{ value: MemoryConnectionApp; description: string }> = [
@@ -53,6 +54,7 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
   const [app, setApp] = useState<MemoryConnectionApp>("claude");
   const [canContribute, setCanContribute] = useState(true);
   const [created, setCreated] = useState<CreatedMemoryConnection | null>(null);
+  const [openHistory, setOpenHistory] = useState<string | null>(null);
 
   const connections = useQuery({
     queryKey: queryKeys.memoryGraph.connections(companyId),
@@ -128,6 +130,11 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
                 ))}
               </ol>
               <pre className="overflow-x-auto rounded-md border border-border bg-background p-3 text-xs">{setup.snippet}</pre>
+              <MemoryConnectionCheck
+                companyId={companyId}
+                agentId={created.connection.agentId}
+                appLabel={MEMORY_CONNECTION_APP_LABEL[created.connection.app]}
+              />
               <div className="flex items-center justify-between gap-2">
                 <Button type="button" size="sm" variant="ghost" onClick={() => setCreated(null)}>
                   Done
@@ -176,15 +183,31 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
                           {connection.keys.length > 1 ? `, ${connection.keys.length} keys` : ""}
                         </p>
                       </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={revoke.isPending}
-                        onClick={() => revoke.mutate(connection.agentId)}
-                      >
-                        Disconnect
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={openHistory === connection.agentId}
+                          onClick={() => setOpenHistory(openHistory === connection.agentId ? null : connection.agentId)}
+                        >
+                          {openHistory === connection.agentId ? "Hide activity" : "What it has done"}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={revoke.isPending}
+                          onClick={() => revoke.mutate(connection.agentId)}
+                        >
+                          Disconnect
+                        </Button>
+                      </div>
+                      {openHistory === connection.agentId ? (
+                        <div className="w-full">
+                          <MemoryConnectionHistory companyId={companyId} agentId={connection.agentId} />
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}

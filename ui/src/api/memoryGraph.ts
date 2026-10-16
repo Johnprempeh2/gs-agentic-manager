@@ -3,6 +3,7 @@ import type {
   CreateMemoryConnection,
   CreatedMemoryConnection,
   MemoryConnection,
+  MemoryConnectionActivity,
   ImportMemory,
   MemoryImportResult,
   MemoryScope,
@@ -73,6 +74,8 @@ export const memoryGraphApi = {
   connections: (companyId: string) => api.get<MemoryConnection[]>(`/companies/${companyId}/memory/connections`),
   createConnection: (companyId: string, body: CreateMemoryConnection) =>
     api.post<CreatedMemoryConnection>(`/companies/${companyId}/memory/connections`, body),
+  connectionActivity: (companyId: string, agentId: string) =>
+    api.get<MemoryConnectionActivity>(`/companies/${companyId}/memory/connections/${encodeURIComponent(agentId)}/activity`),
   revokeConnection: (companyId: string, agentId: string) =>
     api.delete<{ ok: true }>(`/companies/${companyId}/memory/connections/${encodeURIComponent(agentId)}`),
   /** `limit` caps the nodes returned (server default 200). */
