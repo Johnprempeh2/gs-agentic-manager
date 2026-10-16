@@ -95,8 +95,10 @@ export interface OrganisationImportResult {
   dealProducts?: OrganisationImportCounts;
   /** Connection import only: the Leads inbox, as cases in the "Pipedrive leads" pipeline. */
   leads?: OrganisationImportCounts;
+  /** Connection import only: files on deals, leads, people and organisations. */
+  files?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product" | "lead"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product" | "lead" | "file"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }
@@ -145,6 +147,29 @@ export interface OrganisationHistory {
   cases: OrganisationHistoryCase[];
   /** Activities, notes and calls about it, its people or its cases, newest first. */
   timeline?: CrmTimelineEntry[];
+  /** Files from a CRM on it, its people or its cases, newest first. */
+  files?: CrmFile[];
+}
+
+/** One file imported from a CRM. */
+export interface CrmFile {
+  id: string;
+  source: string;
+  name: string;
+  contentType: string | null;
+  byteSize: number | null;
+  description: string | null;
+  ownerName: string | null;
+  addedAt: string | null;
+  /** GSAM path that serves the copied file; null when the bytes were not copied. */
+  contentPath: string | null;
+  /** The CRM's own link, for a file linked from elsewhere or not copied. */
+  remoteUrl: string | null;
+  /** Why the bytes were not copied, such as a file linked from Google Drive. */
+  notCopied: string | null;
+  contactName: string | null;
+  caseId: string | null;
+  caseTitle: string | null;
 }
 
 /** One activity, note or call imported from a CRM. */

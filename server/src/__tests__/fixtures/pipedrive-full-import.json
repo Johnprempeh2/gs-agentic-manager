@@ -1,5 +1,5 @@
 {
-  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703. Also /api/v1/productFields, /api/v1/products and /api/v1/deals/{id}/products pages for deals 701 and 702. Also /api/v1/leadLabels and /api/v1/leads pages.",
+  "_about": "Recorded shapes of Pipedrive API v1 answers for pipelines, stages, users, deal fields and deals, trimmed to what the deal import reads. Names and values are invented. Also holds /api/v1/activities, /api/v1/notes and /api/v1/callLogs pages. Also /api/v1/deals/{id}/flow pages for deals 701 to 703. Also /api/v1/productFields, /api/v1/products and /api/v1/deals/{id}/products pages for deals 701 and 702. Also /api/v1/leadLabels and /api/v1/leads pages. Also an /api/v1/files page.",
   "pipelines": {
     "success": true,
     "data": [
@@ -843,6 +843,84 @@
       "start": 0,
       "limit": 500,
       "more_items_in_collection": false
+    }
+  },
+  "filesPage": {
+    "success": true,
+    "data": [
+      {
+        "id": 6001,
+        "name": "Northwind order form.pdf",
+        "file_name": "northwind_order_form_6001.pdf",
+        "file_type": "pdf",
+        "file_size": 21,
+        "user_id": 9001,
+        "deal_id": 701,
+        "org_id": 101,
+        "person_id": 501,
+        "remote_location": "s3",
+        "active_flag": true,
+        "add_time": "2026-09-25 09:00:00",
+        "description": "Signed copy",
+        "url": "https://greatstone.pipedrive.com/files/6001",
+        "deal_name": "Northwind CLI trial"
+      },
+      {
+        "id": 6002,
+        "name": "Northwind logo.png",
+        "file_name": "logo_6002.png",
+        "file_type": "png",
+        "file_size": 8,
+        "user_id": 9002,
+        "deal_id": null,
+        "org_id": 101,
+        "person_id": null,
+        "remote_location": "s3",
+        "active_flag": true,
+        "add_time": "2026-09-10 09:00:00"
+      },
+      {
+        "id": 6003,
+        "name": "Proposal deck",
+        "file_type": "gslides",
+        "file_size": 0,
+        "user_id": 9001,
+        "org_id": 101,
+        "remote_location": "googledrive",
+        "remote_id": "1AbC",
+        "active_flag": true,
+        "add_time": "2026-09-12 09:00:00",
+        "url": "https://docs.google.com/presentation/d/1AbC"
+      },
+      {
+        "id": 6004,
+        "name": "Deleted file.txt",
+        "file_type": "txt",
+        "file_size": 4,
+        "org_id": 101,
+        "remote_location": "s3",
+        "active_flag": false
+      },
+      {
+        "id": 6005,
+        "name": "Enquiry notes.txt",
+        "file_name": "enquiry_6005.txt",
+        "file_type": "txt",
+        "file_size": 11,
+        "user_id": 9001,
+        "lead_id": "adf21080-0e10-11eb-879b-05d71fb426ec",
+        "org_id": 102,
+        "remote_location": "s3",
+        "active_flag": true,
+        "add_time": "2026-10-03 11:00:00"
+      }
+    ],
+    "additional_data": {
+      "pagination": {
+        "start": 0,
+        "limit": 500,
+        "more_items_in_collection": false
+      }
     }
   }
 }
