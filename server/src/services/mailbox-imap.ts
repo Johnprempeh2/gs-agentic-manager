@@ -27,6 +27,23 @@ export interface MailboxClient {
   search(query: MailboxSearchInput): Promise<MailboxMessageSummary[]>;
   /** Raw RFC 822 source, or null when the message no longer exists. */
   source(folder: string, uid: number): Promise<Buffer | null>;
+  /**
+   * Store a message in the Drafts folder with the \Draft flag. Nothing is
+   * sent. Returns the folder path it went into.
+   */
+  appendDraft(raw: Buffer): Promise<{ folder: string }>;
+}
+
+/** The Drafts folder: the server's \Drafts special-use flag, else a common name. */
+export function draftsFolder(entries: Array<{ path: string; specialUse?: string }>): string | null {
+  const flagged = entries.find((entry) => entry.specialUse === "\\Drafts");
+  if (flagged) return flagged.path;
+  const byName = ["Drafts", "[Gmail]/Drafts", "INBOX.Drafts", "INBOX/Drafts", "Draft"];
+  for (const name of byName) {
+    const match = entries.find((entry) => entry.path.toLowerCase() === name.toLowerCase());
+    if (match) return match.path;
+  }
+  return null;
 }
 
 export type MailboxClientFactory = (account: MailboxAccount) => MailboxClient;
@@ -194,6 +211,16 @@ export const imapMailboxClient: MailboxClientFactory = (account) => {
         } finally {
           lock.release();
         }
+      }),
+    appendDraft: (raw) =>
+      session(async (client) => {
+        const folder = draftsFolder(await client.list());
+        if (!folder)
+          throw new HttpError(422, "This mailbox has no Drafts folder", {
+            code: "mailbox_no_drafts_folder",
+          });
+        await client.append(folder, raw, ["\\Draft", "\\Seen"]);
+        return { folder };
       }),
   };
 };
