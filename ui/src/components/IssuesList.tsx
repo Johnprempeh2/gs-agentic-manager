@@ -101,6 +101,7 @@ import {
   type TaskCollectionPreferenceLocation,
 } from "../lib/task-collection-preferences";
 import { taskDateGroup, taskDateGroupSeparator, type TaskDateGroup } from "../lib/task-date-groups";
+import { compareIssueDueDates } from "../lib/issue-due-sort";
 import { deriveOriginatingActor, ISSUE_STATUSES, type Issue, type IssueStatus, type IssueWorkFilter, type Project } from "@greatstone/shared";
 import { Badge } from "@/components/ui/badge";
 const ISSUE_SEARCH_DEBOUNCE_MS = 250;
@@ -159,7 +160,7 @@ const progressSegmentClasses: Record<IssueStatus, string> = {
 
 /* ── View state ── */
 
-export type IssueSortField = "status" | "priority" | "title" | "created" | "updated" | "workflow";
+export type IssueSortField = "status" | "priority" | "title" | "created" | "updated" | "due" | "workflow";
 export type BoardCardDensity = "auto" | "compact" | "comfortable";
 export type BoardColdLaneMode = "auto" | "collapsed" | "expanded";
 export type BoardColumnPageSize = KanbanColumnPageSize;
@@ -214,7 +215,7 @@ function normalizeIssueViewState(value: unknown): IssueViewState {
     ...defaultViewState,
     ...parsed,
     ...normalizeIssueFilterState(parsed),
-    sortField: ["status", "priority", "title", "created", "updated", "workflow"].includes(parsed.sortField ?? "")
+    sortField: ["status", "priority", "title", "created", "updated", "due", "workflow"].includes(parsed.sortField ?? "")
       ? parsed.sortField as IssueSortField
       : defaultViewState.sortField,
     sortDir: parsed.sortDir === "asc" ? "asc" : "desc",
@@ -309,6 +310,8 @@ function sortIssues(issues: Issue[], state: IssueViewState): Issue[] {
         return dir * (new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
       case "updated":
         return dir * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+      case "due":
+        return compareIssueDueDates(a, b, dir);
       default:
         return 0;
     }
@@ -2039,6 +2042,7 @@ export function IssuesList({
                     ["title", "Title"],
                     ["created", "Created"],
                     ["updated", "Updated"],
+                    ["due", "Due date"],
                   ] as const)
                     .filter(([field]) => SHOW_TASK_PRIORITY_UI || field !== "priority")
                     .map(([field, label]) => (
