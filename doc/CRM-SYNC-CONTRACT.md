@@ -216,6 +216,15 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   `0359_contacts_without_organisation`). The Organisations page lists them under "People with no
   organisation", from `GET /api/companies/:companyId/organisation-contacts/unassigned`. The export
   file import does the same.
+- The product catalogue (`/v1/products`, `/v1/productFields`) lands in `crm_products` with its
+  code, unit, tax, owner, prices in every currency and every other field, custom fields included,
+  under Pipedrive's name (migration `0360_crm_products`). The products on each deal
+  (`/v1/deals/{id}/products`, read only for deals whose `products_count` is above 0) land in
+  `crm_deal_products` with quantity, price, discount, tax, sum and comments, linked to the case
+  and the catalogue product. The case also gets a "Products" field listing them with a total. A
+  product taken off a deal in Pipedrive comes off the case. An account without the Products
+  add-on still imports everything else, and a deal whose products cannot be read keeps what it
+  had. Code: `server/src/services/pipedrive-product-import.ts`.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.
