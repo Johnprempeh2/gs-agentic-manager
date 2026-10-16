@@ -14,6 +14,7 @@ import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
+import { ClientsExportButton } from "@/components/DataExport";
 import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,7 @@ export function Organisations() {
           {selectedCompanyId ? <PipedriveImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <HubspotImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <NotionImport companyId={selectedCompanyId} /> : null}
+          <ClientsExportButton rows={rows} />
           <Button onClick={() => setEditing("new")}>
             <Plus />
             Add organisation
