@@ -2146,6 +2146,8 @@ registry.registerPath({
             serverVersion: z.string(),
             commit: z.string().nullable(),
             error: z.literal("database_unreachable"),
+            reason: z.literal("shared_memory_lost").optional(),
+            hint: z.string().optional(),
             serverInfo: healthServerInfoSchema.optional(),
           }),
         },
