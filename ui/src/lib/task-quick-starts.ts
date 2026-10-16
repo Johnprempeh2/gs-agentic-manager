@@ -123,3 +123,19 @@ export function firstPlaceholderRange(text: string): { start: number; end: numbe
   const match = /\[[^\]]+\]/.exec(text);
   return match ? { start: match.index, end: match.index + match[0].length } : null;
 }
+
+const QUICK_START_PLACEHOLDERS: ReadonlySet<string> = new Set(
+  TASK_QUICK_STARTS.flatMap((quickStart) =>
+    `${quickStart.title}\n${quickStart.description}`.match(/\[[^\]]+\]/g) ?? [],
+  ),
+);
+
+/**
+ * The quick start words in brackets still left in a draft, once each, in
+ * the order they appear. Only the quick starts' own placeholders count, so a
+ * markdown link or other square brackets the user wrote are never flagged.
+ */
+export function unfilledPlaceholders(title: string, description: string): string[] {
+  const found = `${title}\n${description}`.match(/\[[^\]]+\]/g) ?? [];
+  return [...new Set(found.filter((token) => QUICK_START_PLACEHOLDERS.has(token)))];
+}

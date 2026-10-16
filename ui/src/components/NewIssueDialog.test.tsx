@@ -1007,6 +1007,9 @@ describe("NewIssueDialog", () => {
     const descriptionInput = container.querySelector('textarea[aria-label="What should the agent do, and what does a good result look like?"]') as HTMLTextAreaElement | null;
     expect(descriptionInput?.value).toContain("## Done when");
     expect(container.querySelector('[data-testid="task-quick-starts"]')).toBeNull();
+    expect(container.querySelector('[data-testid="new-issue-unfilled-placeholders"]')?.textContent).toContain(
+      "Still to fill in: [company name].",
+    );
 
     act(() => root.unmount());
   });

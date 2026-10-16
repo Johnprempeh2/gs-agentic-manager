@@ -78,7 +78,7 @@ import {
   ScanEye,
   Sparkles,
 } from "lucide-react";
-import { TASK_QUICK_STARTS, firstPlaceholderRange, type TaskQuickStart } from "../lib/task-quick-starts";
+import { TASK_QUICK_STARTS, firstPlaceholderRange, unfilledPlaceholders, type TaskQuickStart } from "../lib/task-quick-starts";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -501,6 +501,12 @@ export function NewIssueDialog() {
   const descriptionRef = useRef("");
   const [titleHasText, setTitleHasText] = useState(false);
   const [draftHasText, setDraftHasText] = useState(false);
+  // Quick start words in brackets the user has not replaced yet.
+  const [unfilled, setUnfilled] = useState<string[]>([]);
+  const refreshUnfilled = useCallback((nextTitle: string, nextDescription: string) => {
+    const next = unfilledPlaceholders(nextTitle, nextDescription);
+    setUnfilled((current) => (current.join("|") === next.join("|") ? current : next));
+  }, []);
   const [status, setStatus] = useState("todo");
   const [priority, setPriority] = useState("");
   const [assigneeValue, setAssigneeValue] = useState("");
@@ -742,7 +748,8 @@ export function NewIssueDialog() {
     setDescription(nextDescription);
     setTitleHasText(nextTitle.trim().length > 0);
     setDraftHasText(nextTitle.trim().length > 0 || nextDescription.trim().length > 0);
-  }, []);
+    refreshUnfilled(nextTitle, nextDescription);
+  }, [refreshUnfilled]);
 
   const queueDraftSave = useCallback((overrides: { title?: string; description?: string } = {}) => {
     if (!newIssueOpen) return;
@@ -807,15 +814,17 @@ export function NewIssueDialog() {
     const nextDraftHasText = nextTitleHasText || descriptionRef.current.trim().length > 0;
     setTitleHasText((current) => current === nextTitleHasText ? current : nextTitleHasText);
     setDraftHasText((current) => current === nextDraftHasText ? current : nextDraftHasText);
+    refreshUnfilled(nextTitle, descriptionRef.current);
     queueDraftSave({ title: nextTitle });
-  }, [queueDraftSave]);
+  }, [queueDraftSave, refreshUnfilled]);
 
   const handleDescriptionChange = useCallback((nextDescription: string) => {
     descriptionRef.current = nextDescription;
     const nextDraftHasText = titleRef.current.trim().length > 0 || nextDescription.trim().length > 0;
     setDraftHasText((current) => current === nextDraftHasText ? current : nextDraftHasText);
+    refreshUnfilled(titleRef.current, nextDescription);
     queueDraftSave({ description: nextDescription });
-  }, [queueDraftSave]);
+  }, [queueDraftSave, refreshUnfilled]);
 
   // Save draft on meaningful changes
   useEffect(() => {
@@ -2449,6 +2458,18 @@ export function NewIssueDialog() {
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-300" />
             <span className="leading-snug">
               Low-trust review agent. It can only act inside its assigned review boundary; task, project, or run policy defines the concrete scope.
+            </span>
+          </div>
+        ) : null}
+
+        {unfilled.length > 0 && !createIssue.isPending ? (
+          <div
+            data-testid="new-issue-unfilled-placeholders"
+            className="mx-4 mb-2 flex items-start gap-2 text-xs text-muted-foreground"
+          >
+            <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="leading-snug">
+              Still to fill in: {unfilled.join(", ")}. Replace the words in brackets so the task says exactly what you mean.
             </span>
           </div>
         ) : null}
