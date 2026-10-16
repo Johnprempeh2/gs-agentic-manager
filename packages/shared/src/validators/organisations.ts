@@ -22,6 +22,8 @@ export const createOrganisationSchema = z
     industry: optionalText(200),
     country: optionalText(120),
     countryOwner: optionalText(200),
+    /** A company member who owns the country; their name fills countryOwner. */
+    countryOwnerUserId: z.string().trim().min(1).max(200).nullish(),
     status: organisationStatusSchema.default("target"),
     notes: optionalText(20_000),
     source: organisationSourceSchema.default("manual"),
@@ -37,6 +39,7 @@ export const updateOrganisationSchema = z
     industry: optionalText(200).optional(),
     country: optionalText(120).optional(),
     countryOwner: optionalText(200).optional(),
+    countryOwnerUserId: z.string().trim().min(1).max(200).nullish(),
     status: organisationStatusSchema.optional(),
     notes: optionalText(20_000).optional(),
     /** false restores an archived organisation; archive itself is POST .../archive. */

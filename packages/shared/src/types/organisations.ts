@@ -26,6 +26,8 @@ export interface Organisation {
   industry: string | null;
   country: string | null;
   countryOwner: string | null;
+  /** The member who owns the country, when the owner is a GSAM user. */
+  countryOwnerUserId?: string | null;
   status: OrganisationStatus;
   notes: string | null;
   source: OrganisationSource;
