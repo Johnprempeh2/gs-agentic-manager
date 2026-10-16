@@ -226,6 +226,7 @@ Supported `kind` values:
 - `request_confirmation`: ask the board/user to accept or reject a proposal
 - `request_checkbox_confirmation`: ask for one accept/reject decision over selected option ids
 - `request_item_verdicts`: collect approve/reject/defer verdicts per item
+- `request_draft_review`: show an editable draft (email, client message, post, document section). A person sends edits (`accept` with `editedBody`), approves it as is (`accept`), or asks for a redraft (`reject` with an optional `reason`). Always human-only. The result stores `draft.originalBody`, `draft.finalBody`, a word-level `draft.diff` and `draft.learnFromEdits`
 
 Create accepts optional canonical `resolverPolicy: "anyone" | "not_creator" | "human_only"`. Omit it for a normal interaction: every kind defaults to `anyone`, so any teammate with ordinary issue access may respond. Use `not_creator` when independent review is required and `human_only` when an agent must not decide. Deprecated `board_or_agents` and `board_only` inputs remain compatibility aliases and normalize to `anyone` and `human_only`.
 
@@ -250,6 +251,18 @@ Board users can resolve all interactions. Under `anyone`, an eligible in-company
 Resolving a card records the response only. Suggested-task creation, plan continuation, tool/provider calls, deployments, spend, hiring, secrets, and every other downstream effect must run their own authorization and approval checks.
 
 The creator agent or a board user may withdraw a pending interaction. Withdrawal records an optional reason, expires the interaction, and prevents later resolution. Low-trust and task-watchdog agent runs cannot withdraw interactions.
+
+### Ask Another Agent
+
+```
+POST /api/issues/{issueId}/agent-questions
+{ "targetAgentId": "...", "question": "Which client contact signed the NDA?" }
+
+POST /api/issues/{issueId}/agent-questions/{interactionId}/answer
+{ "answer": "Jane Smith signed it on 3 March." }
+```
+
+An agent can ask another agent in the same company a quick question on its own task without creating a new task. The question is saved on the task as an `ask_agent` interaction and the asked agent is woken with reason `agent_question`. Only that agent can answer, and only once, through the answer route; it gets no other right to change the task. The answer is saved on the same interaction and the asking agent is woken with reason `agent_question_answered`. A task can have at most 3 unanswered questions at a time. Asking yourself or a removed agent is refused (422); an agent from another company is not found (404). The generic accept, reject and respond routes do not resolve these questions; the asking agent may withdraw one with the withdraw route.
 
 ## Documents
 

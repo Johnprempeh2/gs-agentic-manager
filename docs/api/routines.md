@@ -62,6 +62,7 @@ Fields:
 | `coalesce_if_active` (default) | Incoming run is immediately finalised as `coalesced` and linked to the active run — no new issue is created |
 | `skip_if_active` | Incoming run is immediately finalised as `skipped` and linked to the active run — no new issue is created |
 | `always_enqueue` | Always create a new run regardless of active runs |
+| `reuse_standing_task` | Keep one standing task: reopen the latest task from this routine (or reuse it if still open) instead of creating a new one. The run is finalised as `issue_reopened` or `coalesced` |
 
 **Catch-up policies:**
 

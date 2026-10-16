@@ -64,6 +64,9 @@ import {
   getManagedInstanceConfig,
   type ManagedInstanceConfig,
 } from "./services/managed-config.js";
+import { readEntitlementConfig } from "./services/entitlement-document.js";
+import { createEntitlementRuntime, setEntitlementRuntime } from "./services/entitlement-runtime.js";
+import { entitlementActivityAuditSink } from "./services/entitlement-audit.js";
 import { getOperatorSettingDefaults } from "./services/setting-defaults.js";
 import { getInstallLimits } from "./services/install-limits.js";
 import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/environment-custom-image-terminal-ws.js";
@@ -96,6 +99,7 @@ import {
   toolAccessService,
   workspaceOperationService,
 } from "./services/index.js";
+import { websiteService } from "./services/website/index.js";
 import { questionResponseDeliveryService } from "./services/question-response-delivery.js";
 import { deliverNativeQuestionResponse } from "./services/native-runtime/native-question-bridge.js";
 import { queueIssueAssignmentWakeup } from "./services/issue-assignment-wakeup.js";
@@ -109,6 +113,9 @@ import {
 import { createProductionSetupTokenReaper } from "./services/setup-token-reaper.js";
 import { localAiLoginService } from "./services/local-ai-login.js";
 import { remindStewardGrantRenewals } from "./services/memory-gateway/steward-grant-renewal.js";
+import { runScheduledStrategyBoardAlerts } from "./services/strategy-board.js";
+import { runScheduledStrategyBoardEmails } from "./services/strategy-board-email.js";
+import { emailChannelService } from "./services/email-channels.js";
 import { runScheduledMemoryLinkChecks } from "./services/memory-gateway/link-check.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { runScheduledMemoryIngestDrain, runScheduledMemoryRetention } from "./services/memory-gateway/scheduled-work.js";
@@ -119,6 +126,9 @@ import {
 } from "./services/adapter-registry-bootstrap.js";
 import { createFeedbackTraceShareClientFromConfig } from "./services/feedback-share-client.js";
 import { pushNotificationService } from "./services/push-notifications.js";
+import { morningSummaryService } from "./services/morning-summary.js";
+import { weeklyReportService } from "./services/weekly-report.js";
+import { agentDailyDigestService } from "./services/agent-daily-digest.js";
 import { defaultConnectivityStateFile } from "./services/connectivity-watch.js";
 import { buildRuntimeApiCandidateUrls, choosePrimaryRuntimeApiUrl } from "./runtime-api.js";
 import { isLoopbackHost, rewriteLoopbackUrlPort } from "./url-utils.js";
@@ -127,6 +137,7 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { startTempFolderSweeper } from "./services/managed-ai-home-sweep.js";
 import { supportQueueService } from "./services/support-queue.js";
+import { deliverableService } from "./services/deliverables.js";
 import { scrubAcpSessionEnvironments } from "./services/acp-session-env-scrub.js";
 import {
   LEFTOVER_PROCESS_SWEEP_INTERVAL_MS,
@@ -877,6 +888,36 @@ async function startServerWithDatabaseTeardown(
     throw err;
   }
 
+  // Signed entitlement document (GRE-1078). Off unless GSAM_ENTITLEMENT_PUBLIC_KEY
+  // is set; a malformed key refuses startup (fail closed). The document is read
+  // before routes serve, then re-read every minute and on "sync now".
+  let entitlementRuntime: ReturnType<typeof createEntitlementRuntime> | null = null;
+  try {
+    const entitlementConfig = readEntitlementConfig();
+    if (entitlementConfig) {
+      entitlementRuntime = createEntitlementRuntime({
+        ...entitlementConfig,
+        onAudit: entitlementActivityAuditSink(db as any),
+        onError: (err, context) => logger.error({ err }, context),
+      });
+      const started = await entitlementRuntime.start();
+      setEntitlementRuntime(entitlementRuntime);
+      entitlementRuntime.startPolling();
+      logger.warn(
+        {
+          filePath: entitlementConfig.filePath,
+          state: started.entitlements.state,
+          version: started.entitlements.document?.version ?? null,
+          error: started.error,
+        },
+        "signed entitlements active",
+      );
+    }
+  } catch (err) {
+    logger.error({ err }, "invalid entitlement configuration; refusing to start (fail closed)");
+    throw err;
+  }
+
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
   const feedback = feedbackService(db as any, {
@@ -1269,6 +1310,9 @@ async function startServerWithDatabaseTeardown(
     }
   };
   const executionControlSweepsInFlight = new Set<string>();
+  // GRE-1187: board emails are only queued here; the app's email service
+  // (started in app.ts) delivers them on its own tick.
+  const boardEmailSender = emailChannelService(db, { heartbeat: { wakeup: async () => null } });
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
@@ -1286,6 +1330,10 @@ async function startServerWithDatabaseTeardown(
     ["memory_retention", () => runScheduledMemoryRetention(db)],
     // GRE-1079: deliver the memory ingest outbox (the retry queue) and report what fails.
     ["memory_ingest_drain", () => runScheduledMemoryIngestDrain(db, memoryIngestEngine)],
+    // GRE-1135: hourly KPI slippage check (a deadline can pass with no new reading).
+    ["strategy_board_alerts", () => runScheduledStrategyBoardAlerts(db)],
+    // GRE-1187: meeting reminders, slippage alerts and "Why?" requests by email.
+    ["strategy_board_emails", () => runScheduledStrategyBoardEmails(db, { sender: boardEmailSender, publicBaseUrl: config.authPublicBaseUrl ?? null })],
   ] as const;
   const sweepExecutionControl = () => {
     if (heartbeatSchedulerStopped) return;
@@ -1439,6 +1487,7 @@ async function startServerWithDatabaseTeardown(
     const environmentCustomImages = environmentCustomImageService(db as any, { pluginWorkerManager });
     const routines = routineService(db as any, { pluginWorkerManager });
     const statusCards = statusCardService(db as any);
+    const website = websiteService(db as any);
     const issues = issueService(db as any);
     const mergedPullRequestConfirmations = issueThreadInteractionService(db as any, {
       wakeup: heartbeat.wakeup,
@@ -1447,6 +1496,22 @@ async function startServerWithDatabaseTeardown(
       workspaceReaperCooldownDays: config.workspaceReaperCooldownDays,
     });
     const supportQueue = supportQueueService(db as any, { wakeup: heartbeat.wakeup });
+    // Daily check of link deliverables (live sites): a few per tick, never-checked first.
+    const deliverableLinks = deliverableService(db as any);
+    let deliverableLinkCheckInFlight = false;
+    const scheduleDeliverableLinkCheck = () => {
+      if (heartbeatSchedulerStopped || deliverableLinkCheckInFlight) return;
+      deliverableLinkCheckInFlight = true;
+      trackHeartbeatSchedulerWork(deliverableLinks
+        .checkDueLinks()
+        .then((result) => {
+          if (result.broken > 0) logger.info(result, "deliverable link check found broken links");
+        })
+        .catch((err) => {
+          logger.error({ err }, "deliverable link check failed");
+        })
+        .finally(() => { deliverableLinkCheckInFlight = false; }));
+    };
     const scheduleSupportClockSweep = () => {
       if (heartbeatSchedulerStopped) return;
       trackHeartbeatSchedulerWork(supportQueue
@@ -1725,18 +1790,36 @@ async function startServerWithDatabaseTeardown(
           return;
         }
 
-        const promotion = await heartbeat.promoteDueScheduledRetries();
-        await heartbeat.resumeQueuedRuns();
-        await recoverSessionGoals("startup");
-        const reconciled = await heartbeat.reconcileStrandedAssignedIssues();
+        // Each recovery step stands alone: one that fails is logged and the
+        // rest still run, and the server keeps starting. The periodic recovery
+        // retries them on its next tick. A failure here once stopped live from
+        // starting at all (16 Oct 2026).
+        const recoveryStep = async <T>(step: string, run: () => Promise<T>): Promise<T | null> => {
+          try {
+            return await run();
+          } catch (err) {
+            logger.error({ err, step }, "startup heartbeat recovery step failed; continuing startup");
+            return null;
+          }
+        };
+
+        const promotion = (await recoveryStep("promoteDueScheduledRetries", () =>
+          heartbeat.promoteDueScheduledRetries(),
+        )) ?? { promoted: 0, runIds: [] };
+        await recoveryStep("resumeQueuedRuns", () => heartbeat.resumeQueuedRuns());
+        await recoveryStep("recoverSessionGoals", () => recoverSessionGoals("startup"));
+        const reconciled = await recoveryStep("reconcileStrandedAssignedIssues", () =>
+          heartbeat.reconcileStrandedAssignedIssues(),
+        );
         if (
           promotion.promoted > 0 ||
-          reconciled.assignmentDispatched > 0 ||
-          reconciled.dispatchRequeued > 0 ||
-          reconciled.continuationRequeued > 0 ||
-          reconciled.successfulRunHandoffEscalated > 0 ||
-          reconciled.successfulRunHandoffRetried > 0 ||
-          reconciled.escalated > 0
+          (reconciled !== null &&
+            (reconciled.assignmentDispatched > 0 ||
+              reconciled.dispatchRequeued > 0 ||
+              reconciled.continuationRequeued > 0 ||
+              reconciled.successfulRunHandoffEscalated > 0 ||
+              reconciled.successfulRunHandoffRetried > 0 ||
+              reconciled.escalated > 0))
         ) {
           logger.warn(
             { promotedScheduledRetries: promotion.promoted, promotedScheduledRetryRunIds: promotion.runIds, ...reconciled },
@@ -1744,29 +1827,33 @@ async function startServerWithDatabaseTeardown(
           );
         }
 
-        const dependencyWakesReconciled = await heartbeat.reconcileResolvedDependencyWakes();
-        if (dependencyWakesReconciled.healed > 0) {
+        const dependencyWakesReconciled = await recoveryStep("reconcileResolvedDependencyWakes", () =>
+          heartbeat.reconcileResolvedDependencyWakes(),
+        );
+        if (dependencyWakesReconciled && dependencyWakesReconciled.healed > 0) {
           logger.warn(
             { ...dependencyWakesReconciled },
             "startup dependency-wake reconciliation restored task execution paths",
           );
         }
 
-        const taskWatchdogsReconciled = await heartbeat.reconcileTaskWatchdogs();
-        if (taskWatchdogsReconciled.triggered > 0) {
+        const taskWatchdogsReconciled = await recoveryStep("reconcileTaskWatchdogs", () =>
+          heartbeat.reconcileTaskWatchdogs(),
+        );
+        if (taskWatchdogsReconciled && taskWatchdogsReconciled.triggered > 0) {
           logger.warn(
             { ...taskWatchdogsReconciled },
             "startup task-watchdog reconciliation triggered watchdog work",
           );
         }
 
-        const scanned = await heartbeat.scanSilentActiveRuns();
-        if (scanned.created > 0 || scanned.escalated > 0 || (scanned.silentStops?.stopped ?? 0) > 0) {
+        const scanned = await recoveryStep("scanSilentActiveRuns", () => heartbeat.scanSilentActiveRuns());
+        if (scanned && (scanned.created > 0 || scanned.escalated > 0 || (scanned.silentStops?.stopped ?? 0) > 0)) {
           logger.warn({ ...scanned }, "startup active-run output watchdog created review work");
         }
 
-        const swept = await heartbeat.sweepStaleIssueLocks();
-        if (swept.cleared > 0) {
+        const swept = await recoveryStep("sweepStaleIssueLocks", () => heartbeat.sweepStaleIssueLocks());
+        if (swept && swept.cleared > 0) {
           logger.warn({ ...swept }, "startup stale-lock sweeper cleared issue locks");
         }
       })().catch((err) => {
@@ -1872,6 +1959,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
         scheduleSupportClockSweep();
+        scheduleDeliverableLinkCheck();
         scheduleUnrecordedWorktreeSweep();
         scheduleRunProcessSweep();
         scheduleAdapterLoginReaperSweep();
@@ -1928,6 +2016,21 @@ async function startServerWithDatabaseTeardown(
           }
         })().catch((err) => {
           logger.error({ err }, "status-card scheduler tick failed");
+        }));
+
+        if (heartbeatSchedulerStopped) return;
+        trackHeartbeatSchedulerWork((async () => {
+          const experimental = await instanceSettingsService(db).getExperimental();
+          if (experimental.enableWebsiteView !== true) return;
+          const result = await website.tickDuePulls(new Date());
+          const failed = result.results.filter((entry) => entry.status === "failed" || entry.status === "error");
+          if (failed.length > 0) {
+            logger.warn({ failed }, "website daily pull failed for some properties; errors are on each property");
+          } else if (result.results.length > 0) {
+            logger.info({ pulled: result.results.length }, "website daily pull complete");
+          }
+        })().catch((err) => {
+          logger.error({ err }, "website daily pull tick failed");
         }));
 
         if (heartbeatSchedulerStopped) return;
@@ -2042,6 +2145,12 @@ async function startServerWithDatabaseTeardown(
               }
             })
             .then(async () => {
+              const reconciled = await heartbeat.reconcileWaitingDatesPassed();
+              if (reconciled.issueIds.length > 0) {
+                logger.info({ ...reconciled }, "periodic waiting-date sweep woke assignees whose expected date passed");
+              }
+            })
+            .then(async () => {
               const scanned = await heartbeat.scanSilentActiveRuns({ skipSilentStops: true });
               if (scanned.created > 0 || scanned.escalated > 0) {
                 logger.warn({ ...scanned }, "periodic active-run output watchdog created review work");
@@ -2081,6 +2190,8 @@ async function startServerWithDatabaseTeardown(
   // users who turned notifications on, so it costs nothing until someone does.
   // A self-rescheduling timer: a slow round never overlaps the next.
   const decisionPushes = pushNotificationService(db as any);
+  const morningSummaries = morningSummaryService(db as any);
+  const weeklyReports = weeklyReportService(db as any);
   let decisionPushTimer: ReturnType<typeof setTimeout> | null = null;
   let decisionPushStopped = false;
   const scheduleDecisionPushRound = () => {
@@ -2089,11 +2200,42 @@ async function startServerWithDatabaseTeardown(
       void decisionPushes
         .notifyNewDecisions()
         .catch((err) => logger.warn({ err }, "decision push round failed"))
+        // The morning summary rides the same round: each person's chosen hour, once a day.
+        .then(() => morningSummaries.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "morning summary round failed"))
+        // The weekly report goes on Monday at the same hour, for people who chose it.
+        .then(() => weeklyReports.sendDue(decisionPushes.deliver))
+        .catch((err) => logger.warn({ err }, "weekly report round failed"))
         .finally(scheduleDecisionPushRound);
     }, DECISION_PUSH_INTERVAL_MS);
     decisionPushTimer.unref?.();
   };
   scheduleDecisionPushRound();
+
+  /** How often the nightly digest checks whether yesterday (UTC) still needs one. */
+  const AGENT_DAILY_DIGEST_INTERVAL_MS = 10 * 60_000;
+  // The nightly digest of what each agent did, with cost, for the lead agent.
+  // Each round stores yesterday's digest for every company that has none yet,
+  // so it goes out shortly after midnight UTC, once: the stored row per company
+  // and day is the marker, so a restart never sends it twice. It writes a
+  // document and wakes no one.
+  const agentDailyDigests = agentDailyDigestService(db as any);
+  let agentDailyDigestTimer: ReturnType<typeof setTimeout> | null = null;
+  let agentDailyDigestStopped = false;
+  const scheduleAgentDailyDigestRound = (delayMs = AGENT_DAILY_DIGEST_INTERVAL_MS) => {
+    if (agentDailyDigestStopped) return;
+    agentDailyDigestTimer = setTimeout(() => {
+      void agentDailyDigests
+        .runDue()
+        .then((result) => {
+          if (result.delivered > 0 || result.skipped > 0) logger.info(result, "nightly agent digests stored");
+        })
+        .catch((err) => logger.warn({ err }, "nightly agent digest round failed"))
+        .finally(() => scheduleAgentDailyDigestRound());
+    }, delayMs);
+    agentDailyDigestTimer.unref?.();
+  };
+  scheduleAgentDailyDigestRound(60_000);
 
   if (config.databaseBackupEnabled) {
     const backupIntervalMs = config.databaseBackupIntervalMinutes * 60 * 1000;
@@ -2189,8 +2331,11 @@ async function startServerWithDatabaseTeardown(
     await systemdNotify(["--stopping", `--status=Stopping after ${signal}`]);
     heartbeatSchedulerStopped = true;
     clearInterval(executionControlInterval);
+    entitlementRuntime?.stop();
     decisionPushStopped = true;
     if (decisionPushTimer) clearTimeout(decisionPushTimer);
+    agentDailyDigestStopped = true;
+    if (agentDailyDigestTimer) clearTimeout(agentDailyDigestTimer);
     if (heartbeatSchedulerInterval) {
       clearInterval(heartbeatSchedulerInterval);
       heartbeatSchedulerInterval = null;

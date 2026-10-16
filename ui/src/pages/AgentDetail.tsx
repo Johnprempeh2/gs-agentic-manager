@@ -30,6 +30,7 @@ import { copyTextToClipboard } from "../lib/clipboard";
 import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsList";
+import { AgentPipelinesAccessSection } from "../components/AgentPipelinesAccessSection";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -40,7 +41,7 @@ import { MarkdownEditor } from "../components/MarkdownEditor";
 import { assetsApi } from "../api/assets";
 import { toolsApi } from "../api/tools";
 import { getUIAdapter, buildTranscript, onAdapterChange, rebrandRunLogText } from "../adapters";
-import { StatusBadge } from "../components/StatusBadge";
+import { StatusBadge, sentenceCaseStatus } from "../components/StatusBadge";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { CopyText } from "../components/CopyText";
 import { IssueRow } from "../components/IssueRow";
@@ -95,6 +96,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import { AgentToolsTab } from "./AgentToolsTab";
+import { AgentAccessTab } from "./AgentAccessTab";
 import { AgentChannelsPanel } from "../components/chat/AgentChannelsPanel";
 import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import {
@@ -1346,7 +1348,7 @@ export function AgentDetail() {
                   <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                 </span>
-                <span className="text-(length:--text-micro) font-medium text-blue-600 dark:text-blue-400">Live</span>
+                <span className="text-(length:--text-micro) font-medium text-blue-700 dark:text-blue-400">Live</span>
               </Link>
             )}
           </AgentActionButtons>
@@ -1488,6 +1490,10 @@ export function AgentDetail() {
 
       {activeView === "tools" && resolvedCompanyId && (
         <AgentToolsTab agent={agent} companyId={resolvedCompanyId} />
+      )}
+
+      {activeView === "access" && resolvedCompanyId && (
+        <AgentAccessTab agent={agent} companyId={resolvedCompanyId} />
       )}
 
       {activeView === "channels" && resolvedCompanyId && (
@@ -1680,10 +1686,7 @@ function LatestRunCard({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
             )}
-            <span>{isLive ? "Live Run" : "Latest Run"}</span>
-            <span className="font-mono text-xs font-normal text-muted-foreground">
-              &middot; {run.id.slice(0, 8)}
-            </span>
+            <span title={`Run ${run.id.slice(0, 8)}`}>{isLive ? "Working now" : "Latest run"}</span>
           </h3>
         </Link>
       </div>
@@ -1762,7 +1765,7 @@ export function AgentOverview({
   const configuredModel = asNonEmptyString(agent.adapterConfig?.model)
     ?? asNonEmptyString(agent.adapterConfig?.modelName)
     ?? asNonEmptyString(agent.runtimeConfig?.model)
-    ?? "Adapter default";
+    ?? "Default model";
   const lastRun = runs[0] ?? null;
 
   return (
@@ -1791,15 +1794,15 @@ export function AgentOverview({
 
         <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-runtime-heading">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h3 id="agent-runtime-heading" className="text-sm font-medium">Harness / Runtime</h3>
+            <h3 id="agent-runtime-heading" className="text-sm font-medium">How it runs</h3>
             <Link className="text-xs text-muted-foreground hover:text-foreground" to={agentDetailHref(agentRouteId, "runtime")}>Configure</Link>
           </div>
           <div className="space-y-3">
-            <SummaryRow label="Adapter"><span className="text-sm">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span></SummaryRow>
+            <SummaryRow label="Runs on"><span className="text-sm">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span></SummaryRow>
             <SummaryRow label="Model"><span className="max-w-64 truncate text-sm font-mono">{configuredModel}</span></SummaryRow>
-            <SummaryRow label="Session"><span className="max-w-64 truncate text-sm font-mono">{runtimeState?.sessionDisplayId ?? runtimeState?.sessionId ?? "No session"}</span></SummaryRow>
+            <SummaryRow label="Session"><span className="max-w-64 truncate text-sm font-mono">{runtimeState?.sessionDisplayId ?? runtimeState?.sessionId ?? "Starts fresh next run"}</span></SummaryRow>
             <SummaryRow label="Last run">
-              <span className="text-sm">{lastRun ? `${lastRun.status} · ${relativeTime(lastRun.createdAt)}` : "No runs"}</span>
+              <span className="text-sm">{lastRun ? `${sentenceCaseStatus(lastRun.status)} · ${relativeTime(lastRun.createdAt)}` : "Not run yet"}</span>
             </SummaryRow>
           </div>
         </section>
@@ -1809,7 +1812,7 @@ export function AgentOverview({
           {agent.capabilities?.trim() ? (
             <MarkdownBody className="text-sm [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{agent.capabilities}</MarkdownBody>
           ) : (
-            <p className="text-sm text-muted-foreground">No capability summary has been added.</p>
+            <p className="text-sm text-muted-foreground">Nothing written yet about what this agent is good at.</p>
           )}
         </section>
 
@@ -1824,7 +1827,7 @@ export function AgentOverview({
               {skillNames.length > 8 ? <Badge variant="outline">+{skillNames.length - 8} more</Badge> : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No skills enabled.</p>
+            <p className="text-sm text-muted-foreground">No skills added yet. Skills teach the agent how to do specific jobs.</p>
           )}
         </section>
       </div>
@@ -2237,6 +2240,10 @@ export function ConfigurationTab({
           </div>
         </div>
       </div> : null}
+
+      {content === "permissions" && companyId ? (
+        <AgentPipelinesAccessSection companyId={companyId} agentId={agent.id} agentName={agent.name} />
+      ) : null}
 
       {content === "permissions" ? <AgentPermissionGrantsList grants={agent.access?.grants ?? []} /> : null}
     </div>

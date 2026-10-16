@@ -6,6 +6,11 @@
 #   scripts/greatstone-release.sh --full-restart <tag>  the same, but stop live completely and start it
 #                                                     again instead of a hot restart (GRE-442)
 #
+# An rc-* tag is released only when scripts/greatstone-test-gate.sh passed the
+# full test suite on its commit (--skip-test-gate "<reason>" in an emergency),
+# and, by hand, only while the preview runs it and answers
+# (--skip-preview "<reason>" in an emergency).
+#
 # Run from the dev checkout. The live app is a separate clone that only ever
 # sits on a live-* tag; this script is the one thing that moves it. Before it
 # moves live it backs up the live database to ~/GSAM/backups/. After a
@@ -19,16 +24,36 @@ die() { printf 'release: %s\n' "$*" >&2; exit 1; }
 # running, with the code it started with. When that runner is the one at fault
 # (#274: on Linux it left the old server running next to the new one), stop
 # all of live and start it with ~/GSAM/start-live.sh instead.
+#
+# --skip-test-gate "<reason>": release an rc-* tag whose commit has no pass
+# from scripts/greatstone-test-gate.sh. Emergencies only; the reason goes to
+# $TEST_GATE_DIR/overrides.log.
+#
+# --skip-preview "<reason>": release an rc-* tag by hand when the preview does
+# not run it or does not answer. Emergencies only; the reason goes to
+# $GS_ROOT/preview-overrides.log.
 FULL_RESTART=0
-if [ "${1:-}" = --full-restart ]; then
-  FULL_RESTART=1
-  shift
-fi
+SKIP_TEST_GATE=""
+SKIP_PREVIEW=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --full-restart) FULL_RESTART=1; shift ;;
+    --skip-test-gate)
+      [ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" ] && case "$2" in rc-* | live-* | --*) false ;; esac \
+        || die "--skip-test-gate needs a reason first, for example: --skip-test-gate \"live is down, fix for GRE-123\" rc-YYYY-MM-DD.N"
+      SKIP_TEST_GATE="$2"; shift 2 ;;
+    --skip-preview)
+      [ -n "$(printf '%s' "${2:-}" | tr -d '[:space:]')" ] && case "$2" in rc-* | live-* | --*) false ;; esac \
+        || die "--skip-preview needs a reason first, for example: --skip-preview \"preview host down, fix for GRE-123\" rc-YYYY-MM-DD.N"
+      SKIP_PREVIEW="$2"; shift 2 ;;
+    *) break ;;
+  esac
+done
 TAG="${1:-}"
 case "$TAG" in
   rc-*) MODE=release ;;
   live-*) MODE=rollback ;;
-  *) die "usage: greatstone-release.sh [--full-restart] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
+  *) die "usage: greatstone-release.sh [--full-restart] [--skip-test-gate \"<reason>\"] [--skip-preview \"<reason>\"] <rc-tag> | <live-tag>  (an rc-* tag releases a checked candidate; a live-* tag rolls back)" ;;
 esac
 
 # GSAM_RELEASE_FROM_APP=1: started by the live server (the Releases page, GRE-121).
@@ -50,7 +75,8 @@ fi
 # Before the backup and the tag: a stale index.lock would stop the checkout below.
 LOCK_NOTE="$(live_index_lock_check)" || die "$LOCK_NOTE"
 [ -z "$LOCK_NOTE" ] || say "$LOCK_NOTE"
-[ -z "$(git -C "$LIVE_DIR" status --porcelain)" ] || die "the live checkout has local changes; nothing may edit it. Inspect $LIVE_DIR before releasing."
+LIVE_CHANGES="$(git -C "$LIVE_DIR" status --porcelain)"
+[ -z "$LIVE_CHANGES" ] || die "the live checkout has local changes; nothing may edit it. Inspect $LIVE_DIR before releasing. Changed: $(printf '%s' "$LIVE_CHANGES" | head -n 10 | tr '\n' ';' | sed 's/;$//')"
 
 git -C "$RELEASE_REPO" fetch --quiet --tags origin
 git -C "$RELEASE_REPO" fetch --quiet origin main
@@ -69,8 +95,28 @@ if [ "$MODE" = release ]; then
     || die "live runs $PREVIOUS ($LIVE_HEAD), which $RELEASE_REPO does not have, so it cannot tell whether $TAG is newer. Fetch it, then release again. Nothing was changed."
   git -C "$RELEASE_REPO" merge-base --is-ancestor "$LIVE_HEAD" "$TARGET" \
     || die "$TAG is older than live ($PREVIOUS); to go back, use the rollback form with a live-* tag. Nothing was changed."
-  if [ "$FROM_APP" != 1 ] && preview_running && [ "$(preview_state commit)" != "$TARGET" ]; then
-    die "the preview runs $(preview_state tag) ($(preview_state commit)), not $TAG. Release the tag you checked, or check $TAG in the preview first."
+  # The full test suite must have passed on exactly this commit: Fork CI runs
+  # no tests on pull requests, so this is where failing tests are stopped.
+  if GATE="$(test_gate_check "$TARGET" "$TAG")"; then
+    say "Test gate: $GATE"
+  elif [ -n "$SKIP_TEST_GATE" ]; then
+    mkdir -p "$TEST_GATE_DIR"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TAG" "$TARGET" "${USER:-unknown}" "$(printf '%s' "$SKIP_TEST_GATE" | tr '\t\n' '  ')" >>"$TEST_GATE_DIR/overrides.log"
+    say "Test gate SKIPPED for $TAG ($TARGET): $SKIP_TEST_GATE. Logged in $TEST_GATE_DIR/overrides.log."
+  else
+    die "$GATE"
+  fi
+  # By hand, the candidate must be the one up in the preview right now: a
+  # preview that never came up is a check that did not run (15 Oct 2026).
+  if [ "$FROM_APP" = 1 ]; then
+    : # the one-click release checks no preview (see GSAM_RELEASE_FROM_APP above)
+  elif PREVIEW_NOTE="$(preview_check "$TARGET" "$TAG")"; then
+    say "Preview: $PREVIEW_NOTE"
+  elif [ -n "$SKIP_PREVIEW" ]; then
+    printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$TAG" "$TARGET" "${USER:-unknown}" "$(printf '%s' "$SKIP_PREVIEW" | tr '\t\n' '  ')" >>"$GS_ROOT/preview-overrides.log"
+    say "Preview check SKIPPED for $TAG ($TARGET): $SKIP_PREVIEW. Logged in $GS_ROOT/preview-overrides.log. Why: $PREVIEW_NOTE"
+  else
+    die "$PREVIEW_NOTE"
   fi
 fi
 
@@ -205,7 +251,8 @@ for _ in $(seq 1 90); do
       GSAM_RELEASE=1 git -C "$RELEASE_REPO" push --quiet origin "refs/tags/$TAG" "refs/tags/$LIVE_TAG" \
         || say "Could not push $TAG and $LIVE_TAG to origin; live runs $LIVE_TAG. Push them with: GSAM_RELEASE=1 git push origin $TAG $LIVE_TAG"
     fi
-    "$GS_SCRIPT_DIR/greatstone-preview.sh" stop
+    # Live is healthy: a preview step that holds the lock does not undo that.
+    "$GS_SCRIPT_DIR/greatstone-preview.sh" stop || say "Could not stop the preview (see above); stop it later with: scripts/greatstone-preview.sh stop"
     say "Roll back with: $ROLLBACK"
     say "Database backup from before this release: $BACKUP_FILE"
     exit 0

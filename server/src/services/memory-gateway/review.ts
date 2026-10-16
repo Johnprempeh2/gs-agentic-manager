@@ -41,7 +41,13 @@ import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import { logger } from "../../middleware/logger.js";
 import { classifyEngineError, nextAttemptAt } from "./ingest-outbox.js";
 import { enqueueMemoryIngest, settleDirectMemoryIngest } from "./ingest-outbox-db.js";
-import { insertRelationship, insertReviewEvent, type MemoryReviewActor } from "./review-store.js";
+import {
+  authorRefusal,
+  insertRelationship,
+  insertReviewEvent,
+  loadEditChain,
+  type MemoryReviewActor,
+} from "./review-store.js";
 import {
   DIRECT_RETAIN_GRACE_MS,
   grantedScopeIds,
@@ -72,6 +78,7 @@ export const MEMORY_RETENTION_ACTOR_ID = "memory-retention";
 
 const REFUSALS = {
   own_entry: "Nobody can approve or settle their own entry",
+  incomplete_history: "This record's edit history cannot be fully checked, so it cannot be approved",
   owner_only: "Only the company owner can review this kind of record",
   working_notes: "Agent working notes are never reviewed",
   no_review_right: "You do not have the right to review this record",
@@ -80,13 +87,6 @@ const REFUSALS = {
   no_retention_right: "Only the company owner or a memory admin can run retention",
 } as const;
 type Refusal = keyof typeof REFUSALS;
-
-function isContributor(caller: MemoryCaller, row: RecordRow) {
-  return (
-    (row.contributorAgentId !== null && row.contributorAgentId === caller.agentId) ||
-    (row.contributorUserId !== null && row.contributorUserId === caller.userId)
-  );
-}
 
 function toEvent(row: typeof memoryReviewEvents.$inferSelect): MemoryReviewEvent {
   return {
@@ -151,6 +151,24 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
   ): Promise<never> {
     await logOperation(caller, operation, "denied", { ...extra, detail: { reason: refusal } });
     throw forbidden(REFUSALS[refusal]);
+  }
+
+  /**
+   * Nobody approves or settles a record when they wrote any version of it:
+   * the first proposal or any edit since (GRE-1089). The whole edit history
+   * is checked; if it cannot be read in full, the step is refused.
+   */
+  async function refuseIfAuthor(
+    caller: MemoryCaller,
+    operation: string,
+    rows: RecordRow[],
+    audit: { scopeIds?: string[]; recordId?: string | null },
+  ) {
+    for (const row of rows) {
+      const chain = await loadEditChain(db, caller.companyId, row);
+      if (!chain) await refuse(caller, operation, "incomplete_history", audit);
+      if (authorRefusal(caller, chain!)) await refuse(caller, operation, "own_entry", audit);
+    }
   }
 
   /** A record the caller may read, or 404 with an audit row. Same answer for "missing" and "not yours". */
@@ -218,7 +236,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     if (row.status === target) throw conflict(`The record is already ${target}`);
     const refusal = await reviewRefusal(caller, access, scope, row.decisionClass);
     if (refusal) await refuse(caller, operation, refusal, audit);
-    if (input.action === "approve" && isContributor(caller, row)) await refuse(caller, operation, "own_entry", audit);
+    if (input.action === "approve") await refuseIfAuthor(caller, operation, [row], audit);
 
     if (input.action === "approve") {
       // An entry that may contradict an approved record never replaces it by approval.
@@ -257,6 +275,88 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
   }
 
   /**
+   * The supersession writes, in the caller's transaction: `old` becomes
+   * superseded and `replacement` approved, conflicts between them are settled
+   * and other open challenges to `old` move to `replacement`. Null when `old`
+   * changed since it was read. Also used by steward confirm (GRE-1089).
+   */
+  async function applySupersede(
+    tx: DbOrTransaction,
+    caller: MemoryCaller,
+    old: RecordRow,
+    replacement: RecordRow,
+    reason: string,
+    now: Date,
+  ) {
+    const [oldNext] = await tx
+      .update(memoryRecords)
+      .set({
+        status: "superseded",
+        supersededById: replacement.id,
+        supersededAt: now,
+        effectiveTo: old.effectiveTo ?? replacement.effectiveFrom ?? now,
+        updatedAt: now,
+      })
+      .where(and(eq(memoryRecords.id, old.id), eq(memoryRecords.status, old.status)))
+      .returning();
+    if (!oldNext) return null;
+    const [replacementNext] = await tx
+      .update(memoryRecords)
+      .set({ status: "approved", supersedesId: old.id, version: old.version + 1, reviewedAt: now, updatedAt: now })
+      .where(and(eq(memoryRecords.id, replacement.id), eq(memoryRecords.status, replacement.status)))
+      .returning();
+    if (!replacementNext) throw conflict("The replacement changed while it was reviewed; read it again");
+    // Conflicts between the two are settled by this supersession.
+    await tx
+      .update(memoryConflicts)
+      .set({
+        state: "resolved",
+        resolution: "superseded",
+        resolutionNote: reason,
+        resolvedByActorType: caller.actorType,
+        resolvedByActorId: caller.actorId,
+        resolvedAt: now,
+      })
+      .where(
+        and(
+          eq(memoryConflicts.state, "open"),
+          or(
+            and(eq(memoryConflicts.recordId, replacement.id), eq(memoryConflicts.approvedRecordId, old.id)),
+            and(eq(memoryConflicts.recordId, old.id), eq(memoryConflicts.approvedRecordId, replacement.id)),
+          ),
+        ),
+      );
+    // Other open challenges to the old position now challenge the new one.
+    await tx
+      .update(memoryConflicts)
+      .set({ approvedRecordId: replacement.id })
+      .where(
+        and(
+          eq(memoryConflicts.state, "open"),
+          eq(memoryConflicts.approvedRecordId, old.id),
+          ne(memoryConflicts.recordId, replacement.id),
+        ),
+      );
+    await insertReviewEvent(tx, caller, old, {
+      action: "superseded_by",
+      fromStatus: old.status,
+      toStatus: "superseded",
+      reason,
+      relatedRecordId: replacement.id,
+      now,
+    });
+    await insertReviewEvent(tx, caller, replacement, {
+      action: "supersede",
+      fromStatus: replacement.status,
+      toStatus: "approved",
+      reason,
+      relatedRecordId: old.id,
+      now,
+    });
+    return { oldNext, replacementNext };
+  }
+
+  /**
    * Replaces a record with a newer one in the same scope (correction or a
    * dated change). The old record stays, linked and readable, as history.
    * The replacement becomes approved, so its contributor cannot do this.
@@ -289,77 +389,10 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
       const refusal = await reviewRefusal(caller, access, scope, decisionClass);
       if (refusal) await refuse(caller, operation, refusal, audit);
     }
-    if (isContributor(caller, replacement)) await refuse(caller, operation, "own_entry", audit);
+    await refuseIfAuthor(caller, operation, [replacement], audit);
 
     const now = new Date();
-    const result = await db.transaction(async (tx) => {
-      const [oldNext] = await tx
-        .update(memoryRecords)
-        .set({
-          status: "superseded",
-          supersededById: replacement.id,
-          supersededAt: now,
-          effectiveTo: old.effectiveTo ?? replacement.effectiveFrom ?? now,
-          updatedAt: now,
-        })
-        .where(and(eq(memoryRecords.id, old.id), eq(memoryRecords.status, old.status)))
-        .returning();
-      if (!oldNext) return null;
-      const [replacementNext] = await tx
-        .update(memoryRecords)
-        .set({ status: "approved", supersedesId: old.id, version: old.version + 1, reviewedAt: now, updatedAt: now })
-        .where(and(eq(memoryRecords.id, replacement.id), eq(memoryRecords.status, replacement.status)))
-        .returning();
-      if (!replacementNext) throw conflict("The replacement changed while it was reviewed; read it again");
-      // Conflicts between the two are settled by this supersession.
-      await tx
-        .update(memoryConflicts)
-        .set({
-          state: "resolved",
-          resolution: "superseded",
-          resolutionNote: input.reason,
-          resolvedByActorType: caller.actorType,
-          resolvedByActorId: caller.actorId,
-          resolvedAt: now,
-        })
-        .where(
-          and(
-            eq(memoryConflicts.state, "open"),
-            or(
-              and(eq(memoryConflicts.recordId, replacement.id), eq(memoryConflicts.approvedRecordId, old.id)),
-              and(eq(memoryConflicts.recordId, old.id), eq(memoryConflicts.approvedRecordId, replacement.id)),
-            ),
-          ),
-        );
-      // Other open challenges to the old position now challenge the new one.
-      await tx
-        .update(memoryConflicts)
-        .set({ approvedRecordId: replacement.id })
-        .where(
-          and(
-            eq(memoryConflicts.state, "open"),
-            eq(memoryConflicts.approvedRecordId, old.id),
-            ne(memoryConflicts.recordId, replacement.id),
-          ),
-        );
-      await insertReviewEvent(tx, caller, old, {
-        action: "superseded_by",
-        fromStatus: old.status,
-        toStatus: "superseded",
-        reason: input.reason,
-        relatedRecordId: replacement.id,
-        now,
-      });
-      await insertReviewEvent(tx, caller, replacement, {
-        action: "supersede",
-        fromStatus: replacement.status,
-        toStatus: "approved",
-        reason: input.reason,
-        relatedRecordId: old.id,
-        now,
-      });
-      return { oldNext, replacementNext };
-    });
+    const result = await db.transaction((tx) => applySupersede(tx, caller, old, replacement, input.reason, now));
     if (!result) throw conflict("The record changed while it was reviewed; read it again");
     await logOperation(caller, operation, "ok", { ...audit, detail: { replacementRecordId: replacement.id } });
     return { superseded: toRecord(result.oldNext, scope), replacement: toRecord(result.replacementNext, scope) };
@@ -753,7 +786,7 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
     const decisionClass = approved.decisionClass as MemoryDecisionClass;
     const refusal = await reviewRefusal(caller, access, scope, decisionClass);
     if (refusal) await refuse(caller, operation, refusal, audit);
-    if (isContributor(caller, challenger) || isContributor(caller, approved)) await refuse(caller, operation, "own_entry", audit);
+    await refuseIfAuthor(caller, operation, [challenger, approved], audit);
 
     const now = new Date();
     const resolved = await db.transaction(async (tx) => {
@@ -918,6 +951,8 @@ export function memoryReviewService(db: Db, gateway: MemoryGatewayService) {
   }
 
   return {
+    /** For the steward actions (steward-actions.ts) only. */
+    internals: { reviewRefusal, applySupersede, loadReadable, refuse },
     review,
     supersede,
     deleteRecord,

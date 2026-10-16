@@ -40,6 +40,7 @@ export {
 export {
   instanceSettingsSchema,
   instanceGeneralSettingsSchema,
+  strategyBoardEmailSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type InstanceGeneralSettings,
   type PatchInstanceGeneralSettings,
@@ -78,9 +79,13 @@ export {
   interactionResolverGovernanceSchema,
   updateCompanySchema,
   updateCompanyBrandingSchema,
+  pauseCompanySchema,
+  resumeCompanySchema,
   type CreateCompany,
   type UpdateCompany,
   type UpdateCompanyBranding,
+  type PauseCompany,
+  type ResumeCompany,
 } from "./company.js";
 export {
   environmentDriverSchema,
@@ -129,6 +134,10 @@ export {
 export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
+  sidebarLayoutSchema,
+  upsertSidebarLayoutSchema,
+  type SidebarLayout,
   type UpsertSidebarOrderPreference,
 } from "./sidebar-preferences.js";
 export {
@@ -367,6 +376,8 @@ export {
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
+  agentPipelineAccessSchema,
+  setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
@@ -452,6 +463,10 @@ export {
   issueThreadInteractionResolverPolicyProvenanceSchema,
   issueThreadInteractionEffectiveResolverPolicySourceSchema,
   issueThreadInteractionContinuationPolicySchema,
+  askAgentPayloadSchema,
+  askAgentResultSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   connectionIntentPhaseSchema,
   connectionIntentPayloadSchema,
   connectionIntentResultSchema,
@@ -482,6 +497,8 @@ export {
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultItemSchema,
   requestItemVerdictsResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,
@@ -496,6 +513,9 @@ export {
   issueDocumentKeySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   upsertIssueWatchdogSchema,
   type CreateIssue,
   type CreateChildIssue,
@@ -510,6 +530,8 @@ export {
   type CheckoutIssue,
   type AddIssueComment,
   type CreateIssueThreadInteraction,
+  type CreateAgentQuestion,
+  type AnswerAgentQuestion,
   type AcceptIssueThreadInteraction,
   type RejectIssueThreadInteraction,
   type CancelIssueThreadInteraction,
@@ -522,6 +544,9 @@ export {
   type IssueDocumentFormat,
   type UpsertIssueDocument,
   type RestoreIssueDocumentRevision,
+  type CreateIssueDocumentLink,
+  type SetIssueDocumentMaker,
+  type SetIssueDocumentApprovedRevision,
   type UpsertIssueWatchdog,
 } from "./issue.js";
 
@@ -624,10 +649,30 @@ export {
   createGoalSchema,
   updateGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
+  type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
 } from "./goal.js";
+export {
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
+  type CreateGoalWhyRequest,
+  type AnswerGoalWhyRequest,
+  type CreateStrategyBoardPack,
+  type SetStrategyBoardMembers,
+  type SetStrategyBoardMemberAgents,
+  updateStrategyBoardSettingsSchema,
+  type UpdateStrategyBoardSettings,
+} from "./strategy-board.js";
 
 export {
   applyOnboardingSeedSchema,
@@ -746,6 +791,9 @@ export {
   pipelineStageKindSchema,
   pipelineStageOnEnterSchema,
   pipelineStageVariableSchema,
+  pipelineStageTemplateSchema,
+  pipelineStageExpectedDeliverableSchema,
+  pipelineStageRequestedDocumentSchema,
   type PipelineAutomationRetryCleanupOptions,
   type PipelineAutomationRetryRequest,
   type PipelineAutomationRetryScope,
@@ -755,6 +803,7 @@ export {
   type PipelineStageKind,
   type PipelineStageOnEnter,
   type PipelineStageVariable,
+  type PipelineStageTemplate,
 } from "./pipeline.js";
 
 export {
@@ -997,3 +1046,6 @@ export * from "./chat-channels.js";
 export * from "./chat-github.js";
 
 export * from "./email.js";
+export * from "./mailbox.js";
+export * from "./crm-sync.js";
+export * from "./pipeline-fields.js";

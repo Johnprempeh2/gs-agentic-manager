@@ -394,7 +394,7 @@ export function pluginCapabilityValidator(): PluginCapabilityValidator {
       if (!required) {
         log.warn(
           { pluginId: manifest.id, operation },
-          "capability check for unknown operation – rejecting by default",
+          "capability check for unknown operation; rejecting by default",
         );
         return {
           allowed: false,

@@ -3,6 +3,7 @@ import type { IssueDocument } from "@greatstone/shared";
 import type { MentionOption } from "@/components/MarkdownEditor";
 import { IssueThreadInteractionCard } from "@/components/IssueThreadInteractionCard";
 import { AppLogo } from "@/pages/apps/AppLogo";
+import { AgentQuestionCard } from "@/components/AgentQuestionCard";
 import { MarkdownBody } from "@/components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { shouldHideInteractionCard } from "@/lib/issue-thread-interactions";
@@ -42,6 +43,11 @@ export function TaskChatInteractionCard({
   ...cardProps
 }: TaskChatInteractionCardProps) {
   const interaction = item.interaction;
+  // A question for another agent shows in the timeline while it waits, since
+  // nobody here answers it.
+  if (interaction.kind === "ask_agent") {
+    return <AgentQuestionCard interaction={interaction} agentMap={cardProps.agentMap} />;
+  }
   if (interaction.kind === "request_confirmation" && interaction.payload.toolAction) {
     const action = interaction.payload.toolAction;
     if (presentation === "takeover") {

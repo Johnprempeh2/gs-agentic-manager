@@ -1,4 +1,12 @@
-import type { GoalLevel, GoalStatus, IssueStatus } from "../constants.js";
+import type {
+  GoalKind,
+  GoalLevel,
+  GoalStatus,
+  IssueStatus,
+  KpiDirection,
+  KpiReadingSource,
+} from "../constants.js";
+import type { GoalRagRollup, KpiStatus } from "../goal-kpi-status.js";
 
 export interface Goal {
   id: string;
@@ -6,17 +14,60 @@ export interface Goal {
   title: string;
   description: string | null;
   level: GoalLevel;
+  /** Strategy layer; null for a plain goal. */
+  kind: GoalKind | null;
   status: GoalStatus;
   parentId: string | null;
   ownerAgentId: string | null;
+  /** A person owner. A goal has a person or an agent owner, not both. */
+  ownerUserId: string | null;
   /** Calendar date, "YYYY-MM-DD". */
   targetDate: string | null;
   doneWhen: string | null;
   targetValue: number | null;
   currentValue: number | null;
   unit: string | null;
+  /** KPI start point; null means the first reading is the baseline. */
+  baselineValue: number | null;
+  /** "YYYY-MM-DD"; null means the KPI's creation date. */
+  baselineDate: string | null;
+  /** Which way is good; null means "up". */
+  kpiDirection: KpiDirection | null;
+  /** Percent off the planned path that turns the KPI amber; null means 10. */
+  amberThresholdPct: number | null;
+  /** Percent off the planned path that turns the KPI red; null means 20. */
+  redThresholdPct: number | null;
+  /** Initiative budget in minor units (cents) of `budgetCurrency`. */
+  budgetPlannedCents: number | null;
+  budgetSpentCents: number | null;
+  /** ISO 4217 code, e.g. "USD". */
+  budgetCurrency: string | null;
+  /**
+   * Peer benchmark from a research pack (GRE-1161). Context for whoever sets
+   * the target, never the target itself.
+   */
+  benchmarkNote: string | null;
+  /** The research pack document a pre-filled KPI came from: issue, document key and bullet ID. */
+  sourceIssueId: string | null;
+  sourceDocumentKey: string | null;
+  sourceBulletId: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+/** One dated value of a KPI, and who recorded it from which source. */
+export interface GoalKpiReading {
+  id: string;
+  companyId: string;
+  goalId: string;
+  value: number;
+  /** "YYYY-MM-DD": the date the value is for. */
+  readingDate: string;
+  note: string | null;
+  source: KpiReadingSource;
+  recordedByAgentId: string | null;
+  recordedByUserId: string | null;
+  createdAt: Date;
 }
 
 export type GoalProgressSource = "number" | "issues" | "none";
@@ -96,6 +147,12 @@ export interface GoalWithProgress extends Goal {
   progress: GoalProgress;
   blockers: GoalBlocker[];
   latestCheckIn: GoalCheckIn | null;
+  /** Green / amber / red of this KPI; null for goals that are not KPIs. */
+  kpiStatus: KpiStatus | null;
+  /** Worst KPI status under this goal (the goal itself when it is a KPI). */
+  ragRollup: GoalRagRollup;
+  /** Newest reading of this KPI; null for goals that are not KPIs or have none. */
+  latestReading: GoalKpiReading | null;
 }
 
 export interface GoalMilestone {

@@ -123,28 +123,28 @@ export function ResponsibleUserDenialUxLab() {
         </header>
 
         <LabSection
-          title="1 · Run identity — “on behalf of {user}”"
+          title="1 · Run identity: “on behalf of {user}”"
           description="A run acting for a human now names that user on both the issue run ledger and the run detail header."
         >
-          <BeforeAfter label="Before — run ledger">
+          <BeforeAfter label="Before: run ledger">
             <RunLedgerRow />
           </BeforeAfter>
-          <BeforeAfter label="After — run ledger">
+          <BeforeAfter label="After: run ledger">
             <RunLedgerRow onBehalfOf="Ada Lovelace" />
           </BeforeAfter>
-          <BeforeAfter label="Before — run detail">
+          <BeforeAfter label="Before: run detail">
             <RunDetailHeader />
           </BeforeAfter>
-          <BeforeAfter label="After — run detail">
+          <BeforeAfter label="After: run detail">
             <RunDetailHeader onBehalfOf="Ada Lovelace" />
           </BeforeAfter>
         </LabSection>
 
         <LabSection
-          title="2 · Denial state — responsible user not authorized"
+          title="2 · Denial state: responsible user not authorized"
           description="The agent is allowed, but the user the run acts for is not. Distinct from a plain agent-lacks-permission failure."
         >
-          <BeforeAfter label="Before — generic failure text">
+          <BeforeAfter label="Before: generic failure text">
             <div className="text-xs">
               <span className="text-red-600 dark:text-red-400">
                 Forbidden: action not permitted
@@ -152,7 +152,7 @@ export function ResponsibleUserDenialUxLab() {
               <span className="ml-1 text-muted-foreground">(RESPONSIBLE_USER_UNAUTHORIZED)</span>
             </div>
           </BeforeAfter>
-          <BeforeAfter label="After — actionable denial copy">
+          <BeforeAfter label="After: actionable denial copy">
             <ResponsibleUserDenialNotice
               code="RESPONSIBLE_USER_UNAUTHORIZED"
               userName="Ada Lovelace"
@@ -161,8 +161,8 @@ export function ResponsibleUserDenialUxLab() {
         </LabSection>
 
         <LabSection
-          title="3 · Denial state — agent lacks permission (unchanged)"
-          description="A denial that is NOT a responsible-user code keeps the existing generic error copy — no responsible-user notice."
+          title="3 · Denial state: agent lacks permission (unchanged)"
+          description="A denial that is NOT a responsible-user code keeps the existing generic error copy, with no responsible-user notice."
         >
           <BeforeAfter label="Agent-lacks-permission failure">
             <div className="text-xs">
@@ -180,10 +180,10 @@ export function ResponsibleUserDenialUxLab() {
         </LabSection>
 
         <LabSection
-          title="4 · Denial state — responsible user unavailable"
+          title="4 · Denial state: responsible user unavailable"
           description="The user this run acts for was removed or deactivated. Steers the agent to mark work blocked."
         >
-          <BeforeAfter label="Before — generic failure text">
+          <BeforeAfter label="Before: generic failure text">
             <div className="text-xs">
               <span className="text-red-600 dark:text-red-400">
                 Forbidden: responsible user unavailable
@@ -191,7 +191,7 @@ export function ResponsibleUserDenialUxLab() {
               <span className="ml-1 text-muted-foreground">(RESPONSIBLE_USER_UNAVAILABLE)</span>
             </div>
           </BeforeAfter>
-          <BeforeAfter label="After — actionable denial copy">
+          <BeforeAfter label="After: actionable denial copy">
             <ResponsibleUserDenialNotice
               code="RESPONSIBLE_USER_UNAVAILABLE"
               userName="Grace Hopper"
@@ -200,7 +200,7 @@ export function ResponsibleUserDenialUxLab() {
         </LabSection>
 
         <LabSection
-          title="In-context — denial inside a failed run ledger row"
+          title="In-context: denial inside a failed run ledger row"
           description="How the notice reads within a run row on the issue timeline."
         >
           <BeforeAfter label="Unauthorized">

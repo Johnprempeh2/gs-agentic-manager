@@ -4,7 +4,6 @@ import { createRoot } from "react-dom/client";
 import type { HeartbeatRun } from "@greatstone/shared";
 import { afterEach, expect, it, vi } from "vitest";
 import { LogViewer } from "./AgentDetail";
-import { LogViewer as ProductionLogViewer } from "./AgentDetail.production";
 
 const { log, events, empty } = vi.hoisted(() => ({ log: vi.fn(), events: vi.fn(async () => []), empty: [] }));
 vi.mock("../api/heartbeats", () => ({ heartbeatsApi: { log, events } }));
@@ -24,7 +23,7 @@ vi.mock("../components/transcript/RunTranscriptView", () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); log.mockReset(); events.mockClear(); });
 
-it.each([LogViewer, ProductionLogViewer])("retains legacy history and reads only the next offset on visibility recovery (%#)", async (Viewer) => {
+it.each([LogViewer])("retains legacy history and reads only the next offset on visibility recovery (%#)", async (Viewer) => {
   const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   const row = (seq: number, chunk: string) => JSON.stringify({ seq, ts: `2026-09-10T12:00:0${seq}Z`, stream: "stdout", chunk }) + "\n";
   const first = row(1, "retained history");
@@ -63,7 +62,7 @@ it.each([LogViewer, ProductionLogViewer])("retains legacy history and reads only
   }
 });
 
-it.each([LogViewer, ProductionLogViewer])("polls logs when WebSocket construction fails and recovers on retry (%#)", async (Viewer) => {
+it.each([LogViewer])("polls logs when WebSocket construction fails and recovers on retry (%#)", async (Viewer) => {
   vi.useFakeTimers();
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   vi.stubGlobal("WebSocket", undefined);
@@ -94,7 +93,7 @@ it.each([LogViewer, ProductionLogViewer])("polls logs when WebSocket constructio
   expect(sockets[0].close).toHaveBeenCalled();
 });
 
-it.each([LogViewer, ProductionLogViewer])("shows the product tag in a stderr excerpt stored before the rename (%#)", async (Viewer) => {
+it.each([LogViewer])("shows the product tag in a stderr excerpt stored before the rename (%#)", async (Viewer) => {
   vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   const row = JSON.stringify({ seq: 1, ts: "2026-09-10T12:00:01Z", stream: "stdout", chunk: "output" }) + "\n";
   log.mockResolvedValue({ content: row, nextOffset: row.length });

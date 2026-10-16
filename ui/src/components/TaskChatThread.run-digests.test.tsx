@@ -32,9 +32,6 @@ vi.mock("@/api/instanceSettings", () => ({
 }));
 vi.mock("@/context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 vi.mock("@/hooks/useIssuePlanDocument", () => ({ useIssuePlanDocument: () => ({ data: null }) }));
-vi.mock("@/hooks/useStreamlinedUiEnabled", () => ({
-  useStreamlinedUiEnabled: () => ({ enabled: true, loaded: true }),
-}));
 vi.mock("@/lib/router", () => ({
   Link: ({ to, children, ...props }: { to: string; children: React.ReactNode }) => (
     <a href={to} {...props}>{children}</a>
@@ -262,7 +259,7 @@ describe("task thread run digests", () => {
       expect.stringContaining("1 tool · 900 tokens"),
     ]);
     expect(fromLogs.rows[0]).toContain("Stopped");
-    for (const marker of ["Run failed", "Execution was stopped", "Run completed"]) {
+    for (const marker of ["Run failed", "The work was stopped", "Run completed"]) {
       expect(fromLogs.text).toContain(marker);
     }
     expect(fromLogs.text).not.toContain("Nothing to do here.");

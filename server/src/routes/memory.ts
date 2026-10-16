@@ -1,11 +1,22 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import type { ZodType } from "zod";
-import type { Db } from "@greatstone/db";
+import { and, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { memoryRecords, type Db } from "@greatstone/db";
 import {
   confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
   createMemoryRelationshipSchema,
   dismissMemoryLinkLeadSchema,
+  importMemorySchema,
+  checkMemoryImportSchema,
+  memoryTextSimilarity,
+  memoryTextWords,
+  MEMORY_IMPORT_SIMILAR_THRESHOLD,
+  type CheckMemoryImport,
+  type MemoryImportCheckResult,
+  MEMORY_IMPORT_SOURCE_KIND,
+  type ImportMemory,
+  type MemoryImportResult,
   MEMORY_LINK_LEAD_STATES,
   createMemoryScopeSchema,
   deleteMemoryRecordSchema,
@@ -13,10 +24,14 @@ import {
   memoryActivityCountsQuerySchema,
   memoryActivityQuerySchema,
   memoryGraphQuerySchema,
+  memoryOperationsQuerySchema,
+  memoryReviewQueueQuerySchema,
+  memoryStewardActionSchema,
   recallMemorySchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
   runMemoryRetentionSchema,
+  setMemoryScopeStewardSchema,
   supersedeMemoryRecordSchema,
   updateMemorySettingsSchema,
   type MemoryCallerApp,
@@ -34,7 +49,9 @@ import {
 import { memoryGraphService } from "../services/memory-gateway/graph.js";
 import { memoryGrantService } from "../services/memory-gateway/grants.js";
 import { memoryLinkService } from "../services/memory-gateway/link-check.js";
+import { memoryOperationsReadService } from "../services/memory-gateway/operations.js";
 import { memoryReviewService } from "../services/memory-gateway/review.js";
+import { memoryStewardService } from "../services/memory-gateway/steward-actions.js";
 import { memoryGatewayService, type MemoryCaller } from "../services/memory-gateway/service.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyOwnerOrAdminRole } from "./authz.js";
 
@@ -100,6 +117,8 @@ export function memoryRoutes(
   const graphs = memoryGraphService(db, svc);
   const grants = memoryGrantService(db, svc);
   const links = memoryLinkService(db, svc);
+  const stewards = memoryStewardService(db, svc, reviews);
+  const operations = memoryOperationsReadService(db);
 
   // Runs before body validation so a company with memory off learns nothing
   // from any memory route, not even which bodies are valid.
@@ -244,6 +263,146 @@ export function memoryRoutes(
     }
   });
 
+  // Before an import: which picked entries are already in this scope, by
+  // source id or by much the same words, so the screen can untick them.
+  router.post("/companies/:companyId/memory/import/check", requireEnabled, validate(checkMemoryImportSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "import_check");
+    const { scopeId, app, entries } = req.body as CheckMemoryImport;
+    if (!(await svc.listScopes(caller)).some((scope) => scope.id === scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const rows = await db
+      .select({
+        id: memoryRecords.id,
+        title: memoryRecords.title,
+        content: memoryRecords.content,
+        status: memoryRecords.status,
+        sourceKind: memoryRecords.sourceKind,
+        sourceId: memoryRecords.sourceId,
+      })
+      .from(memoryRecords)
+      .where(
+        and(
+          eq(memoryRecords.companyId, companyId),
+          eq(memoryRecords.scopeId, scopeId),
+          isNull(memoryRecords.deletedAt),
+          ne(memoryRecords.status, "superseded"),
+        ),
+      )
+      .orderBy(desc(memoryRecords.updatedAt))
+      .limit(2_000);
+    const sourceKind = MEMORY_IMPORT_SOURCE_KIND[app];
+    const bySource = new Map(rows.filter((row) => row.sourceKind === sourceKind && row.sourceId).map((row) => [row.sourceId!, row]));
+    const words = rows.map((row) => ({ row, words: memoryTextWords(`${row.title ?? ""} ${row.content ?? ""}`) }));
+    // Up to 500 long entries against 2,000 records is a lot of word lookups:
+    // skip records whose size alone rules out the threshold (Jaccard is at
+    // most smaller/larger) and give the event loop back between batches, so
+    // one big check cannot stall every other request on the server.
+    const checked: MemoryImportCheckResult["entries"] = [];
+    for (const [index, entry] of entries.entries()) {
+      if (index > 0 && index % 25 === 0) await new Promise((resolve) => setImmediate(resolve));
+      const same = bySource.get(entry.sourceId);
+      if (same) {
+        checked.push({ sourceId: entry.sourceId, match: "already_imported", existing: { recordId: same.id, title: same.title, status: same.status } });
+        continue;
+      }
+      const target = memoryTextWords(entry.content);
+      let best: { row: (typeof rows)[number]; score: number } | null = null;
+      for (const candidate of words) {
+        const size = candidate.words.size;
+        if (Math.min(target.size, size) < Math.max(target.size, size) * MEMORY_IMPORT_SIMILAR_THRESHOLD) continue;
+        const score = memoryTextSimilarity(target, candidate.words);
+        if (score >= MEMORY_IMPORT_SIMILAR_THRESHOLD && (!best || score > best.score)) best = { row: candidate.row, score };
+      }
+      checked.push(
+        best
+          ? { sourceId: entry.sourceId, match: "similar", existing: { recordId: best.row.id, title: best.row.title, status: best.row.status } }
+          : { sourceId: entry.sourceId, match: null, existing: null },
+      );
+    }
+    const result: MemoryImportCheckResult = { entries: checked };
+    res.json(result);
+  });
+
+  // Claude and ChatGPT import: the browser parses the export and sends only
+  // the entries picked. Each one is an ordinary contribution, so it arrives
+  // unreviewed and passes the same sensitive-content check. A second import
+  // of the same line or conversation is skipped by its source id.
+  router.post("/companies/:companyId/memory/import", requireEnabled, validate(importMemorySchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "contribute");
+    const { scopeId, app, via, entries } = req.body as ImportMemory;
+    // Same answer as contribute for a scope the caller cannot see, before any lookup.
+    if (!(await svc.listScopes(caller)).some((scope) => scope.id === scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const sourceKind = MEMORY_IMPORT_SOURCE_KIND[app];
+    const existing = await db
+      .select({ sourceId: memoryRecords.sourceId })
+      .from(memoryRecords)
+      .where(
+        and(
+          eq(memoryRecords.companyId, companyId),
+          eq(memoryRecords.scopeId, scopeId),
+          eq(memoryRecords.sourceKind, sourceKind),
+          inArray(memoryRecords.sourceId, entries.map((entry) => entry.sourceId)),
+          isNull(memoryRecords.deletedAt),
+        ),
+      );
+    const seen = new Set(existing.map((row) => row.sourceId));
+    const result: MemoryImportResult = { added: 0, alreadyImported: 0, heldBack: 0, entries: [] };
+    for (const entry of entries) {
+      if (seen.has(entry.sourceId)) {
+        result.alreadyImported += 1;
+        result.entries.push({ sourceId: entry.sourceId, outcome: "already_imported", recordId: null, reason: null });
+        continue;
+      }
+      seen.add(entry.sourceId);
+      try {
+        const contributed = await svc.contribute(caller, {
+          scopeId,
+          content: entry.content,
+          title: entry.title ?? null,
+          entryType: "observation",
+          decisionClass: "operational",
+          sensitivity: "internal",
+          entities: [],
+          topics: [],
+          sourceKind,
+          sourceId: entry.sourceId,
+          evidence: { importedFrom: app, via, occurredAt: entry.occurredAt ? entry.occurredAt.toISOString() : null },
+        });
+        result.added += 1;
+        result.entries.push({ sourceId: entry.sourceId, outcome: "added", recordId: contributed.record.id, reason: null });
+      } catch (error) {
+        if (!(error instanceof MemorySensitiveContentError)) throw error;
+        result.heldBack += 1;
+        result.entries.push({
+          sourceId: entry.sourceId,
+          outcome: "held_back",
+          recordId: null,
+          reason: "It looked like it held personal or secret details, so it was not added.",
+        });
+      }
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.imported",
+      entityType: "company",
+      entityId: companyId,
+      details: { app, via, scopeId, added: result.added, alreadyImported: result.alreadyImported, heldBack: result.heldBack },
+    });
+    res.status(result.added > 0 ? 201 : 200).json(result);
+  });
+
   router.get("/companies/:companyId/memory/records/:recordId", requireEnabled, async (req, res) => {
     const companyId = req.params.companyId as string;
     const recordId = req.params.recordId as string;
@@ -309,6 +468,62 @@ export function memoryRoutes(
     res.status(201).json(await reviews.createRelationship(await callerFor(req, companyId, "relationship_create"), req.body));
   });
 
+  // Shared memory M1 (GRE-1089): the review queue, card actions and stewards
+  // per scope. A refusal answers 403 with a plain reason; a card that changed
+  // since the caller opened it answers 409.
+  router.get("/companies/:companyId/memory/review-queue", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "review_queue");
+    res.json(await stewards.reviewQueue(caller, parseQuery(memoryReviewQueueQuerySchema, req)));
+  });
+
+  router.post("/companies/:companyId/memory/records/:recordId/steward-action", requireEnabled, validate(memoryStewardActionSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, `steward_${req.body.action}`);
+    const recordId = recordIdOr404(req, res);
+    if (!recordId) return;
+    try {
+      res.json(await stewards.act(caller, recordId, req.body));
+    } catch (error) {
+      if (!(error instanceof MemorySensitiveContentError)) throw error;
+      res.status(422).json({
+        error: error.message,
+        code: MEMORY_SENSITIVE_CONTENT_CODE,
+        matchedTypes: error.matchedTypes,
+        detection: MEMORY_DETECTION_NOTE,
+      });
+    }
+  });
+
+  router.get("/companies/:companyId/memory/stewards", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    res.json(await stewards.listStewards(await callerFor(req, companyId, "stewards_list")));
+  });
+
+  router.put("/companies/:companyId/memory/stewards/:scopeId", requireEnabled, validate(setMemoryScopeStewardSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "steward_set");
+    const scopeId = req.params.scopeId as string;
+    if (!UUID_RE.test(scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const steward = await stewards.setSteward(caller, scopeId, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.steward_set",
+      entityType: "company",
+      entityId: companyId,
+      details: { scopeId, primaryUserId: steward.primaryUserId, backupUserId: steward.backupUserId },
+    });
+    res.json(steward);
+  });
+
   // Conflict queue data, grouped by the approved position (GRE-886); the steward reads it (GRE-887).
   router.get("/companies/:companyId/memory/conflicts", requireEnabled, async (req, res) => {
     const companyId = req.params.companyId as string;
@@ -371,6 +586,14 @@ export function memoryRoutes(
   router.post("/companies/:companyId/memory/retention", requireEnabled, validate(runMemoryRetentionSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     res.json(await reviews.runRetention(await callerFor(req, companyId, "retention"), req.body));
+  });
+
+  // The operations log for live checks (GRE-1302): any agent or board user of
+  // the company. Read only and not itself logged; counts and flags, never content.
+  router.get("/companies/:companyId/memory/operations", requireEnabled, async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await callerFor(req, companyId, "operations_list");
+    res.json(await operations.list(companyId, parseQuery(memoryOperationsQuerySchema, req)));
   });
 
   // Graph and contribution activity (GRE-864, plan section 8). Read only;

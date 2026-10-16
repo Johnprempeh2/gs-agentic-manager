@@ -117,6 +117,11 @@ export const companiesApi = {
   updateBranding: (companyId: string, data: UpdateCompanyBranding) =>
     api.patch<Company>(`/companies/${companyId}/branding`, data),
   archive: (companyId: string) => api.post<Company>(`/companies/${companyId}/archive`, {}),
+  // GRE-1364: pause and resume are their own actions; a status PATCH is refused.
+  pause: (companyId: string, data: { reason?: string | null }) =>
+    api.post<Company>(`/companies/${companyId}/pause`, data),
+  resume: (companyId: string, data: { operator: string; reason: string }) =>
+    api.post<Company>(`/companies/${companyId}/resume`, data),
   remove: (companyId: string) => api.delete<{ ok: true }>(`/companies/${companyId}`),
   exportBundle: (
     companyId: string,

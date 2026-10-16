@@ -321,6 +321,23 @@ describe("Memory page", () => {
     expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(kestrelNodes.length);
   });
 
+  it("shows search results as a list with the searched words marked", async () => {
+    const [first] = kestrelNodes;
+    const word = (first.title ?? first.excerpt).split(/\s+/).find((part) => part.length > 3)!;
+    memoryApiMock.graph.mockResolvedValue({ ...kestrelGraph, nodes: [first], edges: [] });
+    await renderAt(`/memory?q=${encodeURIComponent(word)}`);
+    expect(container.querySelector('[data-testid="memory-graph-3d"]')).toBeNull();
+    expect(container.querySelectorAll("button[data-memory-row]")).toHaveLength(1);
+    expect(container.querySelector("button[data-memory-row] mark")?.textContent?.toLowerCase()).toBe(word.toLowerCase());
+  });
+
+  it("says what was searched when nothing matches", async () => {
+    memoryApiMock.graph.mockResolvedValue({ ...kestrelGraph, nodes: [], edges: [] });
+    await renderAt("/memory?q=zebra");
+    expect(text()).toContain('Nothing in memory matches "zebra".');
+    expect(text()).toContain("Try fewer or different words");
+  });
+
   it("passes search, scope and status from the URL to the server, and keeps agent focus on the client", async () => {
     memoryApiMock.graph.mockResolvedValue({ ...kestrelGraph, nodes: [kestrelNodes[3]], edges: [] });
     await renderAt("/memory?status=disputed&scope=pj-alder-site&agent=ag-everest-syn&q=launch");

@@ -6,8 +6,8 @@ import path from "node:path";
 import { eq } from "drizzle-orm";
 import { createDb, companies, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
-import type { DecisionCard } from "@greatstone/shared";
-import { decisionPushMessage, pushNotificationService, type DecisionPushMessage } from "../services/push-notifications.js";
+import { DEFAULT_NOTIFICATION_PREFERENCES, type DecisionCard, type NotificationPreferences } from "@greatstone/shared";
+import { assignedTaskPushMessage, decisionPushMessage, pushNotificationService, type DecisionPushMessage } from "../services/push-notifications.js";
 import { loadOrCreateVapidKeys } from "../services/push-keys.js";
 import { generateVapidKeys, type PushSendResult, type PushTarget } from "../services/web-push.js";
 
@@ -21,13 +21,18 @@ const card = (id: string, title = id) => ({ id, title, kind: "blocked", kinds: [
 const phone = (n: number) => ({ endpoint: `https://web.push.apple.com/device-${n}`, p256dh: "p256dh", auth: "auth" });
 
 let feedCards: DecisionCard[] = [];
+let assignedTasks: Array<{ id: string; title: string }> = [];
+let prefs: NotificationPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+let clock = new Date("2026-10-16T12:00:00Z");
 let sent: Array<{ target: PushTarget; message: DecisionPushMessage }> = [];
 let sendResult: PushSendResult = { ok: true, status: 201 };
 
 function service() {
   return pushNotificationService(db, {
     keys: () => keys,
-    buildFeed: async () => ({ cards: feedCards, count: feedCards.length }),
+    buildFeed: async () => ({ cards: feedCards, count: feedCards.length, assignedTasks }),
+    preferences: async () => prefs,
+    now: () => clock,
     send: async (target, message) => {
       sent.push({ target, message });
       return sendResult;
@@ -49,6 +54,9 @@ beforeEach(async () => {
   await db.delete(pushNotifiedDecisions);
   await db.delete(pushSubscriptions);
   feedCards = [];
+  assignedTasks = [];
+  prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+  clock = new Date("2026-10-16T12:00:00Z");
   sent = [];
   sendResult = { ok: true, status: 201 };
 });
@@ -131,6 +139,65 @@ describe("decision push notifications", () => {
     expect(await service().unsubscribe(companyId, "ben", phone(1).endpoint)).toBe(false);
     expect(await service().unsubscribe(companyId, "john", phone(1).endpoint)).toBe(true);
     expect(await service().isSubscribed(companyId, "john", phone(1).endpoint)).toBe(false);
+  });
+});
+
+describe("notification choices", () => {
+  it("tells the user once about a task given to them, linking to their inbox", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    assignedTasks = [{ id: "i1", title: "Sign the Indago brief" }];
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(sent[0]!.message).toEqual({ title: "A task was given to you", body: "Sign the Indago brief", url: "/PSH/inbox/mine", tag: "assigned:i1", badge: 0 });
+    expect(await service().notifyNewDecisions()).toBe(0);
+  });
+
+  it("never sends the tasks already assigned when notifications are turned on", async () => {
+    assignedTasks = [{ id: "i1", title: "Old task" }];
+    await service().subscribe(companyId, "john", phone(1));
+    expect(await service().notifyNewDecisions()).toBe(0);
+  });
+
+  it("stays silent on a topic switched off, and switching it back on sends no backlog", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    prefs = { ...prefs, decisions: false, assignedTasks: false };
+    feedCards = [card("task:a")];
+    assignedTasks = [{ id: "i1", title: "A task" }];
+    expect(await service().notifyNewDecisions()).toBe(0);
+    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+    expect(await service().notifyNewDecisions()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  it("holds everything during quiet hours and sends it once they end", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    prefs = { ...prefs, quietHoursStart: 22, quietHoursEnd: 7, timeZone: "Europe/London" };
+    clock = new Date("2026-10-16T23:30:00Z"); // 00:30 in London (BST)
+    feedCards = [card("task:a", "Approve the budget")];
+    expect(await service().notifyNewDecisions()).toBe(0);
+    clock = new Date("2026-10-17T06:30:00Z"); // 07:30 in London
+    expect(await service().notifyNewDecisions()).toBe(1);
+    expect(sent[0]!.message.body).toBe("Approve the budget");
+  });
+
+  it("skips team chat pushes when team chat is off or it is quiet hours", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    const message = { title: "Ben", body: "Hello", url: "/PSH/chat", tag: "chat" };
+    prefs = { ...prefs, teamChat: false };
+    expect(await service().sendToUser(companyId, "john", message)).toEqual({ targets: 0, delivered: 0 });
+    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, quietHoursStart: 9, quietHoursEnd: 17, timeZone: "UTC" };
+    expect(await service().sendToUser(companyId, "john", message)).toEqual({ targets: 0, delivered: 0 });
+    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+    expect((await service().sendToUser(companyId, "john", message)).delivered).toBe(1);
+  });
+
+  it("summarises several tasks given at once", () => {
+    expect(assignedTaskPushMessage([{ id: "a", title: "One" }, { id: "b", title: "Two" }], 3, "GRE")).toEqual({
+      title: "2 tasks were given to you",
+      body: "One and 1 more",
+      url: "/GRE/inbox/mine",
+      tag: "assigned-tasks",
+      badge: 3,
+    });
   });
 });
 

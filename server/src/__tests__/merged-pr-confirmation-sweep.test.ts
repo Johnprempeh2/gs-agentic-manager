@@ -280,6 +280,7 @@ describeEmbeddedPostgres.sequential("merged pull-request confirmation sweep", ()
       candidates: 3,
       accepted: 2,
       woken: 2,
+      acceptedIssueIds: [issueId],
     });
 
     const stored = await db

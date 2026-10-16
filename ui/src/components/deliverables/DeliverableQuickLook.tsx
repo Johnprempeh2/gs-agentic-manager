@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, MessageSquarePlus, X } from "lucide-react";
-import { deliverablesApi, type Deliverable } from "@/api/deliverables";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft, Camera, ChevronLeft, ChevronRight, CircleCheck, Download, ExternalLink, Link2, MessageSquarePlus, X } from "lucide-react";
+import { deliverablesApi, type Deliverable, type DeliverableConfidentiality } from "@/api/deliverables";
+import { Checkbox } from "@/components/ui/checkbox";
+import { NativeSelect } from "@/components/ui/native-select";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,6 +15,7 @@ import { cn, formatDate, formatDateTime } from "@/lib/utils";
 import { DeliverableCommentsPanel, DeliverableReviewFrame, useDeliverableReview } from "./DeliverableComments";
 import { DeliverableDocumentView, isHtmlDeliverable } from "./DeliverableDocument";
 import { DELIVERABLE_KIND_LABELS } from "./DeliverableCard";
+import { CONFIDENTIALITY_LABELS, ConfidentialityBadge, LinkStatusBadges, siteDomain } from "./DeliverableBadges";
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -72,6 +76,25 @@ export function DeliverableQuickLook({
   }, [companyId, current?.id]);
 
   const review = useDeliverableReview(companyId, shownId ?? "", commenting && !!shownId);
+  const queryClient = useQueryClient();
+  const pushToast = useOptionalToastActions()?.pushToast ?? (() => null);
+  const refreshAll = () => queryClient.invalidateQueries({ queryKey: queryKeys.deliverables.all(companyId) });
+  const relabel = useMutation({
+    mutationFn: (input: { confidentiality?: DeliverableConfidentiality; restricted?: boolean }) =>
+      deliverablesApi.update(companyId, current!.id, input),
+    onSuccess: () => refreshAll(),
+    onError: () => pushToast({ title: "Could not save the label", tone: "error" }),
+  });
+  const screenshot = useMutation({
+    mutationFn: () => deliverablesApi.refreshScreenshot(companyId, current!.id),
+    onSuccess: (result) => {
+      void refreshAll();
+      pushToast(result.captured
+        ? { title: "Screenshot refreshed", tone: "success", ttlMs: 2500 }
+        : { title: "Screenshots are not available on this server", tone: "info" });
+    },
+    onError: () => pushToast({ title: "Could not refresh the screenshot", tone: "error" }),
+  });
 
   const hasPrevious = index > 0;
   const hasNext = index < items.length - 1;
@@ -166,6 +189,8 @@ export function DeliverableQuickLook({
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge variant="secondary">{DELIVERABLE_KIND_LABELS[shown.kind]}</Badge>
               <Badge variant="outline">{shown.status === "draft" ? "Draft" : "Final"}</Badge>
+              <ConfidentialityBadge value={shown.confidentiality} />
+              <LinkStatusBadges deliverable={shown} />
             </div>
             <DialogDescription className="text-sm text-muted-foreground">
               {shown.summary ?? "No summary."}
@@ -173,16 +198,37 @@ export function DeliverableQuickLook({
           </div>
 
           <div className="flex flex-col gap-2">
-            <Button asChild variant="default" size="sm" className="justify-start">
-              <a href={shown.downloadPath} download>
-                <Download /> Download
-              </a>
-            </Button>
-            <Button asChild variant="outline" size="sm" className="justify-start">
-              <a href={shown.openPath} target="_blank" rel="noreferrer">
-                <ExternalLink /> Open in new tab
-              </a>
-            </Button>
+            {shown.external && shown.url ? (
+              <>
+                <Button asChild variant="default" size="sm" className="justify-start">
+                  <a href={shown.url} target="_blank" rel="noopener noreferrer" data-testid="deliverable-open-site">
+                    <ExternalLink /> Open site
+                  </a>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="justify-start"
+                  disabled={screenshot.isPending}
+                  onClick={() => screenshot.mutate()}
+                >
+                  <Camera /> {screenshot.isPending ? "Taking screenshot" : "Refresh screenshot"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button asChild variant="default" size="sm" className="justify-start">
+                  <a href={shown.downloadPath} download>
+                    <Download /> Download
+                  </a>
+                </Button>
+                <Button asChild variant="outline" size="sm" className="justify-start">
+                  <a href={shown.openPath} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink /> Open in new tab
+                  </a>
+                </Button>
+              </>
+            )}
             <Button variant="outline" size="sm" className="justify-start" onClick={() => onCopyLink(current.id)}>
               <Link2 /> Copy link
             </Button>
@@ -212,6 +258,43 @@ export function DeliverableQuickLook({
               <time dateTime={shown.createdAt}>{formatDateTime(shown.createdAt)}</time>
             </PanelRow>
             <PanelRow label="Brand">{shown.brand}</PanelRow>
+            {shown.external ? (
+              <PanelRow label="Site">
+                <span className="break-all">{siteDomain(shown.url)}</span>
+                {shown.linkCheck ? (
+                  <span className="block text-xs text-muted-foreground">
+                    Checked {formatDateTime(shown.linkCheck.lastCheckedAt)}
+                    {shown.linkCheck.httpStatus ? `, answered ${shown.linkCheck.httpStatus}` : ", no answer"}
+                  </span>
+                ) : (
+                  <span className="block text-xs text-muted-foreground">Not checked yet</span>
+                )}
+              </PanelRow>
+            ) : null}
+            <PanelRow label="Label">
+              <NativeSelect
+                aria-label="Confidentiality"
+                value={current.confidentiality}
+                disabled={relabel.isPending}
+                onChange={(event) => relabel.mutate({ confidentiality: event.currentTarget.value as DeliverableConfidentiality })}
+                data-testid="deliverable-confidentiality-select"
+                className="h-8"
+              >
+                {(Object.keys(CONFIDENTIALITY_LABELS) as DeliverableConfidentiality[]).map((value) => (
+                  <option key={value} value={value}>{CONFIDENTIALITY_LABELS[value]}</option>
+                ))}
+              </NativeSelect>
+              {current.external ? (
+                <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={current.restricted}
+                    disabled={relabel.isPending}
+                    onCheckedChange={(checked) => relabel.mutate({ restricted: checked === true })}
+                  />
+                  Password protected or unlisted
+                </label>
+              ) : null}
+            </PanelRow>
             {shown.project ? <PanelRow label="Project">{shown.project.name}</PanelRow> : null}
           </dl>
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Bell, BellOff, Loader2 } from "lucide-react";
+import { Link } from "@/lib/router";
 import { Button } from "../ui/button";
 import { usePushNotifications } from "../../hooks/usePushNotifications";
 import { useIsPhone } from "../../hooks/useIsPhone";
@@ -65,6 +66,7 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground" data-testid="decision-notifications-on">
         <Bell className="size-3.5 text-primary" aria-hidden />
         <span>Notifications are on for this device.</span>
+        <Button type="button" size="xs" variant="ghost" asChild><Link to="/notifications">Choose what you hear about</Link></Button>
         <Button type="button" size="xs" variant="ghost" onClick={() => void sendTest()}>Send a test</Button>
         <Button type="button" size="xs" variant="ghost" onClick={() => void disable()}>Turn off</Button>
         {error ? <span className="basis-full text-destructive" role="alert">{error}</span> : null}
@@ -92,8 +94,10 @@ export function DecisionNotificationsCard({ companyId }: { companyId: string | n
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <Bell className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
         <div className="min-w-0 text-sm">
-          <p className="font-medium">Get a notification when a decision needs you</p>
-          <p className="text-muted-foreground">Only decisions, nothing else.</p>
+          <p className="font-medium">Get a notification when something needs you</p>
+          <p className="text-muted-foreground">
+            Decisions and tasks given to you. <Link to="/notifications" className="underline underline-offset-2">Choose what you hear about</Link>.
+          </p>
           {error ? <p className="text-destructive" role="alert">{error}</p> : null}
         </div>
       </div>

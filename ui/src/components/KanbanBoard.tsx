@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { CardCover, type CardCoverImage } from "./ImageCoverControls";
 import { useMemo, useState } from "react";
 import { Link } from "@/lib/router";
 import {
@@ -161,6 +162,8 @@ interface KanbanBoardProps {
   issues: Issue[];
   agents?: Agent[];
   ownerContext?: KanbanOwnerContext;
+  /** Pictures chosen as task covers, by task id, shown at the top of full cards. */
+  issueCovers?: Record<string, CardCoverImage>;
   liveIssueIds?: Set<string>;
   compactCards?: boolean;
   collapsedStatuses?: string[];
@@ -183,6 +186,7 @@ function KanbanColumn({
   issues,
   agents,
   ownerContext,
+  issueCovers,
   liveIssueIds,
   subtreeLiveCounts,
   compactCards = false,
@@ -198,6 +202,7 @@ function KanbanColumn({
   issues: Issue[];
   agents?: Agent[];
   ownerContext?: KanbanOwnerContext;
+  issueCovers?: Record<string, CardCoverImage>;
   liveIssueIds?: Set<string>;
   subtreeLiveCounts?: ReadonlyMap<string, number>;
   compactCards?: boolean;
@@ -274,6 +279,7 @@ function KanbanColumn({
               issue={issue}
               agents={agents}
               ownerContext={ownerContext}
+              cover={issueCovers?.[issue.id]}
               isLive={liveIssueIds?.has(issue.id)}
               subtreeLiveCount={subtreeLiveCounts?.get(issue.id) ?? 0}
               compact={compactCards}
@@ -308,6 +314,7 @@ function KanbanCard({
   issue,
   agents,
   ownerContext,
+  cover,
   isLive,
   subtreeLiveCount = 0,
   isOverlay,
@@ -319,6 +326,7 @@ function KanbanCard({
   issue: Issue;
   agents?: Agent[];
   ownerContext?: KanbanOwnerContext;
+  cover?: CardCoverImage;
   isLive?: boolean;
   subtreeLiveCount?: number;
   isOverlay?: boolean;
@@ -372,6 +380,7 @@ function KanbanCard({
           if (isDragging) e.preventDefault();
         }}
       >
+        {compact ? null : <CardCover cover={cover} />}
         {showIdentifier || handoffRequired || isLive || subtreeLiveCount > 0 ? (
         <div className={`flex items-start gap-1.5 ${compact ? "mb-1" : "mb-1.5"}`}>
           {showIdentifier ? (
@@ -440,6 +449,7 @@ export function KanbanBoard({
   issues,
   agents,
   ownerContext,
+  issueCovers,
   liveIssueIds,
   compactCards = false,
   collapsedStatuses = [],
@@ -528,6 +538,7 @@ export function KanbanBoard({
             issues={columnIssues[status] ?? []}
             agents={agents}
             ownerContext={ownerContext}
+            issueCovers={issueCovers}
             liveIssueIds={liveIssueIds}
             subtreeLiveCounts={subtreeLiveCounts}
             compactCards={compactCards}

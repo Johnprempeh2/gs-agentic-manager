@@ -5,13 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn, relativeTime } from "@/lib/utils";
 import {
-  formatTargetDate,
   remainingLabel,
+  targetDateLabel,
   type GoalHealth,
   type ScoreboardEntry,
 } from "@/lib/goal-journey";
 import { AgentAvatar } from "../AgentAvatar";
 import { MainBlocker } from "./GoalBlockers";
+import { goalOwnerName, type UsersById } from "./GoalOwner";
 import {
   GoalHealthPill,
   GoalPercent,
@@ -36,19 +37,20 @@ function SubGoalTile({
   goal,
   health,
   agentsById,
+  usersById,
 }: {
   goal: GoalWithProgress;
   health: GoalHealth;
   agentsById: AgentsById;
+  usersById?: UsersById;
 }) {
-  const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
   const left = remainingLabel(goal);
-  const target = formatTargetDate(goal.targetDate);
+  const target = targetDateLabel(goal.targetDate, health === "done");
   const detail = [
     goal.progress.percent == null ? null : `${goal.progress.percent}%`,
-    owner?.name,
+    goalOwnerName(goal, agentsById, usersById),
     left,
-    target ? `target ${target}` : null,
+    target ? target.charAt(0).toLowerCase() + target.slice(1) : null,
   ].filter(Boolean);
   return (
     <Link
@@ -69,20 +71,23 @@ function SubGoalTile({
 export function GoalScoreCard({
   entry,
   agentsById,
+  usersById,
 }: {
   entry: ScoreboardEntry;
   agentsById: AgentsById;
+  usersById?: UsersById;
 }) {
   const { goal, health, subGoals } = entry;
   const owner = goal.ownerAgentId ? agentsById.get(goal.ownerAgentId) : undefined;
+  const ownerName = goalOwnerName(goal, agentsById, usersById);
   const left = remainingLabel(goal);
-  const target = formatTargetDate(goal.targetDate);
+  const target = targetDateLabel(goal.targetDate, health === "done");
   const wide = subGoals.length > 0;
 
   const summary = (
     <div className="grid min-w-0 gap-4">
       <div className="flex min-w-0 items-center gap-2.5">
-        <AgentAvatar agent={owner} name={owner?.name} size={32} />
+        <AgentAvatar agent={owner} name={ownerName ?? undefined} size={32} />
         <div className="min-w-0">
           <Link
             to={goalHref(goal)}
@@ -91,7 +96,7 @@ export function GoalScoreCard({
             {goal.title}
           </Link>
           <p className="truncate text-xs text-muted-foreground">
-            {owner?.name ?? "No owner"} · {LEVEL_LABEL[goal.level] ?? "goal"}
+            {ownerName ?? "No owner"} · {LEVEL_LABEL[goal.level] ?? "goal"}
           </p>
         </div>
         <GoalHealthPill health={health} className="ml-auto" />
@@ -124,7 +129,13 @@ export function GoalScoreCard({
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sub-goals</p>
             <div className="grid gap-2.5 sm:grid-cols-(--gtc-69)">
               {subGoals.map((sub) => (
-                <SubGoalTile key={sub.goal.id} goal={sub.goal} health={sub.health} agentsById={agentsById} />
+                <SubGoalTile
+                  key={sub.goal.id}
+                  goal={sub.goal}
+                  health={sub.health}
+                  agentsById={agentsById}
+                  usersById={usersById}
+                />
               ))}
             </div>
           </div>
@@ -134,7 +145,7 @@ export function GoalScoreCard({
       )}
 
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border pt-3 text-xs text-subtle-foreground">
-        <span>{target ? `Target ${target}` : "No target date"}</span>
+        <span>{target ?? "No target date"}</span>
         <span>
           {goal.latestCheckIn ? `Last check-in ${relativeTime(goal.latestCheckIn.createdAt)}` : "No check-ins yet"}
         </span>
@@ -170,14 +181,16 @@ export function GoalsEmptyState({ onNewGoal }: { onNewGoal: () => void }) {
 export function GoalScoreboardView({
   entries,
   agentsById,
+  usersById,
 }: {
   entries: ScoreboardEntry[];
   agentsById: AgentsById;
+  usersById?: UsersById;
 }) {
   return (
     <div className="grid gap-4 md:grid-cols-(--gtc-70)" data-testid="goal-scoreboard">
       {entries.map((entry) => (
-        <GoalScoreCard key={entry.goal.id} entry={entry} agentsById={agentsById} />
+        <GoalScoreCard key={entry.goal.id} entry={entry} agentsById={agentsById} usersById={usersById} />
       ))}
     </div>
   );

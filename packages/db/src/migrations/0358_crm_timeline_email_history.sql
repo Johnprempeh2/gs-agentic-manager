@@ -1,0 +1,2 @@
+ALTER TABLE "crm_timeline_entries" DROP CONSTRAINT "crm_timeline_entries_kind_check";--> statement-breakpoint
+ALTER TABLE "crm_timeline_entries" ADD CONSTRAINT "crm_timeline_entries_kind_check" CHECK ("crm_timeline_entries"."kind" in ('activity', 'note', 'call', 'email', 'stage_change'));

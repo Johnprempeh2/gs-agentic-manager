@@ -11,6 +11,7 @@ import type {
 import { experimentalSettingKey, isGraduatedInstanceFeatureKey, isRetiredInstanceFeatureKey } from "@greatstone/shared";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useHiddenSettings } from "@/hooks/useHiddenSettings";
+import { useEntitlements } from "@/hooks/useEntitlements";
 import { getWorktreeInstanceId, isWorktreeRuntime } from "../lib/worktree-branding";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -18,6 +19,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { BoardSecretarySetting } from "@/components/strategy-board/BoardSecretarySetting";
 
 type WorktreeRunExecutionDisplayState =
   | { kind: "off" }
@@ -88,7 +90,9 @@ function ExperimentalToggleCard({
   ariaLabel: string;
 }) {
   const { hidden: hiddenSettings } = useHiddenSettings();
-  const isManaged = managed?.managed === true;
+  const entitlement = useEntitlements().featureState(settingKey);
+  const notInPlan = entitlement?.entitled === false;
+  const isManaged = managed?.managed === true || notInPlan;
   if (hiddenSettings.has(experimentalSettingKey(settingKey))) return null;
   // Greatstone (GRE-196): retired switches are hidden; their code stays in place.
   if (isRetiredInstanceFeatureKey(settingKey)) return null;
@@ -100,7 +104,18 @@ function ExperimentalToggleCard({
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold">{title}</h3>
-            {isManaged ? <ManagedByCloudBadge /> : null}
+            {managed?.managed === true ? <ManagedByCloudBadge /> : null}
+            {notInPlan ? (
+              <Badge variant="outline" className="text-muted-foreground">
+                <Lock aria-hidden="true" />
+                Not in your plan
+              </Badge>
+            ) : null}
+            {entitlement?.pendingRestart ? (
+              <Badge variant="outline" className="text-muted-foreground">
+                Pending restart
+              </Badge>
+            ) : null}
           </div>
           <p className="max-w-2xl text-sm text-muted-foreground">{description}</p>
           {footnote ? <p className="max-w-2xl text-xs text-muted-foreground">{footnote}</p> : null}
@@ -114,6 +129,42 @@ function ExperimentalToggleCard({
           disabled={disabled || isManaged}
           aria-label={ariaLabel}
         />
+      </div>
+    </Card>
+  );
+}
+
+/** GRE-1078: the signed plan in force, with "Sync now". Renders nothing while entitlements are off. */
+function EntitlementPlanStatus() {
+  const queryClient = useQueryClient();
+  const { data } = useEntitlements();
+  const syncMutation = useMutation({
+    mutationFn: () => instanceSettingsApi.syncEntitlements(),
+    onSuccess: async (result) => {
+      queryClient.setQueryData(queryKeys.instance.entitlements, result.entitlements);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.instance.experimentalSettings });
+    },
+  });
+  if (!data || data.state === "disabled") return null;
+  const syncError = syncMutation.error instanceof Error ? syncMutation.error.message : null;
+  const summary =
+    data.state === "floor"
+      ? "No valid plan document. Only the base features are on."
+      : data.state === "grace"
+        ? `Plan v${data.document?.version} has expired. It stays on until ${formatActivationTimestamp(data.document?.graceEndsAt ?? "")}.`
+        : `Plan v${data.document?.version} for ${data.document?.client}, valid until ${formatActivationTimestamp(data.document?.validUntil ?? "")}.`;
+  return (
+    <Card className="block bg-transparent p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1 text-sm">
+          <p className="font-medium">Your plan</p>
+          <p className="text-muted-foreground">{summary}</p>
+          {data.lastError ? <p className="text-xs text-muted-foreground">Last check: {data.lastError}</p> : null}
+          {syncError ? <p className="text-xs text-destructive">{syncError}</p> : null}
+        </div>
+        <Button size="sm" variant="outline" disabled={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+          {syncMutation.isPending ? "Syncing..." : "Sync now"}
+        </Button>
       </div>
     </Card>
   );
@@ -203,15 +254,12 @@ export function InstanceExperimentalSettings() {
     getWorktreeInstanceId(),
   );
   const enableEnvironments = experimentalQuery.data?.enableEnvironments === true;
-  const enableNativeRunner = experimentalQuery.data?.enableNativeRunner === true;
   const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
-  const enableIsolatedWorkspaces = experimentalQuery.data?.enableIsolatedWorkspaces === true;
   const enableIsolatedWorkspacesByDefault =
     experimentalQuery.data?.enableIsolatedWorkspacesByDefault === true;
   // Streamlined left navigation is now the standard sidebar (PAP-12472); the
   // experimental opt-out was retired, so it no longer surfaces a toggle here.
-  const enableStreamlinedUi = experimentalQuery.data?.enableStreamlinedUi !== false;
   const enableConferenceRoomChat = experimentalQuery.data?.enableConferenceRoomChat === true;
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
   const enableIssuePlanDecompositions =
@@ -223,6 +271,8 @@ export function InstanceExperimentalSettings() {
   const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
   const enableSummaries = experimentalQuery.data?.enableSummaries === true;
   const enableStatusCards = experimentalQuery.data?.enableStatusCards === true;
+  const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
+  const enableIntelligence = experimentalQuery.data?.enableIntelligence === true;
   const summariesManaged = managedKeys.enableSummaries?.managed === true;
   const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
   const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
@@ -234,6 +284,11 @@ export function InstanceExperimentalSettings() {
   const deepDiveManaged = managedKeys.enableDeepDive?.managed === true;
   const deepDiveBlockedByManagedCases = casesManaged && !enableCases;
   const casesRequiredByManagedDeepDive = deepDiveManaged && enableDeepDive;
+  // GRE-1382: the Board add-on needs the Strategy module.
+  const enableStrategy = experimentalQuery.data?.enableStrategy === true;
+  const enableStrategyBoard = experimentalQuery.data?.enableStrategyBoard === true;
+  const boardBlockedByManagedStrategy = managedKeys.enableStrategy?.managed === true && !enableStrategy;
+  const strategyRequiredByManagedBoard = managedKeys.enableStrategyBoard?.managed === true && enableStrategyBoard;
   const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
   const enablePaperclipDeveloperMode =
     experimentalQuery.data?.enablePaperclipDeveloperMode === true;
@@ -283,6 +338,8 @@ export function InstanceExperimentalSettings() {
         </div>
       </div>
 
+      <EntitlementPlanStatus />
+
       {actionError && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
           {actionError}
@@ -321,6 +378,30 @@ export function InstanceExperimentalSettings() {
           managed={managedKeys.enableBetaSkills}
           ariaLabel="Toggle beta skills experimental setting"
         />
+
+        <ExperimentalToggleCard
+          title="Board control panel"
+          description="The board's view of the strategy: status by area, biggest slippages first, changes since the last board pack, slippage alerts to the chair, “Why?” requests and the quarterly board pack."
+          footnote="Turning it on also turns Strategy on. Turning it off hides the Board page, the alerts and the board packs; nothing is deleted."
+          checked={enableStrategyBoard}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate(
+              checked ? { enableStrategy: true, enableStrategyBoard: true } : { enableStrategyBoard: false },
+            )
+          }
+          disabled={toggleMutation.isPending || boardBlockedByManagedStrategy}
+          settingKey="enableStrategyBoard"
+          managed={managedKeys.enableStrategyBoard}
+          ariaLabel="Toggle board control panel experimental setting"
+        />
+
+        {enableStrategyBoard ? (
+          <BoardSecretarySetting
+            value={experimentalQuery.data?.strategyBoardSecretaryAgentId ?? null}
+            onChange={(agentId) => toggleMutation.mutate({ strategyBoardSecretaryAgentId: agentId })}
+            disabled={toggleMutation.isPending}
+          />
+        ) : null}
 
         <ExperimentalToggleCard
           title="Built-in Agents"
@@ -416,17 +497,6 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Enable Isolated Workspaces"
-          description="Show execution workspace controls in project configuration and allow isolated workspace behavior for new and existing task runs."
-          checked={enableIsolatedWorkspaces}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableIsolatedWorkspaces: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableIsolatedWorkspaces"
-          managed={managedKeys.enableIsolatedWorkspaces}
-          ariaLabel="Toggle isolated workspaces experimental setting"
-        />
-
-        <ExperimentalToggleCard
           title="Experimental File Viewer"
           description="Show task detail controls for browsing and previewing workspace files relative to a task."
           checked={enableExperimentalFileViewer}
@@ -451,16 +521,15 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="GS Agentic Manager Runner"
-          description="Allow new Codex agents to select the experimental Rust GS Agentic Manager Runner, including authenticated runner ingress when a sandbox requires it. Onboarding continues to use legacy adapters. Turning this off hides the choice without affecting existing native runs."
-          checked={enableNativeRunner}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate({ enableNativeRunner: checked })
-          }
+          title="Intelligence"
+          description="The Intelligence page: the Daily Pulse, the AI leaderboards with movement, compare, radar and news, and GSAM feature and skill recommendations. An agent with the intelligence:write permission writes it every day."
+          footnote="Turning this off hides the Intelligence page and blocks its API; stored reports are kept."
+          checked={enableIntelligence}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableIntelligence: checked })}
           disabled={toggleMutation.isPending}
-          settingKey="enableNativeRunner"
-          managed={managedKeys.enableNativeRunner}
-          ariaLabel="Toggle GS Agentic Manager Runner experimental setting"
+          settingKey="enableIntelligence"
+          managed={managedKeys.enableIntelligence}
+          ariaLabel="Toggle intelligence experimental setting"
         />
 
         <ExperimentalToggleCard
@@ -507,16 +576,23 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Streamlined UI"
-          description="Use the simplified main sidebar, shared Tasks and Inbox presentation, focused task detail layout, and contextual navigation across Agents, Routines, Skills, and Settings."
-          footnote="Turning this off restores the legacy shell and navigation. Task and page data are unchanged."
-          checked={enableStreamlinedUi}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableStreamlinedUi: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableStreamlinedUi"
-          managed={managedKeys.enableStreamlinedUi}
-          ariaLabel="Toggle Streamlined UI experimental setting"
+          title="Strategy"
+          description="The one-page strategic plan (vision down to KPIs), KPI readings with on and off track status, and KPI drafts from a research pack. Plain goals work without it."
+          footnote="Turning it off hides the plan and the KPI parts of each goal; nothing is deleted. The Board control panel needs Strategy, so turning Strategy off also turns the Board off."
+          checked={enableStrategy}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate(
+              checked || !enableStrategyBoard
+                ? { enableStrategy: checked }
+                : { enableStrategy: false, enableStrategyBoard: false },
+            )
+          }
+          disabled={toggleMutation.isPending || strategyRequiredByManagedBoard}
+          settingKey="enableStrategy"
+          managed={managedKeys.enableStrategy}
+          ariaLabel="Toggle strategy setting"
         />
+
 
         <ExperimentalToggleCard
           title="Summaries"
@@ -536,20 +612,42 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle summaries experimental setting"
         />
 
-        {enableIsolatedWorkspaces && (
-          <ExperimentalToggleCard
-            title="Use Isolated Workspaces By Default"
-            description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
-            checked={enableIsolatedWorkspacesByDefault}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableIsolatedWorkspacesByDefault: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableIsolatedWorkspacesByDefault"
-            managed={managedKeys.enableIsolatedWorkspacesByDefault}
-            ariaLabel="Toggle isolated workspaces by default experimental setting"
-          />
-        )}
+        <ExperimentalToggleCard
+          title="Team Chat"
+          description="Message colleagues directly, and start group chats with people and agents. Agents in a group reply only when you @mention them."
+          footnote="Turning this off hides Chats and blocks new team chat messages; existing chats are kept."
+          checked={experimentalQuery.data?.enableTeamChat ?? false}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableTeamChat: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableTeamChat"
+          managed={managedKeys.enableTeamChat}
+          ariaLabel="Toggle team chat experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Use Isolated Workspaces By Default"
+          description="Treat a project that has no execution workspace policy of its own as if it selected isolated workspaces, so its tasks get a per-task worktree instead of sharing the project checkout. A project that carries its own policy keeps it."
+          checked={enableIsolatedWorkspacesByDefault}
+          onCheckedChange={(checked) =>
+            toggleMutation.mutate({ enableIsolatedWorkspacesByDefault: checked })
+          }
+          disabled={toggleMutation.isPending}
+          settingKey="enableIsolatedWorkspacesByDefault"
+          managed={managedKeys.enableIsolatedWorkspacesByDefault}
+          ariaLabel="Toggle isolated workspaces by default experimental setting"
+        />
+
+        <ExperimentalToggleCard
+          title="Website view"
+          description="A read-only Website page built from Google Analytics 4 and Search Console, with a daily pull stored in this instance."
+          footnote="Turning this off hides the Website page and blocks the Website API; stored reports are kept."
+          checked={enableWebsiteView}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableWebsiteView: checked })}
+          disabled={toggleMutation.isPending}
+          settingKey="enableWebsiteView"
+          managed={managedKeys.enableWebsiteView}
+          ariaLabel="Toggle website view experimental setting"
+        />
       </section>
 
       {showDeveloperSection ? (

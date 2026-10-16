@@ -77,6 +77,7 @@ const {
     })),
     reconcileResolvedDependencyWakes: vi.fn(async () => ({ healed: 0 })),
     reconcileOverdueHumanWaits: vi.fn(async () => ({ issueIds: [] })),
+    reconcileWaitingDatesPassed: vi.fn(async () => ({ issueIds: [] })),
     reconcileTaskWatchdogs: vi.fn(async () => ({ triggered: 0 })),
     scanSilentActiveRuns: vi.fn(async () => ({ created: 0, escalated: 0, silentStops: { stopped: 0, retried: 0, escalated: 0, runIds: [] } })),
     stopSilentRuns: vi.fn(async () => ({
@@ -737,6 +738,23 @@ describe("startServer feedback export wiring", () => {
 
     expect(heartbeatServiceMock.reconcileHotRestartAdoption).toHaveBeenCalledTimes(1);
     expect(heartbeatServiceMock.reapOrphanedRuns).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps starting when a startup recovery step fails, and still runs the later steps (16 Oct 2026)", async () => {
+    loadConfigMock.mockReturnValue(buildTestConfig({
+      heartbeatSchedulerEnabled: true,
+      heartbeatSchedulerIntervalMs: 30000,
+    }));
+    heartbeatServiceMock.reconcileStrandedAssignedIssues.mockRejectedValueOnce(
+      Object.assign(new Error("Blocking relations cannot contain cycles"), { status: 422 }),
+    );
+
+    await expect(startServer()).resolves.toBeDefined();
+
+    expect(heartbeatServiceMock.reconcileStrandedAssignedIssues).toHaveBeenCalled();
+    expect(heartbeatServiceMock.reconcileResolvedDependencyWakes).toHaveBeenCalled();
+    expect(heartbeatServiceMock.sweepStaleIssueLocks).toHaveBeenCalled();
+    expect(fakeServer.close).not.toHaveBeenCalled();
   });
 
   it("closes the bound listener when native startup recovery fails", async () => {

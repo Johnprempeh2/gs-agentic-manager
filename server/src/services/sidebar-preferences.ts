@@ -4,7 +4,7 @@ import {
   companyUserSidebarPreferences,
   userSidebarPreferences,
 } from "@greatstone/db";
-import type { SidebarOrderPreference } from "@greatstone/shared";
+import { sidebarLayoutSchema, type SidebarLayout, type SidebarLayoutPreference, type SidebarOrderPreference } from "@greatstone/shared";
 
 function normalizeOrderedIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -26,6 +26,12 @@ function toPreference(orderedIds: unknown, updatedAt: Date | null): SidebarOrder
     orderedIds: normalizeOrderedIds(orderedIds),
     updatedAt,
   };
+}
+
+/** A stored layout that no longer parses reads as the default layout. */
+function toLayoutPreference(layout: unknown, updatedAt: Date | null): SidebarLayoutPreference {
+  const parsed = sidebarLayoutSchema.safeParse(layout ?? {});
+  return { layout: parsed.success ? parsed.data : {}, updatedAt };
 }
 
 export function sidebarPreferenceService(db: Db) {
@@ -56,6 +62,47 @@ export function sidebarPreferenceService(db: Db) {
         })
         .returning();
       return toPreference(row?.companyOrder ?? normalized, row?.updatedAt ?? now);
+    },
+
+    async getSectionOrder(userId: string): Promise<SidebarOrderPreference> {
+      const row = await db.query.userSidebarPreferences.findFirst({
+        where: eq(userSidebarPreferences.userId, userId),
+      });
+      return toPreference(row?.sectionOrder ?? [], row?.updatedAt ?? null);
+    },
+
+    async upsertSectionOrder(userId: string, orderedIds: string[]): Promise<SidebarOrderPreference> {
+      const now = new Date();
+      const normalized = normalizeOrderedIds(orderedIds);
+      const [row] = await db
+        .insert(userSidebarPreferences)
+        .values({ userId, sectionOrder: normalized, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [userSidebarPreferences.userId],
+          set: { sectionOrder: normalized, updatedAt: now },
+        })
+        .returning();
+      return toPreference(row?.sectionOrder ?? normalized, row?.updatedAt ?? now);
+    },
+
+    async getLayout(userId: string): Promise<SidebarLayoutPreference> {
+      const row = await db.query.userSidebarPreferences.findFirst({
+        where: eq(userSidebarPreferences.userId, userId),
+      });
+      return toLayoutPreference(row?.layout, row?.updatedAt ?? null);
+    },
+
+    async upsertLayout(userId: string, layout: SidebarLayout): Promise<SidebarLayoutPreference> {
+      const now = new Date();
+      const [row] = await db
+        .insert(userSidebarPreferences)
+        .values({ userId, layout, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [userSidebarPreferences.userId],
+          set: { layout, updatedAt: now },
+        })
+        .returning();
+      return toLayoutPreference(row?.layout ?? layout, row?.updatedAt ?? now);
     },
 
     async getProjectOrder(companyId: string, userId: string): Promise<SidebarOrderPreference> {

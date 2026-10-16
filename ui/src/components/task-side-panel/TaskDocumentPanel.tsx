@@ -5,7 +5,9 @@ import { FileQuestion, Loader2 } from "lucide-react";
 import { ApiError } from "@/api/client";
 import { issuesApi } from "@/api/issues";
 import { DocumentAnnotationsCountChip, IssueDocumentAnnotations } from "@/components/IssueDocumentAnnotations";
+import { IssueDocumentEvidence } from "@/components/IssueDocumentEvidence";
 import { MarkdownBody } from "@/components/MarkdownBody";
+import { CopyMarkdownButton } from "@/components/CopyMarkdownButton";
 import { queryKeys } from "@/lib/queryKeys";
 import { documentDisplayTitle } from "@/lib/issue-artifacts";
 import { useLocation } from "@/lib/router";
@@ -78,6 +80,9 @@ export function TaskDocumentPanel({
             panelOpen={annotationPanelOpen}
             onToggle={() => setAnnotationPanelOpen((open) => !open)}
           />
+          {document.body.trim() ? (
+            <CopyMarkdownButton markdown={document.body} className="ml-auto" />
+          ) : null}
         </div>
       </header>
       {document.body.trim() ? (
@@ -98,6 +103,7 @@ export function TaskDocumentPanel({
       ) : (
         <p className="text-sm text-muted-foreground">Document is empty.</p>
       )}
+      <IssueDocumentEvidence issueId={issueId} documentKey={document.key} revisionNumber={document.latestRevisionNumber ?? 1} />
     </article>
   );
 }

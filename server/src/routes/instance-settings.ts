@@ -1,12 +1,16 @@
 import { Router, type Request } from "express";
 import { companies, type Db } from "@greatstone/db";
 import {
+  INSTANCE_FEATURE_CATALOG,
+  featureDependencyViolations,
   patchInstanceSettingsSchema,
   patchInstanceExperimentalSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   startTaskDrainRequestSchema,
 } from "@greatstone/shared";
-import { forbidden } from "../errors.js";
+import { conflict, forbidden, unprocessable } from "../errors.js";
+import { effectiveEntitlements, getEntitlementRuntime } from "../services/entitlement-runtime.js";
+import { notEntitled } from "../services/entitlements.js";
 import {
   cloudTenantPrimaryCompanyId,
   getCloudStackContext,
@@ -67,6 +71,22 @@ async function assertNoHiddenSettingChanges(
     throw forbidden(`${key} is managed by the hosting operator on this instance`, {
       code: "settings_operator_managed",
     });
+  }
+}
+
+/**
+ * GRE-1382: refuse a write that would leave a dependent switch on without the
+ * switch it needs (Board on, Strategy off). Writes that touch neither key pass,
+ * so an unrelated toggle never fails on a managed or entitled value.
+ */
+async function assertFeatureDependencies(body: Record<string, unknown>, getCurrent: () => Promise<object>) {
+  const next = { ...((await getCurrent()) as Record<string, unknown>), ...body };
+  for (const { feature, requires } of featureDependencyViolations(next)) {
+    if (!(feature in body) && !(requires in body)) continue;
+    throw unprocessable(
+      `${INSTANCE_FEATURE_CATALOG[feature].title} needs ${INSTANCE_FEATURE_CATALOG[requires].title}: turn ${INSTANCE_FEATURE_CATALOG[requires].title} on first, or turn both off`,
+      { code: "feature_requires", feature, requires },
+    );
   }
 }
 
@@ -280,6 +300,18 @@ export function instanceSettingsRoutes(db: Db) {
         (field) =>
           hidden.has("instance.experimental") || hidden.has(`instance.experimental.${field}`),
       );
+      // GRE-1078: a client admin may turn off a feature they have, but cannot
+      // turn on one the signed entitlement document does not grant.
+      const entitlementRuntime = getEntitlementRuntime();
+      if (entitlementRuntime) {
+        const entitled = entitlementRuntime.entitled();
+        for (const [key, value] of Object.entries(req.body as Record<string, unknown>)) {
+          if (value === true && entitled[key as keyof typeof entitled] === false) {
+            throw notEntitled(key as keyof typeof entitled);
+          }
+        }
+      }
+      await assertFeatureDependencies(req.body, () => svc.getExperimental());
       const updated = await svc.updateExperimental(req.body);
       const actor = getActorInfo(req);
       const companyIds = await svc.listCompanyIds();
@@ -305,6 +337,28 @@ export function instanceSettingsRoutes(db: Db) {
       res.json(updated.experimental);
     },
   );
+
+  // GRE-1078: the one endpoint the UI reads effective features from.
+  router.get("/instance/entitlements", async (req, res) => {
+    assertBoardOrgAccess(req);
+    res.json(effectiveEntitlements(await svc.getExperimental()));
+  });
+
+  // "Sync now": re-read the entitlement file at once instead of waiting for the timer.
+  router.post("/instance/entitlements/sync", async (req, res) => {
+    assertCanManageInstanceSettings(req);
+    const runtime = getEntitlementRuntime();
+    if (!runtime) {
+      throw conflict("Entitlements are not configured on this instance", { code: "entitlements_not_configured" });
+    }
+    const actor = getActorInfo(req);
+    const result = await runtime.sync({ trigger: "sync_now", requestedBy: actor.actorId });
+    res.json({
+      applied: result.applied,
+      error: result.error,
+      entitlements: effectiveEntitlements(await svc.getExperimental()),
+    });
+  });
 
   router.get("/instance/task-drain", async (req, res) => {
     assertBoardOrgAccess(req);

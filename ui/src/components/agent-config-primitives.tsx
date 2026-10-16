@@ -53,8 +53,10 @@ export const help: Record<string, string> = {
   webhookUrl: "The URL that receives POST requests when the agent is invoked.",
   heartbeatInterval: "Run this agent automatically on a timer. Useful for periodic tasks like checking for new work.",
   intervalSec: "Seconds between automatic heartbeat invocations.",
+  skipTimerWhenNothingChanged: "Saves money. The timer only runs this agent when one of its tasks changed or someone commented on it since its last run. It still checks in once a day, and new tasks, comments and answers wake it straight away.",
   timeoutSec: "Maximum seconds a run can take before being terminated. 0 means no timeout.",
   graceSec: "Seconds to wait after sending interrupt before force-killing the process.",
+  requiredCapabilities: "Tools this agent needs on the machine that runs it. Each run on this machine checks them first and stops early, with a plain reason, if one is missing. Leave all off to skip the check.",
   wakeOnDemand: "Allow this agent to be woken by assignments, API calls, UI actions, or automated systems.",
   cooldownSec: "Minimum seconds between consecutive heartbeat runs.",
   maxConcurrentRuns: "Maximum number of heartbeat runs that can execute simultaneously for this agent.",
@@ -73,12 +75,21 @@ export const roleLabels = AGENT_ROLE_LABELS as Record<string, string>;
 /* ---- Primitive components ---- */
 
 export function HintIcon({ text, label }: { text: string; label?: string }) {
+  // Hover opens it on a computer; a tap opens it on a phone, which has no
+  // hover. Tapping anywhere else closes it.
+  const [open, setOpen] = useState(false);
   return (
-    <Tooltip>
+    <Tooltip open={open} onOpenChange={setOpen}>
       <TooltipTrigger asChild>
         <button
           type="button"
+          data-hint-trigger=""
           aria-label={label ? `About ${label}` : "More info"}
+          onClick={(event) => {
+            // Radix closes a tooltip on click; keep it open so a tap shows it.
+            event.preventDefault();
+            setOpen(true);
+          }}
           className="inline-flex items-center justify-center text-subtle-foreground hover:text-muted-foreground transition-colors">
           <HelpCircle className="h-3 w-3" />
         </button>

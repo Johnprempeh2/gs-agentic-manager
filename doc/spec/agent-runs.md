@@ -704,6 +704,13 @@ On server startup:
    - structure-only transcripts of finished runs (same read window, redaction and parser as the board, no content), so a task page draws folded run rows without reading each log; `null` where the board must read the log
 9. `GET /api/companies/:companyId/events/ws`
    - websocket stream
+10. `GET /api/companies/:companyId/heartbeat-runs/failure-rate?since=:iso&before=:iso&agentId=:id`
+   - failed runs per 100 finished runs, counted in the database, so a week reads in one call even though the run list stops at 1,000 rows (GRE-1325)
+   - window on `finishedAt`: `since` inclusive, `before` exclusive; with no parameters it is the last 7 days
+   - failed is `failed + timed_out + interrupted`; the base (`judged`) is failed plus `succeeded`; cancelled runs appear in `byStatus` but not in the base (the R2 rule in `tests/lifecycle-baseline/metrics/README.md`)
+   - returns `{ since, before, agentId, byStatus, failed, judged, failedPer100 }`; `failedPer100` is null when no run finished
+   - the Strategy Board KPI "Failed runs per 100 runs, last 7 days" reads it with:
+     `curl -s -H "Authorization: Bearer $GSAM_API_KEY" "$GSAM_API_BASE/api/companies/$COMPANY_ID/heartbeat-runs/failure-rate" | jq .failedPer100`
 
 ## 13.2 Mutation logging
 

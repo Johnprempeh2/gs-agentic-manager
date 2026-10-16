@@ -2128,8 +2128,12 @@ export async function ensureGitWorktreeBranchCoherent(input: {
   executionWorkspaceId?: string | null;
   actualBranchName?: string | null;
   heartbeatRunId?: string | null;
+  /**
+   * Greatstone (GRE-1438): forward reconciliation graduated from Experimental
+   * and is always on. Only a caller that must not adopt a branch (quarantine
+   * restore) passes `false`.
+   */
   enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
   persistForwardReconcile?: boolean;
   reconcileOperationPhase?: "worktree_prepare" | "workspace_finalize";
   recorder?: WorkspaceOperationRecorder | null;
@@ -2154,7 +2158,9 @@ export async function ensureGitWorktreeBranchCoherent(input: {
     executionWorkspaceId: input.executionWorkspaceId ?? null,
   });
 
-  if (evidence.cleanliness === "dirty" && input.enableWorkspaceDirtyQuarantineRepair === true) {
+  // Greatstone (GRE-1439): dirty quarantine repair graduated from Experimental
+  // and always runs; the guards below still fail closed when it is unsafe.
+  if (evidence.cleanliness === "dirty") {
     if (!input.db) {
       evidence.safeRepair.reason = "dirty quarantine repair requires database access for claimant checks and audit";
       throw branchIncoherenceValidationFailure(evidence);
@@ -2215,7 +2221,7 @@ export async function ensureGitWorktreeBranchCoherent(input: {
     evidence.provenance.actualBranchExists === true &&
     evidence.provenance.registeredBranchMatchesHead;
   if (
-    input.enableWorkspaceBranchReconcileForward === true &&
+    input.enableWorkspaceBranchReconcileForward !== false &&
     evidence.cleanliness === "clean" &&
     currentBranch &&
     ((evidence.provenance.ancestryVerdict === "ancestor" && !evidence.provenance.sameHead) ||
@@ -3278,8 +3284,6 @@ export async function realizeExecutionWorkspace(input: {
     createdByRuntime: boolean;
   } | null;
   heartbeatRunId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
   resolveGitAuth?: GitRemoteAuthProvider | null;
 }): Promise<RealizedExecutionWorkspace> {
@@ -3481,8 +3485,6 @@ export async function realizeExecutionWorkspace(input: {
         sourceIssue: input.issue,
         executionWorkspaceId: null,
         heartbeatRunId: input.heartbeatRunId ?? null,
-        enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
-        enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         reconcileOperationPhase: "worktree_prepare",
         recorder: input.recorder ?? null,
       });
@@ -3729,8 +3731,6 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
   issue: ExecutionWorkspaceIssueRef | null;
   agent: ExecutionWorkspaceAgentRef;
   heartbeatRunId?: string | null;
-  enableWorkspaceBranchReconcileForward?: boolean;
-  enableWorkspaceDirtyQuarantineRepair?: boolean;
   recorder?: WorkspaceOperationRecorder | null;
   resolveGitAuth?: GitRemoteAuthProvider | null;
 }): Promise<RealizedExecutionWorkspace | null> {
@@ -3804,8 +3804,6 @@ export async function ensurePersistedExecutionWorkspaceAvailable(input: {
         sourceIssue: input.issue,
         executionWorkspaceId: input.workspace.id ?? null,
         heartbeatRunId: input.heartbeatRunId ?? null,
-        enableWorkspaceBranchReconcileForward: input.enableWorkspaceBranchReconcileForward === true,
-        enableWorkspaceDirtyQuarantineRepair: input.enableWorkspaceDirtyQuarantineRepair === true,
         persistForwardReconcile: false,
         reconcileOperationPhase: "worktree_prepare",
         recorder: input.recorder ?? null,
@@ -6710,7 +6708,7 @@ async function spawnLocalRuntimeService(input: StartLocalRuntimeServiceInput): P
         // in the operation log is what made PAP-17254 undiagnosable (PAP-17256).
         const code = provisioned.status.lastError ?? "unknown error";
         throw new Error(
-          `HTTPS exposure failed: ${code}${provisioned.errorDetail ? ` — ${provisioned.errorDetail}` : ""}`,
+          `HTTPS exposure failed: ${code}${provisioned.errorDetail ? ` (${provisioned.errorDetail})` : ""}`,
         );
       }
     }

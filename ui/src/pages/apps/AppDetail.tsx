@@ -51,6 +51,7 @@ import { appTabHref, appTabLabel, isAppTabKey, type AppTabKey } from "./app-tabs
 import { ConnectionProvenanceChip } from "./ConnectionProvenanceChip";
 import { IdentitiesSection } from "./app-detail/IdentitiesSection";
 import { PermissionsPanel } from "./app-detail/PermissionsPanel";
+import { ShareWithAgentsSection } from "./app-detail/ShareWithAgentsSection";
 import { RailwayAccessPanel } from "./app-detail/RailwayAccessPanel";
 import { ReviewPanel } from "./app-detail/ReviewPanel";
 import {
@@ -650,6 +651,9 @@ export function AppDetail({ renderActions, onReconnect }: {
                 onReplaceAudience={(grant, memberUserIds) =>
                   replaceAudience.mutate({ grantId: grant.id, memberUserIds })}
               />
+              {currentUserPersonalGrant && (connection.config?.sourceTemplateKey === "github" || currentUserPersonalGrant.providerTenant?.github) && (
+                <ShareWithAgentsSection connectionId={connection.id} grant={currentUserPersonalGrant} agents={agents} />
+              )}
               {isRemoteMcpConnectorMethod(connection.config?.sourceTemplateKey, connection.config?.connectionMethodKey) && <p className="text-sm text-muted-foreground">{CLIENT_BRAND_NAME} controls access to the tools listed here. App and action permissions inside these tools are managed in {baseAppName}.</p>}
               <PermissionsPanel
                 actions={actionsContent}

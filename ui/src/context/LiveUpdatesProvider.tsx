@@ -860,6 +860,10 @@ const ISSUE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "issue.document_annotation_thread_reopened",
   "issue.document_annotation_remapped",
 ]);
+const ISSUE_DOCUMENT_EVIDENCE_ACTIVITY_ACTIONS = new Set([
+  "issue.document_evidence_updated",
+  "issue.document_evidence_removed",
+]);
 const ROUTINE_DOCUMENT_ANNOTATION_ACTIVITY_ACTIONS = new Set([
   "routine.document_annotation_thread_created",
   "routine.document_annotation_comment_added",
@@ -931,6 +935,8 @@ function buildActivityToast(
   ) {
     return null;
   }
+  // Team chat messages alert their members only (TeamChatAlerts).
+  if (details?.teamChat === true) return null;
 
   const issue = resolveIssueToastContext(
     queryClient,
@@ -1350,6 +1356,10 @@ function invalidateActivityQueries(
         if (action === "issue.comment_added" || action === "issue.conversation_session_started") {
           queryClient.invalidateQueries({ queryKey: queryKeys.issues.comments(ref), ...invalidationOptions });
         }
+        // Team chat unread counts (only refetches while the chats list is shown).
+        if (action === "issue.comment_added") {
+          queryClient.invalidateQueries({ queryKey: queryKeys.teamChats.all });
+        }
         if (action?.startsWith("issue.attachment_") || action?.startsWith("issue.work_product_")) {
           // These cards are durable API objects, not streamed text. Refresh the
           // visible task too, including attachments bound to an existing comment.
@@ -1397,6 +1407,15 @@ function invalidateActivityQueries(
             queryKey: documentKey
               ? ["issues", "document-annotations", ref, documentKey]
               : ["issues", "document-annotations", ref],
+            ...invalidationOptions,
+          });
+        }
+        if (action && ISSUE_DOCUMENT_EVIDENCE_ACTIVITY_ACTIONS.has(action)) {
+          const documentKey = readString(details?.key);
+          queryClient.invalidateQueries({
+            queryKey: documentKey
+              ? queryKeys.issues.documentEvidence(ref, documentKey)
+              : ["issues", "document-evidence", ref],
             ...invalidationOptions,
           });
         }

@@ -1,0 +1,577 @@
+// Pipedrive client for CRM sync (GRE-1100 part 2, write-back GRE-1076).
+// Contract: doc/CRM-SYNC-CONTRACT.md. It reads deals and deal fields, and
+// updates one deal's fields. The organisation import (GRE-1479) only reads
+// organisations, persons and organisation fields, and the full deal import
+// reads pipelines, stages, users and every deal. Only the sync runner calls `updateDeal`; agents
+// never write to Pipedrive through it. Rate-limit answers (429) are retried
+// with back-off before the caller sees them.
+import type { CrmSyncFieldValue } from "@greatstone/shared";
+
+export const PIPEDRIVE_PROVIDER_KEY = "pipedrive";
+export const PIPEDRIVE_DEFAULT_BASE_URL = "https://api.pipedrive.com";
+const PAGE_SIZE = 100;
+/** v1 list endpoints allow up to 500 per page. */
+const V1_LIST_PAGE_SIZE = 500;
+const DEFAULT_MAX_RETRIES = 3;
+const BASE_RETRY_DELAY_MS = 1_000;
+const MAX_RETRY_DELAY_MS = 30_000;
+
+export type PipedriveFetch = (url: string, init: {
+  method: "GET" | "PATCH";
+  headers: Record<string, string>;
+  body?: string;
+}) => Promise<{
+  status: number;
+  headers: { get(name: string): string | null };
+  json(): Promise<unknown>;
+  /** The raw body, for file downloads. */
+  arrayBuffer?(): Promise<ArrayBuffer>;
+}>;
+
+/** Pipedrive answered 429 on every try. `retryAfterMs` is how long it asked us to wait. */
+export class PipedriveRateLimitError extends Error {
+  constructor(readonly retryAfterMs: number) {
+    super("Pipedrive rate limit reached");
+    this.name = "PipedriveRateLimitError";
+  }
+}
+
+/** Pipedrive refused the credential (401 or 403). A person must reconnect. */
+export class PipedriveAuthError extends Error {
+  constructor(readonly status: number) {
+    super(`Pipedrive refused the credential (${status})`);
+    this.name = "PipedriveAuthError";
+  }
+}
+
+export class PipedriveApiError extends Error {
+  constructor(message: string, readonly status: number | null) {
+    super(message);
+    this.name = "PipedriveApiError";
+  }
+}
+
+export interface PipedriveDeal {
+  id: number;
+  title?: string | null;
+  stage_id?: number | null;
+  pipeline_id?: number | null;
+  update_time?: string | null;
+  custom_fields?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+export interface PipedriveDealField {
+  key: string;
+  name?: string;
+  /** Custom fields can be edited; Pipedrive's own fields cannot. */
+  edit_flag?: boolean | null;
+  active_flag?: boolean | null;
+  field_type?: string;
+  options?: Array<{ id: number | string; label: string }> | null;
+}
+
+/** A linked record in a v1 answer: `owner_id` and `org_id` come back as objects or bare ids. */
+export type PipedriveLink = number | { id?: number; value?: number; name?: string | null; email?: string | null } | null;
+
+/** One organisation from the v1 list (GRE-1479). Only the fields the import reads are typed. */
+export interface PipedriveOrganization {
+  id: number;
+  name?: string | null;
+  owner_id?: PipedriveLink;
+  address_country?: string | null;
+  industry?: string | number | null;
+  open_deals_count?: number | null;
+  won_deals_count?: number | null;
+  lost_deals_count?: number | null;
+  [key: string]: unknown;
+}
+
+export interface PipedriveContactValue {
+  value?: string | null;
+  primary?: boolean | null;
+  label?: string | null;
+}
+
+/** One person from the v1 list (GRE-1479). */
+export interface PipedrivePerson {
+  id: number;
+  name?: string | null;
+  org_id?: PipedriveLink;
+  job_title?: string | null;
+  email?: PipedriveContactValue[] | string | null;
+  phone?: PipedriveContactValue[] | string | null;
+  [key: string]: unknown;
+}
+
+/** One pipeline from `/v1/pipelines`. */
+export interface PipedrivePipeline {
+  id: number;
+  name?: string | null;
+  order_nr?: number | null;
+  active?: boolean | null;
+  deal_probability?: boolean | null;
+}
+
+/** One stage from `/v1/stages`. */
+export interface PipedriveStage {
+  id: number;
+  name?: string | null;
+  pipeline_id?: number | null;
+  order_nr?: number | null;
+  deal_probability?: number | null;
+  rotten_flag?: boolean | null;
+  rotten_days?: number | null;
+  active_flag?: boolean | null;
+}
+
+/** One user from `/v1/users`. */
+export interface PipedriveUser {
+  id: number;
+  name?: string | null;
+  email?: string | null;
+  active_flag?: boolean | null;
+}
+
+export interface PipedriveClientOptions {
+  token: string;
+  /** `oauth` sends a Bearer token; anything else sends the API token header. */
+  authKind: string;
+  baseUrl?: string;
+  fetch?: PipedriveFetch;
+  sleep?: (ms: number) => Promise<void>;
+  maxRetries?: number;
+}
+
+/** Wait time a 429 answer asks for, in ms. Falls back to exponential back-off. */
+export function pipedriveRetryDelayMs(headers: { get(name: string): string | null }, attempt: number) {
+  const fromHeader = Number(headers.get("retry-after") ?? headers.get("x-ratelimit-reset") ?? Number.NaN);
+  const delay = Number.isFinite(fromHeader) && fromHeader >= 0
+    ? fromHeader * 1_000
+    : BASE_RETRY_DELAY_MS * 2 ** attempt;
+  return Math.min(delay, MAX_RETRY_DELAY_MS);
+}
+
+/** Only https URLs on pipedrive.com, so a connection config cannot point the token elsewhere. */
+export function resolvePipedriveBaseUrl(config: Record<string, unknown>) {
+  // Apps setup stores the optional domain under methodConfig (pipedrive.json).
+  const methodConfig = (config.methodConfig ?? {}) as Record<string, unknown>;
+  const raw = config.companyDomain ?? methodConfig.companyDomain;
+  const domain = typeof raw === "string" ? raw.trim() : "";
+  if (domain && /^[a-z0-9][a-z0-9-]{0,62}$/i.test(domain)) return `https://${domain}.pipedrive.com`;
+  return PIPEDRIVE_DEFAULT_BASE_URL;
+}
+
+export function createPipedriveClient(options: PipedriveClientOptions) {
+  const baseUrl = (options.baseUrl ?? PIPEDRIVE_DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const doFetch = options.fetch ?? (globalThis.fetch as unknown as PipedriveFetch);
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  const headers: Record<string, string> = options.authKind === "oauth"
+    ? { Authorization: `Bearer ${options.token}`, Accept: "application/json" }
+    : { "x-api-token": options.token, Accept: "application/json" };
+
+  /** One request with retries on 429; throws on any answer that is not 2xx. */
+  async function fetchOk(
+    method: "GET" | "PATCH",
+    path: string,
+    query: Record<string, string | number | undefined>,
+    payload?: Record<string, unknown>,
+  ) {
+    const url = new URL(`${baseUrl}${path}`);
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
+    }
+    const init = payload
+      ? { method, headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+      : { method, headers };
+    for (let attempt = 0; ; attempt += 1) {
+      let response: Awaited<ReturnType<PipedriveFetch>>;
+      try {
+        response = await doFetch(url.toString(), init);
+      } catch (error) {
+        throw new PipedriveApiError(`Could not reach Pipedrive: ${(error as Error).message}`, null);
+      }
+      if (response.status === 429) {
+        const delay = pipedriveRetryDelayMs(response.headers, attempt);
+        if (attempt >= maxRetries) throw new PipedriveRateLimitError(delay);
+        await sleep(delay);
+        continue;
+      }
+      if (response.status === 401 || response.status === 403) throw new PipedriveAuthError(response.status);
+      if (response.status < 200 || response.status >= 300) {
+        const detail = await response.json().catch(() => null) as { error?: string } | null;
+        throw new PipedriveApiError(
+          `Pipedrive answered ${response.status} for ${path}${detail?.error ? `: ${detail.error}` : ""}`,
+          response.status,
+        );
+      }
+      return response;
+    }
+  }
+
+  async function send(
+    method: "GET" | "PATCH",
+    path: string,
+    query: Record<string, string | number | undefined>,
+    payload?: Record<string, unknown>,
+  ) {
+    const response = await fetchOk(method, path, query, payload);
+    const body = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
+    if (!body || body.success === false) {
+      throw new PipedriveApiError(`Pipedrive returned an error for ${path}: ${body?.error ?? "no body"}`, response.status);
+    }
+    return body as Record<string, unknown>;
+  }
+
+  const get = (path: string, query: Record<string, string | number | undefined>) => send("GET", path, query);
+
+  /** One page of a v1 list. `nextStart` is null on the last page. */
+  async function listV1Page<T>(path: string, start: number, limit: number, extra: Record<string, string | number> = {}) {
+    const body = await get(path, { ...extra, start, limit });
+    const items = Array.isArray(body.data) ? body.data as T[] : [];
+    const pagination = (body.additional_data as { pagination?: { more_items_in_collection?: boolean; next_start?: number } } | undefined)
+      ?.pagination;
+    // Some lists (call logs) say there is more without giving next_start.
+    const nextStart = !pagination?.more_items_in_collection || items.length === 0
+      ? null
+      : typeof pagination.next_start === "number"
+        ? pagination.next_start
+        : start + items.length;
+    return { items, nextStart };
+  }
+
+  return {
+    /** The token's own user: a cheap read that proves the connection works. */
+    async getCurrentUser() {
+      return get("/api/v1/users/me", {});
+    },
+
+    /** One page of every organisation, all owners (API v1, read only). GRE-1479. */
+    async listOrganizationsPage(input: { start?: number } = {}) {
+      return listV1Page<PipedriveOrganization>("/api/v1/organizations", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** One page of every person, all owners (API v1, read only). GRE-1479. */
+    async listPersonsPage(input: { start?: number } = {}) {
+      return listV1Page<PipedrivePerson>("/api/v1/persons", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** Every organisation field, so choice fields such as industry can be shown as labels. */
+    async listOrganizationFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/organizationFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
+    /** Every person field, so custom person fields keep their names. */
+    async listPersonFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/personFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
+    /** One page of every activity of every user, done or not (API v1, read only). */
+    async listActivitiesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/activities", input.start ?? 0, V1_LIST_PAGE_SIZE, { user_id: 0 });
+    },
+
+    /** One page of every note (API v1, read only). */
+    async listNotesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/notes", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** One page of a deal's history: field changes, emails, activities, notes and files (read only). */
+    async listDealFlowPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/flow`, input.start ?? 0, 100);
+    },
+
+    /** One page of a person's history, which holds emails not linked to a deal (API v1, read only). */
+    async listPersonFlowPage(input: { personId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/persons/${encodeURIComponent(input.personId)}/flow`, input.start ?? 0, 100);
+    },
+
+    /** One page of an organisation's history, which holds emails not linked to a deal (API v1, read only). */
+    async listOrganizationFlowPage(input: { organizationId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/organizations/${encodeURIComponent(input.organizationId)}/flow`, input.start ?? 0, 100);
+    },
+
+    /** One page of call logs (API v1, read only; Pipedrive allows 50 a page). */
+    async listCallLogsPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/callLogs", input.start ?? 0, 50);
+    },
+
+    /** One page of the product catalogue (API v1, read only). */
+    async listProductsPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/products", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** Every product field, so custom product fields keep their names. */
+    async listProductFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/productFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
+    /** One page of the products on one deal, with quantity, price and discount (read only). */
+    async listDealProductsPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/products`, input.start ?? 0, 100);
+    },
+
+    /** One page of the people on a deal, its main contact included (API v1, read only). */
+    async listDealParticipantsPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/participants`, input.start ?? 0, 100);
+    },
+
+    /** One page of the users following a deal (API v1, read only). */
+    async listDealFollowersPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/followers`, input.start ?? 0, 100);
+    },
+
+    /**
+     * One page of every lead, archived ones included (API v1, read only). The
+     * leads list answers its paging at the top of `additional_data`.
+     */
+    async listLeadsPage(input: { start?: number } = {}) {
+      const start = input.start ?? 0;
+      const body = await get("/api/v1/leads", { start, limit: V1_LIST_PAGE_SIZE, archived_status: "all" });
+      const items = Array.isArray(body.data) ? body.data as Record<string, unknown>[] : [];
+      const extra = body.additional_data as { more_items_in_collection?: boolean; pagination?: { more_items_in_collection?: boolean } } | undefined;
+      const more = extra?.more_items_in_collection ?? extra?.pagination?.more_items_in_collection ?? false;
+      return { items, nextStart: more && items.length > 0 ? start + items.length : null };
+    },
+
+    /** One page of every file: uploads on deals, people, organisations, activities and notes (read only). */
+    async listFilesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/files", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** The bytes of one file (read only). */
+    async downloadFile(fileId: string) {
+      const path = `/api/v1/files/${encodeURIComponent(fileId)}/download`;
+      const response = await fetchOk("GET", path, {});
+      if (!response.arrayBuffer) throw new PipedriveApiError(`Pipedrive sent no file body for ${path}`, response.status);
+      return { body: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type") };
+    },
+
+    /** Every lead label, so leads show label names. */
+    async listLeadLabels() {
+      const body = await get("/api/v1/leadLabels", {});
+      return Array.isArray(body.data) ? body.data as Array<{ id: string; name?: string | null }> : [];
+    },
+
+    /** Every pipeline (API v1, read only). Used by the full deal import. */
+    async listPipelines() {
+      const body = await get("/api/v1/pipelines", {});
+      return Array.isArray(body.data) ? body.data as PipedrivePipeline[] : [];
+    },
+
+    /** Every stage of every pipeline (API v1, read only). */
+    async listStages() {
+      const body = await get("/api/v1/stages", {});
+      return Array.isArray(body.data) ? body.data as PipedriveStage[] : [];
+    },
+
+    /** Every user on the account, so owner and user fields read as names. */
+    async listUsers() {
+      const body = await get("/api/v1/users", {});
+      return Array.isArray(body.data) ? body.data as PipedriveUser[] : [];
+    },
+
+    /**
+     * One page of every deal that is not deleted, in every pipeline and status
+     * (API v1, read only). v1 answers custom fields as top-level keys.
+     */
+    async listAllDealsPage(input: { start?: number } = {}) {
+      const body = await get("/api/v1/deals", { start: input.start ?? 0, limit: V1_LIST_PAGE_SIZE, status: "all_not_deleted" });
+      const items = Array.isArray(body.data) ? body.data as PipedriveDeal[] : [];
+      const pagination = (body.additional_data as { pagination?: { more_items_in_collection?: boolean; next_start?: number } } | undefined)
+        ?.pagination;
+      const nextStart = pagination?.more_items_in_collection && typeof pagination.next_start === "number"
+        ? pagination.next_start
+        : null;
+      return { items, nextStart };
+    },
+
+    /** Deals in one Pipedrive pipeline changed since `updatedSince`, oldest change first (API v2). */
+    async listDealsPage(input: { pipelineId: string; updatedSince?: string | null; cursor?: string | null }) {
+      const body = await get("/api/v2/deals", {
+        pipeline_id: input.pipelineId,
+        updated_since: input.updatedSince ?? undefined,
+        sort_by: "update_time",
+        sort_direction: "asc",
+        limit: PAGE_SIZE,
+        cursor: input.cursor ?? undefined,
+      });
+      const data = Array.isArray(body.data) ? body.data as PipedriveDeal[] : [];
+      const extra = body.additional_data as { next_cursor?: string | null } | undefined;
+      return { deals: data, nextCursor: extra?.next_cursor ?? null };
+    },
+
+    /** One deal by id (API v2). Null when Pipedrive no longer has it. */
+    async getDeal(dealId: string): Promise<PipedriveDeal | null> {
+      try {
+        const body = await get(`/api/v2/deals/${encodeURIComponent(dealId)}`, {});
+        return (body.data ?? null) as PipedriveDeal | null;
+      } catch (error) {
+        if (error instanceof PipedriveApiError && error.status === 404) return null;
+        throw error;
+      }
+    },
+
+    /** Writes changed fields to one deal (API v2 PATCH). Used by the sync runner only. */
+    async updateDeal(dealId: string, patch: PipedriveDealPatch): Promise<PipedriveDeal> {
+      const body = await send("PATCH", `/api/v2/deals/${encodeURIComponent(dealId)}`, {}, patch);
+      return body.data as PipedriveDeal;
+    },
+
+    /** Every deal field, so option ids can be shown as their labels. */
+    async listDealFields() {
+      const fields: PipedriveDealField[] = [];
+      let start = 0;
+      for (;;) {
+        const body = await get("/api/v1/dealFields", { start, limit: 500 });
+        if (Array.isArray(body.data)) fields.push(...body.data as PipedriveDealField[]);
+        const pagination = (body.additional_data as { pagination?: { more_items_in_collection?: boolean; next_start?: number } } | undefined)
+          ?.pagination;
+        if (!pagination?.more_items_in_collection || typeof pagination.next_start !== "number") return fields;
+        start = pagination.next_start;
+      }
+    },
+  };
+}
+
+export type PipedriveClient = ReturnType<typeof createPipedriveClient>;
+
+function optionLabelMap(fields: PipedriveDealField[]) {
+  const labels = new Map<string, Map<string, string>>();
+  for (const field of fields) {
+    if (!field.options?.length) continue;
+    labels.set(field.key, new Map(field.options.map((option) => [String(option.id), option.label])));
+  }
+  return labels;
+}
+
+function toFieldValue(raw: unknown, options: Map<string, string> | undefined): CrmSyncFieldValue {
+  if (raw === undefined || raw === null) return null;
+  if (options) {
+    const ids = Array.isArray(raw) ? raw : typeof raw === "string" && raw.includes(",") ? raw.split(",") : null;
+    if (ids) return ids.map((id) => options.get(String(id).trim()) ?? String(id).trim());
+    return options.get(String(raw)) ?? String(raw);
+  }
+  if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") return raw;
+  if (Array.isArray(raw)) {
+    return raw.flatMap((item) => {
+      const value = toFieldValue(item, undefined);
+      return value === null || Array.isArray(value) ? [] : [String(value)];
+    });
+  }
+  if (typeof raw === "object") {
+    // Money ({ value, currency }), linked records ({ name, value }) and addresses ({ value }).
+    const record = raw as Record<string, unknown>;
+    if (typeof record.name === "string") return record.name;
+    if ("value" in record) return toFieldValue(record.value, undefined);
+  }
+  return null;
+}
+
+/**
+ * Flattens a v2 deal to `externalField -> value`: top-level fields by name and
+ * custom fields by their Pipedrive key. Choice fields come back as labels.
+ */
+export function flattenPipedriveDeal(deal: PipedriveDeal, fields: PipedriveDealField[]) {
+  const labels = optionLabelMap(fields);
+  const flat: Record<string, CrmSyncFieldValue> = {};
+  for (const [key, raw] of Object.entries(deal)) {
+    if (key === "custom_fields") continue;
+    flat[key] = toFieldValue(raw, labels.get(key));
+  }
+  for (const [key, raw] of Object.entries(deal.custom_fields ?? {})) {
+    flat[key] = toFieldValue(raw, labels.get(key));
+  }
+  return flat;
+}
+
+/** Body of a v2 deal update: top-level fields by name, custom fields under `custom_fields`. */
+export type PipedriveDealPatch = Record<string, unknown> & { custom_fields?: Record<string, unknown> };
+
+/** Deal fields Pipedrive sets itself. The sync never writes them. */
+const PIPEDRIVE_READ_ONLY_DEAL_FIELDS = new Set([
+  "id",
+  "add_time",
+  "update_time",
+  "close_time",
+  "won_time",
+  "lost_time",
+  "stage_change_time",
+  "creator_user_id",
+  "pipeline_id",
+  "is_deleted",
+]);
+
+/** Custom deal fields have a 40-character hex key; every other key is a top-level field. */
+function isPipedriveCustomFieldKey(key: string) {
+  return /^[0-9a-f]{40}$/.test(key);
+}
+
+export class PipedriveValueError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PipedriveValueError";
+  }
+}
+
+/**
+ * Turns GSAM values back into a v2 deal update. Choice fields go back from
+ * labels to option ids, the reverse of `flattenPipedriveDeal`. Throws
+ * `PipedriveValueError` for a read-only field or a label Pipedrive does not have.
+ */
+export function buildPipedriveDealPatch(
+  values: Array<{ externalField: string; value: CrmSyncFieldValue }>,
+  fields: PipedriveDealField[],
+): PipedriveDealPatch {
+  const patch: PipedriveDealPatch = {};
+  const byKey = new Map(fields.map((field) => [field.key, field]));
+  for (const { externalField, value } of values) {
+    if (PIPEDRIVE_READ_ONLY_DEAL_FIELDS.has(externalField)) {
+      throw new PipedriveValueError(`Pipedrive field ${externalField} is read-only`);
+    }
+    const field = byKey.get(externalField);
+    let out: unknown = value;
+    if (field?.options?.length && value !== null) {
+      const idByLabel = new Map(field.options.map((option) => [option.label.trim().toLowerCase(), option.id]));
+      const toId = (label: string) => {
+        const id = idByLabel.get(label.trim().toLowerCase());
+        if (id === undefined) {
+          throw new PipedriveValueError(`"${label}" is not an option of the Pipedrive field ${field.name ?? externalField}`);
+        }
+        return typeof id === "string" && /^\d+$/.test(id) ? Number(id) : id;
+      };
+      out = Array.isArray(value) ? value.map(toId) : toId(String(value));
+    }
+    if (isPipedriveCustomFieldKey(externalField)) {
+      patch.custom_fields = { ...(patch.custom_fields ?? {}), [externalField]: out };
+    } else {
+      patch[externalField] = out;
+    }
+  }
+  return patch;
+}

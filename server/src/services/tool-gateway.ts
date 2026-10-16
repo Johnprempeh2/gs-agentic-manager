@@ -10,7 +10,11 @@ import { githubChatReviewService } from "./chat-github-reviews.js";
 import { runIdentityContexts } from "@greatstone/db";
 import { captureRunIdentity } from "./run-identity.js";
 import { emitConnectionInvoked } from "./connector-telemetry.js";
-import { resolveManagedGitHubIdentitySelection } from "./git-credentials.js";
+import {
+  githubIdentityScopeForRun,
+  recordGitHubDelegationUse,
+  resolveManagedGitHubIdentitySelection,
+} from "./git-credentials.js";
 import { extractRemoteMcpPending } from "./remote-mcp-pending.js";
 import { logger } from "../middleware/logger.js";
 import { spawn } from "node:child_process";
@@ -316,10 +320,17 @@ export interface ToolGatewaySession {
   responsibleUserId?: string | null;
   /** Captured by the controller for this request, never accepted from tool arguments. */
   identityContextId?: string | null;
+  /** Cause of the captured identity context; `company_default` means no person caused the work. */
+  identityCause?: string | null;
   /** Set only after verifying the signed approved action. */
   approvedSlackInvocationId?: string;
   createdAt: Date;
   expiresAt: Date;
+}
+
+/** Same rule as run start and gh/git export: see githubIdentityScopeForRun. */
+function githubScopeForSession(session: ToolGatewaySession) {
+  return githubIdentityScopeForRun({ cause: session.identityCause, responsibleUserId: session.responsibleUserId });
 }
 
 export type ToolGatewayRuntimeSlot = ToolRuntimeSlotView;
@@ -1818,6 +1829,16 @@ export function createToolGatewayService(
     }
   }
 
+  /** GRE-1364: no gateway token or session works while its company is paused or archived. */
+  async function isCompanyActive(companyId: string) {
+    const [company] = await db
+      .select({ status: companies.status })
+      .from(companies)
+      .where(eq(companies.id, companyId))
+      .limit(1);
+    return company?.status === "active";
+  }
+
   async function getActiveSession(
     sessionToken: string,
     namedGatewayProtocol?: {
@@ -1889,6 +1910,15 @@ export function createToolGatewayService(
       );
     }
 
+    if (!(await isCompanyActive(row.companyId))) {
+      await writeSessionAuthFailure(row, "company_paused");
+      throw new ToolGatewayHttpError(
+        403,
+        "The company is paused, so its tools are off",
+        "company_paused",
+      );
+    }
+
     await assertSessionRunIsActive(row);
 
     const now = new Date();
@@ -1932,6 +1962,7 @@ export function createToolGatewayService(
     return {
       ...session,
       identityContextId: captured.context?.id,
+      identityCause: captured.context?.cause ?? null,
       responsibleUserId:
         captured.context?.cause === "company_default"
           ? null
@@ -2710,8 +2741,7 @@ export function createToolGatewayService(
           session.companyId,
           {
             agentId: session.agentId,
-            responsibleUserId: session.responsibleUserId,
-            allowStandingDelegation: false,
+            ...githubScopeForSession(session),
           },
         );
         if (!selected.grant)
@@ -2769,8 +2799,7 @@ export function createToolGatewayService(
               session.companyId,
               {
                 agentId: session.agentId,
-                responsibleUserId: session.responsibleUserId,
-                allowStandingDelegation: false,
+                ...githubScopeForSession(session),
                 excludeGrantId: original.id,
               },
             );
@@ -3902,6 +3931,12 @@ export function createToolGatewayService(
               resolveOptions,
             );
       if (tracked)
+        await recordGitHubDelegationUse(db, {
+          companyId: session.companyId, grant, agentId: session.agentId,
+          responsibleUserId: githubScopeForSession(session).responsibleUserId, heartbeatRunId: session.runId,
+          issueId: session.issueId, consumer: "tool_gateway",
+        });
+      if (tracked)
         await db
           .update(runIdentityContexts)
           .set({
@@ -4410,8 +4445,7 @@ export function createToolGatewayService(
         ? { grant: captured.grant, error: undefined }
         : await resolveManagedGitHubIdentitySelection(db, session.companyId, {
             agentId: session.agentId,
-            responsibleUserId: session.responsibleUserId,
-            allowStandingDelegation: false,
+            ...githubScopeForSession(session),
           });
       if (!selected.grant || selected.grant.connectionId !== connection.id) {
         throw new ToolGatewayHttpError(
@@ -7019,6 +7053,15 @@ export function createToolGatewayService(
         clientMetadata,
       });
     }
+    if (!(await isCompanyActive(row.gateway.companyId))) {
+      await recordNamedGatewayAuthFailure({
+        gatewayId: input.gatewayId,
+        gatewayPublicId: input.gatewayPublicId,
+        bearerToken,
+        reasonCode: "company_paused",
+        clientMetadata,
+      });
+    }
     const nativeMetadata = row.gateway.metadata;
     const [profile] = await db.select({
       profileKey: toolProfiles.profileKey,
@@ -7828,6 +7871,7 @@ export function createToolGatewayService(
         "identity_context_unavailable",
       );
     session.identityContextId = origin.id;
+    session.identityCause = origin.cause;
     session.responsibleUserId =
       origin.cause === "company_default" ? null : origin.responsibleUserId;
   }
@@ -9935,6 +9979,7 @@ export function createToolGatewayService(
               "identity_context_unavailable",
             );
           session.identityContextId = origin.id;
+          session.identityCause = origin.cause;
           session.responsibleUserId =
             origin.cause === "company_default"
               ? null

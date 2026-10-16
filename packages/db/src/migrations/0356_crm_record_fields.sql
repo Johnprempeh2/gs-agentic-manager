@@ -1,0 +1,2 @@
+ALTER TABLE "organisation_contacts" ADD COLUMN "crm_fields" jsonb DEFAULT '[]'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "organisations" ADD COLUMN "crm_fields" jsonb DEFAULT '[]'::jsonb NOT NULL;

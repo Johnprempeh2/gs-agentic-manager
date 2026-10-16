@@ -26,7 +26,9 @@ import {
 } from "@/components/ui/tooltip";
 import { Activity, ArrowDown, History, MessageSquarePlus, X } from "lucide-react";
 import { ActivityFeed } from "../components/ActivityFeed";
-import { ChatComposer, type ChatComposerHandle } from "../components/ChatComposer";
+import { MakeImageButton } from "../components/MakeImageDialog";
+import { ChatComposer, type ChatComposerAttachment, type ChatComposerHandle } from "../components/ChatComposer";
+import { boardChatApi, MAX_BOARD_CHAT_ATTACHMENTS } from "../api/boardChat";
 import {
   AgentBubbleActionRow,
   agentBubbleDateLabel,
@@ -178,6 +180,9 @@ export function BoardChat() {
   const [statusText, setStatusText] = useState("");
   const [errorText, setErrorText] = useState("");
   const [boardIssueId, setBoardIssueId] = useState<string | null>(null);
+  // Files on the next message: uploaded to the board conversation as they are
+  // added, then sent by id so the assistant can read them.
+  const [attachments, setAttachments] = useState<Array<ChatComposerAttachment & { attachmentId?: string }>>([]);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [optimisticMessage, setOptimisticMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -221,6 +226,7 @@ export function BoardChat() {
         queryClient.removeQueries({ queryKey: queryKeys.issues.comments(boardIssueId) });
       }
       setBoardIssueId(null);
+      setAttachments([]);
       setStreamingText("");
       setStatusText("");
       setSending(false);
@@ -536,6 +542,11 @@ export function BoardChat() {
     async (body: string) => {
       const trimmed = body.trim();
       if (!trimmed || sending || !selectedCompanyId) return;
+      if (attachments.some((attachment) => attachment.status === "uploading")) return;
+      const attachmentIds = attachments.flatMap((attachment) =>
+        attachment.status === "attached" && attachment.attachmentId ? [attachment.attachmentId] : [],
+      );
+      setAttachments([]);
 
       // Show user message immediately
       setOptimisticMessage(trimmed);
@@ -555,11 +566,20 @@ export function BoardChat() {
             companyId: selectedCompanyId,
             message: trimmed,
             taskId: boardIssueId ?? undefined,
+            ...(attachmentIds.length > 0 ? { attachmentIds } : {}),
           }),
           signal: controller.signal,
         });
         clearTimeout(fetchTimeout);
 
+        if (res.status === 422) {
+          const refusal = (await res.json().catch(() => null)) as { error?: string } | null;
+          setStatusText("");
+          setErrorText(refusal?.error ?? "The board assistant could not take those files.");
+          setOptimisticMessage(null);
+          setInput(trimmed);
+          return;
+        }
         if (!res.ok || !res.body) {
           throw new Error("Board chat stream not available");
         }
@@ -629,7 +649,42 @@ export function BoardChat() {
         composerRef.current?.focus();
       }
     },
-    [sending, selectedCompanyId, boardIssueId, queryClient],
+    [sending, selectedCompanyId, boardIssueId, queryClient, attachments],
+  );
+
+  const attachFiles = useCallback(
+    async (files: File[]) => {
+      if (!selectedCompanyId || files.length === 0) return;
+      const room = MAX_BOARD_CHAT_ATTACHMENTS - attachments.filter((attachment) => attachment.status !== "error").length;
+      const batch = files.map((file, index) => ({
+        file,
+        chip: {
+          id: `${Date.now()}-${index}-${file.name}`,
+          name: file.name,
+          size: file.size,
+          status: index < room ? ("uploading" as const) : ("error" as const),
+          error: index < room ? undefined : `Up to ${MAX_BOARD_CHAT_ATTACHMENTS} files per message`,
+        },
+      }));
+      setAttachments((current) => [...current, ...batch.map((entry) => entry.chip)]);
+      const update = (id: string, patch: Partial<ChatComposerAttachment & { attachmentId?: string }>) =>
+        setAttachments((current) => current.map((attachment) => (attachment.id === id ? { ...attachment, ...patch } : attachment)));
+      let issueId = boardIssueId;
+      for (const { file, chip } of batch) {
+        if (chip.status === "error") continue;
+        try {
+          if (!issueId) {
+            issueId = (await boardChatApi.ensureIssue(selectedCompanyId)).issueId;
+            setBoardIssueId(issueId);
+          }
+          const uploaded = await issuesApi.uploadAttachment(selectedCompanyId, issueId, file);
+          update(chip.id, { status: "attached", attachmentId: uploaded.id });
+        } catch (error) {
+          update(chip.id, { status: "error", error: error instanceof Error ? error.message : "Upload failed" });
+        }
+      }
+    },
+    [selectedCompanyId, boardIssueId, attachments],
   );
 
   const handleSend = useCallback(() => {
@@ -976,6 +1031,23 @@ export function BoardChat() {
               submitting={sending}
               disabled={sending}
               sendLabel="Send message"
+              onAttachFiles={attachFiles}
+              leadingTools={
+                selectedCompanyId ? (
+                  <MakeImageButton
+                    variant="icon"
+                    companyId={selectedCompanyId}
+                    attachLabel="this message"
+                    disabled={sending}
+                    onAttach={(file) => attachFiles([file])}
+                  />
+                ) : null
+              }
+              attachments={attachments}
+              attaching={attachments.some((attachment) => attachment.status === "uploading")}
+              onRemoveAttachment={(id) =>
+                setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+              }
               className="pointer-events-auto"
             />
           </div>

@@ -1221,6 +1221,37 @@ describeEmbeddedPostgres("routine service live-execution coalescing", () => {
     expect(revisions[0]?.snapshot.triggers).toHaveLength(0);
   });
 
+  it("keeps one standing task: reopens it when done and reuses it when open", async () => {
+    const { agentId, routine, svc, wakeups } = await seedFixture();
+    await svc.update(routine.id, { concurrencyPolicy: "reuse_standing_task" }, {});
+
+    const first = await svc.runRoutine(routine.id, { source: "manual" });
+    expect(first.status).toBe("issue_created");
+    const standingId = first.linkedIssueId!;
+
+    await db.update(issues).set({ status: "done", executionRunId: null, executionLockedAt: null, completedAt: new Date() }).where(eq(issues.id, standingId));
+    wakeups.length = 0;
+    const second = await svc.runRoutine(routine.id, { source: "manual" });
+    expect(second.status).toBe("issue_reopened");
+    expect(second.linkedIssueId).toBe(standingId);
+    const [reopened] = await db.select({ status: issues.status }).from(issues).where(eq(issues.id, standingId));
+    expect(reopened?.status).toBe("todo");
+    expect(wakeups).toEqual([
+      expect.objectContaining({
+        agentId,
+        opts: expect.objectContaining({ reason: "routine_standing_task_reopened", payload: { issueId: standingId, mutation: "update" } }),
+      }),
+    ]);
+
+    // Open but idle: the run joins the same task rather than opening a second one.
+    await db.update(issues).set({ executionRunId: null, executionLockedAt: null }).where(eq(issues.id, standingId));
+    const third = await svc.runRoutine(routine.id, { source: "manual" });
+    expect(third.status).toBe("coalesced");
+    expect(third.linkedIssueId).toBe(standingId);
+    const routineIssues = await db.select({ id: issues.id }).from(issues).where(eq(issues.originId, routine.id));
+    expect(routineIssues).toHaveLength(1);
+  });
+
   it("wakes the assignee when a routine creates a fresh execution issue", async () => {
     const { agentId, routine, svc, wakeups } = await seedFixture();
 

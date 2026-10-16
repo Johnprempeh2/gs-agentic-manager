@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   activityLog,
   agents,
@@ -63,6 +63,11 @@ describeEmbeddedPostgres("pipeline routes", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipelines-routes-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
+
+  // GRE-1077: the pipelines API is gated on enablePipelines.
+  beforeEach(async () => {
+    await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
+  });
 
   afterEach(async () => {
     await db.delete(pipelineAutomationExecutions);
@@ -356,6 +361,41 @@ describeEmbeddedPostgres("pipeline routes", () => {
     expect(new Date(byKey.get("legacy")!.stageEnteredAt).toISOString()).toBe(legacyCreatedAt.toISOString());
   });
 
+  it("lists open items per stage in the pipeline list response", async () => {
+    const company = await seedCompany();
+    const http = request(app(boardActor));
+    const pipeline = await http
+      .post(`/api/companies/${company.id}/pipelines`)
+      .send({
+        key: "clients",
+        name: "Client journey",
+        stages: [
+          { key: "lead", name: "First contact", kind: "working", position: 100 },
+          { key: "gita", name: "GITA", kind: "working", position: 200 },
+          { key: "live", name: "Live", kind: "done", position: 900 },
+          { key: "lost", name: "Lost", kind: "cancelled", position: 1000 },
+        ],
+      })
+      .expect(201);
+    const pipelineId = pipeline.body.id;
+    for (const caseKey of ["a", "b", "c"]) {
+      await http.post(`/api/pipelines/${pipelineId}/cases`).send({ caseKey, title: caseKey }).expect(201);
+    }
+    const cases = await db.select().from(pipelineCases).where(eq(pipelineCases.pipelineId, pipelineId));
+    const gita = await db.select().from(pipelineStages).where(eq(pipelineStages.key, "gita"));
+    await db.update(pipelineCases).set({ stageId: gita[0]!.id }).where(eq(pipelineCases.id, cases[0]!.id));
+    await db.update(pipelineCases).set({ terminalKind: "done" }).where(eq(pipelineCases.id, cases[1]!.id));
+
+    const list = await http.get(`/api/companies/${company.id}/pipelines`).expect(200);
+    const stages = list.body[0].stages as Array<{ key: string; openCaseCount: number }>;
+    expect(stages.map((stage) => [stage.key, stage.openCaseCount])).toEqual([
+      ["lead", 1],
+      ["gita", 1],
+      ["live", 0],
+      ["lost", 0],
+    ]);
+  });
+
   it("patches case content and workspaceRef in one service transaction", async () => {
     const company = await seedCompany();
     const http = request(app(boardActor));
@@ -438,7 +478,9 @@ describeEmbeddedPostgres("pipeline routes", () => {
       permissionKey: "pipelines:write",
       scope: null,
     });
-    const runId = randomUUID();
+    // Structure changes are audited with the run id, so the run must exist.
+    const [run] = await db.insert(heartbeatRuns).values({ companyId: company.id, agentId: agent!.id }).returning();
+    const runId = run!.id;
     const agentActor: Express.Request["actor"] = {
       type: "agent",
       agentId: agent!.id,
@@ -998,9 +1040,30 @@ describeEmbeddedPostgres("pipeline routes", () => {
     const caseRes = await http.post(`/api/pipelines/${pipelineRes.body.id}/cases`).send({ caseKey: "review", title: "Review me" }).expect(201);
     await http.post(`/api/cases/${caseRes.body.case.id}/transition`).send({ toStageKey: "review", expectedVersion: 1 }).expect(200);
 
+    // The agent may work cases (GRE-1072), so the refusal comes from the review gate.
+    const [reviewAgent] = await db.insert(agents).values({
+      companyId: company.id,
+      name: "Case worker",
+      role: "engineer",
+      adapterType: "codex_local",
+    }).returning();
+    await db.insert(companyMemberships).values({
+      companyId: company.id,
+      principalType: "agent",
+      principalId: reviewAgent!.id,
+      status: "active",
+      membershipRole: "member",
+    });
+    await db.insert(principalPermissionGrants).values({
+      companyId: company.id,
+      principalType: "agent",
+      principalId: reviewAgent!.id,
+      permissionKey: "pipelines:cases",
+      scope: null,
+    });
     const agentActor: Express.Request["actor"] = {
       type: "agent",
-      agentId: randomUUID(),
+      agentId: reviewAgent!.id,
       companyId: company.id,
       runId: randomUUID(),
       source: "agent_key",

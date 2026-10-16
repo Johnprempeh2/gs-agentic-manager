@@ -67,7 +67,7 @@ describe("AgentOverview", () => {
 
     expect(markup).toContain("Identity");
     expect(markup).toContain("Capabilities");
-    expect(markup).toContain("Harness / Runtime");
+    expect(markup).toContain("How it runs");
     expect(markup).toContain("Design Guide");
     expect(markup).toContain("Simplify agent information architecture");
     expect(markup).toContain("PAP-42");

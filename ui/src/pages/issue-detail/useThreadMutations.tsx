@@ -71,7 +71,6 @@ export type UseThreadMutationsInput = {
   invalidateIssueThreadLazily: () => void;
   setLocallyQueuedCommentRunIds: Dispatch<SetStateAction<Map<string, string>>>;
   commentRenderKeys: RefObject<Map<string, string>>;
-  streamlinedUiEnabled: boolean;
   sessionResolved: boolean;
   issueCacheRefs: string[];
   invalidateIssueRunState: () => void;
@@ -107,7 +106,6 @@ export function useThreadMutations({
   invalidateIssueThreadLazily,
   setLocallyQueuedCommentRunIds,
   commentRenderKeys,
-  streamlinedUiEnabled,
   sessionResolved,
   issueCacheRefs,
   invalidateIssueRunState,
@@ -298,7 +296,7 @@ export function useThreadMutations({
           ),
         );
       }
-      if (streamlinedUiEnabled && issue && sessionResolved) {
+      if (issue && sessionResolved) {
         recordRecentTask(
           issue,
           currentUserId,

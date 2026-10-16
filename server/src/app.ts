@@ -4,6 +4,10 @@ import { aiConnectionRoutes } from "./routes/ai-connections.js";
 import { projectToolRoutes } from "./routes/project-tools.js";
 import { emailChannelService } from "./services/email-channels.js";
 import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
+import { mailboxRoutes } from "./routes/mailboxes.js";
+import { inboundTaskHookRoutes } from "./routes/inbound-task-hooks.js";
+import { outboundWebhookRoutes } from "./routes/outbound-webhooks.js";
+import { integrationKeyRoutes } from "./routes/integration-keys.js";
 import { toolActionDeliveryService } from "./services/tool-action-delivery.js";
 import { registerAssignedMcpGateway } from "./services/native-runtime/assigned-mcp-tools.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -25,6 +29,7 @@ import type { StorageService } from "./storage/types.js";
 import { httpLogger, errorHandler } from "./middleware/index.js";
 import { actorMiddleware } from "./middleware/auth.js";
 import { boardMutationGuard } from "./middleware/board-mutation-guard.js";
+import { boardQuestionRunGuard } from "./middleware/board-question-run-guard.js";
 import {
   privateHostnameGuard,
   resolvePrivateHostnameAllowSet,
@@ -41,6 +46,7 @@ import {
 } from "./services/company-import-transfers.js";
 import { companyTransferRunService } from "./services/company-transfer-runs.js";
 import { healthRoutes } from "./routes/health.js";
+import { fleetHubRoutes, fleetSpokeRoutes } from "./routes/fleet.js";
 import {
   connectivityProbeUrlsFromEnv,
   connectivityWatcher,
@@ -62,6 +68,9 @@ import { releaseRoutes } from "./routes/releases.js";
 import { releasesFloorRoutes } from "./routes/releases-floor.js";
 import { clientVersionRoutes } from "./routes/client-version.js";
 import { statusCardRoutes } from "./routes/status-cards.js";
+import { websiteRoutes } from "./routes/website.js";
+import { intelligenceRoutes } from "./routes/intelligence.js";
+import { teamChatRoutes } from "./routes/team-chats.js";
 import { teamsCatalogRoutes } from "./routes/teams-catalog.js";
 import { agentRoutes } from "./routes/agents.js";
 import type { SetupTokenSessionService } from "./services/setup-token-session.js";
@@ -83,12 +92,19 @@ import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
+import { clientAcceptancePublicRoutes } from "./routes/client-acceptance-public.js";
+import { crmSyncRoutes } from "./routes/crm-sync.js";
+import { organisationRoutes } from "./routes/organisations.js";
+import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
 import { environmentRoutes } from "./routes/environments.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
 import { goalRoutes } from "./routes/goals.js";
+import { strategyBoardRoutes } from "./routes/strategy-board.js";
+import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
+import { memoryConnectionRoutes } from "./routes/memory-connections.js";
 import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
@@ -107,7 +123,14 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
 import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
+import { blockedWorkRoutes } from "./routes/blocked-work.js";
+import { calendarRoutes } from "./routes/calendar.js";
+import { teamScorecardRoutes } from "./routes/team-scorecard.js";
+import { weeklyReportRoutes } from "./routes/weekly-report.js";
+import { agentDailyDigestRoutes } from "./routes/agent-daily-digests.js";
+import { recoveryHoldRoutes } from "./routes/recovery-holds.js";
 import { supportRoutes } from "./routes/support.js";
+import { clientSupportRoutes } from "./routes/client-support.js";
 import { pushRoutes } from "./routes/push.js";
 import { decisionTrainingRoutes } from "./routes/decision-training.js";
 import { decisionRoutes } from "./routes/decisions.js";
@@ -117,12 +140,13 @@ import { userProfileRoutes } from "./routes/user-profiles.js";
 import { sidebarBadgeRoutes } from "./routes/sidebar-badges.js";
 import { sidebarPreferenceRoutes } from "./routes/sidebar-preferences.js";
 import { announcementRoutes } from "./routes/announcements.js";
+import { tourDismissalRoutes } from "./routes/tour-dismissals.js";
 import { serverVersion } from "./version.js";
 import { resourceMembershipRoutes } from "./routes/resource-memberships.js";
 import { inboxDismissalRoutes } from "./routes/inbox-dismissals.js";
 import { instanceSettingsRoutes } from "./routes/instance-settings.js";
+import { billingAccountRoutes } from "./routes/billing-account.js";
 import { runAdmissionRecommendationRoutes } from "./routes/run-admission-recommendation.js";
-import { instanceSettingsService } from "./services/instance-settings.js";
 import { openApiRoutes } from "./routes/openapi.js";
 import {
   instanceDatabaseBackupRoutes,
@@ -132,6 +156,7 @@ import { llmRoutes } from "./routes/llms.js";
 import { authRoutes } from "./routes/auth.js";
 import { releaseReauthRoutes } from "./routes/release-reauth.js";
 import { assetRoutes } from "./routes/assets.js";
+import { generatedImageRoutes } from "./routes/generated-images.js";
 import { accessRoutes } from "./routes/access.js";
 import { legacyBoardRoutes } from "./routes/legacy-board.js";
 import { memberHandoverRoutes } from "./routes/member-handover.js";
@@ -150,7 +175,8 @@ import { remoteAgentProfileRoutes } from "./routes/remote-agent-profiles.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { readBrandedStaticIndexHtml } from "./static-index-html.js";
 import { staticUiCacheControl } from "./static-ui-cache.js";
-import { applyUiBranding } from "./ui-branding.js";
+import { applyUiBranding, renderPartnerWebManifest } from "./ui-branding.js";
+import { getPartnerBranding } from "./services/partner-branding.js";
 import { logger } from "./middleware/logger.js";
 import {
   DEFAULT_LOCAL_PLUGIN_DIR,
@@ -190,7 +216,8 @@ import {
   flushPluginLogBuffer,
 } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
-import { setPluginEventBus } from "./services/activity-log.js";
+import { addActivityListener, setPluginEventBus } from "./services/activity-log.js";
+import { startOutboundWebhookDispatch } from "./services/outbound-webhooks.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
@@ -637,6 +664,8 @@ export async function createApp(
   // before GS Agentic Manager persists or acts on any event.
   const emailChannels = emailChannelService(db, { heartbeat: connectionIntentHeartbeat, storage: opts.storageService, publicBaseUrl: opts.chatWebhookPublicBaseUrl ?? opts.authPublicBaseUrl });
   app.use(emailWebhookRoutes(emailChannels));
+  // Fleet spokes sign each message with their own key (GRE-1082); no session.
+  app.use(fleetSpokeRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   app.use(chatWebhookRoutes(chatChannels));
   // The instance validates single-use registration state and its trusted
   // current origin. This exact GET is the only public setup return.
@@ -682,6 +711,8 @@ export async function createApp(
   const agentAvatars = agentAvatarRoutes();
   api.use(agentAvatars.router);
   api.use(boardMutationGuard());
+  // Board question chats are questions only (GRE-1186).
+  api.use(boardQuestionRunGuard(db));
   // Password re-check for release, rollback and promote (GRE-133). After the
   // mutation guard so a cross-site page cannot post a password.
   api.use(releaseReauthRoutes(db));
@@ -698,6 +729,7 @@ export async function createApp(
   api.use(openApiRoutes());
   api.use("/cloud", cloudRoutes());
   api.use(releasesFloorRoutes());
+  api.use(fleetHubRoutes(db));
   api.use("/companies", companyRoutes(db, opts.storageService));
   api.use(llmRoutes(db));
   api.use(folderRoutes(db));
@@ -709,6 +741,9 @@ export async function createApp(
   api.use(releaseRoutes(db));
   api.use(clientVersionRoutes());
   api.use(statusCardRoutes(db));
+  api.use(websiteRoutes(db));
+  api.use(intelligenceRoutes(db));
+  api.use(teamChatRoutes(db));
   api.use(teamsCatalogRoutes(db));
   // The setup-token login session service. The router builds it and hands it
   // back through the callback below, so the shutdown hook can cancel every live
@@ -794,7 +829,8 @@ export async function createApp(
     }),
   );
   api.use(assetRoutes(db, opts.storageService));
-  api.use(deliverableRoutes(db, opts.storageService));
+  api.use(generatedImageRoutes(db, opts.storageService));
+  api.use(deliverableRoutes(db, opts.storageService, { publicBaseUrl: opts.authPublicBaseUrl }));
   api.use(projectToolRoutes(db));
   api.use(projectRoutes(db));
   api.use(caseRoutes(db, opts.storageService));
@@ -802,7 +838,11 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db));
+  const memoryEngine = memoryEngineFromGatewayConfig();
+  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(clientAcceptancePublicRoutes(db, opts.storageService));
+  api.use(crmSyncRoutes(db));
+  api.use(organisationRoutes(db, { storage: opts.storageService }));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,
@@ -816,14 +856,21 @@ export async function createApp(
   );
   api.use(executionWorkspaceRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(emailRoutes(db, emailChannels));
+  api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(inboundTaskHookRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
+  api.use(outboundWebhookRoutes(db, { publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(integrationKeyRoutes(db));
+  startOutboundWebhookDispatch(db, addActivityListener, { publicBaseUrl: opts.authPublicBaseUrl });
   api.use(goalRoutes(db));
+  api.use(strategyBoardRoutes(db));
+  api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
-  const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
-  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
+  api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode, storage: opts.storageService }));
   api.use(approvalRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(secretRoutes(db));
   api.use(managedAgentProfileRoutes(db));
@@ -846,7 +893,14 @@ export async function createApp(
   api.use(attentionRoutes(db));
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(agentWorkDigestRoutes(db));
+  api.use(blockedWorkRoutes(db));
+  api.use(calendarRoutes(db));
+  api.use(teamScorecardRoutes(db));
+  api.use(weeklyReportRoutes(db));
+  api.use(agentDailyDigestRoutes(db));
+  api.use(recoveryHoldRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
+  api.use(clientSupportRoutes(db, { storage: opts.storageService }));
   api.use(pushRoutes(db));
   api.use(decisionTrainingRoutes(db));
   api.use(decisionRoutes(db, opts.decisionServiceOptions));
@@ -855,9 +909,11 @@ export async function createApp(
   api.use(sidebarBadgeRoutes(db));
   api.use(sidebarPreferenceRoutes(db));
   api.use(announcementRoutes(db, { ...opts.announcements, version: opts.hostVersion ?? serverVersion }));
+  api.use(tourDismissalRoutes(db));
   api.use(resourceMembershipRoutes(db));
   api.use(inboxDismissalRoutes(db));
   api.use(instanceSettingsRoutes(db));
+  api.use(billingAccountRoutes(db));
   api.use(runAdmissionRecommendationRoutes(db));
   if (opts.databaseBackupService) {
     api.use(instanceDatabaseBackupRoutes(opts.databaseBackupService));
@@ -997,13 +1053,7 @@ export async function createApp(
       { toolGateway },
     ),
   );
-  api.use(
-    adapterRoutes({
-      getNativeRunnerEnabled: async () =>
-        (await instanceSettingsService(db).getExperimental())
-          .enableNativeRunner === true,
-    }),
-  );
+  api.use(adapterRoutes());
   api.use(
     accessRoutes(db, {
       deploymentMode: opts.deploymentMode,
@@ -1024,6 +1074,17 @@ export async function createApp(
       localPluginDir: opts.localPluginDir ?? DEFAULT_LOCAL_PLUGIN_DIR,
     }),
   );
+
+  // Partner branding: parsed here at startup so a rejected value (a bad logo
+  // URL, a colour that fails contrast) is warned about at boot, not on the
+  // first page view. A branded instance serves its own phone manifest; an
+  // unbranded one falls through to the static file.
+  const partnerManifest = renderPartnerWebManifest(getPartnerBranding());
+  if (partnerManifest) {
+    app.get("/site.webmanifest", (_req, res) => {
+      res.type("application/manifest+json").set("Cache-Control", "no-cache").send(partnerManifest);
+    });
+  }
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   if (opts.uiMode === "static") {
@@ -1280,6 +1341,8 @@ export async function createApp(
       IMPORT_TRANSFER_SPOOL_SWEEP_INTERVAL_MS,
     );
   importTransferSweepTimer.unref?.();
+  // CRM sync (GRE-1100): polls due Pipedrive bindings once a minute. Read only.
+  const stopCrmSyncScheduler = startCrmSyncScheduler(db);
   // Startup only (never on the hourly interval — that would kill live
   // applies): apply jobs are in-memory in this single process, so any run
   // still "applying" now was interrupted by the previous shutdown and would
@@ -1386,6 +1449,7 @@ export async function createApp(
         clearInterval(importTransferSweepTimer);
         importTransferSweepTimer = null;
       }
+      stopCrmSyncScheduler();
       devWatcher?.close();
       viteHtmlRenderer?.dispose();
       void viteDevServer?.close().catch(() => undefined);

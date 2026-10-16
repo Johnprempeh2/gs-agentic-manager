@@ -352,6 +352,35 @@ describe("MarkdownEditor", () => {
     });
   });
 
+  it("submits on plain Enter only when submitOnEnter is set; Shift+Enter never submits", async () => {
+    const root = createRoot(container);
+    const onSubmit = vi.fn();
+    const press = (init: KeyboardEventInit) =>
+      act(async () => {
+        container.querySelector(".paperclip-mdxeditor-scope")!.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true, ...init }),
+        );
+      });
+
+    await act(async () => {
+      root.render(<MarkdownEditor value="hi" onChange={() => {}} onSubmit={onSubmit} />);
+    });
+    await press({});
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.render(<MarkdownEditor value="hi" onChange={() => {}} onSubmit={onSubmit} submitOnEnter />);
+    });
+    await press({ shiftKey: true });
+    expect(onSubmit).not.toHaveBeenCalled();
+    await press({});
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
   it("keeps the external value when the unfocused editor emits an empty mount reset", async () => {
     mdxEditorMockState.emitMountEmptyReset = true;
     const handleChange = vi.fn();

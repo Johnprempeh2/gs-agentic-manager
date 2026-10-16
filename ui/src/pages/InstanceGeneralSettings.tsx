@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PatchInstanceGeneralSettings, BackupRetentionPolicy } from "@greatstone/shared";
+import type { PatchInstanceGeneralSettings, BackupRetentionPolicy, StrategyBoardEmailSettings } from "@greatstone/shared";
 import {
   DAILY_RETENTION_PRESETS,
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
 } from "@greatstone/shared";
 import { LogOut, SlidersHorizontal } from "lucide-react";
 import { healthApi } from "@/api/health";
@@ -32,7 +33,14 @@ export type InstanceGeneralSection =
   | "aiAccessRoute"
   | "teamCatalogFilter"
   | "teamCatalogAddMode"
+  | "strategyBoardEmail"
   | "signOut";
+
+const STRATEGY_BOARD_EMAIL_TOGGLES: Array<{ key: keyof StrategyBoardEmailSettings; title: string; description: string }> = [
+  { key: "meetingReminders", title: "Meeting reminders", description: "Each KPI owner, before the board meeting: readings and actions due." },
+  { key: "slippageAlerts", title: "Slippage alerts", description: "The chair, once each time a KPI turns red." },
+  { key: "whyRequests", title: "\"Why?\" requests", description: "The KPI owner, when the board asks why a KPI slipped." },
+];
 
 export function InstanceGeneralSettings({
   embedded = false,
@@ -115,6 +123,8 @@ export function InstanceGeneralSettings({
   const showAiAccessRoute = shows("aiAccessRoute");
   const showTeamCatalogFilter = shows("teamCatalogFilter");
   const showTeamCatalogAddMode = shows("teamCatalogAddMode");
+  const showStrategyBoardEmail = shows("strategyBoardEmail");
+  const boardEmail = generalQuery.data?.strategyBoardEmail ?? DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS;
   const showSignOut = shows("signOut");
   const visibleTopics = [
     ...(showCensorUsernameInLogs ? ["log display"] : []),
@@ -249,6 +259,34 @@ export function InstanceGeneralSettings({
             aria-label="Ask Greatstone to add teams"
           />
         </div>
+      </section>
+      )}
+
+      {showStrategyBoardEmail && (
+      <section className="space-y-3">
+        <div className="space-y-1.5">
+          <h2 className="text-sm font-semibold">Board email</h2>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            Which board alerts the board secretary also sends by email. Needs the board control panel switch and a
+            secretary inbox on the Board page. Off keeps that alert in the app only.
+          </p>
+        </div>
+        {STRATEGY_BOARD_EMAIL_TOGGLES.map((toggle) => (
+          <div key={toggle.key} className="flex items-start justify-between gap-4">
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium">{toggle.title}</p>
+              <p className="text-xs text-muted-foreground">{toggle.description}</p>
+            </div>
+            <ToggleSwitch
+              checked={boardEmail[toggle.key]}
+              onCheckedChange={() =>
+                updateGeneralMutation.mutate({ strategyBoardEmail: { ...boardEmail, [toggle.key]: !boardEmail[toggle.key] } })
+              }
+              disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+              aria-label={`Board email: ${toggle.title}`}
+            />
+          </div>
+        ))}
       </section>
       )}
 

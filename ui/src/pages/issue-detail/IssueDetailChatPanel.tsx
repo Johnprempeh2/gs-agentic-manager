@@ -2,6 +2,7 @@ import type { issuesApi } from "../../api/issues";
 import { DispositionRecoveryProvider } from "../../components/DispositionRecoveryNotice";
 import { ExecutionBlockerNotice } from "../../components/ExecutionBlockerNotice";
 import { EmailTaskActivity } from "../../components/EmailTaskActivity";
+import { TabledBanner } from "../../components/decisions-feed/TabledBanner";
 import { queryKeys } from "../../lib/queryKeys";
 import { createIssueDetailPath } from "../../lib/issueDetailBreadcrumb";
 import type { IssueChatComposerHandle } from "../../components/IssueChatThread";
@@ -55,7 +56,7 @@ export type IssueDetailChatPanelProps = {
   mentionOptions: MentionOption[];
   externalObjectsState: IssueExternalObjectsResult;
   uploadAttachment: UseMutationResult<IssueAttachment, Error, File, unknown>;
-  conversation: { agent: Agent; issue: Issue | null; ensureIssue: () => Promise<Issue>; } | undefined;
+  conversation: { agent: Agent; issue: Issue | null; ensureIssue: () => Promise<Issue>; questionsOnly?: boolean } | undefined;
   liveIssueIds: Set<string>;
   handleResolveRecoveryAction: ReturnType<typeof useRecoveryActionHandlers>["handleResolveRecoveryAction"];
   handleReissueIsolatedRecoveryAction: ReturnType<typeof useRecoveryActionHandlers>["handleReissueIsolatedRecoveryAction"];
@@ -251,6 +252,8 @@ export function IssueDetailChatPanel({
   resolveRecoveryAction,
   casesChipsEnabled,
 }: IssueDetailChatPanelProps) {
+  // A board question chat (GRE-1186) stays in Ask mode and runs under the Strategy Board switch.
+  const questionsOnly = Boolean(conversation?.questionsOnly || issue.originKind === "strategy_board_question");
   return (
     <TabsContent
       data-testid="issue-detail-content"
@@ -270,6 +273,8 @@ export function IssueDetailChatPanel({
       {issue.executionBlocker && (
         <ExecutionBlockerNotice companyId={issue.companyId} issueId={issue.id} blocker={issue.executionBlocker} onRetried={invalidateIssueDetail} />
       )}
+      {/* Agent chats hide the task header, so its tabled banner too (GRE-1475). */}
+      {issue.conversationAgentId ? <TabledBanner issue={issue} chat /> : null}
       {resolvedDetailTab === "chat" ? (
         <DispositionRecoveryProvider value={{
           issue,
@@ -433,7 +438,7 @@ export function IssueDetailChatPanel({
             } : undefined,
             resumeHref: !activePauseHold.isRoot ? createIssueDetailPath(activePauseHoldRoot?.identifier ?? activePauseHold.rootIssueId) : undefined,
           } : null}
-          composerDisabledReason={issue.conversationAgentId && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is disabled in Experimental settings." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
+          composerDisabledReason={issue.conversationAgentId && !questionsOnly && !instanceExperimentalSettings?.enableAgentChat ? "Agent Chat is disabled in Experimental settings." : treeControlStateError ? "Couldn’t check whether this task is paused. Refresh to try again." : null}
           composerHint={composerHint}
           queuedCommentReason={queuedCommentReason}
           onVote={handleCommentVote}
@@ -478,7 +483,8 @@ export function IssueDetailChatPanel({
               : undefined
           }
           runFinalizationActions={runFinalizationActions}
-          onWorkModeChange={(nextMode) => {
+          questionsOnly={questionsOnly}
+          onWorkModeChange={questionsOnly ? undefined : (nextMode) => {
             const currentMode: IssueWorkMode =
               issue.workMode ?? "standard";
             if (currentMode === nextMode) return;

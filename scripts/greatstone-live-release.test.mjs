@@ -443,7 +443,7 @@ function releaseSandbox(t, pnpmScript, { base = {}, rc = {} } = {}) {
   git(root, "clone", "--quiet", origin, dev);
   configure(dev);
   mkdirSync(join(dev, "scripts"));
-  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh"]) {
+  for (const f of ["greatstone-release.sh", "greatstone-common.sh", "greatstone-live-release.sh", "greatstone-preview.sh", "greatstone-test-gate.sh"]) {
     copyFileSync(join(scriptsDir, f), join(dev, "scripts", f));
   }
   const addFiles = (files) => {
@@ -474,6 +474,13 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
   const live = join(root, "live");
   git(root, "clone", "--quiet", origin, live);
   git(live, "checkout", "--quiet", "--detach", "live-2026-09-01.1");
+  // The full test suite passed on the candidate (scripts/greatstone-test-gate.sh).
+  const passGate = (tag) => {
+    mkdirSync(join(root, "test-gate", "passed"), { recursive: true });
+    const commit = git(dev, "rev-parse", `${tag}^{commit}`);
+    writeFileSync(join(root, "test-gate", "passed", commit), `commit=${commit}\ntag=${tag}\npassed_at=2026-09-29T07:00:00Z\n`);
+  };
+  passGate("rc-2026-09-29.1");
   const db = join(root, "data", "instances", "default", "db");
   mkdirSync(db, { recursive: true });
   writeFileSync(join(db, "postmaster.pid"), `${process.pid}\n/x\n0\n5432\n`);
@@ -491,7 +498,7 @@ fs.mkdirSync(dir, { recursive: true }); const f = dir + "/" + a[a.indexOf("--pre
     GSAM_RELEASE_POLL_SECONDS: "0.05",
     PATH: `${bin}:${process.env.PATH}`,
   });
-  return { root, origin, dev, live, env };
+  return { root, origin, dev, live, env, passGate };
 }
 
 test("a release that fails after tagging pushes no live tag and deletes the local one", (t) => {
@@ -514,11 +521,12 @@ test("a release that fails after tagging pushes no live tag and deletes the loca
 // silently take live back. Live here is on the rc-2026-09-29.1 commit. A check
 // that passes stops later, at the failing `pnpm install`.
 test("a release refuses a candidate older than live; a newer candidate and a rollback pass", (t) => {
-  const { dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  const { dev, live, env, passGate } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
   git(dev, "tag", "-a", "live-2026-09-29.1", "-m", "Current release", "rc-2026-09-29.1^{commit}");
   git(dev, "tag", "-a", "rc-2026-09-28.1", "-m", "Older candidate", "live-2026-09-01.1^{commit}");
   git(dev, "commit", "--quiet", "--allow-empty", "-m", "newer");
   git(dev, "tag", "-a", "rc-2026-09-30.1", "-m", "Newer candidate");
+  passGate("rc-2026-09-30.1");
   git(dev, "push", "--quiet", "origin", "HEAD:main", "live-2026-09-29.1");
   git(live, "fetch", "--quiet", "--tags", "origin");
   git(live, "checkout", "--quiet", "--detach", "live-2026-09-29.1");
@@ -540,6 +548,52 @@ test("a release refuses a candidate older than live; a newer candidate and a rol
   const rollback = release("live-2026-09-01.1");
   assert.doesNotMatch(rollback.stderr, /older than live/, rollback.stderr);
   assert.match(rollback.stdout, /^Live checkout is on live-2026-09-01\.1 /m, rollback.stderr);
+});
+
+// The release test gate: Fork CI runs no tests on pull requests, so an rc tag
+// is released only when scripts/greatstone-test-gate.sh passed the full suite
+// on its exact commit, or with a logged --skip-test-gate "<reason>".
+test("a release refuses a candidate with no test gate pass before anything moves; the override is logged", (t) => {
+  const { root, dev, live, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  rmSync(join(root, "test-gate"), { recursive: true, force: true });
+  const commit = git(dev, "rev-parse", "rc-2026-09-29.1^{commit}");
+  const release = (...args) => spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), ...args], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+
+  const refused = release("rc-2026-09-29.1");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, new RegExp(`^release: the full test suite has not passed on rc-2026-09-29\\.1 \\(${commit}\\).*Run it first: scripts/greatstone-test-gate\\.sh rc-2026-09-29\\.1 .*--skip-test-gate .*Nothing was changed\\.$`, "m"));
+  assert.doesNotMatch(refused.stdout, /Backed up|Tagged/);
+  assert.equal(existsSync(join(root, "gs-db.log")), false);
+  assert.equal(git(dev, "tag", "--list", "live-*"), "live-2026-09-01.1");
+  assert.equal(git(live, "describe", "--tags", "--exact-match", "HEAD"), "live-2026-09-01.1");
+
+  // A pass marker for another commit does not count.
+  mkdirSync(join(root, "test-gate", "passed"), { recursive: true });
+  writeFileSync(join(root, "test-gate", "passed", git(dev, "rev-parse", "live-2026-09-01.1^{commit}")), "passed_at=x\n");
+  assert.equal(release("rc-2026-09-29.1").status, 1);
+
+  for (const bad of [["--skip-test-gate", "rc-2026-09-29.1"], ["--skip-test-gate", " ", "rc-2026-09-29.1"]]) {
+    const run = release(...bad);
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /^release: --skip-test-gate needs a reason first/m);
+  }
+  assert.equal(existsSync(join(root, "test-gate", "overrides.log")), false);
+
+  const skipped = release("--skip-test-gate", "live is down; GRE-1 hotfix", "rc-2026-09-29.1");
+  assert.match(skipped.stdout, new RegExp(`^Test gate SKIPPED for rc-2026-09-29\\.1 \\(${commit}\\): live is down; GRE-1 hotfix\\.`, "m"), skipped.stderr);
+  // Past the gate: it goes on to the backup and the tag (and stops at the failing install).
+  assert.match(skipped.stdout, /^Tagged rc-2026-09-29\.1 as /m);
+  const [line, ...more] = readFileSync(join(root, "test-gate", "overrides.log"), "utf8").trim().split("\n");
+  assert.equal(more.length, 0);
+  assert.deepEqual(line.split("\t").slice(1, 3).concat(line.split("\t")[4]), ["rc-2026-09-29.1", commit, "live is down; GRE-1 hotfix"]);
+});
+
+test("a release with a test gate pass says so and needs no override", (t) => {
+  const { root, dev, env } = releaseSandbox(t, "#!/bin/sh\necho 'pnpm: install failed' >&2\nexit 1\n");
+  const run = spawnSync("bash", [join(dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { encoding: "utf8", env: env("http://127.0.0.1:9") });
+  assert.match(run.stdout, /^Test gate: the full test suite passed on rc-2026-09-29\.1 \([0-9a-f]{40}\) at 2026-09-29T07:00:00Z$/m, run.stderr);
+  assert.match(run.stdout, /^Tagged rc-2026-09-29\.1 as /m);
+  assert.equal(existsSync(join(root, "test-gate", "overrides.log")), false);
 });
 
 // GRE-930: the live database has a random password. The backup gets it as
@@ -593,6 +647,12 @@ function fakeRestartNotRequired(live) {
     if (req.url === "/api/health") {
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({ status: "ok", commit: git(live, "rev-parse", "HEAD"), serverInfo: { processStartedAt: "2026-09-29T08:00:00.000Z" } }));
+      return;
+    }
+    // No company, so no active agent run (a release by hand counts them).
+    if (req.url === "/api/companies") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("[]");
       return;
     }
     res.writeHead(404, { "content-type": "application/json" });
@@ -658,6 +718,63 @@ test("drop_unpushed_live_tag keeps a live tag origin already has", (t) => {
   assert.equal(drop("live-2026-09-29.1").status, 0);
   assert.equal(drop("live-2026-09-29.2").status, 0);
   assert.equal(git(dev, "tag", "--list", "live-*"), "live-2026-09-29.1");
+});
+
+// 15 Oct 2026: the preview of rc-2026-10-15.3 never came up ("preview 000"),
+// and the release by hand went out anyway: it only refused a preview of
+// another tag. Now it needs the preview of this tag, up and answering.
+test("a release by hand refuses before the backup and the tag when the preview of the tag is not up", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+  const before = git(box.live, "rev-parse", "HEAD");
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { ...box.env(fake.url), GSAM_RELEASE_FROM_APP: "" });
+  assert.equal(release.status, 1, release.stdout);
+  assert.match(release.stderr, /^release: no preview of rc-2026-09-29\.1 is running, so it was not checked on a copy of the live data\. .*Nothing was changed\.$/m);
+  assert.equal(existsSync(join(box.root, "backups")), false);
+  assert.equal(git(box.dev, "tag", "--list", "live-*"), "live-2026-09-01.1");
+  assert.equal(git(box.live, "rev-parse", "HEAD"), before);
+  assert.equal(fake.seen.restarts, 0);
+});
+
+test("--skip-preview needs a reason", () => {
+  const run = spawnSync("bash", [join(scriptsDir, "greatstone-release.sh"), "--skip-preview", "rc-2026-09-29.1"], { encoding: "utf8" });
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /^release: --skip-preview needs a reason first/);
+});
+
+test("a release by hand goes ahead when the preview runs the tag and answers, then stops it", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  const fake = await fakeRestartNotRequired(box.live);
+  t.after(() => fake.server.close());
+  const commit = git(box.dev, "rev-parse", "rc-2026-09-29.1^{commit}");
+  const port = await freePort();
+  const dataDir = join(box.root, "preview", "data");
+  mkdirSync(dataDir, { recursive: true });
+  // The fake preview: its own process group, its command line names the
+  // preview data folder (preview_running), and it answers /api/health.
+  const preview = spawn(process.execPath, ["-e", `require("node:http").createServer((q, r) => r.end(JSON.stringify({ commit: ${JSON.stringify(commit)} }))).listen(${port}, "127.0.0.1")`, dataDir], { detached: true, stdio: "ignore" });
+  t.after(() => { try { process.kill(-preview.pid, "SIGKILL"); } catch {} });
+  writeFileSync(join(box.root, "preview", "preview.state"), `tag=rc-2026-09-29.1\ncommit=${commit}\npid=${preview.pid}\nport=${port}\n`);
+  for (let i = 0; i < 100; i++) {
+    try { await fetch(`http://127.0.0.1:${port}/api/health`); break; } catch { await new Promise((r) => setTimeout(r, 50)); }
+  }
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], { ...box.env(fake.url), GSAM_RELEASE_FROM_APP: "", GSAM_PREVIEW_PORT: String(port) });
+  assert.equal(release.status, 0, release.stdout + release.stderr);
+  assert.match(release.stdout, new RegExp(`^Preview: the preview runs rc-2026-09-29\\.1 \\(${commit}\\) and answers on http://localhost:${port}$`, "m"));
+  assert.match(release.stdout, new RegExp(`^Live app at .* is running ${esc(TODAY_TAG)} `, "m"));
+  assert.match(release.stdout, /^Preview stopped\.$/m);
+});
+
+// A release whose live checkout has local changes names them (15 Oct 2026:
+// an agent's scratch script in live/scripts, gone a minute later).
+test("the release names the local changes in the live checkout it refuses", async (t) => {
+  const box = releaseSandbox(t, "#!/bin/sh\nexit 0\n", { base: EMPTY_WORKSPACE, rc: { "doc/NOTES.md": "Only docs change.\n" } });
+  mkdirSync(join(box.live, "scripts"), { recursive: true });
+  writeFileSync(join(box.live, "scripts", "_tmp-customise-shot.mjs"), "\n");
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "rc-2026-09-29.1"], box.env("http://127.0.0.1:9"));
+  assert.equal(release.status, 1);
+  assert.match(release.stderr, /^release: the live checkout has local changes; nothing may edit it\. Inspect .* before releasing\. Changed: \?\? scripts\/_tmp-customise-shot\.mjs$/m);
 });
 
 // Live serves the built UI (ui/dist) so a phone over Tailscale can load it. The
@@ -753,8 +870,10 @@ function startLiveSession(file) {
 
 test("--full-restart stops the runner, the server it leaves and the database, then starts live on the new tag", { skip: process.platform !== "linux" && "reads /proc" }, async (t) => {
   const box = await fullRestartSandbox(t);
-  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "rc-2026-09-29.1"], box.env);
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "--skip-preview", "sandbox has no preview", "rc-2026-09-29.1"], box.env);
   assert.equal(release.status, 0, release.stdout + release.stderr);
+  assert.match(release.stdout, /^Preview check SKIPPED for rc-2026-09-29\.1 \([0-9a-f]{40}\): sandbox has no preview\. Logged in .*preview-overrides\.log\. Why: no preview of rc-2026-09-29\.1 is running/m);
+  assert.match(readFileSync(join(box.root, "preview-overrides.log"), "utf8"), /^\S+\trc-2026-09-29\.1\t[0-9a-f]{40}\t\S*\tsandbox has no preview\n$/);
   assert.match(release.stdout, /^Stopping the live dev runner \(pid \d+\)/m);
   assert.match(release.stdout, /^Stopping the live server left by the runner \(tsx pid \d+\)/m);
   assert.match(release.stdout, /^Stopping the live database \(pid \d+\)/m);
@@ -778,7 +897,7 @@ test("--full-restart stops the runner, the server it leaves and the database, th
 test("--full-restart still fails with the rollback hint when start-live.sh fails", { skip: process.platform !== "linux" && "reads /proc" }, async (t) => {
   const box = await fullRestartSandbox(t);
   writeFileSync(join(box.root, "start-live.sh"), '#!/bin/sh\necho started >> "$GSAM_ROOT/start-live.log"\nexit 3\n', { mode: 0o755 });
-  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "rc-2026-09-29.1"], box.env);
+  const release = await runAsync([join(box.dev, "scripts", "greatstone-release.sh"), "--full-restart", "--skip-preview", "sandbox has no preview", "rc-2026-09-29.1"], box.env);
   assert.notEqual(release.status, 0);
   assert.match(release.stderr, /^release: the live server did not start on live-\d{4}-\d{2}-\d{2}\.1; see ~\/GSAM\/logs\/live\.log\. Roll back with: scripts\/greatstone-release\.sh --full-restart live-2026-09-01\.1$/m);
   assert.doesNotMatch(release.stdout, /^Started the live server$/m);

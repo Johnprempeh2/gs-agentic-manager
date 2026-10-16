@@ -1,8 +1,10 @@
 import { api } from "./client";
 import type {
-  CreateDeliverableComment,
+  CreateDeliverableCommentInput,
   DeliverableComment,
   DeliverableCommentsResponse,
+  DeliverableAudience,
+  DeliverableConfidentiality,
   DeliverableDetail,
   DeliverableKind,
   DeliverableSort,
@@ -13,9 +15,12 @@ import type {
 
 export type {
   CreateDeliverableComment,
+  CreateDeliverableCommentInput,
   DeliverableComment,
+  DeliverableCommentLocator,
   SendDeliverableCommentsResponse,
   Deliverable,
+  DeliverableConfidentiality,
   DeliverableDetail,
   DeliverableFacets,
   DeliverableKind,
@@ -33,6 +38,9 @@ export interface ListDeliverablesParams {
   projectId?: string;
   agentId?: string;
   brand?: string;
+  confidentiality?: DeliverableConfidentiality;
+  audience?: DeliverableAudience;
+  linkHealth?: "broken";
   from?: string;
   sort?: DeliverableSort;
   limit?: number;
@@ -64,6 +72,10 @@ export const deliverablesApi = {
     api.get<DeliverableDetail>(`/companies/${companyId}/deliverables/${id}`),
   markOpened: (companyId: string, id: string) =>
     api.post<{ ok: true }>(`/companies/${companyId}/deliverables/${id}/opened`, {}),
+  update: (companyId: string, id: string, input: { confidentiality?: DeliverableConfidentiality; restricted?: boolean }) =>
+    api.patch<DeliverableDetail>(`/companies/${companyId}/deliverables/${id}`, input),
+  refreshScreenshot: (companyId: string, id: string) =>
+    api.post<{ deliverable: DeliverableDetail; captured: boolean }>(`/companies/${companyId}/deliverables/${id}/screenshot`, {}),
   mark: (companyId: string, input: MarkDeliverableInput) =>
     api.post<DeliverableDetail>(`/companies/${companyId}/deliverables/mark`, input),
 
@@ -72,7 +84,7 @@ export const deliverablesApi = {
     `/api/companies/${companyId}/deliverables/${id}/review-content`,
   listComments: (companyId: string, id: string) =>
     api.get<DeliverableCommentsResponse>(`/companies/${companyId}/deliverables/${id}/comments`),
-  createComment: (companyId: string, id: string, input: CreateDeliverableComment) =>
+  createComment: (companyId: string, id: string, input: CreateDeliverableCommentInput) =>
     api.post<DeliverableComment>(`/companies/${companyId}/deliverables/${id}/comments`, input),
   updateComment: (companyId: string, id: string, commentId: string, body: string) =>
     api.patch<DeliverableComment>(`/companies/${companyId}/deliverables/${id}/comments/${commentId}`, { body }),

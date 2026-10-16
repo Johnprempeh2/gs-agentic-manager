@@ -171,5 +171,13 @@ projected only into the child process:
 Tokens never appear in arguments, URLs, files, logs, events, or model context,
 and the projection never replaces `HOME`.
 
+A token-only Apps connection cannot supply managed git credentials. When none
+are available, the operation summary and `git`/`gh` launcher explain how to use
+**Apps → GitHub → Connect as me**, then **Share with agents** for agent-started
+work. Server-side git can also use the existing company-secret or server
+environment fallback (`GITHUB_TOKEN` or `GH_TOKEN`); checkout authentication
+errors name that setup path. These diagnostics do not grant access, change
+fallback eligibility, or prevent local and anonymous git operations.
+
 Cloud deployment and exact GitHub App registration settings live in
 `paperclip-cloud/docs/github-connector-deploy-bootstrap.md`.

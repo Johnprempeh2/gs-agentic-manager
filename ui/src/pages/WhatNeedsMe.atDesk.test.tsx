@@ -71,6 +71,10 @@ describe("Decisions: at your desk (GRE-450)", () => {
     render();
     expect(order()).toEqual(["desk", "task:issue-44"]);
     expect(container.querySelector("[aria-label='1 waiting']")).not.toBeNull();
+    // A plain-words line says what a decision is, with the words explained.
+    const intro = container.querySelector("[data-testid='decisions-intro']");
+    expect(intro?.textContent).toContain("cannot make without you");
+    expect(intro?.querySelector("[data-testid='help-term-decision']")).not.toBeNull();
   });
 
   it.each(["list", "focus"] as const)("%s on a phone: phone cards first, the desk group folded last", (view) => {

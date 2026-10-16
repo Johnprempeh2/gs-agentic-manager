@@ -178,7 +178,7 @@ function parseField(token: string, spec: FieldSpec): number[] {
 function validateBounds(value: number, spec: FieldSpec): void {
   if (value < spec.min || value > spec.max) {
     throw new Error(
-      `Value ${value} out of range [${spec.min}–${spec.max}] for cron ${spec.name} field`,
+      `Value ${value} out of range [${spec.min} to ${spec.max}] for cron ${spec.name} field`,
     );
   }
 }

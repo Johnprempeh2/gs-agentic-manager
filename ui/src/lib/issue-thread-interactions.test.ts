@@ -140,9 +140,9 @@ describe("issue thread interaction helpers", () => {
     expect(buildAnsweredQuestionsDeliveryText(interaction)).toBe([
       "Answered questions",
       "",
-      "- Purpose — What is it for?: Internal API",
-      "- Runtime — Which runtime?: Node.js",
-      "- Features — Which features?: Request logs, Metrics",
+      "- Purpose (What is it for?): Internal API",
+      "- Runtime (Which runtime?): Node.js",
+      "- Features (Which features?): Request logs, Metrics",
     ].join("\n"));
   });
 
@@ -311,6 +311,32 @@ describe("issue thread interaction helpers", () => {
       status: "expired",
       result: { version: 1, outcome: "stale_target" },
     })).toBe("Selection expired after target changed");
+  });
+
+  it("names a typed ask by what the person did", () => {
+    const base = {
+      id: "interaction-typed",
+      companyId: "company-1",
+      issueId: "issue-1",
+      kind: "request_confirmation" as const,
+      continuationPolicy: "wake_assignee" as const,
+      ...resolverPolicyFields,
+      createdAt: "2026-04-06T12:00:00.000Z",
+      updatedAt: "2026-04-06T12:01:00.000Z",
+      payload: { version: 1 as const, prompt: "Did you send the NDA?", askType: "confirm_sent" as const },
+    };
+
+    expect(buildIssueThreadInteractionSummary({ ...base, status: "pending" as const })).toBe("Did you send it?");
+    expect(buildIssueThreadInteractionSummary({
+      ...base,
+      status: "accepted" as const,
+      result: { version: 1 as const, outcome: "accepted" as const },
+    })).toBe("Answered “Yes, I sent it”");
+    expect(buildIssueThreadInteractionSummary({
+      ...base,
+      status: "rejected" as const,
+      result: { version: 1 as const, outcome: "rejected" as const },
+    })).toBe("Selected “Not yet”");
   });
 
   it("uses a confirmation's explicit rejection action in its receipt", () => {

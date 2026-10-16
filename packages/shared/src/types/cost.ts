@@ -43,6 +43,23 @@ export interface IssueCostSummary {
   /** sum of wall-clock duration of each run in the tree (ms);
    * still-running runs contribute (now - startedAt) so this ticks up live */
   runtimeMs: number;
+  /** What the tree's tokens would cost under API billing, priced per model.
+   * Not a bill: `costCents` is the real spend. */
+  apiEquivalentCents: number;
+  /** tokens on models with no published price; not included in apiEquivalentCents */
+  unpricedTokens: number;
+  byModel: IssueCostModelRow[];
+}
+
+export interface IssueCostModelRow {
+  provider: string;
+  model: string;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  costCents: number;
+  /** null when the model has no published price in the price table */
+  apiEquivalentCents: number | null;
 }
 
 export interface CostByAgent {

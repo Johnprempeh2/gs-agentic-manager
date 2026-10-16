@@ -176,4 +176,35 @@ describe("ThemeContext", () => {
       root.unmount();
     });
   });
+
+  it("prints in daylight and restores the dark theme afterwards", () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, "dark");
+    document.documentElement.classList.add("dark");
+    installMatchMedia(true);
+
+    const root = createRoot(container);
+    act(() => {
+      root.render(
+        <ThemeProvider>
+          <Probe />
+        </ThemeProvider>,
+      );
+    });
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    act(() => {
+      window.dispatchEvent(new Event("beforeprint"));
+    });
+    expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(observedTheme).toBe("dark");
+
+    act(() => {
+      window.dispatchEvent(new Event("afterprint"));
+    });
+    expect(document.documentElement.classList.contains("dark")).toBe(true);
+
+    act(() => {
+      root.unmount();
+    });
+  });
 });

@@ -6,7 +6,7 @@ import { slackExplicitPublicationDuplicate } from "./connectors/slack-publicatio
 import { rememberVerifiedSlackSearchEvent, slackSearchActionToken } from "./connectors/slack-search-context.js";
 import { slackAuthorizationRevision } from "./connectors/slack-revision.js";
 import { slackPublicationAllowed } from "./connectors/slack-access.js";
-import { instanceSettingsService } from "./instance-settings.js";
+import { assertEntitled } from "./entitlements.js";
 import { registerSlackTaskAuthority, slackRunOrigin } from "./connectors/slack-authority.js";
 import { captureRunIdentity } from "./run-identity.js";
 import { buildChatCommunicationGuidance } from "./chat-communication-guidance.js";
@@ -6009,7 +6009,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     const connectionId = randomUUID();
     const suffix = endpointId.slice(0, 8);
     const name = (
-      input.name?.trim() || `${PROVIDER_LABELS[input.provider]} — ${agent.name}`
+      input.name?.trim() || `${PROVIDER_LABELS[input.provider]}: ${agent.name}`
     ).slice(0, 145);
     await db.transaction(async (tx) => {
       if (input.applicationId) {
@@ -15958,7 +15958,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
         const responseText =
           controlCommand === "status"
             ? existingIssue
-              ? `${taskLabel} — ${existingIssue.status}`
+              ? `${taskLabel} (${existingIssue.status})`
               : taskLabel
             : controlCommand === "new"
               ? isTelegramForumTopic
@@ -23206,7 +23206,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           if (invocation.command === "status") {
             content =
               issue && (invocation.sourceKind !== "direct_message" || active)
-                ? `${issue.identifier}: ${issue.title} — ${issue.status}${conversation?.state === "completed" ? " (conversation closed)" : ""}`.slice(
+                ? `${issue.identifier}: ${issue.title} (${issue.status})${conversation?.state === "completed" ? " (conversation closed)" : ""}`.slice(
                     0,
                     2000,
                   )
@@ -23486,7 +23486,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
           } }).where(eq(chatActions.id, inserted[0].id));
           const url = `${getPublicBaseUrl()}/chat-identity/confirm?token=${encodeURIComponent(token)}`;
           notice = getPublicBaseUrl()
-            ? `[Connect your GS Agentic Manager account](${url}) — sign in and confirm this Slack identity. This private link expires in 15 minutes and works once. You can also confirm in the setup wizard. No agent work has started.`
+            ? `[Connect your GS Agentic Manager account](${url}), then sign in and confirm this Slack identity. This private link expires in 15 minutes and works once. You can also confirm in the setup wizard. No agent work has started.`
             : "Return to the GS Agentic Manager setup wizard to confirm your Slack account. No agent work has started.";
         }
         await logActivity(tx as unknown as Db, {
@@ -35235,7 +35235,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
     return projectSafeChatPublication({
       classification: "external",
       source: "task_control",
-      text: `${issue.identifier}: ${issue.title} — ${issue.status}`,
+      text: `${issue.identifier}: ${issue.title} (${issue.status})`,
     });
   }
 
@@ -38309,8 +38309,7 @@ export function chatChannelService(db: Db, options: ChatChannelServiceOptions) {
   }
 
   const unregisterSlackTaskAuthority = registerSlackTaskAuthority(db, async (binding) => {
-    if (!(await instanceSettingsService(db).getExperimental()).enableChatConnectors)
-      throw forbidden("Chat connectors are disabled");
+    await assertEntitled(db, "enableChatConnectors");
     const identity = await slackRunOrigin(db, binding);
     const run = identity.run;
     if ((run.contextSnapshot?.issueId ?? run.contextSnapshot?.taskId) !== binding.issueId || !run.responsibleUserId)

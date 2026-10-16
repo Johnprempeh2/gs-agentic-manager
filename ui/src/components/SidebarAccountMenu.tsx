@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Bell,
   Flag,
+  GraduationCap,
   LogOut,
   Settings,
   type LucideIcon,
@@ -204,6 +206,18 @@ export function SidebarAccountMenu({
                 label="Edit profile"
                 icon={UserRoundPen}
                 href={PROFILE_SETTINGS_PATH}
+                onClick={closeNavigationChrome}
+              />
+              <MenuAction
+                label="Notifications"
+                icon={Bell}
+                href="/notifications"
+                onClick={closeNavigationChrome}
+              />
+              <MenuAction
+                label="Tutorials"
+                icon={GraduationCap}
+                href="/tutorials"
                 onClick={closeNavigationChrome}
               />
               <ThemeToggle variant="compact-menu-action" onAfterToggle={() => setOpen(false)} />

@@ -1289,7 +1289,7 @@ describe.sequential("issue thread interaction routes", () => {
       decision: "accepted",
       executionStatus: "executed",
       resultSummary: "Added row 42",
-      instructions: "the approved google_sheets_add_row action already ran — do not call the tool again; continue with this result.",
+      instructions: "the approved google_sheets_add_row action already ran. Do not call the tool again; continue with this result.",
     };
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
       ASSIGNEE_AGENT_ID,
@@ -1343,7 +1343,7 @@ describe.sequential("issue thread interaction routes", () => {
             decision: "accepted",
             executionStatus: "failed",
             error: "Connector timed out",
-            instructions: "the approved action ran and failed with Connector timed out; adjust your approach — a fresh call will open a new approval.",
+            instructions: "the approved action ran and failed with Connector timed out; adjust your approach, as a fresh call will open a new approval.",
           },
         }),
       }),
@@ -1684,6 +1684,102 @@ describe.sequential("issue thread interaction routes", () => {
         details: expect.objectContaining({
           interactionKind: "request_checkbox_confirmation",
           interactionStatus: "accepted",
+        }),
+      }),
+    );
+  });
+
+  it("wakes the drafting agent with the edited text and diff when a person sends draft edits", async () => {
+    mockInteractionService.acceptInteraction.mockResolvedValueOnce({
+      interaction: {
+        id: "interaction-draft",
+        companyId: "company-1",
+        issueId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        kind: "request_draft_review",
+        status: "accepted",
+        continuationPolicy: "wake_assignee",
+        idempotencyKey: null,
+        sourceCommentId: null,
+        sourceRunId: RUN_1,
+        payload: { version: 1, purpose: "Email to Indago", body: "Dear Martyn, thanks" },
+        result: {
+          version: 1,
+          outcome: "accepted",
+          draft: {
+            originalBody: "Dear Martyn, thanks",
+            finalBody: "Hi Martyn, thanks",
+            edited: true,
+            changeCount: 1,
+            diff: [
+              { type: "removed", text: "Dear" },
+              { type: "added", text: "Hi" },
+              { type: "same", text: " Martyn, thanks" },
+            ],
+            editSummary: "1 change, 1 words removed, 1 words added.",
+            learnFromEdits: true,
+          },
+        },
+        createdAt: "2026-04-20T12:00:00.000Z",
+        updatedAt: "2026-04-20T12:05:00.000Z",
+        resolvedAt: "2026-04-20T12:05:00.000Z",
+      },
+      createdIssues: [],
+    });
+    const res = await request(await createApp())
+      .post("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/interaction-draft/accept")
+      .send({ editedBody: "Hi Martyn, thanks", learnFromEdits: true });
+
+    expect(res.status).toBe(200);
+    expect(mockInteractionService.acceptInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }),
+      "interaction-draft",
+      { editedBody: "Hi Martyn, thanks", learnFromEdits: true },
+      expect.objectContaining({ userId: "local-board" }),
+    );
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      ASSIGNEE_AGENT_ID,
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          interactionKind: "request_draft_review",
+          paperclipAgentMessage: expect.objectContaining({
+            source: "draft_review",
+            text: expect.stringMatching(/Hi Martyn, thanks[\s\S]*removed "Dear", added "Hi"[\s\S]*memory_contribute/),
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("wakes the drafting agent with the redraft note when a person asks for a redraft", async () => {
+    mockInteractionService.rejectInteraction.mockResolvedValueOnce({
+      id: "interaction-draft-redo",
+      companyId: "company-1",
+      issueId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      kind: "request_draft_review",
+      status: "rejected",
+      continuationPolicy: "wake_assignee",
+      idempotencyKey: null,
+      sourceCommentId: null,
+      sourceRunId: RUN_1,
+      payload: { version: 1, purpose: "LinkedIn post", body: "Draft" },
+      result: { version: 1, outcome: "rejected", reason: "Warmer tone please" },
+      createdAt: "2026-04-20T12:00:00.000Z",
+      updatedAt: "2026-04-20T12:05:00.000Z",
+      resolvedAt: "2026-04-20T12:05:00.000Z",
+    });
+    const res = await request(await createApp())
+      .post("/api/issues/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/interactions/interaction-draft-redo/reject")
+      .send({ reason: "Warmer tone please" });
+
+    expect(res.status).toBe(200);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
+      ASSIGNEE_AGENT_ID,
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          paperclipAgentMessage: expect.objectContaining({
+            source: "draft_review",
+            text: expect.stringContaining("Their note: Warmer tone please"),
+          }),
         }),
       }),
     );
@@ -2392,7 +2488,7 @@ describe.sequential("issue thread interaction routes", () => {
       decision: "rejected",
       executionStatus: "rejected",
       declineReason: "Use the sandbox sheet instead",
-      instructions: "the action was declined: Use the sandbox sheet instead; do not retry the same call — adjust your approach or mark the task blocked/in_review with the decline reason.",
+      instructions: "the action was declined: Use the sandbox sheet instead; do not retry the same call. Adjust your approach or mark the task blocked/in_review with the decline reason.",
     };
     expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(
       ASSIGNEE_AGENT_ID,

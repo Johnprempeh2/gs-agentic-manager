@@ -5,7 +5,6 @@ import { useId, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, ChevronRight } from "lucide-react";
 import { adaptersApi } from "@/api/adapters";
-import { instanceSettingsApi } from "@/api/instanceSettings";
 import { useCloudInstance } from "@/hooks/useCloudInstance";
 import { isNewAgentAdapterAllowed } from "@/lib/new-agent-adapters";
 import { queryKeys } from "@/lib/queryKeys";
@@ -102,12 +101,6 @@ export function AgentBasicsDialog({
 }) {
   const id = useId();
   const cloud = Boolean(useCloudInstance());
-  const experimental = useQuery({
-    queryKey: queryKeys.instance.experimentalSettings,
-    queryFn: instanceSettingsApi.getExperimental,
-    enabled: open,
-    retry: false,
-  });
   const [name, setName] = useState("");
   const [adapterType, setAdapterType] = useState(initialAdapter);
   const [runnerProvider, setRunnerProvider] = useState("codex");
@@ -125,10 +118,7 @@ export function AgentBasicsDialog({
     (adapter) =>
       adapter.loaded &&
       !adapter.disabled &&
-      isNewAgentAdapterAllowed(adapter.type, {
-        cloud,
-        nativeRunnerEnabled: experimental.data?.enableNativeRunner === true,
-      }) &&
+      isNewAgentAdapterAllowed(adapter.type, { cloud }) &&
       !["process", "http"].includes(adapter.type) &&
       !getAdapterDisplay(adapter.type).comingSoon,
   );

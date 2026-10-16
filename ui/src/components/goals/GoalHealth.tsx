@@ -72,11 +72,11 @@ export function GoalProgressBar({ percent, health }: { percent: number | null; h
   );
 }
 
-/** The one number per goal: "62%", or a dash when there is nothing to measure. */
+/** The one number per goal: "62%", or "n/a" when there is nothing to measure. */
 export function GoalPercent({ percent, className }: { percent: number | null; className?: string }) {
   return (
     <span className={cn("text-4xl font-bold leading-none tracking-tight tabular-nums", className)}>
-      {percent == null ? "–" : percent}
+      {percent == null ? "n/a" : percent}
       {percent == null ? null : <span className="text-lg font-semibold text-muted-foreground">%</span>}
     </span>
   );

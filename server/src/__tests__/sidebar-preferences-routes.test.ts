@@ -7,6 +7,10 @@ const mockSidebarPreferenceService = vi.hoisted(() => ({
   upsertCompanyOrder: vi.fn(),
   getProjectOrder: vi.fn(),
   upsertProjectOrder: vi.fn(),
+  getSectionOrder: vi.fn(),
+  upsertSectionOrder: vi.fn(),
+  getLayout: vi.fn(),
+  upsertLayout: vi.fn(),
 }));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
@@ -158,6 +162,69 @@ describe("sidebar preference routes", () => {
 
     expect(res.status).toBe(403);
     expect(mockSidebarPreferenceService.getProjectOrder).not.toHaveBeenCalled();
+  });
+
+  it("saves section order for the session user, never a user id from the body", async () => {
+    mockSidebarPreferenceService.upsertSectionOrder.mockResolvedValue({ orderedIds: ["build", "work"], updatedAt: null });
+    const app = await createApp({
+      type: "board",
+      userId: "user-1",
+      source: "session",
+      isInstanceAdmin: false,
+      companyIds: ["company-1"],
+    });
+
+    const res = await request(app)
+      .put("/api/sidebar-preferences/me/sections")
+      .send({ orderedIds: ["build", "work"], userId: "user-2" });
+
+    expect(res.status).toBe(200);
+    expect(mockSidebarPreferenceService.upsertSectionOrder).toHaveBeenCalledWith("user-1", ["build", "work"]);
+  });
+
+  it("rejects malformed section ids and agent callers on section order", async () => {
+    const board = await createApp({ type: "board", userId: "user-1", source: "session", companyIds: [] });
+    const bad = await request(board).put("/api/sidebar-preferences/me/sections").send({ orderedIds: ["<script>"] });
+    expect(bad.status).toBe(400);
+
+    const agent = await createApp({ type: "agent", agentId: "agent-1", companyId: "company-1", source: "agent_key" });
+    const res = await request(agent).put("/api/sidebar-preferences/me/sections").send({ orderedIds: ["work"] });
+    expect(res.status).toBe(403);
+    expect(mockSidebarPreferenceService.upsertSectionOrder).not.toHaveBeenCalled();
+  });
+
+  it("reads and saves the item layout for the session user only, never a user id from the body", async () => {
+    const layout = { sections: { work: ["tasks", "dashboard"] }, hidden: ["costs"], pinned: ["decisions"], collapsed: { admin: false } };
+    mockSidebarPreferenceService.getLayout.mockResolvedValue({ layout, updatedAt: null });
+    mockSidebarPreferenceService.upsertLayout.mockResolvedValue({ layout, updatedAt: null });
+    const app = await createApp({ type: "board", userId: "user-1", source: "session", companyIds: ["company-1"] });
+
+    const read = await request(app).get("/api/sidebar-preferences/me/layout?userId=user-2");
+    expect(read.status).toBe(200);
+    expect(read.body.layout).toEqual(layout);
+    expect(mockSidebarPreferenceService.getLayout).toHaveBeenCalledWith("user-1");
+
+    const res = await request(app).put("/api/sidebar-preferences/me/layout").send({ layout, userId: "user-2" });
+    expect(res.status).toBe(200);
+    expect(mockSidebarPreferenceService.upsertLayout).toHaveBeenCalledWith("user-1", layout);
+  });
+
+  it("rejects malformed layouts, agent callers and board calls without a user", async () => {
+    const board = await createApp({ type: "board", userId: "user-1", source: "session", companyIds: [] });
+    const bad = await request(board).put("/api/sidebar-preferences/me/layout").send({ layout: { hidden: ["<script>"] } });
+    expect(bad.status).toBe(400);
+    const badShape = await request(board).put("/api/sidebar-preferences/me/layout").send({ layout: { collapsed: { admin: "yes" } } });
+    expect(badShape.status).toBe(400);
+
+    const agent = await createApp({ type: "agent", agentId: "agent-1", companyId: "company-1", source: "agent_key" });
+    expect((await request(agent).get("/api/sidebar-preferences/me/layout")).status).toBe(403);
+    expect((await request(agent).put("/api/sidebar-preferences/me/layout").send({ layout: {} })).status).toBe(403);
+
+    const noUser = await createApp({ type: "board", source: "session", companyIds: [] });
+    expect((await request(noUser).get("/api/sidebar-preferences/me/layout")).status).toBe(403);
+
+    expect(mockSidebarPreferenceService.getLayout).not.toHaveBeenCalled();
+    expect(mockSidebarPreferenceService.upsertLayout).not.toHaveBeenCalled();
   });
 
   it("rejects agent callers", async () => {

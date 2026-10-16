@@ -12,6 +12,8 @@ import { envConfigSchema } from "./secret.js";
 import { trustAuthorizationPolicySchema, trustPresetSchema } from "./trust-policy.js";
 import { agentDesiredSkillSelectionSchema } from "./adapter-skills.js";
 import { objectWithoutDefaults } from "./partial.js";
+import { PIPELINE_ACCESS_LEVELS } from "../pipeline-access.js";
+import { RUN_CAPABILITY_KEYS, isRunCapabilityKey } from "../run-capabilities.js";
 
 export const agentPermissionsSchema = z.object({
   // No schema default: the server derives the default (enabled unless the
@@ -42,6 +44,17 @@ export const upsertAgentInstructionsFileSchema = z.object({
 export type UpsertAgentInstructionsFile = z.infer<typeof upsertAgentInstructionsFileSchema>;
 
 const adapterConfigSchema = z.record(z.string(), z.unknown()).superRefine((value, ctx) => {
+  const requiredCapabilities = value.requiredCapabilities;
+  if (
+    requiredCapabilities !== undefined &&
+    (!Array.isArray(requiredCapabilities) || !requiredCapabilities.every(isRunCapabilityKey))
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `adapterConfig.requiredCapabilities must be a list of: ${RUN_CAPABILITY_KEYS.join(", ")}`,
+      path: ["requiredCapabilities"],
+    });
+  }
   const envValue = value.env;
   if (envValue === undefined) return;
   const parsed = envConfigSchema.safeParse(envValue);
@@ -290,6 +303,19 @@ export const testAdapterEnvironmentSchema = z.object({
 
 export type TestAdapterEnvironment = z.infer<typeof testAdapterEnvironmentSchema>;
 
+// Pipeline access level and scope (GRE-1072). pipelineIds null = all pipelines.
+export const agentPipelineAccessSchema = z.object({
+  level: z.enum(PIPELINE_ACCESS_LEVELS),
+  pipelineIds: z.array(z.string().uuid()).min(1).max(200).nullable(),
+}).strict();
+
+// One agent's level on one pipeline, or on all pipelines when pipelineId is
+// omitted (GRE-1073). Board users with users:manage_permissions only.
+export const setAgentPipelineLevelSchema = z.object({
+  level: z.enum(PIPELINE_ACCESS_LEVELS),
+  pipelineId: z.string().uuid().optional(),
+}).strict();
+
 export const updateAgentPermissionsSchema = z.object({
   canCreateAgents: z.boolean(),
   canCreateSkills: z.boolean().optional(),
@@ -302,6 +328,8 @@ export const updateAgentPermissionsSchema = z.object({
   // dropping them: memory rights go through PATCH /memory/grants (GRE-988).
   canContributeMemory: z.boolean().optional(),
   canApproveMemory: z.boolean().optional(),
+  // Board users with users:manage_permissions only; agents are refused.
+  pipelineAccess: agentPipelineAccessSchema.optional(),
   trustPreset: trustPresetSchema.optional(),
   authorizationPolicy: trustAuthorizationPolicySchema.optional(),
 });

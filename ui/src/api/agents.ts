@@ -1,4 +1,5 @@
 import type {
+  PipelineAccess,
   Agent,
   AgentDesiredSkillEntry,
   AgentSkillAssignmentMode,
@@ -80,6 +81,7 @@ export interface AgentPermissionUpdate {
   canAssignTasks: boolean;
   canConfigureAgents?: boolean;
   canChangeSkills?: boolean;
+  pipelineAccess?: PipelineAccess;
   trustPreset?: AgentPermissions["trustPreset"];
   authorizationPolicy?: AgentPermissions["authorizationPolicy"];
 }

@@ -216,6 +216,9 @@ interface ActorMiddlewareOptions {
 
 const publicRoutineWebhookPath = /^\/api\/routine-triggers\/public\/[a-f0-9]{24}\/fire\/?$/i;
 
+/** Inbound task webhooks check their own token (Settings > Integrations). */
+const publicInboundTaskPath = /^\/api\/inbound\/tasks\/ith_[a-f0-9]{24}\/?$/i;
+
 const publicMcpGatewayProtocolPath = /^\/mcp\/gateways\/gw_[a-f0-9]{32}\/?$/i;
 
 const runIdLinkageSafeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -294,7 +297,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
 
     // Routine ingress authenticates its own bearer/signature. Never interpret
     // webhook credentials as agent keys or attach an ambient browser session.
-    if (req.method === "POST" && publicRoutineWebhookPath.test(req.path)) {
+    if (req.method === "POST" && (publicRoutineWebhookPath.test(req.path) || publicInboundTaskPath.test(req.path))) {
       req.actor = { type: "none", source: "none" };
       next();
       return;

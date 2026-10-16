@@ -6,12 +6,16 @@ import type {
   AgentWorkDigestItemKind,
 } from "@greatstone/shared";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, CheckCircle2, CircleAlert, CirclePlay, MessageCircleQuestion, type LucideIcon } from "lucide-react";
+import { ArrowRight, CheckCircle2, CircleAlert, CirclePlay, MessageCircleQuestion, Sparkles, type LucideIcon } from "lucide-react";
 import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { agentWorkDigestApi } from "../api/agentWorkDigest";
+import { issuesApi } from "../api/issues";
+import { decisionsFeedApi } from "../api/decisionsFeed";
+import { AWAY_QUESTION, newlyStuck } from "../lib/ask-everest";
+import { openAskEverest } from "../lib/ask-everest-events";
 import { queryKeys } from "../lib/queryKeys";
 import { timeAgo } from "../lib/timeAgo";
 import { cn, issueUrl } from "../lib/utils";
@@ -54,21 +58,33 @@ export function useAgentWorkDigest(companyId: string | null | undefined) {
  * line per agent, with one tap to the full view (GRE-357). Replaces reading
  * the raw Audit log for "what happened overnight".
  */
+export interface AwayExtras {
+  /** Tasks that got stuck inside the window. */
+  stuck: number;
+  /** Things in Needs you right now. */
+  needsYou: number;
+}
+
 export function DashboardDigestCardView({
   digest,
   loading = false,
   error = null,
+  extras = null,
+  onCatchUp,
 }: {
   digest: AgentWorkDigest | null | undefined;
   loading?: boolean;
   error?: Error | null;
+  extras?: AwayExtras | null;
+  /** Opens Ask Everest with "What happened since I was last here?". */
+  onCatchUp?: () => void;
 }) {
   const agents = digest?.agents ?? [];
   const shown = agents.slice(0, DASHBOARD_DIGEST_AGENT_LIMIT);
   const hidden = agents.length - shown.length;
 
   return (
-    <Card className="flex min-w-0 flex-col gap-2 px-4 py-3" aria-label="Since you were last here" data-testid="dashboard-digest" role="region">
+    <Card className="flex min-w-0 flex-col gap-2 px-4 py-3" aria-label="Since you were last here" data-testid="dashboard-digest" data-tour="dashboard-digest" role="region">
       <div className="flex min-w-0 items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold">Since you were last here</h3>
@@ -104,13 +120,58 @@ export function DashboardDigestCardView({
           ) : null}
         </ul>
       )}
+      {extras && (extras.stuck > 0 || extras.needsYou > 0) ? (
+        <p className="flex flex-wrap gap-x-3 gap-y-1 text-sm" data-testid="dashboard-digest-away">
+          {extras.stuck > 0 ? (
+            <Link to="/inbox/blocked" className="font-medium text-foreground hover:underline">
+              {plural(extras.stuck, "task", "tasks")} got stuck
+            </Link>
+          ) : null}
+          {extras.needsYou > 0 ? (
+            <Link to="/decisions" className="font-medium text-foreground hover:underline">
+              {plural(extras.needsYou, "thing needs", "things need")} you
+            </Link>
+          ) : null}
+        </p>
+      ) : null}
+      {onCatchUp ? (
+        <button
+          type="button"
+          onClick={onCatchUp}
+          className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+          data-testid="dashboard-digest-catch-up"
+        >
+          <Sparkles className="h-3.5 w-3.5" aria-hidden />
+          Catch me up
+        </button>
+      ) : null}
     </Card>
   );
 }
 
 export function DashboardDigestCard({ companyId }: { companyId: string }) {
   const { data, isLoading, error } = useAgentWorkDigest(companyId);
-  return <DashboardDigestCardView digest={data} loading={isLoading} error={error} />;
+  const blocked = useQuery({
+    queryKey: ["since-last-visit", companyId, "blocked"],
+    queryFn: () => issuesApi.list(companyId, { status: "blocked", sortField: "updated", limit: 50 }),
+    enabled: !!data,
+  });
+  const needsMe = useQuery({
+    queryKey: queryKeys.decisionsFeed.needsMe(companyId),
+    queryFn: () => decisionsFeedApi.needsMe(companyId),
+  });
+  const extras = data && blocked.data
+    ? { stuck: newlyStuck(blocked.data, data.since).length, needsYou: needsMe.data?.count ?? 0 }
+    : null;
+  return (
+    <DashboardDigestCardView
+      digest={data}
+      loading={isLoading}
+      error={error}
+      extras={extras}
+      onCatchUp={() => openAskEverest(AWAY_QUESTION)}
+    />
+  );
 }
 
 const KIND_ICON: Record<AgentWorkDigestItemKind, { icon: LucideIcon; label: string; className?: string }> = {

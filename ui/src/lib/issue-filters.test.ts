@@ -6,6 +6,8 @@ import {
   applyIssueFilters,
   countActiveIssueFilters,
   defaultIssueFilterState,
+  issueMatchesDueFilter,
+  normalizeIssueFilterState,
   resolveIssueFilterWorkspaceId,
   searchIssueFilterOptions,
   shouldIncludeIssueFilterWorkspaceOption,
@@ -265,5 +267,60 @@ describe("issue filters", () => {
     );
 
     expect(filtered).toEqual([]);
+  });
+});
+
+describe("work filter (GRE-1144)", () => {
+  const issues = [
+    makeIssue({ id: "objective", goalKind: "objective" }),
+    makeIssue({ id: "initiative", goalKind: "initiative" }),
+    makeIssue({ id: "kpi", goalKind: "kpi" }),
+    makeIssue({ id: "no-goal", goalKind: null }),
+    makeIssue({ id: "legacy" }),
+  ];
+  const ids = (list: Issue[]) => list.map((issue) => issue.id);
+
+  it("keeps only strategic or only day-to-day work", () => {
+    expect(ids(applyIssueFilters(issues, { ...defaultIssueFilterState, work: "strategic" }))).toEqual(["objective", "initiative"]);
+    expect(ids(applyIssueFilters(issues, { ...defaultIssueFilterState, work: "day_to_day" }))).toEqual(["kpi", "no-goal", "legacy"]);
+    expect(applyIssueFilters(issues, defaultIssueFilterState)).toHaveLength(5);
+  });
+
+  it("counts as an active filter and drops unknown saved values", () => {
+    expect(countActiveIssueFilters({ ...defaultIssueFilterState, work: "strategic" })).toBe(1);
+    expect(countActiveIssueFilters(defaultIssueFilterState)).toBe(0);
+    expect(normalizeIssueFilterState({ work: "day_to_day" }).work).toBe("day_to_day");
+    expect(normalizeIssueFilterState({ work: "urgent" }).work).toBeNull();
+    expect(normalizeIssueFilterState({}).work).toBeNull();
+  });
+});
+
+describe("due date filter", () => {
+  const today = "2026-10-16";
+  const open = (dueDate: string | null) => ({ dueDate, status: "todo" as const });
+
+  it("finds past due open work only", () => {
+    expect(issueMatchesDueFilter(open("2026-10-15"), "overdue", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-16"), "overdue", today)).toBe(false);
+    expect(issueMatchesDueFilter({ dueDate: "2026-10-01", status: "done" }, "overdue", today)).toBe(false);
+    expect(issueMatchesDueFilter(open(null), "overdue", today)).toBe(false);
+  });
+
+  it("finds work due today and in the next six days", () => {
+    expect(issueMatchesDueFilter(open("2026-10-16"), "next_7_days", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-22"), "next_7_days", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-23"), "next_7_days", today)).toBe(false);
+    expect(issueMatchesDueFilter(open("2026-10-15"), "next_7_days", today)).toBe(false);
+  });
+
+  it("finds tasks with no due date", () => {
+    expect(issueMatchesDueFilter(open(null), "no_due_date", today)).toBe(true);
+    expect(issueMatchesDueFilter(open("2026-10-20"), "no_due_date", today)).toBe(false);
+  });
+
+  it("keeps a saved due filter and drops an unknown one", () => {
+    expect(normalizeIssueFilterState({ due: "overdue" }).due).toBe("overdue");
+    expect(normalizeIssueFilterState({ due: "someday" }).due).toBeNull();
+    expect(countActiveIssueFilters({ ...defaultIssueFilterState, due: "overdue" })).toBe(1);
   });
 });

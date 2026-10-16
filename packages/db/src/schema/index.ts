@@ -29,6 +29,7 @@ export { agentWakeupRequests } from "./agent_wakeup_requests.js";
 export { projects } from "./projects.js";
 export { projectMemberships } from "./project_memberships.js";
 export { documentMemberships } from "./document_memberships.js";
+export { issueParticipants } from "./issue_participants.js";
 export { projectWorkspaces } from "./project_workspaces.js";
 export { executionWorkspaces } from "./execution_workspaces.js";
 export { executionWorkspaceRuntimeLeases } from "./execution_workspace_runtime_leases.js";
@@ -42,6 +43,8 @@ export { workspaceRuntimeServices } from "./workspace_runtime_services.js";
 export { projectGoals } from "./project_goals.js";
 export { goals } from "./goals.js";
 export { goalCheckIns } from "./goal_check_ins.js";
+export { goalKpiReadings } from "./goal_kpi_readings.js";
+export { goalWhyRequests, goalKpiAlerts, strategyBoardPacks, strategyBoardSettings, strategyBoardEmails } from "./strategy_board.js";
 export { folders } from "./folders.js";
 export { issues } from "./issues.js";
 export { issueWatchdogs } from "./issue_watchdogs.js";
@@ -67,7 +70,8 @@ export {
 } from "./chat_channels.js";
 export { issueRelations } from "./issue_relations.js";
 export { routines, routineRevisions, routineTriggers, routineWebhookTestReceipts, routineRuns } from "./routines.js";
-export { pipelines, pipelineStages, pipelineTransitions } from "./pipelines.js";
+export { pipelines, pipelineStages, pipelineTransitions, pipelineFieldDefinitions } from "./pipelines.js";
+export { pipelineMemberships } from "./pipeline_memberships.js";
 export {
   cases,
   caseAttachments,
@@ -81,14 +85,35 @@ export {
   pipelineCaseIssueLinks,
   pipelineCaseProjectLinks,
   pipelineCaseContacts,
+  pipelineCaseEvidence,
+  pipelineCaseDocumentRequests,
+  pipelineCaseStageDeliverables,
   pipelineCaseBlockers,
   pipelineDocuments,
   pipelineCaseDocuments,
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export { clientAcceptanceLinks } from "./client_acceptance_links.js";
+export {
+  crmSyncBindings,
+  crmSyncFieldMaps,
+  crmSyncRecordLinks,
+  crmSyncConflicts,
+  crmSyncEvents,
+  type CrmSyncStoredValue,
+} from "./crm_sync.js";
+export { organisations, organisationContacts, type CrmRecordField } from "./organisations.js";
+export { crmTimelineEntries } from "./crm_timeline.js";
+export { crmProducts, crmDealProducts, type CrmProductPrice, type CrmProductField } from "./crm_products.js";
+export { crmFiles } from "./crm_files.js";
+export { inboundTaskHooks } from "./inbound_task_hooks.js";
+export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks.js";
+export { calendarFeeds } from "./calendar_feeds.js";
 export { issueWorkProducts } from "./issue_work_products.js";
 export { deliverableComments } from "./deliverable_comments.js";
+export { websiteProperties, websitePulls } from "./website.js";
+export { intelligenceReports, intelligenceBoardSnapshots, intelligenceRecommendations } from "./intelligence.js";
 export { labels } from "./labels.js";
 export { issueLabels } from "./issue_labels.js";
 export { issueApprovals } from "./issue_approvals.js";
@@ -121,10 +146,12 @@ export {
 export { feedbackExports } from "./feedback_exports.js";
 export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
+export { generatedImages } from "./generated_images.js";
 export { issueAttachments } from "./issue_attachments.js";
 export { documents } from "./documents.js";
 export { documentRevisions } from "./document_revisions.js";
 export { issueDocuments } from "./issue_documents.js";
+export { issueDocumentLinks } from "./issue_document_links.js";
 export { summarySlots } from "./summary_slots.js";
 export { statusCards, statusCardUpdates } from "./status_cards.js";
 export { routineDocuments } from "./routine_documents.js";
@@ -217,7 +244,9 @@ export { aiConnectionDefaults } from "./ai_connection_defaults.js";
 export { aiProviderDefaults } from "./ai_provider_defaults.js";
 export * from "./email.js";
 export { announcementDismissals, announcementPublications } from "./announcement_dismissals.js";
+export { userTourDismissals } from "./user_tour_dismissals.js";
 export { pushSubscriptions, pushNotifiedDecisions } from "./push_subscriptions.js";
+export { notificationPreferences } from "./notification_preferences.js";
 export * from "./support.js";
 export {
   memorySettings,
@@ -229,6 +258,13 @@ export {
   memoryConflicts,
   memoryExtractedFacts,
   memoryLinkLeads,
+  memoryScopeStewards,
 } from "./memory.js";
 export { memoryIngestOutbox } from "./memory_ingest_outbox.js";
 export * from "./memory_steward.js";
+export { fleetInstances, fleetCheckIns, fleetSupportTickets, fleetSupportReplies, fleetSupportAttachments } from "./fleet.js";
+export { clientSupportTickets, clientSupportReplies, clientSupportAttachments } from "./client_support.js";
+export { workflowTemplates } from "./workflow_templates.js";
+export { documentEvidenceLinks } from "./document_evidence_links.js";
+export { billingAccounts, billingInvoices } from "./billing_accounts.js";
+export { agentDailyDigests } from "./agent_daily_digests.js";

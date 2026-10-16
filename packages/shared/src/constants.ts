@@ -88,8 +88,21 @@ export const ADAPTER_AGNOSTIC_KEYS = [
   "graceSec",
   "bootstrapPromptTemplate",
   "paperclipSkillSync",
+  "requiredCapabilities",
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
+
+// Top-level `access.<ALIAS>` adapterConfig keys are the agent's API-only secret
+// grants. They belong to the agent, not one adapter, so they survive adapter swaps.
+export const AGENT_ACCESS_CONFIG_PATH_PREFIX = "access.";
+
+export function pickAgentAccessGrants(adapterConfig: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(adapterConfig).filter(
+      ([key, value]) => key.startsWith(AGENT_ACCESS_CONFIG_PATH_PREFIX) && value !== undefined,
+    ),
+  );
+}
 
 export const AGENT_ICON_NAMES = [
   "bot",
@@ -211,6 +224,10 @@ export const ISSUE_PRIORITIES = ["critical", "high", "medium", "low"] as const;
 export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
 export const ISSUE_REVIEW_POLICIES = ["anyone", "not_creator", "human_only"] as const;
 export type IssueReviewPolicy = (typeof ISSUE_REVIEW_POLICIES)[number];
+
+/** Who a blocked task is waiting on, beyond its unblock owner. */
+export const ISSUE_UNBLOCK_WAITING_ON = ["client", "board", "outside"] as const;
+export type IssueUnblockWaitingOn = (typeof ISSUE_UNBLOCK_WAITING_ON)[number];
 export const ISSUE_WORK_MODES = ["standard", "ask", "planning", "skill_test"] as const;
 export type IssueWorkMode = (typeof ISSUE_WORK_MODES)[number];
 export const ISSUE_HARNESS_KINDS = ["skill_test"] as const;
@@ -263,8 +280,13 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_checkbox_confirmation",
   "request_item_verdicts",
   "connection_intent",
+  "request_draft_review",
+  "ask_agent",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
+
+/** Most questions one task may have waiting on other agents at once. */
+export const AGENT_QUESTION_MAX_OPEN_PER_ISSUE = 3;
 
 export const ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES = [
   "anyone",
@@ -367,6 +389,15 @@ export const ISSUE_ORIGIN_KINDS = [
   "chat_channel",
   // Renew reminder for a live memory steward grant (GRE-933). originId: the grant id.
   "memory_steward_grant_renewal",
+  // Board control panel (GRE-1135). originId: the KPI alert id / the "Why?" request id.
+  "strategy_board_kpi_alert",
+  "strategy_board_why_request",
+  // A board member's questions-only chat with an agent set for them (GRE-1186).
+  "strategy_board_question",
+  // A direct message or group chat of people and agents (enableTeamChat).
+  "team_chat",
+  // The lead agent's standing "Daily digest" task. originId: the company id.
+  "agent_daily_digest",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -571,8 +602,72 @@ export type IssueExecutionDecisionOutcome = (typeof ISSUE_EXECUTION_DECISION_OUT
 export const GOAL_LEVELS = ["company", "team", "agent", "task"] as const;
 export type GoalLevel = (typeof GOAL_LEVELS)[number];
 
-export const GOAL_STATUSES = ["planned", "active", "achieved", "cancelled"] as const;
+/**
+ * Strategy layers of a goal, top to bottom. A goal with no kind is a plain
+ * goal and keeps the old rules. See `goal-cascade.ts` for the tree rules.
+ */
+export const GOAL_KINDS = ["vision", "value", "csf", "pillar", "objective", "kpi", "initiative"] as const;
+export type GoalKind = (typeof GOAL_KINDS)[number];
+
+export const GOAL_KIND_LABELS: Record<GoalKind, string> = {
+  vision: "Vision",
+  value: "Value",
+  csf: "Critical success factor",
+  pillar: "Pillar",
+  objective: "Objective",
+  kpi: "KPI",
+  initiative: "Initiative",
+};
+
+/** Layers only the board (company owners) may create, edit or delete. */
+export const BOARD_GOAL_KINDS = ["vision", "value", "csf"] as const satisfies readonly GoalKind[];
+
+/** Issues linked to a goal of these kinds count as strategic work. */
+export const STRATEGIC_WORK_GOAL_KINDS = ["objective", "initiative"] as const satisfies readonly GoalKind[];
+
+/** `work=` on the issues list: strategic work, or day-to-day work (no goal, or a goal of another kind). */
+export const ISSUE_WORK_FILTERS = ["strategic", "day_to_day"] as const;
+export type IssueWorkFilter = (typeof ISSUE_WORK_FILTERS)[number];
+
+/**
+ * `draft` (GRE-1161): a KPI pre-filled from a research pack. It is not live and
+ * has no RAG status until a person sets its target and moves it out of draft.
+ */
+export const GOAL_STATUSES = ["draft", "planned", "active", "achieved", "cancelled"] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
+
+/** Which way is good for a KPI: "up" (revenue) or "down" (churn, cost). */
+export const KPI_DIRECTIONS = ["up", "down"] as const;
+export type KpiDirection = (typeof KPI_DIRECTIONS)[number];
+
+/**
+ * Where a KPI reading came from. Owners report their own numbers; an agent
+ * that checked the data posts `agent_verified`; `system` is an import (for
+ * example from accounting).
+ */
+export const KPI_READING_SOURCES = ["owner_reported", "agent_verified", "system"] as const;
+export type KpiReadingSource = (typeof KPI_READING_SOURCES)[number];
+
+export const KPI_READING_SOURCE_LABELS: Record<KpiReadingSource, string> = {
+  owner_reported: "Owner reported",
+  agent_verified: "Agent verified",
+  system: "From a system",
+};
+
+export const KPI_RAG_STATUSES = ["green", "amber", "red"] as const;
+export type KpiRagStatus = (typeof KPI_RAG_STATUSES)[number];
+
+/** A board member's "Why?" request on a KPI (GRE-1135). */
+export const GOAL_WHY_REQUEST_STATUSES = ["open", "answered"] as const;
+export type GoalWhyRequestStatus = (typeof GOAL_WHY_REQUEST_STATUSES)[number];
+
+/** A board pack made by the board secretary agent is a draft until a board member accepts it (GRE-1200). */
+export const STRATEGY_BOARD_PACK_STATUSES = ["draft", "accepted"] as const;
+export type StrategyBoardPackStatus = (typeof STRATEGY_BOARD_PACK_STATUSES)[number];
+
+/** Default slippage lines, in percent off the planned path. */
+export const DEFAULT_KPI_AMBER_THRESHOLD_PCT = 10;
+export const DEFAULT_KPI_RED_THRESHOLD_PCT = 20;
 
 export const PROJECT_STATUSES = [
   "backlog",
@@ -642,7 +737,7 @@ export type EnvironmentCustomImageSetupConnectionType =
 export const ROUTINE_STATUSES = ["active", "paused", "archived"] as const;
 export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
 
-export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active"] as const;
+export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"] as const;
 export type RoutineConcurrencyPolicy = (typeof ROUTINE_CONCURRENCY_POLICIES)[number];
 
 export const ROUTINE_CATCH_UP_POLICIES = ["skip_missed", "enqueue_missed_with_cap"] as const;
@@ -668,6 +763,7 @@ export const ROUTINE_RUN_STATUSES = [
   "coalesced",
   "skipped",
   "issue_created",
+  "issue_reopened",
   "completed",
   "failed",
  ] as const;
@@ -892,6 +988,9 @@ export type BudgetMetric = (typeof BUDGET_METRICS)[number];
 export const BUDGET_WINDOW_KINDS = ["calendar_month_utc", "lifetime"] as const;
 export type BudgetWindowKind = (typeof BUDGET_WINDOW_KINDS)[number];
 
+/** Warn level of a budget policy that sets none, in percent of the amount. The policy's own value wins. */
+export const DEFAULT_BUDGET_WARN_PERCENT = 80;
+
 export const BUDGET_THRESHOLD_TYPES = ["soft", "hard"] as const;
 export type BudgetThresholdType = (typeof BUDGET_THRESHOLD_TYPES)[number];
 
@@ -1038,6 +1137,9 @@ export const PERMISSION_KEYS = [
   "tasks:assign",
   "tasks:assign_scope",
   "tasks:manage_active_checkouts",
+  // Pipeline access levels (GRE-1072). Scope: { pipelineIds: string[] }; null = all pipelines.
+  // pipelines:cases = Work cases; pipelines:write = Administer (also covers Work cases).
+  "pipelines:cases",
   "pipelines:write",
   "joins:approve",
   // Organization memory (GRE-672). Grant scope: { memoryScopeIds: string[] }; null = org and project scopes, never client or restricted.
@@ -1047,6 +1149,13 @@ export const PERMISSION_KEYS = [
   "memory:correct",
   "memory:delete",
   "memory:admin",
+  // Board control panel (GRE-1135). Granted to company viewers only, so a board
+  // member reads the strategy and asks "Why?" but cannot edit goals, run agents
+  // or change settings. The chair also gets the slippage alerts.
+  "strategy:board_member",
+  "strategy:board_chair",
+  // Intelligence page: write daily reports, board snapshots and recommendations.
+  "intelligence:write",
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 

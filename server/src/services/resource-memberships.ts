@@ -1,10 +1,12 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import {
   agentMemberships,
   agents,
   documentMemberships,
   documents,
+  pipelineMemberships,
+  pipelines,
   projectMemberships,
   projects,
 } from "@greatstone/db";
@@ -175,7 +177,7 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
   return {
     async listForUser(companyId: string, userId: string, actor: BoardActor): Promise<ResourceMemberships> {
       assertBoardSelfMembershipAccess(actor, companyId, userId);
-      const [projectRows, agentRows, documentRows] = await Promise.all([
+      const [projectRows, agentRows, documentRows, pipelineRows] = await Promise.all([
         db
           .select({
             projectId: projectMemberships.projectId,
@@ -225,10 +227,30 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
             eq(documentMemberships.companyId, companyId),
             eq(documentMemberships.userId, userId),
           )),
+        // Archived pipelines drop out, so a stale pin never resurrects a hidden pipeline.
+        db
+          .select({
+            pipelineId: pipelineMemberships.pipelineId,
+            starredAt: pipelineMemberships.starredAt,
+            updatedAt: pipelineMemberships.updatedAt,
+          })
+          .from(pipelineMemberships)
+          .innerJoin(pipelines, and(
+            eq(pipelines.id, pipelineMemberships.pipelineId),
+            eq(pipelines.companyId, pipelineMemberships.companyId),
+            isNull(pipelines.archivedAt),
+          ))
+          .where(and(
+            eq(pipelineMemberships.companyId, companyId),
+            eq(pipelineMemberships.userId, userId),
+          )),
       ]);
       const starEligibleProjectRows = projectRows.filter((row) => row.starredAt && !row.projectArchivedAt);
       const starEligibleAgentRows = agentRows.filter((row) => row.starredAt && row.agentStatus !== "terminated");
       const starredDocumentRows = documentRows
+        .filter((row): row is typeof row & { starredAt: Date } => row.starredAt !== null)
+        .sort((a, b) => b.starredAt.getTime() - a.starredAt.getTime());
+      const starredPipelineRows = pipelineRows
         .filter((row): row is typeof row & { starredAt: Date } => row.starredAt !== null)
         .sort((a, b) => b.starredAt.getTime() - a.starredAt.getTime());
       return {
@@ -242,10 +264,15 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
         documentStarredAt: Object.fromEntries(
           starredDocumentRows.map((row) => [row.documentId, row.starredAt.toISOString()]),
         ),
+        starredPipelineIds: starredPipelineRows.map((row) => row.pipelineId),
+        pipelineStarredAt: Object.fromEntries(
+          starredPipelineRows.map((row) => [row.pipelineId, row.starredAt.toISOString()]),
+        ),
         updatedAt: latestDate(
           ...projectRows.map((row) => row.updatedAt),
           ...agentRows.map((row) => row.updatedAt),
           ...documentRows.map((row) => row.updatedAt),
+          ...pipelineRows.map((row) => row.updatedAt),
         ),
       };
     },
@@ -537,6 +564,62 @@ export function resourceMembershipService(db: Db, options: ResourceMembershipSer
         updatedAt: new Date(),
         changed,
         changeKind: changed ? "unstarred" : null,
+        policySource: decision.source ?? "oss_default",
+      };
+    },
+
+    /** Pin or unpin a pipeline for the sidebar. Star only, like documents. */
+    async updatePipeline(input: {
+      companyId: string;
+      userId: string;
+      pipelineId: string;
+      starred: boolean;
+      actor: BoardActor;
+    }): Promise<MembershipUpdateResult> {
+      const pipeline = await db.query.pipelines.findFirst({
+        where: and(eq(pipelines.id, input.pipelineId), eq(pipelines.companyId, input.companyId)),
+      });
+      if (!pipeline || pipeline.archivedAt) throw notFound("Pipeline not found");
+
+      const decision = await assertMutationAllowed({
+        actor: input.actor,
+        companyId: input.companyId,
+        userId: input.userId,
+        resourceType: "pipeline",
+        resourceId: input.pipelineId,
+        state: "joined",
+        starred: input.starred,
+      });
+      const key = and(
+        eq(pipelineMemberships.companyId, input.companyId),
+        eq(pipelineMemberships.userId, input.userId),
+        eq(pipelineMemberships.pipelineId, input.pipelineId),
+      );
+      const now = new Date();
+      let starredAt: Date | null = null;
+      let changed: boolean;
+      if (input.starred) {
+        const inserted = await db
+          .insert(pipelineMemberships)
+          .values({ companyId: input.companyId, pipelineId: input.pipelineId, userId: input.userId, starredAt: now, updatedAt: now })
+          .onConflictDoNothing()
+          .returning({ starredAt: pipelineMemberships.starredAt });
+        changed = inserted.length > 0;
+        starredAt = changed
+          ? now
+          : (await db.query.pipelineMemberships.findFirst({ where: key }))?.starredAt ?? now;
+      } else {
+        const deleted = await db.delete(pipelineMemberships).where(key).returning({ id: pipelineMemberships.id });
+        changed = deleted.length > 0;
+      }
+      return {
+        resourceType: "pipeline",
+        resourceId: input.pipelineId,
+        state: "joined",
+        starredAt,
+        updatedAt: now,
+        changed,
+        changeKind: changed ? (input.starred ? "starred" : "unstarred") : null,
         policySource: decision.source ?? "oss_default",
       };
     },

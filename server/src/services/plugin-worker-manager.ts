@@ -3197,7 +3197,7 @@ export function createPluginWorkerHandle(
     await killWithSignal("SIGKILL", 2_000);
 
     if (childProcess) {
-      log.error("worker process still alive after SIGKILL — this should not happen");
+      log.error("worker process still alive after SIGKILL; this should not happen");
     }
 
     setStatus("stopped");
@@ -3296,7 +3296,7 @@ export function createPluginWorkerHandle(
       if (!childProcess?.stdin?.writable) {
         reject(
           new Error(
-            `Cannot call "${method}" — worker for "${pluginId}" is not running`,
+            `Cannot call "${method}": worker for "${pluginId}" is not running`,
           ),
         );
         return;
@@ -3428,7 +3428,7 @@ export function createPluginWorkerHandle(
       if (status !== "running" && status !== "starting") {
         return Promise.reject(
           new Error(
-            `Cannot call "${method}" — worker for "${pluginId}" is ${status}`,
+            `Cannot call "${method}": worker for "${pluginId}" is ${status}`,
           ),
         );
       }
@@ -3439,7 +3439,7 @@ export function createPluginWorkerHandle(
       if (status !== "running" && status !== "starting") {
         return Promise.reject(
           new Error(
-            `Cannot open a login pseudo-terminal — worker for "${pluginId}" is ${status}`,
+            `Cannot open a login pseudo-terminal: worker for "${pluginId}" is ${status}`,
           ),
         );
       }
@@ -3450,7 +3450,7 @@ export function createPluginWorkerHandle(
       if (status !== "running" && status !== "starting") {
         return Promise.reject(
           new Error(
-            `Cannot open a duplex channel — worker for "${pluginId}" is ${status}`,
+            `Cannot open a duplex channel: worker for "${pluginId}" is ${status}`,
           ),
         );
       }
@@ -3644,7 +3644,7 @@ export function createPluginWorkerManager(
       // Mutex: if a start is already in-flight for this plugin, wait for it
       const inFlight = startupLocks.get(pluginId);
       if (inFlight) {
-        log.warn({ pluginId }, "concurrent startWorker call — waiting for in-flight start");
+        log.warn({ pluginId }, "concurrent startWorker call; waiting for in-flight start");
         return inFlight;
       }
 

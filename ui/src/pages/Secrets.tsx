@@ -2582,7 +2582,7 @@ export function Secrets() {
           if (!open) setCreateNamePrefix(null);
         }}
       >
-        <DialogContent className="max-h-(--sz-calc-18) overflow-y-auto p-4 sm:max-w-lg sm:p-6">
+        <DialogContent scrollBody className="max-h-(--sz-calc-18) p-4 sm:max-w-lg sm:p-6">
           <DialogHeader>
             <DialogTitle>{editingDefinition ? "Edit user-provided secret" : "Create secret"}</DialogTitle>
             <DialogDescription>
@@ -2940,7 +2940,7 @@ export function Secrets() {
       </Dialog>
 
       <Dialog open={vaultDialogOpen} onOpenChange={setVaultDialogOpen}>
-        <DialogContent className="max-h-(--sz-85vh) overflow-y-auto sm:max-w-2xl">
+        <DialogContent scrollBody className="max-h-(--sz-85vh) sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingVault ? "Edit provider vault" : "Create provider vault"}</DialogTitle>
             <DialogDescription>

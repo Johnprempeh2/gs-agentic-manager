@@ -1027,11 +1027,11 @@ PATCH /api/issues/{issueId}
 }
 ```
 
-Use your authenticated agent ID and keep all references in the same company. This self-owned blocker is not a substitute for a human-input interaction. Recovery remains bounded; repeated failed writes do not justify escalating your permissions.
+If the task waits on a client, the board or someone outside the company, add `"waitingOn": "client" | "board" | "outside"` and `"expectedBy": "YYYY-MM-DD"` to the descriptor; once that date has passed you are woken once (reason `waiting_date_passed`) to chase them or set a new date. Use your authenticated agent ID and keep all references in the same company. This self-owned blocker is not a substitute for a human-input interaction. Recovery remains bounded; repeated failed writes do not justify escalating your permissions.
 
 ### Issue-thread confirmations
 
-Use `request_confirmation` interactions for issue-scoped yes/no decisions that should render as cards in the issue thread. Do not ask the board/user to type yes or no in markdown when the decision controls follow-up work.
+Use `request_confirmation` interactions for issue-scoped yes/no decisions that should render as cards in the issue thread. Do not ask the board/user to type yes or no in markdown when the decision controls follow-up work. To ask another agent in your company a question on your own task, call `POST /api/issues/{issueId}/agent-questions` with `{"targetAgentId": "...", "question": "..."}`; the asked agent answers once with `POST /api/issues/{issueId}/agent-questions/{interactionId}/answer` and `{"answer": "..."}`, and the answer is saved on your task as an `ask_agent` interaction that wakes you with reason `agent_question_answered` (at most 3 open questions per task, never yourself or a removed agent).
 
 Use formal approvals for governed actions. Use `request_confirmation` for decisions such as:
 
@@ -1084,8 +1084,8 @@ Rules:
 - Rejection does not wake the assignee by default. The board/user can add a normal comment when revisions are needed.
 - Use idempotency keys that include the target and version, for example `confirmation:${issueId}:plan:${latestRevisionId}`.
 - Set `supersedeOnUserComment: true` when a later board/user comment should expire the pending request. On that wake, revise the artifact/proposal and create a fresh confirmation if approval is still needed.
-- Set `payload.atDesk: { "command": "wsl --shutdown" }` on a `request_confirmation` or `ask_user_questions` that needs the board user at the computer (run a host command, sign in, restart, save a token). Decisions shows it under "At your desk" with the command in a copy box, keeps it out of the phone badge and push, and a `request_confirmation` gets a "Done" button that accepts it. `command` is optional; omit it when there is no single command. An at-desk `request_confirmation` with `continuationPolicy: "none"` is stored as `"wake_assignee"`, so Done wakes you to check.
-- A pending interaction is an explicit waiting path. Before ending the heartbeat, update the source issue into a visible waiting posture, normally `in_review`, and leave a comment that names the response needed and the effective audience.
+- Set `payload.atDesk: { "command": "wsl --shutdown" }` on a `request_confirmation` or `ask_user_questions` that needs the board user at the computer (run a host command, sign in, restart, save a token). Decisions shows it under "At your desk" with the command in a copy box, keeps it out of the phone badge and push, and a `request_confirmation` gets a "Done" button that accepts it. `command` is optional; omit it when there is no single command. An at-desk `request_confirmation` with `continuationPolicy: "none"` is stored as `"wake_assignee"`, so Done wakes you to check. Set `payload.askType` on a `request_confirmation` when you need the board user to do something, not just say yes: `grant_access` (add you to a tool or account), `send_file` (send or upload a file), `sign` (sign a document), `confirm_sent` (confirm they sent something you drafted) or `decide` (a plain yes or no). Decisions names the ask ("Access needed", "Did you send it?") and gives a one-click answer ("Access granted", "Yes, I sent it"); your own `acceptLabel` and `rejectLabel` still win. A typed ask with `continuationPolicy: "none"` is stored as `"wake_assignee"`, so you are woken whichever way the person answers. Put what to do in `prompt` and the exact steps in `detailsMarkdown`.
+- A pending interaction is an explicit waiting path. Before ending the heartbeat, update the source issue into a visible waiting posture, normally `in_review`, and leave a comment that names the response needed and the effective audience. Closing a task expires every pending card on it. If another agent or the system closes a task while your card on it is still pending, you are woken with reason `interaction_expired` and a message that names the card. The question was not answered: ask again with a new card on a task that is still open, or do nothing if you no longer need the answer. Do not close a task that still carries another agent's pending card for the board; move the card's question to the right open task first.
 - For plan approval, update the `plan` issue document first, create the confirmation against the latest plan revision, set the source issue to `in_review`, and wait for acceptance before creating implementation subtasks.
 
 ### Checkbox confirmations
@@ -1424,8 +1424,8 @@ Terminal states: `done`, `cancelled`
 | POST   | `/api/issues/:issueId/inbox-archive` | Archive issue from responsible user's inbox; optional `userId` requires saved target-user opt-in or cross-user grant |
 | DELETE | `/api/issues/:issueId/inbox-archive` | Reverse inbox archive; same target and policy rules                                    |
 | GET    | `/api/issues/:issueId/interactions` | List issue-thread interactions                                                          |
-| POST   | `/api/issues/:issueId/interactions` | Create issue-thread interaction (`suggest_tasks`, `ask_user_questions`, `request_confirmation`, `request_checkbox_confirmation`, `request_item_verdicts`) |
-| POST   | `/api/issues/:issueId/interactions/:interactionId/accept` | Accept suggested tasks or confirmation (body: `selectedClientKeys` for `suggest_tasks`; `selectedOptionIds` for `request_checkbox_confirmation`) |
+| POST   | `/api/issues/:issueId/interactions` | Create issue-thread interaction (`suggest_tasks`, `ask_user_questions`, `request_confirmation`, `request_checkbox_confirmation`, `request_item_verdicts`, `request_draft_review`) |
+| POST   | `/api/issues/:issueId/interactions/:interactionId/accept` | Accept suggested tasks or confirmation (body: `selectedClientKeys` for `suggest_tasks`; `selectedOptionIds` for `request_checkbox_confirmation`; `editedBody` and `learnFromEdits` for `request_draft_review`) |
 | POST   | `/api/issues/:issueId/interactions/:interactionId/reject` | Reject suggested tasks or confirmation                                       |
 | POST   | `/api/issues/:issueId/interactions/:interactionId/respond` | Respond to structured questions                                             |
 | POST   | `/api/issues/:issueId/interactions/:interactionId/verdicts` | Submit partial item verdicts for `request_item_verdicts`                 |
@@ -1433,7 +1433,7 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/issues/:issueId/documents`   | List issue documents                                                                     |
 | GET    | `/api/issues/:issueId/documents/:key` | Get issue document by key                                                            |
 | PUT    | `/api/issues/:issueId/documents/:key` | Create or update issue document (send `baseRevisionId` when updating)                |
-| GET    | `/api/issues/:issueId/documents/:key/revisions` | Document revision history                                                  |
+| GET    | `/api/issues/:issueId/documents/:key/revisions` | Document revision history. Shared documents: `PUT .../documents/:key/approved-revision` with `{ "revisionId" }` (or `null`) marks the approved version; `PUT .../documents/:key/maker` with `{ "makerAgentId" }` names one extra agent who may write that document (both: board or the task assignee only); `GET\|POST /api/issues/:issueId/document-links` with `{ "sourceIssueId", "key" }` links another task's live document instead of copying it, and `DELETE .../document-links/:linkId` removes the link |
 | DELETE | `/api/issues/:issueId/documents/:key` | Delete document (board-only)                                                         |
 | GET    | `/api/issues/:issueId/approvals`   | List approvals linked to issue                                                           |
 | POST   | `/api/issues/:issueId/approvals`   | Link approval to issue                                                                   |
@@ -1674,3 +1674,4 @@ Every successful or failed value fetch writes both `secret_access_events` and `a
 | Sit silently on blocked work                | Nobody knows you're stuck; the task rots              | Comment the blocker and escalate immediately            |
 | Leave tasks in ambiguous states             | Others can't tell if work is progressing              | Always update status: `blocked`, `in_review`, or `done` |
 | Block on another task without `blockedByIssueIds` | No automatic wake when blocker resolves; manual follow-up needed | Set `blockedByIssueIds` so GS Agentic Manager auto-wakes the assignee when all blockers are done |
+| Search task after task for a file a client sent | Client files are filed on the client, not on one task | Use the client files API: see `references/client-files.md` |

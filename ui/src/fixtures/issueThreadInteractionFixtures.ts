@@ -495,7 +495,7 @@ export const stepGuideMarkdown = [
   "**Step 2 of 3** — Run this command:",
   "",
   "```sh",
-  "pnpm gsam setup --company demo",
+  "npx gsam setup --company demo",
   "```",
   "",
   "**Step 3 of 3** — Wait for the line `Setup complete`, then answer below.",

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Agent } from "@greatstone/shared";
+import { ASK_TYPE_COPY, readAskType } from "@greatstone/shared";
 import { AlertTriangle, ArrowUpRight, Bot, Check, CheckCircle2, ChevronDown, ChevronRight, CircleDashed, Clock, ExternalLink, FileText, GitBranch, ImagePlus, KeyRound, Loader2, MessageSquareQuote, MinusCircle, ShieldAlert, ThumbsUp, TriangleAlert, Wrench, X, XCircle } from "lucide-react";
 import { Link } from "@/lib/router";
 import { formatAssigneeUserLabel } from "../lib/assignees";
@@ -32,6 +33,8 @@ import {
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
+import { AgentQuestionCard } from "./AgentQuestionCard";
+import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { InteractionGuideSheet, InteractionGuideText } from "./InteractionGuide";
 import { interactionGuideSummary, needsInteractionGuide } from "../lib/interaction-guide";
 import { Button } from "./ui/button";
@@ -47,6 +50,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { AppLogo } from "@/pages/apps/AppLogo";
 import { ConnectionIntentInteractionBody } from "@/features/connections/ConnectionIntentInteractionBody";
 import { ReauthCancelledError } from "./ReauthDialog";
+import { IssueDocumentSheet } from "./IssueDocumentSheet";
+import { DraftReviewCard } from "./DraftReviewCard";
 
 const OTHER_ANSWER_ID = "__paperclip_other__";
 
@@ -217,6 +222,10 @@ function interactionKindLabel(kind: IssueThreadInteraction["kind"]) {
       return "Item verdicts";
     case "connection_intent":
       return "Connection request";
+    case "request_draft_review":
+      return "Draft";
+    case "ask_agent":
+      return "Question for an agent";
     default:
       return kind;
   }
@@ -875,7 +884,7 @@ function SuggestTasksCard({
 
       {interaction.status === "accepted" ? (
         <div className="rounded-sm border border-emerald-500/60 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-emerald-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-success-foreground">
             Resolution summary
           </div>
           <p className="mt-1 leading-6">
@@ -888,7 +897,7 @@ function SuggestTasksCard({
 
       {interaction.status === "rejected" ? (
         <div className="rounded-sm border border-rose-500/60 bg-rose-500/10 px-4 py-3 text-sm text-rose-900 dark:text-rose-100">
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-rose-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-danger-foreground">
             Rejection reason
           </div>
           <p className={cn(
@@ -1011,7 +1020,7 @@ function QuestionOptionButton({
         "w-full rounded-sm border px-4 py-3 text-left transition-colors outline-none focus-visible:border-ring focus-visible:ring-(length:--rad-3) focus-visible:ring-ring/50",
         selected
           ? "border-sky-500/80 bg-sky-500/10 text-sky-950 dark:border-sky-400/80 dark:bg-sky-400/15 dark:text-sky-50"
-          : "border-border/70 bg-transparent text-foreground hover:border-sky-500/70 hover:bg-sky-500/10 dark:hover:border-sky-400/70 dark:hover:bg-sky-400/10",
+          : "border-border/70 bg-field text-foreground hover:border-sky-500/70 hover:bg-sky-500/10 dark:hover:border-sky-400/70 dark:hover:bg-sky-400/10",
       )}
       id={id}
       onClick={onClick}
@@ -1417,16 +1426,16 @@ function AskUserQuestionsCard({
             <AlertTriangle className="h-4 w-4" />
             {interaction.result?.outcome === "issue_closed"
               ? questions.length === 1
-                ? "Question expired when the issue closed"
-                : "Questions expired when the issue closed"
+                ? "Question closed with the task"
+                : "Questions closed with the task"
               : questions.length === 1
-                ? "Question expired by comment"
-                : "Questions expired by comment"}
+                ? "Question replaced by a later comment"
+                : "Questions replaced by a later comment"}
           </div>
           <p className="mt-1">
             {interaction.result?.outcome === "issue_closed"
-              ? "This question request expired automatically when the issue reached a terminal state."
-              : "A later board/user comment superseded this question request. Create a fresh request if answers are still needed."}
+              ? "The task was closed before anyone answered, so this question no longer needs a reply."
+              : "A later comment replaced this question. Ask again if you still need the answers."}
           </p>
           {interaction.result?.commentId ? (
             <a
@@ -1466,8 +1475,8 @@ function AskUserQuestionsCard({
           })}
 
           {interaction.result?.summaryMarkdown ? (
-            <div className="rounded-2xl border border-emerald-300/60 bg-emerald-50/85 p-4">
-              <div className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-emerald-700">
+            <div className="rounded-2xl border border-status-success/40 bg-status-success-soft p-4">
+              <div className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-success-foreground">
                 Submitted summary
               </div>
               <MarkdownBody externalReferences={externalReferences}>{interaction.result.summaryMarkdown}</MarkdownBody>
@@ -1503,6 +1512,14 @@ function requestConfirmationTargetHref({
   return null;
 }
 
+/**
+ * The document or link a confirmation is about, as a real control (Ben, 13
+ * Oct: "I can't click on it"). It used to be a tiny uppercase tag that read as
+ * a label, and its task link (`/issues/<id>#document-plan`) also fed the hash
+ * into the task preview, which then looked up a task that does not exist. An
+ * issue document now opens in place in a wide reader; any other target is an
+ * ordinary link.
+ */
 function RequestConfirmationTargetChip({
   interaction,
   target,
@@ -1512,33 +1529,63 @@ function RequestConfirmationTargetChip({
   target: RequestConfirmationTarget | null | undefined;
   tone?: "default" | "subtle";
 }) {
+  const [open, setOpen] = useState(false);
   if (!target) return null;
 
+  const label = requestConfirmationTargetLabel(target);
   const href = requestConfirmationTargetHref({ interaction, target });
   const className = cn(
-    "inline-flex max-w-full items-center gap-1.5 rounded-sm border px-2 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-(--tracking-eyebrow)",
+    "inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-sm font-medium underline-offset-4 transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     tone === "default"
-      ? "border-border/70 bg-transparent text-foreground"
-      : "border-border/60 bg-transparent text-muted-foreground",
-    href && "transition-colors hover:border-sky-500/70 hover:bg-sky-500/10",
+      ? "border-primary/40 bg-primary/5 text-primary hover:bg-primary/10"
+      : "border-border/70 bg-transparent text-foreground hover:bg-accent",
   );
   const content = (
     <>
-      <GitBranch className="h-3 w-3 shrink-0" />
-      <span className="min-w-0 truncate">{requestConfirmationTargetLabel(target)}</span>
+      <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 truncate">Open {label}</span>
     </>
   );
 
-  if (!href) return <span className={className}>{content}</span>;
+  if (target.type === "issue_document") {
+    const issueId = target.issueId ?? interaction.issueId;
+    return (
+      <>
+        <button
+          type="button"
+          className={className}
+          aria-haspopup="dialog"
+          data-testid="confirmation-target-open"
+          onClick={() => setOpen(true)}
+        >
+          {content}
+        </button>
+        <IssueDocumentSheet
+          open={open}
+          onOpenChange={setOpen}
+          document={{ issueId, key: target.key, revisionId: target.revisionId, label, taskHref: `/issues/${issueId}#document-${encodeURIComponent(target.key)}` }}
+        />
+      </>
+    );
+  }
+  if (!href) {
+    return (
+      <span className={cn(className, "cursor-default no-underline hover:no-underline")}>
+        <GitBranch className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <span className="min-w-0 truncate">{label}</span>
+      </span>
+    );
+  }
   if (/^https?:\/\//i.test(href)) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className={className}>
         {content}
+        <ExternalLink className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
       </a>
     );
   }
   return (
-    <Link to={href} className={className}>
+    <Link to={href} disableIssueQuicklook className={className}>
       {content}
     </Link>
   );
@@ -1563,7 +1610,7 @@ function RequestConfirmationResolution({
             <RequestConfirmationTargetChip interaction={interaction} target={target} />
           </div>
           <div className="rounded-sm border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-            <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-amber-700">
+            <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-warning-foreground">
               Agent resume failed
             </div>
             <p className="mt-1 leading-6">
@@ -1625,21 +1672,21 @@ function RequestConfirmationResolution({
       <div className="space-y-3 rounded-sm border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
         {/*
          * issue_closed already carries its label in the header status badge
-         * ("Expired · issue closed"), so this eyebrow would duplicate it
+         * ("Closed with the task"), so this eyebrow would duplicate it
          * verbatim — only render the eyebrow for the states the header shows
          * generically as "Expired".
          */}
         {expiredByIssueClosed ? null : (
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-amber-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-warning-foreground">
             {expiredByComment ? "Expired by comment" : "Expired by target change"}
           </div>
         )}
         <p className="leading-6">
           {expiredByComment
-            ? "A board comment superseded this confirmation before it was resolved."
+            ? "A later comment replaced this request before anyone answered it."
             : expiredByIssueClosed
-              ? "This confirmation expired automatically when the issue reached a terminal state."
-              : "The requested target changed before this confirmation was resolved."}
+              ? "The task was closed before anyone answered, so this request no longer needs a reply."
+              : "What this request was about changed before anyone answered, so it no longer applies."}
         </p>
         {expiredByComment && interaction.result?.commentId ? (
           <Button asChild size="sm" variant="ghost" className="h-7 px-2 text-amber-950 hover:bg-amber-500/15 dark:text-amber-50">
@@ -1654,7 +1701,7 @@ function RequestConfirmationResolution({
               tone="subtle"
             />
             {staleTarget && target ? (
-              <ChevronRight className="h-3.5 w-3.5 text-amber-700" />
+              <ChevronRight className="h-3.5 w-3.5 text-status-warning-foreground" />
             ) : null}
             <RequestConfirmationTargetChip interaction={interaction} target={target} />
           </div>
@@ -2583,8 +2630,12 @@ function RequestConfirmationCard({
   const allowScreenshots = isPlan && Boolean(onUploadImage);
   const rejectRequiresReason = interaction.payload.rejectRequiresReason === true;
   const allowRevise = interaction.payload.allowDeclineReason !== false;
+  // A typed ask (access, file, signature...) gets answers in plain words.
+  const askType = readAskType(interaction.payload);
+  const askCopy = askType ? ASK_TYPE_COPY[askType] : null;
   const reasonPlaceholder =
     interaction.payload.declineReasonPlaceholder
+    ?? (askCopy ? `Optional: ${askCopy.declinePlaceholder.toLowerCase()}.` : null)
     ?? (interaction.payload.acceptLabel === "Approve plan"
       ? "Optional: what would you like revised?"
       : "Optional: tell the agent what you'd change.");
@@ -2668,8 +2719,8 @@ function RequestConfirmationCard({
   const actionRow = (
     <ConfirmationActionRow
       resetKey={`${interaction.id}:${interaction.status}`}
-      approveLabel={interaction.payload.acceptLabel ?? CONFIRMATION_APPROVE_LABEL}
-      rejectLabel={CONFIRMATION_REJECT_LABEL}
+      approveLabel={interaction.payload.acceptLabel ?? askCopy?.acceptLabel ?? CONFIRMATION_APPROVE_LABEL}
+      rejectLabel={askCopy ? interaction.payload.rejectLabel ?? askCopy.rejectLabel : CONFIRMATION_REJECT_LABEL}
       approveVariant={isPlan ? "cta" : "default"}
       primaryActionOnRight={primaryActionOnRight}
       allowRevise={allowRevise}
@@ -2780,6 +2831,9 @@ function RequestConfirmationCard({
             interaction={interaction}
             target={interaction.payload.target}
           />
+          <div className="flex justify-end">
+            <CopyMarkdownButton markdown={details ? `${prompt}\n\n${details}` : prompt} />
+          </div>
         </div>
       ) : null}
 
@@ -3666,6 +3720,9 @@ export function IssueThreadInteractionCard({
   // created and stored server-side; only the render is suppressed. Composition
   // sites additionally filter it so no empty slot lingers.
   if (shouldHideInteractionCard(interaction)) return null;
+  if (interaction.kind === "ask_agent") {
+    return <AgentQuestionCard interaction={interaction} agentMap={agentMap} />;
+  }
   const isPlan = isPlanConfirmation(interaction);
   const isToolAction =
     interaction.kind === "request_confirmation" && isToolActionConfirmation(interaction);
@@ -3768,6 +3825,7 @@ export function IssueThreadInteractionCard({
     creatorLabel: createdByLabel,
     addresseeLabel,
   });
+  const resolutionErrorMessage = (error: unknown) => interactionResolutionErrorMessage(error, audience);
   if (isToolAction && interaction.kind === "request_confirmation" && toolActionState) {
     return (
       <InteractionAudienceContext.Provider value={audience}>
@@ -3785,7 +3843,7 @@ export function IssueThreadInteractionCard({
     adminOutcome === "withdrawn"
       ? "Withdrawn"
       : adminOutcome === "issue_closed"
-        ? "Expired · issue closed"
+        ? "Closed with the task"
         : activeStyles
           ? activeStyles.label
           : statusLabel(interaction.status);
@@ -3883,6 +3941,8 @@ export function IssueThreadInteractionCard({
                       ? "Tool approval requested"
                       : interaction.kind === "request_item_verdicts"
                         ? "Review these items"
+                      : interaction.kind === "request_draft_review"
+                        ? "Review this draft"
                         : isPlan
                           ? "Plan review"
                           : "Confirmation requested")}
@@ -3968,6 +4028,13 @@ export function IssueThreadInteractionCard({
               currentUserId={currentUserId}
               addresseeLabel={addresseeLabel ?? "the addressed person"}
             />
+          ) : interaction.kind === "request_draft_review" ? (
+            <DraftReviewCard
+              interaction={interaction}
+              drafterLabel={createdByLabel}
+              resolvedByLabel={resolvedByLabel}
+              errorMessage={resolutionErrorMessage}
+            />
           ) : interaction.kind === "request_item_verdicts" ? (
             <RequestItemVerdictsCard
               interaction={interaction}
@@ -4011,7 +4078,7 @@ export function IssueThreadInteractionCard({
           >
             {formatShortDate(interaction.resolvedAt)}
           </div>
-        ) : resolvedByLabel && !isToolAction && !connectionAuthorization ? (
+        ) : resolvedByLabel && !isToolAction && !connectionAuthorization && interaction.kind !== "request_draft_review" ? (
           // The connection-authorization card states its own resolver and
           // timestamp inside the "Gmail connected" block, so the shared footer
           // would repeat it.

@@ -30,6 +30,7 @@ import {
   invites,
   issueApprovals,
   issueAttachments,
+  issueComments,
   issueDocuments,
   issueRecoveryActions,
   issueRelations,
@@ -688,7 +689,8 @@ describeEmbeddedPostgres("attention service", () => {
     expect(feed.items.find((item) =>
       item.sourceKind === "review" && item.subject.title === "Stalled review blocker"
     )).toMatchObject({
-      whyNow: expect.stringContaining("without a maintained"),
+      whyNow: "The work is ready for review, but no reviewer is set. You must decide.",
+      detail: { kind: "review", lastUpdate: null, workProduct: null },
       // A stalled review resolves in-row on the /decisions card (PAP-16080 §4.4).
       inlineResolvable: true,
       subject: expect.objectContaining({
@@ -1291,6 +1293,85 @@ describeEmbeddedPostgres("attention service", () => {
         },
         expect.objectContaining({ id: brief, title: "Pricing brief" }),
       ],
+    });
+  });
+
+  it("puts the assignee's last update and the pull request on a stalled review card (GRE-1421)", async () => {
+    const { companyId, workerId } = await seedCompany("ATR");
+    const issueId = await insertIssue({
+      companyId,
+      identifier: "ATR-1",
+      title: "Fix the billing page",
+      status: "in_review",
+      assigneeAgentId: workerId,
+    });
+    const handOffId = randomUUID();
+    await db.insert(issueComments).values([
+      {
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "Started work.",
+        createdAt: new Date("2026-07-09T12:00:00.000Z"),
+      },
+      {
+        id: handOffId,
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "**Done.** The billing page now shows fees, the allowance and the usage warnings. PR is open for review.",
+        createdAt: new Date("2026-07-09T12:05:00.000Z"),
+      },
+      {
+        // A newer status note from the assignee does not replace the hand-off.
+        companyId,
+        issueId,
+        authorAgentId: workerId,
+        body: "Starting: I am checking the review notes.",
+        createdAt: new Date("2026-07-09T12:05:30.000Z"),
+      },
+      {
+        // A newer board comment is not the assignee's hand-off.
+        companyId,
+        issueId,
+        authorUserId: "board-user",
+        body: "Thanks",
+        createdAt: new Date("2026-07-09T12:06:00.000Z"),
+      },
+    ]);
+    await db.insert(issueWorkProducts).values([
+      {
+        companyId,
+        issueId,
+        type: "document",
+        provider: "paperclip",
+        title: "Notes",
+        url: "https://example.com/notes",
+        status: "active",
+        isPrimary: true,
+      },
+      {
+        companyId,
+        issueId,
+        type: "pull_request",
+        provider: "github",
+        title: "Billing fees",
+        url: "https://github.com/acme/app/pull/12",
+        status: "open",
+      },
+    ]);
+
+    const feed = await attentionService(db).list(companyId, { userId: "board-user" });
+    const item = feed.items.find((row) => row.sourceKind === "review" && row.subject.id === issueId);
+    expect(item?.detail).toMatchObject({
+      kind: "review",
+      lastUpdate: {
+        commentId: handOffId,
+        authorAgentId: workerId,
+        excerpt: "Done. The billing page now shows fees, the allowance and the usage warnings. PR is open for review.",
+        kind: "handoff",
+      },
+      workProduct: { type: "pull_request", title: "Billing fees", url: "https://github.com/acme/app/pull/12" },
     });
   });
 

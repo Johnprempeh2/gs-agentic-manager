@@ -29,7 +29,6 @@ import { instanceSettingsApi } from "../../api/instanceSettings";
 import { issuesApi } from "../../api/issues";
 import { useIssuePlanDocument } from "@/hooks/useIssuePlanDocument";
 import { useIssueDocuments } from "@/hooks/useIssueDocuments";
-import { useStreamlinedUiEnabled } from "@/hooks/useStreamlinedUiEnabled";
 import { selectAgentArtifactAttachments } from "@/lib/issue-artifacts";
 import { projectsApi } from "../../api/projects";
 import { useCompany } from "../../context/CompanyContext";
@@ -115,6 +114,7 @@ import {
 } from "./helpers";
 import { PropertyPicker } from "./property-picker";
 import { PropertyChip, PropertyRow, PropertySection } from "./primitives";
+import { IssueDueDateRow } from "./IssueDueDateRow";
 import {
   buildWorkspaceSelectionUpdate,
   currentWorkspaceSelection,
@@ -156,8 +156,7 @@ function TruncatedCopyable({ value, icon: Icon }: { value: string; icon: Compone
       timerRef.current = setTimeout(() => setCopied(false), 1500);
     } catch { /* noop */ }
   }, [value]);
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
-  const middle = streamlinedUiEnabled ? splitMiddleTruncation(value) : null;
+  const middle = splitMiddleTruncation(value);
 
   return (
     <div className="flex items-center gap-1.5 min-w-0 flex-1" title={value}>
@@ -166,13 +165,13 @@ function TruncatedCopyable({ value, icon: Icon }: { value: string; icon: Compone
         type="button"
         className={cn(
           "cursor-pointer text-left font-mono text-sm transition-colors hover:text-foreground",
-          streamlinedUiEnabled ? "min-w-0 flex-1" : "min-w-0 truncate",
+          "min-w-0 flex-1",
         )}
         onClick={handleCopy}
         title={value}
         aria-label={`Copy ${value} to clipboard`}
       >
-        {!streamlinedUiEnabled ? value : middle ? (
+        {middle ? (
           <span className="flex min-w-0" data-middle-truncate="true">
             <span className="min-w-0 truncate">{middle.prefix}</span>
             <span className="max-w-1/2 shrink-0 truncate">{middle.suffix}</span>
@@ -264,17 +263,16 @@ export function IssueProperties({
   // the folder the policy exists to hide.
   const hideHostPaths =
     experimentalSettings === undefined || experimentalSettings.enableManagedSandboxOnly === true;
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   // Classic Task Interface: gate the Properties | Plans | Artifacts tab shell.
   // Flag ON renders the legacy stacked sections verbatim (no Tabs wrapper);
   // flag OFF — including while settings load — renders the chat-style tab
   // shell. This pane is always task-scoped, so the flag alone is a sufficient
   // gate.
-  // Classic Task Interface alone controls the production tabbed-vs-stacked
-  // boundary. Streamlined UI layers new relationship tabs and visual treatment
-  // onto master's tabbed task-chat pane without changing that boundary.
+  // Classic Task Interface alone controls the tabbed-vs-stacked boundary. The
+  // streamlined relationship tabs and visual treatment ride on the tabbed
+  // task-chat pane, so they share that boundary.
   const taskChatShellEnabled = experimentalSettings?.enableClassicTaskInterface !== true;
-  const streamlinedPropertiesEnabled = streamlinedUiEnabled && taskChatShellEnabled;
+  const streamlinedPropertiesEnabled = taskChatShellEnabled;
   // When hosted by the resizable PropertiesPanel, the tab strip portals into
   // the pane's header bar (left of the window controls). The slot only exists
   // once the panel has committed, hence the effect; inline hosts (mobile sheet)
@@ -292,10 +290,12 @@ export function IssueProperties({
   const { data: paneTabPlanDocument } = useIssuePlanDocument(
     taskChatShellEnabled ? issue.id : null,
   );
+  // The server refuses this read while the switch is off (GRE-1090).
+  const planDecompositionsEnabled = experimentalSettings?.enableIssuePlanDecompositions === true;
   const { data: paneTabAcceptedPlans } = useQuery({
     queryKey: queryKeys.issues.acceptedPlanDecompositions(issue.id),
     queryFn: () => issuesApi.listAcceptedPlanDecompositions(issue.id),
-    enabled: taskChatShellEnabled,
+    enabled: taskChatShellEnabled && planDecompositionsEnabled,
   });
   const { data: paneTabAttachments } = useQuery({
     queryKey: queryKeys.issues.attachments(issue.id),
@@ -2496,6 +2496,14 @@ export function IssueProperties({
           {assigneeContent}
         </PropertyPicker>
 
+        <IssueDueDateRow
+          companyId={issue.companyId}
+          goalId={issue.goalId}
+          dueDate={issue.dueDate}
+          status={issue.status}
+          onUpdate={onUpdate}
+        />
+
         {issueTeam ? (
           <PropertyRow label="Team">
             <TeamBadge team={issueTeam} />
@@ -2700,8 +2708,8 @@ export function IssueProperties({
           </PropertyRow>
         ) : null}
 
-        {(!streamlinedPropertiesEnabled || !taskChatShellEnabled) && relatedTasks.length > 0 ? (
-          <PropertyRow label={streamlinedPropertiesEnabled ? "Referenced" : "Related tasks"} wrap>
+        {!taskChatShellEnabled && relatedTasks.length > 0 ? (
+          <PropertyRow label="Related tasks" wrap>
             <div className="flex flex-col items-start gap-1.5">
               {visibleRelatedTasks.map((related) => (
                 <IssueReferencePill key={related.id} issue={related} />

@@ -1,4 +1,5 @@
-import type { ExternalObjectSummary, Issue } from "@greatstone/shared";
+import { ISSUE_WORK_FILTERS, isStrategicWorkGoalKind } from "@greatstone/shared";
+import type { ExternalObjectSummary, Issue, IssueWorkFilter } from "@greatstone/shared";
 
 export type IssueFilterWorkspaceLookup = {
   mode?: string | null;
@@ -23,6 +24,10 @@ export type IssueFilterState = {
   projects: string[];
   workspaces: string[];
   liveOnly?: boolean;
+  /** Strategic or day-to-day work (GRE-1144); unset shows all work. */
+  work?: IssueWorkFilter | null;
+  /** Due date filter; unset shows every task. */
+  due?: IssueDueFilter | null;
   /**
    * External object status filter. Values are special tokens that map to
    * properties of the issue's external-object summary (rather than to a
@@ -51,6 +56,8 @@ export const defaultIssueFilterState: IssueFilterState = {
   projects: [],
   workspaces: [],
   liveOnly: false,
+  work: null,
+  due: null,
   externalObjectStatuses: [],
   hideRoutineExecutions: false,
 };
@@ -121,9 +128,67 @@ export function normalizeIssueFilterState(value: unknown): IssueFilterState {
     projects: normalizeIssueFilterValueArray(candidate.projects),
     workspaces: normalizeIssueFilterValueArray(candidate.workspaces),
     liveOnly: candidate.liveOnly === true,
+    work: normalizeIssueWorkFilter(candidate.work),
+    due: normalizeIssueDueFilter(candidate.due),
     externalObjectStatuses: normalizeIssueFilterValueArray(candidate.externalObjectStatuses),
     hideRoutineExecutions: candidate.hideRoutineExecutions === true,
   };
+}
+
+export function normalizeIssueWorkFilter(value: unknown): IssueWorkFilter | null {
+  return typeof value === "string" && (ISSUE_WORK_FILTERS as readonly string[]).includes(value)
+    ? (value as IssueWorkFilter)
+    : null;
+}
+
+export const issueWorkFilterOptions: ReadonlyArray<{ value: IssueWorkFilter | null; label: string }> = [
+  { value: null, label: "All work" },
+  { value: "strategic", label: "Strategic" },
+  { value: "day_to_day", label: "Day-to-day" },
+];
+
+export const ISSUE_DUE_FILTERS = ["overdue", "next_7_days", "no_due_date"] as const;
+export type IssueDueFilter = (typeof ISSUE_DUE_FILTERS)[number];
+
+export const issueDueFilterOptions: ReadonlyArray<{ value: IssueDueFilter | null; label: string }> = [
+  { value: null, label: "Any date" },
+  { value: "overdue", label: "Past due" },
+  { value: "next_7_days", label: "Due in the next 7 days" },
+  { value: "no_due_date", label: "No due date" },
+];
+
+export function normalizeIssueDueFilter(value: unknown): IssueDueFilter | null {
+  return typeof value === "string" && (ISSUE_DUE_FILTERS as readonly string[]).includes(value)
+    ? (value as IssueDueFilter)
+    : null;
+}
+
+/** YYYY-MM-DD in the viewer's own time zone. */
+export function localDateKey(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function addDaysToKey(key: string, days: number): string {
+  const [year, month, day] = key.split("-").map(Number);
+  return localDateKey(new Date(year!, month! - 1, day! + days));
+}
+
+/** Past due and due soon only count open work; a finished task is never late. */
+export function issueMatchesDueFilter(
+  issue: Pick<Issue, "dueDate" | "status">,
+  due: IssueDueFilter,
+  today: string,
+): boolean {
+  const dueDate = issue.dueDate ? issue.dueDate.slice(0, 10) : null;
+  if (due === "no_due_date") return dueDate === null;
+  if (!dueDate || issue.status === "done" || issue.status === "cancelled") return false;
+  if (due === "overdue") return dueDate < today;
+  return dueDate >= today && dueDate <= addDaysToKey(today, 6);
+}
+
+export function issueMatchesWorkFilter(issue: Pick<Issue, "goalKind">, work: IssueWorkFilter): boolean {
+  return isStrategicWorkGoalKind(issue.goalKind) === (work === "strategic");
 }
 
 export function toggleIssueFilterValue(values: string[], value: string): string[] {
@@ -228,6 +293,13 @@ export function applyIssueFilters(
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) {
     result = result.filter((issue) => issue.originKind !== "routine_execution");
   }
+  const work = state.work ?? null;
+  if (work) result = result.filter((issue) => issueMatchesWorkFilter(issue, work));
+  const due = state.due ?? null;
+  if (due) {
+    const today = localDateKey(new Date());
+    result = result.filter((issue) => issueMatchesDueFilter(issue, due, today));
+  }
   if (state.statuses.length > 0) result = result.filter((issue) => state.statuses.includes(issue.status));
   if (state.priorities.length > 0) result = result.filter((issue) => state.priorities.includes(issue.priority));
   if (state.assignees.length > 0) {
@@ -292,6 +364,8 @@ export function countActiveIssueFilters(
   if (state.projects.length > 0) count += 1;
   if (state.workspaces.length > 0) count += 1;
   if (state.liveOnly) count += 1;
+  if (state.work) count += 1;
+  if (state.due) count += 1;
   if (state.externalObjectStatuses.length > 0) count += 1;
   if (enableRoutineVisibilityFilter && state.hideRoutineExecutions) count += 1;
   return count;

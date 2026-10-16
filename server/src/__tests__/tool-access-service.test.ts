@@ -1939,11 +1939,15 @@ describeEmbeddedPostgres("tool access service", () => {
       const firstReplacementDb = createDb(tempDb!.connectionString, {
         maxConnections: 1,
       });
+      // Named so the test can wait on exactly these backends' lock queues.
+      const raceTag = randomUUID().slice(0, 8);
       const replacementDb = createDb(tempDb!.connectionString, {
         maxConnections: 1,
+        applicationName: `race-replacement-${raceTag}`,
       });
       const cleanupDb = createDb(tempDb!.connectionString, {
         maxConnections: 1,
+        applicationName: `race-cleanup-${raceTag}`,
       });
       const replacementService = createTestToolAccessService(replacementDb);
       let releaseFirstReplacement!: () => void;
@@ -2001,10 +2005,33 @@ describeEmbeddedPostgres("tool access service", () => {
         }
       });
 
-      // The first replacement still owns the departing member lock, so this
-      // gives cleanup time to queue for that lock before the empty replacement
-      // queues for the grant lock.
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      // Wait until the named backend is queued on a lock (counting every lock
+      // waiter in the database could be satisfied by another backend).
+      const untilQueuedOnLock = async (applicationName: string) => {
+        for (let attempt = 0; attempt < 1000; attempt++) {
+          const rows = (await db.execute(
+            sql`select count(*)::int as waiting from pg_stat_activity where application_name = ${applicationName} and wait_event_type = 'Lock'`,
+          )) as unknown as Array<{ waiting: number }>;
+          if (rows[0]!.waiting > 0) return;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        throw new Error(`${applicationName} never queued on a lock`);
+      };
+      // Cleanup queues on the departing member's row, which the first
+      // replacement holds, and takes it when that commits.
+      await untilQueuedOnLock(`race-cleanup-${raceTag}`);
+      releaseFirstReplacement();
+      await firstReplacement;
+      await membershipIsLocked;
+
+      // Only now start the empty replacement. Started earlier it queued on the
+      // grant row and, once the first replacement committed, raced cleanup for
+      // the member row. A woken waiter still has to take the row, so arriving
+      // first does not mean winning, and under load the replacement sometimes
+      // won (a valid order:
+      // widen, then suspend), which failed the release test gate on
+      // 14 Oct 2026. Started here, it reads the audience the first replacement
+      // committed and then waits on the member row cleanup holds.
       let replacementSettled = false;
       const replacement = replacementService
         .replaceConnectionGrantMembers(connection.id, grant.id, [])
@@ -2015,12 +2042,7 @@ describeEmbeddedPostgres("tool access service", () => {
         .finally(() => {
           replacementSettled = true;
         });
-      await new Promise((resolve) => setTimeout(resolve, 50));
-      expect(replacementSettled).toBe(false);
-
-      releaseFirstReplacement();
-      await firstReplacement;
-      await membershipIsLocked;
+      await untilQueuedOnLock(`race-replacement-${raceTag}`);
       expect(replacementSettled).toBe(false);
       releaseCleanup();
       await cleanup;
@@ -5107,6 +5129,7 @@ describeEmbeddedPostgres("tool access service", () => {
     expect(res.body.apps.map((app: { slug: string }) => app.slug)).toEqual(
       expect.arrayContaining([
         "agentmail",
+        "pipedrive",
         "imessage-photon",
         "jira",
         "airtable",
@@ -5129,7 +5152,7 @@ describeEmbeddedPostgres("tool access service", () => {
         "youcom",
       ]),
     );
-    expect(res.body.apps).toHaveLength(57);
+    expect(res.body.apps).toHaveLength(58);
     expect(
       res.body.apps.find((app: { slug: string }) => app.slug === "gmail")
         .ownershipAvailability,
@@ -7316,7 +7339,7 @@ describeEmbeddedPostgres("tool access service", () => {
     ).toBe(false);
   });
 
-  it.each(["none", "event", "same-time-refresh", "one-conflict"])(
+  it.each(["none", "event", "same-time-refresh", "one-conflict", "company-pause"])(
     "binds a managed GitHub identity and protects refresh from concurrent access changes (%s)",
     async (concurrentChange) => {
       const company = await createCompany(db);
@@ -7513,6 +7536,38 @@ describeEmbeddedPostgres("tool access service", () => {
             ),
         ).resolves.toHaveLength(1);
         vi.mocked(connector.setWebhookBinding).mockClear();
+        if (concurrentChange === "company-pause") {
+          // GRE-1364: the company is paused while the refresh's GitHub requests
+          // are in flight. The refresh must not write the suspended grant back to active.
+          const { companyService } = await import("../services/companies.js");
+          beforeRepositoryResponse = async () => {
+            beforeRepositoryResponse = async () => {};
+            await companyService(db).pause(company.id, actor, {});
+          };
+          await expect(
+            service.checkHealth(connected.connectionId, actor),
+          ).rejects.toThrow("This GitHub authorization is suspended while the company is paused.");
+          const [latest] = await db
+            .select()
+            .from(connectionGrants)
+            .where(eq(connectionGrants.id, grant!.id));
+          expect(latest?.status).toBe("suspended");
+          expect(connector.setWebhookBinding).not.toHaveBeenCalled();
+          // A later refresh (continuity sweep, webhook follow-up) changes nothing either.
+          await expect(
+            service.refreshManagedGitHubGrantAccess(
+              (await db.select().from(toolConnections).where(eq(toolConnections.id, connected.connectionId)))[0]!,
+              latest!,
+              actor,
+            ),
+          ).rejects.toMatchObject({ status: 409, details: { code: "grant_suspended" } });
+          const [after] = await db
+            .select()
+            .from(connectionGrants)
+            .where(eq(connectionGrants.id, grant!.id));
+          expect(after?.status).toBe("suspended");
+          return;
+        }
         if (concurrentChange !== "none") {
           beforeRepositoryResponse = async () => {
             if (concurrentChange === "one-conflict")
@@ -11676,7 +11731,7 @@ describeEmbeddedPostgres("tool access service", () => {
     try {
       const response = await request(createRouteApp(db)).get(`/api/companies/${company.id}/tools/gallery`).expect(200);
       expect(response.body.apps.some((app: { slug: string }) => app.slug === provider)).toBe(false);
-      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "memory_connectors_disabled" } });
+      await expect(service.connectGalleryApp(company.id, { galleryKey: provider })).rejects.toMatchObject({ status: 403, details: { code: "not_entitled", feature: "enableMemoryConnectors" } });
       expect(await db.select().from(toolConnections).where(eq(toolConnections.companyId, company.id))).toHaveLength(0);
       expect(await db.select().from(companySecrets).where(eq(companySecrets.companyId, company.id))).toHaveLength(0);
     } finally {

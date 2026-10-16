@@ -6,7 +6,7 @@ import type { Request } from "express";
 import { Router } from "express";
 import { companies, type Db } from "@greatstone/db";
 import { eq } from "drizzle-orm";
-import { instanceSettingsService } from "../services/instance-settings.js";
+import { requireEntitlement } from "../services/entitlements.js";
 import { slackToolCallSchema, isUuidLike } from "@greatstone/shared";
 import { badRequest, forbidden } from "../errors.js";
 import { assertCompanyAccess } from "./authz.js";
@@ -15,17 +15,7 @@ import { executeConnectorTool } from "../services/connector-runtime.js";
 export function slackToolRoutes(db: Db, publicBaseUrl?: string) {
   const router = Router();
   const oauth = slackSearchOAuthService(db, publicBaseUrl);
-  router.use(
-    ["/slack/search", "/companies/:companyId/slack"],
-    async (req, _res, next) => {
-      if (
-        !(await instanceSettingsService(db).getExperimental())
-          .enableChatConnectors
-      )
-        throw forbidden("Chat connectors are disabled");
-      next();
-    },
-  );
+  router.use(["/slack/search", "/companies/:companyId/slack"], requireEntitlement(db, "enableChatConnectors"));
   function user(req: Request) {
     assertBoard(req);
     if (!req.actor.userId)

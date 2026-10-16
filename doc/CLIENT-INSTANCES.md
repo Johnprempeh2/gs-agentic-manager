@@ -37,6 +37,35 @@ The server gets a clean environment: nothing from your shell (agent tokens,
 `TMPDIR`, so call the script through `env -i` (below). An agent run has a
 `TMPDIR` that is deleted when the run ends, and a `PATH` into `~/GSAM/live`.
 
+### Prove two instances cannot reach each other (GRE-1362)
+
+One sandbox test makes a sandbox hub and two Managed instances with the same
+`create` command, then proves AT-3.1, AT-3.5 and AT-3.6 (GRE-1357): the two
+differ only in root, ports, database, secrets and keys; neither port,
+log-in, session, database password, backup, master key, off-host key or
+fleet key of one works on the other; `/api/fleet` is 404 on a client
+instance; and no signed check-in holds seeded business text or ids.
+
+```sh
+RESTIC=/path/to/restic scripts/client-instance/isolation.sandbox-test.sh <empty scratch dir>
+```
+
+The test needs restic. If it is not on the host, use the release binary
+(tested with 0.17.3; pick the file for your OS and CPU):
+
+```sh
+curl -sSL -o restic.bz2 https://github.com/restic/restic/releases/download/v0.17.3/restic_0.17.3_linux_amd64.bz2
+bunzip2 restic.bz2 && chmod +x restic && ./restic version
+```
+
+It ends with `ALL PASSED`, and stops all three instances. Run it after any
+change to `create`, the backups, the off-host backups or the fleet channel.
+
+Local backups are plain database dumps. On a host where every instance runs
+as the same user (`gsam`), they are kept apart by folder and by the script's
+path checks, not by a key. Secrets inside them stay encrypted with the
+instance's own master key.
+
 ## Where the code runs
 
 Each release tag gets its own clone, next to the instance folders, never in
@@ -164,6 +193,40 @@ Settings.
 
 It stops with an error if any check fails; the instance stays up so you can look.
 
+### Add board, Exco and owner log-ins (GRE-1189)
+
+`create` makes one client log-in, and invites stay hidden for clients. To add
+the rest (about 35 for a Strategy Board client), write a list and run `users`
+on the running instance:
+
+```sh
+# list.csv: keep it off the app, issues and pull requests; delete it when done
+name,email,role
+Ada Board,ada@example.test,board
+"Kofi, Exco",kofi@example.test,exco
+Ola Owner,ola@example.test,owner
+
+scripts/client-instance.sh users --root <root> --file list.csv --dry-run   # what it would do
+scripts/client-instance.sh users --root <root> --file list.csv
+```
+
+| role | company role | board right (GRE-1135) |
+| --- | --- | --- |
+| `board` | Viewer | `strategy:board_member`: reads the strategy, asks "Why?", makes board packs; cannot edit goals, run agents or change settings |
+| `exco` (or `admin`) | Admin | acts on the board through the Admin role |
+| `owner` | Owner | acts on the board through the Owner role; chooses the board and the chair |
+
+- The whole list is checked first. With any bad row (no name, bad email,
+  unknown role, an email listed twice) it prints each one and writes nothing.
+- It makes a backup (`pre-users-*`) before the first change.
+- Safe to run again: a log-in that is already as the list says is `unchanged`.
+  A log-in with the membership but without a right gets the right (`added`).
+- It never changes a role. A log-in that has another role, or a membership that
+  is not active, is `REFUSED`; the exit code is then 1. Change that role in the
+  app (owners do it in Company settings > Members).
+- New log-ins get a random password, printed **once** to the terminal. Give
+  them to John. The chair is chosen in the app by an owner.
+
 ## Start, stop, status
 
 ```sh
@@ -178,6 +241,10 @@ The same `--root` always gives the same edition, ports and data.
 the last off-host backup, the current release tag, and the last upgrade and restore. It prints a `WARNING` line when there is no
 backup or the newest is older than 2 hours; the exit code stays 0. Run
 `status` before and after each upgrade.
+
+`status` also shows the lifecycle: active, paused or archived (see "Pause,
+resume, archive, delete"). An archive past its retention end shows
+`DUE FOR DELETION`.
 
 ## Check an instance
 
@@ -199,6 +266,149 @@ fails.
 `instance.environments`, `company.secrets`, `company.export` and
 `company.invites` also return 403 since GRE-107. `verify` proves they are
 hidden; it does not yet send a change request to each of them.
+
+## Billing account (GRE-1369)
+
+Each instance has one billing account record: plan, modules, fees, AI
+allowance, term, renewal, cancel state and invoice lines. The operator log-in
+(instance admin) sets it. Every board user of the instance can read it; any
+other write gets 403 `settings_operator_managed`. No price, allowance or end
+policy is built in: every value comes from the signed order form.
+
+```sh
+# as the operator log-in; the whole record each time
+curl -X PUT <base>/api/instance/billing-account -H 'Content-Type: application/json' -d '{
+  "planKind": "modules",                 # or "all_inclusive"
+  "planName": "<name on the order form>",
+  "catalogueVersion": "packaging-v2-d2-2026-10-11",
+  "currency": "GBP",
+  "serviceFeeCents": N,                  # Foundation and service fee per term period
+  "modules": [{"key": "crm", "feeCents": N}, {"key": "crm_write_back", "feeCents": N, "scope": "<agreed scope>"}],
+  "allowanceMonthlyCents": N,            # AI allowance included in the fee, API-equivalent US cents (any account currency)
+  "estimateMonthlyCents": N,             # optional: monthly AI usage estimated at sign-up
+  "usageFxRate": 0.79,                   # optional: account-currency units per US dollar, prices extra usage (not needed for USD)
+  "usageFxRateSetOn": "YYYY-MM-DD",      # optional: the day the rate is from (default: the day it changed)
+  "termKind": "monthly",                 # or "annual"
+  "termStartsOn": "YYYY-MM-DD",
+  "autoRenew": true,
+  "endAction": "pause",                  # or "archive" (John's policy); null until decided
+  "reason": "<why>"
+}'
+# one invoice line; sending the same reference again corrects it
+curl -X POST <base>/api/instance/billing-account/invoices -H 'Content-Type: application/json' \
+  -d '{"reference": "<invoice no>", "periodStart": "YYYY-MM-DD", "periodEnd": "YYYY-MM-DD",
+       "amountCents": N, "currency": "GBP", "status": "issued", "url": "https://<invoice link>", "issuedOn": "YYYY-MM-DD"}'
+```
+
+- **Modules** follow packaging v2 with John's D2 choices (11 Oct 2026):
+  `board` is an add-on that needs `strategy`; `crm_write_back`,
+  `crm_two_way_sync` and `crm_migration` each need `crm` and a `scope`;
+  pipelines and cases are in `crm`; development environments are in
+  `software_development` only. `feeCents: null` means included in the plan
+  fee. An all-inclusive plan lists its modules: a module added later does not
+  join it. The list is in `packages/shared/src/billing-account.ts`.
+- **Invoices** keep a reference, period, amount, status and link. No card or
+  bank data: any other field is refused.
+- **Cancel.** A client owner or admin cancels with
+  `POST /api/instance/billing-account/cancel` (`{"reason": "..."}`). The
+  next renewal stops and access stays to the end of the paid period that holds
+  that day. The day after, the status is `ended` and shows `endAction`; the
+  operator then pauses or archives the instance on the host. Nothing is
+  refunded automatically. A second cancel changes nothing.
+- **Auto-renew off** (operator) stops renewal the same way, without a cancel.
+- **Undo.** Only the operator lifts a cancel:
+  `POST /api/instance/billing-account/resume-renewal` with a reason.
+- Every change writes one activity row (`billing.account_updated`,
+  `billing.invoice_recorded`, `billing.cancel_requested`,
+  `billing.renewal_resumed`) with the old and new values.
+- **Usage (GRE-1389, GRE-1395).** `GET /api/instance/billing-account` also
+  returns `usage` for the instance's company in the current UTC month. The
+  allowance is in API-equivalent US cents; usage measured against it is
+  `consumedCents` = `usedCents` (recorded cost) + `apiEquivalentCents`
+  (subscription-included runs at API price), so the percent is USD against
+  USD for every account currency.
+- **What the client sees.** The response has `audience: "client"` for anyone
+  but the operator: `usedPercent`, `forecastPercent`, the warn level, and
+  `extraUsage` (usage past 100%) in the account currency. No allowance amount,
+  no US amounts and no rate. The operator log-in gets `audience: "operator"`
+  with all of them.
+- **Extra usage.** Converted with `usageFxRate` (a USD account uses 1). With
+  no rate on a non-USD account, `extraUsage.state` is `rate_missing` and no
+  amount is shown: set the rate.
+- **Warn level.** `warning` is true at `warnPercent` of the allowance: the
+  company budget policy's warn level, else the budget default. The first
+  crossing in a month makes one Inbox card and one `billing.usage_warning`
+  activity row; more usage, or a crossing again after a raised allowance,
+  makes no second one. The watch reports `budget-warn` (fail while warning),
+  so the next fleet check-in carries it.
+
+### Billing records outside the instance (GRE-1372)
+
+The billing account and invoices live in the instance's own database, so
+deleting the instance would delete them. Greatstone keeps them for the years
+John set (D8, 11 Oct 2026: 6 years). `billing-export` copies them to a
+billing archive on the host, outside every instance folder.
+
+One config file on the host holds the two settings. Nothing in the code
+holds a retention period; with no `BILLING_RETENTION_YEARS` the commands stop
+with `billing retention not set`.
+
+```sh
+# /etc/gsam/billing.env (one per host)
+BILLING_ARCHIVE_DIR=/srv/gsam-billing        # absolute; never inside an instance folder
+BILLING_RETENTION_YEARS=6                    # D8
+
+scripts/client-instance.sh billing-export --root <dir> --billing-config /etc/gsam/billing.env
+scripts/client-instance.sh billing-archive --billing-config /etc/gsam/billing.env
+```
+
+- **billing-export** reads the two tables (read only; a stopped instance's
+  database is started on its own and stopped again) and writes one file,
+  `<code>-billing-<hash>.json`, readable by its owner only. It holds the rows,
+  the export day and `retentionEndsOn` (export day + the set years). It
+  writes a temp file, renames it, then reads it back and checks the row
+  counts. Running it again with the same rows changes nothing (a later day
+  only moves the retention end forward). New rows give a new file; the old
+  one stays.
+- **billing-archive** lists every export with its retention end. Past that
+  day it says `DUE FOR REVIEW`. Nothing deletes an export on a timer: removal
+  is a manual step with an approval reference.
+- **delete** (GRE-1367) runs the export as its first step when the instance
+  holds any billing record, so it then needs `--billing-config`. If the
+  export fails or does not read back, `delete` stops and removes nothing.
+  The retention end is the deletion day + the set years. The deletion record
+  names the export file.
+
+## Copy a drafted plan to the client (GRE-1190)
+
+The strategy plan is drafted in the practice (workshop) instance. This step
+copies it to the client's instance. Both instances must be running. Add the
+client's users first (F11), so that owners can be matched.
+
+```sh
+scripts/client-instance.sh plan-copy --from <practice root> --to <client root>              # report only
+scripts/client-instance.sh plan-copy --from <practice root> --to <client root> --apply on   # copy
+```
+
+- What moves: every goal with a strategy kind (vision, value, CSF, pillar,
+  objective, KPI, initiative) with its plan fields: KPI target, baseline,
+  direction and thresholds, due dates, done-when, initiative budget, benchmark
+  note. Nothing else moves: no plain goals, issues, comments, check-ins, KPI
+  readings, agents, secrets or research-pack links.
+- Owners: a person owner is matched by email to an active member of the client
+  company. An owner with no match, and every agent owner, is listed; the goal
+  moves without that owner. Add the user, then run again.
+- `--apply on` backs up the client instance first (`pre-plan-copy-*`), then
+  writes the whole plan in one transaction.
+- Run it again after a workshop change: each goal keeps its id, so a re-run
+  updates the copied goals and makes no duplicates. It never deletes a goal in
+  the client instance, and it does not clear an owner set there.
+- The practice instance needs `--from-company <id>` when it has more than one
+  company. The client instance must have exactly one company.
+- Owner emails are printed to the terminal only. Do not paste them into issues.
+
+The company export/import is not used: it does not carry goals, and a client
+edition refuses import.
 
 ## Back up
 
@@ -361,6 +571,135 @@ RESTIC=/path/to/restic scripts/client-instance/offsite-watch.sandbox-test.sh <em
 node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/offsite.test.ts scripts/client-instance/watch.test.ts
 ```
 
+## Report to the Greatstone hub (GRE-1082)
+
+A client instance can report to a Greatstone hub: a GS Agentic Manager that
+oversees all client instances. The channel is in the app. Each message is
+signed with the instance's own key; the network (Tailscale or other) is not
+chosen yet and is never the only lock. The hub cannot send commands.
+
+**On the hub.** Start the hub with `GSAM_FLEET_HUB=true`. Without it, every
+fleet route answers 404 (a client instance is never a hub). An instance
+admin of the hub makes a one-time code for an instance code:
+
+```sh
+curl -X POST <hub>/api/fleet/instances -d '{"code":"c001"}'   # as a hub instance admin
+```
+
+The answer holds `registrationCode`, shown once and good for 24 h. The hub
+keeps only its hash. Give it to the person who runs `create`; never put it
+in an issue or a log.
+
+**On the client host.** Register at create, or later:
+
+```sh
+CLIENT_INSTANCE_FLEET_CODE=<code> scripts/client-instance.sh create --root <root> --edition managed --fleet-hub https://<hub>
+CLIENT_INSTANCE_FLEET_CODE=<code> scripts/client-instance.sh fleet-register --root <root> --fleet-hub https://<hub>
+```
+
+The instance makes its own Ed25519 key pair in `<root>/fleet/key.json` (mode
+600) and sends only the public key. The hub URL must be https (http only on
+loopback, for sandbox tests). The key is not in the backups: after a restore
+on a new host, revoke and register again.
+
+**Check-in.** Each `watch` pass (every 5 minutes) sends one signed check-in
+when the instance is registered. `fleet-check-in --root <root> --watch-config
+<file>` sends one now. A failed check-in prints a `WARNING` and does not
+change the watch exit code; `status` shows the last one. The check-in has a
+fixed schema (`packages/shared/src/fleet.ts`): edition; health (app up,
+backup age, last restore-check and off-host backup); version (release tag,
+app version, last upgrade); usage totals over the whole instance (companies,
+active agents, runs in 24 h, failed runs in 24 h, spend and budget this month,
+storage bytes); and
+one alert per watch check as key and pass/fail only; lifecycle (`active`,
+`paused` or `archived`, from `lifecycle` in `client-instance.json`, absent
+means active); and connection health as four counts over the whole instance
+(AI log-ins healthy / needs attention, tool connections active / disabled),
+or null when the app is down. Per-company signals fold
+into one key for the whole instance (it fails when any company fails), so no
+company id leaves the host; the hub refuses a key with a `:` suffix. The
+signal detail text stays on the host. Runs in 24 h are counted page by page,
+so the count is not capped at 1000. Failed runs are those that ended
+`failed`, `timed_out` or `interrupted` (the failure-rate rule). No names, emails, titles or client records. A new field needs a
+code change and review; the hub refuses any field it does not know.
+
+**Revoke.** From the hub: `POST <hub>/api/fleet/instances/<id>/revoke`. From
+the client host: `fleet-revoke --root <root>` (signed; then the key is
+deleted). After a hub revoke the next check-in fails with "the hub revoked
+this instance"; run `fleet-revoke --root <root> --local-only yes` to delete
+the old key, ask the hub for a new code
+(`POST <hub>/api/fleet/instances/<id>/registration-code`), and register again.
+
+The hub refuses a bad signature, a revoked key, a message older than 5
+minutes, and any message it has seen (each carries a growing `seq`). One
+instance's key cannot write as another. The only thing an instance reads
+back is the state of its own support tickets (below). Read check-ins on the hub (instance admins only):
+`GET <hub>/api/fleet/instances` and `GET <hub>/api/fleet/instances/<id>/check-ins`.
+The hub keeps 7 days of check-ins.
+
+Each instance in the hub list has a `state`. A paused or archived instance
+shows `paused` or `archived`, never `stale` or `down`, also when it sends
+nothing more. An active one shows `ok`, `stale` after
+`GSAM_FLEET_STALE_AFTER_MINUTES` (default 15) with no check-in, and `down`
+after `GSAM_FLEET_DOWN_AFTER_MINUTES` (default 60) or when its last check-in
+said the app was down. Set both on the hub. The hub still takes the v1
+check-in from an instance that is not yet upgraded; it keeps the last
+lifecycle it knows.
+
+**Support tickets ("Get help", GRE-1084).** A board member of the client
+opens a ticket in their instance: `POST /api/companies/<id>/client-support/tickets`
+with `kind` (`support`, `quality-review` or `upgrade`), `title`, `summary`,
+`priority` and, if they want, `linkedIssueId` (one of their own issues; it
+never leaves the instance). They may add up to 5 files to a ticket (PNG,
+JPEG, GIF, WebP, PDF, text or CSV; 5 MB each). Only those files go to the hub.
+Agents cannot open tickets.
+
+- Support is platform support only. A quality review is its own kind, apart
+  from platform faults, and not part of running the client's business.
+- An upgrade request opens a ticket and nothing more. It does not approve a
+  purchase or any spend; a person at Greatstone agrees it with the client.
+  Quality reviews and upgrade requests are always P3.
+
+Each `watch` pass, after the check-in, carries tickets both ways.
+`fleet-support-sync --root <root> --watch-config <file>` does one pass now:
+it signs in to the app as the operator, sends new and edited tickets in one
+signed message, sends each picked file in its own signed message (with its
+SHA-256), and writes the hub's answer back. `status` shows the last pass.
+
+On the hub, link the instance to its support queue once (instance admin):
+
+```sh
+curl -X PUT <hub>/api/fleet/instances/<id>/support-queue -d '{"supportQueueId":"<queue id>"}'
+```
+
+Until then the hub refuses the tickets with `support_not_set_up`; they stay
+`queued` in the client instance and go on a later pass. A new ticket lands in
+the queue like any support ticket (client code, triage owner, first-response
+clock, P1 alert). From the client, the hub gets only the words the client
+typed (title, summary and edits), the ticket kind and the asked priority, and
+the files the client picked (with name, type, size and hash). The hub adds its
+own support data: category, status, SLA times, owner, our replies, and the
+link and sync records that tie the ticket to the instance. Linked issues, run
+logs and records stay in the client instance; the sync message has no field
+for them. A client edit adds a comment on our ticket and keeps the kind in
+the title; priority and category stay with our triage. An `upgrade` or
+`quality-review` ticket stays P3: triage refuses P1 or P2 for it.
+
+To answer the client, the ticket owner or a board user posts
+`POST <hub>/api/issues/<issue id>/support-ticket/client-reply` with `{"body":"..."}`.
+The first reply stops the first-response clock. Internal issue comments never
+go to the client. The next pass brings back the status (`open`,
+`in_progress`, `resolved`, `closed`), SLA times, owner and replies. Every step
+is in the activity log on both sides (`client_support.*` on the client,
+`fleet_support.*` on the hub).
+
+Tests:
+
+```sh
+node cli/node_modules/tsx/dist/cli.mjs --test scripts/client-instance/fleet.test.ts
+(cd server && npx vitest run src/__tests__/fleet-routes.test.ts src/__tests__/fleet-support-bridge.test.ts)
+```
+
 ## Agree the update time with the client
 
 Clients run only `stable-*` tags (`stable-YYYY-MM-DD.N`), made by John with
@@ -454,6 +793,145 @@ Tested on a sandbox instance (upgrade, then restore, then health check and
 ```sh
 scripts/client-instance/upgrade-restore.sandbox-test.sh <empty scratch dir> [from ref] [to ref]
 ```
+
+## Pause, resume, archive, delete (GRE-1367)
+
+Use these when a client stops, takes a break or leaves. Each is a named act:
+`--operator` is the Greatstone person who runs it. Run them only with John's
+go-ahead on the issue for a real client.
+
+**Cost.** A paused or archived instance makes no new AI use, no runs and no
+pause or archive fee. It still uses disk, backups and admin time. Those are
+allocated costs: they stay in active-client economics and are not billed to
+the client as a fee.
+
+### Pause
+
+```sh
+CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh pause --root <root> \
+  --operator <name> --reason "<why>"
+```
+
+The instance must run. In this order it:
+
+1. pauses each active company in the app (GRE-1364): live runs and queued
+   wakes are cancelled, timers and routines stop, every connection and AI
+   grant is suspended. A company that was paused already is left as it is;
+2. counts runs, cost events, finance events and invoices;
+3. makes a backup (`pre-pause-*`);
+4. records the pause in `client-instance.json` (`lifecycle: paused`);
+5. sends a check-in that says `paused` (when registered with a hub);
+6. stops the app.
+
+Data, local backups and the off-host repository stay. While paused, `start`
+is refused with exit code 3 (the systemd unit does not restart on it),
+`offsite-backup` and `restore-check` say `skipped` and change nothing, and
+`watch` reports `paused` and fails only if the app runs.
+
+If `pause` stops after step 1 and before step 4, the companies are paused
+but no pause is recorded, and `resume` refuses (`no pause record`). To
+recover: sign in as the operator and resume each company in the app
+(`POST /api/companies/<id>/resume` with `operator` and `reason`). Then run
+`pause` again if the instance must still pause.
+
+On a hosted server, after `pause`, stop the unit so systemd does not try to
+start it: `sudo systemctl disable --now gsam-client@<code>`. Leave the watch
+timer on; it keeps sending check-ins that say `paused`.
+
+### Resume
+
+```sh
+CLIENT_INSTANCE_OPERATOR_PASSWORD=... scripts/client-instance.sh resume --root <root> \
+  --operator <name> --reason "<why>"
+```
+
+It starts the app with the companies still paused, then counts the same rows
+again. `PASS no new use while paused` means no run, cost event, finance event
+or invoice was added (AT-4.6). If a row was added, it says `FAIL`, finishes
+the resume and exits 1: find out why before the client uses the instance.
+Then it resumes only the companies that `pause` paused, with the operator and
+reason. Missed routine ticks are not replayed. Connections stay off until
+each one is turned on again in the app and passes its health check. Run
+`verify` next. On a hosted server: `sudo systemctl enable --now gsam-client@<code>`.
+
+An archived instance can be resumed the same way. If another instance took
+its ports, it gets new ones; the script says which.
+
+### Archive (dormant)
+
+```sh
+scripts/client-instance.sh archive --root <root> --operator <name> \
+  --retention-days <N> --offsite-config <file> --sandbox <empty dir> [--restic <bin>]
+```
+
+Only from `paused`. `<N>` is John's retention setting; there is no default
+and the script holds no value. It:
+
+1. starts the app only for a final backup (`archive-*`; the companies stay
+   paused), then stops it;
+2. sends the backups off the host (`offsite-backup`);
+3. pulls the newest off-host copy into `--sandbox`, runs restore-check on it
+   and deletes the copy. If this fails, nothing is archived and the instance
+   stays paused;
+4. checks both ports are free. Other instances may use them now;
+5. records the archive date, the retention days and the retention end
+   (`lifecycle: archived`), and sends a check-in that says `archived`.
+
+The local data stays until a delete. When the retention end passes, `status`
+shows `DUE FOR DELETION`. Nothing is deleted automatically.
+
+### Delete
+
+```sh
+scripts/client-instance.sh delete --root <root> --confirm-code <code> \
+  --approval <issue or ticket> --operator <name> \
+  [--billing-config <file>] [--offsite-config <file>] [--watch-config <file>] \
+  [--fleet-local-only yes] [--restic <bin>]
+```
+
+Only from `paused` or `archived`, with the app stopped. `--confirm-code` is
+the instance code typed again. `--approval` is the issue or ticket where John
+approved the deletion. Deletion follows John's approved retention and legal
+policy; do not delete before it allows.
+
+In this order it:
+
+1. **Billing records (AT-4.10).** Greatstone's billing records are not
+   deleted with the instance. When the instance holds any billing account or
+   invoice, `delete` runs `billing-export` with `--billing-config` (see
+   "Billing records outside the instance"). Without that flag, or if the
+   export fails or does not read back, it stops and removes nothing. With no
+   billing record it says so and goes on;
+2. **Hub.** Sends a signed `delete` to the hub. The hub removes this
+   instance's record and its check-ins, then the local hub key is deleted.
+   If the hub refuses or cannot be reached, `delete` stops and removes
+   nothing. If the hub had revoked the key, the spoke cannot ask: the key is
+   deleted and the record says a hub admin must run
+   `DELETE /api/fleet/instances/<id>` on the hub. With `--fleet-local-only yes`
+   (the hub is gone), only the local key is deleted, with the same note;
+3. removes every off-host snapshot of the code (`restic forget --prune`), the
+   repository folder when it is local, the off-host key file and config
+   file. On a Storage Box the empty repository folder stays: remove it there
+   by hand;
+4. removes the watch config file, when given (it holds the operator password);
+5. removes the instance folder: database, data, local backups, logs, keys.
+
+It leaves one record at `<instances dir>/deletions/<code>.json`: code, date,
+operator, approval reference, the billing export file, what was removed
+and what was not. No client
+data. A second run finds nothing to delete and says when it was deleted.
+On a hosted server, also `sudo systemctl disable --now gsam-watch@<code>.timer
+gsam-offsite@<code>.timer gsam-restore-check@<code>.timer`.
+
+### Prove it on a sandbox
+
+```sh
+RESTIC=/path/to/restic scripts/client-instance/lifecycle.sandbox-test.sh <empty scratch dir>
+```
+
+It makes a Managed sandbox instance and runs pause, resume (AT-4.6 PASS),
+pause again, archive, the due-for-deletion line, the delete refusals and a
+delete, then a second delete.
 
 ## Change the edition values
 

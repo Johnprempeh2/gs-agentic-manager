@@ -65,6 +65,8 @@ function isPrivateWebhook(req: {
 }
 
 function privateWebhookLogUrl(url: unknown) {
+  if (typeof url === "string" && /\/inbound\/tasks(?:\/|$)/i.test(url)) return "/api/inbound/tasks/:publicId";
+  if (typeof url === "string" && /\/calendar-feeds(?:\/|$)/i.test(url)) return "/api/calendar-feeds/:token";
   return typeof url === "string" && /\/routine-triggers\/public(?:\/|$)/i.test(url)
     ? "/api/routine-triggers/public/:publicId/fire"
     : "/api/chat-webhooks/:publicId/:provider";
@@ -144,7 +146,7 @@ export function createHttpLogger(baseLogger: Logger) {
       if (
         isSecretSensitiveHttpRequest(req.method, requestClassificationUrl(req))
       ) {
-        return `${req.method} ${requestLogUrl(req)} ${res.statusCode} — request failed`;
+        return `${req.method} ${requestLogUrl(req)} ${res.statusCode}: request failed`;
       }
       const ctx = (res as any).__errorContext;
       const errMsg =
@@ -152,7 +154,7 @@ export function createHttpLogger(baseLogger: Logger) {
         err?.message ||
         (res as any).err?.message ||
         "unknown error";
-      return `${req.method} ${stripSecretBearingUrlParts(req.url ?? "")} ${res.statusCode} — ${errMsg}`;
+      return `${req.method} ${stripSecretBearingUrlParts(req.url ?? "")} ${res.statusCode}: ${errMsg}`;
     },
     customErrorObject(req, _res, _err, value) {
       // pino-http serializes res.err independently of customProps/errorContext.

@@ -6,7 +6,7 @@ describe("buildAlreadyImportedMessage", () => {
     expect(
       buildAlreadyImportedMessage({ id: "company-2", name: "GS Agentic Manager", issuePrefix: "PAPA" }),
     ).toBe(
-      'This exact package was already imported by a completed transfer. The earlier import landed in the company "GS Agentic Manager" (PAPA) — open it from the company switcher. Re-export the package to import it again.',
+      'This exact package was already imported by a completed transfer. The earlier import landed in the company "GS Agentic Manager" (PAPA). Open it from the company switcher. Re-export the package to import it again.',
     );
   });
 
@@ -14,7 +14,7 @@ describe("buildAlreadyImportedMessage", () => {
     expect(
       buildAlreadyImportedMessage({ id: "company-2", name: null, issuePrefix: null }),
     ).toBe(
-      'This exact package was already imported by a completed transfer. The earlier import landed in the company "company-2" — open it from the company switcher. Re-export the package to import it again.',
+      'This exact package was already imported by a completed transfer. The earlier import landed in the company "company-2". Open it from the company switcher. Re-export the package to import it again.',
     );
   });
 

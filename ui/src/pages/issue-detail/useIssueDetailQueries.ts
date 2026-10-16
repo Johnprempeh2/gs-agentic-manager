@@ -33,7 +33,6 @@ export type UseIssueDetailQueriesInput = {
   streamlinedTaskDetailEnabled: boolean;
   tasksTab: { count: number; content: ReactNode; hasError?: boolean; } | undefined;
   selectedCompanyId: string | null;
-  streamlinedUiEnabled: boolean;
   detailTab: string;
   treeControlMode: "resume" | "cancel" | "restore";
   treeControlOpen: boolean;
@@ -49,7 +48,6 @@ export function useIssueDetailQueries({
   streamlinedTaskDetailEnabled,
   tasksTab,
   selectedCompanyId,
-  streamlinedUiEnabled,
   detailTab,
   treeControlMode,
   treeControlOpen,
@@ -241,9 +239,9 @@ export function useIssueDetailQueries({
   });
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
   useEffect(() => {
-    if (!streamlinedUiEnabled || !issue || !sessionResolved) return;
+    if (!issue || !sessionResolved) return;
     recordRecentTask(issue, currentUserId);
-  }, [issue, currentUserId, sessionResolved, streamlinedUiEnabled]);
+  }, [issue, currentUserId, sessionResolved]);
   const { data: boardAccess } = useQuery({
     queryKey: queryKeys.access.currentBoardAccess,
     queryFn: () => accessApi.getCurrentBoardAccess(),

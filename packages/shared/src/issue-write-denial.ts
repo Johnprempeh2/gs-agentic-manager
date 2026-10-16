@@ -143,7 +143,7 @@ export function describeIssueWriteDenial(
         description:
           `Issue writes are open by default, but only for tasks the actor can already ` +
           `read. ${issue} is not visible to ${actor}, so its comment, update, child, and ` +
-          `assignment channels are all closed — the wall is visibility, not the write itself.`,
+          `assignment channels are all closed. The wall is visibility, not the write itself.`,
         whoCanAct:
           `${assignee}, and any agent or board member the task is visible to.`,
         sanctionedPath:
@@ -164,7 +164,7 @@ export function describeIssueWriteDenial(
         whoCanAct:
           `A standard-trust agent in this company, or a board member.`,
         sanctionedPath:
-          `Report the request upward and let a standard-trust agent make the write — ` +
+          `Report the request upward and let a standard-trust agent make the write; ` +
           `actor-class scope cannot be widened per task.`,
       };
 
@@ -217,7 +217,7 @@ export function describeIssueWriteDenial(
         whoCanAct:
           `${assignee}'s live run, or an agent holding the manage-active-checkouts permission.`,
         sanctionedPath:
-          `Comment instead of patching — comments stay open and wake ${assignee} — or ` +
+          `Comment instead of patching (comments stay open and wake ${assignee}), or ` +
           `wait for the run to release the lock and retry.`,
       };
 
@@ -234,13 +234,13 @@ export function describeIssueWriteDenial(
         description:
           `A single heartbeat run may make at most ${cap} cross-issue comments or task ` +
           `updates combined${attempt !== null ? `; this was attempt ${attempt}` : ""}. The cap ` +
-          `bounds runaway comment sprays and loops — it is a rate backstop, not a ` +
+          `bounds runaway comment sprays and loops. It is a rate backstop, not a ` +
           `permission decision, so ${actor} is still allowed to write to ${issue}.`,
         whoCanAct:
           `${actor} on its next heartbeat run, or ${assignee} on ${issue} directly.`,
         sanctionedPath:
           `Consolidate what is left into one comment on your own task, or end the run and ` +
-          `continue on the next heartbeat — the budget resets per run.`,
+          `continue on the next heartbeat; the budget resets per run.`,
       };
     }
 
@@ -271,7 +271,7 @@ export function describeIssueWriteDenial(
         title: "Responsible user cannot be chosen by the caller",
         description:
           `\`onBehalfOfUserId\` is derived from the authenticated actor, never from the ` +
-          `request body — an agent cannot pick the human whose authority it rides. The ` +
+          `request body: an agent cannot pick the human whose authority it rides. The ` +
           `attempt was recorded in the audit log.`,
         whoCanAct:
           `${actor} itself: the write is allowed, only the chosen attribution is not.`,

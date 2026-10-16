@@ -1098,6 +1098,55 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
       });
     }
 
+    // GRE-844: a review with no reviewer left showed only Reassign and Cancel.
+    async function seedStalledReview() {
+      const companyId = randomUUID();
+      const ridgeId = randomUUID();
+      const issueId = randomUUID();
+      const now = new Date();
+      await db.insert(companies).values({ id: companyId, name: "GRE Co", issuePrefix: "GRE", requireBoardApprovalForNewAgents: false });
+      await db.insert(agents).values({
+        id: ridgeId, companyId, name: "Ridge", role: "engineer", status: "idle", adapterType: "codex_local", adapterConfig: {}, runtimeConfig: {}, permissions: {},
+      });
+      await db.insert(authUsers).values({ id: USER_ID, name: "John Prempeh", email: "john@example.com", createdAt: now, updatedAt: now });
+      await db.insert(companyMemberships).values({ companyId, principalType: "user", principalId: USER_ID, status: "active", membershipRole: "owner" });
+      await db.insert(issues).values({
+        id: issueId, companyId, identifier: "GRE-844", issueNumber: 844, title: "Billing page", status: "in_review", priority: "medium", assigneeAgentId: ridgeId,
+      });
+      return { companyId, ridgeId, issueId };
+    }
+
+    it("gives a review with no reviewer a plain ask and Approve, Request changes and Send back (GRE-1421)", async () => {
+      const seeded = await seedStalledReview();
+      const card = cardFor(await build(seeded.companyId), seeded.issueId);
+
+      expect(card?.kind).toBe("review");
+      expect(card?.reason).toBe("Ridge says the work is finished. No reviewer is set, so the task waits for you.");
+      expect(card?.nextStep).toBe("Check the result. Then approve it, ask for changes, or send it back to work.");
+      expect(card!.actions.map((candidate) => candidate.id).slice(0, 3)).toEqual(["approve", "request_changes", "send_back"]);
+      expect(action(card, "approve").description).toBe("The task is marked done.");
+      expect(action(card, "request_changes").description).toBe("The task goes back to Ridge with your note. Write a note first.");
+      expect(action(card, "request_changes").input).toEqual(expect.objectContaining({ field: "note", required: true }));
+      expect(action(card, "send_back").description).toBe("The task goes back to Ridge to continue. No note is necessary.");
+      // No internal words in what John reads.
+      expect([card!.reason, card!.nextStep, ...card!.actions.map((candidate) => candidate.description)].join(" "))
+        .not.toMatch(/stalled|execution policy/i);
+
+      await run(app(seeded.companyId), action(card, "request_changes"), "Show the allowance too.");
+      const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+      expect(task?.status).toBe("todo");
+      const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, seeded.issueId));
+      expect(comments.map((comment) => comment.body)).toContain("Show the allowance too.");
+    });
+
+    it("approves a review with no reviewer from the card", async () => {
+      const seeded = await seedStalledReview();
+      await run(app(seeded.companyId), action(cardFor(await build(seeded.companyId), seeded.issueId), "approve"));
+      const [task] = await db.select().from(issues).where(eq(issues.id, seeded.issueId));
+      expect(task?.status).toBe("done");
+      expect(cardFor(await build(seeded.companyId), seeded.issueId)).toBeNull();
+    });
+
     it("shows the reviewer Approve and Request changes, names them, and approving finishes the review", async () => {
       const seeded = await seedReview({ reviewer: { type: "user", userId: USER_ID } });
       const card = cardFor(await build(seeded.companyId), seeded.issueId);

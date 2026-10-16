@@ -11,7 +11,13 @@ import {
   MoreHorizontal,
   Plus,
   EyeOff,
+  CopyPlus,
+  MessageSquareText,
 } from "lucide-react";
+import { useDialogActions } from "../../context/DialogContext";
+import { repeatTaskDefaults } from "../../lib/repeat-task";
+import { issueToUpdate } from "../../lib/issues-text";
+import { useCopyToast } from "../../lib/use-copy-action";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
 import { cn } from "../../lib/utils";
@@ -145,6 +151,17 @@ export function IssueDetailHeader({
   externalObjectsState,
   uploadAttachment,
 }: IssueDetailHeaderProps) {
+  const { openNewIssue } = useDialogActions();
+  const copyText = useCopyToast();
+  const copyAsUpdate = () => {
+    const responsible = issue.assigneeAgentId
+      ? agentMap.get(issue.assigneeAgentId)?.name
+      : issue.assigneeUserId
+        ? userLabelMap.get(issue.assigneeUserId)
+        : null;
+    const link = typeof window === "undefined" ? null : window.location.href.split(/[?#]/)[0];
+    void copyText(issueToUpdate(issue, { responsible, link }), "Update copied, ready to paste");
+  };
   return (
     <div
       data-testid="issue-detail-header"
@@ -534,6 +551,28 @@ export function IssueDetailHeader({
                     setMoreOpen(false);
                   }}
                 />
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50"
+                  title="Start a new task with the same brief and owner"
+                  onClick={() => {
+                    openNewIssue(repeatTaskDefaults(issue));
+                    setMoreOpen(false);
+                  }}
+                >
+                  <CopyPlus className="h-3 w-3" />
+                  Do this again
+                </button>
+                <button
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50"
+                  title="Copy a short note on where this task stands, to paste into an email or a chat"
+                  onClick={() => {
+                    copyAsUpdate();
+                    setMoreOpen(false);
+                  }}
+                >
+                  <MessageSquareText className="h-3 w-3" />
+                  Copy as an update
+                </button>
                 <button
                   className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
                   onClick={() => {

@@ -43,7 +43,7 @@ Existing Paperclip installs keep working. At startup the server, CLI and dev run
 
 ## Brand and design
 
-The interface follows the Greatstone brand: the void (`#121212`) with lime `#c8ff00` in dark mode, paper (`#f7f8f4`) with emerald `#1b5039` in light mode, and Montserrat throughout. All visual values live in one token file, `ui/src/index.css`; components never hardcode colour, spacing or type. [DESIGN.md](DESIGN.md) sets the rules and `pnpm check:token-gates` enforces them.
+The interface follows the Greatstone brand: the void (`#121212`) with lime `#c8ff00` in dark mode; in light mode, a sage-stone canvas (`#f2f4ee`) under white cards with emerald `#1b5039`, and lime only ever as a fill under ink. Montserrat throughout. All visual values live in one token file, `ui/src/index.css`; components never hardcode colour, spacing or type. [DESIGN.md](DESIGN.md) sets the rules and `pnpm check:token-gates` enforces them.
 
 The stone mark is built from the traced outline of the Greatstone master logo (`ui/src/components/BrandMark.tsx`). Favicons and app icons are generated from the same geometry by `python3 scripts/generate-brand-icons.py`.
 

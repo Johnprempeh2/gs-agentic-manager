@@ -566,7 +566,7 @@ export function EmailEndpointSetup() {
         </p>
       )}
       <Dialog open={trustOpen} onOpenChange={setTrustOpen}>
-        <DialogContent className="max-h-screen overflow-y-auto sm:max-w-2xl">
+        <DialogContent scrollBody className="max-h-screen sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Trust settings · {chosen?.name}</DialogTitle>
             <DialogDescription>

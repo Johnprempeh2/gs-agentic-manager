@@ -63,9 +63,14 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
   document_revision: "Document",
   run: "Run",
   external_object: "External item",
+  claude_import: "Brought in from Claude",
+  chatgpt_import: "Brought in from ChatGPT",
+  client_document: "From document",
   memory_conflict: "Conflict check",
   memory_link_lead: "Link check",
 };
+
+const IMPORT_SOURCE_KINDS = new Set(["claude_import", "chatgpt_import"]);
 
 /**
  * Plain lines for what the link check matched, one per kind. Empty when there
@@ -87,6 +92,12 @@ export function sourceRef(source: MemorySourceRef | null | undefined): { label: 
     return source?.runId ? { label: `Run ${source.runId.slice(0, 8)}`, href: null } : null;
   }
   const kind = SOURCE_KIND_LABEL[source.kind] ?? source.kind.replace(/_/g, " ");
+  // An import's id is a hash of the line or chat: noise to a reader.
+  if (IMPORT_SOURCE_KINDS.has(source.kind)) return { label: kind, href: null };
+  if (source.kind === "client_document") {
+    const [caseId, evidenceId] = source.id.split("/");
+    return { label: kind, href: caseId && evidenceId ? `/api/cases/${caseId}/evidence/${evidenceId}/content` : null };
+  }
   const href = source.kind === "issue" ? `/issues/${source.id}` : null;
   return { label: `${kind} ${source.id.slice(0, 8)}`, href };
 }

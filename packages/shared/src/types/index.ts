@@ -38,6 +38,8 @@ export type {
 export type {
   AttentionDecisionVerb,
   AttentionDetailDeliverable,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -86,6 +88,18 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./team-scorecard.js";
+export type {
+  BlockedWorkIssueRef,
+  BlockedWorkItem,
+  BlockedWorkOverview,
+  BlockedWorkOwner,
+  BlockedWorkOwnerType,
+  BlockedWorkRootCause,
+  BlockedWorkTidyReason,
+} from "./blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -161,6 +175,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  type StrategyBoardEmailSettings,
   GSAM_CLOUD_MANAGED_BY,
   GREATSTONE_TEAM_TAG,
   TEAM_CATALOG_ADD_MODES,
@@ -516,6 +532,11 @@ export type {
   ToolAppAttentionItem,
   ToolAppAttentionReason,
   ToolAppsAttentionResponse,
+  AgentAccessAgentSummary,
+  AgentAccessItem,
+  AgentAccessItemKind,
+  AgentAccessItemState,
+  AgentAccessSummary,
   ToolActionRequestListItem,
   ToolActionRequestsResponse,
   ToolConnectionActivityResponse,
@@ -787,6 +808,8 @@ export type {
   RequestConfirmationConnectionAuthorizationPayload,
   ConnectionIntentPhase,
   ConnectionIntentPayload,
+  AskAgentPayload,
+  AskAgentResult,
   ConnectionIntentResult,
   RequestConfirmationSecretProposalPayload,
   RequestConfirmationSecretProposalResult,
@@ -810,12 +833,18 @@ export type {
   RequestConfirmationInteraction,
   RequestCheckboxConfirmationInteraction,
   RequestItemVerdictsInteraction,
+  RequestDraftReviewInteraction,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
+  RequestDraftReviewResultDraft,
   ConnectionIntentInteraction,
+  AskAgentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
   IssueThreadInteractionResult,
   IssueDocument,
   IssueDocumentSummary,
+  IssueDocumentLink,
   DocumentRevision,
   DocumentFormat,
   LegacyPlanDocument,
@@ -848,12 +877,35 @@ export type {
   GoalBlockerWaitingOn,
   GoalIssueBlocker,
   GoalCheckIn,
+  GoalKpiReading,
   GoalDetail,
   GoalMilestone,
   GoalProgress,
   GoalProgressSource,
   GoalWithProgress,
 } from "./goal.js";
+export type {
+  GoalKpiAlert,
+  GoalWhyRequest,
+  StrategyBoardAgent,
+  StrategyBoardAction,
+  StrategyBoardArea,
+  StrategyBoardBrief,
+  StrategyBoardBriefAction,
+  StrategyBoardBriefCheckIn,
+  StrategyBoardKpi,
+  StrategyBoardMember,
+  StrategyBoardOwner,
+  StrategyBoardPack,
+  StrategyBoardPackListItem,
+  StrategyBoardPackSnapshot,
+  StrategyBoardSnapshotRef,
+  StrategyBoardSummary,
+  StrategyBoardViewerRights,
+  StrategyBoardEmail,
+  StrategyBoardEmailKind,
+  StrategyBoardSettings,
+} from "./strategy-board.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   BudgetPolicy,
@@ -931,7 +983,7 @@ export type {
   RoutineExecutionIssueOrigin,
   RoutineListItem,
 } from "./routine.js";
-export type { CostEvent, CostSummary, IssueCostSummary, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
+export type { CostEvent, CostSummary, IssueCostSummary, IssueCostModelRow, CostByAgent, CostByProviderModel, CostByBiller, CostByAgentModel, CostWindowSpendRow, CostByProject, CompanySubscription, DetectedSubscriptionProvider, CompanySubscriptionsResult, ApiEquivalentModelRow, ApiEquivalentProviderRow, ApiEquivalentAgentRow, ApiEquivalentSummary, CostLedgerBasis, CostLedgerLine, CostLedgerTotal, CostLedger } from "./cost.js";
 export type { FinanceEvent, FinanceSummary, FinanceByBiller, FinanceByKind } from "./finance.js";
 export type {
   AgentWakeupResponse,
@@ -983,7 +1035,7 @@ export type {
   UserProfileWindowStats,
 } from "./user-profile.js";
 export type { SidebarBadges } from "./sidebar-badges.js";
-export type { SidebarOrderPreference } from "./sidebar-preferences.js";
+export type { SidebarOrderPreference, SidebarLayoutPreference } from "./sidebar-preferences.js";
 export type {
   ResourceMembershipResourceType,
   ResourceMembershipState,
@@ -1124,3 +1176,5 @@ export * from "./chat-channels.js";
 export * from "./chat-github.js";
 
 export * from "./email.js";
+export * from "./crm-sync.js";
+export * from "./pipeline-fields.js";

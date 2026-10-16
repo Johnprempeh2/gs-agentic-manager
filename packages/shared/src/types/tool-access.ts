@@ -79,7 +79,7 @@ export type ToolConnectionStatus = "draft" | "active" | "disabled" | "archived";
 export type ToolConnectionInstallTargetType = "company" | "agent";
 export type ConnectionGrantKind = "organization" | "user" | "agent";
 export type ConnectionGrantStatus =
-  "active" | "revoked" | "expired" | "needs_reauthorization";
+  "active" | "revoked" | "expired" | "needs_reauthorization" | "suspended";
 export type ToolConnectionCredentialPolicy =
   "shared" | "per_user" | "per_user_with_fallback" | "per_agent";
 export type ConnectionGrantMemberSubjectType = "user";
@@ -194,6 +194,8 @@ export interface ToolConnection {
   /** Most recent tool-call event timestamp for this connection; only populated by list endpoints. */
   lastUsedAt?: Date | string | null;
   enabled: boolean;
+  /** Set while a company pause holds this connection off (GRE-1364); re-enable it one by one after resume. */
+  pauseSuspendedAt?: Date | string | null;
   createdByAgentId: string | null;
   createdByUserId: string | null;
   createdAt: Date;
@@ -1741,4 +1743,41 @@ export interface ToolConnectionTestCallStatus {
   requestedAt: string;
   /** ISO timestamp the request was resolved (approved/denied/cancelled), when applicable. */
   resolvedAt?: string | null;
+}
+
+/** What an agent's access item is: an app, a gateway key, a stored secret or a chat channel. */
+export type AgentAccessItemKind = "connection" | "mcp_token" | "secret" | "channel";
+
+/**
+ * Whether one thing an agent relies on is working. `failing` means it is
+ * broken now, `missing` means something it needs was never set up (or was
+ * deleted), `expiring` means it stops working within 14 days, and `unchecked`
+ * means nothing looks wrong but it has not been tested yet.
+ */
+export type AgentAccessItemState = "ok" | "missing" | "failing" | "expiring" | "unchecked";
+
+/** One thing an agent can reach. Read only; never carries credentials. */
+export interface AgentAccessItem {
+  kind: AgentAccessItemKind;
+  id: string;
+  label: string;
+  connectionId?: string | null;
+  state: AgentAccessItemState;
+  /** Plain English explanation, for example "Needs to be reconnected". */
+  reason?: string | null;
+  lastUsedAt?: string | null;
+  expiresAt?: string | null;
+}
+
+export interface AgentAccessAgentSummary {
+  agentId: string;
+  name: string;
+  items: AgentAccessItem[];
+  counts: { missing: number; failing: number; expiring: number };
+}
+
+/** `GET /companies/:companyId/tools/agent-access`: what each agent can reach. */
+export interface AgentAccessSummary {
+  generatedAt: string;
+  agents: AgentAccessAgentSummary[];
 }

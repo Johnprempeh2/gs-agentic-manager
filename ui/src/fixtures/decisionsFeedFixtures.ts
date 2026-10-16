@@ -340,6 +340,66 @@ export function humanReviewCard(): DecisionCard {
   });
 }
 
+/**
+ * GRE-1421: in review with no reviewer left. The card says what Ridge handed
+ * over and what each verdict does. `context: false` has no summary or PR.
+ */
+export function stalledReviewCard(opts: { context?: boolean } = {}): DecisionCard {
+  const id = "task:issue-844";
+  const withContext = opts.context !== false;
+  const decisionPath = "/api/issues/issue-844/stalled-review-decision";
+  const reviewItem = {
+    id: "review:review:issue-844",
+    sourceKind: "review",
+    dismissalKey: "attention:review:issue-844",
+    severity: "high",
+    subject: {
+      kind: "issue",
+      id: "issue-844",
+      companyId: FIXTURE_COMPANY_ID,
+      title: "Billing page: show fees and allowance",
+      identifier: "GRE-844",
+      status: "in_review",
+      href: "/issues/GRE-844",
+      metadata: { assigneeAgentId: "agent-ridge", reviewAttentionState: "stalled" },
+    },
+    detail: {
+      kind: "review",
+      lastUpdate: withContext
+        ? {
+            commentId: "comment-9",
+            authorAgentId: "agent-ridge",
+            excerpt: "Done. The billing page now shows fees, the allowance, and actual against estimate. Tests pass. PR #525 is open.",
+            createdAt: NOW,
+            kind: "handoff",
+          }
+        : null,
+      workProduct: withContext
+        ? { type: "pull_request", title: "Billing fees and allowance (#525)", url: "https://github.com/Johnprempeh2/gs-agentic-manager/pull/525" }
+        : null,
+      images: [],
+    },
+    relatedIssue: null,
+  } as unknown as AttentionItem;
+  return card({
+    id,
+    kind: "review",
+    severity: "high",
+    task: task("issue-844", "GRE-844", "Billing page: show fees and allowance"),
+    title: "GRE-844 Billing page: show fees and allowance",
+    reason: "Ridge says the work is finished. No reviewer is set, so the task waits for you.",
+    waiting: { id: "agent-ridge", name: "Ridge" },
+    nextStep: "Check the result. Then approve it, ask for changes, or send it back to work.",
+    items: [reviewItem],
+    actions: [
+      { id: "approve", label: "Approve", description: "The task is marked done.", type: "request", requests: [request("POST", decisionPath, { action: "approve" })], href: null, input: null },
+      { id: "request_changes", label: "Request changes", description: "The task goes back to Ridge with your note. Write a note first.", type: "request", requests: [request("POST", decisionPath, { action: "request_changes" })], href: null, input: { field: "note", type: "text", label: "What must change", required: true } },
+      { id: "send_back", label: "Send back to work", description: "The task goes back to Ridge to continue. No note is necessary.", type: "request", requests: [request("POST", decisionPath, { action: "send_back" })], href: null, input: null },
+      ...taskActions("issue-844", id),
+    ],
+  });
+}
+
 /** Company-level card: no task, so no Not now or Ask for clarity. */
 export function connectionAlertCard(): DecisionCard {
   return card({

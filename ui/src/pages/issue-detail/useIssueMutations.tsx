@@ -53,7 +53,6 @@ export type UseIssueMutationsInput = {
   commentComposerRef: RefObject<IssueChatComposerHandle | null>;
   selectedCompanyId: string | null;
   pushToast: (input: ToastInput) => string | null;
-  streamlinedUiEnabled: boolean;
   sessionResolved: boolean;
   currentUserId: string | null;
   runStateIssueId: string | undefined;
@@ -81,7 +80,6 @@ export function useIssueMutations({
   commentComposerRef,
   selectedCompanyId,
   pushToast,
-  streamlinedUiEnabled,
   sessionResolved,
   currentUserId,
   runStateIssueId,
@@ -393,7 +391,7 @@ export function useIssueMutations({
       const issueRefs = new Set<string>([issueId!, nextIssue.id]);
       if (nextIssue.identifier) issueRefs.add(nextIssue.identifier);
       mergeIssueResponseIntoCaches(issueRefs, nextIssue);
-      if (streamlinedUiEnabled && sessionResolved) {
+      if (sessionResolved) {
         recordRecentTask(nextIssue, currentUserId);
       }
       queryClient.invalidateQueries({

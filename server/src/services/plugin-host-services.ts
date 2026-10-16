@@ -28,7 +28,7 @@ import type {
   PluginExecutionWorkspaceMetadata,
 } from "@greatstone/plugin-sdk";
 import type { CreateIssueThreadInteraction, InviteJoinType, IssueDocumentSummary, PermissionKey, PrincipalType } from "@greatstone/shared";
-import { pluginOperationIssueOriginKind } from "@greatstone/shared";
+import { isBoardGoalKind, pluginOperationIssueOriginKind } from "@greatstone/shared";
 import { companyService } from "./companies.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
@@ -167,7 +167,7 @@ async function validateAndResolveFetchUrl(urlString: string): Promise<ValidatedF
 
   if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) {
     throw new Error(
-      `Disallowed protocol "${parsed.protocol}" — only http: and https: are permitted`,
+      `Disallowed protocol "${parsed.protocol}": only http: and https: are permitted`,
     );
   }
 
@@ -2881,7 +2881,11 @@ export function buildHostServices(
       async update(params) {
         const companyId = ensureCompanyId(params.companyId);
         await ensurePluginAvailableForCompany(companyId);
-        requireInCompany("Goal", await goals.getById(params.goalId), companyId);
+        const existing = requireInCompany("Goal", await goals.getById(params.goalId), companyId);
+        // Vision, values and CSFs are for the board only (GRE-1132); plugins act as no board member.
+        if (isBoardGoalKind(existing.kind) || isBoardGoalKind((params.patch as { kind?: string | null }).kind)) {
+          throw new Error("Plugins cannot edit vision, value or critical success factor goals");
+        }
         return (await goals.update(params.goalId, params.patch as any)) as Goal;
       },
     },
@@ -3377,7 +3381,7 @@ export function buildHostServices(
           const timeoutTimer = setTimeout(() => {
             logger.warn(
               { pluginId, pluginKey, runId: run.id },
-              "session event subscription timed out — forcing cleanup",
+              "session event subscription timed out; forcing cleanup",
             );
             cleanup();
           }, SESSION_EVENT_SUBSCRIPTION_TIMEOUT_MS);

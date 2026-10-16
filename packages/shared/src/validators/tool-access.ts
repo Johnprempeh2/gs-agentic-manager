@@ -68,7 +68,7 @@ export const vercelConnectGrantSummarySchema = z.object({
   lastVerifiedAt: z.string().datetime({ offset: true }).optional(),
 }).strict();
 export const connectionGrantKindSchema = z.enum(["organization", "user", "agent"]);
-export const connectionGrantStatusSchema = z.enum(["active", "revoked", "expired", "needs_reauthorization"]);
+export const connectionGrantStatusSchema = z.enum(["active", "revoked", "expired", "needs_reauthorization", "suspended"]);
 export const createConnectionGrantDelegationSchema = z.object({
   agentId: z.string().guid(),
 });

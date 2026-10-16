@@ -18,7 +18,60 @@ export {
   type RunnerGoalActionRequest,
   type RunnerGoalActionAccepted,
 } from "./runner-goal.js";
+export {
+  GOAL_KIND_PARENTS,
+  GOAL_KIND_DEFAULT_LEVEL,
+  STRATEGIC_PLAN_TEMPLATE,
+  STRATEGIC_PLAN_TEMPLATE_NAME,
+  goalKindParentError,
+  isBoardGoalKind,
+  isStrategicWorkGoalKind,
+  type StrategicPlanTemplateNode,
+} from "./goal-cascade.js";
+export {
+  computeKpiStatus,
+  plannedKpiValue,
+  rollUpKpiStatus,
+  type GoalRagRollup,
+  type KpiPlan,
+  type KpiReadingPoint,
+  type KpiStatus,
+  type KpiStatusReason,
+  type RollupGoal,
+} from "./goal-kpi-status.js";
+export {
+  isPackReferenceSection,
+  suggestKpiDraftsFromPack,
+  type KpiDraftSuggestion,
+} from "./goal-kpi-drafts.js";
+export {
+  buildStrategyBoardAreas,
+  buildStrategyBoardKpis,
+  buildStrategyBoardOverdueActions,
+  findPlanObjective,
+  countStrategyBoardKpis,
+  kpiAlertAction,
+  rankStrategyBoardAttention,
+  boardEvidenceTrust,
+  renderStrategyBoardBrief,
+  renderStrategyBoardPackMarkdown,
+  strategyBoardNotMeasuredReason,
+  strategyBoardOwner,
+  type StrategyBoardGoal,
+  type StrategyBoardKpiInput,
+  type StrategyBoardActionTask,
+} from "./strategy-board.js";
+export * from "./team-chat.js";
+export * from "./unblock-waiting.js";
 export { ADAPTER_AUTH_MISSING_CHECK_CODE } from "./adapter-auth-check-code.js";
+export {
+  REQUIRED_CAPABILITIES_CONFIG_KEY,
+  RUN_CAPABILITY_KEYS,
+  RUN_CAPABILITY_LABELS,
+  isRunCapabilityKey,
+  readRequiredRunCapabilities,
+  type RunCapabilityKey,
+} from "./run-capabilities.js";
 export {
   CONNECTION_INTENT_AGENT_GUIDANCE,
   CONNECTION_REQUEST_TOOL_DESCRIPTION,
@@ -140,6 +193,24 @@ export {
   type PipelineHealthWarningCode,
 } from "./pipeline-health.js";
 export {
+  PIPELINE_ACCESS_LEVELS,
+  PIPELINE_ADMIN_PERMISSION_KEY,
+  PIPELINE_CASES_PERMISSION_KEY,
+  pipelineAccessGrantScope,
+  pipelineAccessScopeIds,
+  pipelineAccessLevelFor,
+  pipelineAllPipelinesLevel,
+  pipelinesTouchedByAccessChange,
+  planPipelineLevelChange,
+  resolvePipelineAccess,
+  type PipelineAccess,
+  type PipelineAccessLastChange,
+  type PipelineAccessLevel,
+  type PipelineAccessMatrix,
+  type PipelineAccessMatrixAgent,
+  type PipelineGrantScopeState,
+} from "./pipeline-access.js";
+export {
   caseTypeMatchesPipeline,
   deriveCaseType,
   type CaseTypePipelineRef,
@@ -188,6 +259,8 @@ export {
 export type {
   AttentionDecisionVerb,
   AttentionDetailDeliverable,
+  AttentionReviewLastUpdate,
+  AttentionReviewWorkProduct,
   AttentionDetailImage,
   AttentionFeed,
   AttentionItem,
@@ -236,6 +309,18 @@ export type {
   AgentWorkDigestSinceSource,
   AgentWorkDigestVisit,
 } from "./types/agent-work-digest.js";
+export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./types/calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./types/team-scorecard.js";
+export type {
+  BlockedWorkIssueRef,
+  BlockedWorkItem,
+  BlockedWorkOverview,
+  BlockedWorkOwner,
+  BlockedWorkOwnerType,
+  BlockedWorkRootCause,
+  BlockedWorkTidyReason,
+} from "./types/blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./types/recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
@@ -380,6 +465,22 @@ export {
 export * from "./validators/status-card.js";
 export * from "./types/deliverable.js";
 export * from "./validators/deliverable.js";
+export * from "./types/client-files.js";
+export * from "./validators/client-files.js";
+export * from "./types/client-journey.js";
+export * from "./validators/client-journey.js";
+export * from "./client-journey.js";
+export * from "./deliverable-versions.js";
+export * from "./draft-diff.js";
+export * from "./types/workflow-template.js";
+export * from "./validators/workflow-template.js";
+export * from "./types/document-evidence.js";
+export * from "./validators/document-evidence.js";
+export * from "./document-evidence.js";
+export * from "./types/website.js";
+export * from "./validators/website.js";
+export * from "./types/intelligence.js";
+export * from "./validators/intelligence.js";
 export { appDefinitionSchema, appDefinitionsSchema, connectionMethodDefSchema } from "./validators/app-definition.js";
 export * from "./types/chat-channels.js";
 export * from "./types/chat-github.js";
@@ -428,6 +529,8 @@ export {
   AGENT_DEFAULT_MAX_CONCURRENT_RUNS,
   WORKSPACE_BRANCH_ROUTINE_VARIABLE,
   ADAPTER_AGNOSTIC_KEYS,
+  AGENT_ACCESS_CONFIG_PATH_PREFIX,
+  pickAgentAccessGrants,
   AGENT_ICON_NAMES,
   PROJECT_ICON_NAMES,
   ISSUE_STATUSES,
@@ -435,6 +538,7 @@ export {
   INBOX_MINE_ISSUE_STATUS_FILTER,
   ISSUE_PRIORITIES,
   ISSUE_REVIEW_POLICIES,
+  ISSUE_UNBLOCK_WAITING_ON,
   ISSUE_WORK_MODES,
   ISSUE_HARNESS_KINDS,
   MAX_ISSUE_REQUEST_DEPTH,
@@ -448,6 +552,7 @@ export {
   ISSUE_COMMENT_PRESENTATION_DENSITIES,
   clampIssueRequestDepth,
   ISSUE_THREAD_INTERACTION_KINDS,
+  AGENT_QUESTION_MAX_OPEN_PER_ISSUE,
   ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES,
   ISSUE_THREAD_INTERACTION_LEGACY_RESOLVER_POLICY_ALIASES,
   ISSUE_THREAD_INTERACTION_RESOLVER_POLICIES,
@@ -499,7 +604,20 @@ export {
   ISSUE_EXECUTION_MONITOR_CLEAR_REASONS,
   ISSUE_EXECUTION_DECISION_OUTCOMES,
   GOAL_LEVELS,
+  GOAL_KINDS,
+  GOAL_KIND_LABELS,
+  BOARD_GOAL_KINDS,
+  STRATEGIC_WORK_GOAL_KINDS,
+  ISSUE_WORK_FILTERS,
   GOAL_STATUSES,
+  KPI_DIRECTIONS,
+  KPI_READING_SOURCES,
+  KPI_READING_SOURCE_LABELS,
+  KPI_RAG_STATUSES,
+  GOAL_WHY_REQUEST_STATUSES,
+  STRATEGY_BOARD_PACK_STATUSES,
+  DEFAULT_KPI_AMBER_THRESHOLD_PCT,
+  DEFAULT_KPI_RED_THRESHOLD_PCT,
   PROJECT_STATUSES,
   ENVIRONMENT_DRIVERS,
   ENVIRONMENT_STATUSES,
@@ -536,6 +654,7 @@ export {
   BUDGET_SCOPE_TYPES,
   BUDGET_METRICS,
   BUDGET_WINDOW_KINDS,
+  DEFAULT_BUDGET_WARN_PERCENT,
   BUDGET_THRESHOLD_TYPES,
   BUDGET_INCIDENT_STATUSES,
   BUDGET_INCIDENT_RESOLUTION_ACTIONS,
@@ -633,6 +752,7 @@ export {
   type IssueStatus,
   type IssuePriority,
   type IssueReviewPolicy,
+  type IssueUnblockWaitingOn,
   type IssueWorkMode,
   type IssueHarnessKind,
   type SummarySlotScopeKind,
@@ -686,7 +806,14 @@ export {
   type IssueExecutionMonitorClearReason,
   type IssueExecutionDecisionOutcome,
   type GoalLevel,
+  type GoalKind,
+  type IssueWorkFilter,
   type GoalStatus,
+  type KpiDirection,
+  type KpiReadingSource,
+  type KpiRagStatus,
+  type GoalWhyRequestStatus,
+  type StrategyBoardPackStatus,
   type ProjectStatus,
   type EnvironmentDriver,
   type EnvironmentStatus,
@@ -1237,6 +1364,8 @@ export type {
   RequestConfirmationConnectionAuthorizationPayload,
   ConnectionIntentPhase,
   ConnectionIntentPayload,
+  AskAgentPayload,
+  AskAgentResult,
   ConnectionIntentResult,
   RequestConfirmationSecretProposalPayload,
   RequestConfirmationSecretProposalResult,
@@ -1248,6 +1377,9 @@ export type {
   RequestItemVerdictsPayload,
   RequestItemVerdictsResultItem,
   RequestItemVerdictsResult,
+  RequestDraftReviewPayload,
+  RequestDraftReviewResult,
+  RequestDraftReviewResultDraft,
   AcceptedPlanDecompositionStatus,
   AcceptedPlanDecompositionChild,
   AcceptedPlanDecomposition,
@@ -1260,12 +1392,15 @@ export type {
   RequestConfirmationInteraction,
   RequestCheckboxConfirmationInteraction,
   RequestItemVerdictsInteraction,
+  RequestDraftReviewInteraction,
   ConnectionIntentInteraction,
+  AskAgentInteraction,
   IssueThreadInteraction,
   IssueThreadInteractionPayload,
   IssueThreadInteractionResult,
   IssueDocument,
   IssueDocumentSummary,
+  IssueDocumentLink,
   DocumentRevision,
   DocumentFormat,
   LegacyPlanDocument,
@@ -1288,11 +1423,32 @@ export type {
   GoalBlockerWaitingOn,
   GoalIssueBlocker,
   GoalCheckIn,
+  GoalKpiReading,
   GoalDetail,
   GoalMilestone,
   GoalProgress,
   GoalProgressSource,
   GoalWithProgress,
+  GoalKpiAlert,
+  GoalWhyRequest,
+  StrategyBoardAgent,
+  StrategyBoardAction,
+  StrategyBoardArea,
+  StrategyBoardBrief,
+  StrategyBoardBriefAction,
+  StrategyBoardBriefCheckIn,
+  StrategyBoardKpi,
+  StrategyBoardMember,
+  StrategyBoardOwner,
+  StrategyBoardPack,
+  StrategyBoardPackListItem,
+  StrategyBoardPackSnapshot,
+  StrategyBoardSnapshotRef,
+  StrategyBoardSummary,
+  StrategyBoardViewerRights,
+  StrategyBoardEmail,
+  StrategyBoardEmailKind,
+  StrategyBoardSettings,
   Approval,
   ApprovalComment,
   BudgetPolicy,
@@ -1304,6 +1460,7 @@ export type {
   CostEvent,
   CostSummary,
   IssueCostSummary,
+  IssueCostModelRow,
   CostByAgent,
   CostByProviderModel,
   CostByBiller,
@@ -1371,6 +1528,7 @@ export type {
   UserProfileWindowStats,
   SidebarBadges,
   SidebarOrderPreference,
+  SidebarLayoutPreference,
   InboxDismissal,
   InboxDismissalKind,
   AccessUserProfile,
@@ -1530,6 +1688,11 @@ export type {
   ToolAppAttentionItem,
   ToolAppAttentionReason,
   ToolAppsAttentionResponse,
+  AgentAccessAgentSummary,
+  AgentAccessItem,
+  AgentAccessItemKind,
+  AgentAccessItemState,
+  AgentAccessSummary,
   ToolActionRequestListItem,
   ToolActionRequestsResponse,
   ToolConnectionActivityResponse,
@@ -1781,6 +1944,10 @@ export {
 export {
   sidebarOrderPreferenceSchema,
   upsertSidebarOrderPreferenceSchema,
+  upsertSidebarSectionOrderSchema,
+  sidebarLayoutSchema,
+  upsertSidebarLayoutSchema,
+  type SidebarLayout,
   type UpsertSidebarOrderPreference,
 } from "./validators/sidebar-preferences.js";
 export {
@@ -1838,6 +2005,8 @@ export {
   WEEKLY_RETENTION_PRESETS,
   MONTHLY_RETENTION_PRESETS,
   DEFAULT_BACKUP_RETENTION,
+  DEFAULT_STRATEGY_BOARD_EMAIL_SETTINGS,
+  type StrategyBoardEmailSettings,
   DEFAULT_RUN_ADMISSION_MAX_CONCURRENT_RUNS,
   DEFAULT_RUN_ADMISSION_MIN_AVAILABLE_MEMORY_MB,
   DEFAULT_RUN_ADMISSION_MIN_FREE_DISK_GB,
@@ -1882,6 +2051,7 @@ export {
 export {
   instanceSettingsSchema,
   instanceGeneralSettingsSchema,
+  strategyBoardEmailSettingsSchema,
   patchInstanceGeneralSettingsSchema,
   type PatchInstanceGeneralSettings,
   instanceExperimentalSettingsSchema,
@@ -1917,6 +2087,8 @@ export {
   interactionResolverGovernanceSchema,
   updateCompanySchema,
   updateCompanyBrandingSchema,
+  pauseCompanySchema,
+  resumeCompanySchema,
   feedbackTargetTypeSchema,
   feedbackTraceStatusSchema,
   feedbackVoteValueSchema,
@@ -1980,6 +2152,8 @@ export {
   resetAgentSessionSchema,
   testAdapterEnvironmentSchema,
   agentPermissionsSchema,
+  agentPipelineAccessSchema,
+  setAgentPipelineLevelSchema,
   updateAgentPermissionsSchema,
   type CreateAgent,
   type BuiltInAgentProvision,
@@ -2064,6 +2238,10 @@ export {
   issueThreadInteractionStatusSchema,
   issueThreadInteractionKindSchema,
   issueThreadInteractionContinuationPolicySchema,
+  askAgentPayloadSchema,
+  askAgentResultSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   connectionIntentPhaseSchema,
   connectionIntentPayloadSchema,
   connectionIntentResultSchema,
@@ -2092,6 +2270,8 @@ export {
   requestItemVerdictsPayloadSchema,
   requestItemVerdictsResultItemSchema,
   requestItemVerdictsResultSchema,
+  requestDraftReviewPayloadSchema,
+  requestDraftReviewResultSchema,
   createIssueThreadInteractionSchema,
   acceptIssueThreadInteractionSchema,
   rejectIssueThreadInteractionSchema,
@@ -2144,6 +2324,9 @@ export {
   issueDocumentKeySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   tableIssueSchema,
   type TableIssue,
   createIssueTreeHoldSchema,
@@ -2162,6 +2345,8 @@ export {
   type CheckoutIssue,
   type AddIssueComment,
   type CreateIssueThreadInteraction,
+  type CreateAgentQuestion,
+  type AnswerAgentQuestion,
   type AcceptIssueThreadInteraction,
   type RejectIssueThreadInteraction,
   type CancelIssueThreadInteraction,
@@ -2188,15 +2373,36 @@ export {
   type IssueDocumentFormat,
   type UpsertIssueDocument,
   type RestoreIssueDocumentRevision,
+  type CreateIssueDocumentLink,
+  type SetIssueDocumentMaker,
+  type SetIssueDocumentApprovedRevision,
   type CreateIssueTreeHold,
   type PreviewIssueTreeControl,
   type ReleaseIssueTreeHold,
   createGoalSchema,
   updateGoalSchema,
   createGoalCheckInSchema,
+  createGoalKpiReadingSchema,
+  createKpiDraftsFromPackSchema,
+  kpiDraftRowSchema,
   type CreateGoal,
   type UpdateGoal,
   type CreateGoalCheckIn,
+  type CreateGoalKpiReading,
+  type CreateKpiDraftsFromPack,
+  type KpiDraftRow,
+  createGoalWhyRequestSchema,
+  answerGoalWhyRequestSchema,
+  createStrategyBoardPackSchema,
+  setStrategyBoardMembersSchema,
+  setStrategyBoardMemberAgentsSchema,
+  type CreateGoalWhyRequest,
+  type AnswerGoalWhyRequest,
+  type CreateStrategyBoardPack,
+  type SetStrategyBoardMembers,
+  type SetStrategyBoardMemberAgents,
+  updateStrategyBoardSettingsSchema,
+  type UpdateStrategyBoardSettings,
   applyOnboardingSeedSchema,
   type ApplyOnboardingSeed,
   createApprovalSchema,
@@ -2349,6 +2555,9 @@ export {
   pipelineStageKindSchema,
   pipelineStageOnEnterSchema,
   pipelineStageVariableSchema,
+  pipelineStageTemplateSchema,
+  pipelineStageExpectedDeliverableSchema,
+  pipelineStageRequestedDocumentSchema,
   rotateRoutineTriggerSecretSchema,
   routineRevisionSnapshotRoutineV1Schema,
   routineRevisionSnapshotTriggerV1Schema,
@@ -2773,14 +2982,18 @@ export {
   GRADUATED_INSTANCE_FEATURE_KEYS,
   INSTANCE_FEATURE_CATALOG,
   INSTANCE_FEATURE_KEYS,
+  INSTANCE_FEATURE_REQUIRES,
   RETIRED_INSTANCE_FEATURE_KEYS,
+  applyFeatureDependencies,
   buildFeatureCatalogArtifact,
   featureCatalogArtifactSchema,
+  featureDependencyViolations,
   isGraduatedInstanceFeatureKey,
   isRetiredInstanceFeatureKey,
   renderFeatureCatalogArtifact,
   type FeatureCatalogArtifact,
   type FeatureCatalogEntry,
+  type FeatureDependencyViolation,
   type FeatureTier,
   type GraduatedInstanceFeatureKey,
   type InstanceFeatureKey,
@@ -2894,6 +3107,11 @@ export * from "./ai-connections.js";
 export * from "./member-handover.js";
 export * from "./types/email.js";
 export * from "./validators/email.js";
+export * from "./validators/mailbox.js";
+export * from "./validators/inbound-task-hooks.js";
+export * from "./validators/outbound-webhooks.js";
+export * from "./validators/notion-import.js";
+export * from "./validators/integration-keys.js";
 export { configureRailwaySshSchema, type ConfigureRailwaySsh, type RailwaySshSetup } from "./railway-connection.js";
 export * from "./announcements.js";
 
@@ -2909,6 +3127,7 @@ export * from "./connection-routing.js";
 export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorkspaceRestorePath } from "./workspace-restore.js";
 
 export * from "./deep-dive.js";
+export * from "./image-generation.js";
 export {
   AGENT_TEAM_COLORS,
   addAgentTeamMemberSchema,
@@ -2920,3 +3139,39 @@ export {
   type UpdateAgentTeam,
 } from "./agent-teams.js";
 export * from "./memory.js";
+export * from "./memory-import.js";
+export * from "./crm-sync.js";
+export * from "./types/crm-sync.js";
+export * from "./validators/crm-sync.js";
+export * from "./organisations.js";
+export * from "./types/organisations.js";
+export * from "./validators/organisations.js";
+export * from "./pipeline-fields.js";
+export * from "./types/pipeline-fields.js";
+export * from "./validators/pipeline-fields.js";
+export * from "./entitlement-document.js";
+export * from "./partner-branding.js";
+export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
+export type { MorningSummary, MorningSummaryTask, NotificationPreferences } from "./types/notification-preferences.js";
+export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
+export {
+  updateNotificationPreferencesSchema,
+  type UpdateNotificationPreferences,
+} from "./validators/notification-preferences.js";
+export type {
+  WeeklyReport,
+  WeeklyReportAgentCost,
+  WeeklyReportAgentWork,
+  WeeklyReportDay,
+  WeeklyReportPipelineMove,
+  WeeklyReportStuckTask,
+  WeeklyReportTask,
+} from "./types/weekly-report.js";
+export type {
+  AgentDailyDigest,
+  AgentDailyDigestAgent,
+  AgentDailyDigestCounts,
+  AgentDailyDigestItem,
+  AgentDailyDigestMove,
+  AgentDailyDigestPayload,
+} from "./types/agent-daily-digest.js";

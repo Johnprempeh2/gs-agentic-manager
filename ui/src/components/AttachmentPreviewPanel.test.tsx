@@ -139,8 +139,16 @@ describe("attachment preview panel", () => {
     return event;
   }
 
-  it("opens an HTML attachment in a sandboxed frame on a plain click", async () => {
+  // Router navigations render in a transition, which can take more than one
+  // macrotask when the machine is busy, so wait for the panel itself.
+  async function openPreview() {
     const event = await click(link("mock-up.html"));
+    await vi.waitFor(() => expect(panel()).not.toBeNull());
+    return event;
+  }
+
+  it("opens an HTML attachment in a sandboxed frame on a plain click", async () => {
+    const event = await openPreview();
 
     expect(event.defaultPrevented).toBe(true);
     const sheet = panel();
@@ -171,7 +179,7 @@ describe("attachment preview panel", () => {
   });
 
   it("closes with the close button and returns to the issue's history entry", async () => {
-    await click(link("mock-up.html"));
+    await openPreview();
     const close = document.querySelector<HTMLButtonElement>("button[aria-label='Close preview']")!;
     await act(() => {
       close.click();
@@ -181,7 +189,7 @@ describe("attachment preview panel", () => {
   });
 
   it("closes on Escape", async () => {
-    await click(link("mock-up.html"));
+    await openPreview();
     await act(() => {
       document.activeElement?.dispatchEvent(
         new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
@@ -191,8 +199,7 @@ describe("attachment preview panel", () => {
   });
 
   it("closes on browser back", async () => {
-    await click(link("mock-up.html"));
-    expect(panel()).not.toBeNull();
+    await openPreview();
     await act(() => {
       navigateBack!();
     });
@@ -201,7 +208,7 @@ describe("attachment preview panel", () => {
   });
 
   it("switches HTML previews between fit, laptop and phone widths", async () => {
-    await click(link("mock-up.html"));
+    await openPreview();
     const frame = () => panel()!.querySelector("iframe")!;
     expect(frame().dataset.viewport).toBe("fit");
 

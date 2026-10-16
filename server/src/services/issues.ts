@@ -1,4 +1,5 @@
 import { mirrorSlackBoardComment, slackBoardReplyBindings } from "./slack-board-messages.js";
+import { buildClosedCardAgentMessage, closedCardMakersToWake, closedCardQuestion } from "./closed-card-wake.js";
 import { assertAgentRunWriteAllowed } from "../agent-run-cancellation.js";
 import { externalConversationStateSql, nonIdleSlackIssueCondition, resumeSlackConversation } from "./slack-conversation-state.js";
 import { documentService } from "./documents.js";
@@ -22,6 +23,7 @@ import {
   isNull,
   like,
   lt,
+  lte,
   ne,
   notExists,
   notInArray,
@@ -104,6 +106,8 @@ import {
   issueCommentPresentationSchema,
   isUuidLike,
   normalizeIssueIdentifier as normalizeIssueReferenceIdentifier,
+  STRATEGIC_WORK_GOAL_KINDS,
+  type IssueWorkFilter,
 } from "@greatstone/shared";
 import { conflict, HttpError, notFound, unprocessable } from "../errors.js";
 import { isForeignKeyViolation } from "../db-errors.js";
@@ -153,6 +157,7 @@ import {
 } from "./issue-goal-fallback.js";
 import { getRunLogStore } from "./run-log-store.js";
 import { getDefaultCompanyGoal } from "./goals.js";
+import { assertDueDateOnPlan, resolveNextDueDate } from "./issue-due-date.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import {
   CHAT_RUN_PRESENTATION_AUTHORIZATION_REASON,
@@ -188,6 +193,7 @@ import {
   type IssueGraphLivenessInput,
   type IssueLivenessFinding,
 } from "./recovery/issue-graph-liveness.js";
+import { carryWaitingDateMarker } from "./recovery/waiting-date.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 import { finalizeStatusCardsForStalledGeneration } from "./status-card-finalization.js";
 import { finalizeSummarySlotsForTerminalIssue } from "./summary-slot-finalization.js";
@@ -246,12 +252,25 @@ const ISSUE_WAKE_DIAGNOSTICS_ACTIVITY_ACTIONS = [
   "issue.tree_hold_wakeup_deferred",
 ] as const;
 
-export type IssuePostCommitAction = {
-  type: "cancel_native_question_run";
-  runId: string;
-  issueId: string;
-  issueStatus: string;
-};
+export type IssuePostCommitAction =
+  | {
+      type: "cancel_native_question_run";
+      runId: string;
+      issueId: string;
+      issueStatus: string;
+    }
+  | {
+      // An agent or the system closed a task under another agent's pending
+      // card. Tell the card's maker its question was never answered.
+      type: "wake_closed_card_maker";
+      companyId: string;
+      agentId: string;
+      interactionId: string;
+      issueId: string;
+      issueLabel: string;
+      question: string | null;
+      closerAgentId: string | null;
+    };
 
 /** Execute side effects that must never run before the issue transaction commits. */
 export async function executeIssuePostCommitActions(
@@ -263,6 +282,10 @@ export async function executeIssuePostCommitActions(
   const heartbeat = heartbeatService(db);
   const cancelledRunIds = new Set<string>();
   for (const action of actions) {
+    if (action.type === "wake_closed_card_maker") {
+      await wakeClosedCardMaker(db, heartbeat, action);
+      continue;
+    }
     if (cancelledRunIds.has(action.runId)) continue;
     cancelledRunIds.add(action.runId);
     try {
@@ -285,6 +308,57 @@ export async function executeIssuePostCommitActions(
         "native question cancellation deferred to recovery sweep",
       );
     }
+  }
+}
+
+async function wakeClosedCardMaker(
+  db: Db,
+  heartbeat: { wakeup: (agentId: string, input: any) => Promise<unknown> },
+  action: Extract<IssuePostCommitAction, { type: "wake_closed_card_maker" }>,
+): Promise<void> {
+  try {
+    const closerName = action.closerAgentId
+      ? await db
+          .select({ name: agents.name })
+          .from(agents)
+          .where(and(eq(agents.id, action.closerAgentId), eq(agents.companyId, action.companyId)))
+          .then((rows) => rows[0]?.name ?? null)
+      : "GS Agentic Manager";
+    const text = buildClosedCardAgentMessage({
+      question: action.question,
+      issueLabel: action.issueLabel,
+      closerName,
+    });
+    const agentMessage = { text, source: "closed_card_expired", sessionId: action.interactionId };
+    // No issueId: the task is closed, and the maker should ask again elsewhere.
+    await heartbeat.wakeup(action.agentId, {
+      source: "automation",
+      triggerDetail: "system",
+      reason: "interaction_expired",
+      idempotencyKey: `interaction:${action.interactionId}:issue_closed`,
+      requestedByActorType: "system",
+      requestedByActorId: "closed_card_guard",
+      payload: {
+        closedIssueId: action.issueId,
+        interactionId: action.interactionId,
+        interactionStatus: "expired",
+        paperclipAgentMessage: agentMessage,
+      },
+      contextSnapshot: {
+        closedIssueId: action.issueId,
+        interactionId: action.interactionId,
+        interactionStatus: "expired",
+        paperclipAgentMessage: agentMessage,
+        wakeReason: "interaction_expired",
+        source: "issue.status_transition.issue_closed",
+      },
+    });
+  } catch (err) {
+    // The card is already expired and logged; a lost wake must not fail the close.
+    logger.warn(
+      { err, interactionId: action.interactionId, agentId: action.agentId },
+      "failed to wake the maker of a card expired by a task close",
+    );
   }
 }
 
@@ -1854,6 +1928,8 @@ export interface IssueFilters {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  /** Strategic work (goal kind objective or initiative) or everything else. */
+  work?: IssueWorkFilter;
   lowTrustBoundary?: LowTrustBoundary & { companyId: string };
   q?: string;
   limit?: number;
@@ -1958,9 +2034,10 @@ function assigneeUserFilterCondition(assigneeUserId: string, aliases: readonly s
 /** Conversation containers cannot acquire new child edges, even with the experiment disabled. */
 async function assertExecutionTaskParent(db: Db, companyId: string, parentId?: string | null) {
   if (!parentId) return;
-  const [parent] = await db.select({ conversationAgentId: issues.conversationAgentId })
+  const [parent] = await db.select({ conversationAgentId: issues.conversationAgentId, originKind: issues.originKind })
     .from(issues).where(and(eq(issues.id, parentId), eq(issues.companyId, companyId)));
   if (parent?.conversationAgentId) throw unprocessable("Conversations cannot have new subtasks; create a task in a project instead");
+  if (parent?.originKind === "team_chat") throw unprocessable("Team chats cannot have subtasks; create a task in a project and link it in the chat");
 }
 
 type DbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -2884,6 +2961,14 @@ function touchedByUserCondition(companyId: string, userId: string) {
         WHERE ${issueComments.issueId} = ${issues.id}
           AND ${issueComments.companyId} = ${companyId}
           AND ${issueComments.authorUserId} = ${userId}
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM ${issueComments}
+        WHERE ${issueComments.issueId} = ${issues.id}
+          AND ${issueComments.companyId} = ${companyId}
+          AND ${issueComments.deletedAt} IS NULL
+          AND position(${`(user://${userId})`} in ${issueComments.body}) > 0
       )
     )
   `;
@@ -4958,6 +5043,10 @@ const issueListSelect = {
   projectId: issues.projectId,
   projectWorkspaceId: issues.projectWorkspaceId,
   goalId: issues.goalId,
+  goalKind: sql<string | null>`(
+    SELECT ${goals.kind} FROM ${goals}
+    WHERE ${goals.id} = ${issues.goalId} AND ${goals.companyId} = ${issues.companyId}
+  )`,
   parentId: issues.parentId,
   title: issues.title,
   description: sql<string | null>`
@@ -5029,6 +5118,7 @@ const issueListSelect = {
   tabledUntil: issues.tabledUntil,
   tabledByUserId: issues.tabledByUserId,
   tabledFromStatus: issues.tabledFromStatus,
+  dueDate: issues.dueDate,
   createdAt: issues.createdAt,
   updatedAt: issues.updatedAt,
 };
@@ -5340,6 +5430,21 @@ function hasPlanDocumentCondition(
   return hasPlanDocument
     ? existsPlanDocument
     : sql<boolean>`NOT ${existsPlanDocument}`;
+}
+
+function issueWorkCondition(companyId: string, work: IssueWorkFilter): SQL {
+  const linkedToStrategicGoal = sql<boolean>`
+    EXISTS (
+      SELECT 1
+      FROM ${goals}
+      WHERE ${goals.companyId} = ${companyId}
+        AND ${goals.id} = ${issues.goalId}
+        AND ${inArray(goals.kind, [...STRATEGIC_WORK_GOAL_KINDS])}
+    )
+  `;
+  return work === "strategic"
+    ? linkedToStrategicGoal
+    : sql<boolean>`NOT ${linkedToStrategicGoal}`;
 }
 
 function isoDate(value: Date | string | null | undefined): string | null {
@@ -6440,6 +6545,7 @@ async function blockedInboxIssueConditions(
       hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
     );
   }
+  if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
   if (!shouldIncludePluginOperationIssues(filters))
     conditions.push(nonPluginOperationIssueCondition());
   if (filters?.labelId) {
@@ -7488,13 +7594,14 @@ export function issueService(db: Db) {
     }));
   }
 
-  async function assertNoBlockingCycles(
+  /** The blockers in `blockerIssueIds` that `issueId` already blocks, directly or through other tasks. */
+  async function findCyclicBlockers(
     companyId: string,
     issueId: string,
     blockerIssueIds: string[],
     dbOrTx: DbReader = db,
-  ) {
-    if (blockerIssueIds.length === 0) return;
+  ): Promise<string[]> {
+    if (blockerIssueIds.length === 0) return [];
 
     const rows = await dbOrTx
       .select({
@@ -7516,19 +7623,22 @@ export function issueService(db: Db) {
       adjacency.set(row.blockerIssueId, list);
     }
 
+    const cyclic: string[] = [];
     for (const blockerIssueId of blockerIssueIds) {
       const queue = [...(adjacency.get(issueId) ?? [])];
       const visited = new Set<string>([issueId]);
       while (queue.length > 0) {
         const current = queue.shift()!;
         if (current === blockerIssueId) {
-          throw unprocessable("Blocking relations cannot contain cycles");
+          cyclic.push(blockerIssueId);
+          break;
         }
         if (visited.has(current)) continue;
         visited.add(current);
         queue.push(...(adjacency.get(current) ?? []));
       }
     }
+    return cyclic;
   }
 
   async function syncBlockedByIssueIds(
@@ -7562,7 +7672,39 @@ export function issueService(db: Db) {
           "Blocked-by issues must belong to the same company",
         );
       }
-      await assertNoBlockingCycles(companyId, issueId, deduped, dbOrTx);
+      // Only a blocker this write adds can be refused for making a cycle.
+      // Re-saving blockers the task already has (recovery does this on every
+      // startup) must not fail on a cycle that is already in the data, or one
+      // bad pair of tasks stops the server from starting (16 Oct 2026).
+      const existingBlockerIds = new Set<string>(
+        await dbOrTx
+          .select({ id: issueRelations.issueId })
+          .from(issueRelations)
+          .where(
+            and(
+              eq(issueRelations.companyId, companyId),
+              eq(issueRelations.relatedIssueId, issueId),
+              eq(issueRelations.type, "blocks"),
+            ),
+          )
+          .then((rows: Array<{ id: string }>) => rows.map((row) => row.id)),
+      );
+      const addedBlockerIds = deduped.filter((id) => !existingBlockerIds.has(id));
+      const addedCyclic = await findCyclicBlockers(companyId, issueId, addedBlockerIds, dbOrTx);
+      if (addedCyclic.length > 0) {
+        throw unprocessable("Blocking relations cannot contain cycles", {
+          issueId,
+          cyclicBlockerIssueIds: addedCyclic,
+        });
+      }
+      const keptBlockerIds = deduped.filter((id) => existingBlockerIds.has(id));
+      const keptCyclic = await findCyclicBlockers(companyId, issueId, keptBlockerIds, dbOrTx);
+      if (keptCyclic.length > 0) {
+        logger.warn(
+          { companyId, issueId, cyclicBlockerIssueIds: keptCyclic },
+          "task keeps blockers that already form a cycle; remove one of these blocked-by links to repair it",
+        );
+      }
     }
 
     await dbOrTx
@@ -7957,41 +8099,73 @@ export function issueService(db: Db) {
     },
     dbOrTx: any = db,
   ) {
-    const now = new Date();
-    const [row] = await dbOrTx
-      .insert(issueInboxArchives)
-      .values({
-        companyId,
-        issueId,
-        userId,
-        archivedByActorType: attribution?.archivedByActorType ?? "user",
-        archivedByAgentId: attribution?.archivedByAgentId ?? null,
-        archivedByRunId: attribution?.archivedByRunId ?? null,
-        archivedAt,
-        updatedAt: now,
-      })
-      .onConflictDoUpdate({
-        target: [
-          issueInboxArchives.companyId,
-          issueInboxArchives.issueId,
-          issueInboxArchives.userId,
-        ],
-        set: {
-          archivedAt,
+    const runArchive = async (tx: typeof dbOrTx) => {
+      // Completion locks the issue before archiving. Take the FK's parent lock
+      // first too, or an insert can hold the archive key while waiting on that
+      // issue and deadlock with completion's archive UPSERT. SHARE also holds
+      // companyId stable; different users can still archive concurrently.
+      const [issue] = await tx
+        .select({ id: issues.id })
+        .from(issues)
+        .where(and(eq(issues.companyId, companyId), eq(issues.id, issueId)))
+        .for("share");
+      if (!issue) throw notFound("Issue not found");
+
+      const now = new Date();
+      const [row] = await tx
+        .insert(issueInboxArchives)
+        .values({
+          companyId,
+          issueId,
+          userId,
           archivedByActorType: attribution?.archivedByActorType ?? "user",
           archivedByAgentId: attribution?.archivedByAgentId ?? null,
           archivedByRunId: attribution?.archivedByRunId ?? null,
+          archivedAt,
           updatedAt: now,
-        },
-      })
-      .returning();
-    return row;
+        })
+        .onConflictDoUpdate({
+          target: [
+            issueInboxArchives.companyId,
+            issueInboxArchives.issueId,
+            issueInboxArchives.userId,
+          ],
+          set: {
+            archivedAt,
+            archivedByActorType: attribution?.archivedByActorType ?? "user",
+            archivedByAgentId: attribution?.archivedByAgentId ?? null,
+            archivedByRunId: attribution?.archivedByRunId ?? null,
+            updatedAt: now,
+          },
+          // A request that waited behind completion must not replace the newer
+          // archive with its earlier request time and resurface the done task.
+          setWhere: lte(issueInboxArchives.archivedAt, archivedAt),
+        })
+        .returning();
+      if (row) return row;
+      // ON CONFLICT holds this row lock even when setWhere skips the update.
+      // Return the newer state, including its matching actor attribution.
+      const [existing] = await tx
+        .select()
+        .from(issueInboxArchives)
+        .where(and(
+          eq(issueInboxArchives.companyId, companyId),
+          eq(issueInboxArchives.issueId, issueId),
+          eq(issueInboxArchives.userId, userId),
+        ));
+      if (!existing) throw new Error("Inbox archive conflict row missing");
+      return existing;
+    };
+    return dbOrTx === db ? db.transaction(runArchive) : runArchive(dbOrTx);
   }
 
   const service = {
     clearExecutionRunIfTerminal,
     clearCheckoutRunIfTerminal,
     addStopRelayCommentIfNeeded,
+    /** The candidate blockers that would close a blocking loop if added to `issueId`. */
+    findCyclicBlockers: (companyId: string, issueId: string, blockerIssueIds: string[]) =>
+      findCyclicBlockers(companyId, issueId, blockerIssueIds),
 
     list: async (companyId: string, filters?: IssueFilters) => {
       if (filters?.sortField === "id" && filters.attention) {
@@ -8137,6 +8311,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters)) {
         conditions.push(nonPluginOperationIssueCondition());
       }
@@ -8424,6 +8599,7 @@ export function issueService(db: Db) {
           hasPlanDocumentCondition(companyId, filters.hasPlanDocument),
         );
       }
+      if (filters?.work) conditions.push(issueWorkCondition(companyId, filters.work));
       if (!shouldIncludePluginOperationIssues(filters))
         conditions.push(nonPluginOperationIssueCondition());
       const [row] = await db
@@ -10321,6 +10497,12 @@ export function issueService(db: Db) {
           issueNumber,
           identifier,
         } as typeof issues.$inferInsert;
+        if (values.dueDate) {
+          await assertDueDateOnPlan(tx, companyId, values.goalId ?? null);
+        }
+        if (values.unblockDescriptor) {
+          values.unblockDescriptor = carryWaitingDateMarker(values.unblockDescriptor, null);
+        }
         if (values.status === "in_progress" && !values.startedAt) {
           values.startedAt = new Date();
         }
@@ -10866,6 +11048,9 @@ export function issueService(db: Db) {
         ...issueData,
         updatedAt: new Date(),
       };
+      if (issueData.unblockDescriptor !== undefined) {
+        patch.unblockDescriptor = carryWaitingDateMarker(issueData.unblockDescriptor, existing.unblockDescriptor);
+      }
       if (existing.status !== "blocked" && issueData.status === "blocked") {
         patch.blockedTransitionAt = patch.updatedAt;
         patch.blockedOwnerNotifiedAt = null;
@@ -11124,6 +11309,13 @@ export function issueService(db: Db) {
           projectGoalId: nextProjectGoalId,
           defaultGoalId: defaultCompanyGoal?.id ?? null,
         });
+        const nextDueDate = await resolveNextDueDate(tx, existing.companyId, {
+          currentDueDate: existing.dueDate,
+          currentGoalId: existing.goalId,
+          dueDate: issueData.dueDate,
+          goalId: patch.goalId ?? null,
+        });
+        if (nextDueDate !== undefined) patch.dueDate = nextDueDate;
         // Ownership changes invalidate observed handoff versions even if status
         // stays the same, including an A -> B -> A assignment race.
         if ((issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== receiptExisting.assigneeAgentId)
@@ -11231,6 +11423,22 @@ export function issueService(db: Db) {
               agentId: actorAgentId ?? null,
               userId: actorUserId ?? null,
             });
+            const closedCards = new Map(expiredInteractions.map((interaction) => [interaction.id, interaction]));
+            for (const wake of closedCardMakersToWake(expiredInteractions, {
+              agentId: actorAgentId ?? null,
+              userId: actorUserId ?? null,
+            })) {
+              queuedPostCommitActions.push({
+                type: "wake_closed_card_maker",
+                companyId: updated.companyId,
+                agentId: wake.agentId,
+                interactionId: wake.interactionId,
+                issueId: updated.id,
+                issueLabel: updated.identifier ?? `"${updated.title}"`,
+                question: closedCardQuestion(closedCards.get(wake.interactionId)!),
+                closerAgentId: actorAgentId ?? null,
+              });
+            }
             const {
               nativeQuestionCancellationIdentity,
               requestNativeQuestionRunCancellation,
@@ -12366,15 +12574,21 @@ export function issueService(db: Db) {
         await dbOrTx.select({ id: issues.id }).from(issues).where(eq(issues.id, issueId)).for(REFERENCED_ROW_LOCK);
       }
       const issue = await dbOrTx
-        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId })
+        .select({ companyId: issues.companyId, conversationAgentId: issues.conversationAgentId, originKind: issues.originKind })
         .from(issues)
         .where(eq(issues.id, issueId))
-        .then((rows: Array<{ companyId: string; conversationAgentId: string | null }>) => rows[0] ?? null);
+        .then((rows: Array<{ companyId: string; conversationAgentId: string | null; originKind: string }>) => rows[0] ?? null);
 
       if (!issue) throw notFound("Issue not found");
 
-      if (issue.conversationAgentId && actor.userId && !(await instanceSettingsService(dbOrTx).getExperimental()).enableAgentChat) {
-        throw unprocessable("Agent Chat is disabled in Experimental settings");
+      if (issue.conversationAgentId && actor.userId) {
+        // A board question chat (GRE-1186) runs under the Strategy Board switch, not Agent Chat.
+        const experimental = await instanceSettingsService(dbOrTx).getExperimental();
+        if (issue.originKind === "strategy_board_question") {
+          if (!experimental.enableStrategyBoard) throw unprocessable("The Strategy Board is turned off");
+        } else if (!experimental.enableAgentChat) {
+          throw unprocessable("Agent Chat is disabled in Experimental settings");
+        }
       }
       const currentUserRedactionOptions = {
         // Keep every read on the caller's transaction connection. Re-entering

@@ -19,7 +19,7 @@ import type {
   EnvSecretRefBinding,
   Environment,
 } from "@greatstone/shared";
-import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS, supportedEnvironmentDriversForAdapter, isValidBrowserCode, ADAPTER_AUTH_MISSING_CHECK_CODE } from "@greatstone/shared";
+import { AGENT_DEFAULT_MAX_CONCURRENT_RUNS, supportedEnvironmentDriversForAdapter, isValidBrowserCode, ADAPTER_AUTH_MISSING_CHECK_CODE, RUN_CAPABILITY_KEYS, RUN_CAPABILITY_LABELS, readRequiredRunCapabilities } from "@greatstone/shared";
 import type { AdapterModel } from "../api/agents";
 import { agentsApi } from "../api/agents";
 import { ApiError } from "../api/client";
@@ -395,16 +395,6 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     queryFn: () => instanceSettingsApi.getExperimental(),
     retry: false,
   });
-  const adapterPickerDisabledTypes = useMemo(() => {
-    const next = new Set(disabledTypes);
-    // Fail closed while settings load. Existing native agents still render
-    // their current value in edit mode, but the picker does not offer a fresh
-    // native selection until the explicit experimental opt-in is known true.
-    if (experimentalSettings?.enableNativeRunner !== true) {
-      next.add("paperclip_runner");
-    }
-    return next;
-  }, [disabledTypes, experimentalSettings?.enableNativeRunner]);
   const environmentsEnabled = experimentalSettings?.enableEnvironments === true;
   // Managed-sandbox-only policy: every agent runs in the platform-managed
   // environment, so the form hides each host filesystem path and each
@@ -1597,7 +1587,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
             <Field label="Adapter type" hint={help.adapterType}>
               <AdapterTypeDropdown
                 value={adapterType}
-                disabledTypes={adapterPickerDisabledTypes}
+                disabledTypes={disabledTypes}
                 onChange={(t) => {
                   if (isCreate) {
                     // Reset all adapter-specific fields to defaults when switching adapter type
@@ -1979,6 +1969,18 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 numberHint={help.intervalSec}
                 showNumber={eff("heartbeat", "enabled", heartbeat.enabled === true)}
               />
+              {eff("heartbeat", "enabled", heartbeat.enabled === true) && (
+                <ToggleField
+                  label="Skip timer runs when nothing has changed"
+                  hint={help.skipTimerWhenNothingChanged}
+                  checked={eff(
+                    "heartbeat",
+                    "skipTimerWhenNothingChanged",
+                    heartbeat.skipTimerWhenNothingChanged === true,
+                  )}
+                  onChange={(v) => mark("heartbeat", "skipTimerWhenNothingChanged", v)}
+                />
+              )}
             </div>
             <CollapsibleSection
               title="Advanced Run Policy"
@@ -2020,6 +2022,28 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     />
                   </Field>
                   )}
+                  <Field label="Required on this machine" hint={help.requiredCapabilities}>
+                    <div className="space-y-2">
+                      {RUN_CAPABILITY_KEYS.map((capability) => {
+                        const selected = readRequiredRunCapabilities({
+                          requiredCapabilities: eff("adapterConfig", "requiredCapabilities", config.requiredCapabilities),
+                        });
+                        return (
+                          <ToggleField
+                            key={capability}
+                            label={RUN_CAPABILITY_LABELS[capability]}
+                            checked={selected.includes(capability)}
+                            onChange={(checked) => {
+                              const next = checked
+                                ? [...selected, capability]
+                                : selected.filter((entry) => entry !== capability);
+                              mark("adapterConfig", "requiredCapabilities", next.length > 0 ? next : undefined);
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+                  </Field>
                 </>
               )}
               </>)}

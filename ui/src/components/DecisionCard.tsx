@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AlertTriangle,
   ArrowRight,
@@ -8,6 +8,7 @@ import {
   ExternalLink,
   Loader2,
   MinusCircle,
+  PaperclipIcon,
   ShieldAlert,
   XCircle,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { MarkdownBody } from "./MarkdownBody";
+import { useFileIntake } from "../hooks/useFileIntake";
 
 /**
  * Presentational card for a single Decisions-v1 decision (PAP-14966 / PAP-14939
@@ -58,6 +60,12 @@ export interface DecisionCardProps {
   errorMessage?: string | null;
   onDecide?: (optionId: string, inputValues: Record<string, string>) => void;
   onDismiss?: (reason?: string) => void;
+  /**
+   * Upload a file the person attaches to an answer and return where it lives.
+   * When set, each answer box takes a picked, dropped or pasted file and adds
+   * a link to it in the answer.
+   */
+  onUploadFile?: (file: File) => Promise<{ name: string; href: string; isImage?: boolean }>;
   className?: string;
 }
 
@@ -224,6 +232,116 @@ const RESULT_ICON: Record<ResultRow["status"], ReactNode> = {
   claimed: <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />,
 };
 
+type DecisionInputDef = NonNullable<Decision["inputs"]>[number];
+
+function attachmentMarkdown(file: { name: string; href: string; isImage?: boolean }) {
+  const label = file.name.replace(/[[\]]/g, "");
+  return `${file.isImage ? "!" : ""}[${label}](${file.href})`;
+}
+
+function DecisionInputField({
+  field,
+  value,
+  onChange,
+  onUploadFile,
+  onUploadingChange,
+}: {
+  field: DecisionInputDef;
+  value: string;
+  onChange: (update: (previous: string) => string) => void;
+  onUploadFile?: DecisionCardProps["onUploadFile"];
+  onUploadingChange: (delta: number) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const upload = async (files: File[]) => {
+    if (!onUploadFile) return;
+    setUploadError(null);
+    for (const file of files) {
+      setUploading((count) => count + 1);
+      onUploadingChange(1);
+      try {
+        const stored = await onUploadFile(file);
+        const link = attachmentMarkdown(stored);
+        onChange((previous) => (previous.trim() ? `${previous.replace(/\s+$/, "")}\n${link}` : link));
+      } catch (error) {
+        setUploadError(`Could not attach ${file.name}. ${error instanceof Error ? error.message : "Try again."}`);
+      } finally {
+        setUploading((count) => count - 1);
+        onUploadingChange(-1);
+      }
+    }
+  };
+
+  const intake = useFileIntake((files) => void upload(files), { disabled: !onUploadFile });
+  const { tabIndex: _tabIndex, ...dropProps } = intake.targetProps;
+
+  return (
+    <div
+      {...(onUploadFile ? dropProps : {})}
+      data-testid={`decision-input-${field.id}`}
+      data-dragging={intake.dragging || undefined}
+      className={cn("block rounded-md transition-colors", intake.dragging && "bg-accent ring-2 ring-primary")}
+    >
+      <label className="block">
+        <span className="text-xs font-medium text-muted-foreground">
+          {field.label}
+          {field.required && <span className="text-rose-500"> *</span>}
+        </span>
+        <Textarea
+          value={value}
+          onChange={(event) => {
+            const next = event.target.value;
+            onChange(() => next);
+          }}
+          placeholder={field.placeholder ?? undefined}
+          maxLength={field.maxLength ?? undefined}
+          className="mt-1 min-h-16 bg-background text-sm"
+        />
+      </label>
+      {onUploadFile && (
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={uploading > 0}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            {uploading > 0 ? (
+              <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <PaperclipIcon className="mr-1 h-3.5 w-3.5" aria-hidden />
+            )}
+            {uploading > 0 ? "Attaching" : "Attach a file"}
+          </Button>
+          <span>or drop or paste one into the box</span>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            aria-label={`Attach a file to ${field.label}`}
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              event.target.value = "";
+              void upload(files);
+            }}
+          />
+        </div>
+      )}
+      {uploadError && (
+        <p role="alert" className="mt-1 text-xs text-destructive">
+          {uploadError}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export function DecisionCard({
   decision,
   executions,
@@ -237,9 +355,11 @@ export function DecisionCard({
   errorMessage,
   onDecide,
   onDismiss,
+  onUploadFile,
   className,
 }: DecisionCardProps) {
   const [inputValues, setInputValues] = useState<Record<string, string>>({});
+  const [uploadingCount, setUploadingCount] = useState(0);
   const [confirmOptionId, setConfirmOptionId] = useState<string | null>(null);
   const [confirmText, setConfirmText] = useState("");
 
@@ -320,7 +440,7 @@ export function DecisionCard({
   return (
     <div
       className={cn(
-        "rounded-xl border bg-background/82 p-4 text-sm",
+        "rounded-xl border bg-card p-4 text-sm",
         SHELL[tone],
         dimmed && "opacity-80",
         className,
@@ -416,19 +536,16 @@ export function DecisionCard({
       {open && (decision.inputs ?? []).length > 0 && (
         <div className="mt-3 space-y-2">
           {(decision.inputs ?? []).map((field) => (
-            <label key={field.id} className="block">
-              <span className="text-xs font-medium text-muted-foreground">
-                {field.label}
-                {field.required && <span className="text-rose-500"> *</span>}
-              </span>
-              <Textarea
-                value={inputValues[field.id] ?? ""}
-                onChange={(event) => setInputValues((prev) => ({ ...prev, [field.id]: event.target.value }))}
-                placeholder={field.placeholder ?? undefined}
-                maxLength={field.maxLength ?? undefined}
-                className="mt-1 min-h-16 bg-background text-sm"
-              />
-            </label>
+            <DecisionInputField
+              key={field.id}
+              field={field}
+              value={inputValues[field.id] ?? ""}
+              onChange={(update) =>
+                setInputValues((prev) => ({ ...prev, [field.id]: update(prev[field.id] ?? "") }))
+              }
+              onUploadFile={onUploadFile}
+              onUploadingChange={(delta) => setUploadingCount((count) => count + delta)}
+            />
           ))}
         </div>
       )}
@@ -441,7 +558,7 @@ export function DecisionCard({
             const blockedStale = option.effects.some(
               (effect) => effect.staleness === "strict" && decisionEffectTargetIssueIds(effect).some((id) => staleTargetIdSet.has(id)),
             );
-            const disabled = busy || requiredUnmet || blockedStale;
+            const disabled = busy || uploadingCount > 0 || requiredUnmet || blockedStale;
             const cancelTree = cancelTreeEffect(option);
             const confirming = confirmOptionId === option.id;
             const previewRows = cancelTree && cancelTreePreview ? cancelTreePreview(cancelTree.targetIssueId) : null;
@@ -458,7 +575,7 @@ export function DecisionCard({
                     disabled && "cursor-not-allowed text-subtle-foreground",
                     destructive
                       ? "border-rose-500/70 bg-rose-500/5 text-foreground hover:border-rose-500 hover:bg-rose-500/10"
-                      : "border-border/70 bg-transparent text-foreground hover:border-sky-500/70 hover:bg-sky-500/10",
+                      : "border-border/70 bg-field text-foreground hover:border-sky-500/70 hover:bg-sky-500/10",
                   )}
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -527,7 +644,7 @@ export function DecisionCard({
                       value={confirmText}
                       onChange={(event) => setConfirmText(event.target.value)}
                       placeholder={confirmToken}
-                      aria-label="Type the issue identifier to confirm"
+                      aria-label="Type the task number to confirm"
                       autoFocus
                       className="mt-1"
                     />
@@ -549,7 +666,7 @@ export function DecisionCard({
                         onClick={() => onDecide?.(option.id, inputValues)}
                       >
                         {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                        {previewRows ? `Cancel ${pluralize(previewRows.length, "issue")}` : "Cancel tree"}
+                        {previewRows ? `Cancel ${pluralize(previewRows.length, "task")}` : "Cancel these tasks"}
                       </Button>
                     </div>
                   </div>
@@ -563,7 +680,7 @@ export function DecisionCard({
             <div className="flex items-center justify-between gap-2 pt-1">
               <span className="text-xs text-muted-foreground">Not now?</span>
               <Button variant="ghost" size="sm" disabled={busy} onClick={() => onDismiss?.()}>
-                Dismiss (no effects)
+                Not now
               </Button>
             </div>
           )}
@@ -581,11 +698,11 @@ export function DecisionCard({
               </div>
               <p className="mt-1">
                 {expiredReason === "target_gone"
-                  ? "A target issue was cancelled before this was decided."
+                  ? "A task this was about was cancelled before anyone decided."
                   : expiredReason === "target_completed"
-                    ? "All target issues were completed before this was decided."
-                    : "No response before the expiry deadline."}
-                {decision.continuationPolicy === "wake_origin_agent" && " The proposer was re-woken."}
+                    ? "The tasks this was about were finished before anyone decided."
+                    : "Nobody answered before the deadline."}
+                {decision.continuationPolicy === "wake_origin_agent" && " The agent that asked has been told."}
               </p>
             </div>
           )}

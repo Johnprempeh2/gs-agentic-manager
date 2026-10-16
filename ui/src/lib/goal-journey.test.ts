@@ -4,12 +4,14 @@ import {
   blockerSentence,
   buildJourney,
   buildScoreboard,
+  needsAttention,
   goalHealth,
   leadAgentId,
   mainBlockerSummary,
   plainText,
   remainingLabel,
   shortTitle,
+  targetDateLabel,
 } from "./goal-journey";
 import { makeGoal } from "./goal-journey.fixtures";
 
@@ -242,5 +244,44 @@ describe("mainBlockerSummary", () => {
     const goal = makeGoal({ progress: { percent: 13, source: "issues", done: 1, open: 7, blocked: 0, total: 8 } });
     expect(mainBlockerSummary(goal, "at_risk")).toEqual({ kind: "open", sentence: "No blocker. 7 of 8 tasks still open." });
     expect(mainBlockerSummary(goal, "on_track")).toBeNull();
+  });
+});
+
+describe("targetDateLabel", () => {
+  const now = new Date(2026, 9, 16, 9, 0);
+  it("says how far away the target is", () => {
+    expect(targetDateLabel(null, false, now)).toBeNull();
+    expect(targetDateLabel("2026-12-31", false, now)).toBe("Target 31 Dec");
+    expect(targetDateLabel("2026-10-20", false, now)).toBe("Target 20 Oct, 4 days to go");
+    expect(targetDateLabel("2026-10-17", false, now)).toBe("Target 17 Oct, 1 day to go");
+    expect(targetDateLabel("2026-10-16", false, now)).toBe("Target today");
+    expect(targetDateLabel("2026-10-06", false, now)).toBe("Target 6 Oct, 10 days late");
+  });
+
+  it("shows only the date once the goal is done", () => {
+    expect(targetDateLabel("2026-10-06", true, now)).toBe("Target 6 Oct");
+  });
+});
+
+describe("needsAttention", () => {
+  it("keeps blocked and at-risk goals, and parents of sub-goals that need attention", () => {
+    const entries = buildScoreboard(
+      [
+        makeGoal({ id: "fine", title: "Fine", targetDate: "2026-12-31" }),
+        makeGoal({ id: "late", title: "Late", targetDate: "2026-01-01" }),
+        makeGoal({ id: "parent", title: "Parent", targetDate: "2026-12-31" }),
+        makeGoal({ id: "late-child", title: "Late child", parentId: "parent", targetDate: "2026-01-01" }),
+        makeGoal({ id: "fine-child", title: "Fine child", parentId: "parent", targetDate: "2026-12-31" }),
+      ],
+      { now: NOW },
+    );
+    const shown = needsAttention(entries);
+    expect(shown.map((entry) => entry.goal.id)).toEqual(["late", "parent"]);
+    expect(shown[1]!.subGoals.map((sub) => sub.goal.id)).toEqual(["late-child"]);
+  });
+
+  it("returns nothing when every goal is fine", () => {
+    const entries = buildScoreboard([makeGoal({ id: "fine", targetDate: "2026-12-31" })], { now: NOW });
+    expect(needsAttention(entries)).toEqual([]);
   });
 });

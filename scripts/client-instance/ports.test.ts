@@ -42,3 +42,14 @@ test("the new root itself and folders without a state file claim nothing", () =>
   assert.deepEqual(siblingPortClaims(sibling), []);
   assert.deepEqual(siblingPortClaims(path.join(instances, "missing", "c001")), []);
 });
+
+test("an archived sibling has freed its ports and claims none (AT-4.7)", () => {
+  const archived = path.join(instances, "c003");
+  mkdirSync(archived);
+  writeFileSync(path.join(archived, "client-instance.json"), JSON.stringify({ edition: "managed", port: 3302, dbPort: 55402, lifecycle: "archived" }));
+  try {
+    assert.deepEqual(siblingPortClaims(newRoot), [{ root: sibling, port: 3300, dbPort: 55400 }]);
+  } finally {
+    rmSync(archived, { recursive: true, force: true });
+  }
+});

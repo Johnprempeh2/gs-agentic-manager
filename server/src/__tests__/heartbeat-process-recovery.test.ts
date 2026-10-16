@@ -1631,9 +1631,12 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     await waitForRunToSettle(heartbeat, runId);
     await heartbeat.waitForRunExecutionDrain(runId);
 
+    // GRE-1437 graduated Isolated Workspaces, so the "isolation unavailable"
+    // gate can no longer fire; the fixture has no sandbox environment, so the
+    // run now fails closed at the next non-retryable preflight gate.
     expect(await heartbeat.getRun(runId)).toMatchObject({
       status: "failed",
-      errorCode: "low_trust_isolation_unavailable",
+      errorCode: "low_trust_requires_sandbox_environment",
     });
     expect(
       mockAdapterExecute.mock.calls.some(
@@ -4752,7 +4755,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       createdByRunId: runId,
-      body: "Agent failed to resume after approval: `adapter_failed` — retrying (attempt 1/2)",
+      body: "Agent failed to resume after approval: `adapter_failed`, retrying (attempt 1/2)",
     });
 
     const interaction = await db
@@ -5303,7 +5306,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       body: expect.stringContaining(
-        "Agent failed to resume after approval: `adapter_failed` — needs attention",
+        "Agent failed to resume after approval: `adapter_failed`, needs attention",
       ),
     });
 
@@ -5404,7 +5407,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]).toMatchObject({
       authorType: "system",
       body: expect.stringContaining(
-        "Agent failed to resume after approval: `adapter_failed` — needs attention",
+        "Agent failed to resume after approval: `adapter_failed`, needs attention",
       ),
     });
     expect(
@@ -5559,7 +5562,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments).toHaveLength(1);
     expect(comments[0]).toMatchObject({
       authorType: "system",
-      body: "Agent failed to resume after approval: `process_lost` — retrying (attempt 1/2)",
+      body: "Agent failed to resume after approval: `process_lost`, retrying (attempt 1/2)",
     });
 
     const interaction = await db
@@ -6703,7 +6706,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
       tone: "warning",
-      title: "Recovery: waiting on dependencies — moved to blocked",
+      title: "Recovery: waiting on dependencies; moved to blocked",
       density: "compact",
     });
     expect(comments[0]?.metadata).toMatchObject({
@@ -7482,6 +7485,110 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
       maxAttempts: 5,
     });
     expect(takeoverWakes).toHaveLength(0);
+  });
+
+  it("does not make a task wait on a sub-task that already waits on it (16 Oct 2026 startup crash)", async () => {
+    const { companyId, agentId, issueId } = await seedStrandedIssueFixture({
+      status: "in_progress",
+      runStatus: "failed",
+    });
+    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    const waitingChildId = randomUUID();
+    await db.update(issues).set({ status: "blocked" }).where(eq(issues.id, issueId));
+    await db.insert(issues).values({
+      id: waitingChildId,
+      companyId,
+      parentId: issueId,
+      title: "Sub-task that waits on its parent",
+      status: "blocked",
+      priority: "medium",
+      issueNumber: 30,
+      identifier: `${issuePrefix}-30`,
+    });
+    // The parent blocks its own sub-task, so the sub-task looks healthy (it
+    // has a blocker to wait on). Making the parent wait on it would close a loop.
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId,
+      relatedIssueId: waitingChildId,
+      type: "blocks",
+    });
+    await db.insert(issueRecoveryActions).values({
+      companyId,
+      sourceIssueId: issueId,
+      kind: "stranded_assigned_issue",
+      status: "active",
+      ownerType: "agent",
+      ownerAgentId: agentId,
+      previousOwnerAgentId: agentId,
+      returnOwnerAgentId: agentId,
+      cause: "process_lost",
+      fingerprint: `loop:${issueId}`,
+      evidence: { latestRunId: null },
+      nextAction: "Recovery action whose sub-task waits on the source",
+      wakePolicy: {
+        type: "bounded_recovery_owner",
+        ownerAgentId: agentId,
+        attempt: 1,
+        maxAttempts: 5,
+      },
+      attemptCount: 1,
+      maxAttempts: 5,
+    });
+
+    await expect(heartbeatService(db).reconcileStrandedAssignedIssues()).resolves.toBeDefined();
+
+    expect(await sourceBlockerIssueIds(companyId, issueId)).toEqual([]);
+    expect(await sourceBlockerIssueIds(companyId, waitingChildId)).toEqual([issueId]);
+  });
+
+  it("leaves out a sub-task that already waits on its parent when parking a continuation for review", async () => {
+    const { companyId, issueId } = await seedStrandedIssueFixture({
+      status: "in_progress",
+      runStatus: "cancelled",
+      retryReason: "issue_continuation_needed",
+      runErrorCode: "issue_continuation_waiting_on_review",
+      runError: "Continuation parked: issue is waiting on review/approval",
+    });
+    const issuePrefix = `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`;
+    const waitingChildId = randomUUID();
+    const openChildId = randomUUID();
+    await db.insert(issues).values([
+      {
+        id: waitingChildId,
+        companyId,
+        parentId: issueId,
+        title: "Sub-task that waits on its parent",
+        status: "blocked",
+        priority: "medium",
+        issueNumber: 31,
+        identifier: `${issuePrefix}-31`,
+      },
+      {
+        id: openChildId,
+        companyId,
+        parentId: issueId,
+        title: "Sub-task still to do",
+        status: "todo",
+        priority: "medium",
+        issueNumber: 32,
+        identifier: `${issuePrefix}-32`,
+      },
+    ]);
+    await db.insert(issueRelations).values({
+      companyId,
+      issueId,
+      relatedIssueId: waitingChildId,
+      type: "blocks",
+    });
+
+    const result = await heartbeatService(db).reconcileStrandedAssignedIssues();
+
+    expect(result.waitingOnReviewResolved).toBe(1);
+    expect(await sourceBlockerIssueIds(companyId, issueId)).toEqual([openChildId]);
+    const comments = await db.select().from(issueComments).where(eq(issueComments.issueId, issueId));
+    expect(comments[0]?.body).toContain(`${issuePrefix}-32`);
+    expect(comments[0]?.body).not.toContain(`${issuePrefix}-31`);
   });
 
   it("does not consume a disposition-repair attempt when on-demand wakes are disabled", async () => {
@@ -11062,7 +11169,7 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(comments[0]?.presentation).toMatchObject({
       kind: "system_notice",
       tone: "warning",
-      title: "Recovery: recovery attempt failed — remains blocked",
+      title: "Recovery: recovery attempt failed; remains blocked",
       density: "compact",
     });
     expect(comments[0]?.metadata).toMatchObject({ version: 1 });

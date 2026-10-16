@@ -1,12 +1,15 @@
+import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
 import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
+import { readTimerWakeNews } from "./timer-wake-news.js";
 import { settleSlackConversation } from "./slack-conversation-lifecycle.js";
 import { publicChatTaskUrl } from "./chat-task-url.js";
 import { bindLegacyBoardUserId } from "./board-identity.js";
 import { toolActionDeliveryService } from "./tool-action-delivery.js";
 import { githubBotConnectionIdsForRun } from "./chat-github-tools.js";
 import { readQueuedInteractionResponse } from "./queued-interaction-response.js";
+import { TEAM_CHAT_DIRECTIVE, isTeamChat, teamChatService } from "./team-chats.js";
 import { AGENT_CHAT_DIRECTIVE, conversationReplay, isConversation, isConversationExecutionWake, isWaitingConversation, prepareConversationTurn, settleConversationTurn } from "./agent-conversations.js";
 import { PROCESS_IDENTITY_RECORDED, recordNativeLocalProcessStop } from "./native-local-process-stop.js";
 import { hasAcknowledgedNativeReassignmentStopIntent, hasAcknowledgedNativeStopIntent, isAcknowledgedNativeStop, acknowledgedNativeStopExecutionHasStopped } from "./acknowledged-native-stop.js";
@@ -43,6 +46,13 @@ import { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-
 export { buildHeartbeatRunStatusLiveEventPayload } from "./heartbeat-run-status-payload.js";
 import { buildExecutionContinuation, StaleExecutionContinuationError } from "./execution-continuation.js";
 import { renderPaperclipWakePrompt } from "@greatstone/adapter-utils/server-utils";
+import {
+  REQUIRED_CAPABILITY_MISSING_REASON,
+  RUN_CAPABILITY_CHECK_EVENT_TYPE,
+  checkRequiredRunCapabilities,
+  runCapabilityCheckEventPayload,
+  type RunCapabilityProbe,
+} from "./run-capability-check.js";
 import { rebrandRunLogText } from "@greatstone/adapter-utils/run-log-transcript";
 import { collectRunSecretValues, redactRunSecretValues } from "@greatstone/adapter-utils/run-secret-values";
 import { PROJECT_REPOSITORIES_DIR, readGitWorkspaceSnapshot } from "@greatstone/adapter-utils/git-workspace-sync";
@@ -184,7 +194,6 @@ import { incrementToolRuntimeMetricCounter } from "./tool-runtime-metrics.js";
 import { logger } from "../middleware/logger.js";
 import {
   createGitRemoteAuthProvider,
-  resolveManagedGitHubIdentitySelection,
   describeGitAuthFailure,
   filterResolvedGitHubConnectionsForRun,
   scrubGitCredentialText,
@@ -299,6 +308,7 @@ import {
   EXTERNAL_CHAT_QUESTION_RESPONSE_KEY,
   resolveExternalChatQuestionResponse,
 } from "./native-runtime/external-chat-question-response.js";
+import { isBoardQuestionChat, strategyBoardChatService } from "./strategy-board-chat.js";
 import { materializeExternalChatQuestionResponseInput } from "./native-runtime/external-chat-question-response-input.js";
 import {
   NativeRunnerOwnershipUnverifiedError,
@@ -8206,6 +8216,48 @@ export async function buildPaperclipWakePayload(input: {
   const checkboxSelection = parseObject(
     input.contextSnapshot.checkboxSelection,
   );
+  // A question one agent asked another: carry the question (and answer, once
+  // given) so both agents see it without fetching the asking task.
+  const agentQuestion =
+    interactionId && interactionKind === "ask_agent" && issueId
+      ? await input.db
+          .select({
+            id: issueThreadInteractions.id,
+            status: issueThreadInteractions.status,
+            payload: issueThreadInteractions.payload,
+            result: issueThreadInteractions.result,
+            askedByName: agents.name,
+          })
+          .from(issueThreadInteractions)
+          .leftJoin(
+            agents,
+            and(
+              eq(agents.id, issueThreadInteractions.createdByAgentId),
+              eq(agents.companyId, input.companyId),
+            ),
+          )
+          .where(
+            and(
+              eq(issueThreadInteractions.id, interactionId),
+              eq(issueThreadInteractions.companyId, input.companyId),
+              eq(issueThreadInteractions.issueId, issueId),
+              eq(issueThreadInteractions.kind, "ask_agent"),
+            ),
+          )
+          .then((rows) => {
+            const row = rows[0];
+            if (!row) return null;
+            const payload = parseObject(row.payload);
+            const result = parseObject(row.result);
+            return {
+              interactionId: row.id,
+              status: row.status,
+              askedByAgentName: row.askedByName ?? null,
+              question: readNonEmptyString(payload.question),
+              answer: readNonEmptyString(result.answer),
+            };
+          })
+      : null;
   // A resolved plan review is new user input, including in chat. Ordinary chat
   // wakes must still exclude historical plan context across /new boundaries.
   const resolvedPlanInteraction = interactionId && interactionKind === "request_confirmation" &&
@@ -8401,6 +8453,7 @@ export async function buildPaperclipWakePayload(input: {
     interactionKind,
     interactionStatus,
     interactionId,
+    agentQuestion,
     sourceRunId: readNonEmptyString(input.contextSnapshot.sourceRunId),
     externalChatQuestionResponse: externalChatProvider
       ? (input.contextSnapshot[EXTERNAL_CHAT_QUESTION_RESPONSE_KEY] ?? null)
@@ -8763,6 +8816,16 @@ function buildRunEventRuntimeProgress(input: {
   };
 }
 
+/** The board directive and plan brief when the issue is a board question chat (GRE-1186), else null. */
+async function boardQuestionDirectiveFor(db: Db, companyId: string, issueId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ originKind: issues.originKind, conversationAgentId: issues.conversationAgentId })
+    .from(issues)
+    .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)));
+  if (!isBoardQuestionChat(row)) return null;
+  return strategyBoardChatService(db).directiveFor(companyId);
+}
+
 export function buildPaperclipTaskMarkdown(input: {
   issue: {
     id: string;
@@ -8772,6 +8835,10 @@ export function buildPaperclipTaskMarkdown(input: {
     conversationAgentId?: string | null;
     description?: string | null;
   } | null;
+  /** A board question chat (GRE-1186): replaces the chat directive, with the plan brief. */
+  boardQuestionDirective?: string | null;
+  /** A team chat (enableTeamChat): the members and the recent thread. */
+  teamChatContext?: string | null;
   ancestors?: Array<{
     id: string;
     identifier?: string | null;
@@ -8948,7 +9015,11 @@ export function buildPaperclipTaskMarkdown(input: {
       `- Title: ${quoteTaskScalar(issue.title)}`,
     );
     if (issue.conversationAgentId) {
-      lines.push("", "Chat mode directive:", AGENT_CHAT_DIRECTIVE, `Current composer mode: ${issue.workMode ?? "standard"}.`);
+      if (input.boardQuestionDirective) {
+        lines.push("", "Board question directive:", input.boardQuestionDirective, "Current composer mode: ask.");
+      } else {
+        lines.push("", "Chat mode directive:", AGENT_CHAT_DIRECTIVE, `Current composer mode: ${issue.workMode ?? "standard"}.`);
+      }
       if (acceptedChatPlan) {
         lines.push(
           "",
@@ -8956,6 +9027,8 @@ export function buildPaperclipTaskMarkdown(input: {
           "The user has approved the plan for handoff. Perform that handoff now: select or create a suitable project, then create the ordinary assigned execution tasks with the relevant approved plan in initialPlan before execution starts. Do not stop at acknowledging approval or ask for another confirmation. Keep the original plan here, link the created tasks, and leave this conversation available for discussion. Do not implement here or create subtasks of this conversation.",
         );
       }
+    } else if (input.teamChatContext) {
+      lines.push("", "Team chat directive:", TEAM_CHAT_DIRECTIVE, "", input.teamChatContext);
     } else if (issue.workMode === "ask") {
       lines.push(
         `- Work mode: ${quoteTaskScalar("ask")}`,
@@ -9593,6 +9666,8 @@ export type HeartbeatEnvironmentRuntime = ReturnType<
 >;
 
 export interface HeartbeatServiceOptions {
+  /** Test seam for the required-tools check at run start. */
+  runCapabilityProbe?: RunCapabilityProbe;
   /** Test seam before the atomic native runtime handoff. */
   beforeNativeRuntimeSelection?: (runId: string) => Promise<void>;
   /** Test seam immediately before the durable chat-control admission check. */
@@ -10225,9 +10300,9 @@ export function heartbeatService(
   }) {
     const errorCode = planApprovalResumeFailureErrorCode(input.run);
     if (input.status === "retrying") {
-      return `Agent failed to resume after approval: \`${errorCode}\` — retrying (attempt ${input.attempt}/${input.maxAttempts})`;
+      return `Agent failed to resume after approval: \`${errorCode}\`, retrying (attempt ${input.attempt}/${input.maxAttempts})`;
     }
-    return `Agent failed to resume after approval: \`${errorCode}\` — needs attention`;
+    return `Agent failed to resume after approval: \`${errorCode}\`, needs attention`;
   }
 
   function buildPlanApprovalResumeFailureResult(input: {
@@ -17529,6 +17604,10 @@ export function heartbeatService(
           heartbeat.issueOnlyTimer,
         false,
       ),
+      skipTimerWhenNothingChanged: asBoolean(
+        heartbeat.skipTimerWhenNothingChanged,
+        false,
+      ),
       maxDailyRuns: normalizeOptionalNonNegativeInteger(
         heartbeat.maxDailyRuns ??
           heartbeat.dailyRunLimit ??
@@ -21241,12 +21320,17 @@ export function heartbeatService(
   async function reconcileResolvedDependencyWakes(opts?: {
     runId?: string | null;
     companyId?: string | null;
+    issueIds?: string[] | null;
   }) {
     return recovery.reconcileResolvedDependencyWakeBackstop(opts);
   }
 
   async function reconcileOverdueHumanWaits(opts?: { companyId?: string | null; now?: Date }) {
     return recovery.reconcileOverdueHumanWaits(opts);
+  }
+
+  async function reconcileWaitingDatesPassed(opts?: { companyId?: string | null; now?: Date }) {
+    return recovery.reconcileWaitingDatesPassed(opts);
   }
 
   async function updateRuntimeState(
@@ -21527,14 +21611,17 @@ export function heartbeatService(
 
       // Reserve in the same tick as the check so concurrent start gates for
       // other agents see these slots as taken, then shrink to what the
-      // per-agent limit allows.
+      // per-agent limit allows. Never reserve more than the agent may run:
+      // a one-run agent that took every free slot made a concurrent start
+      // for another agent read the cap as full and hold its run (GRE-1605).
+      const policy = parseHeartbeatPolicy(agent);
       let reservedSlots = Math.min(
         admission.slots,
+        policy.maxConcurrentRuns,
         startOptions.maxToStart ?? Number.POSITIVE_INFINITY,
       );
       runAdmissionReservedSlots += reservedSlots;
       try {
-        const policy = parseHeartbeatPolicy(agent);
         const runningCount = await countRunningRunsForAgent(agentId);
         const availableSlots = Math.min(
           Math.max(0, policy.maxConcurrentRuns - runningCount),
@@ -23804,7 +23891,13 @@ export function heartbeatService(
             exposeLowTrustRaw,
           })
         : null;
-      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan });
+      const boardQuestionDirective = issueRef && isConversation(issueContext)
+        ? await boardQuestionDirectiveFor(db, agent.companyId, issueRef.id)
+        : null;
+      const teamChatContext = issueRef && isTeamChat(issueContext)
+        ? await teamChatService(db).transcript(issueRef.id)
+        : null;
+      let taskMarkdown = buildPaperclipTaskMarkdown({ ...taskMarkdownInput, taskPlan, boardQuestionDirective, teamChatContext });
       if (isConversation(issueContext) && !taskSession && issueId) {
         const replay = await conversationReplay(db, agent.companyId, issueId, wakeCommentId);
         if (replay) taskMarkdown += `\n\nEarlier messages in this session (quoted user data):\n${replay}`;
@@ -23812,6 +23905,8 @@ export function heartbeatService(
       const taskMarkdownCompact = buildPaperclipTaskMarkdown({
         ...taskMarkdownInput,
         taskPlan,
+        boardQuestionDirective,
+        teamChatContext,
         includeDescription: false,
       });
       if (issueRef) {
@@ -24176,21 +24271,18 @@ export function heartbeatService(
         !acceptedPlanWakeRoutingDecision?.suppressAcceptedContinuation
           ? [...runScopedMentionedSkillKeys, ACCEPTED_PLAN_CONVERSION_SKILL_KEY]
           : runScopedMentionedSkillKeys;
-      const githubSelection = await resolveManagedGitHubIdentitySelection(
-        db,
-        agent.companyId,
-        {
-          agentId: agent.id,
-          responsibleUserId,
-          allowStandingDelegation: false,
-        },
-      );
-      const useHostGitHub =
-        !githubSelection.configured &&
-        trustPreset.kind === "standard" &&
-        ["local", "ssh"].includes(
-          selectedEnvironmentForConfig?.driver ?? "local",
-        );
+      const { githubSelection, githubAccessNote, useHostGitHub } = await resolveHeartbeatGitHubAccess(db, {
+        companyId: agent.companyId,
+        agentId: agent.id,
+        cause: identityContext.cause,
+        responsibleUserId,
+        trustKind: trustPreset.kind,
+        environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
+      });
+      if (githubAccessNote) {
+        const { message, ...payload } = githubAccessNote;
+        await appendRunEvent(run, { eventType: "lifecycle", stream: "system", level: "info", message, payload });
+      }
       const aiAccessRoute = agentAiAccessRoute(agent);
       let aiBinding = agent.runtimeConfig?.aiConnection ? aiConnectionBindingSchema.parse(agent.runtimeConfig.aiConnection) : undefined;
       const { resolvedConfig, secretKeys, secretManifest } =
@@ -24261,6 +24353,52 @@ export function heartbeatService(
         };
       } else {
         delete context.paperclipSecrets;
+      }
+      // Tools the agent declared it needs on this machine. Nothing declared
+      // means no check and no cost. A resumed native run already passed it.
+      if (!persistedNativeExecutionInput) {
+        const capabilityCheck = await checkRequiredRunCapabilities({
+          resolvedConfig,
+          environmentDriver: selectedEnvironmentForConfig?.driver ?? "local",
+          githubAccessProvidedByPlatform: githubSelection.configured,
+          baseEnv: runtimeEnv,
+          probe: options.runCapabilityProbe,
+        });
+        if (capabilityCheck.status !== "not_declared") {
+          const missing = capabilityCheck.status === "missing";
+          await appendRunEvent(run, {
+            eventType: RUN_CAPABILITY_CHECK_EVENT_TYPE,
+            stream: "system",
+            level: missing ? "error" : "info",
+            message:
+              capabilityCheck.status === "skipped"
+                ? "Skipped the check for required tools: this run does not use this machine."
+                : missing
+                  ? (capabilityCheck.message ?? "Some required tools are missing on this machine.")
+                  : "All required tools are available on this machine.",
+            payload: runCapabilityCheckEventPayload(capabilityCheck),
+          });
+          if (capabilityCheck.status === "missing") {
+            const missingCapabilities = [...capabilityCheck.report.missing].sort();
+            throw new ConfigurationIncompleteFailure(
+              capabilityCheck.message ?? "Some required tools are missing on this machine.",
+              {
+                configurationIncomplete: {
+                  reason: REQUIRED_CAPABILITY_MISSING_REASON,
+                  companyId: agent.companyId,
+                  agentId: agent.id,
+                  issueId: issueId ?? null,
+                  missingCapabilities,
+                  reasons: capabilityCheck.report.checks
+                    .filter((check) => !check.ok)
+                    .map((check) => ({ capability: check.capability, reason: check.reason })),
+                  actionUrl: `/agents/${agent.id}/configuration`,
+                  fingerprint: `capabilities:${agent.id}:${missingCapabilities.join(",")}`,
+                },
+              },
+            );
+          }
+        }
       }
       const effectiveResolvedConfig = applyRunScopedMentionedSkillKeys(
         resolvedConfig,
@@ -24697,12 +24835,6 @@ export function heartbeatService(
                     companyId: agent.companyId,
                   },
                   heartbeatRunId: run.id,
-                  enableWorkspaceBranchReconcileForward:
-                    resolvedInstanceSettings.experimental
-                      .enableWorkspaceBranchReconcileForward,
-                  enableWorkspaceDirtyQuarantineRepair:
-                    resolvedInstanceSettings.experimental
-                      .enableWorkspaceDirtyQuarantineRepair,
                   recorder: workspaceOperationRecorder,
                   resolveGitAuth: workspaceGitAuthProvider,
                 })
@@ -24729,12 +24861,6 @@ export function heartbeatService(
                     }
                   : null,
               heartbeatRunId: run.id,
-              enableWorkspaceBranchReconcileForward:
-                resolvedInstanceSettings.experimental
-                  .enableWorkspaceBranchReconcileForward,
-              enableWorkspaceDirtyQuarantineRepair:
-                resolvedInstanceSettings.experimental
-                  .enableWorkspaceDirtyQuarantineRepair,
               recorder: workspaceOperationRecorder,
               resolveGitAuth: workspaceGitAuthProvider,
             }),
@@ -25264,9 +25390,17 @@ export function heartbeatService(
           return { dispatched: false };
         const repairBlock = await recovery.legacyRepairDispatchBlock(run.id);
         if (repairBlock) {
+          // The gate runs before provider handoff. Without this evidence the
+          // stranded-work sweep holds the issue for execution reconciliation
+          // and every later wake parks for good (GRE-1560).
           const cancelled = await setRunStatusIfRunning(run.id, "cancelled", {
             finishedAt: new Date(), errorCode: "legacy_disposition_repair_suppressed",
             error: `Disposition repair suppressed: ${repairBlock}`,
+            resultJson: {
+              ...run.resultJson,
+              stopReason: "legacy_disposition_repair_suppressed",
+              executionRecovery: { kind: "bootstrap", providerWorkStarted: false },
+            },
           });
           if (cancelled.updated) {
             await setWakeupStatus(run.wakeupRequestId, "skipped", { finishedAt: new Date(), error: repairBlock });
@@ -26025,12 +26159,11 @@ export function heartbeatService(
           }
           throw new Error("direct_adapter_goal_controller_unavailable");
         }
-        // Runtime selection is immutable once persisted. In particular, turning the instance flag
-        // off prevents new native runs without changing the recovery path for an already-native run.
+        // Runtime selection is immutable once persisted. Greatstone (GRE-1436): the Runner
+        // graduated from Experimental, so fresh selections are always enabled.
         const nativeRuntimeResolution = resolveHeartbeatNativeRuntimeMode({
           persisted: run,
-          enabled:
-            resolvedInstanceSettings.experimental.enableNativeRunner === true,
+          enabled: true,
           runtimeConfig: agent.runtimeConfig,
           adapterConfig: agent.adapterConfig,
           agent: {
@@ -26874,12 +27007,6 @@ export function heartbeatService(
                       : null,
                     executionWorkspaceId: branchInspection.workspaceRecord.id,
                     heartbeatRunId: run.id,
-                    enableWorkspaceBranchReconcileForward:
-                      resolvedInstanceSettings.experimental
-                        .enableWorkspaceBranchReconcileForward,
-                    enableWorkspaceDirtyQuarantineRepair:
-                      resolvedInstanceSettings.experimental
-                        .enableWorkspaceDirtyQuarantineRepair,
                     persistForwardReconcile: false,
                     reconcileOperationPhase: "workspace_finalize",
                     recorder: workspaceOperationRecorder,
@@ -29214,6 +29341,18 @@ export function heartbeatService(
       await markTimerHeartbeatChecked(agentId, source);
       return null;
     }
+    if (policy.skipTimerWhenNothingChanged && genericTimerWake) {
+      const news = await readTimerWakeNews(db, agent);
+      if (!news.hasNews) {
+        await writeSkippedHeartbeatRequest("heartbeat.timer.nothing_changed", {
+          reason:
+            "Nothing assigned to or made by this agent changed, and nobody commented on its tasks, since its last run.",
+          since: news.since.toISOString(),
+        });
+        await markTimerHeartbeatChecked(agentId, source);
+        return null;
+      }
+    }
 
     // "Not now" (GRE-262): a tabled task gets no wakes of any kind. The wake
     // is dropped, not saved; bringing the task back sends one fresh wake.
@@ -31272,6 +31411,41 @@ export function heartbeatService(
     return rows.map((row) => row.id);
   }
 
+  /**
+   * GRE-1364: a company pause cancels every live run and every queued or
+   * deferred wake of the company. Cancelled wakes are not replayed on resume.
+   */
+  async function cancelCompanyPauseWork(companyId: string, reason: string) {
+    const runIds = await db
+      .select({ id: heartbeatRuns.id })
+      .from(heartbeatRuns)
+      .where(
+        and(
+          eq(heartbeatRuns.companyId, companyId),
+          inArray(heartbeatRuns.status, [...CANCELLABLE_HEARTBEAT_RUN_STATUSES]),
+        ),
+      )
+      .then((rows) => rows.map((row) => row.id));
+    for (const runId of runIds) {
+      await cancelRunInternal(runId, reason);
+    }
+
+    const now = new Date();
+    const wakeups = await db
+      .update(agentWakeupRequests)
+      .set({ status: "cancelled", finishedAt: now, error: reason, updatedAt: now })
+      .where(
+        and(
+          eq(agentWakeupRequests.companyId, companyId),
+          inArray(agentWakeupRequests.status, ["queued", "deferred_issue_execution"]),
+          sql`${agentWakeupRequests.runId} is null`,
+        ),
+      )
+      .returning({ id: agentWakeupRequests.id });
+
+    return { runsCancelled: runIds.length, wakeupsCancelled: wakeups.length };
+  }
+
   async function cancelPendingWakeupsForBudgetScope(
     scope: BudgetEnforcementScope,
   ) {
@@ -32128,6 +32302,25 @@ export function heartbeatService(
       });
     },
 
+    // Runs that finished in [since, before), counted by status (GRE-1325).
+    // One grouped query, so a week of runs reads in one call however many there are.
+    countFinishedByStatus: async (
+      companyId: string,
+      options: { agentId?: string; since: Date; before: Date },
+    ) => {
+      const conditions = [
+        eq(heartbeatRuns.companyId, companyId),
+        gte(heartbeatRuns.finishedAt, options.since),
+        lt(heartbeatRuns.finishedAt, options.before),
+      ];
+      if (options.agentId) conditions.push(eq(heartbeatRuns.agentId, options.agentId));
+      return db
+        .select({ status: heartbeatRuns.status, count: sql<number>`count(*)::int` })
+        .from(heartbeatRuns)
+        .where(and(...conditions))
+        .groupBy(heartbeatRuns.status);
+    },
+
     getRun,
 
     decorateActiveRunStatus: decorateHeartbeatRunRuntimeStatus,
@@ -32390,6 +32583,7 @@ export function heartbeatService(
     reconcileResolvedDependencyWakes,
 
     reconcileOverdueHumanWaits,
+    reconcileWaitingDatesPassed,
 
     scanSilentActiveRuns,
     stopSilentRuns,
@@ -32500,6 +32694,7 @@ export function heartbeatService(
       cancelInvocationsForAgentsInternal(agentIds, reason),
 
     cancelBudgetScopeWork,
+    cancelCompanyPauseWork,
     noticeBudgetHardStop,
 
     getRunIssueSummary: async (runId: string) => {

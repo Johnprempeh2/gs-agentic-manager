@@ -15,13 +15,15 @@ interface PageTabBarProps {
   align?: "center" | "start";
   /** Names the phone select; give nested tab bars their own name. */
   ariaLabel?: string;
+  /** Shown above the phone select, for pages that stack two of them. */
+  mobileLabel?: string;
 }
 
-export function PageTabBar({ items, value, onValueChange, align = "center", ariaLabel = "Page section" }: PageTabBarProps) {
+export function PageTabBar({ items, value, onValueChange, align = "center", ariaLabel = "Page section", mobileLabel }: PageTabBarProps) {
   const { isMobile } = useSidebar();
 
   if (isMobile && value !== undefined && onValueChange) {
-    return (
+    const select = (
       <div className="relative inline-flex">
         <select
           value={value}
@@ -37,6 +39,13 @@ export function PageTabBar({ items, value, onValueChange, align = "center", aria
         </select>
         <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
       </div>
+    );
+    if (!mobileLabel) return select;
+    return (
+      <label className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground">{mobileLabel}</span>
+        {select}
+      </label>
     );
   }
 

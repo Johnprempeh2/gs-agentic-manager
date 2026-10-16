@@ -18,4 +18,9 @@ export const resourceMembershipsApi = {
       `/companies/${companyId}/resource-memberships/me/agents/${agentId}`,
       data,
     ),
+  updatePipeline: (companyId: string, pipelineId: string, data: { starred: boolean }) =>
+    api.put<ResourceMembershipUpdateResult>(
+      `/companies/${companyId}/resource-memberships/me/pipelines/${pipelineId}`,
+      data,
+    ),
 };

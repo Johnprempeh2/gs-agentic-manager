@@ -20,6 +20,7 @@ import { conflict, forbidden, unprocessable } from "../errors.js";
 import { isCloudManagedInstance } from "../services/cloud-instance.js";
 import { getManagedInstanceConfig, SECRET_LIKE_CONFIG_KEY_PATTERN } from "../services/managed-config.js";
 import { hiddenSettingWriteFloor } from "../services/settings-visibility.js";
+import { requireEntitlementForWrites } from "../services/entitlements.js";
 import { parseExecutionPolicyBootstrapEnv } from "../services/execution-policy-bootstrap.js";
 import { isExecutionForcedToKubernetes } from "../services/execution-allowlist.js";
 import { validate } from "../middleware/validate.js";
@@ -340,6 +341,12 @@ export function environmentRoutes(
   router.use("/companies/:companyId/environments", environmentsFloor);
   router.use("/environments", environmentsFloor);
   router.use("/environment-custom-image-setup-sessions", environmentsFloor);
+  // GRE-1090: with enableEnvironments off, every write is refused (403
+  // not_entitled). Reads stay open for agent setup, onboarding and the pickers.
+  router.use(
+    ["/companies/:companyId/environments", "/environments", "/environment-custom-image-setup-sessions"],
+    requireEntitlementForWrites(instanceSettingsService(db), "enableEnvironments"),
+  );
   const environmentRuntime = environmentRuntimeService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
   });

@@ -9,6 +9,7 @@
 #   GSAM_PREVIEW_PORT   preview server port       (default 3200)
 #   GSAM_RELEASE_REPO   git repo that holds the rc-*/live-* tags (default: this checkout)
 #   GSAM_LIVE_BOARD_KEY_FILE  board API key for the live server (default $GSAM_ROOT/release-board-key)
+#   GSAM_TEST_GATE_DIR  release test gate: clone, logs, pass markers (default $GSAM_ROOT/test-gate)
 #
 # When live runs in login mode (authenticated), the restart request, the
 # serverInfo read and the active-run count need a board login. The scripts send
@@ -35,6 +36,7 @@ PREVIEW_PORT="${GSAM_PREVIEW_PORT:-3200}"
 PREVIEW_URL="http://localhost:$PREVIEW_PORT"
 RELEASE_REPO="${GSAM_RELEASE_REPO:-$GS_TOOLS_ROOT}"
 LIVE_BOARD_KEY_FILE="${GSAM_LIVE_BOARD_KEY_FILE:-$GS_ROOT/release-board-key}"
+TEST_GATE_DIR="${GSAM_TEST_GATE_DIR:-$GS_ROOT/test-gate}"
 INSTANCE_ID="default"
 
 export PATH="/opt/homebrew/opt/node@24/bin:$PATH"
@@ -190,6 +192,20 @@ rc_tag_title() {
   say "$title"
 }
 
+# test_gate_check <commit> <tag>
+# Fails with the reason when the full test suite has not passed on <commit>:
+# scripts/greatstone-test-gate.sh writes $TEST_GATE_DIR/passed/<commit> only
+# when every lane passed on exactly that commit.
+test_gate_check() {
+  local marker="$TEST_GATE_DIR/passed/$1"
+  if [ -f "$marker" ]; then
+    say "the full test suite passed on $2 ($1) at $(sed -n 's/^passed_at=//p' "$marker")"
+    return 0
+  fi
+  say "the full test suite has not passed on $2 ($1): there is no pass marker $marker. Run it first: scripts/greatstone-test-gate.sh $2 (about 20 minutes on the PC). Only in an emergency: greatstone-release.sh --skip-test-gate \"<reason>\" $2 (logged in $TEST_GATE_DIR/overrides.log). Nothing was changed."
+  return 1
+}
+
 # Makes the annotated <live-tag> on <commit> with the message of <rc-tag>: its
 # title and changelog (GRE-120). The one place a live-* tag is made, for a
 # release from the app and a release by hand alike.
@@ -217,7 +233,7 @@ drop_unpushed_live_tag() {
 # origin/main (fetch first). A dev checkout that was not pulled runs an old
 # release script; before GRE-120 that one wrote a generic live tag message
 # with no title or changelog (GRE-178).
-RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh)
+RELEASE_SCRIPT_FILES=(scripts/greatstone-release.sh scripts/greatstone-common.sh scripts/greatstone-live-release.sh scripts/greatstone-test-gate.sh)
 release_scripts_current() {
   local repo="$1" files
   files="$(git -C "$repo" diff --name-only origin/main -- "${RELEASE_SCRIPT_FILES[@]}" 2>&1)" \
@@ -270,6 +286,49 @@ preview_running() {
   [ -n "$pid" ] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   ps -o command= -p "$pid" | grep -qF -- "$PREVIEW_DATA_DIR"
+}
+
+# gs_lock <name> [<what>...]: one holder at a time for the steps that share ~/GSAM/preview
+# ("preview") or cut tags ("candidate"). On 15 Oct 2026 Flint's preview starts
+# ran while John's did: each start removed the seed folder and the data copy
+# the other was restoring, and stopped its database. The lock is the folder
+# $GS_ROOT/locks/<name>.lock with the holder's pid ($$, also from a $(...)),
+# run and issue; the caller removes it on exit.
+# A lock whose holder is gone (killed with SIGKILL, so no exit trap) is taken
+# over. Fails, naming the holder, when another step holds it.
+gs_lock() {
+  local dir="$GS_ROOT/locks/$1.lock" pid age
+  mkdir -p "$GS_ROOT/locks"
+  if ! mkdir "$dir" 2>/dev/null; then
+    pid="$(sed -n 's/^pid=//p' "$dir/owner" 2>/dev/null || true)"
+    age="$(perl -e 'printf "%d", time - (stat shift)[9]' "$dir" 2>/dev/null || echo 0)"
+    # No owner yet: the holder made the folder a moment ago and writes it next.
+    if { [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; } || { [ -z "$pid" ] && [ "$age" -lt 60 ]; }; then
+      say "another $1 step runs ($(tr '\n' ' ' <"$dir/owner" 2>/dev/null | sed 's/ $//')); wait for it to end. If none runs, remove $dir."
+      return 1
+    fi
+    rm -rf "$dir"
+    mkdir "$dir" 2>/dev/null || { say "another $1 step took the lock just now; try again."; return 1; }
+    say "Took over the $1 lock from pid ${pid:-<none>}, which no longer runs." >&2
+  fi
+  printf 'pid=%s\ncommand=%s\nrun_id=%s\nissue_id=%s\nstarted_at=%s\n' "$$" "$(basename "$0") ${*:2}" \
+    "$(printf '%s' "${GSAM_RUN_ID:-}" | tr -d '\r\n')" "$(printf '%s' "${GSAM_TASK_ID:-}" | tr -d '\r\n')" \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$dir/owner"
+}
+
+# preview_check <commit> <tag>
+# Fails with the reason unless the preview runs <commit> and answers on
+# /api/health now. On 15 Oct 2026 the preview of rc-2026-10-15.3 never came up
+# and the release went out anyway, because the release only refused a preview
+# of a different tag, not a missing or broken one.
+preview_check() {
+  local skip="Only in an emergency: greatstone-release.sh --skip-preview \"<reason>\" $2 (logged in $GS_ROOT/preview-overrides.log). Nothing was changed."
+  preview_running || { say "no preview of $2 is running, so it was not checked on a copy of the live data. Start it: scripts/greatstone-preview.sh start $2. $skip"; return 1; }
+  [ "$(preview_state commit)" = "$1" ] \
+    || { say "the preview runs $(preview_state tag) ($(preview_state commit)), not $2. Release the tag you checked, or check $2 in the preview first. $skip"; return 1; }
+  [ "$(health_commit "$PREVIEW_URL")" = "$1" ] \
+    || { say "the preview of $2 does not answer on $PREVIEW_URL/api/health; see $PREVIEW_LOG. $skip"; return 1; }
+  say "the preview runs $2 ($1) and answers on $PREVIEW_URL"
 }
 
 # Prints the PIDs whose command line matches <pattern> (extended regex) and

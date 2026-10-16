@@ -94,10 +94,10 @@ function Section({ title, description, children }: { title: string; description?
   </section>;
 }
 
-export function NewAgentWizard({ initialScreen = "name", initialAdapter = null, initialName = "", initialOpen = true, cloud = false, nativeRunnerEnabled = true,
+export function NewAgentWizard({ initialScreen = "name", initialAdapter = null, initialName = "", initialOpen = true, cloud = false,
   initialRunnerProvider = "Codex (app server)", initialConnectionMethod = "subscription", initialConnectionWaiting = false, initialTestState = "idle", testOutcome = "pass", testDelayMs = 1200,
 }: {
-  cloud?: boolean; nativeRunnerEnabled?: boolean;
+  cloud?: boolean;
   initialScreen?: NewAgentScreen; initialAdapter?: NewAgentAdapter | null; initialName?: string; initialOpen?: boolean;
   initialRunnerProvider?: RunnerProvider; initialConnectionMethod?: ConnectionMethod; initialConnectionWaiting?: boolean;
   initialTestState?: TestState; testOutcome?: TestOutcome; testDelayMs?: number;
@@ -246,7 +246,7 @@ export function NewAgentWizard({ initialScreen = "name", initialAdapter = null, 
                     </div> : <fieldset className="flex flex-col gap-3">
                       <legend className="sr-only">Adapter</legend>
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                        {NEW_AGENT_ADAPTERS.filter(type => isNewAgentAdapterAllowed(type, { cloud, nativeRunnerEnabled })).map(type => {
+                        {NEW_AGENT_ADAPTERS.filter(type => isNewAgentAdapterAllowed(type, { cloud })).map(type => {
                           const info = getAdapterDisplay(type);
                           return <label key={type} className="relative cursor-pointer">
                             <input type="radio" name="new-agent-adapter" value={type} checked={adapter === type} onChange={() => setAdapter(type)} className="peer sr-only" />

@@ -173,6 +173,42 @@ describe("BlockedInboxView", () => {
     act(() => root.unmount());
   });
 
+  it("says on each row, in plain words, why the task is blocked and who can clear it", async () => {
+    const issue = {
+      ...makeIssue(
+        "issue-wait",
+        "PAP-4",
+        "Calibrate rig",
+        attention({ reason: "blocked_chain_stalled", severity: "high" }),
+      ),
+      status: "blocked",
+      blockedBy: [
+        {
+          id: "issue-12",
+          identifier: "PAP-12",
+          title: "Order lidar",
+          status: "in_progress",
+          priority: "medium",
+          assigneeAgentId: "agent-grace",
+          assigneeUserId: null,
+        },
+      ],
+    } as Issue;
+    mockIssuesApi.list.mockResolvedValue([issue]);
+    const { root } = renderWithClient(
+      <BlockedInboxView
+        {...blockedViewProps}
+        agentNameById={new Map([["agent-grace", "Grace"]])}
+        presentation="task"
+      />,
+      container,
+    );
+    await waitFor(() => container.querySelector('[data-slot="task-row-why-blocked"]') !== null);
+    const note = container.querySelector('[data-slot="task-row-why-blocked"]');
+    expect(note?.textContent).toBe("Waiting on Grace to finish 'Order lidar' (PAP-12). Who can clear it: Grace.");
+    act(() => root.unmount());
+  });
+
   it("defaults to no grouping and orders rows by most recent stopped item first", async () => {
     const issues: Issue[] = [
       makeIssue(

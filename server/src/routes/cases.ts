@@ -42,11 +42,13 @@ import {
   createDocumentAnnotationThreadSchema,
   updateDocumentAnnotationThreadSchema,
   isUuidLike,
+  DEEP_DIVE_CASE_TYPES,
 } from "@greatstone/shared";
 import { formatAttachmentSize, MAX_ATTACHMENT_BYTES, normalizeContentType } from "../attachment-types.js";
-import { badRequest, conflict, forbidden, notFound, unprocessable } from "../errors.js";
+import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { assertEntitled, requireEntitlement } from "../services/entitlements.js";
 import { documentAnnotationService, logActivity } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -64,9 +66,15 @@ function eventActorValues(actor: CaseActor) {
 }
 
 async function assertCasesEnabled(db: Db) {
-  const experimental = await instanceSettingsService(db).getExperimental();
-  if (!experimental.enableCases) {
-    throw forbidden("Cases are disabled");
+  await assertEntitled(instanceSettingsService(db), "enableCases");
+}
+
+const DEEP_DIVE_TYPES: ReadonlySet<string> = new Set(Object.values(DEEP_DIVE_CASE_TYPES));
+
+// GRE-1090: Deep Dive is stored as Cases, so its case types also need enableDeepDive.
+async function assertDeepDiveCaseTypesEntitled(db: Db, caseTypes: readonly unknown[]) {
+  if (caseTypes.some((caseType) => typeof caseType === "string" && DEEP_DIVE_TYPES.has(caseType))) {
+    await assertEntitled(instanceSettingsService(db), "enableDeepDive");
   }
 }
 
@@ -157,6 +165,7 @@ async function assertCaseAccess(db: Db, req: Request, idOrIdentifier: string) {
   const row = await loadCaseByIdOrIdentifier(db, idOrIdentifier, caseLookupCompanyIds(req));
   if (!row || !hasCompanyAccess(req, row.companyId)) throw notFound("Case not found");
   assertCompanyAccess(req, row.companyId);
+  await assertDeepDiveCaseTypesEntitled(db, [row.caseType]);
   return row;
 }
 
@@ -169,6 +178,7 @@ async function resolveSharedPathCase(db: Db, req: Request, idOrIdentifier: strin
   const row = await loadCaseByIdOrIdentifier(db, idOrIdentifier, companyIds);
   if (!row || !hasCompanyAccess(req, row.companyId)) return null;
   await assertCasesEnabled(db);
+  await assertDeepDiveCaseTypesEntitled(db, [row.caseType]);
   assertCompanyAccess(req, row.companyId);
   return row;
 }
@@ -550,6 +560,17 @@ export function caseRoutes(db: Db, storage: StorageService) {
   const router = Router();
   const documentAnnotationsSvc = documentAnnotationService(db);
 
+  // GRE-1077: company case routes are refused while enableCases is off, before
+  // validation. /cases/:id routes check per route (see resolveSharedPathCase).
+  router.use("/companies/:companyId/cases", requireEntitlement(db, "enableCases"));
+  router.get("/companies/:companyId/cases", (req, _res, next) => {
+    const types = req.query.types ?? req.query.type;
+    assertDeepDiveCaseTypesEntitled(db, parseQueryList(types as string | string[] | undefined)).then(() => next(), next);
+  });
+  router.post("/companies/:companyId/cases", (req, _res, next) => {
+    assertDeepDiveCaseTypesEntitled(db, [req.body?.caseType]).then(() => next(), next);
+  });
+
   async function logCaseAnnotationRemaps(input: {
     caseRow: typeof cases.$inferSelect;
     key: string;
@@ -590,7 +611,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   }
 
   router.post("/companies/:companyId/cases", validate(createCaseSchema), async (req, res) => {
-    await assertCasesEnabled(db);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const actor = getActorInfo(req);
@@ -667,7 +687,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   });
 
   router.get("/companies/:companyId/cases", async (req, res) => {
-    await assertCasesEnabled(db);
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const parsed = listCasesQuerySchema.safeParse(req.query);

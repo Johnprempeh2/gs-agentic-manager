@@ -286,7 +286,7 @@ export class ManagedSandboxUnavailableError extends Error {
   constructor() {
     super(
       "This instance runs agents only in its platform-managed sandbox environment " +
-        "(managed sandbox only), but no active managed sandbox environment exists — " +
+        "(managed sandbox only), but no active managed sandbox environment exists; " +
         "its provider plugin may be unavailable. Refusing to fall back to local execution.",
     );
     this.name = "ManagedSandboxUnavailableError";

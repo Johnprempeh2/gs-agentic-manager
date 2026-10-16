@@ -41,6 +41,10 @@ export const MEMORY_REVIEW_EVENT_ACTIONS = [
   "conflict_flagged",
   "conflict_resolved",
   "delete",
+  // Steward card actions (GRE-1089). `edit` is written on the version an edit replaced.
+  "edit",
+  "reject",
+  "merge",
 ] as const;
 export type MemoryReviewEventAction = (typeof MEMORY_REVIEW_EVENT_ACTIONS)[number];
 
@@ -74,7 +78,18 @@ export type MemoryRetainMode = (typeof MEMORY_RETAIN_MODES)[number];
 export const MEMORY_SYNC_STATES = ["pending", "synced", "failed"] as const;
 export type MemorySyncState = (typeof MEMORY_SYNC_STATES)[number];
 
-export const MEMORY_SOURCE_KINDS = ["issue", "comment", "document_revision", "run", "external_object"] as const;
+export const MEMORY_SOURCE_KINDS = [
+  "issue",
+  "comment",
+  "document_revision",
+  "run",
+  "external_object",
+  /** Brought in from Claude or ChatGPT (see `memory-import.ts`). */
+  "claude_import",
+  "chatgpt_import",
+  /** A file added to a client in the pipeline; the id is `<caseId>/<evidenceId>`. */
+  "client_document",
+] as const;
 
 /** Shown with every recall result: memory is evidence, never an instruction. */
 export const MEMORY_EVIDENCE_NOTE =
@@ -552,7 +567,7 @@ export interface MemoryActorRef {
 
 /** Where a record or edge came from. Ids only; the UI opens them through their own permission-checked APIs. */
 export interface MemorySourceRef {
-  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, or null. */
+  /** `issue`, `comment`, `document_revision`, `run`, `external_object`, `claude_import`, `chatgpt_import`, `client_document`, or null. */
   kind: string | null;
   id: string | null;
   runId: string | null;
@@ -728,6 +743,45 @@ export const memoryActivityCountsQuerySchema = memoryActivityQuerySchema.omit({ 
 export type MemoryActivityCountsQuery = z.infer<typeof memoryActivityCountsQuerySchema>;
 
 /**
+ * The memory operations log, read only (GRE-1302). For live checks: which
+ * operations ran, who ran them, the outcome and their counts. Never content.
+ */
+export const MEMORY_OPERATIONS_LIMIT_MAX = 200;
+export const memoryOperationsQuerySchema = z
+  .object({
+    /** The operation, for example `retention`. */
+    kind: z.string().trim().regex(/^[a-z_]{1,64}$/).optional(),
+    since: z.coerce.date().optional(),
+    limit: z.coerce.number().int().min(1).max(MEMORY_OPERATIONS_LIMIT_MAX).default(50),
+  })
+  .strict();
+export type MemoryOperationsQuery = z.infer<typeof memoryOperationsQuerySchema>;
+
+export interface MemoryOperationRow {
+  id: string;
+  kind: string;
+  outcome: string;
+  actor: { type: string; id: string; agentId: string | null };
+  runId: string | null;
+  app: string | null;
+  createdAt: Date;
+  /** Numbers recorded with the operation, for example `count`, `deleted` or `byRule`. */
+  counts: Record<string, number | Record<string, number>>;
+  /** Yes/no flags recorded with the operation, for example `dryRun`. */
+  flags: Record<string, boolean>;
+  /** `schedule` or `manual` where the operation records it. */
+  trigger: string | null;
+  /** Retention only: records forgotten by this pass; 0 for a dry run, null when the row does not say. */
+  forgotten: number | null;
+}
+
+export interface MemoryOperationsResult {
+  rows: MemoryOperationRow[];
+  /** Over every row the filters match, not only the rows returned. */
+  summary: { total: number; byKind: Record<string, number>; byOutcome: Record<string, number> };
+}
+
+/**
  * Memory rights the owner may grant (G3, GRE-933). Always for organization
  * and project scopes only: a grant made here never reaches a client or
  * restricted-project scope. `memory:admin` is never granted; only John has it.
@@ -764,3 +818,122 @@ export const changeMemoryGrantSchema = z
   })
   .strict();
 export type ChangeMemoryGrant = z.infer<typeof changeMemoryGrantSchema>;
+
+// Shared memory M1: stewards per scope, the review queue and card actions
+// (GRE-1080, GRE-1089). A steward is a person; client and restricted scopes,
+// and the owner-only decision classes, always route to the company owner.
+
+/** `overdue` at 7 days unreviewed, `expired` at 30. Expired is kept and searchable; it ranks last. */
+export const MEMORY_REVIEW_AGE_FLAGS = ["fresh", "overdue", "expired"] as const;
+export type MemoryReviewAgeFlag = (typeof MEMORY_REVIEW_AGE_FLAGS)[number];
+export const MEMORY_REVIEW_OVERDUE_DAYS = 7;
+export const MEMORY_REVIEW_EXPIRED_DAYS = 30;
+
+export function memoryReviewAgeFlag(ageDays: number): MemoryReviewAgeFlag {
+  if (ageDays >= MEMORY_REVIEW_EXPIRED_DAYS) return "expired";
+  if (ageDays >= MEMORY_REVIEW_OVERDUE_DAYS) return "overdue";
+  return "fresh";
+}
+
+export const MEMORY_STEWARD_ACTIONS = ["confirm", "edit_and_confirm", "reject", "merge"] as const;
+export type MemoryStewardAction = (typeof MEMORY_STEWARD_ACTIONS)[number];
+
+/** A proposer or editor as people see them: "John · via ChatGPT". */
+export interface MemoryActorLabel {
+  type: "user" | "agent";
+  id: string;
+  name: string;
+  /** "ChatGPT", "Claude Code": the name of the API key the call came through; null for GSAM itself or unknown. */
+  app: string | null;
+}
+
+export interface MemoryReviewQueueItem {
+  proposal: MemoryRecord;
+  /** Who wrote the first version. */
+  proposer: MemoryActorLabel;
+  /** Set on a version made by edit and confirm. */
+  editedBy: MemoryActorLabel | null;
+  /** The confirmed card this proposal changes; null for a new card. */
+  current: MemoryRecord | null;
+  scope: { id: string; name: string; kind: MemoryScopeKind };
+  ageDays: number;
+  ageFlag: MemoryReviewAgeFlag;
+  /** Open conflicts on the proposal. */
+  conflictIds: string[];
+  allowed: Record<MemoryStewardAction, boolean>;
+  /** Why the caller cannot confirm, e.g. "You proposed this card". Null when allowed. */
+  blockedReason: string | null;
+  /**
+   * The entry this proposal most resembles by shared words: a confirmed card
+   * in the same scope or an earlier proposal there. A hint, never a merge.
+   */
+  lookalike?: { recordId: string; title: string | null; content: string | null; status: MemoryRecordStatus } | null;
+}
+
+export interface MemoryReviewQueue {
+  /** Expired last, then oldest first. */
+  items: MemoryReviewQueueItem[];
+  /** Counts over every proposal the caller may review, before filters. */
+  facets: {
+    scopes: Array<{ id: string; name: string; count: number }>;
+    people: Array<{ type: "user" | "agent"; id: string; name: string; count: number }>;
+    apps: Array<{ app: string; count: number }>;
+  };
+}
+
+export interface MemoryScopeSteward {
+  scopeId: string;
+  scopeName: string;
+  scopeKind: MemoryScopeKind;
+  /** True for client and restricted scopes: fixed to the owner. */
+  ownerOnly: boolean;
+  primaryUserId: string | null;
+  backupUserId: string | null;
+}
+
+export interface MemoryStewardActionResult {
+  record: MemoryRecord;
+  /** The new version written by edit and confirm. */
+  newRecord?: MemoryRecord;
+}
+
+export const memoryStewardActionSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("confirm"), expectedVersion: z.number().int(), reason: memoryReason }).strict(),
+  z
+    .object({
+      action: z.literal("edit_and_confirm"),
+      expectedVersion: z.number().int(),
+      title: z.string().trim().max(200).nullable().optional(),
+      content: z.string().trim().min(1).max(20_000),
+      reason: memoryReason,
+    })
+    .strict(),
+  z.object({ action: z.literal("reject"), expectedVersion: z.number().int(), reason: memoryReason }).strict(),
+  z
+    .object({ action: z.literal("merge"), expectedVersion: z.number().int(), intoRecordId: z.string().uuid(), reason: memoryReason })
+    .strict(),
+]);
+export type MemoryStewardActionInput = z.infer<typeof memoryStewardActionSchema>;
+
+export const setMemoryScopeStewardSchema = z
+  .object({
+    primaryUserId: z.string().trim().min(1).max(200).nullable(),
+    backupUserId: z.string().trim().min(1).max(200).nullable(),
+  })
+  .strict();
+export type SetMemoryScopeSteward = z.infer<typeof setMemoryScopeStewardSchema>;
+
+export const memoryReviewQueueQuerySchema = z
+  .object({
+    scopeId: z.string().guid().optional(),
+    /** `user:<id>` or `agent:<id>`: the proposer. */
+    person: z
+      .string()
+      .regex(/^(user|agent):.{1,200}$/)
+      .optional(),
+    app: z.string().trim().min(1).max(100).optional(),
+    age: z.enum(MEMORY_REVIEW_AGE_FLAGS).optional(),
+    conflict: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
+  })
+  .strict();
+export type MemoryReviewQueueQuery = z.infer<typeof memoryReviewQueueQuerySchema>;

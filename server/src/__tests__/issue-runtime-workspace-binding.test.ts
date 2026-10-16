@@ -30,10 +30,13 @@ const support = await getEmbeddedPostgresTestSupport();
     executionWorkspaceSettings: { mode: "shared_workspace" as const },
   });
 
-  it("persists the internal binding with isolated workspaces off while public updates remain gated", async () => {
+  // Isolated Workspaces graduated (GRE-1437): the server reads the switch as on
+  // whatever the stored row says, so a stored "off" no longer gates a public
+  // update. The internal binding still persists and survives a later update.
+  it("persists the internal binding, and a stored isolated-workspaces off no longer gates public updates", async () => {
     const f = await fixture(), svc = issueService(db);
     const ordinary = await svc.update(f.issueId, binding(f.workspaceId));
-    expect(ordinary?.executionWorkspaceId).toBeNull();
+    expect(ordinary).toMatchObject(binding(f.workspaceId));
     const bound = await svc.update(f.issueId, { ...binding(f.workspaceId), companyGuard: f.companyId }, db, undefined, undefined, { bindRuntimeSharedWorkspace: true });
     expect(bound).toMatchObject(binding(f.workspaceId));
     const followUp = await svc.update(f.issueId, { title: "A second message" });

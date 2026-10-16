@@ -1,9 +1,10 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type { HeartbeatRun, RoutineRunSummary } from "@greatstone/shared";
 import { Activity, CircleDotDashed } from "lucide-react";
 import { agentsApi } from "@/api/agents";
 import { heartbeatsApi } from "@/api/heartbeats";
+import { issuesApi } from "@/api/issues";
 import { routinesApi } from "@/api/routines";
 import { EmptyState } from "@/components/EmptyState";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -21,6 +22,13 @@ import { relativeTime } from "@/lib/utils";
 
 const ALL = "__all";
 const RUN_LIMIT = 200;
+/** Tasks looked up to name what each run worked on; older rows fall back to the run kind. */
+const RUN_TASK_LOOKUP_LIMIT = 40;
+
+function runIssueId(run: HeartbeatRun): string | null {
+  const snapshot = run.contextSnapshot as { issueId?: unknown } | null | undefined;
+  return typeof snapshot?.issueId === "string" ? snapshot.issueId : null;
+}
 
 function runSummary(run: HeartbeatRun) {
   const result = run.resultJson as { summary?: unknown; result?: unknown } | null;
@@ -163,6 +171,26 @@ export function AuditRuns({ companyId, routineId }: { companyId: string; routine
     [runs.data, status],
   );
 
+  const runIssueIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const run of visibleRuns) {
+      const issueId = runIssueId(run);
+      if (issueId && !ids.includes(issueId)) ids.push(issueId);
+      if (ids.length >= RUN_TASK_LOOKUP_LIMIT) break;
+    }
+    return ids;
+  }, [visibleRuns]);
+  const runIssueQueries = useQueries({
+    queries: runIssueIds.map((issueId) => ({
+      queryKey: queryKeys.issues.detail(issueId),
+      queryFn: () => issuesApi.get(issueId),
+      staleTime: 60_000,
+    })),
+  });
+  const issueById = new Map(
+    runIssueQueries.flatMap((query) => (query.data ? [[query.data.id, query.data] as const] : [])),
+  );
+
   const updateFilter = (key: "agentId" | "runStatus", value: string) => {
     setSearchParams(
       (current) => {
@@ -272,6 +300,8 @@ export function AuditRuns({ companyId, routineId }: { companyId: string; routine
             const agent = agentById.get(run.agentId);
             const summary = runSummary(run);
             const duration = runDuration(run);
+            const issueId = runIssueId(run);
+            const issue = issueId ? issueById.get(issueId) : undefined;
             return (
               <li key={run.id}>
                 <Link
@@ -283,14 +313,18 @@ export function AuditRuns({ companyId, routineId }: { companyId: string; routine
                       <span className="font-medium text-foreground">
                         {agent?.name ?? "Unknown agent"}
                       </span>
-                      <span className="font-mono text-(length:--text-micro) text-muted-foreground">
-                        {run.id.slice(0, 8)}
-                      </span>
                       <StatusBadge status={run.status} />
                     </div>
-                    <p className="mt-1 truncate text-sm text-muted-foreground">
-                      {summary ?? `${readableSource(run.invocationSource)} run`}
-                    </p>
+                    {issue ? (
+                      <p className="mt-1 truncate text-sm text-foreground" title={`Run ${run.id.slice(0, 8)}`}>
+                        Worked on {issue.identifier ? `${issue.identifier} ` : ""}{issue.title}
+                      </p>
+                    ) : null}
+                    {summary || !issue ? (
+                      <p className="mt-1 truncate text-sm text-muted-foreground" title={issue ? undefined : `Run ${run.id.slice(0, 8)}`}>
+                        {summary ?? `${readableSource(run.invocationSource)} run`}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground sm:justify-end">
                     <span className="capitalize">{readableSource(run.invocationSource)}</span>

@@ -11,6 +11,7 @@ import {
   issueDocuments,
   issueComments,
   issues,
+  organisations,
   pipelineAutomationExecutions,
   pipelineCaseBlockers,
   pipelineCaseDocuments,
@@ -47,6 +48,7 @@ import { routineService } from "./routines.js";
 import { secretService } from "./secrets.js";
 import type { IssueAssignmentWakeupDeps } from "./issue-assignment-wakeup.js";
 import { logActivity } from "./activity-log.js";
+import { assertCaseFieldValues } from "./pipeline-fields.js";
 import { assertAssignableAgent } from "./agent-assignability.js";
 import { authorizationService } from "./authorization.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
@@ -1510,6 +1512,37 @@ async function getPipelineOrThrow(db: PipelineDb, companyId: string, pipelineId:
     .then((rows) => rows[0] ?? null);
   if (!row) throw notFound("Pipeline not found");
   return row;
+}
+
+// Ben's rule (GRE-1478): a case on a pipeline with requiresOrganisation must
+// name a live organisation record of the same company. Any organisation named
+// on another pipeline is checked the same way, but may be left empty.
+export async function assertCaseOrganisation(
+  db: PipelineDb,
+  input: { companyId: string; pipeline: { requiresOrganisation: boolean }; organisationId: string | null },
+) {
+  if (!input.organisationId) {
+    if (input.pipeline.requiresOrganisation) {
+      throw unprocessable("This pipeline needs an organisation: pick one from the organisation database or create it first", {
+        code: "organisation_required",
+      });
+    }
+    return null;
+  }
+  const row = await db
+    .select({ id: organisations.id, archivedAt: organisations.archivedAt })
+    .from(organisations)
+    .where(and(eq(organisations.id, input.organisationId), eq(organisations.companyId, input.companyId)))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+  // Another company's organisation reads as not found, so ids do not leak.
+  if (!row) {
+    throw unprocessable("Organisation not found in this company", { code: "organisation_not_found" });
+  }
+  if (row.archivedAt) {
+    throw unprocessable("This organisation is archived: restore it or pick another one", { code: "organisation_archived" });
+  }
+  return row.id;
 }
 
 async function getStageOrThrow(db: PipelineDb, pipelineId: string, stageId: string) {
@@ -3111,6 +3144,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
       summary?: string | null;
       fields?: Record<string, unknown>;
       parentCaseId?: string | null;
+      organisationId?: string | null;
       workspaceRef?: Record<string, unknown> | null;
       expectedVersion?: number;
       leaseToken?: string | null;
@@ -3134,10 +3168,26 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     const summaryChanged = input.summary !== undefined && input.summary !== current.summary;
     const fieldsChanged = input.fields !== undefined && !isDeepStrictEqual(input.fields, current.fields);
     const parentCaseChanged = input.parentCaseId !== undefined && input.parentCaseId !== current.parentCaseId;
+    const organisationChanged = input.organisationId !== undefined && input.organisationId !== current.organisationId;
+    if (organisationChanged) {
+      await assertCaseOrganisation(tx, {
+        companyId: input.companyId,
+        pipeline: await getPipelineOrThrow(tx, input.companyId, current.pipelineId),
+        organisationId: input.organisationId ?? null,
+      });
+    }
     const workspaceRefChanged = input.workspaceRef !== undefined && !isDeepStrictEqual(input.workspaceRef, current.workspaceRef);
     const materialChanged = titleChanged || summaryChanged || fieldsChanged;
+    if (fieldsChanged) {
+      await assertCaseFieldValues(tx, {
+        companyId: input.companyId,
+        pipelineId: current.pipelineId,
+        fields: input.fields!,
+        previous: current.fields,
+      });
+    }
     const visibleMetadataChanged = titleChanged || summaryChanged;
-    if (!materialChanged && !visibleMetadataChanged && !parentCaseChanged && !workspaceRefChanged) {
+    if (!materialChanged && !visibleMetadataChanged && !parentCaseChanged && !organisationChanged && !workspaceRefChanged) {
       return { case: current, event: null };
     }
 
@@ -3149,6 +3199,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
     if (summaryChanged) patch.summary = input.summary;
     if (fieldsChanged) patch.fields = input.fields;
     if (parentCaseChanged) patch.parentCaseId = input.parentCaseId;
+    if (organisationChanged) patch.organisationId = input.organisationId;
     if (workspaceRefChanged) patch.workspaceRef = input.workspaceRef;
 
     const [updated] = await tx
@@ -3161,7 +3212,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
       throw conflict("Pipeline case version conflict", conflictDetailsForCase(latest.case, latest.stage));
     }
 
-    const event = materialChanged || visibleMetadataChanged || parentCaseChanged
+    const event = materialChanged || visibleMetadataChanged || parentCaseChanged || organisationChanged
       ? await writeCaseEvent(tx, {
         companyId: input.companyId,
         caseId: updated.id,
@@ -3173,6 +3224,9 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
           parentCaseChanged,
           materialChanged,
           workspaceRefChanged,
+          ...(organisationChanged
+            ? { organisationChanged, previousOrganisationId: current.organisationId, organisationId: input.organisationId }
+            : {}),
         },
       })
       : null;
@@ -3472,6 +3526,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
       description?: string | null;
       projectId?: string | null;
       enforceTransitions?: boolean;
+      requiresOrganisation?: boolean;
       stages?: Array<{ key: string; name: string; kind: PipelineStageKind; position?: number; config?: PipelineStageConfig }>;
       actor: PipelineActor;
     }) {
@@ -3504,6 +3559,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
             description: input.description ?? null,
             projectId: input.projectId ?? null,
             enforceTransitions: input.enforceTransitions ?? false,
+            requiresOrganisation: input.requiresOrganisation ?? false,
             createdByUserId: input.actor.type === "user" ? input.actor.userId : null,
             createdByAgentId: input.actor.type === "agent" ? input.actor.agentId : null,
           })
@@ -3901,6 +3957,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
       stageKey?: string | null;
       parentCaseId?: string | null;
       requestKey?: string | null;
+      organisationId?: string | null;
       blockedByCaseIds?: string[];
       blockedByCaseKeys?: string[];
       actor: PipelineActor;
@@ -3936,6 +3993,11 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
             .then((rows) => rows[0] ?? null);
           if (existingByRequestKey) return { case: existingByRequestKey, created: false };
         }
+        const organisationId = await assertCaseOrganisation(tx, {
+          companyId: input.companyId,
+          pipeline,
+          organisationId: input.organisationId ?? null,
+        });
         const automationAttempt = input.actor.type === "agent"
           ? await resolveAutomationAttemptForActorRun(tx, input.companyId, input.actor.runId)
           : null;
@@ -3964,6 +4026,11 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
         if (!stage) throw unprocessable("Pipeline has no stages", { code: "validation" });
         assertStageEnabled(stage, "ingest");
         validateAddFormFieldsForStage(stage, input.fields ?? {});
+        await assertCaseFieldValues(tx, {
+          companyId: input.companyId,
+          pipelineId: input.pipelineId,
+          fields: input.fields ?? {},
+        });
 
         const [inserted] = await tx
           .insert(pipelineCases)
@@ -3974,6 +4041,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
             caseKey,
             title: input.title,
             summary: input.summary ?? null,
+            organisationId,
             fields: input.fields ?? {},
             workspaceRef: input.workspaceRef ?? null,
             parentCaseId: input.parentCaseId ?? null,
@@ -4084,6 +4152,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
         stageKey?: string | null;
         parentCaseId?: string | null;
         requestKey?: string | null;
+        organisationId?: string | null;
         blockedByCaseIds?: string[];
         blockedByCaseKeys?: string[];
       }>;
@@ -4244,6 +4313,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
           stageKey: config.targetStageKey,
           parentCaseId: detail.case.id,
           requestKey: `${config.pieceNoun}:${key}`,
+          organisationId: detail.case.organisationId ?? null,
         };
       });
 
@@ -4316,6 +4386,7 @@ export function pipelineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeu
       summary?: string | null;
       fields?: Record<string, unknown>;
       parentCaseId?: string | null;
+      organisationId?: string | null;
       workspaceRef?: Record<string, unknown> | null;
       expectedVersion?: number;
       leaseToken?: string | null;

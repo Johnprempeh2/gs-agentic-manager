@@ -1,5 +1,8 @@
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
 import { describe, it, expect } from "vitest";
 import {
+  contentDispositionHeader,
   DEFAULT_ALLOWED_TYPES,
   formatAttachmentSize,
   INLINE_ATTACHMENT_TYPES,
@@ -257,5 +260,22 @@ describe("formatAttachmentSize", () => {
     expect(formatAttachmentSize(0)).toBe("0 bytes");
     expect(formatAttachmentSize(-1)).toBe("0 bytes");
     expect(formatAttachmentSize(Number.NaN)).toBe("0 bytes");
+  });
+});
+
+describe("contentDispositionHeader", () => {
+  it("keeps a plain ASCII name as a quoted filename", () => {
+    expect(contentDispositionHeader("attachment", "brief.pdf")).toBe('attachment; filename="brief.pdf"');
+  });
+
+  it("encodes a non-Latin name so Node accepts the header", () => {
+    const value = contentDispositionHeader("inline", "合同 (final).pdf");
+    expect(value).toBe(`inline; filename="__ (final).pdf"; filename*=UTF-8''%E5%90%88%E5%90%8C%20%28final%29.pdf`);
+    const res = new ServerResponse(new IncomingMessage(new Socket()));
+    expect(() => res.setHeader("Content-Disposition", value)).not.toThrow();
+  });
+
+  it("drops quotes and backslashes from the plain filename", () => {
+    expect(contentDispositionHeader("attachment", 'a"b\\c.txt')).toMatch(/^attachment; filename="a_b_c.txt"; filename\*=UTF-8''/);
   });
 });

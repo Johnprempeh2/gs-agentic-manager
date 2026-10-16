@@ -119,6 +119,22 @@ diagnostic context, but they cannot be the only access path. Browse/search is a
 fallback for recovering workspace files when the issue link or chip is not
 available, not the preferred way to deliver files to users.
 
+## UI Screenshots
+
+For before and after screenshots of a UI change, `pnpm screenshots` starts a
+throwaway seeded sandbox, captures routes at desktop and phone width in light
+and dark, and stops the sandbox again. With `--attach <issueId>` it uploads the
+index as an artifact work product and each PNG as an attachment through
+`paperclip-upload-artifact.sh`:
+
+```sh
+pnpm screenshots --routes "dashboard,issues/{issue}" --attach "$GSAM_TASK_ID"
+```
+
+Without the GSAM API variables it prints the output folder and skips the
+upload. Run it once on the base branch and once on your branch (with `--out`)
+to get a matching pair. See "Sandbox screenshots" in `doc/DEVELOPING.md`.
+
 ## Video Examples
 
 Upload an `.mp4` render:

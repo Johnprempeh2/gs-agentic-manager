@@ -86,7 +86,7 @@ export function parseTrustProxyEnv(raw: string | undefined): TrustProxyValue | u
   // typo, not a subnet list.
   if (/^\s*\d+\s*$/.test(raw)) {
     throw new Error(
-      `TRUST_PROXY: invalid integer value ${JSON.stringify(raw)} — use a positive integer with no leading zeros or whitespace`,
+      `TRUST_PROXY: invalid integer value ${JSON.stringify(raw)}; use a positive integer with no leading zeros or whitespace`,
     );
   }
   const tokens = value
@@ -97,7 +97,7 @@ export function parseTrustProxyEnv(raw: string | undefined): TrustProxyValue | u
   for (const token of tokens) {
     if (!isValidSubnetToken(token)) {
       throw new Error(
-        `TRUST_PROXY: unrecognized token ${JSON.stringify(token)} — expected one of {loopback, linklocal, uniquelocal} or a CIDR like 10.0.0.0/8 or fd00::/8`,
+        `TRUST_PROXY: unrecognized token ${JSON.stringify(token)}; expected one of {loopback, linklocal, uniquelocal} or a CIDR like 10.0.0.0/8 or fd00::/8`,
       );
     }
   }

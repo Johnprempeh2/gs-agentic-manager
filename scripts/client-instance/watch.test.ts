@@ -5,6 +5,7 @@ import {
   ALERT_REPEAT_MS,
   aiSignals,
   alertMessage,
+  billingUsageSignal,
   decideAlert,
   diskSignal,
   linesSignal,
@@ -131,4 +132,15 @@ test("the public URL probe passes only on HTTP 200 with health ok", () => {
   assert.match(publicUrlSignal(url, { status: 200, body: null }).detail, /health not JSON$/);
   assert.match(publicUrlSignal(url, { status: 200, body: { status: "degraded" } }).detail, /health degraded$/);
   for (const r of [{ error: "x" }, { status: 502, body: null }, { status: 200, body: { status: "degraded" } }]) assert.equal(publicUrlSignal(url, r).ok, false);
+});
+
+test("budget-warn (GRE-1389): fails when the app says usage is at the warn level; passes with no billing account", () => {
+  const usage = { warning: true, usedPercent: 80, warnPercent: 80, windowStart: "2026-10-01" };
+  assert.deepEqual(billingUsageSignal(usage), {
+    key: "budget-warn",
+    ok: false,
+    detail: "80% of the AI allowance used since 2026-10-01 (warn at 80%)",
+  });
+  assert.equal(billingUsageSignal({ ...usage, warning: false, usedPercent: 79.99 }).ok, true);
+  assert.equal(billingUsageSignal(null).ok, true);
 });

@@ -100,14 +100,14 @@ function extractUiParserSource(
     if (major !== SUPPORTED_PARSER_CONTRACT) {
       logger.warn(
         { packageName, contractVersion, supported: `${SUPPORTED_PARSER_CONTRACT}.x` },
-        "Adapter declares unsupported UI parser contract version — skipping UI parser",
+        "Adapter declares unsupported UI parser contract version; skipping UI parser",
       );
       return undefined;
     }
   } else {
     logger.info(
       { packageName },
-      "Adapter has ./ui-parser export but no paperclip.adapterUiParser version — loading anyway (future versions may require it)",
+      "Adapter has ./ui-parser export but no paperclip.adapterUiParser version; loading anyway (future versions may require it)",
     );
   }
 
@@ -120,7 +120,7 @@ function extractUiParserSource(
   if (!uiParserPath.startsWith(packageDir + path.sep) && uiParserPath !== packageDir) {
     logger.warn(
       { packageName, uiParserFile },
-      "UI parser path escapes package directory — skipping",
+      "UI parser path escapes package directory; skipping",
     );
     return undefined;
   }

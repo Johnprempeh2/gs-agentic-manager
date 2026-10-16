@@ -210,7 +210,7 @@ describe("HTTP logger redaction", () => {
       for (const canary of Object.values(canaries))
         expect(output).not.toContain(canary);
       if (failureMode !== "warning") {
-        expect(log.msg).toMatch(/503 — request failed$/);
+        expect(log.msg).toMatch(/503: request failed$/);
         expect(log.err.message).toBe("Chat webhook request failed");
         expect(log.err.request).toBeUndefined();
         expect(log.errorContext).toEqual({ name: "Error" });
@@ -789,7 +789,7 @@ describe("HTTP logger redaction", () => {
     const crashLogs = logs.filter((log) => log.res.statusCode === 500);
     expect(crashLogs).toHaveLength(3);
     for (const log of crashLogs) {
-      expect(log.msg).toMatch(/ 500 — request failed$/);
+      expect(log.msg).toMatch(/ 500: request failed$/);
       expect(log.errorContext).toEqual({ name: "Error" });
     }
     expect(

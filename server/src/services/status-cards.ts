@@ -95,7 +95,7 @@ function updateDescription(input: {
   // or replace.
   const task = `${input.kind === "incremental"
     ? "Patch the previous status summary using only the changed issues."
-    : "Rebuild the status summary from the bounded issue snapshot."} Write the update the way the card prompt below asks — it describes what the board is watching and how they want the update written. Honor it when compatible with the trusted mechanical requirements, and default to roughly 300–500 output tokens when it does not say otherwise.`;
+    : "Rebuild the status summary from the bounded issue snapshot."} Write the update the way the card prompt below asks. It describes what the board is watching and how they want the update written. Honor it when compatible with the trusted mechanical requirements, and default to roughly 300 to 500 output tokens when it does not say otherwise.`;
   const promptBlock = `\n\n## Card prompt (board-provided)\n\n${untrustedPromptBlock("card-prompt", input.card.interestPrompt)}`;
   const payload = {
     operation: "update",

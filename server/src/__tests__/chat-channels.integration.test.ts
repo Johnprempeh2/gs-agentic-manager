@@ -1081,7 +1081,10 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await db.insert(companies).values({
       id: companyId,
       name: `Chat Test ${companyId.slice(0, 8)}`,
-      issuePrefix: `C${companyId.replaceAll("-", "").slice(0, 7).toUpperCase()}`,
+      // Issue prefixes are unique. Seven hex digits (28 bits) collided once in
+      // a full run of this suite's ~400 companies (13 Oct 2026); nine digits
+      // keep the prefix within the 10 characters an identifier mention allows.
+      issuePrefix: `C${companyId.replaceAll("-", "").slice(0, 9).toUpperCase()}`,
       requireBoardApprovalForNewAgents: false,
     });
     const now = new Date();
@@ -27015,7 +27018,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(statusPublication).toMatchObject({
       conversationId: conversation.id,
       state: "pending",
-      payload: { text: expect.stringMatching(/— in_progress$/) },
+      payload: { text: expect.stringMatching(/\(in_progress\)$/) },
     });
 
     // Sample again at send time so a status waiting behind an older provider
@@ -27032,7 +27035,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: thread.thread.id,
         messageId: "outbound-1",
-        text: expect.stringMatching(/— done$/),
+        text: expect.stringMatching(/\(done\)$/),
       },
     ]);
 
@@ -27054,7 +27057,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: thread.thread.id,
         messageId: "outbound-1",
-        text: expect.stringMatching(/— done$/),
+        text: expect.stringMatching(/\(done\)$/),
       },
       {
         threadId: thread.thread.id,
@@ -27080,7 +27083,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       .then((rows) => rows[0]);
     expect(publishedStatus).toMatchObject({
       state: "published",
-      payload: { text: expect.stringMatching(/— done$/) },
+      payload: { text: expect.stringMatching(/\(done\)$/) },
       providerMessageId: "outbound-1",
     });
     await service.shutdown();
@@ -29169,7 +29172,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
       {
         threadId: thread.thread.id,
         messageId: "outbound-1",
-        text: expect.stringMatching(/ — /),
+        text: expect.stringMatching(/ \(\w+\)$/),
       },
       {
         threadId: thread.thread.id,
@@ -29225,7 +29228,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await service.processPendingPublications();
     expect(providerRuntime?.posts).toEqual([
       { threadId: thread.thread.id, text: "Maya is queued." },
-      { threadId: thread.thread.id, text: expect.stringMatching(/ — /) },
+      { threadId: thread.thread.id, text: expect.stringMatching(/ \(\w+\)$/) },
     ]);
   });
 
@@ -50199,7 +50202,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     await service.processPendingPublications();
     expect(runtime.endpoints.get(endpoint.id)?.posts.at(-1)).toMatchObject({
       threadId: starterThreadId,
-      text: expect.stringMatching(/— todo$/),
+      text: expect.stringMatching(/\(todo\)$/),
     });
     await invoke("close");
     await expect(service.listConversations(endpoint.id)).resolves.toEqual([
@@ -50552,7 +50555,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toHaveLength(issuesBeforeStatus.length);
     await service.processPendingPublications();
     expect(runtime.endpoints.get(endpoint.id)?.posts.at(-1)?.text).toMatch(
-      /— todo$/,
+      /\(todo\)$/,
     );
 
     await invokeControl("new");
@@ -50649,7 +50652,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     ).toEqual([
       {
         threadId: dm.thread.id,
-        text: `${firstIssue.identifier}: Start the first DM task — todo`,
+        text: `${firstIssue.identifier}: Start the first DM task (todo)`,
       },
       {
         threadId: dm.thread.id,
@@ -52060,7 +52063,7 @@ describeEmbeddedPostgres("chat channel control-plane integration", () => {
     expect(
       runtime.endpoints.get(endpoint.id)?.posts.map((post) => post.text),
     ).toEqual([
-      expect.stringMatching(/— todo$/),
+      expect.stringMatching(/\(todo\)$/),
       expect.stringContaining(
         "Open a new Telegram forum topic to start a new GS Agentic Manager task.",
       ),

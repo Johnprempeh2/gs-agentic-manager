@@ -150,11 +150,12 @@ describe("summary slot routes", () => {
       expect(mockSummarySlotService.listRevisions).toHaveBeenCalledOnce();
     });
 
-    it("returns 404 and does not load state when the summaries flag is disabled", async () => {
+    it("returns 403 not_entitled and does not load state when the summaries flag is disabled", async () => {
       mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableSummaries: false });
       const app = await createApp(boardActor);
       const res = await request(app).get(slotPath);
-      expect(res.status, JSON.stringify(res.body)).toBe(404);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body).toMatchObject({ code: "not_entitled", feature: "enableSummaries" });
       expect(mockSummarySlotService.getSlot).not.toHaveBeenCalled();
     });
 
@@ -236,13 +237,14 @@ describe("summary slot routes", () => {
       expect(mockSummarySlotService.generate).not.toHaveBeenCalled();
     });
 
-    it("returns 404 when the summaries flag is disabled", async () => {
+    it("returns 403 not_entitled when the summaries flag is disabled", async () => {
       mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableSummaries: false });
       const app = await createApp(boardActor);
       const res = await request(app).post(
         `/api/companies/${companyId}/summary-slots/project/header/generate`,
       ).send({});
-      expect(res.status, JSON.stringify(res.body)).toBe(404);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body).toMatchObject({ code: "not_entitled", feature: "enableSummaries" });
       expect(mockSummarySlotService.generate).not.toHaveBeenCalled();
     });
   });
@@ -279,11 +281,12 @@ describe("summary slot routes", () => {
       expect(mockSummarySlotService.write).not.toHaveBeenCalled();
     });
 
-    it("returns 404 when the summaries flag is disabled", async () => {
+    it("returns 403 not_entitled when the summaries flag is disabled", async () => {
       mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableSummaries: false });
       const app = await createApp(agentActor);
       const res = await request(app).put(slotPath).send({ markdown: "# Summary" });
-      expect(res.status, JSON.stringify(res.body)).toBe(404);
+      expect(res.status, JSON.stringify(res.body)).toBe(403);
+      expect(res.body).toMatchObject({ code: "not_entitled", feature: "enableSummaries" });
       expect(mockSummarySlotService.write).not.toHaveBeenCalled();
     });
 

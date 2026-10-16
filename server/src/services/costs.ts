@@ -9,6 +9,8 @@ import {
   type ApiEquivalentProviderRow,
   type ApiEquivalentSummary,
   type CreateCompanySubscription,
+  type IssueCostModelRow,
+  type IssueCostSummary,
   type UpdateCompanySubscription,
 } from "@greatstone/shared";
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, sql } from "drizzle-orm";
@@ -17,6 +19,8 @@ import type { Db } from "@greatstone/db";
 import { activityLog, agents, companies, companySubscriptions, costEvents, heartbeatRuns, issues, projects } from "@greatstone/db";
 import { notFound, unprocessable } from "../errors.js";
 import { budgetService, type BudgetServiceHooks } from "./budgets.js";
+import { noteBillingUsageWarning } from "./billing-account.js";
+import { logger } from "../middleware/logger.js";
 import { visibleIssueCondition } from "./issue-visibility.js";
 
 export interface CostDateRange {
@@ -142,6 +146,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         .where(eq(companies.id, companyId));
 
       await budgets.evaluateCostEvent(event);
+      // The event is stored; a failed warn check must not make the caller send it again.
+      await noteBillingUsageWarning(db, event.occurredAt).catch((err) => {
+        logger.warn({ err, companyId }, "billing usage warning not checked");
+      });
 
       return event;
     },
@@ -184,7 +192,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       companyId: string,
       issueId: string,
       options: { excludeRoot?: boolean } = {},
-    ) => {
+    ): Promise<IssueCostSummary> => {
       // Callers must resolve and authorize a visible root issue before invoking this.
       // The route does that so zero counts are not mistaken for a missing root.
       const childIssues = alias(issues, "child");
@@ -276,7 +284,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       // Run cost-event aggregation and run-duration aggregation in parallel.
       // They're separate queries because cost_events fan out per-event and
       // joining heartbeat_runs through them would double-count run durations.
-      const [costRowResult, runRowResult] = await Promise.all([
+      const [costRowResult, runRowResult, modelRows] = await Promise.all([
         db
           .select({
             issueCount: sql<number>`count(distinct ${issues.id})::int`,
@@ -301,12 +309,64 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
             ),
           ),
         db.execute(runSummarySql),
+        // Same tree and rows as the totals above, grouped per model so each
+        // model is priced like the company API-equivalent view.
+        db
+          .select({
+            provider: costEvents.provider,
+            model: costEvents.model,
+            costCents: sumAsNumber(costEvents.costCents),
+            inputTokens: sumAsNumber(costEvents.inputTokens),
+            cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+            outputTokens: sumAsNumber(costEvents.outputTokens),
+          })
+          .from(issues)
+          .innerJoin(
+            costEvents,
+            and(
+              eq(costEvents.companyId, companyId),
+              eq(costEvents.issueId, issues.id),
+            ),
+          )
+          .where(
+            and(
+              eq(issues.companyId, companyId),
+              visibleIssueCondition(),
+              issueTreeCondition,
+            ),
+          )
+          .groupBy(costEvents.provider, costEvents.model)
+          .orderBy(costEvents.provider, costEvents.model),
       ]);
 
       const costRow = costRowResult[0];
       const runRow = Array.isArray(runRowResult)
         ? (runRowResult[0] as { runCount?: number | string | null; runtimeMs?: number | string | null } | undefined)
         : undefined;
+
+      const byModel: IssueCostModelRow[] = modelRows.map((row) => {
+        const usage = {
+          inputTokens: Number(row.inputTokens),
+          cachedInputTokens: Number(row.cachedInputTokens),
+          outputTokens: Number(row.outputTokens),
+        };
+        return {
+          provider: row.provider,
+          model: row.model,
+          ...usage,
+          costCents: Number(row.costCents),
+          apiEquivalentCents: computeApiEquivalentCents({ provider: row.provider, model: row.model, ...usage }),
+        };
+      });
+      let apiEquivalentCents = 0;
+      let unpricedTokens = 0;
+      for (const row of byModel) {
+        if (row.apiEquivalentCents === null) {
+          unpricedTokens += row.inputTokens + row.cachedInputTokens + row.outputTokens;
+        } else {
+          apiEquivalentCents += row.apiEquivalentCents;
+        }
+      }
 
       return {
         issueId,
@@ -318,6 +378,9 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         outputTokens: Number(costRow?.outputTokens ?? 0),
         runCount: Number(runRow?.runCount ?? 0),
         runtimeMs: Number(runRow?.runtimeMs ?? 0),
+        apiEquivalentCents,
+        unpricedTokens,
+        byModel,
       };
     },
 

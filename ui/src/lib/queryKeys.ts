@@ -1,4 +1,9 @@
 export const queryKeys = {
+  teamChats: {
+    all: ["team-chats"] as const,
+    list: (companyId: string) => ["team-chats", "list", companyId] as const,
+    detail: (chatId: string) => ["team-chats", "detail", chatId] as const,
+  },
   agentChats: {
     detail: (companyId: string | null, userId: string | null, agentId: string | undefined) =>
       ["agent-chat", companyId, userId, agentId] as const,
@@ -31,6 +36,10 @@ export const queryKeys = {
     gallery: (companyId: string) => ["apps", companyId, "gallery"] as const,
     attention: (companyId: string) => ["apps", companyId, "attention"] as const,
   },
+  mailboxes: {
+    list: (companyId: string) => ["mailboxes", companyId] as const,
+    oauthApps: (companyId: string) => ["mailboxes", companyId, "oauth-apps"] as const,
+  },
   chatEndpoints: {
     list: (companyId: string) => ["chat-endpoints", companyId] as const,
     detail: (endpointId: string) => ["chat-endpoints", "detail", endpointId] as const,
@@ -42,6 +51,8 @@ export const queryKeys = {
   tools: {
     applications: (companyId: string) =>
       ["tools", companyId, "applications"] as const,
+    agentAccess: (companyId: string) =>
+      ["tools", companyId, "agent-access"] as const,
     connections: (companyId: string) =>
       ["tools", companyId, "connections"] as const,
     connection: (connectionId: string) =>
@@ -312,6 +323,10 @@ export const queryKeys = {
       ["issues", companyId, "blocked-attention"] as const,
     countBlockedAttention: (companyId: string) =>
       ["issues", companyId, "blocked-attention", "count"] as const,
+    blockedWork: (companyId: string) =>
+      ["issues", companyId, "blocked-work"] as const,
+    recoveryHolds: (companyId: string) =>
+      ["issues", companyId, "recovery-holds"] as const,
     labels: (companyId: string) => ["issues", companyId, "labels"] as const,
     listByProject: (companyId: string, projectId: string) =>
       ["issues", companyId, "project", projectId] as const,
@@ -365,10 +380,14 @@ export const queryKeys = {
     attachmentPreview: (attachmentId: string) =>
       ["issues", "attachment-preview", attachmentId] as const,
     documents: (issueId: string) => ["issues", "documents", issueId] as const,
+    documentLinks: (issueId: string) =>
+      ["issues", "document-links", issueId] as const,
     document: (issueId: string, key: string) =>
       ["issues", "document", issueId, key] as const,
     documentRevisions: (issueId: string, key: string) =>
       ["issues", "document-revisions", issueId, key] as const,
+    documentEvidence: (issueId: string, key: string) =>
+      ["issues", "document-evidence", issueId, key] as const,
     documentAnnotations: (
       issueId: string,
       key: string,
@@ -446,11 +465,23 @@ export const queryKeys = {
     list: (companyId: string, kind: string) =>
       ["folders", companyId, kind] as const,
   },
+  pipelineAccess: (companyId: string) => ["pipeline-access", companyId] as const,
+  organisations: {
+    list: (companyId: string, filters: { q?: string; status?: string }) =>
+      ["organisations", companyId, "list", filters] as const,
+    all: (companyId: string) => ["organisations", companyId] as const,
+    detail: (companyId: string, organisationId: string) =>
+      ["organisations", companyId, "detail", organisationId] as const,
+    history: (companyId: string, organisationId: string) =>
+      ["organisations", companyId, "history", organisationId] as const,
+    unassignedContacts: (companyId: string) => ["organisations", companyId, "unassigned-contacts"] as const,
+  },
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
     detail: (pipelineId: string) =>
       ["pipelines", "detail", pipelineId] as const,
     cases: (pipelineId: string) => ["pipelines", "cases", pipelineId] as const,
+    fields: (pipelineId: string) => ["pipelines", "fields", pipelineId] as const,
     caseDetail: (caseId: string) => ["pipelines", "item", caseId] as const,
     caseChildren: (caseId: string) =>
       ["pipelines", "item", caseId, "children"] as const,
@@ -460,12 +491,27 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "issue-links"] as const,
     caseProjectLinks: (caseId: string) =>
       ["pipelines", "item", caseId, "project-links"] as const,
+    caseCrmSync: (caseId: string) =>
+      ["pipelines", "item", caseId, "crm-sync"] as const,
+    /** Open "Sync conflicts" items for a company, or for one case. */
+    crmSyncConflicts: (companyId: string, caseId?: string) =>
+      ["pipelines", "crm-sync-conflicts", companyId, caseId ?? "all"] as const,
+    crmSyncFieldMap: (bindingId: string) =>
+      ["pipelines", "crm-sync-field-map", bindingId] as const,
     caseContacts: (caseId: string) =>
       ["pipelines", "item", caseId, "contacts"] as const,
     projectCases: (projectId: string) =>
       ["pipelines", "project-cases", projectId] as const,
     caseOutputs: (caseId: string) =>
       ["pipelines", "item", caseId, "outputs"] as const,
+    caseFiles: (caseId: string) =>
+      ["pipelines", "item", caseId, "files"] as const,
+    caseEvidenceCandidates: (caseId: string) =>
+      ["pipelines", "item", caseId, "evidence-candidates"] as const,
+    caseJourney: (caseId: string) =>
+      ["pipelines", "item", caseId, "journey"] as const,
+    casePortal: (caseId: string) =>
+      ["pipelines", "item", caseId, "portal"] as const,
     caseDocument: (caseId: string, key: string) =>
       ["pipelines", "item", caseId, "document", key] as const,
     caseDocumentRevisions: (caseId: string, key: string) =>
@@ -556,10 +602,25 @@ export const queryKeys = {
   agentTeams: {
     list: (companyId: string) => ["agent-teams", companyId] as const,
   },
+  workflowTemplates: {
+    list: (companyId: string) => ["workflow-templates", companyId] as const,
+  },
   goals: {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
     checkIns: (id: string) => ["goals", "check-ins", id] as const,
+    readings: (id: string) => ["goals", "readings", id] as const,
+  },
+  strategyBoard: {
+    summary: (companyId: string) => ["strategy-board", companyId] as const,
+    members: (companyId: string) => ["strategy-board", companyId, "members"] as const,
+    settings: (companyId: string) => ["strategy-board", companyId, "settings"] as const,
+    emails: (companyId: string) => ["strategy-board", companyId, "emails"] as const,
+    packs: (companyId: string) => ["strategy-board", companyId, "packs"] as const,
+    pack: (id: string) => ["strategy-board", "pack", id] as const,
+    whyRequests: (goalId: string) => ["strategy-board", "why-requests", goalId] as const,
+    agents: (companyId: string) => ["strategy-board", companyId, "agents"] as const,
+    chat: (companyId: string, agentId: string) => ["strategy-board", companyId, "chat", agentId] as const,
   },
   artifacts: {
     list: (
@@ -578,12 +639,33 @@ export const queryKeys = {
         groupIssueId ?? "",
       ] as const,
   },
+  images: {
+    all: (companyId: string) => ["images", companyId] as const,
+    status: (companyId: string) => ["images", companyId, "status"] as const,
+    list: (companyId: string, filters?: { q?: string; organisationId?: string }) =>
+      filters ? (["images", companyId, "list", filters] as const) : (["images", companyId, "list"] as const),
+    detail: (imageId: string) => ["images", "detail", imageId] as const,
+    covers: (companyId: string) => ["images", companyId, "covers"] as const,
+  },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
     list: (companyId: string, params: Record<string, string | undefined>) =>
       ["deliverables", companyId, "list", params] as const,
     detail: (companyId: string, id: string) => ["deliverables", companyId, "detail", id] as const,
     comments: (companyId: string, id: string) => ["deliverables", companyId, "comments", id] as const,
+  },
+  intelligence: {
+    all: (companyId: string) => ["intelligence", companyId] as const,
+    report: (companyId: string, date: string, kind: string) => ["intelligence", companyId, "report", date, kind] as const,
+    reports: (companyId: string) => ["intelligence", companyId, "reports"] as const,
+    boards: (companyId: string, date: string | null) => ["intelligence", companyId, "boards", date] as const,
+    boardHistory: (companyId: string, date: string | null) => ["intelligence", companyId, "boardHistory", date] as const,
+    recommendations: (companyId: string) => ["intelligence", companyId, "recommendations"] as const,
+  },
+  website: {
+    overview: (companyId: string) => ["website", companyId, "overview"] as const,
+    report: (companyId: string, propertyId: string) =>
+      ["website", companyId, "report", propertyId] as const,
   },
   budgets: {
     overview: (companyId: string) =>
@@ -592,10 +674,19 @@ export const queryKeys = {
   memory: {
     settings: (companyId: string) => ["memory", companyId, "settings"] as const,
   },
+  memoryReview: {
+    all: (companyId: string) => ["memory-review", companyId] as const,
+    queue: (companyId: string, filters: Record<string, string | undefined>) =>
+      ["memory-review", companyId, "queue", filters] as const,
+    stewards: (companyId: string) => ["memory-review", companyId, "stewards"] as const,
+  },
   memoryGraph: {
     graph: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "graph", filters] as const,
     node: (companyId: string, recordId: string) => ["memory-graph", companyId, "node", recordId] as const,
+    scopes: (companyId: string) => ["memory-graph", companyId, "scopes"] as const,
+    connections: (companyId: string) => ["memory-graph", companyId, "connections"] as const,
+    connectionActivity: (companyId: string, agentId: string) => ["memory-graph", companyId, "connections", agentId, "activity"] as const,
     edge: (companyId: string, edgeId: string) => ["memory-graph", companyId, "edge", edgeId] as const,
     activity: (companyId: string, filters: Record<string, string | undefined>) =>
       ["memory-graph", companyId, "activity", filters] as const,
@@ -638,9 +729,14 @@ export const queryKeys = {
   sidebarPreferences: {
     companyOrder: (userId: string) =>
       ["sidebar-preferences", "company-order", userId] as const,
+    sectionOrder: (userId: string) =>
+      ["sidebar-preferences", "section-order", userId] as const,
+    layout: (userId: string) =>
+      ["sidebar-preferences", "layout", userId] as const,
     projectOrder: (companyId: string, userId: string) =>
       ["sidebar-preferences", "project-order", companyId, userId] as const,
   },
+  tourDismissals: (userId: string) => ["tour-dismissals", userId] as const,
   resourceMemberships: {
     mine: (companyId: string) =>
       ["resource-memberships", companyId, "me"] as const,
@@ -649,8 +745,14 @@ export const queryKeys = {
     settings: ["instance", "settings"] as const,
     generalSettings: ["instance", "general-settings"] as const,
     experimentalSettings: ["instance", "experimental-settings"] as const,
+    entitlements: ["instance", "entitlements"] as const,
     systemMemory: ["instance", "system-memory"] as const,
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
+    billingAccount: ["instance", "billing-account"] as const,
+    fleetInstances: ["instance", "fleet-instances"] as const,
+  },
+  clientSupport: {
+    tickets: (companyId: string) => ["client-support", companyId, "tickets"] as const,
   },
   health: ["health"] as const,
   cloud: {
@@ -685,6 +787,12 @@ export const queryKeys = {
   dashboard: (companyId: string) => ["dashboard", companyId] as const,
   /** "Since you were last here" (GRE-357). */
   agentWorkDigest: (companyId: string) => ["agent-work-digest", companyId] as const,
+  calendar: (companyId: string, from: string, to: string) => ["calendar", companyId, from, to] as const,
+  teamScorecard: (companyId: string, days: number) => ["team-scorecard", companyId, days] as const,
+  notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
+  morningSummary: (companyId: string) => ["morning-summary", companyId] as const,
+  weeklyReport: (companyId: string) => ["weekly-report", companyId] as const,
+  agentDailyDigests: (companyId: string, from: string, to: string) => ["agent-daily-digests", companyId, from, to] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   /** One Decisions feed (GRE-263). Under the `attention` prefix so every
    *  existing attention invalidation also refreshes the feed and its count. */

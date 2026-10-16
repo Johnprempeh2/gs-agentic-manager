@@ -49,9 +49,16 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  scrollBody = false,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /**
+   * Scroll the children inside a body, not the dialog itself. The glass rim
+   * (`gs-glass-float::after`) is absolutely placed, so on a scrolling dialog
+   * it moves with the text. Use this with a `max-h-*` instead of `overflow-y-auto`.
+   */
+  scrollBody?: boolean
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -60,11 +67,22 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "gs-glass-float data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=closed]:slide-out-to-top-[1%] data-[state=open]:slide-in-from-top-[1%] fixed top-(--sz-calc-26) md:top-(--pct-50) left-(--pct-50) z-dialog grid w-full max-w-(--sz-calc-25) translate-x-(--pct-neg-50) translate-y-0 md:translate-y-(--pct-neg-50) gap-4 rounded-lg border p-6 shadow-lg duration-150 ease-(--e-cubic-bezier-0_16-1-0_3-1) outline-none sm:max-w-lg [&>*]:min-w-0 motion-reduce:animate-none motion-reduce:transition-none",
+          scrollBody && "grid-rows-[minmax(0,1fr)]",
           className
         )}
         {...props}
       >
-        {children}
+        {scrollBody ? (
+          // Negative margin plus padding keeps focus rings clear of the scroll clip.
+          <div
+            data-slot="dialog-scroll-body"
+            className="-m-2 grid min-h-0 gap-4 overflow-y-auto p-2 [&>*]:min-w-0"
+          >
+            {children}
+          </div>
+        ) : (
+          children
+        )}
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"

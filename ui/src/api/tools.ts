@@ -40,6 +40,7 @@ import type {
   ReorderToolPolicies,
   AppDefinition,
   ToolAppsAttentionResponse,
+  AgentAccessSummary,
   ToolConnectionActivityResponse,
   ToolConnectionLifecycleEventType,
   ToolConnectionTestAgentsResponse,
@@ -329,6 +330,8 @@ export const toolsApi = {
     ),
   listAppsAttention: (companyId: string) =>
     api.get<ToolAppsAttentionResponse>(`/companies/${companyId}/tools/apps/attention`),
+  listAgentAccess: (companyId: string) =>
+    api.get<AgentAccessSummary>(`/companies/${companyId}/tools/agent-access`),
   listApplications: (companyId: string) =>
     api.get<ToolApplicationsResponse>(`/companies/${companyId}/tools/applications`),
   createApplication: (companyId: string, input: CreateToolApplicationInput) =>
@@ -410,6 +413,9 @@ export const toolsApi = {
     api.delete<ToolConnection & { removal: ToolConnectionRemovalSummary }>(
       `/tool-connections/${connectionId}`,
     ),
+  // GRE-1364: health-checks the connection first; it stays off if the check fails.
+  reenableConnectionAfterPause: (connectionId: string) =>
+    api.post<ToolConnection>(`/tool-connections/${connectionId}/reenable-after-pause`, {}),
   checkConnectionHealth: (connectionId: string) =>
     api.post<ToolConnectionHealthCheckResult>(`/tool-connections/${connectionId}/health-check`, {}),
   reconnectConnection: (connectionId: string, credentialValues: Record<string, string>) =>

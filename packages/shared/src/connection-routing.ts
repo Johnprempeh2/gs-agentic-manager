@@ -269,7 +269,7 @@ export function aggregatorProviderQuestion(
     options: [
       ...results.map((result, index) => ({
         id: result.service,
-        label: `${AGGREGATOR_NAMES[result.aggregator!.provider]}${index === 0 ? " — Recommended" : ""}`,
+        label: `${AGGREGATOR_NAMES[result.aggregator!.provider]}${index === 0 ? " (Recommended)" : ""}`,
         description:
           result.reason ?? "Verify the app in this external provider.",
       })),

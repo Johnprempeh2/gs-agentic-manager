@@ -1006,7 +1006,7 @@ describe("TaskChatThreadView interaction items", () => {
       const guide = document.body.querySelector(
         '[data-testid="interaction-guide"]',
       );
-      expect(guide?.textContent).toContain("pnpm gsam setup --company demo");
+      expect(guide?.textContent).toContain("npx gsam setup --company demo");
       clickButton(guide!, "Yes, it finished");
       await vi.waitFor(() =>
         expect(onAcceptInteraction).toHaveBeenCalledWith(

@@ -41,6 +41,7 @@ import {
   deriveIssueCommentRunLogAttribution,
   ISSUE_LIST_MAX_LIMIT,
   issueService,
+  type IssuePostCommitAction,
 } from "../services/issues.ts";
 import {
   WORKSPACE_WORKTREE_REQUIRES_PROJECT_CODE,
@@ -773,6 +774,88 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
       interactionKind: "ask_user_questions",
       interactionStatus: "expired",
     });
+  });
+
+  it("queues a wake for the card's maker when another agent closes the task", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const makerId = randomUUID();
+    const closerId = randomUUID();
+    await db.insert(agents).values([
+      agentRow(companyId, { id: makerId, name: "Ridge" }),
+      agentRow(companyId, { id: closerId, name: "Keystone" }),
+    ]);
+    const issue = await svc.create(companyId, {
+      title: "Merge the holds fix",
+      description: null,
+      status: "todo",
+      priority: "medium",
+    });
+    const makerCardId = randomUUID();
+    const closerCardId = randomUUID();
+    await db.insert(issueThreadInteractions).values([
+      {
+        id: makerCardId,
+        companyId,
+        issueId: issue.id,
+        kind: "request_confirmation",
+        status: "pending",
+        continuationPolicy: "wake_assignee",
+        createdByAgentId: makerId,
+        title: "Remove 3 old recovery holds",
+        payload: { version: 1, prompt: "Can I remove the holds?" } as never,
+      },
+      {
+        id: closerCardId,
+        companyId,
+        issueId: issue.id,
+        kind: "request_confirmation",
+        status: "pending",
+        continuationPolicy: "wake_assignee",
+        createdByAgentId: closerId,
+        payload: { version: 1, prompt: "Merge it?" } as never,
+      },
+    ]);
+
+    const actions: IssuePostCommitAction[] = [];
+    await svc.update(issue.id, { status: "done", actorAgentId: closerId }, db, undefined, actions);
+
+    // The closer knows it closed the task; only the other maker is told.
+    expect(actions).toEqual([
+      expect.objectContaining({
+        type: "wake_closed_card_maker",
+        agentId: makerId,
+        interactionId: makerCardId,
+        issueId: issue.id,
+        question: "Remove 3 old recovery holds",
+        closerAgentId: closerId,
+      }),
+    ]);
+  });
+
+  it("queues no maker wake when a person closes the task", async () => {
+    const companyId = await seedAssignableAgentCompany();
+    const makerId = randomUUID();
+    await db.insert(agents).values(agentRow(companyId, { id: makerId, name: "Ridge" }));
+    const issue = await svc.create(companyId, {
+      title: "Closed by John",
+      description: null,
+      status: "todo",
+      priority: "medium",
+    });
+    await db.insert(issueThreadInteractions).values({
+      id: randomUUID(),
+      companyId,
+      issueId: issue.id,
+      kind: "request_confirmation",
+      status: "pending",
+      continuationPolicy: "wake_assignee",
+      createdByAgentId: makerId,
+      payload: { version: 1, prompt: "Send it?" } as never,
+    });
+
+    const actions: IssuePostCommitAction[] = [];
+    await svc.update(issue.id, { status: "cancelled", actorUserId: "local-board" }, db, undefined, actions);
+    expect(actions.filter((action) => action.type === "wake_closed_card_maker")).toEqual([]);
   });
 
   it("expires superseded interactions when human comments are added through the service", async () => {
@@ -4390,6 +4473,42 @@ describeEmbeddedPostgres("issueService blockers and dependency wake readiness", 
     expect(priorityUpdate?.changes).toEqual({
       priority: { from: "medium", to: "high" },
     });
+  });
+
+  it("re-saves blockers that already form a cycle, but refuses a new blocker that makes one", async () => {
+    const companyId = randomUUID();
+    const firstId = randomUUID();
+    const secondId = randomUUID();
+    const thirdId = randomUUID();
+    await db.insert(companies).values({
+      id: companyId,
+      name: "GS Agentic Manager",
+      issuePrefix: `C${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+    await db.insert(issues).values([
+      { id: firstId, companyId, title: "First", status: "blocked", priority: "medium" },
+      { id: secondId, companyId, title: "Second", status: "blocked", priority: "medium" },
+      { id: thirdId, companyId, title: "Third", status: "todo", priority: "medium" },
+    ]);
+    // A cycle already in the data, as live had on 16 Oct 2026: each blocks the other.
+    await db.insert(issueRelations).values([
+      { companyId, issueId: secondId, relatedIssueId: firstId, type: "blocks" },
+      { companyId, issueId: firstId, relatedIssueId: secondId, type: "blocks" },
+    ]);
+
+    // Startup recovery re-saves a task's existing blockers; that must not fail.
+    const resaved = await svc.update(firstId, { status: "blocked", blockedByIssueIds: [secondId] });
+    expect(resaved?.blockedByIssueIds).toEqual([secondId]);
+
+    // A new blocker that closes a loop is still refused.
+    await svc.update(thirdId, { blockedByIssueIds: [firstId] });
+    await expect(svc.update(secondId, { blockedByIssueIds: [firstId, thirdId] })).rejects.toThrow(
+      "Blocking relations cannot contain cycles",
+    );
+    await expect(svc.update(firstId, { blockedByIssueIds: [secondId, thirdId] })).rejects.toThrow(
+      "Blocking relations cannot contain cycles",
+    );
   });
 
   it("persists blocked-by relations and exposes both blockedBy and blocks summaries", async () => {

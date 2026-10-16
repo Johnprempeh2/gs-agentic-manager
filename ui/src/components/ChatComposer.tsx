@@ -9,7 +9,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
-import { AlertTriangle, Check, Loader2, PaperclipIcon, Send } from "lucide-react";
+import { AlertTriangle, Check, Loader2, PaperclipIcon, Send, X } from "lucide-react";
+import { filesFromPaste } from "../hooks/useFileIntake";
 import { cn } from "../lib/utils";
 
 /**
@@ -79,6 +80,8 @@ export interface ChatComposerProps {
   onAttachFiles?: (files: File[]) => void | Promise<void>;
   attachments?: ChatComposerAttachment[];
   attaching?: boolean;
+  /** When provided, each attachment chip gets a remove button. */
+  onRemoveAttachment?: (id: string) => void;
   /** Restrict the file picker (e.g. "image/*"). */
   acceptFileTypes?: string;
   /** Slot rendered just right of the attach button (e.g. the planning mode chip). */
@@ -123,6 +126,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
     autoFocus = false,
     sendLabel = "Send message",
     onAttachFiles,
+    onRemoveAttachment,
     attachments = [],
     attaching = false,
     acceptFileTypes,
@@ -265,6 +269,14 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
+        onPaste={(evt) => {
+          // A screenshot or copied file pasted into the box attaches it; text pastes as usual.
+          if (!canAttach) return;
+          const files = filesFromPaste(evt);
+          if (files.length === 0) return;
+          evt.preventDefault();
+          void emitFiles(files);
+        }}
         placeholder={placeholder}
         disabled={disabled}
         autoFocus={autoFocus}
@@ -316,6 +328,17 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
                 </span>
                 {sizeLabel ? <span className="shrink-0">{sizeLabel}</span> : null}
                 <span className="shrink-0">{statusLabel}</span>
+                {onRemoveAttachment && attachment.status !== "uploading" ? (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveAttachment(attachment.id)}
+                    aria-label={`Remove ${attachment.name}`}
+                    title="Remove"
+                    className="grid h-5 w-5 shrink-0 place-items-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                ) : null}
               </div>
             );
           })}
@@ -334,6 +357,7 @@ export const ChatComposer = forwardRef<ChatComposerHandle, ChatComposerProps>(fu
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               accept={acceptFileTypes}
               className="hidden"
               onChange={handleFileInputChange}

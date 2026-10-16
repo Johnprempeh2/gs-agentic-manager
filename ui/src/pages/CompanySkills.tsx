@@ -41,7 +41,6 @@ import { CopyText } from "../components/CopyText";
 import { Identity } from "../components/Identity";
 import { AgentMultiSelect } from "../components/AgentMultiSelect";
 import { useAdapterCapabilities } from "../adapters/use-adapter-capabilities";
-import { useStreamlinedUiEnabled } from "../hooks/useStreamlinedUiEnabled";
 import {
   SkillPolicyDenialNotice,
   useSkillPolicyDenial,
@@ -4028,7 +4027,6 @@ export function CompanySkills() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
   const adapterCaps = useAdapterCapabilities();
-  const { enabled: streamlinedUiEnabled } = useStreamlinedUiEnabled();
   const policyDenial = useSkillPolicyDenial();
   // Route a failed skill mutation to the persistent policy banner when it is an
   // explicit-policy (State B) or platform-safety (State C) denial; otherwise keep
@@ -4085,8 +4083,6 @@ export function CompanySkills() {
   const [moveDialog, setMoveDialog] = useState<
     { skillIds: string[]; title: string; subtitle: string | null; currentFolderId: string | null } | null
   >(null);
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [moveAfterCreateSkillIds, setMoveAfterCreateSkillIds] = useState<string[]>([]);
   const parsedRoute = useMemo(() => parseSkillRoute(routePath), [routePath]);
   const isStudioNew = routePath === "studio/new";
@@ -4101,45 +4097,20 @@ export function CompanySkills() {
   const selectedCatalogRef = searchParams.get("catalog");
   const tabParam = searchParams.get("tab");
   const discoveryTab = resolveDiscoveryTab(tabParam ?? (viewParam === "catalog" ? "catalog" : null));
-  const legacyDiscoveryTab = (["all", "installed", "catalog", "bundled"] as const).includes(
-    tabParam as "all" | "installed" | "catalog" | "bundled",
-  )
-    ? (tabParam as "all" | "installed" | "catalog" | "bundled")
-    : "installed";
-  const effectiveDiscoveryTab: DiscoveryTab = streamlinedUiEnabled
-    ? discoveryTab
-    : legacyDiscoveryTab === "installed"
-      ? "installed"
-      : "discover";
   const detailTab: SkillDetailTab = (["overview", "files", "versions", "agents"] as SkillDetailTab[]).includes(tabParam as SkillDetailTab)
     ? (tabParam as SkillDetailTab)
     : parsedRoute.hasExplicitFilePath || selectedPath !== "SKILL.md"
       ? "files"
       : "overview";
-  const discoveryCategory = searchParams.get("category");
   const studioForkFromId = isStudioNew ? searchParams.get("forkFrom")?.trim() || null : null;
   const studioNewFolderId = isStudioNew ? searchParams.get("folderId")?.trim() || null : null;
   // Discovery grid owns `/skills` whenever no specific skill or catalog entry is
   // selected; selecting either drops into the existing master/detail surfaces.
   const isDiscovery = !isStudioNew && !routeSkillToken && !selectedCatalogRef;
   const folderSelection = normalizeFolderSelection(searchParams.get("folder"));
-  const browseRailsEnabled = !streamlinedUiEnabled;
-  const visibleDiscoveryCategory = browseRailsEnabled ? discoveryCategory : null;
-  const visibleFolderSelection: FolderSelection = browseRailsEnabled ? folderSelection : "all";
 
   function setDiscoveryTab(tab: DiscoveryTab) {
     setSearchParams((current) => withDiscoveryTab(current, tab));
-  }
-
-  function setLegacyDiscoveryTab(tab: "all" | "installed" | "catalog" | "bundled") {
-    setSearchParams((current) => {
-      const params = new URLSearchParams(current);
-      if (tab === "installed") params.delete("tab");
-      else params.set("tab", tab);
-      params.delete("category");
-      if (tab !== "installed") params.delete("folder");
-      return params;
-    });
   }
 
   function setFolderSelection(selection: FolderSelection) {
@@ -4206,7 +4177,6 @@ export function CompanySkills() {
   // Canonicalize the old split-view and multi-tab URLs into the single Discover
   // destination while keeping every stale deep link useful.
   useEffect(() => {
-    if (!streamlinedUiEnabled) return;
     const legacyTab = searchParams.get("tab");
     const hasLegacyDiscoveryTab = isDiscovery && ["all", "catalog", "bundled"].includes(legacyTab ?? "");
     const hasRetiredBrowseFilter = isDiscovery && (searchParams.has("category") || searchParams.has("folder"));
@@ -4226,13 +4196,7 @@ export function CompanySkills() {
       },
       { replace: true },
     );
-  }, [isDiscovery, searchParams, setSearchParams, streamlinedUiEnabled]);
-
-  useEffect(() => {
-    if (!streamlinedUiEnabled) return;
-    setSelectMode(false);
-    setSelectedSkillIds([]);
-  }, [streamlinedUiEnabled]);
+  }, [isDiscovery, searchParams, setSearchParams]);
 
   const skillsQuery = useQuery({
     queryKey: queryKeys.companySkills.list(selectedCompanyId ?? ""),
@@ -4242,7 +4206,7 @@ export function CompanySkills() {
   const skillFoldersQuery = useQuery({
     queryKey: queryKeys.folders.list(selectedCompanyId ?? "", "skill"),
     queryFn: () => foldersApi.list(selectedCompanyId!, "skill"),
-    enabled: Boolean(selectedCompanyId && ((isDiscovery && effectiveDiscoveryTab === "installed") || routeSkillToken)),
+    enabled: Boolean(selectedCompanyId && ((isDiscovery && discoveryTab === "installed") || routeSkillToken)),
   });
 
   const installedSkills = skillsQuery.data ?? [];
@@ -4288,18 +4252,6 @@ export function CompanySkills() {
     // destination folder to that folder (PAP-14038).
     return studioNewFolderId ? { ...base, folderId: studioNewFolderId } : base;
   }, [isStudioNew, studioForkDetailQuery.data, studioForkFromId, studioNewFolderId]);
-
-  // The writable folder to seed a new skill into when creating from the browser.
-  const defaultNewSkillFolderId = useMemo(() => {
-    if (visibleFolderSelection === "all" || visibleFolderSelection === "unfiled") return null;
-    const model = treeFromResult(skillFoldersQuery.data);
-    const folder = model.byId.get(visibleFolderSelection);
-    if (!folder) return null;
-    // Never seed into read-only reserved subtrees (Bundled / Projects).
-    if (folder.path === "bundled" || folder.path.startsWith("bundled/")) return null;
-    if (folder.path === "projects" || folder.path.startsWith("projects/")) return null;
-    return folder.id;
-  }, [skillFoldersQuery.data, visibleFolderSelection]);
 
   const updateStatusQuery = useQuery({
     queryKey: queryKeys.companySkills.updateStatus(selectedCompanyId ?? "", selectedSkillId ?? ""),
@@ -4634,14 +4586,8 @@ export function CompanySkills() {
     [installedSkills, catalogListQuery.data],
   );
   const discoveryTabCards = useMemo(
-    () => {
-      if (streamlinedUiEnabled) return cardsForTab(discoveryCards, discoveryTab);
-      if (legacyDiscoveryTab === "installed") return discoveryCards.filter((card) => card.installed);
-      if (legacyDiscoveryTab === "catalog") return discoveryCards.filter((card) => card.catalogRef != null);
-      if (legacyDiscoveryTab === "bundled") return discoveryCards.filter((card) => card.required);
-      return discoveryCards;
-    },
-    [discoveryCards, discoveryTab, legacyDiscoveryTab, streamlinedUiEnabled],
+    () => cardsForTab(discoveryCards, discoveryTab),
+    [discoveryCards, discoveryTab],
   );
   const discoveryCategoryCounts = useMemo<DiscoveryCategory[]>(() => {
     const counts = new Map<string, number>();
@@ -4654,28 +4600,10 @@ export function CompanySkills() {
       .map(([slug, count]) => ({ slug, count }))
       .sort((a, b) => b.count - a.count || a.slug.localeCompare(b.slug));
   }, [discoveryTabCards]);
-  const discoverySearchActive = discoverySearch.trim().length > 0;
-  // Selecting a folder shows its whole subtree (folder + descendants), matching
-  // the folder-browser model. `null` means no subtree constraint (All/Unfiled).
-  const folderSubtreeIds = useMemo(() => {
-    if (visibleFolderSelection === "all" || visibleFolderSelection === "unfiled") return null;
-    const model = treeFromResult(skillFoldersQuery.data);
-    if (!model.byId.has(visibleFolderSelection)) return null;
-    return subtreeFolderIds(model, visibleFolderSelection);
-  }, [skillFoldersQuery.data, visibleFolderSelection]);
   const visibleDiscoveryCards = useMemo(() => {
-    const filtered = discoveryTabCards.filter((card) => {
-      if (visibleDiscoveryCategory && !card.categories.includes(visibleDiscoveryCategory)) return false;
-      // Search spans all folders (user story 5): the folder filter only
-      // narrows when the user is browsing, never when searching.
-      if (effectiveDiscoveryTab === "installed" && !discoverySearchActive) {
-        if (visibleFolderSelection === "unfiled" && card.folderId) return false;
-        if (folderSubtreeIds && (!card.folderId || !folderSubtreeIds.has(card.folderId))) return false;
-      }
-      return discoveryMatchesSearch(card, discoverySearch.trim());
-    });
-    return sortDiscoveryCards(filtered, discoverySort, effectiveDiscoveryTab === "discover");
-  }, [discoverySearch, discoverySearchActive, discoverySort, discoveryTabCards, effectiveDiscoveryTab, folderSubtreeIds, visibleDiscoveryCategory, visibleFolderSelection]);
+    const filtered = discoveryTabCards.filter((card) => discoveryMatchesSearch(card, discoverySearch.trim()));
+    return sortDiscoveryCards(filtered, discoverySort, discoveryTab === "discover");
+  }, [discoverySearch, discoverySort, discoveryTab, discoveryTabCards]);
 
   const selectedCatalogSkill = catalogDetailQuery.data
     ?? (catalogListQuery.data ?? []).find((entry) => entry.id === selectedCatalogRef || entry.key === selectedCatalogRef)
@@ -4883,27 +4811,6 @@ export function CompanySkills() {
     },
   });
 
-  async function moveSelectedSkills(folderId: string | null) {
-    const ids = selectedSkillIds;
-    if (ids.length === 0) return;
-    try {
-      await Promise.all(ids.map((itemId) => foldersApi.moveItem(selectedCompanyId!, { kind: "skill", itemId, folderId })));
-      setSelectedSkillIds([]);
-      setSelectMode(false);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.companySkills.list(selectedCompanyId!) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.folders.list(selectedCompanyId!, "skill") }),
-      ]);
-      pushToast({ tone: "success", title: "Skills moved", body: `${ids.length} skill${ids.length === 1 ? "" : "s"} filed.` });
-    } catch (moveError) {
-      pushToast({
-        tone: "error",
-        title: "Failed to move skills",
-        body: moveError instanceof Error ? moveError.message : "Failed to move the selected skills.",
-      });
-    }
-  }
-
   // Provision the signed-in user's personal "My Skills" root, then select it.
   const ensureMyFolder = useMutation({
     mutationFn: () => foldersApi.ensureMy(selectedCompanyId!),
@@ -4920,21 +4827,8 @@ export function CompanySkills() {
     },
   });
 
-  async function openNewSkill() {
-    const model = treeFromResult(skillFoldersQuery.data);
-    const selectedFolder = visibleFolderSelection === "all" || visibleFolderSelection === "unfiled"
-      ? null
-      : model.byId.get(visibleFolderSelection) ?? null;
-    if (selectedFolder?.systemKey === "my") {
-      try {
-        const personalFolder = await ensureMyFolder.mutateAsync();
-        navigate(skillStudioNewRoute(null, personalFolder.id));
-      } catch {
-        return;
-      }
-      return;
-    }
-    navigate(skillStudioNewRoute(null, defaultNewSkillFolderId));
+  function openNewSkill() {
+    navigate(skillStudioNewRoute(null, null));
   }
 
   async function openCreateFolderIn(parentId: string | null) {
@@ -4994,8 +4888,6 @@ export function CompanySkills() {
         ),
       ]);
       setMoveDialog(null);
-      setSelectedSkillIds([]);
-      setSelectMode(false);
       pushToast({
         tone: "success",
         title: ids.length === 1 ? "Skill moved" : "Skills moved",
@@ -5136,16 +5028,12 @@ export function CompanySkills() {
   });
 
   const skillFolderResult = skillFoldersQuery.data ?? null;
-  const showInstalledFolders = isDiscovery && effectiveDiscoveryTab === "installed";
-  const showInstalledBulkSelection = showInstalledFolders && !streamlinedUiEnabled;
+  const showInstalledFolders = isDiscovery && discoveryTab === "installed";
   // Rail counts reflect the current category/search scope, never the folder
   // filter itself (ux-spec §5.3).
   const railSkillFolderResult = useMemo(() => {
-    if (!skillFolderResult || effectiveDiscoveryTab !== "installed") return skillFolderResult;
-    const scoped = discoveryTabCards.filter((card) => {
-      if (visibleDiscoveryCategory && !card.categories.includes(visibleDiscoveryCategory)) return false;
-      return discoveryMatchesSearch(card, discoverySearch.trim());
-    });
+    if (!skillFolderResult || discoveryTab !== "installed") return skillFolderResult;
+    const scoped = discoveryTabCards.filter((card) => discoveryMatchesSearch(card, discoverySearch.trim()));
     const direct = new Map<string, number>();
     let unfiled = 0;
     for (const card of scoped) {
@@ -5165,7 +5053,7 @@ export function CompanySkills() {
         return { ...folder, itemCount };
       }),
     };
-  }, [discoverySearch, discoveryTabCards, effectiveDiscoveryTab, skillFolderResult, visibleDiscoveryCategory]);
+  }, [discoverySearch, discoveryTab, discoveryTabCards, skillFolderResult]);
   const activeSkillFolderDisplayPath = useMemo(
     () => skillFolderDisplayPath(treeFromResult(skillFolderResult), activeDetail?.folderId),
     [skillFolderResult, activeDetail?.folderId],
@@ -5475,24 +5363,11 @@ export function CompanySkills() {
           </div>
         </div>
       ) : isDiscovery ? (
-        <>
-        {!streamlinedUiEnabled ? (
-          <div className="px-4 pt-4">
-            <Tabs value={legacyDiscoveryTab} onValueChange={(value) => setLegacyDiscoveryTab(value as "all" | "installed" | "catalog" | "bundled")}>
-              <TabsList variant="line" aria-label="Skills view">
-                <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="installed">Installed</TabsTrigger>
-                <TabsTrigger value="catalog">Catalog</TabsTrigger>
-                <TabsTrigger value="bundled">Bundled</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
-        ) : null}
         <DiscoveryGrid
-          tab={effectiveDiscoveryTab}
+          tab={discoveryTab}
           categories={discoveryCategoryCounts}
           categoryTotal={discoveryTabCards.length}
-          activeCategory={visibleDiscoveryCategory}
+          activeCategory={null}
           onCategoryChange={setDiscoveryCategory}
           search={discoverySearch}
           onSearchChange={setDiscoverySearch}
@@ -5507,18 +5382,15 @@ export function CompanySkills() {
             if (catalogListQuery.error) void catalogListQuery.refetch();
           }}
           totalCount={discoveryTabCards.length}
-          onCreate={() => void openNewSkill()}
+          onCreate={openNewSkill}
           onImport={() => setImportDialogOpen(true)}
           onImportFromProject={() => setImportFromProjectOpen(true)}
-          onBrowseDiscover={() => streamlinedUiEnabled ? setDiscoveryTab("discover") : setLegacyDiscoveryTab("catalog")}
+          onBrowseDiscover={() => setDiscoveryTab("discover")}
           onScan={(projectId) => scanProjects.mutate(projectId)}
           scanPending={scanProjects.isPending}
           scanStatus={scanStatusMessage}
           folderResult={showInstalledFolders ? railSkillFolderResult : null}
-          folderSelection={visibleFolderSelection}
           foldersLoading={skillFoldersQuery.isLoading}
-          selectMode={showInstalledBulkSelection && selectMode}
-          selectedSkillIds={showInstalledBulkSelection ? selectedSkillIds : []}
           onFolderSelect={showInstalledFolders ? setFolderSelection : undefined}
           onOpenMobileFolders={showInstalledFolders ? () => setMobileFoldersOpen(true) : undefined}
           onCreateFolder={showInstalledFolders ? () => openCreateFolder() : undefined}
@@ -5540,18 +5412,6 @@ export function CompanySkills() {
           } : undefined}
           onMoveFolder={showInstalledFolders ? (folder, destination) => void moveFolderBetweenScopes(folder, destination) : undefined}
           onDeleteFolder={showInstalledFolders ? setDeleteFolderTarget : undefined}
-          onToggleSelectMode={showInstalledBulkSelection ? () => {
-            setSelectMode((current) => !current);
-            if (selectMode) setSelectedSkillIds([]);
-          } : undefined}
-          onSelectCard={showInstalledBulkSelection ? (card, selected) => {
-            if (!card.skillId) return;
-            setSelectedSkillIds((current) =>
-              selected
-                ? Array.from(new Set([...current, card.skillId!]))
-                : current.filter((id) => id !== card.skillId)
-            );
-          } : undefined}
           onMoveCard={showInstalledFolders ? (card, folderId) => {
             if (!card.skillId) return;
             const skillId = card.skillId;
@@ -5572,13 +5432,9 @@ export function CompanySkills() {
           onCreateFolderAndMoveCard={showInstalledFolders ? (card) => {
             if (card.skillId) openCreateFolder([card.skillId]);
           } : undefined}
-          onMoveSelected={showInstalledBulkSelection ? (folderId) => void moveSelectedSkills(folderId) : undefined}
-          onCreateFolderAndMoveSelected={showInstalledBulkSelection ? () => openCreateFolder(selectedSkillIds) : undefined}
-          onClearSelected={showInstalledBulkSelection ? () => setSelectedSkillIds([]) : undefined}
           folderNudgeStorageKey={showInstalledFolders ? `paperclip:skills-folder-nudge:${selectedCompanyId ?? "none"}` : undefined}
-          showBrowseRails={browseRailsEnabled}
+          showBrowseRails={false}
         />
-        </>
       ) : activeView === "installed" && selectedSkillId ? (
         <SkillDetailPage
           detail={activeDetail}

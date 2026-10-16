@@ -19,6 +19,7 @@ export const interactionResolverGovernanceSchema = z.object({
   request_confirmation: interactionResolverKindGovernanceSchema.optional(),
   request_checkbox_confirmation: interactionResolverKindGovernanceSchema.optional(),
   request_item_verdicts: interactionResolverKindGovernanceSchema.optional(),
+  request_draft_review: interactionResolverKindGovernanceSchema.optional(),
 }).strict().default({});
 
 export const createCompanySchema = z.object({
@@ -66,3 +67,22 @@ export const updateCompanyBrandingSchema = z
   );
 
 export type UpdateCompanyBranding = z.infer<typeof updateCompanyBrandingSchema>;
+
+/** GRE-1364: pause a company. The reason is recorded on the activity log. */
+export const pauseCompanySchema = z
+  .object({
+    reason: z.string().trim().min(1).max(2000).nullable().optional(),
+  })
+  .strict();
+
+export type PauseCompany = z.infer<typeof pauseCompanySchema>;
+
+/** GRE-1364: resume is a deliberate act; it names the operator and gives a reason. */
+export const resumeCompanySchema = z
+  .object({
+    operator: z.string().trim().min(1).max(200),
+    reason: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+
+export type ResumeCompany = z.infer<typeof resumeCompanySchema>;

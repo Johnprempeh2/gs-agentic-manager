@@ -122,3 +122,67 @@ describe("sw.js offline fallback", () => {
     expect(response!.type).toBe("error");
   });
 });
+
+describe("sw.js app shell for starting offline", () => {
+  const SHELL = '<!doctype html><html><body><div id="root"></div><script type="module" src="/assets/index-abcdefgh.js"></script></body></html>';
+
+  function loadWithCacheStorage(fetchImpl: () => Promise<Response>) {
+    const stores = new Map<string, Map<string, Response>>();
+    const caches = {
+      open: async (name: string) => {
+        const store = stores.get(name) ?? new Map<string, Response>();
+        stores.set(name, store);
+        return {
+          put: async (key: unknown, response: Response) => {
+            store.set(typeof key === "string" ? key : (key as { url: string }).url, response);
+          },
+          match: async (key: unknown) => store.get(typeof key === "string" ? key : (key as { url: string }).url)?.clone(),
+          delete: async () => true,
+        };
+      },
+      match: async () => undefined,
+      keys: async () => [...stores.keys()],
+      delete: async (name: string) => stores.delete(name),
+    };
+    const listeners = new Map<string, (event: unknown) => void>();
+    const swSelf = {
+      addEventListener: (type: string, listener: (event: unknown) => void) => listeners.set(type, listener),
+      skipWaiting: vi.fn(),
+      clients: { claim: vi.fn() },
+      location: { origin: "https://app.example.com" },
+    };
+    let current = fetchImpl;
+    const code = readFileSync(resolve(uiRoot, "public/sw.js"), "utf8").replace("__GSAM_BUILD_ID__", "fixture-production");
+    new Function("self", "caches", "fetch", "Response", "URL", code)(swSelf, caches, () => current(), Response, URL);
+    return {
+      listener: listeners.get("fetch") as FetchListener,
+      setFetch: (next: () => Promise<Response>) => { current = next; },
+    };
+  }
+
+  const navigate = (path: string) => ({ method: "GET", url: `https://app.example.com${path}`, mode: "navigate" });
+  const html = (body: string, headers: Record<string, string> = {}) =>
+    new Response(body, { status: 200, headers: { "Content-Type": "text/html", "Cache-Control": "no-cache", ...headers } });
+
+  it("keeps the shell from a page that loaded and starts the app from it with no signal", async () => {
+    const sw = loadWithCacheStorage(async () => html(SHELL));
+    expect((await respondTo(sw.listener, navigate("/GRE/inbox/mine")))!.status).toBe(200);
+
+    sw.setFetch(() => Promise.reject(new TypeError("network down")));
+    const offline = await respondTo(sw.listener, navigate("/GRE/today"));
+    expect(offline!.status).toBe(200);
+    expect(await offline!.text()).toBe(SHELL);
+  });
+
+  it("never keeps a page that is not the empty shell, or one marked private", async () => {
+    const sw = loadWithCacheStorage(async () => html("<html><body><h1>Sign in</h1></body></html>"));
+    await respondTo(sw.listener, navigate("/login"));
+    sw.setFetch(async () => html(SHELL, { "Cache-Control": "private, no-store" }));
+    await respondTo(sw.listener, navigate("/GRE/inbox/mine"));
+
+    sw.setFetch(() => Promise.reject(new TypeError("network down")));
+    const offline = await respondTo(sw.listener, navigate("/GRE/today"));
+    expect(offline!.status).toBe(503);
+    expect(await offline!.text()).toContain("GS Agentic Manager is offline");
+  });
+});

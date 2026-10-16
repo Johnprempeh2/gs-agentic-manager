@@ -300,7 +300,7 @@ describe("environment routes", () => {
     mockInstanceSettingsService.getGeneral.mockReset();
     mockInstanceSettingsService.getGeneral.mockResolvedValue({ executionMode: "any" });
     mockInstanceSettingsService.getExperimental.mockReset();
-    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableManagedSandboxOnly: false });
+    mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableEnvironments: true, enableManagedSandboxOnly: false });
     mockEnvironmentService.list.mockReset();
     mockEnvironmentService.list.mockResolvedValue([]);
     mockEnvironmentService.getById.mockReset();
@@ -729,7 +729,7 @@ describe("environment routes", () => {
     });
 
     it("hides the local environment from every read surface under managed-sandbox-only", async () => {
-      mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableManagedSandboxOnly: true });
+      mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableEnvironments: true, enableManagedSandboxOnly: true });
       const localRow = {
         ...createPlatformSandboxEnvironment(),
         id: "env-local-1",

@@ -4,17 +4,35 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
+import { WEBSITE_API_ROUTES } from "@greatstone/shared";
 import { COMPANY_IMPORT_TRANSFERS_ROUTE_PATH } from "@greatstone/shared/company-import-transfer";
 import { errorHandler } from "../middleware/index.js";
 import { buildOpenApiSpec, openApiRoutes } from "../routes/openapi.js";
+import { COMPANY_IMPORT_ROUTE_PATH } from "../routes/company-import-paths.js";
+import { ORGANISATION_ROUTE_PREFIX } from "../routes/organisations.js";
+import { OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH } from "../services/tool-access.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROUTES_DIR = path.resolve(__dirname, "../routes");
 
 const apiPrefixes: Record<string, string> = {
   "pipelines.ts": "/api",
+  "client-acceptance-public.ts": "/api",
   "client-version.ts": "/api",
   "cases.ts": "/api",
+  "client-support.ts": "/api",
+  "crm-sync.ts": "/api",
+  "intelligence.ts": "/api",
+  "team-chats.ts": "/api",
+  "mailboxes.ts": "/api",
+  "inbound-task-hooks.ts": "/api",
+  "outbound-webhooks.ts": "/api",
+  "integration-keys.ts": "/api",
+  "organisations.ts": "/api",
+  "pipeline-access.ts": "/api",
+  "website.ts": "/api",
+  "workflow-templates.ts": "/api",
+  "billing-account.ts": "/api",
   "support.ts": "/api",
   "smoke-lab.ts": "/api",
   "access.ts": "/api",
@@ -25,12 +43,14 @@ const apiPrefixes: Record<string, string> = {
   "memory.ts": "/api",
   "memory-steward.ts": "/api",
   "memory-tools.ts": "/api",
+  "memory-connections.ts": "/api",
   "agent-avatars.ts": "/api",
   "announcements.ts": "/api",
   "ai-connections.ts": "/api",
   "attention.ts": "/api",
   "approvals.ts": "/api",
   "assets.ts": "/api",
+  "generated-images.ts": "/api",
   "auth.ts": "/api/auth",
   "board-chat.ts": "/api",
   "built-in-agents.ts": "/api",
@@ -49,12 +69,19 @@ const apiPrefixes: Record<string, string> = {
   "decision-training.ts": "/api",
   "decisions-feed.ts": "/api",
   "agent-work-digest.ts": "/api",
+  "blocked-work.ts": "/api",
+  "calendar.ts": "/api",
+  "team-scorecard.ts": "/api",
+  "weekly-report.ts": "/api",
+  "agent-daily-digests.ts": "/api",
+  "recovery-holds.ts": "/api",
   "push.ts": "/api",
   "environments.ts": "/api",
   "execution-workspaces.ts": "/api",
   "file-resources.ts": "/api",
   "folders.ts": "/api",
   "goals.ts": "/api",
+  "strategy-board.ts": "/api",
   "health.ts": "/api/health",
   "inbox-agent-policy.ts": "/api",
   "inbox-dismissals.ts": "/api",
@@ -66,6 +93,7 @@ const apiPrefixes: Record<string, string> = {
   "issue-tree-control.ts": "/api",
   "issue-tabling.ts": "/api",
   "deliverables.ts": "/api",
+  "fleet.ts": "/api",
   "llms.ts": "/api",
   "managed-agent-profiles.ts": "/api",
   "onboarding-seed.ts": "/api",
@@ -82,6 +110,7 @@ const apiPrefixes: Record<string, string> = {
   "secrets.ts": "/api",
   "sidebar-badges.ts": "/api",
   "sidebar-preferences.ts": "/api",
+  "tour-dismissals.ts": "/api",
   "summary-slots.ts": "/api",
   "releases.ts": "/api",
   "status-cards.ts": "/api",
@@ -93,6 +122,10 @@ const apiPrefixes: Record<string, string> = {
 
 const ROUTE_LITERAL_PATTERN =
   /router\.(get|post|put|patch|delete)\(\s*["'`]([^"'`]+)["'`]/g;
+// A route registered with a path constant instead of a literal. The identifier
+// must resolve through routePathIdentifiers, or the coverage test fails.
+const ROUTE_IDENTIFIER_PATTERN =
+  /router\.(get|post|put|patch|delete)\(\s*([A-Za-z_$][\w$.]*)/g;
 const ROUTER_METHOD_PATTERN = /router\.(get|post|put|patch|delete)\(/;
 const HTTP_METHODS = new Set([
   "get",
@@ -131,6 +164,23 @@ function createApp() {
 // literals; substitute the constants' values before normalizing.
 const routePathConstantSubstitutions: Record<string, string> = {
   "${COMPANY_IMPORT_TRANSFERS_ROUTE_PATH}": COMPANY_IMPORT_TRANSFERS_ROUTE_PATH,
+  "${ORGANISATION_ROUTE_PREFIX}": ORGANISATION_ROUTE_PREFIX,
+};
+
+// Bare path constants passed as the first argument, resolved from the real
+// constants (the tool-access one is the CIMD path with its /api mount cut).
+const routePathIdentifiers: Record<string, string> = {
+  COMPANY_IMPORT_ROUTE_PATH,
+  COMPANY_IMPORT_TRANSFERS_ROUTE_PATH,
+  ORGANISATION_ROUTE_PREFIX,
+  "OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH.replace":
+    OAUTH_CLIENT_ID_METADATA_DOCUMENT_PATH.replace(/^\/api/, ""),
+  ...Object.fromEntries(
+    Object.entries(WEBSITE_API_ROUTES).map(([key, value]) => [
+      `WEBSITE_API_ROUTES.${key}`,
+      value,
+    ]),
+  ),
 };
 
 function normalizeExpressPath(routePath: string) {
@@ -160,6 +210,10 @@ function resolveMountedPath(file: string, prefix: string, routePath: string) {
     file === "connection-intents.ts" &&
     (routePath.startsWith("/mcp/") || routePath.startsWith("/runtime-tools/"))
   ) {
+    return routePath;
+  }
+  // Fleet spoke routes are mounted on the app with their full path.
+  if (file === "fleet.ts" && routePath.startsWith("/api/")) {
     return routePath;
   }
   if ((file === "companies.ts" || file === "health.ts") && routePath === "/") {
@@ -192,28 +246,23 @@ function loadActualRoutes() {
       continue;
     }
 
-    for (const match of source.matchAll(ROUTE_LITERAL_PATTERN)) {
-      const method = match[1].toUpperCase();
-      const routePath = match[2];
+    const registrations = [...source.matchAll(ROUTE_LITERAL_PATTERN)].map(
+      (match) => [match[1], match[2]],
+    );
+    for (const match of source.matchAll(ROUTE_IDENTIFIER_PATTERN)) {
+      const routePath = routePathIdentifiers[match[2]];
+      if (routePath === undefined) unknownRouteFiles.push(`${file}:${match[2]}`);
+      else registrations.push([match[1], routePath]);
+    }
+
+    for (const [rawMethod, routePath] of registrations) {
+      const method = rawMethod.toUpperCase();
       const operation = `${method} ${normalizeExpressPath(resolveMountedPath(file, prefix, routePath))}`;
       if (explicitOpenApiOperationCoverageExclusions.has(operation)) {
         excludedRoutes.add(operation);
       } else {
         routes.add(operation);
       }
-    }
-
-    if (
-      file === "companies.ts" &&
-      source.includes("router.post(COMPANY_IMPORT_ROUTE_PATH")
-    ) {
-      routes.add("POST /api/companies/import");
-    }
-    if (
-      file === "companies.ts" &&
-      source.includes("router.post(COMPANY_IMPORT_TRANSFERS_ROUTE_PATH")
-    ) {
-      routes.add(`POST /api/companies${COMPANY_IMPORT_TRANSFERS_ROUTE_PATH}`);
     }
   }
 

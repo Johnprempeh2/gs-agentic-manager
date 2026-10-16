@@ -12,6 +12,7 @@ import {
   emailReplyRecipients,
   isAutomaticEmail,
   isFilteredEmail,
+  isSenderAuthenticated,
   normalizeAgentmailEvent,
   verifyAgentmailWebhook,
 } from "../services/agentmail-api.js";
@@ -109,6 +110,32 @@ describe("AgentMail protocol boundary", () => {
     ).toBe(false);
     for (const label of ["spam", "blocked", "unauthenticated"])
       expect(isFilteredEmail(message({ labels: [label] }))).toBe(true);
+  });
+  it("trusts only AgentMail's DMARC verdict for the sender, never a planted header (GRE-1215)", () => {
+    expect(
+      isSenderAuthenticated(
+        message({ authentication_results: { spf: "pass", dkim: "pass", dmarc: "pass" } }),
+      ),
+    ).toBe(true);
+    // An unaligned SPF pass, no DMARC record: AgentMail adds no label, but the From is unproven.
+    expect(
+      isSenderAuthenticated(message({ authentication_results: { dmarc: "none" } })),
+    ).toBe(false);
+    expect(isSenderAuthenticated(message({ authentication_results: {} }))).toBe(false);
+    expect(
+      isSenderAuthenticated(
+        message({
+          headers: {
+            "Authentication-Results": "mx.example; spf=pass; dkim=pass; dmarc=pass",
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSenderAuthenticated(
+        message({ authentication_results: { dmarc: "some-future-verdict" } }),
+      ),
+    ).toBe(false);
   });
   it("pins the API host, encodes message IDs and preserves the provider idempotency key", async () => {
     const fetcher = vi

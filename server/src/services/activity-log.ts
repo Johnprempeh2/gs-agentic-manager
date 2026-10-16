@@ -148,7 +148,26 @@ export async function resolveResponsibleUserIdForActivity(db: Db, input: LogActi
   return readNonEmptyString(company?.defaultResponsibleUserId);
 }
 
+type ActivityListener = (publication: ActivityPublication) => void;
+const activityListeners = new Set<ActivityListener>();
+
+/**
+ * Run `listener` after each activity is published (after commit). Listeners
+ * must not throw or block; they run for every company. Returns an unsubscribe.
+ */
+export function addActivityListener(listener: ActivityListener): () => void {
+  activityListeners.add(listener);
+  return () => activityListeners.delete(listener);
+}
+
 export function publishActivity(publication: ActivityPublication) {
+  for (const listener of activityListeners) {
+    try {
+      listener(publication);
+    } catch (err) {
+      logger.warn({ err, action: publication.payload.action }, "activity listener failed");
+    }
+  }
   publishLiveEvent({
     companyId: publication.companyId,
     type: "activity.logged",

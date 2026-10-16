@@ -132,11 +132,11 @@ describeEmbeddedPostgres("status card routes", () => {
     return { type: "agent", companyId, agentId, runId, source: "agent_jwt" };
   }
 
-  it("returns 404 while the experimental flag is disabled", async () => {
+  it("returns 403 not_entitled while the experimental flag is disabled", async () => {
     const company = await seedCompany();
     const response = await request(createApp(db, localBoardActor())).get(`/api/companies/${company.id}/status-cards`);
-    expect(response.status).toBe(404);
-    expect(response.body.error).toContain("not enabled");
+    expect(response.status).toBe(403);
+    expect(response.body).toMatchObject({ code: "not_entitled", feature: "enableStatusCards" });
   });
 
   it("rolls back a new card when compile wakeup fails", async () => {

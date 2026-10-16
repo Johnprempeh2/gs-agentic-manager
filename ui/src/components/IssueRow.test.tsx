@@ -142,6 +142,19 @@ describe("IssueRow", () => {
     ));
     expect(line()?.textContent).toBe("Waiting for GRE-306 · Ridge to act");
 
+    // A wait on someone outside, with the date it expected to hear back by.
+    const waitOn = (expectedBy: string) => createIssue({
+      status: "blocked",
+      assigneeAgentId: "agent-ridge",
+      unblockDescriptor: { owner: { agentId: "agent-ridge" }, action: "Chase the client", waitingOn: "client", expectedBy },
+    });
+    act(() => root.render(<IssueRow issue={waitOn("2099-10-20")} stopReasonContext={stopReasonContext} />));
+    expect(line()?.textContent).toBe("Waiting on a client until 20 Oct · Ridge to act");
+    expect(container.querySelector('[data-slot="task-row-date-passed"]')).toBeNull();
+    act(() => root.render(<IssueRow issue={waitOn("2020-10-20")} stopReasonContext={stopReasonContext} />));
+    expect(line()?.textContent).toBe("Waiting on a client until 20 Oct · Date passed · Ridge to act");
+    expect(container.querySelector('[data-slot="task-row-date-passed"]')?.className).toContain("text-destructive");
+
     // Nothing for a running row, a done row, or a run that went fine.
     act(() => root.render(
       <IssueRow
@@ -186,6 +199,19 @@ describe("IssueRow", () => {
     expect(container.querySelector("[data-external-status]")).toBeNull();
     act(() => root.render(<IssueRow issue={createIssue()} externalObjectSummary={summary("danger")} />));
     expect(container.querySelector("[data-external-status]")).not.toBeNull();
+    act(() => root.unmount());
+  });
+
+  it("shows the Strategic badge only for work linked to an objective or initiative", () => {
+    const root = createRoot(container);
+    for (const presentation of ["task", "legacy"] as const) {
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: "initiative" })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")?.textContent).toBe("Strategic");
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: "kpi" })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")).toBeNull();
+      act(() => root.render(<IssueRow presentation={presentation} issue={createIssue({ goalKind: null })} />));
+      expect(container.querySelector("[data-testid='issue-row-strategic']")).toBeNull();
+    }
     act(() => root.unmount());
   });
 

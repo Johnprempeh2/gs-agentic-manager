@@ -40,6 +40,7 @@ import {
   requiresExecutionReconciliation,
   type IssueCommentMetadata,
   type IssueCommentPresentation,
+  utcCalendarDay,
 } from "@greatstone/shared";
 import {
   agents,
@@ -148,6 +149,11 @@ import {
   needsHumanWaitRecheckWake,
 } from "./human-wait-deadline.js";
 import {
+  WAITING_DATE_PASSED_WAKE_REASON,
+  buildWaitingDatePassedIdempotencyKey,
+  needsWaitingDatePassedWake,
+} from "./waiting-date.js";
+import {
   REVIEW_WAIT_ACTIVITY_SOURCE,
   REVIEW_WAIT_MONITOR_SERVICE_NAME,
   decideReviewWait,
@@ -199,6 +205,7 @@ const DISPOSITION_REPAIR_IDEMPOTENCY_INDEX =
   "agent_wakeup_requests_disposition_repair_idempotency_uq";
 const RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT = 500;
 const HUMAN_WAIT_RECHECK_CANDIDATE_LIMIT = 200;
+const WAITING_DATE_PASSED_CANDIDATE_LIMIT = 200;
 
 // GGU-809: when a stranded `in_progress` issue would otherwise hit the
 // `isRepeatedProductiveContinuationRecovery` escalation path, exempt the
@@ -239,6 +246,8 @@ type ResolvedDependencyWakeBackstopOptions = {
   runId?: string | null;
   companyId?: string | null;
   blockerIssueId?: string | null;
+  /** Limit both passes to these dependent issues (event path after a blocker change). */
+  issueIds?: string[] | null;
   source?: ResolvedDependencyWakeBackstopSource;
 };
 
@@ -2825,7 +2834,7 @@ export function recoveryService(
       {
         authorType: "system",
         presentation: compactRecoveryPresentation(
-          "Recovery: recovery attempt failed — remains blocked",
+          "Recovery: recovery attempt failed; remains blocked",
         ),
         metadata: {
           version: 1,
@@ -2933,6 +2942,40 @@ export function recoveryService(
     );
   }
 
+  // Recovery may only add a blocker that keeps the blocking graph loop free.
+  // A child that already waits on its parent must not become the parent's
+  // blocker as well: the strict cycle check would refuse the write, and on
+  // startup that refusal stopped live from starting (16 Oct 2026). Such a
+  // blocker is skipped with a warning instead.
+  async function withoutCycleFormingBlockers(
+    issue: { id: string; companyId: string; identifier?: string | null },
+    existingBlockerIds: string[],
+    candidateBlockerIds: string[],
+  ) {
+    const existing = new Set(existingBlockerIds);
+    const added = [...new Set(candidateBlockerIds)].filter((id) => !existing.has(id));
+    const cyclic = new Set(
+      await issuesSvc.findCyclicBlockers(issue.companyId, issue.id, added),
+    );
+    if (cyclic.size > 0) {
+      logger.warn(
+        {
+          companyId: issue.companyId,
+          issueId: issue.id,
+          issueIdentifier: issue.identifier ?? null,
+          skippedBlockerIssueIds: [...cyclic],
+        },
+        "recovery skipped a blocker that would make tasks block each other in a loop",
+      );
+    }
+    return [
+      ...new Set([
+        ...existingBlockerIds,
+        ...added.filter((id) => !cyclic.has(id)),
+      ]),
+    ];
+  }
+
   async function openChildIssues(issue: typeof issues.$inferSelect) {
     return db
       .select({ id: issues.id, identifier: issues.identifier })
@@ -2983,12 +3026,11 @@ export function recoveryService(
       existingUnresolvedBlockerIssues(issue.companyId, issue.id),
       openChildIssues(issue),
     ]);
-    const blockedByIssueIds = [
-      ...new Set([
-        ...existingBlockers.map((row) => row.id),
-        ...openChildren.map((row) => row.id),
-      ]),
-    ];
+    const blockedByIssueIds = await withoutCycleFormingBlockers(
+      issue,
+      existingBlockers.map((row) => row.id),
+      openChildren.map((row) => row.id),
+    );
     if (blockedByIssueIds.length === 0) return null;
 
     const updated = await issuesSvc.update(issue.id, {
@@ -2998,20 +3040,20 @@ export function recoveryService(
     if (!updated) return null;
 
     const waitingOn = formatIssueLinksForComment([
-      ...openChildren,
+      ...openChildren.filter((child) => blockedByIssueIds.includes(child.id)),
       ...existingBlockers,
     ]);
     await issuesSvc.addComment(
       issue.id,
       `This task is waiting on ${waitingOn} to finish. ` +
-        "It will continue automatically when that work is done — there's nothing you need to do. " +
+        "It will continue automatically when that work is done, and there's nothing you need to do. " +
         "(It was paused because the latest run reported it was waiting for review/approval; " +
         "GS Agentic Manager turned that into a normal dependency wait instead of flagging it as stuck.)",
       {},
       {
         authorType: "system",
         presentation: compactRecoveryPresentation(
-          "Recovery: waiting on dependencies — moved to blocked",
+          "Recovery: waiting on dependencies; moved to blocked",
         ),
         metadata: {
           version: 1,
@@ -3535,12 +3577,11 @@ export function recoveryService(
           );
           await issuesSvc.update(issue.id, {
             status: "blocked",
-            blockedByIssueIds: [
-              ...new Set([
-                ...blockerIds,
-                ...healthyChildren.map((child) => child.id),
-              ]),
-            ],
+            blockedByIssueIds: await withoutCycleFormingBlockers(
+              issue,
+              blockerIds,
+              healthyChildren.map((child) => child.id),
+            ),
           });
         }
         const resolved = await recoveryActionsSvc.resolveActiveForIssue({
@@ -4954,6 +4995,18 @@ export function recoveryService(
         issue.status === "in_review"
           ? participantLatestRunForRecovery
           : latestRun;
+      // GRE-1444: a dependency-gate cancel is a wait, not a failure. While a
+      // blocker is open the blockers-resolved wake owns the next step; a
+      // failure retry here is cancelled at the gate again and only burns budget.
+      if (
+        executionRecoverySource?.status === "cancelled" &&
+        executionRecoverySource.errorCode === "issue_dependencies_blocked" &&
+        (await issuesSvc.listDependencyReadiness(issue.companyId, [issue.id]))
+          .get(issue.id)?.isDependencyReady === false
+      ) {
+        result.skipped += 1;
+        continue;
+      }
       if (
         executionRecoverySource?.agentId === agentId &&
         (
@@ -5972,7 +6025,9 @@ export function recoveryService(
       source === "workspace.finalize"
         ? "workspace_finalize_reconciliation"
         : "issue_graph_liveness_reconciliation";
-    const useCursor = !opts?.blockerIssueId;
+    const scopedIssueIds = opts?.issueIds ?? null;
+    if (scopedIssueIds && scopedIssueIds.length === 0) return result;
+    const useCursor = !opts?.blockerIssueId && !scopedIssueIds;
 
     const queryCandidates = (afterIssueId: string | null) => {
       const filters = [
@@ -5982,6 +6037,7 @@ export function recoveryService(
         sql`${issues.assigneeAgentId} is not null`,
       ];
       if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+      if (scopedIssueIds) filters.push(inArray(issues.id, scopedIssueIds));
       if (afterIssueId) filters.push(gt(issues.id, afterIssueId));
 
       if (opts?.blockerIssueId) {
@@ -6219,6 +6275,167 @@ export function recoveryService(
       );
     }
 
+    if (!opts?.blockerIssueId) {
+      const cleared = await reconcileClearedDependencyWakes({
+        companyId: opts?.companyId ?? null,
+        issueIds: scopedIssueIds,
+        runId: opts?.runId ?? null,
+      });
+      result.checked += cleared.checked;
+      result.healed += cleared.healed;
+      result.issueIds.push(...cleared.issueIds);
+    }
+
+    return result;
+  }
+
+  // GRE-1082: a run cancelled (or a retry suppressed) because dependencies were
+  // still blocked promises to wake the assignee when blockers resolve. Only a
+  // blocker reaching `done` used to keep that promise, so a blocker that stopped
+  // counting any other way (relation removed, blockedByIssueIds edited, blocker
+  // deleted) stranded the issue. This keys on the promise itself: the latest
+  // run on the issue was cancelled for blocked dependencies and the issue is now
+  // dependency ready. The idempotency key is per cancelled run, so each
+  // cancellation earns exactly one wake; the next run clears the condition.
+  async function reconcileClearedDependencyWakes(opts: {
+    companyId: string | null;
+    issueIds: string[] | null;
+    runId: string | null;
+  }) {
+    const result = { checked: 0, healed: 0, issueIds: [] as string[] };
+    const filters = [
+      inArray(issues.status, ["todo", "in_progress", "blocked"]),
+      isNull(issues.conversationAgentId),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      isNull(issues.monitorNextCheckAt),
+      // Cheap pre-filter: the newest run on the issue is a dependency cancel.
+      sql`(
+        select ${heartbeatRuns.errorCode} from ${heartbeatRuns}
+        where ${heartbeatRuns.companyId} = ${issues.companyId}
+          and ${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issues.id}::text
+        order by ${heartbeatRuns.createdAt} desc limit 1
+      ) = 'issue_dependencies_blocked'`,
+    ];
+    if (opts.companyId) filters.push(eq(issues.companyId, opts.companyId));
+    if (opts.issueIds) filters.push(inArray(issues.id, opts.issueIds));
+    // ponytail: no cursor; the pre-filter keeps this set tiny. Page it if it ever is not.
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        assigneeAgentId: issues.assigneeAgentId,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.id))
+      .limit(RESOLVED_DEPENDENCY_WAKE_BACKSTOP_CANDIDATE_LIMIT);
+    result.checked = candidates.length;
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      if (!agentId) continue;
+      const companyId = candidate.companyId;
+      const readiness = (
+        await issuesSvc.listDependencyReadiness(companyId, [candidate.id])
+      ).get(candidate.id);
+      if (readiness && !readiness.isDependencyReady) continue;
+      const blockerIssueIds = readiness?.blockerIssueIds ?? [];
+
+      const cancelledRun = await db
+        .select({
+          id: heartbeatRuns.id,
+          errorCode: heartbeatRuns.errorCode,
+          createdAt: heartbeatRuns.createdAt,
+        })
+        .from(heartbeatRuns)
+        .where(
+          and(
+            eq(heartbeatRuns.companyId, companyId),
+            sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${candidate.id}`,
+          ),
+        )
+        .orderBy(desc(heartbeatRuns.createdAt))
+        .limit(1)
+        .then((rows) => rows[0] ?? null);
+      if (cancelledRun?.errorCode !== "issue_dependencies_blocked") continue;
+
+      // The cancelled run's creation time stamps this transition, so one
+      // cancellation maps to one key and a later cancellation earns a new wake.
+      const keyInput = {
+        dependentIssueId: candidate.id,
+        blockerIssueIds,
+        blockedTransitionAt: cancelledRun.createdAt,
+      };
+      const idempotencyKey = buildIssueBlockersResolvedWakeStateKey(keyInput);
+      if (
+        (await findExistingIssueBlockersResolvedWakeForReadyState(db, {
+          companyId,
+          ...keyInput,
+        })) ||
+        (await hasActiveExecutionPath(companyId, candidate.id, agentId)) ||
+        (await hasQueuedIssueWake(companyId, candidate.id, agentId)) ||
+        (await hasPendingWakeInteraction(companyId, candidate.id)) ||
+        (await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          companyId,
+          candidate.id,
+          treeControlSvc,
+        ))
+      ) {
+        continue;
+      }
+
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            resolvedBlockerIssueId: blockerIssueIds[0] ?? null,
+            blockerIssueIds,
+            cancelledRunId: cancelledRun.id,
+            backstop: "dependency_blockers_cleared",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "issue_graph_liveness_backstop",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: ISSUE_BLOCKERS_RESOLVED_WAKE_REASON,
+            source: "issue.blockers_cleared",
+            blockerIssueIds,
+          },
+        });
+        if (!wake) continue;
+        result.healed += 1;
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId,
+          actorType: "system",
+          actorId: "issue_graph_liveness_backstop",
+          agentId,
+          runId: opts.runId,
+          action: "issue.blockers_resolved_wake_emitted",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            source: "issue.blockers_cleared",
+            wakeupRunId: wake.id,
+            idempotencyKey,
+            cancelledRunId: cancelledRun.id,
+            blockerIssueIds,
+          },
+        });
+      } catch (err) {
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue dependency wake after blockers cleared",
+        );
+      }
+    }
     return result;
   }
 
@@ -6361,6 +6578,158 @@ export function recoveryService(
         logger.warn(
           { err, issueId: candidate.id, agentId, idempotencyKey },
           "failed to enqueue 24h human-wait re-check wake",
+        );
+      }
+    }
+
+    return result;
+  }
+
+  // A blocked task waiting on a client, the board or someone outside, with a
+  // date it expected to hear back by. Once that day is over, wake the assignee
+  // once to chase or set a new date. The claim is a guarded update that writes
+  // `expectedByWokenFor` into the descriptor for this exact date, so two
+  // sweeps cannot both wake and a new date gets its own wake.
+  async function reconcileWaitingDatesPassed(opts?: { companyId?: string | null; now?: Date }) {
+    const result = {
+      checked: 0,
+      woken: 0,
+      pauseHoldSkipped: 0,
+      claimLost: 0,
+      deferred: 0,
+      enqueueFailed: 0,
+      issueIds: [] as string[],
+    };
+    const now = opts?.now ?? new Date();
+    const today = utcCalendarDay(now);
+    const filters = [
+      eq(issues.status, "blocked"),
+      visibleIssueCondition(),
+      sql`${issues.assigneeAgentId} is not null`,
+      sql`${issues.unblockDescriptor}->>'expectedBy' < ${today}`,
+      sql`${issues.unblockDescriptor}->>'expectedByWokenFor' is distinct from ${issues.unblockDescriptor}->>'expectedBy'`,
+    ];
+    if (opts?.companyId) filters.push(eq(issues.companyId, opts.companyId));
+
+    const candidates = await db
+      .select({
+        id: issues.id,
+        companyId: issues.companyId,
+        status: issues.status,
+        hiddenAt: issues.hiddenAt,
+        assigneeAgentId: issues.assigneeAgentId,
+        unblockDescriptor: issues.unblockDescriptor,
+      })
+      .from(issues)
+      .where(and(...filters))
+      .orderBy(asc(issues.updatedAt))
+      .limit(WAITING_DATE_PASSED_CANDIDATE_LIMIT);
+
+    for (const candidate of candidates) {
+      const agentId = candidate.assigneeAgentId;
+      const descriptor = candidate.unblockDescriptor;
+      const expectedBy = descriptor?.expectedBy;
+      if (!agentId || !descriptor || !expectedBy || !needsWaitingDatePassedWake(candidate, now)) continue;
+      result.checked += 1;
+
+      if (
+        await isAutomaticRecoverySuppressedByPauseHold(
+          db,
+          candidate.companyId,
+          candidate.id,
+          treeControlSvc,
+        )
+      ) {
+        result.pauseHoldSkipped += 1;
+        continue;
+      }
+
+      const claimed = await db
+        .update(issues)
+        .set({
+          unblockDescriptor: sql`jsonb_set(${issues.unblockDescriptor}, '{expectedByWokenFor}', to_jsonb(${expectedBy}::text))`,
+        })
+        .where(and(
+          eq(issues.id, candidate.id),
+          eq(issues.companyId, candidate.companyId),
+          eq(issues.status, "blocked"),
+          eq(issues.assigneeAgentId, agentId),
+          sql`${issues.unblockDescriptor}->>'expectedBy' = ${expectedBy}`,
+          sql`${issues.unblockDescriptor}->>'expectedByWokenFor' is distinct from ${expectedBy}`,
+        ))
+        .returning({ id: issues.id });
+      if (claimed.length === 0) {
+        result.claimLost += 1;
+        continue;
+      }
+
+      const waitingOn = descriptor.waitingOn ?? null;
+      const idempotencyKey = buildWaitingDatePassedIdempotencyKey(candidate.id, expectedBy);
+      try {
+        const wake = await deps.enqueueWakeup(agentId, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: WAITING_DATE_PASSED_WAKE_REASON,
+          payload: {
+            issueId: candidate.id,
+            expectedBy,
+            waitingOn,
+            unblockOwner: descriptor.owner ?? null,
+            unblockAction: descriptor.action ?? null,
+            instruction:
+              `This task expected to hear back by ${expectedBy}, and that date has passed. ` +
+              "Chase the person it is waiting on, or set a new expected date, and say what you did in a comment.",
+          },
+          idempotencyKey,
+          requestedByActorType: "system",
+          requestedByActorId: "waiting_date",
+          contextSnapshot: {
+            issueId: candidate.id,
+            taskId: candidate.id,
+            wakeReason: WAITING_DATE_PASSED_WAKE_REASON,
+            expectedBy,
+            waitingOn,
+          },
+          issueStateGuard: { statuses: ["blocked"], assigneeAgentId: agentId },
+        });
+        // A null wake is a normal deferral. The one attempt for this date is
+        // spent either way; the date still shows as passed on the task.
+        if (wake) {
+          result.woken += 1;
+        } else {
+          result.deferred += 1;
+        }
+        result.issueIds.push(candidate.id);
+        await logActivity(db, {
+          companyId: candidate.companyId,
+          actorType: "system",
+          actorId: "waiting_date",
+          agentId,
+          action: "issue.waiting_date_passed_woken",
+          entityType: "issue",
+          entityId: candidate.id,
+          details: {
+            expectedBy,
+            waitingOn,
+            wakeupRunId: wake?.id ?? null,
+            deferred: !wake,
+            idempotencyKey,
+          },
+        });
+      } catch (err) {
+        // Release the claim so the next sweep can retry this date.
+        result.enqueueFailed += 1;
+        await db
+          .update(issues)
+          .set({ unblockDescriptor: sql`${issues.unblockDescriptor} - 'expectedByWokenFor'` })
+          .where(and(
+            eq(issues.id, candidate.id),
+            sql`${issues.unblockDescriptor}->>'expectedByWokenFor' = ${expectedBy}`,
+          ))
+          .catch(() => undefined);
+        logger.warn(
+          { err, issueId: candidate.id, agentId, idempotencyKey },
+          "failed to enqueue waiting-date-passed wake",
         );
       }
     }
@@ -6814,6 +7183,7 @@ export function recoveryService(
     sweepStaleIssueLocks,
     reconcileResolvedDependencyWakeBackstop,
     reconcileOverdueHumanWaits,
+    reconcileWaitingDatesPassed,
     readRecoveryTimerIntervalMs,
   };
 }

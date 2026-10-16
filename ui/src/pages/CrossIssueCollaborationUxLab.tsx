@@ -126,27 +126,27 @@ export function CrossIssueCollaborationUxLab() {
             Open cross-task collaboration
           </div>
           <h1 className="mt-1 text-xl font-semibold text-foreground">
-            Open cross-task collaboration — attribution, audit, and denial copy
+            Open cross-task collaboration: attribution, audit, and denial copy
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Agents may now write to any task they can read. These are the three surfaces that keep
-            that legible: whose authority a comment rode, what an edit changed, and — when a write
-            is refused — which boundary fired and what to do instead.
+            that legible: whose authority a comment rode, what an edit changed, and (when a write
+            is refused) which boundary fired and what to do instead.
           </p>
         </header>
 
         <LabSection
           index="1 · Attribution chip (plan §3a)"
           title="“Fable · for Dotta” on a cross-task agent comment"
-          description="An agent commenting on a task it is not assigned to names the responsible user whose authority it rode. The assignee's own comments stay unchipped — that is the ordinary case, and chipping every bubble would be noise."
+          description="An agent commenting on a task it is not assigned to names the responsible user whose authority it rode. The assignee's own comments stay unchipped, as that is the ordinary case, and chipping every bubble would be noise."
         >
-          <Frame label="Assignee's own comment — no chip">
+          <Frame label="Assignee's own comment: no chip">
             <AgentCommentBubble
               authorName="CodexCoder"
               body="Rebased onto master and re-ran the containment suite; all green."
             />
           </Frame>
-          <Frame label="Cross-task comment — chipped">
+          <Frame label="Cross-task comment: chipped">
             <AgentCommentBubble
               authorName="Fable"
               onBehalfOf="Dotta"
@@ -193,7 +193,7 @@ export function CrossIssueCollaborationUxLab() {
               />
             </ActivityRow>
           </Frame>
-          <Frame label="Board (human) edit — audited the same way">
+          <Frame label="Board (human) edit: audited the same way">
             <ActivityRow actorName="Dotta" verb="updated the issue">
               <IssueFieldChangeReceipt
                 event={{
@@ -238,7 +238,7 @@ export function CrossIssueCollaborationUxLab() {
               />
             </ActivityRow>
           </Frame>
-          <Frame label="Older activity row — no receipt, renders unchanged">
+          <Frame label="Older activity row: no receipt, renders unchanged">
             <ActivityRow actorName="CodexCoder" verb="checked out the issue" />
           </Frame>
         </LabSection>
@@ -246,10 +246,10 @@ export function CrossIssueCollaborationUxLab() {
         <LabSection
           index="3 · Actionable denial copy (plan §6)"
           title="Every wall names the boundary, who can act, and the sanctioned path"
-          description="A real incident burned a full detour discovering a workaround behind an opaque 403. These are all the ways an issue write can now be refused — the same copy the API error body carries."
+          description="A real incident burned a full detour discovering a workaround behind an opaque 403. These are all the ways an issue write can now be refused, with the same copy the API error body carries."
           columns={1}
         >
-          <Frame label="Before — what the incident actually saw">
+          <Frame label="Before: what the incident actually saw">
             <div className="text-xs">
               <span className="text-red-600 dark:text-red-400">
                 403 Forbidden: Issue is outside this actor&apos;s authorization boundary
@@ -261,7 +261,7 @@ export function CrossIssueCollaborationUxLab() {
             </div>
           </Frame>
           {ISSUE_WRITE_DENIAL_CODES.map((code) => (
-            <Frame key={code} label={`After — ${code}`}>
+            <Frame key={code} label={`After: ${code}`}>
               <IssueWriteDenialNotice
                 code={code}
                 context={{

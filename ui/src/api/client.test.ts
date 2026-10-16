@@ -3,7 +3,7 @@ import {
   createTenantSessionRecoveryCoordinator,
   tenantSessionRecovery,
 } from "@/lib/tenant-session-recovery";
-import { __inflightGetCount, api, detachInflightGet } from "./client";
+import { __inflightGetCount, api, detachInflightGet, plainHttpErrorMessage } from "./client";
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -197,5 +197,14 @@ describe("per-caller abort semantics", () => {
       name: "AbortError",
     });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("plain error messages", () => {
+  it("explains a failure the server gave no reason for", () => {
+    expect(plainHttpErrorMessage(403)).toBe("You don't have permission to do that.");
+    expect(plainHttpErrorMessage(404)).toBe("We couldn't find that. It may have been deleted or moved.");
+    expect(plainHttpErrorMessage(502)).toBe("Something went wrong on the server. Try again in a moment.");
+    expect(plainHttpErrorMessage(418)).toBe("Request failed (418). Try again.");
   });
 });

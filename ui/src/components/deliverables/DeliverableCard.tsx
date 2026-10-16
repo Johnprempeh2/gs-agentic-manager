@@ -1,10 +1,18 @@
-import { Download, ExternalLink, Eye, Link2 } from "lucide-react";
+import { Briefcase, ChevronDown, Download, ExternalLink, Eye, FolderOpen, History, Link2 } from "lucide-react";
 import type { Deliverable, DeliverableKind } from "@/api/deliverables";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { Badge } from "@/components/ui/badge";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Link } from "@/lib/router";
 import { cn, formatDate } from "@/lib/utils";
 import { DeliverableThumbnail } from "./DeliverableDocument";
+import { ConfidentialityBadge, LinkStatusBadges } from "./DeliverableBadges";
 
 export const DELIVERABLE_KIND_LABELS: Record<DeliverableKind, string> = {
   report: "Report",
@@ -42,7 +50,7 @@ function QuickAction({
     return (
       <a
         href={href}
-        {...(download ? { download: "" } : { target: "_blank", rel: "noreferrer" })}
+        {...(download ? { download: "" } : { target: "_blank", rel: "noopener noreferrer" })}
         title={label}
         aria-label={label}
         className={className}
@@ -58,13 +66,72 @@ function QuickAction({
   );
 }
 
+/**
+ * Every version a card stands for: its own versions (same task, same key) plus
+ * the older entries folded under it (same document under another key or task).
+ */
+export function deliverableVersionTotal(deliverable: Deliverable, olderVersions: readonly Deliverable[]): number {
+  return olderVersions.reduce((sum, entry) => sum + Math.max(entry.versionCount, 1), Math.max(deliverable.versionCount, 1));
+}
+
+/** The versions control: how many there are, and the older entries one click away. */
+function VersionsMenu({
+  deliverable,
+  olderVersions,
+  onOpenVersion,
+}: {
+  deliverable: Deliverable;
+  olderVersions: readonly Deliverable[];
+  onOpenVersion: (id: string) => void;
+}) {
+  const total = deliverableVersionTotal(deliverable, olderVersions);
+  if (total <= 1) return null;
+  if (olderVersions.length === 0) {
+    // Only this entry's own versions: Quick Look lists them.
+    return <span className="ml-auto shrink-0">v{deliverable.version} of {total}</span>;
+  }
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          data-testid="deliverable-versions"
+          className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-full border border-border px-2 py-0.5 font-medium text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <History className="h-3 w-3" aria-hidden="true" />
+          {total} versions
+          <ChevronDown className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuLabel>Versions of this document</DropdownMenuLabel>
+        {[deliverable, ...olderVersions].map((entry, index) => (
+          <DropdownMenuItem key={entry.id} onSelect={() => onOpenVersion(entry.id)} className="flex-col items-start gap-0">
+            <span className="w-full truncate text-sm">{entry.title}</span>
+            <span className="text-xs text-muted-foreground">
+              {index === 0 ? "Latest · " : ""}
+              {formatDate(entry.createdAt)} · {entry.issue.identifier}
+              {entry.versionCount > 1 ? ` · v${entry.version}` : ""}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function DeliverableCard({
   deliverable,
+  olderVersions = [],
   onPreview,
+  onOpenVersion,
   onCopyLink,
 }: {
   deliverable: Deliverable;
+  /** Older entries for the same document, newest first (see groupDeliverableDocuments). */
+  olderVersions?: readonly Deliverable[];
   onPreview: () => void;
+  onOpenVersion?: (id: string) => void;
   onCopyLink: () => void;
 }) {
   return (
@@ -88,25 +155,59 @@ export function DeliverableCard({
         <QuickAction label="Preview" onClick={onPreview}>
           <Eye className="h-3.5 w-3.5" />
         </QuickAction>
-        <QuickAction label="Open in new tab" href={deliverable.openPath}>
-          <ExternalLink className="h-3.5 w-3.5" />
-        </QuickAction>
-        <QuickAction label="Download" href={deliverable.downloadPath} download>
-          <Download className="h-3.5 w-3.5" />
-        </QuickAction>
+        {deliverable.external && deliverable.url ? (
+          <QuickAction label="Open site" href={deliverable.url}>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </QuickAction>
+        ) : (
+          <>
+            <QuickAction label="Open in new tab" href={deliverable.openPath}>
+              <ExternalLink className="h-3.5 w-3.5" />
+            </QuickAction>
+            <QuickAction label="Download" href={deliverable.downloadPath} download>
+              <Download className="h-3.5 w-3.5" />
+            </QuickAction>
+          </>
+        )}
         <QuickAction label="Copy link" onClick={onCopyLink}>
           <Link2 className="h-3.5 w-3.5" />
         </QuickAction>
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{DELIVERABLE_KIND_LABELS[deliverable.kind]}</Badge>
-          <span className="truncate text-xs text-muted-foreground">{deliverable.brand}</span>
+          <ConfidentialityBadge value={deliverable.confidentiality} />
+          <span className="min-w-0 truncate text-xs text-muted-foreground">{deliverable.brand}</span>
           {deliverable.status === "draft" ? (
             <Badge variant="outline" className="ml-auto">Draft</Badge>
           ) : null}
         </div>
+        {deliverable.external ? (
+          <div className="-mt-1 flex flex-wrap items-center gap-1.5 empty:hidden">
+            <LinkStatusBadges deliverable={deliverable} />
+          </div>
+        ) : null}
+        <p
+          data-testid="deliverable-card-project"
+          className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground"
+          title={deliverable.project?.name ?? "No project"}
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span className="sr-only">Project: </span>
+          <span className="truncate">{deliverable.project?.name ?? "No project"}</span>
+        </p>
+        {deliverable.clientCase ? (
+          <p
+            data-testid="deliverable-card-case"
+            className="-mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+            title={deliverable.clientCase.name}
+          >
+            <Briefcase className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span className="sr-only">Client case: </span>
+            <span className="truncate">{deliverable.clientCase.name}</span>
+          </p>
+        ) : null}
         <h3 className="line-clamp-2 text-sm font-semibold leading-5 text-foreground" title={deliverable.title}>
           {deliverable.title}
         </h3>
@@ -128,9 +229,7 @@ export function DeliverableCard({
           </Link>
           <span aria-hidden="true">·</span>
           <time dateTime={deliverable.createdAt} className="shrink-0">{formatDate(deliverable.createdAt)}</time>
-          {deliverable.versionCount > 1 ? (
-            <span className="ml-auto shrink-0">v{deliverable.version}</span>
-          ) : null}
+          <VersionsMenu deliverable={deliverable} olderVersions={olderVersions} onOpenVersion={onOpenVersion ?? (() => onPreview())} />
         </div>
       </div>
     </article>

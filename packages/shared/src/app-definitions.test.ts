@@ -8,6 +8,7 @@ import {
   APP_STORE_HIDDEN_SLUGS,
   CONNECTABLE_APP_DEFINITIONS,
   appSupportsCatalogSetup,
+  credentialConfigPath,
   getAvailableConnectionMethod,
   getAppDefinitionForUrl,
   getRecommendedConnectionMethod,
@@ -447,6 +448,24 @@ describe("AppDefinition catalog", () => {
       expect(["S1", "S2", "S3", "S4"]).toContain(entry.riskTier);
     }
   });
+  it("offers Pipedrive in the store as a CRM API-token connection the organisation import can read", () => {
+    const app = APP_STORE_DEFINITIONS.find((entry) => entry.slug === "pipedrive")!;
+    expect(appDefinitionsSchema.parse([app])).toHaveLength(1);
+    expect(app).toMatchObject({ name: "Pipedrive", categories: ["crm"], branding: { logoUrl: "/brands/apps/pipedrive.png" } });
+    expect(appSupportsCatalogSetup(app)).toBe(true);
+    expect(getAppDefinitionForUrl("https://greatstone.pipedrive.com/pipeline")?.slug).toBe("pipedrive");
+    expect(app.methods).toHaveLength(1);
+    const [method] = app.methods;
+    expect(method).toMatchObject({
+      transport: "rest_api", auth: "api_key", grantKinds: ["organization"],
+      keyPlacement: { location: "header", name: "x-api-token" },
+    });
+    expect(method.guidanceMd).toContain("Settings > Personal preferences > API");
+    // resolveCrmConnectionCredential (crm-sync-runner.ts) looks for this exact secret path.
+    expect(method.credentialFields?.map((field) => credentialConfigPath(field, method))).toEqual(["credentials.api_token"]);
+    // resolvePipedriveBaseUrl reads this key; the field is optional.
+    expect(method.tenantFields).toMatchObject([{ key: "companyDomain", required: false }]);
+  });
   it("offers Higgsfield as one-click direct sign-in, not through the managed connector broker", () => {
     const app = APP_STORE_DEFINITIONS.find((entry) => entry.slug === "higgsfield")!;
     expect(app).toMatchObject({ name: "Higgsfield", branding: { logoUrl: "/brands/apps/higgsfield.png" } });
@@ -738,7 +757,7 @@ describe("AppDefinition catalog", () => {
       "ticktick",
       "xero",
     ]);
-    expect(APP_STORE_DEFINITIONS).toHaveLength(57);
+    expect(APP_STORE_DEFINITIONS).toHaveLength(58);
     const connectableSlugs = new Set(
       CONNECTABLE_APP_DEFINITIONS.map((entry) => entry.slug),
     );

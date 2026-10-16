@@ -228,6 +228,24 @@ describeEmbeddedPostgres("one needs-me list for the board user (GRE-355)", () =>
     expect(body).toMatchObject({ count: 2, decisionCount: 1, assignedTaskCount: 1 });
   });
 
+  it("leaves release tasks out: releases run from Claude", async () => {
+    const { companyId, agentId } = await seedCompany();
+    const check = await task(companyId, {
+      status: "blocked",
+      assigneeAgentId: agentId,
+      title: "Release candidate rc-2026-10-15.3: check in preview (GRE-1565)",
+    });
+    await question(companyId, check, agentId);
+    await task(companyId, { status: "todo", assigneeUserId: USER_ID, title: "John: release rc-2026-10-15.3 to live (by hand)" });
+    const plain = await task(companyId, { status: "todo", assigneeUserId: USER_ID });
+
+    const body = await needsMe(companyId);
+
+    expect(body.decisions).toEqual([]);
+    expect(taskIds(body)).toEqual([plain]);
+    expect(body).toMatchObject({ count: 1, decisionCount: 0, assignedTaskCount: 1 });
+  });
+
   it("refuses agents", async () => {
     const { companyId, agentId } = await seedCompany();
     await request(app(companyId, { type: "agent", agentId, companyId, source: "agent_key" }))

@@ -7,21 +7,31 @@
 # they either fail or act on infrastructure we do not own.
 # scripts/check-fork-workflows.mjs keeps it that way after upstream merges.
 #
-#   guard      the rebrand is complete and no upstream workflow came back
+#   guard      the rebrand is complete, no upstream workflow came back and the
+#              ui token gates pass
 #   typecheck  pnpm typecheck: every workspace, including the runner's
 #              cargo fmt --check and cargo check
 #   build      pnpm build: every workspace, including the runner's release
 #              binary built with cargo
 #   runner     the runner's Rust tests (the rebrand edits Rust sources)
+#   ui-tests   the ui and cli vitest suites, on every run
+#   server-security  the server's authz, cross-company and route contract
+#              tests (16 files, about 5 minutes), on every run
+#   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys, overnight-features and smoke-pages specs)
 #   test       the vitest suites through scripts/run-vitest-stable.mjs,
 #              sharded across runners (the server suites run one file at a time)
 #   Fork CI    a single result to require in branch protection
 #
 # Triggers: pull requests, pushes to main, and manual runs. The repository is
 # private, so every minute comes out of the account's Actions allowance: pull
-# requests and main run the fast lanes (guard, typecheck, build); the runner
-# and vitest lanes (about 17 jobs) run only when started by hand. Agents run
-# the relevant tests in their sandbox before opening a pull request.
+# requests and main run the fast lanes (guard, typecheck, build) and the ui and
+# cli vitest suites (one job); the runner and the full vitest matrix (about 17
+# jobs) run only when started by hand. The ui lane runs on every pull request
+# because two merges close together on 16 Oct 2026 broke ui tests on main with
+# the fast lanes still green. Agents run the relevant server tests in their
+# sandbox before opening a pull request. The server security lane runs on
+# every pull request because two new routes reached main without their
+# cross-company test while every other lane was green (16 Oct 2026).
 #
 # No secrets, a read-only token, GitHub-hosted runners only.
 
@@ -60,6 +70,16 @@ jobs:
       - name: Nothing left to rebrand
         run: node scripts/greatstone-rebrand.mjs --check
 
+      - name: No em or en dashes in user-facing copy
+        run: node scripts/check-no-dashes.mjs
+
+      - name: Every company page route is registered
+        run: node scripts/check-company-routes.mjs
+
+      # DESIGN.md: ui colours, sizes and date formats come from the token layer.
+      - name: UI token gates
+        run: npm run --silent check:token-gates
+
       - name: Only fork-owned workflows
         run: node scripts/check-fork-workflows.mjs
 
@@ -87,6 +107,12 @@ jobs:
 
       - name: Typecheck every workspace
         run: pnpm typecheck
+
+      # The full suite only runs on the PC release gate; this one test is cheap
+      # and catches the commonest miss (a new route not added to the API
+      # document), which otherwise only fails at release time.
+      - name: Every mounted route is in the API document
+        run: pnpm --filter @greatstone/server exec vitest run src/__tests__/openapi-routes.test.ts
 
   build:
     name: Build
@@ -144,6 +170,80 @@ jobs:
       - name: Runner Rust checks and tests
         run: pnpm --filter @greatstone/paperclip-runner run check:runner
 
+  # The "ui and cli" shard of the full matrix below, on pull requests and main.
+  # A manual run skips it, because the matrix runs the same group.
+  ui-tests:
+    name: Tests (ui and cli)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+
+      - name: Run vitest (ui and cli)
+        run: pnpm test:run:general -- --group general-workspaces-a
+
+  # The server's company boundary and route contract tests, by file name: every
+  # authz, cross-company and cross-tenant suite, the upload type rules and the
+  # API document. A new route with no company boundary test fails here, on the
+  # pull request that adds it. The rest of the server suite stays manual.
+  server-security:
+    name: Tests (server security)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+
+      - name: Run the server security tests
+        run: |
+          pnpm run preflight:workspace-links
+          pnpm --filter @greatstone/plugin-sdk ensure-build-deps
+          cd server && npx vitest run authz cross-company cross-tenant attachment-types openapi-routes
+
+  # Dashboard, new task, Needs you, a client, Inbox and Blocked, and the theme
+  # switch, through the built UI against a throwaway local_trusted instance.
+  journeys:
+    name: Core journeys (e2e)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the core journeys
+        run: pnpm test:e2e core-journeys.spec.ts overnight-features.spec.ts smoke-pages.spec.ts
+
+      - name: Keep the report when a journey fails
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: core-journeys-report
+          path: |
+            tests/e2e/playwright-report
+            tests/e2e/test-results
+          retention-days: 7
+
   test:
     name: Tests (${{ matrix.label }})
     if: github.event_name == 'workflow_dispatch'
@@ -198,7 +298,7 @@ jobs:
   result:
     name: Fork CI
     if: always()
-    needs: [guard, typecheck, build, runner, test]
+    needs: [guard, typecheck, build, ui-tests, server-security, journeys, runner, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

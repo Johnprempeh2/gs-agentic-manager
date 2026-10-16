@@ -281,9 +281,13 @@ const support = await getEmbeddedPostgresTestSupport();
       await instanceSettingsService(db).updateExperimental({
         enableAgentChat: false,
       });
-      expect((await request(app).get(path)).status).toBe(404);
-      expect((await request(app).post(`/api/issues/${chatId}/queued-comments/interrupt`)
-        .send(queuedInterrupt)).status).toBe(404);
+      // GRE-1090: refused with 403 not_entitled (was 404).
+      const resolveOff = await request(app).get(path);
+      expect(resolveOff.status).toBe(403);
+      expect(resolveOff.body).toMatchObject({ code: "not_entitled", feature: "enableAgentChat" });
+      const interruptOff = await request(app).post(`/api/issues/${chatId}/queued-comments/interrupt`).send(queuedInterrupt);
+      expect(interruptOff.status).toBe(403);
+      expect(interruptOff.body).toMatchObject({ code: "not_entitled", feature: "enableAgentChat" });
       expect(
         (await request(app).get(`/api/issues/${resolved[0].body.id}`)).status,
       ).toBe(200);

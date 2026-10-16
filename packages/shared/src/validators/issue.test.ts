@@ -15,6 +15,15 @@ import {
 import { createAgentSchema } from "./agent.js";
 
 describe("issue validators", () => {
+  it("accepts a real calendar due date or null, and refuses anything else (GRE-1188)", () => {
+    expect(updateIssueSchema.parse({ dueDate: "2026-10-31" }).dueDate).toBe("2026-10-31");
+    expect(updateIssueSchema.parse({ dueDate: null }).dueDate).toBeNull();
+    expect(createIssueSchema.parse({ title: "Act", dueDate: "2026-02-28" }).dueDate).toBe("2026-02-28");
+    for (const bad of ["2026-02-30", "31/10/2026", "2026-10-31T00:00:00Z", ""]) {
+      expect(updateIssueSchema.safeParse({ dueDate: bad }).success).toBe(false);
+    }
+  });
+
   it("validates the typed recovery display snapshot while retaining older metadata", () => {
     const metadata = { version: 1, sections: [{ rows: [{ type: "text", text: "Details" }] }] };
     const recovery = { kind: "disposition_repair_escalated", actionId: "9af8228f-0be7-45ae-a104-6fbe0af6f1d3", attemptCount: 2, maxAttempts: 2, reason: "unchanged_source_state_exhausted", assigneeAgentId: null };
@@ -150,6 +159,36 @@ describe("issue validators", () => {
     });
 
     expect(parsed.comment).toBe("Done\n\n- Verified the route");
+  });
+
+  it("accepts who a task waits on and the date it expects to hear back by", () => {
+    const owner = { agentId: "00000000-0000-4000-8000-000000000001" };
+    expect(
+      updateIssueSchema.parse({
+        status: "blocked",
+        unblockDescriptor: { owner, action: "Chase the client", waitingOn: "client", expectedBy: "2026-10-20" },
+      }).unblockDescriptor,
+    ).toEqual({ owner, action: "Chase the client", waitingOn: "client", expectedBy: "2026-10-20" });
+    for (const waitingOn of ["client", "board", "outside"]) {
+      expect(
+        updateIssueSchema.safeParse({ status: "blocked", unblockDescriptor: { owner, action: "Wait", waitingOn } }).success,
+      ).toBe(true);
+    }
+    // Existing descriptors without the new fields stay valid.
+    expect(
+      updateIssueSchema.safeParse({ status: "blocked", unblockDescriptor: { owner: "board", action: "Review" } }).success,
+    ).toBe(true);
+    expect(
+      updateIssueSchema.safeParse({
+        status: "blocked",
+        unblockDescriptor: { owner, action: "Wait", waitingOn: "supplier" },
+      }).success,
+    ).toBe(false);
+    for (const expectedBy of ["20 Oct", "2026-02-30", "2026-10-20T00:00:00Z"]) {
+      expect(
+        updateIssueSchema.safeParse({ status: "blocked", unblockDescriptor: { owner, action: "Wait", expectedBy } }).success,
+      ).toBe(false);
+    }
   });
 
   it("validates structured unblock descriptors", () => {

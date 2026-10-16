@@ -21,7 +21,9 @@ import type {
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
 } from "@greatstone/shared";
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { openAskEverest } from "../lib/ask-everest-events";
+import { pipelineItemAskContext } from "../lib/ask-everest";
 import {
   DndContext,
   DragOverlay,
@@ -37,6 +39,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ClientMemoryPanel } from "../components/memory/ClientMemoryPanel";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -86,6 +89,8 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
+import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
+import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
 import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
@@ -94,9 +99,18 @@ import {
   readCardSummary,
 } from "../lib/client-case";
 import { EmptyState } from "../components/EmptyState";
+import { StarToggle } from "../components/StarToggle";
+import { FeatureTour } from "../components/FeatureTour";
+import { CLIENT_CASE_TOUR, PIPELINE_BOARD_TOUR, PIPELINES_LIST_TOUR } from "../lib/feature-tours";
+import {
+  starredResourceIds,
+  useResourceMembershipMutation,
+  useResourceMemberships,
+} from "../hooks/useResourceMemberships";
 import { IssueChatThread } from "../components/IssueChatThread";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { ErrorState } from "../components/ErrorState";
 import { PipelineHealthBar } from "../components/PipelineHealthWarnings";
 import { PipelineItemBodyDocument } from "../components/PipelineItemBodyDocument";
 import { PipelineLivenessBanner } from "../components/PipelineLivenessBanner";
@@ -126,6 +140,7 @@ import { getPipelineStageColumnTone, pipelineStageAutomationSettingsHref } from 
 import { queryKeys } from "../lib/queryKeys";
 import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data";
 import { useProjectOrder } from "../hooks/useProjectOrder";
+import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
 import { cn, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
@@ -137,6 +152,9 @@ import { applyLocalQueuedIssueCommentState, isQueuedIssueComment } from "../lib/
 import type { IssueChatComment } from "../lib/issue-chat-messages";
 import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
+import { CardCover, useImageCovers } from "@/components/ImageCoverControls";
+import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
+import { OrganisationPicker } from "@/components/OrganisationPicker";
 
 type PipelineConversationActionableInteraction =
   | SuggestTasksInteraction
@@ -153,6 +171,7 @@ interface DraftRow {
   id: string;
   expanded: boolean;
   values: Record<string, string>;
+  organisationId?: string | null;
   serverError?: string | null;
 }
 
@@ -183,7 +202,14 @@ function isBlank(value: string | undefined) {
   return !value || value.trim().length === 0;
 }
 
-export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[]): RowErrors {
+/** Error key for the organisation picker; never a field key. */
+export const ORGANISATION_ERROR_KEY = "__organisation";
+
+export function validateDraftRows(
+  rows: DraftRow[],
+  fields: PipelineIntakeField[],
+  options: { requiresOrganisation?: boolean } = {},
+): RowErrors {
   const errors: RowErrors = {};
   for (const row of rows) {
     const rowErrors: FieldErrors = {};
@@ -191,6 +217,9 @@ export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[
       if (field.required && isBlank(row.values[field.key])) {
         rowErrors[field.key] = `${field.label} is required.`;
       }
+    }
+    if (options.requiresOrganisation && !row.organisationId) {
+      rowErrors[ORGANISATION_ERROR_KEY] = "Pick or create an organisation.";
     }
     if (Object.keys(rowErrors).length > 0) {
       errors[row.id] = rowErrors;
@@ -210,7 +239,9 @@ export function buildBatchPayload(rows: DraftRow[], fields: PipelineIntakeField[
         itemFields[field.key] = value.trim();
       }
     }
-    return { title, fields: itemFields };
+    return row.organisationId
+      ? { title, fields: itemFields, organisationId: row.organisationId }
+      : { title, fields: itemFields };
   });
 }
 
@@ -227,6 +258,15 @@ export function plainBatchError(result: Extract<PipelineBatchIngestResult, { ok:
   }
   if (details.code === "blocker_cycle") {
     return "This item waits on another row that also waits on it.";
+  }
+  if (details.code === "organisation_required") {
+    return "Pick or create an organisation for this item.";
+  }
+  if (details.code === "organisation_archived") {
+    return "This organisation is archived. Pick another one.";
+  }
+  if (details.code === "organisation_not_found") {
+    return "This organisation no longer exists. Pick another one.";
   }
   if (typeof result.error?.message === "string" && result.error.message.trim()) {
     return result.error.message.replace(/^Pipeline\s+/i, "");
@@ -420,10 +460,6 @@ function pipelineAttentionCount(pipeline: PipelineListItem) {
   return pipeline.attentionCount ?? 0;
 }
 
-function pipelineInMotionCount(pipeline: PipelineListItem) {
-  return pipeline.inMotionCount ?? 0;
-}
-
 function descendantActiveWorkCount(value: { descendantActiveWorkCount?: number | null }) {
   return value.descendantActiveWorkCount ?? 0;
 }
@@ -436,14 +472,13 @@ function pipelineActivityTime(pipeline: PipelineListItem) {
   return pipeline.lastActivityAt ?? pipeline.updatedAt ?? pipeline.createdAt ?? null;
 }
 
-type PipelineSortField = "name" | "activity" | "review" | "inMotion" | "openItems";
+type PipelineSortField = "name" | "activity" | "review" | "openItems";
 type PipelineSortDir = "asc" | "desc";
 
 const PIPELINE_SORT_OPTIONS: ReadonlyArray<readonly [PipelineSortField, string]> = [
   ["name", "Name"],
   ["activity", "Last activity"],
-  ["review", "Most to review"],
-  ["inMotion", "Most in motion"],
+  ["review", "Most needing attention"],
   ["openItems", "Most open items"],
 ];
 
@@ -463,9 +498,6 @@ function comparePipelinesBySort(field: PipelineSortField, dir: PipelineSortDir) 
       }
       case "review":
         cmp = pipelineAttentionCount(left) - pipelineAttentionCount(right);
-        break;
-      case "inMotion":
-        cmp = pipelineInMotionCount(left) - pipelineInMotionCount(right);
         break;
       case "openItems":
         cmp = pipelineOpenItemCount(left) - pipelineOpenItemCount(right);
@@ -572,10 +604,6 @@ export function buildPipelineTableRows(
   return rows;
 }
 
-function formatOpenItems(count: number) {
-  return `${formatNumber(count)} open`;
-}
-
 function formatPipelineActivity(value: string | Date | null) {
   if (!value) return "No activity";
   const then = new Date(value).getTime();
@@ -599,16 +627,72 @@ function PipelineStatusChip({ archivedAt }: { archivedAt: Date | string | null }
   return (
     <Badge variant="outline"
       className={cn(
-        "font-semibold",
+        "border-transparent font-semibold",
         paused
-          ? "border-muted-foreground/20 bg-muted text-muted-foreground"
-          : "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300",
+          ? "bg-status-neutral-soft text-status-neutral-foreground"
+          : "bg-status-success-soft text-status-success-foreground",
       )}
     >
       {paused ? "Paused" : "Active"}
     </Badge>
   );
 }
+
+const STAGE_CHIP_LIMIT = 4;
+
+/** Stages an open item can sit in, in journey order (finished and cancelled stages hold no open items). */
+export function pipelineOpenStages(pipeline: Pick<PipelineListItem, "stages">) {
+  return (pipeline.stages ?? []).filter((stage) => stage.kind !== "done" && stage.kind !== "cancelled");
+}
+
+export function formatNeedsAttention(count: number) {
+  return `${formatNumber(count)} need${count === 1 ? "s" : ""} attention`;
+}
+
+export function PipelineStageDistribution({ pipeline }: { pipeline: Pick<PipelineListItem, "stages" | "openCaseCount"> }) {
+  const stages = pipelineOpenStages(pipeline);
+  if (stages.length === 0) return null;
+  const occupied = stages.filter((stage) => (stage.openCaseCount ?? 0) > 0);
+  const shown = occupied.slice(0, STAGE_CHIP_LIMIT);
+  const hidden = occupied.slice(STAGE_CHIP_LIMIT);
+  return (
+    <div className="mt-2 space-y-1.5" data-tour="pipelines-stages">
+      <div className="flex max-w-(--sz-420px) gap-0.5" aria-hidden="true">
+        {stages.map((stage) => (
+          <span
+            key={stage.id}
+            className={cn("h-1.5 flex-1 rounded-full", (stage.openCaseCount ?? 0) > 0 ? "bg-primary" : "bg-border")}
+          />
+        ))}
+      </div>
+      {occupied.length === 0 ? (
+        <p className="text-xs text-muted-foreground">No open items in any stage</p>
+      ) : (
+        <ul className="flex flex-wrap gap-1" aria-label="Open items by stage">
+          {shown.map((stage) => (
+            <li
+              key={stage.id}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-sm bg-muted px-1.5 py-0.5 text-xs"
+            >
+              <span className="truncate text-muted-foreground">{stage.name}</span>
+              <span className="font-semibold tabular-nums text-foreground">{formatNumber(stage.openCaseCount ?? 0)}</span>
+            </li>
+          ))}
+          {hidden.length > 0 ? (
+            <li
+              className="relative z-raised inline-flex cursor-default items-center rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground"
+              title={hidden.map((stage) => `${stage.name}: ${formatNumber(stage.openCaseCount ?? 0)}`).join(", ")}
+            >
+              +{formatNumber(hidden.length)} more
+            </li>
+          ) : null}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+const PIPELINE_ROW_GRID = "lg:grid lg:grid-cols-(--gtc-72) lg:items-start lg:gap-x-6";
 
 interface PipelinesIndexTableProps {
   pipelines: PipelineListItem[];
@@ -617,6 +701,11 @@ interface PipelinesIndexTableProps {
   connectionsAvailable: boolean;
   search: string;
   onSearchChange: (search: string) => void;
+  /** Pipelines the viewer has pinned to the sidebar. */
+  starredIds?: ReadonlySet<string>;
+  /** Omit to hide the pin star (e.g. read-only previews). */
+  onToggleStar?: (pipeline: PipelineListItem, nextStarred: boolean) => void;
+  starPendingId?: string | null;
 }
 
 export function PipelinesIndexTable({
@@ -626,6 +715,9 @@ export function PipelinesIndexTable({
   connectionsAvailable,
   search,
   onSearchChange,
+  starredIds,
+  onToggleStar,
+  starPendingId = null,
 }: PipelinesIndexTableProps) {
   const [collapsedPipelineIds, setCollapsedPipelineIds] = useState<Set<string>>(() => new Set());
   const [sortField, setSortField] = useState<PipelineSortField>("name");
@@ -744,82 +836,110 @@ export function PipelinesIndexTable({
       {rows.length === 0 ? (
         <EmptyState icon={Hexagon} message="No pipelines match your search." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-(--sz-780px) border-collapse text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-(length:--text-micro) font-semibold uppercase tracking-widest text-muted-foreground">
-                <th className="py-2 pl-3 pr-4">Name</th>
-                <th className="px-4 py-2">Attention</th>
-                <th className="px-4 py-2">Open items</th>
-                <th className="px-4 py-2">Status</th>
-                <th className="px-4 py-2">Last activity</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const attentionCount = pipelineAttentionCount(row.pipeline);
-                const inMotionCount = pipelineInMotionCount(row.pipeline);
-                const liveDownstreamCount = descendantActiveWorkCount(row.pipeline);
-                return (
-                  <tr key={row.pipeline.id} className="h-10 border-b border-border/70">
-                    <td className="pl-3 pr-4">
-                      <div className="flex min-w-0 items-center gap-2" style={{ paddingLeft: row.depth * 28 }}>
-                        {row.hasChildren ? (
-                          <button
-                            type="button"
-                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                            aria-label={row.expanded ? `Collapse ${row.pipeline.name}` : `Expand ${row.pipeline.name}`}
-                            onClick={() => togglePipeline(row.pipeline.id)}
-                          >
-                            {row.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                          </button>
-                        ) : (
-                          <span className="h-6 w-6 shrink-0" aria-hidden="true" />
-                        )}
-                        <div className="min-w-0">
-                          <Link
-                            to={`/pipelines/${row.pipeline.id}`}
-                            className="font-semibold text-foreground hover:underline"
-                          >
-                            {row.pipeline.name}
-                          </Link>
-                          {row.parentPipelineName ? (
-                            <span className="ml-2 text-muted-foreground">under {row.parentPipelineName}</span>
-                          ) : row.pipeline.description ? (
-                            <span className="ml-2 text-muted-foreground">- {row.pipeline.description}</span>
-                          ) : null}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 text-sm">
-                      <div className="flex items-center gap-3 whitespace-nowrap">
-                        {attentionCount > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-red-700 dark:text-red-400">
-                            <span className="h-2 w-2 rounded-full bg-red-600" aria-hidden="true" />
-                            {formatNumber(attentionCount)} to review
-                          </span>
-                        ) : null}
-                        {inMotionCount > 0 ? (
-                          <span className="text-muted-foreground">
-                            {formatNumber(inMotionCount)} in motion
-                          </span>
-                        ) : null}
-                        {liveDownstreamCount > 0 ? (
-                          <span className="inline-flex items-center gap-1.5 text-emerald-700 dark:text-emerald-300">
-                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
-                            {formatLiveDownstream(liveDownstreamCount)}
+        <div>
+          <div
+            className={cn(
+              "hidden border-b border-border px-3 pb-2 text-(length:--text-micro) font-semibold uppercase tracking-widest text-muted-foreground",
+              PIPELINE_ROW_GRID,
+            )}
+            aria-hidden="true"
+          >
+            <span>Pipeline</span>
+            <span>Needs attention</span>
+            <span className="text-right">Open</span>
+            <span>Status</span>
+            <span>Last activity</span>
+          </div>
+          <ul className="space-y-3 lg:space-y-0">
+            {rows.map((row) => {
+              const attentionCount = pipelineAttentionCount(row.pipeline);
+              const liveDownstreamCount = descendantActiveWorkCount(row.pipeline);
+              const openCount = pipelineOpenItemCount(row.pipeline);
+              return (
+                <li
+                  key={row.pipeline.id}
+                  className={cn(
+                    "group relative rounded-lg border border-border p-4 transition-colors hover:bg-accent/40 lg:rounded-none lg:border-x-0 lg:border-t-0 lg:px-3 lg:py-3",
+                    PIPELINE_ROW_GRID,
+                  )}
+                >
+                  <div className="flex min-w-0 items-start gap-2" style={{ paddingLeft: row.depth * 24 }}>
+                    {row.hasChildren ? (
+                      <button
+                        type="button"
+                        className="relative z-raised inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                        aria-label={row.expanded ? `Collapse ${row.pipeline.name}` : `Expand ${row.pipeline.name}`}
+                        onClick={() => togglePipeline(row.pipeline.id)}
+                      >
+                        {row.expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                      </button>
+                    ) : rows.some((other) => other.hasChildren) ? (
+                      <span className="h-6 w-6 shrink-0" aria-hidden="true" />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-1">
+                        <Link
+                          to={`/pipelines/${row.pipeline.id}`}
+                          title={row.pipeline.description || undefined}
+                          className="block min-w-0 truncate text-sm font-semibold leading-6 text-foreground after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring lg:after:rounded-none"
+                        >
+                          {row.pipeline.name}
+                        </Link>
+                        {onToggleStar && !row.pipeline.archivedAt ? (
+                          <span className="inline-flex" data-tour="pipelines-pin">
+                            <StarToggle
+                              size="row"
+                              className="relative z-raised"
+                              starred={starredIds?.has(row.pipeline.id) ?? false}
+                              pending={starPendingId === row.pipeline.id}
+                              resourceName={row.pipeline.name}
+                              onToggle={(next) => onToggleStar(row.pipeline, next)}
+                            />
                           </span>
                         ) : null}
                       </div>
-                    </td>
-                    <td className="px-4 text-muted-foreground">{formatOpenItems(pipelineOpenItemCount(row.pipeline))}</td>
-                    <td className="px-4"><PipelineStatusChip archivedAt={row.pipeline.archivedAt} /></td>
-                    <td className="px-4 text-muted-foreground">{formatPipelineActivity(pipelineActivityTime(row.pipeline))}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {row.parentPipelineName ? (
+                        <p className="truncate text-xs text-muted-foreground">Fed by {row.parentPipelineName}</p>
+                      ) : null}
+                      {row.pipeline.description ? (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {row.pipeline.description}
+                        </p>
+                      ) : null}
+                      <PipelineStageDistribution pipeline={row.pipeline} />
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm lg:contents">
+                    <div className="leading-6" data-tour="pipelines-attention">
+                      {attentionCount > 0 ? (
+                        <Link
+                          to="/review-queue"
+                          className="relative z-raised inline-flex items-center gap-1.5 font-semibold text-foreground hover:underline"
+                        >
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-status-warning" aria-hidden="true" />
+                          {formatNeedsAttention(attentionCount)}
+                        </Link>
+                      ) : (
+                        <span className="text-muted-foreground">Nothing waiting</span>
+                      )}
+                      {liveDownstreamCount > 0 ? (
+                        <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground lg:flex">
+                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-status-running" aria-hidden="true" />
+                          {formatLiveDownstream(liveDownstreamCount)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="leading-6 tabular-nums text-foreground lg:text-right">
+                      {formatNumber(openCount)}
+                      <span className="text-muted-foreground lg:sr-only"> open</span>
+                    </div>
+                    <div className="leading-6"><PipelineStatusChip archivedAt={row.pipeline.archivedAt} /></div>
+                    <div className="leading-6 text-muted-foreground">{formatPipelineActivity(pipelineActivityTime(row.pipeline))}</div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
           <p className="mt-4 text-sm text-muted-foreground">
             Showing {formatNumber(rows.length)} of {formatNumber(filteredPipelines.length)}.
           </p>
@@ -906,6 +1026,26 @@ export function pipelineKeyFromName(name: string) {
   return slug || "pipeline";
 }
 
+/** The viewer's pinned pipelines (sidebar), via the shared resource membership stars. */
+function usePipelineStars(companyId: string | null | undefined) {
+  const memberships = useResourceMemberships(companyId);
+  const mutation = useResourceMembershipMutation(companyId);
+  const starredIds = useMemo(() => new Set(starredResourceIds(memberships.data, "pipeline")), [memberships.data]);
+  const toggle = useCallback(
+    (pipeline: Pick<PipelineListItem, "id" | "name">, nextStarred: boolean) =>
+      mutation.mutate({
+        resourceType: "pipeline",
+        resourceId: pipeline.id,
+        resourceName: pipeline.name,
+        starred: nextStarred,
+      }),
+    [mutation],
+  );
+  const pendingId =
+    mutation.isPending && mutation.variables?.resourceType === "pipeline" ? mutation.variables.resourceId : null;
+  return { starredIds, toggle, pendingId };
+}
+
 function PipelinesIndex() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
@@ -914,6 +1054,9 @@ function PipelinesIndex() {
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<PipelineViewMode>("nested");
   const [newPipelineOpen, setNewPipelineOpen] = useState(false);
+  const { canCreatePipelines, rightsError } = usePipelineAdminRights(selectedCompanyId);
+  const { starredIds: starredPipelineIds, toggle: togglePipelineStar, pendingId: pipelineStarPendingId } =
+    usePipelineStars(selectedCompanyId);
 
   useEffect(() => setBreadcrumbs([{ label: "Pipelines" }]), [setBreadcrumbs]);
 
@@ -961,29 +1104,40 @@ function PipelinesIndex() {
   return (
     <div className="w-full max-w-6xl px-6 py-8">
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+        <div data-tour="pipelines-title">
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Work</p>
           <h1 className="text-2xl font-semibold text-foreground">Pipelines</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {formatNumber(pipelines.length)} pipeline{pipelines.length === 1 ? "" : "s"}. Connected ones are grouped from upstream work into downstream work.
           </p>
         </div>
-        <Button onClick={() => setNewPipelineOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          New pipeline
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <FeatureTour tour={PIPELINES_LIST_TOUR} />
+          {canCreatePipelines ? (
+            <Button onClick={() => setNewPipelineOpen(true)} data-tour="pipelines-new">
+              <Plus className="mr-2 h-4 w-4" />
+              New pipeline
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {pipelinesQuery.error ? (
         <p className="mb-4 text-sm text-destructive">Could not load pipelines.</p>
+      ) : null}
+      {rightsError ? (
+        <p className="mb-4 text-sm text-destructive">
+          Could not check your pipeline rights, so the controls to create pipelines are hidden. Reload the page to try again.
+        </p>
       ) : null}
 
       {pipelines.length === 0 && !pipelinesQuery.error ? (
         <EmptyState
           icon={Hexagon}
           message="No pipelines yet."
-          action="New pipeline"
-          onAction={() => setNewPipelineOpen(true)}
+          description="A pipeline tracks clients or deals stage by stage, from first contact to signed work."
+          action={canCreatePipelines ? "New pipeline" : undefined}
+          onAction={canCreatePipelines ? () => setNewPipelineOpen(true) : undefined}
         />
       ) : (
         <PipelinesIndexTable
@@ -993,6 +1147,9 @@ function PipelinesIndex() {
           connectionsAvailable={connectionsAvailable}
           search={search}
           onSearchChange={setSearch}
+          starredIds={starredPipelineIds}
+          onToggleStar={togglePipelineStar}
+          starPendingId={pipelineStarPendingId}
         />
       )}
 
@@ -1234,6 +1391,8 @@ function PipelineCaseCard({
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
   const { owner, nextAction } = readCardSummary(caseItem.fields);
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
+  const covers = useImageCovers(caseItem.companyId);
+  const cover = caseItem.organisationId ? covers.data?.organisations[caseItem.organisationId] : undefined;
   const {
     attributes,
     listeners,
@@ -1254,6 +1413,7 @@ function PipelineCaseCard({
       style={style}
       {...attributes}
       {...listeners}
+      data-tour={isOverlay ? undefined : "pipeline-card"}
       className={`block px-3 py-2 text-sm ${
         isDragging && !isOverlay ? "opacity-40" : ""
       } ${isOverlay ? "shadow-lg ring-1 ring-primary/20" : "hover:shadow-sm"}`}
@@ -1265,6 +1425,7 @@ function PipelineCaseCard({
         }}
         className="block text-inherit no-underline"
       >
+        <CardCover cover={cover} />
         <p className="font-medium leading-snug text-foreground">{title}</p>
         <div className="mt-1.5 flex flex-wrap gap-1.5">
           {isWorking ? (
@@ -1461,6 +1622,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
   const { selectedCompanyId } = useCompany();
+  const pipelineStars = usePipelineStars(selectedCompanyId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
@@ -1738,6 +1900,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   }, [pipelineId]);
 
   if (pipelineQuery.isLoading || casesQuery.isLoading) return <PageSkeleton />;
+  // A failed load says so, rather than an empty board or "not found".
+  if (pipelineQuery.error && !pipeline) {
+    return <ErrorState error={pipelineQuery.error} title="Could not load this pipeline" onRetry={() => void pipelineQuery.refetch()} />;
+  }
+  if (casesQuery.error && !casesQuery.data) {
+    return <ErrorState error={casesQuery.error} title="Could not load the items" onRetry={() => void casesQuery.refetch()} />;
+  }
   if (!pipeline) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }
@@ -1767,7 +1936,18 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Pipeline</p>
-          <h1 className="text-2xl font-semibold text-foreground">{pipeline.name}</h1>
+          <div className="flex items-center gap-1">
+            <h1 className="text-2xl font-semibold text-foreground">{pipeline.name}</h1>
+            {pipeline.archivedAt ? null : (
+              <StarToggle
+                size="button"
+                starred={pipelineStars.starredIds.has(pipeline.id)}
+                pending={pipelineStars.pendingId === pipeline.id}
+                resourceName={pipeline.name}
+                onToggle={(next) => pipelineStars.toggle(pipeline, next)}
+              />
+            )}
+          </div>
           {pipeline.description ? <p className="mt-1 text-sm text-muted-foreground">{pipeline.description}</p> : null}
           <p className="mt-1 text-xs text-muted-foreground">{cases.length} total item{cases.length === 1 ? "" : "s"}</p>
           {fedByPipelines.length > 0 ? (
@@ -1787,6 +1967,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+          <FeatureTour tour={PIPELINE_BOARD_TOUR} />
           <Select value={groupBy} onValueChange={handleGroupByChange}>
             <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
               <Layers className="h-4 w-4 text-muted-foreground" />
@@ -1797,13 +1978,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <SelectItem value="builtFor">Built for</SelectItem>
             </SelectContent>
           </Select>
-          <Button asChild>
+          <Button asChild data-tour="board-add">
             <Link to={`/pipelines/${pipelineId}/add`}>
               <Plus className="mr-2 h-4 w-4" />
               Add items
             </Link>
           </Button>
-          <Button variant="outline" size="icon" asChild>
+          <Button variant="outline" size="icon" asChild data-tour="board-settings">
             <Link to={`/pipelines/${pipelineId}/settings`} aria-label="Pipeline settings" title="Pipeline settings">
               <Settings className="h-4 w-4" />
             </Link>
@@ -1822,7 +2003,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onDragEnd={handleDragEnd}
         sensors={sensors}
       >
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto" data-tour="board-columns">
           <div className="flex items-start gap-3 pb-3">
             {boardColumns.columns.map((stage) => {
               const items = boardColumns.byStage.get(stage.id) ?? [];
@@ -2764,6 +2945,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
   });
 
   if (pipeline.isLoading || item.isLoading) return <PageSkeleton />;
+  if (pipeline.error && !pipeline.data) {
+    return <ErrorState error={pipeline.error} title="Could not load this pipeline" onRetry={() => void pipeline.refetch()} />;
+  }
+  if (item.error && !detail) {
+    return <ErrorState error={item.error} title="Could not load this item" onRetry={() => void item.refetch()} />;
+  }
   if (!detail || !pipeline.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Item not found.</div>;
   }
@@ -2853,6 +3040,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               Stage: <span className="font-medium text-foreground">{detail.stage.name}</span>
             </div>
           </div>
+          {detail.case.organisationId && (detail.case.companyId ?? selectedCompanyId) ? (
+            <CaseOrganisationLink
+              companyId={(detail.case.companyId ?? selectedCompanyId)!}
+              organisationId={detail.case.organisationId}
+            />
+          ) : null}
           {detail.parentCase ? (
             <p className="mt-2 text-sm text-muted-foreground">
               Built for{" "}
@@ -2885,6 +3078,22 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         </div>
         <div className="flex w-full flex-col gap-5">
           <div className="flex items-center gap-2 lg:justify-end">
+            {isClientCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
+            <Button
+              variant="outline"
+              title={`Ask Everest a question about ${detail.case.title}`}
+              data-testid="pipeline-item-ask"
+              onClick={() => openAskEverest(undefined, pipelineItemAskContext({
+                title: detail.case.title,
+                pipelineName: pipeline.data.name,
+                stageName: detail.stage.name,
+                statusLabel,
+                isClient: isClientCase,
+              }))}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Ask Everest
+            </Button>
             {primaryAction}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -3293,7 +3502,20 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               issueLinks={issueLinks.data ?? []}
               projects={projectsPanel}
             />
-          ) : null}
+          ) : (
+            <PipelineCaseCrmSync
+              caseId={caseId}
+              companyId={detail.case.companyId}
+              wrap={(children) => (
+                <section>
+                  <h2 className="mb-3 text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+                    CRM sync
+                  </h2>
+                  <div className="border-y border-border">{children}</div>
+                </section>
+              )}
+            />
+          )}
 
           <PipelineItemBodyDocument
             caseId={caseId}
@@ -3409,8 +3631,12 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         <aside className="min-w-0 space-y-8">
           {reviewPanel}
 
+          {isClientCase && (item.data?.case.companyId ?? selectedCompanyId) ? (
+            <ClientMemoryPanel companyId={(item.data?.case.companyId ?? selectedCompanyId)!} clientName={detail.case.title} />
+          ) : null}
+
           {/* Client cases show Projects inside the overview on narrow screens. */}
-          <div className={isClientCase ? "hidden lg:block" : undefined}>
+          <div className={isClientCase ? "hidden lg:block" : undefined} data-tour="client-projects">
             <DetailSection title="Projects">{projectsPanel}</DetailSection>
           </div>
 
@@ -4255,7 +4481,11 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   }, [pipeline.data?.name, pipelineId, setBreadcrumbs]);
 
   const fields = intake.data?.fields ?? [];
-  const errors = useMemo(() => validateDraftRows(rows, fields), [fields, rows]);
+  const requiresOrganisation = Boolean(pipeline.data?.requiresOrganisation);
+  const errors = useMemo(
+    () => validateDraftRows(rows, fields, { requiresOrganisation }),
+    [fields, requiresOrganisation, rows],
+  );
   const invalid = rows.length === 0 || Object.keys(errors).length > 0;
 
   const submit = useMutation({
@@ -4285,6 +4515,12 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   });
 
   if (pipeline.isLoading || intake.isLoading) return <PageSkeleton />;
+  if (pipeline.error && !pipeline.data) {
+    return <ErrorState error={pipeline.error} title="Could not load this pipeline" onRetry={() => void pipeline.refetch()} />;
+  }
+  if (intake.error && !intake.data) {
+    return <ErrorState error={intake.error} title="Could not load the intake form" onRetry={() => void intake.refetch()} />;
+  }
   if (!pipeline.data || !intake.data) {
     return <div className="mx-auto max-w-3xl py-10 text-sm text-muted-foreground">Pipeline not found.</div>;
   }
@@ -4318,6 +4554,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
             index={index}
             fields={fields}
             intake={intake.data}
+            organisationCompanyId={requiresOrganisation ? pipeline.data.companyId : null}
             errors={errors[row.id] ?? {}}
             onToggle={() =>
               setRows((current) => current.map((candidate) => candidate.id === row.id ? { ...candidate, expanded: !candidate.expanded } : candidate))
@@ -4329,6 +4566,13 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
                   candidate.id === row.id
                     ? { ...candidate, values: { ...candidate.values, [fieldKey]: value }, serverError: null }
                     : candidate,
+                ),
+              )
+            }
+            onOrganisationChange={(organisationId) =>
+              setRows((current) =>
+                current.map((candidate) =>
+                  candidate.id === row.id ? { ...candidate, organisationId, serverError: null } : candidate,
                 ),
               )
             }
@@ -4367,19 +4611,24 @@ function DraftItemRow({
   index,
   fields,
   intake,
+  organisationCompanyId,
   errors,
   onToggle,
   onRemove,
   onChange,
+  onOrganisationChange,
 }: {
   row: DraftRow;
   index: number;
   fields: PipelineIntakeField[];
   intake: PipelineIntakeForm;
+  /** Set when the pipeline requires an organisation on every case. */
+  organisationCompanyId: string | null;
   errors: FieldErrors;
   onToggle: () => void;
   onRemove: () => void;
   onChange: (fieldKey: string, value: string) => void;
+  onOrganisationChange: (organisationId: string) => void;
 }) {
   const title = row.values.title?.trim() || `Item ${index + 1}`;
   const preview = fields
@@ -4411,6 +4660,16 @@ function DraftItemRow({
       {row.expanded ? (
         <div className="grid gap-5 border-t border-border px-4 py-4 lg:grid-cols-(--gtc-50)">
           <div className="grid gap-4 md:grid-cols-2">
+            {organisationCompanyId ? (
+              <div className="md:col-span-2">
+                <OrganisationPicker
+                  companyId={organisationCompanyId}
+                  value={row.organisationId ?? null}
+                  onChange={onOrganisationChange}
+                  error={errors[ORGANISATION_ERROR_KEY]}
+                />
+              </div>
+            ) : null}
             {fields.map((field) => (
               <GeneratedField
                 key={field.key}
@@ -5175,6 +5434,8 @@ export function ReviewQueue() {
           ))}
         </div>
       )}
+
+      <CrmSyncConflictQueue companyId={selectedCompanyId} />
 
       <p className="text-xs text-muted-foreground">
         Shortcuts: <span className="font-semibold">j</span>/<span className="font-semibold">k</span> or arrow keys move, <span className="font-semibold">Enter</span> opens item, <span className="font-semibold">a</span> approves.

@@ -1,10 +1,11 @@
-import type { ExecutionReconciliation } from "@greatstone/shared";
+import type { ExecutionReconciliation, IssueWorkFilter } from "@greatstone/shared";
 import type {
   AcceptedPlanDecompositionSummary,
   AskUserQuestionsAnswer,
   Approval,
   CompactIssue,
   CreateIssueTreeHold,
+  DocumentEvidenceView,
   DocumentRevision,
   FeedbackTargetType,
   FeedbackTrace,
@@ -16,6 +17,7 @@ import type {
   IssueComment,
   IssueQueuedCommentQueue,
   IssueDocument,
+  IssueDocumentLink,
   IssueLabel,
   IssueRecoveryAction,
   IssueRetryNowResponse,
@@ -104,6 +106,7 @@ export type IssueListFilters = {
   includeBlockedInboxAttention?: boolean;
   includeLiveDescendantSummary?: boolean;
   hasPlanDocument?: boolean;
+  work?: IssueWorkFilter;
   q?: string;
   limit?: number;
   offset?: number;
@@ -151,6 +154,7 @@ function issueListSearchParams(filters?: IssueListFilters) {
   if (filters?.hasPlanDocument !== undefined) {
     params.set("hasPlanDocument", filters.hasPlanDocument ? "true" : "false");
   }
+  if (filters?.work) params.set("work", filters.work);
   if (filters?.q) params.set("q", filters.q);
   if (filters?.limit) params.set("limit", String(filters.limit));
   if (filters?.offset !== undefined)
@@ -434,6 +438,8 @@ export const issuesApi = {
       selectedClientKeys?: string[];
       selectedOptionIds?: string[];
       rememberAction?: boolean;
+      editedBody?: string;
+      learnFromEdits?: boolean;
     },
     options?: RequestOptions,
   ) =>
@@ -559,6 +565,10 @@ export const issuesApi = {
       `/issues/${id}/documents/${encodeURIComponent(key)}/unlock`,
       {},
     ),
+  getDocumentEvidence: (id: string, key: string) =>
+    api.get<DocumentEvidenceView>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/evidence`,
+    ),
   listDocumentRevisions: (id: string, key: string) =>
     api.get<DocumentRevision[]>(
       `/issues/${id}/documents/${encodeURIComponent(key)}/revisions`,
@@ -572,6 +582,26 @@ export const issuesApi = {
     api.delete<{ ok: true }>(
       `/issues/${id}/documents/${encodeURIComponent(key)}`,
     ),
+  setDocumentApprovedRevision: (
+    id: string,
+    key: string,
+    revisionId: string | null,
+  ) =>
+    api.put<IssueDocument>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/approved-revision`,
+      { revisionId },
+    ),
+  setDocumentMaker: (id: string, key: string, makerAgentId: string | null) =>
+    api.put<IssueDocument>(
+      `/issues/${id}/documents/${encodeURIComponent(key)}/maker`,
+      { makerAgentId },
+    ),
+  listDocumentLinks: (id: string) =>
+    api.get<IssueDocumentLink[]>(`/issues/${id}/document-links`),
+  createDocumentLink: (id: string, data: { sourceIssueId: string; key: string }) =>
+    api.post<IssueDocumentLink>(`/issues/${id}/document-links`, data),
+  deleteDocumentLink: (id: string, linkId: string) =>
+    api.delete<{ ok: true }>(`/issues/${id}/document-links/${linkId}`),
   listAttachments: (id: string) =>
     api.get<IssueAttachment[]>(`/issues/${id}/attachments`),
   uploadAttachment: (

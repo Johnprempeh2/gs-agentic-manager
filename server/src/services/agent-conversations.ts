@@ -69,7 +69,8 @@ export function isConversationExecutionWake(
   return isConversation(issue) && (
     reason === "issue_blockers_resolved" ||
     reason === "issue_children_completed" ||
-    reason === "issue_unblock_requested"
+    reason === "issue_unblock_requested" ||
+    reason === "pull_request_merged"
   );
 }
 
