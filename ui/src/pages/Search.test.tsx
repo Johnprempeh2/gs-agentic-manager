@@ -190,7 +190,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -276,7 +276,7 @@ describe("Search page", () => {
     }));
     searchApiMock.search.mockResolvedValue({ query: "rank", normalizedQuery: "rank", scope: "all",
       sort, limit: 20, offset: 0, hasMore: false, zeroResults: null, results,
-      countsByType: { issue: 1, comment: 1, document: 1, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 1, comment: 1, document: 1, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: { status: {}, priority: {}, assigneeAgentId: {}, assigneeUserId: {}, projectId: {}, labelId: {}, updatedWithin: {} },
     });
     const { root } = renderSearch(`/search?q=rank&sort=${sort}`, container);
@@ -295,7 +295,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 1, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 1, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -363,6 +363,68 @@ describe("Search page", () => {
     });
   });
 
+  it("renders a file result with its owner and the matching line", async () => {
+    searchApiMock.search.mockResolvedValueOnce({
+      query: "retainer",
+      normalizedQuery: "retainer",
+      scope: "files",
+      limit: 20,
+      offset: 0,
+      sort: "relevance",
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 1, agent: 0, project: 0 },
+      filterOptionCounts: {
+        status: {},
+        priority: {},
+        assigneeAgentId: {},
+        assigneeUserId: {},
+        projectId: {},
+        labelId: {},
+        updatedWithin: {},
+      },
+      zeroResults: null,
+      hasMore: false,
+      results: [
+        {
+          id: "file:asset-1",
+          type: "file",
+          score: 100,
+          title: "nda.docx",
+          href: "/PAP/pipelines/p-1/items/c-1",
+          matchedFields: ["file"],
+          sourceLabel: "nda.docx",
+          snippet: "The retainer terms stay confidential",
+          snippets: [{ field: "file", label: "nda.docx", text: "The retainer terms stay confidential", highlights: [{ start: 4, end: 12 }] }],
+          file: {
+            assetId: "asset-1",
+            filename: "nda.docx",
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            mediaKind: "document",
+            owner: { kind: "client", label: "Acme Ltd", href: "/PAP/pipelines/p-1/items/c-1" },
+            contentPath: null,
+            matchedAltText: false,
+          },
+          updatedAt: new Date().toISOString(),
+          previewImageUrl: null,
+        },
+      ],
+    });
+
+    const { root } = renderSearch("/search?q=retainer&scope=files", container);
+
+    await waitForAssertion(() => {
+      const row = container.querySelector('[data-result-type="file"]');
+      expect(row?.textContent).toContain("nda.docx");
+      expect(row?.textContent).toContain("Client: Acme Ltd");
+      expect(row?.textContent).toContain("In file");
+      expect(row?.textContent).toContain("The retainer terms stay confidential");
+    });
+    expect(container.textContent).toContain("Inside files");
+
+    flushSync(() => {
+      root.unmount();
+    });
+  });
+
   it("renders comment and document result rows with exact anchors, source chips, and highlights", async () => {
     searchApiMock.search.mockResolvedValueOnce({
       query: "needle",
@@ -371,7 +433,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 1, document: 1, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 1, document: 1, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -503,7 +565,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -558,7 +620,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 1, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -623,7 +685,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -659,7 +721,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -704,7 +766,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -843,7 +905,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},
@@ -902,7 +964,7 @@ describe("Search page", () => {
       limit: 20,
       offset: 0,
       sort: "relevance",
-      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, agent: 0, project: 0 },
+      countsByType: { issue: 0, comment: 0, document: 0, artifact: 0, file: 0, agent: 0, project: 0 },
       filterOptionCounts: {
         status: {},
         priority: {},

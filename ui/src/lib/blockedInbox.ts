@@ -108,11 +108,12 @@ export interface BlockedInboxIssueRow {
   stoppedAtMs: number | null;
 }
 
-export type BlockedInboxGroupBy = "blocker_type" | "none";
+export type BlockedInboxGroupBy = "blocker_type" | "root_blocker" | "none";
 export type BlockedInboxSort = "urgency" | "most_recent" | "longest_stopped";
 
 export const BLOCKED_GROUP_OPTIONS: readonly [BlockedInboxGroupBy, string][] = [
   ["blocker_type", "Blocker type"],
+  ["root_blocker", "Root blocker"],
   ["none", "None"],
 ];
 
@@ -123,6 +124,8 @@ export const BLOCKED_SORT_OPTIONS: readonly [BlockedInboxSort, string][] = [
 ];
 
 export interface BlockedInboxGroup {
+  /** Stable id for React keys, collapse state and test ids. */
+  key: string;
   variant: BlockedReasonVariant;
   label: string;
   rows: BlockedInboxIssueRow[];
@@ -212,7 +215,52 @@ export function groupBlockedInboxRows(
     const list = buckets.get(variant);
     if (!list || list.length === 0) continue;
     const sorted = sortBlockedInboxRows(list, sort);
-    groups.push({ variant, label: BLOCKED_VARIANT_LABELS[variant], rows: sorted });
+    groups.push({ key: variant, variant, label: BLOCKED_VARIANT_LABELS[variant], rows: sorted });
+  }
+  return groups;
+}
+
+export const NO_ROOT_BLOCKER_GROUP_KEY = "root-none";
+
+/**
+ * Groups stopped tasks by the one task at the bottom of their blocking chain,
+ * so "9 tasks waiting on GRE-1463" shows as one group. Biggest chains come
+ * first; tasks with no single root blocker sit in a last group.
+ */
+export function groupBlockedInboxRowsByRoot(
+  rows: readonly BlockedInboxIssueRow[],
+  sort: BlockedInboxSort = "urgency",
+): BlockedInboxGroup[] {
+  const buckets = new Map<string, { label: string; rows: BlockedInboxIssueRow[] }>();
+  const unrooted: BlockedInboxIssueRow[] = [];
+  for (const row of rows) {
+    const leaf = row.attention.leafIssue;
+    if (!leaf || leaf.id === row.issue.id) {
+      unrooted.push(row);
+      continue;
+    }
+    const bucket = buckets.get(leaf.id);
+    if (bucket) {
+      bucket.rows.push(row);
+    } else {
+      const name = leaf.identifier ? `${leaf.identifier} ${leaf.title}` : leaf.title;
+      buckets.set(leaf.id, { label: `Waiting on ${name}`, rows: [row] });
+    }
+  }
+  const groups: BlockedInboxGroup[] = [...buckets.entries()]
+    .map(([leafId, bucket]) => {
+      const sorted = sortBlockedInboxRows(bucket.rows, sort);
+      return { key: `root-${leafId}`, variant: sorted[0]!.variant, label: bucket.label, rows: sorted };
+    })
+    .sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label));
+  if (unrooted.length > 0) {
+    const sorted = sortBlockedInboxRows(unrooted, sort);
+    groups.push({
+      key: NO_ROOT_BLOCKER_GROUP_KEY,
+      variant: sorted[0]!.variant,
+      label: "No single blocker",
+      rows: sorted,
+    });
   }
   return groups;
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Project } from "@greatstone/shared";
 import { projectsApi } from "../api/projects";
+import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
@@ -14,6 +15,10 @@ import { StarToggle } from "../components/StarToggle";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { formatDate, formatNumber, formatProjectBudget, projectUrl } from "../lib/utils";
+import { projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "../lib/projects-text";
+import { downloadTextFile } from "../lib/issues-csv";
+import { exportFileName, localToday } from "../lib/spreadsheet-export";
+import { useCopyAction } from "../lib/use-copy-action";
 import {
   isStarred,
   resourceMembershipState,
@@ -22,7 +27,7 @@ import {
 } from "../hooks/useResourceMemberships";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ArrowUpDown, Check, Hexagon, Plus } from "lucide-react";
+import { ArrowUpDown, Check, ClipboardList, Download, Hexagon, Plus } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { ErrorState } from "../components/ErrorState";
 import { HelpTerm } from "../components/HelpTerm";
@@ -79,7 +84,7 @@ function sortProjects(projects: Project[], sortField: ProjectSortField, sortDir:
 }
 
 export function Projects() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { openNewProject } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [sortField, setSortField] = useState<ProjectSortField>("name");
@@ -94,6 +99,12 @@ export function Projects() {
     queryFn: () => projectsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+  const { data: agents } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+  const projectsCopy = useCopyAction();
   const membershipsQuery = useResourceMemberships(selectedCompanyId);
   const membershipMutation = useResourceMembershipMutation(selectedCompanyId);
   const projects = useMemo(
@@ -118,6 +129,15 @@ export function Projects() {
 
     return groups;
   }, [membershipsQuery.data, sortedProjects]);
+  const agentNames = useMemo(() => new Map((agents ?? []).map((agent) => [agent.id, agent.name])), [agents]);
+  const textLookups = { agentName: (id: string) => agentNames.get(id) };
+  const hasLiveProjects = projectsForUpdate(projects).length > 0;
+  const copyProjectsUpdate = () => {
+    void projectsCopy.copy(projectsUpdateText(projects, textLookups, localToday()));
+  };
+  const downloadProjects = () => {
+    downloadTextFile(exportFileName(selectedCompany?.issuePrefix, "projects", localToday(), "csv"), projectsToCsv(projects, textLookups));
+  };
   const sortLabel = PROJECT_SORT_OPTIONS.find((option) => option.field === sortField)?.label ?? "Name";
 
   if (!selectedCompanyId) {
@@ -177,10 +197,35 @@ export function Projects() {
             </div>
           </PopoverContent>
         </Popover>
-        <Button size="sm" variant="outline" onClick={openNewProject}>
-          <Plus className="h-4 w-4 mr-1" />
-          Add project
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {hasLiveProjects ? (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy every open project and how it is going, to paste into an email or a board pack"
+              onClick={copyProjectsUpdate}
+            >
+              {projectsCopy.copied ? <Check className="h-4 w-4 mr-1" /> : <ClipboardList className="h-4 w-4 mr-1" />}
+              {projectsCopy.copied ? "Copied" : projectsCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
+          ) : null}
+          {hasLiveProjects ? (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Download every open project as a spreadsheet that opens in Excel or Google Sheets"
+              onClick={downloadProjects}
+            >
+              <Download className="h-4 w-4 sm:mr-1" />
+              <span className="hidden sm:inline">Download as spreadsheet</span>
+              <span className="sr-only sm:hidden">Download as spreadsheet</span>
+            </Button>
+          ) : null}
+          <Button size="sm" variant="outline" onClick={openNewProject}>
+            <Plus className="h-4 w-4 mr-1" />
+            Add project
+          </Button>
+        </div>
       </div>
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
@@ -243,8 +288,11 @@ export function Projects() {
                               </span>
                             )}
                             {project.targetDate && (
-                              <span className="hidden text-xs text-muted-foreground md:inline">
-                                {formatDate(project.targetDate)}
+                              <span
+                                className="hidden text-xs text-muted-foreground md:inline"
+                                title={`Target date ${formatDate(project.targetDate)}`}
+                              >
+                                {projectTargetLabel(project) ?? formatDate(project.targetDate)}
                               </span>
                             )}
                             <StatusBadge status={project.status} />
