@@ -304,8 +304,9 @@ export function memoryTextWords(text: string): Set<string> {
  */
 export function memoryTextSimilarity(a: Set<string>, b: Set<string>): number {
   if (a.size === 0 || b.size === 0) return 0;
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
   let shared = 0;
-  for (const word of a) if (b.has(word)) shared += 1;
+  for (const word of small) if (large.has(word)) shared += 1;
   return shared / (a.size + b.size - shared);
 }
 
