@@ -26,6 +26,7 @@ import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages"
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
+import { getDealNextStepFlag, type DealNextStepFlag } from "../lib/client-card-flags";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 
@@ -127,7 +128,7 @@ function NotSet() {
 }
 
 /** The deal behind a DevTools client, as Pipedrive held it. */
-function DealRecord({ deal }: { deal: DevtoolsDeal }) {
+function DealRecord({ deal, nextStep }: { deal: DevtoolsDeal; nextStep: DealNextStepFlag | null }) {
   const value = deal.value != null ? `${formatNumber(deal.value, { maximumFractionDigits: 2 })}${deal.currency ? ` ${deal.currency}` : ""}` : null;
   return (
     <dl className="divide-y divide-border" aria-label="Deal">
@@ -141,7 +142,16 @@ function DealRecord({ deal }: { deal: DevtoolsDeal }) {
         {deal.expectedClose ? formatDay(deal.expectedClose) : <NotSet />}
         {deal.probability != null ? <span className="block text-xs text-muted-foreground">{deal.probability}% likely</span> : null}
       </RecordRow>
-      <RecordRow label="Next activity">{deal.nextActivity ? formatDay(deal.nextActivity) : <NotSet />}</RecordRow>
+      <RecordRow label="Next activity">
+        {deal.nextActivity ? formatDay(deal.nextActivity) : <NotSet />}
+        {nextStep ? (
+          <span data-testid="deal-next-step-flag" className="block text-xs text-status-danger-foreground">
+            {nextStep.kind === "none"
+              ? "No next step scheduled for this open deal"
+              : `Overdue by ${nextStep.days === 1 ? "1 day" : `${nextStep.days} days`}`}
+          </span>
+        ) : null}
+      </RecordRow>
       <RecordRow label="Last activity">{deal.lastActivity ? formatDay(deal.lastActivity) : <NotSet />}</RecordRow>
       {deal.lostReason ? <RecordRow label="Lost reason">{deal.lostReason}</RecordRow> : null}
     </dl>
@@ -191,7 +201,13 @@ export function ClientCaseOverview({
 
       {devtools ? (
         <OverviewSection title="Deal">
-          <DealRecord deal={readDevtoolsDeal(detail.case.fields)} />
+          <DealRecord
+            deal={readDevtoolsDeal(detail.case.fields)}
+            nextStep={getDealNextStepFlag({
+              fields: detail.case.fields,
+              terminalKind: stages.find((stage) => stage.id === detail.case.stageId && (stage.kind === "done" || stage.kind === "cancelled"))?.kind ?? null,
+            })}
+          />
           <DevtoolsDealOutcome detail={detail} stages={stages} />
         </OverviewSection>
       ) : (
