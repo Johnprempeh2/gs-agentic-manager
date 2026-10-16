@@ -305,6 +305,7 @@ vi.mock("../services/index.js", () => ({
   executionWorkspaceService: executionWorkspaceServiceFactoryMock,
   externalObjectService: externalObjectsServiceFactoryMock,
   heartbeatService: heartbeatServiceFactoryMock,
+  budgetService: vi.fn(() => ({ applyDueChanges: vi.fn(async () => undefined) })),
   githubConnectionEventService: vi.fn(() => ({
     pollOnce: vi.fn(async () => ({
       leased: 0,
