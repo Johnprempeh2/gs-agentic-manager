@@ -86,6 +86,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
   router.use("/companies/:companyId/crm-files", requireEntitlement(db, "enablePipelines"));
   router.use("/companies/:companyId/crm-products", requireEntitlement(db, "enablePipelines"));
+  router.use("/companies/:companyId/organisation-contacts", requireEntitlement(db, "enablePipelines"));
 
   async function assertCrmWriter(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -392,6 +393,14 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   );
 
   /** People with no organisation, such as Pipedrive people held on their own. Reads need company access only. */
+  /** People across every organisation, found by name, role, email, phone or organisation. */
+  router.get("/companies/:companyId/organisation-contacts", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (q.length < 2) throw badRequest("Type at least two characters to search people");
+    res.json(await svc.searchContacts(companyId, q.slice(0, 200)));
+  });
   router.get("/companies/:companyId/organisation-contacts/unassigned", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

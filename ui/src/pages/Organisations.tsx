@@ -16,6 +16,7 @@ import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
 import { CrmProductCatalogue } from "@/components/CrmProductCatalogue";
 import { ClientsExportButton } from "@/components/DataExport";
+import { PeopleSearch } from "@/components/PeopleSearch";
 import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -214,6 +215,7 @@ export function Organisations() {
         </div>
       )}
 
+      {selectedCompanyId ? <PeopleSearch companyId={selectedCompanyId} /> : null}
       {selectedCompanyId ? <UnassignedPeople companyId={selectedCompanyId} /> : null}
       {selectedCompanyId ? <CrmProductCatalogue companyId={selectedCompanyId} /> : null}
 

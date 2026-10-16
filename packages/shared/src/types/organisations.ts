@@ -49,6 +49,11 @@ export interface Organisation {
   updatedAt: string;
 }
 
+/** A person found by the people search, with the name of their organisation (null when they have none). */
+export interface OrganisationPerson extends OrganisationContact {
+  organisationName: string | null;
+}
+
 /** One row on the Organisations list: the organisation and its key contacts. */
 export interface OrganisationListItem extends Organisation {
   keyContacts: Pick<OrganisationContact, "id" | "name" | "role" | "email" | "phone">[];

@@ -20,6 +20,7 @@ const mockApi = vi.hoisted(() => ({
   archiveContact: vi.fn(),
   unassignedContacts: vi.fn(),
   products: vi.fn(),
+  searchPeople: vi.fn(),
 }));
 
 const accessMock = vi.hoisted(() => ({ listMembers: vi.fn() }));
@@ -222,6 +223,27 @@ describe("Organisations page", () => {
     });
     expect(section.textContent).toContain("DevTools audit");
     expect(section.textContent).not.toContain("Old licence");
+  });
+
+  it("finds a person across every organisation once two characters are typed", async () => {
+    mockApi.list.mockResolvedValue([]);
+    mockApi.searchPeople.mockResolvedValue([{
+      id: "p9", companyId: "company-1", organisationId: "org-7", organisationName: "Northwind", name: "Esi Boateng",
+      role: "CFO", email: "esi@example.test", phone: null, isKeyContact: false, source: "pipedrive", externalId: "501",
+      archivedAt: null, createdAt: "2026-10-16T09:00:00Z", updatedAt: "2026-10-16T09:00:00Z",
+    }]);
+    await render();
+    const input = container.querySelector('input[aria-label="Search people"]') as HTMLInputElement;
+    await act(async () => setValue(input, "e"));
+    await settle();
+    expect(mockApi.searchPeople).not.toHaveBeenCalled();
+    await act(async () => setValue(input, "esi"));
+    await settle();
+    expect(mockApi.searchPeople).toHaveBeenCalledWith("company-1", "esi");
+    const found = container.querySelector('ul[aria-label="People found"]')!;
+    expect(found.textContent).toContain("Esi Boateng");
+    expect(found.textContent).toContain("(CFO)");
+    expect(found.querySelector('a[href="/organisations/org-7"]')?.textContent).toBe("Northwind");
   });
 
   it("shows one card per organisation on a phone", async () => {
