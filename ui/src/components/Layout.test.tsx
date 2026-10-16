@@ -145,6 +145,7 @@ vi.mock("./NewAgentDialog", () => ({
 
 vi.mock("./KeyboardShortcutsCheatsheet", () => ({
   KeyboardShortcutsCheatsheet: () => null,
+  OPEN_SHORTCUTS_EVENT: "gsam:open-shortcuts",
 }));
 
 vi.mock("./ToastViewport", () => ({
