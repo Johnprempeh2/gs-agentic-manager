@@ -134,6 +134,21 @@ in a comment on each task it holds (`todo` or `in_progress`). The task keeps
 its assignee. The board raises the budget on the Costs page (the agent then
 starts again) or gives the task to another agent.
 
+**Stop or hold (GRE-1365).** The instance setting `budgetHardStopMode` says
+what happens to queued task work at the hard stop. `stop` (the default, when
+the setting is absent) cancels it. `hold` keeps it: each task with queued work
+or a stopped run is held, and so is a wake that comes in for it while the
+scope is stopped. After an approved raise, each held task gets exactly one
+wake. That wake goes through the normal run admission, so the RAM, disk and
+run-cap guards still apply. After "keep paused" the work stays held. The Costs
+overview shows how many tasks are held (`heldTaskCount`). A wake with no task
+is cancelled in both modes. Only an instance admin can change the setting:
+
+```sh
+curl -X PATCH "$GSAM_API_URL/api/instance/settings/general" \
+  -H "Content-Type: application/json" -d '{"budgetHardStopMode":"hold"}'
+```
+
 The budget and daily cap go on agents made after the start that uses them.
 An agent's own budget, set by the board, stays. `verify` checks that every
 agent has a monthly budget.

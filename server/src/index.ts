@@ -1512,6 +1512,25 @@ async function startServerWithDatabaseTeardown(
         })
         .finally(() => { deliverableLinkCheckInFlight = false; }));
     };
+    // Hold at a budget hard stop (GRE-1365): wake each held task once its
+    // scope resumes. The resume itself releases at once; this catches a
+    // resume path without the release hook, a crash or a failed wake.
+    let budgetHoldReleaseInFlight = false;
+    const scheduleBudgetHoldReleaseSweep = () => {
+      if (heartbeatSchedulerStopped || budgetHoldReleaseInFlight) return;
+      budgetHoldReleaseInFlight = true;
+      trackHeartbeatSchedulerWork(heartbeat
+        .releaseBudgetHeldWork()
+        .then((result) => {
+          if (result.released + result.dropped + result.failed > 0) {
+            logger.info(result, "budget hold sweep released held tasks");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "budget hold sweep failed");
+        })
+        .finally(() => { budgetHoldReleaseInFlight = false; }));
+    };
     const scheduleSupportClockSweep = () => {
       if (heartbeatSchedulerStopped) return;
       trackHeartbeatSchedulerWork(supportQueue
@@ -1959,6 +1978,7 @@ async function startServerWithDatabaseTeardown(
         scheduleGitHubConnectionContinuitySweep();
         scheduleTerminalWorkspaceSweep();
         scheduleSupportClockSweep();
+        scheduleBudgetHoldReleaseSweep();
         scheduleDeliverableLinkCheck();
         scheduleUnrecordedWorktreeSweep();
         scheduleRunProcessSweep();
