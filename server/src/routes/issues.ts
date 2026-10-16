@@ -3781,14 +3781,6 @@ export function issueRoutes(
   const teamChats = teamChatService(db);
   // GRE-1090: refuse these feature routes while their managed switch is off,
   // before validation. Agent Chat on existing conversations checks per route.
-  router.use(
-    [
-      "/issues/:id/external-objects",
-      "/issues/:id/external-object-summary",
-      "/companies/:companyId/issues/external-object-summaries",
-    ],
-    requireEntitlement(instanceSettings, "enableExternalObjects"),
-  );
   router.get(
     "/issues/:id/accepted-plan-decompositions",
     requireEntitlement(instanceSettings, "enableIssuePlanDecompositions"),
@@ -4096,9 +4088,6 @@ export function issueRoutes(
     }) ?? noopTaskWatchdogService();
   const externalObjectsSvc = externalObjectService(db, {
     pluginWorkerManager: opts.pluginWorkerManager,
-    enabled: async (dbOrTx) =>
-      (await instanceSettings.getExperimental({ db: dbOrTx }))
-        .enableExternalObjects === true,
   });
   const queuedCommentQueue = createQueuedCommentQueue(db, {
     syncCommentReferences: (commentId, tx) => issueReferencesSvc.syncComment(commentId, tx),

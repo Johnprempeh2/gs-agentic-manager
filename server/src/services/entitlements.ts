@@ -65,22 +65,16 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     ],
   },
   enableCases: {
-    kind: "api",
-    probes: [
-      { method: "get", path: `${COMPANY}/cases` },
-      { method: "post", path: `${COMPANY}/cases` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableStatusCards: {
-    kind: "api",
-    probes: [
-      { method: "get", path: `${COMPANY}/status-cards` },
-      { method: "post", path: `${COMPANY}/status-cards` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableSummaries: {
-    kind: "api",
-    probes: [{ method: "get", path: `${COMPANY}/summary-slots/project/status` }],
+    kind: "runtime",
+    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableBuiltInAgents: {
     kind: "api",
@@ -116,14 +110,8 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     reason: "Graduated (GRE-1620): always on; stored and managed values are ignored.",
   },
   enableExternalObjects: {
-    kind: "api",
-    probes: [
-      { method: "get", path: `/issues/${ID}/external-objects` },
-      { method: "post", path: `/issues/${ID}/external-objects/refresh` },
-      { method: "get", path: `/issues/${ID}/external-object-summary` },
-      { method: "post", path: `${COMPANY}/issues/external-object-summaries` },
-      { method: "get", path: `/projects/${ID}/external-object-summary` },
-    ],
+    kind: "runtime",
+    reason: "Graduated (GRE-1622): always on; stored and managed values are ignored.",
   },
   enableIssuePlanDecompositions: {
     kind: "api",

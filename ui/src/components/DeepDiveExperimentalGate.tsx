@@ -5,9 +5,8 @@ import { instanceSettingsApi } from "@/api/instanceSettings";
 import { queryKeys } from "@/lib/queryKeys";
 
 /**
- * Route guard for the Deep Dive page. The record is stored as Cases, so the
- * page needs both `enableDeepDive` and `enableCases`; otherwise it redirects to
- * the dashboard, mirroring {@link CasesExperimentalGate}.
+ * Route guard for the Deep Dive page. Redirects to the dashboard when
+ * `enableDeepDive` is off, mirroring {@link PipelinesExperimentalGate}.
  */
 export function DeepDiveExperimentalGate({ children }: { children: ReactNode }) {
   const { data: experimentalSettings, isFetched } = useQuery({
@@ -16,7 +15,7 @@ export function DeepDiveExperimentalGate({ children }: { children: ReactNode }) 
   });
 
   if (!isFetched) return null;
-  if (experimentalSettings?.enableDeepDive !== true || experimentalSettings?.enableCases !== true) {
+  if (experimentalSettings?.enableDeepDive !== true) {
     return <Navigate to="/dashboard" replace />;
   }
   return <>{children}</>;

@@ -72,7 +72,7 @@ describe("applyManagedExperimentalOverlay", () => {
     // managed overlay > schema default
     expect(experimental.enablePipelines).toBe(true);
     // unmanaged keys keep their stored/default values
-    expect(experimental.enableCases).toBe(false);
+    expect(experimental.enableWebsiteView).toBe(false);
     expect(managedKeys).toEqual({
       enablePipelines: { managed: true, managedBy: "paperclip-cloud" },
     });
@@ -165,6 +165,17 @@ describe("instanceSettingsService managed overlay", () => {
       experimental: { enableChatConnectors: true, enableMemoryConnectors: true },
     });
   });
+  it("keeps Cases, External Objects, Summaries and Status Cards on when stored and managed values say off (GRE-1622)", async () => {
+    const off = { enableCases: false, enableExternalObjects: false, enableSummaries: false, enableStatusCards: false };
+    const on = { enableCases: true, enableExternalObjects: true, enableSummaries: true, enableStatusCards: true };
+    const { db } = stubDb(settingsRow(off));
+    const service = instanceSettingsService(db, { runtimeEnv: managedEnv(JSON.stringify({
+      v: 1, mode: "cloud", catalogVersion: "graduated", features: off, plugins: { autoInstall: [] },
+    })) });
+    expect(await service.getExperimental()).toMatchObject({ ...on, managedKeys: {} });
+    expect(await service.updateExperimental(off)).toMatchObject({ experimental: on });
+  });
+
   it("fails closed at construction on a malformed managed config", () => {
     const { db } = stubDb(settingsRow({}));
     expect(() => instanceSettingsService(db, { runtimeEnv: managedEnv("{bad") })).toThrow(
@@ -231,7 +242,7 @@ describe("instanceSettingsService managed overlay", () => {
     const { db, persistedSets } = stubDb(settingsRow({ enableApps: true }));
     const svc = instanceSettingsService(db, { runtimeEnv: managedEnv() });
 
-    const updated = await svc.updateExperimental({ enableCases: true });
+    const updated = await svc.updateExperimental({ enableWebsiteView: true });
 
     expect(persistedSets).toHaveLength(1);
     const persisted = persistedSets[0]!.experimental as Record<string, unknown>;
@@ -240,7 +251,7 @@ describe("instanceSettingsService managed overlay", () => {
     expect(persisted.enableApps).toBe(true);
     // The overlay-added value is not written.
     expect(persisted.enablePipelines).toBe(false);
-    expect(persisted.enableCases).toBe(true);
+    expect(persisted.enableWebsiteView).toBe(true);
     expect(persisted).not.toHaveProperty("managedKeys");
 
     // The response still reflects the overlay.
@@ -253,7 +264,7 @@ describe("instanceSettingsService managed overlay", () => {
     const { db, persistedSets } = stubDb(settingsRow({}));
     const svc = instanceSettingsService(db, { runtimeEnv: {} });
 
-    const updated = await svc.updateExperimental({ enableCases: true });
+    const updated = await svc.updateExperimental({ enableWebsiteView: true });
     expect(persistedSets).toHaveLength(1);
     expect(persistedSets[0]!.experimental).not.toHaveProperty("managedKeys");
     expect(Object.prototype.hasOwnProperty.call(updated.experimental, "managedKeys")).toBe(false);

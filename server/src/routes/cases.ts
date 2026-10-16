@@ -48,7 +48,7 @@ import { formatAttachmentSize, MAX_ATTACHMENT_BYTES, normalizeContentType } from
 import { badRequest, conflict, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
-import { assertEntitled, requireEntitlement } from "../services/entitlements.js";
+import { assertEntitled } from "../services/entitlements.js";
 import { documentAnnotationService, logActivity } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
 import { assertCompanyAccess, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -63,10 +63,6 @@ function eventActorValues(actor: CaseActor) {
     actorAgentId: actor.agentId,
     runId: actor.runId && isUuidLike(actor.runId) ? actor.runId : null,
   };
-}
-
-async function assertCasesEnabled(db: Db) {
-  await assertEntitled(instanceSettingsService(db), "enableCases");
 }
 
 const DEEP_DIVE_TYPES: ReadonlySet<string> = new Set(Object.values(DEEP_DIVE_CASE_TYPES));
@@ -172,12 +168,11 @@ async function assertCaseAccess(db: Db, req: Request, idOrIdentifier: string) {
 // The pipelines feature registers its own /cases/:caseId routes after this
 // router. On paths both features share, return null (caller falls through via
 // next()) when the id is not a new-Cases row so pipeline case requests still
-// reach their handler regardless of the enableCases flag.
+// reach their handler.
 async function resolveSharedPathCase(db: Db, req: Request, idOrIdentifier: string) {
   const companyIds = caseLookupCompanyIds(req);
   const row = await loadCaseByIdOrIdentifier(db, idOrIdentifier, companyIds);
   if (!row || !hasCompanyAccess(req, row.companyId)) return null;
-  await assertCasesEnabled(db);
   await assertDeepDiveCaseTypesEntitled(db, [row.caseType]);
   assertCompanyAccess(req, row.companyId);
   return row;
@@ -560,9 +555,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   const router = Router();
   const documentAnnotationsSvc = documentAnnotationService(db);
 
-  // GRE-1077: company case routes are refused while enableCases is off, before
-  // validation. /cases/:id routes check per route (see resolveSharedPathCase).
-  router.use("/companies/:companyId/cases", requireEntitlement(db, "enableCases"));
   router.get("/companies/:companyId/cases", (req, _res, next) => {
     const types = req.query.types ?? req.query.type;
     assertDeepDiveCaseTypesEntitled(db, parseQueryList(types as string | string[] | undefined)).then(() => next(), next);
@@ -1196,7 +1188,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   });
 
   router.post("/cases/:id/links", validate(createIssueLinkSchema), async (req, res) => {
-    await assertCasesEnabled(db);
     const caseRow = await assertCaseAccess(db, req, req.params.id as string);
     const actor = getActorInfo(req);
     const body = req.body as z.infer<typeof createIssueLinkSchema>;
@@ -1241,7 +1232,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   });
 
   router.post("/cases/:id/attachments", async (req, res) => {
-    await assertCasesEnabled(db);
     const caseRow = await assertCaseAccess(db, req, req.params.id as string);
     const actor = getActorInfo(req);
 
@@ -1386,7 +1376,6 @@ export function caseRoutes(db: Db, storage: StorageService) {
   });
 
   router.get("/issues/:issueId/cases", async (req, res) => {
-    await assertCasesEnabled(db);
     const issueIdOrIdentifier = (req.params.issueId as string).trim();
     const issue = await loadIssueByIdOrIdentifier(db, issueIdOrIdentifier, caseLookupCompanyIds(req));
     if (!issue || !hasCompanyAccess(req, issue.companyId)) throw notFound("Issue not found");

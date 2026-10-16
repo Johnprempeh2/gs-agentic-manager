@@ -5,9 +5,9 @@ research packets, release notes, incidents, QA runs, or generated asset sets.
 They are company-scoped and live beside issues: issues coordinate work, while
 cases preserve the structured object an agent is producing.
 
-Cases are experimental and must be enabled with `experimental.enableCases`.
-If a route returns `403 Cases are disabled`, stop and report that the operator
-must enable cases before the skill can use this surface.
+Cases are always on. Deep Dive case types (`deep_dive`, `deep_dive_stream`,
+`agent_team_blueprint`) still need `experimental.enableDeepDive`; if those return `403 not_entitled`,
+stop and report that the operator must enable Deep Dive.
 
 ## Core Model
 

@@ -279,8 +279,9 @@ export function useIssueDetailQueries({
     retry: false,
   });
   const keyboardShortcutsEnabled = useUserPreferences().data?.keyboardShortcuts === true;
-  // Experimental Cases: linkify `PAP-C7` chips in this issue's comment bodies.
-  const casesChipsEnabled = instanceExperimentalSettings?.enableCases === true;
+  // Cases graduated out of Experimental (GRE-1622): always linkify `PAP-C7`
+  // chips in this issue's comment bodies.
+  const casesChipsEnabled = true;
   const feedbackDataSharingPreference =
     instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
   const showPlanDecompositionsSection =

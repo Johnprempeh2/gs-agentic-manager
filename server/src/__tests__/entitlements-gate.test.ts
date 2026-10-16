@@ -26,18 +26,10 @@ const fakeDb = {} as never;
 /** One real router per `api` gate. A new `api` gate without a mount here fails the build. */
 const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> = {
   enablePipelines: async () => (await import("../routes/pipelines.js")).pipelineRoutes(fakeDb),
-  enableCases: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
-  enableStatusCards: async () =>
-    (await import("../routes/status-cards.js")).statusCardRoutes(fakeDb, { heartbeat: {} as never }),
-  enableSummaries: async () => (await import("../routes/summary-slots.js")).summarySlotRoutes(fakeDb),
   enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
   enableConferenceRoomChat: async () =>
     (await import("../routes/board-chat.js")).boardChatRoutes(fakeDb, { deploymentMode: "local_trusted" }),
   enableAgentChat: issueRouter,
-  enableExternalObjects: async () =>
-    Router()
-      .use(await issueRouter())
-      .use((await import("../routes/projects.js")).projectRoutes(fakeDb)),
   enableIssuePlanDecompositions: issueRouter,
   enableDeepDive: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
   enableStrategy: async () => (await import("../routes/goals.js")).goalRoutes(fakeDb),
@@ -164,13 +156,13 @@ describe("managed feature reads that stay open with the switch off (GRE-1090)", 
 
 describe("assertEntitled", () => {
   it("reads the effective setting and names the feature", async () => {
-    const reader = { getExperimental: async () => ({ enableStatusCards: false }) };
-    await expect(assertEntitled(reader, "enableStatusCards")).rejects.toMatchObject({
+    const reader = { getExperimental: async () => ({ enableWebsiteView: false }) };
+    await expect(assertEntitled(reader, "enableWebsiteView")).rejects.toMatchObject({
       status: 403,
-      details: { code: "not_entitled", feature: "enableStatusCards" },
+      details: { code: "not_entitled", feature: "enableWebsiteView" },
     });
     await expect(
-      assertEntitled({ getExperimental: async () => ({ enableStatusCards: true }) }, "enableStatusCards"),
+      assertEntitled({ getExperimental: async () => ({ enableWebsiteView: true }) }, "enableWebsiteView"),
     ).resolves.toBeUndefined();
   });
 });

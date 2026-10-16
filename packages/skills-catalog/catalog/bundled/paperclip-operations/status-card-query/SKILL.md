@@ -22,7 +22,7 @@ Use this skill in one of two modes:
 
 ## Agent-authored card recipe
 
-Agent-authored cards require `tasks:assign`, remain company-scoped, and are available only when `enableStatusCards` is enabled. An agent may manage only cards it authored, may author at most 20 cards, and may send at most 4,000 characters in `interestPrompt`.
+Agent-authored cards require `tasks:assign`, and remain company-scoped. An agent may manage only cards it authored, may author at most 20 cards, and may send at most 4,000 characters in `interestPrompt`.
 
 Normalize the run-provided API base and create a manual card:
 

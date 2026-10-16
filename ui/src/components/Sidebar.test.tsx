@@ -547,17 +547,12 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows Status with its beta tag last in the Team section", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
-      enableStatusCards: true,
-      enableConferenceRoomChat: true,
-    });
+  it("always shows Status, without a beta tag, last in the Team section (GRE-1622)", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableStatusCards: false, enableConferenceRoomChat: true });
     const root = await renderSidebar();
 
-    const statusLink = container.querySelector('a[href="/status"]');
-    expect(statusLink?.textContent).toContain("Status");
-    expect(statusLink?.textContent).toContain("beta");
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
+    expect(container.querySelector('a[href="/status"]')?.textContent).toBe("Status");
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
 
     flushSync(() => {
       root.unmount();
@@ -768,10 +763,8 @@ describe("Sidebar", () => {
     mockCanRelease.value = true;
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIsolatedWorkspaces: true,
-      enableCases: true,
       enableDeepDive: true,
       enablePipelines: true,
-      enableStatusCards: true,
       enableConferenceRoomChat: true,
       enableAgentChat: true,
     });
@@ -785,9 +778,9 @@ describe("Sidebar", () => {
     expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
-    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
+    expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Status"]);
     expect(sectionLabels("Admin")).toEqual([
-      "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Casesbeta",
+      "Skills", "Connectors", "Routines", "Workflows", "Workspaces", "Artifacts", "Cases",
       "Audit", "Releases", "Settings", "Design guide",
     ]);
     expect(
@@ -832,15 +825,15 @@ describe("Sidebar", () => {
     });
   });
 
-  it("shows Deep Dive in Clients only while both flags are on", async () => {
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
+  it("shows Deep Dive in Clients only while its flag is on", async () => {
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableDeepDive: true });
     let root = await renderSidebar();
     expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "Images"]);
     flushSync(() => {
       root.unmount();
     });
 
-    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: false, enableDeepDive: true });
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: false, enableDeepDive: false });
     root = await renderSidebar();
     expect(container.textContent).not.toContain("Deep Dive");
     flushSync(() => {

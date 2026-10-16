@@ -51,10 +51,6 @@ vi.mock("./components/Layout", async () => {
 });
 
 // The experimental gate would otherwise hide the page behind a feature flag.
-vi.mock("./components/CasesExperimentalGate", () => ({
-  CasesExperimentalGate: ({ children }: { children: ReactNode }) => <>{children}</>,
-}));
-
 vi.mock("./components/DeepDiveExperimentalGate", () => ({
   DeepDiveExperimentalGate: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));

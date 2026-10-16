@@ -881,7 +881,6 @@ export function Inbox() {
     enabled: !!selectedCompanyId,
   });
   const isolatedWorkspacesEnabled = experimentalSettings?.enableIsolatedWorkspaces === true;
-  const externalObjectsEnabled = experimentalSettings?.enableExternalObjects === true;
   const { data: executionWorkspaces = [] } = useQuery({
     queryKey: selectedCompanyId
       ? queryKeys.executionWorkspaces.summaryList(selectedCompanyId)
@@ -1753,15 +1752,6 @@ export function Inbox() {
       issueFilters: { ...previous.issueFilters, ...patch },
     }));
   }, [updateFilterPreferences]);
-  useEffect(() => {
-    if (!experimentalSettingsLoaded || externalObjectsEnabled || issueFilters.externalObjectStatuses.length === 0) return;
-    updateIssueFilters({ externalObjectStatuses: [] });
-  }, [
-    experimentalSettingsLoaded,
-    externalObjectsEnabled,
-    issueFilters.externalObjectStatuses.length,
-    updateIssueFilters,
-  ]);
   const updateAllCategoryFilter = useCallback((value: InboxCategoryFilter) => {
     updateFilterPreferences((previous) => ({ ...previous, allCategoryFilter: value }));
   }, [updateFilterPreferences]);
@@ -2528,7 +2518,6 @@ export function Inbox() {
                 projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
                 labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
                 currentUserId={currentUserId}
-                enableExternalObjectFilters={externalObjectsEnabled}
                 enableRoutineVisibilityFilter
                 buttonVariant="outline"
                 iconOnly
@@ -2634,7 +2623,6 @@ export function Inbox() {
                 projects={projects?.map((project) => ({ id: project.id, name: project.name }))}
                 labels={labels?.map((label) => ({ id: label.id, name: label.name, color: label.color }))}
                 currentUserId={currentUserId}
-                enableExternalObjectFilters={externalObjectsEnabled}
                 enableRoutineVisibilityFilter
                 buttonVariant="outline"
                 iconOnly

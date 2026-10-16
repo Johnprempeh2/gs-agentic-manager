@@ -138,17 +138,16 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableCases: {
-    title: "Cases",
-    description:
-      "Durable work products that tasks create and iterate on. Adds the Cases tab and the agent case API.",
+    title: "Cases (compatibility)",
+    description: "Deprecated compatibility key. Cases are always enabled (GRE-1622); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableDeepDive: {
     title: "Deep Dive",
     description:
-      "Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with depth, status and visibility per stream. Requires Cases.",
+      "Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with depth, status and visibility per stream.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -234,20 +233,20 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: true,
   },
   enableStatusCards: {
-    title: "Status Cards",
+    title: "Status Cards (compatibility)",
     description:
-      "Enable the experimental shared status-card board, update engine, and gated API.",
+      "Deprecated compatibility key. The status-card board, update engine and API are always enabled (GRE-1622); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableExternalObjects: {
-    title: "External Objects",
+    title: "External Objects (compatibility)",
     description:
-      "Detect external URLs in issues and show resolved status for pull requests, tickets, and other referenced work objects.",
+      "Deprecated compatibility key. External object detection and status are always enabled (GRE-1622); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableSmokeLab: {
     title: "Smoke Lab",
@@ -273,12 +272,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableSummaries: {
-    title: "Summaries",
+    title: "Summaries (compatibility)",
     description:
-      "Show Summarizer-generated status slots on project and workspace pages, with on-demand refresh and revision history.",
+      "Deprecated compatibility key. Summary slots are always enabled (GRE-1622); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableDecisions: {
     title: "Decisions",
@@ -446,17 +445,21 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
  */
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableCases", issue: "GRE-1622" },
   { key: "enableChatConnectors", issue: "GRE-1620" },
   { key: "enableEnvironments", issue: "GRE-1623" },
   { key: "enableExperimentalFileViewer", issue: "GRE-1623" },
+  { key: "enableExternalObjects", issue: "GRE-1622" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
   { key: "enableMemoryConnectors", issue: "GRE-1620" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableServerInfoDebugView", issue: "GRE-1623" },
+  { key: "enableStatusCards", issue: "GRE-1622" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
   { key: "enableStreamlinedUi", issue: "GRE-1441" },
+  { key: "enableSummaries", issue: "GRE-1622" },
   { key: "enableWorkspaceBranchReconcileForward", issue: "GRE-1438" },
   { key: "enableWorkspaceDirtyQuarantineRepair", issue: "GRE-1439" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];

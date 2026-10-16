@@ -145,8 +145,9 @@ export interface InstanceExperimentalSettings {
   /** Compatibility key (GRE-1620): memory connectors are always on; reads as true. */
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
+  /** Compatibility key (GRE-1622): Cases are always on; reads as true. */
   enableCases: boolean;
-  /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
+  /** Greatstone: the Deep Dive page (Book V streams and GIF), stored as Cases. */
   enableDeepDive: boolean;
   /** Greatstone: the Strategy module, the KPI cascade and KPI readings (GRE-1382). */
   enableStrategy: boolean;
@@ -169,11 +170,14 @@ export interface InstanceExperimentalSettings {
   enableIssuePlanDecompositions: boolean;
   /** Compatibility key (GRE-1623): the task file viewer is always on; reads as true. */
   enableExperimentalFileViewer: boolean;
+  /** Compatibility key (GRE-1622): External Objects are always on; reads as true. */
   enableExternalObjects: boolean;
   enableSmokeLab: boolean;
   enableBuiltInAgents: boolean;
   enableBetaSkills: boolean;
+  /** Compatibility key (GRE-1622): Summaries are always on; reads as true. */
   enableSummaries: boolean;
+  /** Compatibility key (GRE-1622): Status Cards are always on; reads as true. */
   enableStatusCards: boolean;
   enableDecisions: boolean;
   enableGoalsSidebarLink: boolean;

@@ -1364,7 +1364,6 @@ async function startServerWithDatabaseTeardown(
   };
   const externalObjects = externalObjectService(db as any, {
     pluginWorkerManager,
-    enabled: async () => (await instanceSettingsService(db).getExperimental()).enableExternalObjects === true,
   });
   const scheduleExternalObjectRefreshSweep = (now = new Date()) => {
     if (heartbeatSchedulerStopped) return;
@@ -1991,8 +1990,6 @@ async function startServerWithDatabaseTeardown(
 
         if (heartbeatSchedulerStopped) return;
         trackHeartbeatSchedulerWork((async () => {
-          const experimental = await instanceSettingsService(db).getExperimental();
-          if (experimental.enableStatusCards !== true) return;
           const result = await statusCards.tickDueStatusCards(new Date());
           await Promise.all(result.enqueued.map(async ({ cardId, generatingIssue }) => {
             try {

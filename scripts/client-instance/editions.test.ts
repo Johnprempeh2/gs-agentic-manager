@@ -122,7 +122,7 @@ test("hidden settings are exactly section 5", () => {
   const values = buildEditionValues({ edition: "managed", catalogVersion });
   assert.equal(values.hiddenSettings, MANAGED_HIDDEN_SETTINGS.join(","));
   assert.equal(
-    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }).hiddenSettings,
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }).hiddenSettings,
     values.hiddenSettings,
   );
 });
@@ -130,15 +130,15 @@ test("hidden settings are exactly section 5", () => {
 test("both editions hide Releases (GRE-129)", () => {
   for (const values of [
     buildEditionValues({ edition: "managed", catalogVersion }),
-    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }),
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }),
   ]) {
     assert.ok(values.hiddenSettings.split(",").includes("instance.releases"));
   }
 });
 
 test("the same input gives the same values", () => {
-  const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases", "enablePipelines"], catalogVersion });
-  const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableCases"], catalogVersion });
+  const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView", "enablePipelines"], catalogVersion });
+  const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableWebsiteView"], catalogVersion });
   assert.deepEqual(a, b);
 });
 
@@ -147,7 +147,7 @@ test("Managed plus turns on only the passed features", () => {
   const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
   assert.ok(parsed);
   assert.equal(parsed.features.enablePipelines, true);
-  assert.equal(parsed.features.enableCases, false);
+  assert.equal(parsed.features.enableWebsiteView, false);
   assert.ok(values.expectOn.includes("enablePipelines"));
   assert.ok(!values.expectOff.includes("enablePipelines"));
 });
@@ -159,7 +159,7 @@ test("Managed plus with no passed features equals Managed features", () => {
 });
 
 test("rejects features without a place in section 5", () => {
-  assert.throws(() => buildEditionValues({ edition: "managed", passedBetaFeatures: ["enableCases"], catalogVersion }), /Managed edition/);
+  assert.throws(() => buildEditionValues({ edition: "managed", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }), /Managed edition/);
   assert.throws(
     () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableApps"], catalogVersion }),
     /not a Managed "off" beta feature/,

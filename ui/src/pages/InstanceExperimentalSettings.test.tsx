@@ -58,16 +58,12 @@ const DECISIONS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle decisions experimental setting"]';
 const GSAM_DEVELOPER_MODE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager developer mode experimental setting"]';
+const INTELLIGENCE_TOGGLE_SELECTOR =
+  'button[aria-label="Toggle intelligence experimental setting"]';
 const BUILT_IN_AGENTS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle built-in agents experimental setting"]';
 const BETA_SKILLS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle beta skills experimental setting"]';
-const SUMMARIES_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle summaries experimental setting"]';
-const STATUS_CARDS_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle status cards experimental setting"]';
-const CASES_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle cases experimental setting"]';
 const DEEP_DIVE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle deep dive experimental setting"]';
 const STRATEGY_TOGGLE_SELECTOR = 'button[aria-label="Toggle strategy setting"]';
@@ -89,7 +85,7 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableChatConnectors: true,
     enableMemoryConnectors: true,
     enablePipelines: false,
-    enableCases: false,
+    enableCases: true,
     enableDeepDive: false,
     enableStrategy: false,
     enableStrategyBoard: false,
@@ -102,11 +98,11 @@ function defaultExperimentalSettings(): InstanceExperimentalSettingsPayload {
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: false,
     enableExperimentalFileViewer: false,
-    enableExternalObjects: false,
+    enableExternalObjects: true,
     enableBuiltInAgents: false,
     enableBetaSkills: false,
-    enableSummaries: false,
-    enableStatusCards: false,
+    enableSummaries: true,
+    enableStatusCards: true,
     enableDecisions: false,
     enableGoalsSidebarLink: false,
     enableServerInfoDebugView: false,
@@ -626,75 +622,19 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
   });
 
-  it("renders and patches the Summaries experimental toggle", async () => {
+  it("no longer shows Cases, External Objects, Status Cards or Summaries toggles (graduated, GRE-1622)", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Summaries");
-    expect(container.textContent).toContain("Show Summarizer-generated status slots");
-
-    const toggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    for (const label of ["cases", "external objects", "status cards", "summaries"]) {
+      expect(container.querySelector(`button[aria-label="Toggle ${label} experimental setting"]`)).toBeNull();
+    }
+    const titles = [...container.querySelectorAll("h3")].map((heading) => heading.textContent);
+    for (const title of ["Cases", "Enable External Objects", "Status Cards", "Summaries"]) {
+      expect(titles).not.toContain(title);
+    }
   });
 
-  it("enables Summaries when enabling the Status Cards experimental toggle", async () => {
-    await renderPage();
-
-    expect(container.textContent).toContain("Status Cards");
-    expect(container.textContent).toContain("experimental shared status-card board");
-
-    const toggle = container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: true,
-      enableStatusCards: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
-    expect(
-      container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("true");
-  });
-
-  it("disables Status Cards when disabling Summaries", async () => {
-    currentExperimentalSettings = {
-      ...currentExperimentalSettings,
-      enableSummaries: true,
-      enableStatusCards: true,
-    };
-    await renderPage();
-
-    const summariesToggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    await act(async () => {
-      summariesToggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: false,
-      enableStatusCards: false,
-    });
-    expect(summariesToggle?.getAttribute("aria-checked")).toBe("false");
-    expect(
-      container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("false");
-  });
-
-  it("enables Cases when enabling the Deep Dive experimental toggle", async () => {
+  it("turns Deep Dive on alone now that Cases are always on (GRE-1622)", async () => {
     await renderPage();
 
     const toggle = container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR);
@@ -705,43 +645,13 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     });
     await flushReact();
 
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableCases: true,
-      enableDeepDive: true,
-    });
+    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableDeepDive: true });
     expect(toggle?.getAttribute("aria-checked")).toBe("true");
-    expect(
-      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("true");
   });
 
-  it("disables Deep Dive when disabling Cases", async () => {
+  it("turns Deep Dive off alone", async () => {
     currentExperimentalSettings = {
       ...currentExperimentalSettings,
-      enableCases: true,
-      enableDeepDive: true,
-    };
-    await renderPage();
-
-    const casesToggle = container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR);
-    await act(async () => {
-      casesToggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableCases: false,
-      enableDeepDive: false,
-    });
-    expect(
-      container.querySelector<HTMLButtonElement>(DEEP_DIVE_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("false");
-  });
-
-  it("turns only Deep Dive off and leaves Cases on", async () => {
-    currentExperimentalSettings = {
-      ...currentExperimentalSettings,
-      enableCases: true,
       enableDeepDive: true,
     };
     await renderPage();
@@ -752,9 +662,6 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     await flushReact();
 
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({ enableDeepDive: false });
-    expect(
-      container.querySelector<HTMLButtonElement>(CASES_TOGGLE_SELECTOR)?.getAttribute("aria-checked"),
-    ).toBe("true");
   });
 
   it("turns Strategy on with the Board, and the Board off with Strategy (GRE-1382)", async () => {
@@ -854,13 +761,13 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
     await flushReact();
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
 
-    const summariesToggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    expect(summariesToggle?.disabled).toBe(false);
+    const intelligenceToggle = container.querySelector<HTMLButtonElement>(INTELLIGENCE_TOGGLE_SELECTOR);
+    expect(intelligenceToggle?.disabled).toBe(false);
 
-    await act(() => summariesToggle?.click());
+    await act(() => intelligenceToggle?.click());
     await flushReact();
     expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableSummaries: true,
+      enableIntelligence: true,
     });
   });
 
@@ -884,40 +791,6 @@ describe("InstanceExperimentalSettings — cloud-managed keys", () => {
     expect(container.textContent).toContain(MANAGED_BADGE_TEXT);
 
     await act(() => toggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-  });
-
-  it("locks Status Cards when managed Summaries is disabled", async () => {
-    await renderPage({
-      ...defaultExperimentalSettings(),
-      managedKeys: {
-        enableSummaries: { managed: true, managedBy: "paperclip-cloud" },
-      },
-    });
-
-    const statusCardsToggle = container.querySelector<HTMLButtonElement>(STATUS_CARDS_TOGGLE_SELECTOR);
-    expect(statusCardsToggle?.disabled).toBe(true);
-
-    await act(() => statusCardsToggle?.click());
-    await flushReact();
-    expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
-  });
-
-  it("locks Summaries on when managed Status Cards is enabled", async () => {
-    await renderPage({
-      ...defaultExperimentalSettings(),
-      enableSummaries: true,
-      enableStatusCards: true,
-      managedKeys: {
-        enableStatusCards: { managed: true, managedBy: "paperclip-cloud" },
-      },
-    });
-
-    const summariesToggle = container.querySelector<HTMLButtonElement>(SUMMARIES_TOGGLE_SELECTOR);
-    expect(summariesToggle?.disabled).toBe(true);
-
-    await act(() => summariesToggle?.click());
     await flushReact();
     expect(mockInstanceSettingsApi.updateExperimental).not.toHaveBeenCalled();
   });
@@ -1081,7 +954,7 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
 
   it("keeps only permitted controls in alphabetical order, including when hidden features are enabled", async () => {
     setWorktreeRuntimeMeta(true);
-    const visible = new Set(["enableExternalObjects", "enableSimplifiedEnglishInteractions"]);
+    const visible = new Set(["enableTeamChat", "enableWebsiteView"]);
     await renderPage(
       INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`),
       {
@@ -1096,8 +969,8 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
     );
 
     expect([...container.querySelectorAll("h3")].map((heading) => heading.textContent)).toEqual([
-      "Enable External Objects",
-      "Simplified English Interactions",
+      "Team Chat",
+      "Website view",
     ]);
     expect([...container.querySelectorAll("section h2")].map((heading) => heading.textContent)).toEqual([
       "Experimental features",

@@ -100,8 +100,10 @@ export const instanceExperimentalSettingsSchema = z.object({
   // on; old stored and managed values must still parse.
   enableMemoryConnectors: z.boolean().default(true),
   enablePipelines: z.boolean().default(false),
-  enableCases: z.boolean().default(false),
-  // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.
+  // Greatstone (GRE-1622): compatibility only. Cases are always on; old
+  // stored and managed values must still parse.
+  enableCases: z.boolean().default(true),
+  // Greatstone: Deep Dive record (Book V), stored as Cases.
   enableDeepDive: z.boolean().default(false),
   // Greatstone: Strategy module (GRE-1382): the KPI cascade and KPI readings.
   // On for self-hosted so existing instances keep their plan; client editions
@@ -125,12 +127,15 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableIssuePlanDecompositions: z.boolean().default(false),
   // Greatstone (GRE-1623): compatibility only; the file viewer is always on.
   enableExperimentalFileViewer: z.boolean().default(true),
-  enableExternalObjects: z.boolean().default(false),
+  // Greatstone (GRE-1622): compatibility only; External Objects are always on.
+  enableExternalObjects: z.boolean().default(true),
   enableSmokeLab: z.boolean().default(false),
   enableBuiltInAgents: z.boolean().default(false),
   enableBetaSkills: z.boolean().default(false),
-  enableSummaries: z.boolean().default(false),
-  enableStatusCards: z.boolean().default(false),
+  // Greatstone (GRE-1622): compatibility only; Summaries and Status Cards
+  // are always on.
+  enableSummaries: z.boolean().default(true),
+  enableStatusCards: z.boolean().default(true),
   enableDecisions: z.boolean().default(true),
   enableGoalsSidebarLink: z.boolean().default(false),
   // Greatstone (GRE-1623): compatibility only; the Server section always shows.

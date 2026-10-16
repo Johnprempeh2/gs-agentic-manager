@@ -262,24 +262,12 @@ export function InstanceExperimentalSettings() {
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
   const enableIssuePlanDecompositions =
     experimentalQuery.data?.enableIssuePlanDecompositions === true;
-  const enableExternalObjects = experimentalQuery.data?.enableExternalObjects === true;
   const enableBuiltInAgents = experimentalQuery.data?.enableBuiltInAgents === true;
   const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
-  const enableSummaries = experimentalQuery.data?.enableSummaries === true;
-  const enableStatusCards = experimentalQuery.data?.enableStatusCards === true;
   const enableWebsiteView = experimentalQuery.data?.enableWebsiteView === true;
   const enableIntelligence = experimentalQuery.data?.enableIntelligence === true;
-  const summariesManaged = managedKeys.enableSummaries?.managed === true;
-  const statusCardsManaged = managedKeys.enableStatusCards?.managed === true;
-  const statusCardsBlockedByManagedSummaries = summariesManaged && !enableSummaries;
-  const summariesRequiredByManagedStatusCards = statusCardsManaged && enableStatusCards;
   const enableGoalsSidebarLink = experimentalQuery.data?.enableGoalsSidebarLink === true;
-  const enableCases = experimentalQuery.data?.enableCases === true;
   const enableDeepDive = experimentalQuery.data?.enableDeepDive === true;
-  const casesManaged = managedKeys.enableCases?.managed === true;
-  const deepDiveManaged = managedKeys.enableDeepDive?.managed === true;
-  const deepDiveBlockedByManagedCases = casesManaged && !enableCases;
-  const casesRequiredByManagedDeepDive = deepDiveManaged && enableDeepDive;
   // GRE-1382: the Board add-on needs the Strategy module.
   const enableStrategy = experimentalQuery.data?.enableStrategy === true;
   const enableStrategyBoard = experimentalQuery.data?.enableStrategyBoard === true;
@@ -408,24 +396,6 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle built-in agents experimental setting"
         />
 
-        <ExperimentalToggleCard
-          title="Cases"
-          description="Durable work products (blog posts, tweet storms…) that tasks create and iterate on. Adds the Cases tab and the agent case API."
-          footnote="Turning Cases off hides the tab and blocks the case API; existing case data is kept. Deep Dive requires Cases, so turning Cases off also turns Deep Dive off."
-          checked={enableCases}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked || !enableDeepDive
-                ? { enableCases: checked }
-                : { enableCases: false, enableDeepDive: false },
-            )
-          }
-          disabled={toggleMutation.isPending || casesRequiredByManagedDeepDive}
-          settingKey="enableCases"
-          managed={managedKeys.enableCases}
-          ariaLabel="Toggle cases experimental setting"
-        />
-
 
         {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
         <ExperimentalToggleCard
@@ -442,30 +412,13 @@ export function InstanceExperimentalSettings() {
         <ExperimentalToggleCard
           title="Deep Dive"
           description="Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with status, depth and visibility for each stream. Adds the Deep Dive page."
-          footnote="Turning Deep Dive on also turns Cases on. Turning it off hides the page; the deep dive cases are kept."
+          footnote="Turning it off hides the page; the deep dive cases are kept."
           checked={enableDeepDive}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked
-                ? { enableCases: true, enableDeepDive: true }
-                : { enableDeepDive: false },
-            )
-          }
-          disabled={toggleMutation.isPending || deepDiveBlockedByManagedCases}
+          onCheckedChange={(checked) => toggleMutation.mutate({ enableDeepDive: checked })}
+          disabled={toggleMutation.isPending}
           settingKey="enableDeepDive"
           managed={managedKeys.enableDeepDive}
           ariaLabel="Toggle deep dive experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="Enable External Objects"
-          description="Detect external URLs in issues and show resolved status for pull requests, tickets, and other referenced work objects."
-          checked={enableExternalObjects}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableExternalObjects: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableExternalObjects"
-          managed={managedKeys.enableExternalObjects}
-          ariaLabel="Toggle external objects experimental setting"
         />
 
         <ExperimentalToggleCard
@@ -508,24 +461,6 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Status Cards"
-          description="Enable the experimental shared status-card board and its gated API. Existing card data is kept when this is disabled."
-          footnote="Enabling Status Cards also enables Summaries."
-          checked={enableStatusCards}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked
-                ? { enableSummaries: true, enableStatusCards: true }
-                : { enableStatusCards: false },
-            )
-          }
-          disabled={toggleMutation.isPending || statusCardsBlockedByManagedSummaries}
-          settingKey="enableStatusCards"
-          managed={managedKeys.enableStatusCards}
-          ariaLabel="Toggle status cards experimental setting"
-        />
-
-        <ExperimentalToggleCard
           title="Strategy"
           description="The one-page strategic plan (vision down to KPIs), KPI readings with on and off track status, and KPI drafts from a research pack. Plain goals work without it."
           footnote="Turning it off hides the plan and the KPI parts of each goal; nothing is deleted. The Board control panel needs Strategy, so turning Strategy off also turns the Board off."
@@ -543,24 +478,6 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle strategy setting"
         />
 
-
-        <ExperimentalToggleCard
-          title="Summaries"
-          description="Show Summarizer-generated status slots on project and workspace pages, with on-demand refresh and revision history. Existing summary data is kept when this is disabled."
-          footnote="Status Cards requires Summaries. Disabling Summaries also disables Status Cards."
-          checked={enableSummaries}
-          onCheckedChange={(checked) =>
-            toggleMutation.mutate(
-              checked || !enableStatusCards
-                ? { enableSummaries: checked }
-                : { enableSummaries: false, enableStatusCards: false },
-            )
-          }
-          disabled={toggleMutation.isPending || summariesRequiredByManagedStatusCards}
-          settingKey="enableSummaries"
-          managed={managedKeys.enableSummaries}
-          ariaLabel="Toggle summaries experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Team Chat"

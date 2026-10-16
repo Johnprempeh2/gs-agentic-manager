@@ -6,9 +6,7 @@ import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
 import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
-import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
-import { StatusCardsExperimentalGate } from "./components/StatusCardsExperimentalGate";
 import { CloudManagedPageGate } from "./components/CloudManagedPageGate";
 import { HiddenSettingsPageGate } from "./components/HiddenSettingsPageGate";
 import { IsolatedWorkspacesRouteGate } from "./components/IsolatedWorkspacesRouteGate";
@@ -326,26 +324,14 @@ function boardRoutes() {
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
       ) : null}
       <Route path="routines" element={<Routines />} />
-      <Route
-        path="cases"
-        element={<CasesExperimentalGate><Cases /></CasesExperimentalGate>}
-      />
-      <Route
-        path="cases/:caseIdentifier"
-        element={<CasesExperimentalGate><CaseDetail /></CasesExperimentalGate>}
-      />
+      <Route path="cases" element={<Cases />} />
+      <Route path="cases/:caseIdentifier" element={<CaseDetail />} />
       <Route
         path="deep-dive"
         element={<DeepDiveExperimentalGate><DeepDive /></DeepDiveExperimentalGate>}
       />
-      <Route
-        path="status"
-        element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
-      />
-      <Route
-        path="status/:cardId"
-        element={<StatusCardsExperimentalGate><StatusCards /></StatusCardsExperimentalGate>}
-      />
+      <Route path="status" element={<StatusCards />} />
+      <Route path="status/:cardId" element={<StatusCards />} />
       {/* Back-compat: the board lived at /status-cards before PAP-15223. */}
       <Route path="status-cards" element={<StatusCardsLegacyRedirect />} />
       <Route path="status-cards/:cardId" element={<StatusCardsLegacyRedirect />} />

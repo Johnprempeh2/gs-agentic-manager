@@ -357,14 +357,11 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Website view (GRE-1088): hidden while the managed switch is off.
   const showWebsite = experimentalSettings?.enableWebsiteView === true;
   const showIntelligence = experimentalSettings?.enableIntelligence === true;
-  const showStatusCards = experimentalSettings?.enableStatusCards === true;
   // The one Decisions count (GRE-263): same number as the Decisions header and Focus.
   const attentionCount = useDecisionsCount(selectedCompanyId);
   // Tasks assigned to the user count on My tasks, not Decisions (GRE-586).
   const myTasksCount = useMyTasksCount(selectedCompanyId);
-  const showCases = experimentalSettings?.enableCases === true;
-  // Deep Dive stores its record as Cases, so it needs both flags (same rule as its route gate).
-  const showDeepDive = showCases && experimentalSettings?.enableDeepDive === true;
+  const showDeepDive = experimentalSettings?.enableDeepDive === true;
   // Conference Room Chat flag (PAP-136/PAP-137): hidden entirely while the flag is off.
   const conferenceRoomChatEnabled = experimentalSettings?.enableConferenceRoomChat === true;
   const showAgentChats = agentChatEnabled && !children;
@@ -447,14 +444,16 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     scorecard: link("/scorecard", "Scorecard", Trophy),
     "weekly-report": link("/weekly-report", "This week", Newspaper),
     "conference-room": gated(conferenceRoomChatEnabled, link("/board-chat", "Conference Room", MessagesSquare)),
-    status: gated(showStatusCards, link("/status", "Status", LayoutGrid, { textBadge: "beta" })),
+    // Greatstone (GRE-1622): Status Cards graduated from Experimental; always shown.
+    status: link("/status", "Status", LayoutGrid),
     skills: link("/skills", "Skills", Boxes),
     connectors: link("/apps", "Connectors", Unplug),
     routines: link("/routines", "Routines", Repeat),
     workflows: link("/workflows", "Workflows", Workflow),
     workspaces: gated(showWorkspacesLink, link("/workspaces", "Workspaces", GitBranch)),
     artifacts: link("/artifacts", "Artifacts", Package),
-    cases: gated(showCases, link("/cases", "Cases", Layers, { textBadge: "beta" })),
+    // Greatstone (GRE-1622): Cases graduated from Experimental; always shown.
+    cases: link("/cases", "Cases", Layers),
     website: gated(showWebsite, link("/website", "Website", Globe)),
     activity: link("/activity", "Audit", History),
     releases: gated(canRelease, link("/releases", "Releases", Rocket)),

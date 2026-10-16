@@ -29,18 +29,14 @@ export const ENTITLEMENT_RELOAD_INTERVAL_MS = 60_000;
 export const ENTITLEMENT_FEATURE_KEYS = [
   "enableAgentChat",
   "enableBuiltInAgents",
-  "enableCases",
   "enableConferenceRoomChat",
   "enableDeepDive",
   "enableEnvironments",
-  "enableExternalObjects",
   "enableIntelligence",
   "enableIssuePlanDecompositions",
   "enablePipelines",
-  "enableStatusCards",
   "enableStrategy",
   "enableStrategyBoard",
-  "enableSummaries",
   "enableTeamChat",
   "enableWebsiteView",
 ] as const satisfies readonly InstanceFeatureKey[];

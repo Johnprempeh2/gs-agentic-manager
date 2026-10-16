@@ -274,7 +274,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableChatConnectors: true,
       enableMemoryConnectors: true,
       enablePipelines: parsed.data.enablePipelines ?? false,
-      enableCases: parsed.data.enableCases ?? false,
+      // Greatstone (GRE-1622): Cases graduated; a stored off value is ignored.
+      enableCases: true,
       enableDeepDive: parsed.data.enableDeepDive ?? false,
       enableStrategy: parsed.data.enableStrategy ?? true,
       enableStrategyBoard: parsed.data.enableStrategyBoard ?? false,
@@ -288,12 +289,15 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableIssuePlanDecompositions: parsed.data.enableIssuePlanDecompositions ?? false,
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
       enableExperimentalFileViewer: true,
-      enableExternalObjects: parsed.data.enableExternalObjects ?? false,
+      // Greatstone (GRE-1622): graduated; a stored off value is ignored.
+      enableExternalObjects: true,
       enableSmokeLab: parsed.data.enableSmokeLab ?? false,
       enableBuiltInAgents: parsed.data.enableBuiltInAgents ?? false,
       enableBetaSkills: parsed.data.enableBetaSkills ?? false,
-      enableSummaries: parsed.data.enableSummaries ?? false,
-      enableStatusCards: parsed.data.enableStatusCards ?? false,
+      // Greatstone (GRE-1622): Summaries and Status Cards graduated; a stored
+      // off value is ignored.
+      enableSummaries: true,
+      enableStatusCards: true,
       enableDecisions: parsed.data.enableDecisions ?? true,
       enableGoalsSidebarLink: parsed.data.enableGoalsSidebarLink ?? false,
       // Greatstone (GRE-1623): graduated; a stored off value is ignored.
@@ -328,7 +332,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableChatConnectors: true,
     enableMemoryConnectors: true,
     enablePipelines: false,
-    enableCases: false,
+    enableCases: true,
     enableDeepDive: false,
     enableStrategy: true,
     enableStrategyBoard: false,
@@ -341,12 +345,12 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableClassicTaskInterface: false,
     enableIssuePlanDecompositions: false,
     enableExperimentalFileViewer: false,
-    enableExternalObjects: false,
+    enableExternalObjects: true,
     enableSmokeLab: false,
     enableBuiltInAgents: false,
     enableBetaSkills: false,
-    enableSummaries: false,
-    enableStatusCards: false,
+    enableSummaries: true,
+    enableStatusCards: true,
     enableDecisions: true,
     enableGoalsSidebarLink: false,
     enableServerInfoDebugView: false,
@@ -402,6 +406,16 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableIsolatedWorkspaces") continue;
     // Greatstone (GRE-1620): Chat and Memory connectors are always on; a managed "off" is ignored.
     if (key === "enableChatConnectors" || key === "enableMemoryConnectors") continue;
+    // Greatstone (GRE-1622): Cases, External Objects, Summaries and Status
+    // Cards are always on; a managed "off" is ignored.
+    if (
+      key === "enableCases" ||
+      key === "enableExternalObjects" ||
+      key === "enableSummaries" ||
+      key === "enableStatusCards"
+    ) {
+      continue;
+    }
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;
