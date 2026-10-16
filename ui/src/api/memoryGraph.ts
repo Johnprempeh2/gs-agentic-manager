@@ -1,5 +1,8 @@
 import type {
   ChangeMemoryGrant,
+  ImportMemory,
+  MemoryImportResult,
+  MemoryScope,
   MemoryActivityCounts,
   MemoryActivityFeed,
   MemoryGraph,
@@ -58,6 +61,11 @@ export const memoryGraphApi = {
       `/companies/${companyId}/memory/grants`,
       body,
     ),
+  /** Scopes the caller may read; the import picker offers these. */
+  scopes: (companyId: string) => api.get<MemoryScope[]>(`/companies/${companyId}/memory/scopes`),
+  /** Adds picked Claude or ChatGPT entries as unreviewed contributions. */
+  importEntries: (companyId: string, body: ImportMemory) =>
+    api.post<MemoryImportResult>(`/companies/${companyId}/memory/import`, body),
   /** `limit` caps the nodes returned (server default 200). */
   graph: (companyId: string, filters: MemoryGraphFilters & { limit?: number } = {}) =>
     api.get<MemoryGraph>(`/companies/${companyId}/memory/graph${toQuery(filters)}`),

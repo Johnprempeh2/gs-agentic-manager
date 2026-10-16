@@ -1,11 +1,16 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import type { ZodType } from "zod";
-import type { Db } from "@greatstone/db";
+import { and, eq, inArray, isNull } from "drizzle-orm";
+import { memoryRecords, type Db } from "@greatstone/db";
 import {
   confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
   createMemoryRelationshipSchema,
   dismissMemoryLinkLeadSchema,
+  importMemorySchema,
+  MEMORY_IMPORT_SOURCE_KIND,
+  type ImportMemory,
+  type MemoryImportResult,
   MEMORY_LINK_LEAD_STATES,
   createMemoryScopeSchema,
   deleteMemoryRecordSchema,
@@ -250,6 +255,83 @@ export function memoryRoutes(
         detection: MEMORY_DETECTION_NOTE,
       });
     }
+  });
+
+  // Claude and ChatGPT import: the browser parses the export and sends only
+  // the entries picked. Each one is an ordinary contribution, so it arrives
+  // unreviewed and passes the same sensitive-content check. A second import
+  // of the same line or conversation is skipped by its source id.
+  router.post("/companies/:companyId/memory/import", requireEnabled, validate(importMemorySchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const caller = await callerFor(req, companyId, "contribute");
+    const { scopeId, app, via, entries } = req.body as ImportMemory;
+    // Same answer as contribute for a scope the caller cannot see, before any lookup.
+    if (!(await svc.listScopes(caller)).some((scope) => scope.id === scopeId)) {
+      res.status(404).json({ error: "Memory scope not found" });
+      return;
+    }
+    const sourceKind = MEMORY_IMPORT_SOURCE_KIND[app];
+    const existing = await db
+      .select({ sourceId: memoryRecords.sourceId })
+      .from(memoryRecords)
+      .where(
+        and(
+          eq(memoryRecords.companyId, companyId),
+          eq(memoryRecords.scopeId, scopeId),
+          eq(memoryRecords.sourceKind, sourceKind),
+          inArray(memoryRecords.sourceId, entries.map((entry) => entry.sourceId)),
+          isNull(memoryRecords.deletedAt),
+        ),
+      );
+    const seen = new Set(existing.map((row) => row.sourceId));
+    const result: MemoryImportResult = { added: 0, alreadyImported: 0, heldBack: 0, entries: [] };
+    for (const entry of entries) {
+      if (seen.has(entry.sourceId)) {
+        result.alreadyImported += 1;
+        result.entries.push({ sourceId: entry.sourceId, outcome: "already_imported", recordId: null, reason: null });
+        continue;
+      }
+      seen.add(entry.sourceId);
+      try {
+        const contributed = await svc.contribute(caller, {
+          scopeId,
+          content: entry.content,
+          title: entry.title ?? null,
+          entryType: "observation",
+          decisionClass: "operational",
+          sensitivity: "internal",
+          entities: [],
+          topics: [],
+          sourceKind,
+          sourceId: entry.sourceId,
+          evidence: { importedFrom: app, via, occurredAt: entry.occurredAt ? entry.occurredAt.toISOString() : null },
+        });
+        result.added += 1;
+        result.entries.push({ sourceId: entry.sourceId, outcome: "added", recordId: contributed.record.id, reason: null });
+      } catch (error) {
+        if (!(error instanceof MemorySensitiveContentError)) throw error;
+        result.heldBack += 1;
+        result.entries.push({
+          sourceId: entry.sourceId,
+          outcome: "held_back",
+          recordId: null,
+          reason: "It looked like it held personal or secret details, so it was not added.",
+        });
+      }
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "memory.imported",
+      entityType: "company",
+      entityId: companyId,
+      details: { app, via, scopeId, added: result.added, alreadyImported: result.alreadyImported, heldBack: result.heldBack },
+    });
+    res.status(result.added > 0 ? 201 : 200).json(result);
   });
 
   router.get("/companies/:companyId/memory/records/:recordId", requireEnabled, async (req, res) => {

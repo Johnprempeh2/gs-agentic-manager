@@ -63,6 +63,8 @@ const SOURCE_KIND_LABEL: Record<string, string> = {
   document_revision: "Document",
   run: "Run",
   external_object: "External item",
+  claude_import: "Brought in from Claude",
+  chatgpt_import: "Brought in from ChatGPT",
   memory_conflict: "Conflict check",
   memory_link_lead: "Link check",
 };
