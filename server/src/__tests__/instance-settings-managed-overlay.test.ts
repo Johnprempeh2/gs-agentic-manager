@@ -79,6 +79,23 @@ describe("applyManagedExperimentalOverlay", () => {
     // input is not mutated
     expect(stored.enableApps).toBe(true);
   });
+
+  it("keeps a managed Environments off, which client editions use to pin it off (GRE-1623)", () => {
+    const config = parseManagedConfigEnv(managedEnv(JSON.stringify({
+      v: 1,
+      mode: "cloud",
+      catalogVersion: "gre-1623",
+      features: { enableEnvironments: false },
+      plugins: { autoInstall: [] },
+    })))!;
+    const stored = normalizeExperimentalSettings({ enableEnvironments: false });
+    // A stored off is ignored: Environments graduated.
+    expect(stored.enableEnvironments).toBe(true);
+    const { experimental, managedKeys } = applyManagedExperimentalOverlay(stored, config);
+
+    expect(experimental.enableEnvironments).toBe(false);
+    expect(managedKeys).toEqual({ enableEnvironments: { managed: true, managedBy: "paperclip-cloud" } });
+  });
 });
 
 describe("instanceSettingsService managed overlay", () => {

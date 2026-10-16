@@ -252,7 +252,9 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
   const parsed = instanceExperimentalSettingsStorageSchema.safeParse(raw ?? {});
   if (parsed.success) {
     return {
-      enableEnvironments: parsed.data.enableEnvironments ?? false,
+      // Greatstone (GRE-1623): Environments graduated; a stored off value is
+      // ignored. A managed config can still pin it off (client editions do).
+      enableEnvironments: true,
       // Greatstone (GRE-1436): Runner graduated from Experimental. Ignore
       // stored off values but keep accepting the compatibility key.
       enableNativeRunner: true,
@@ -282,7 +284,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableConferenceRoomChat: parsed.data.enableConferenceRoomChat ?? false,
       enableClassicTaskInterface: parsed.data.enableClassicTaskInterface ?? false,
       enableIssuePlanDecompositions: parsed.data.enableIssuePlanDecompositions ?? false,
-      enableExperimentalFileViewer: parsed.data.enableExperimentalFileViewer ?? false,
+      // Greatstone (GRE-1623): graduated; a stored off value is ignored.
+      enableExperimentalFileViewer: true,
       enableExternalObjects: parsed.data.enableExternalObjects ?? false,
       enableSmokeLab: parsed.data.enableSmokeLab ?? false,
       enableBuiltInAgents: parsed.data.enableBuiltInAgents ?? false,
@@ -291,7 +294,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       enableStatusCards: parsed.data.enableStatusCards ?? false,
       enableDecisions: parsed.data.enableDecisions ?? true,
       enableGoalsSidebarLink: parsed.data.enableGoalsSidebarLink ?? false,
-      enableServerInfoDebugView: parsed.data.enableServerInfoDebugView ?? false,
+      // Greatstone (GRE-1623): graduated; a stored off value is ignored.
+      enableServerInfoDebugView: true,
       enablePaperclipDeveloperMode: parsed.data.enablePaperclipDeveloperMode ?? false,
       enableSimplifiedEnglishInteractions: parsed.data.enableSimplifiedEnglishInteractions ?? false,
       enableFirstTaskPlanProposal: parsed.data.enableFirstTaskPlanProposal ?? false,
@@ -310,7 +314,7 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     };
   }
   return {
-    enableEnvironments: false,
+    enableEnvironments: true,
     enableNativeRunner: true,
     enableManagedSandboxOnly: false,
     enableIsolatedWorkspaces: true,

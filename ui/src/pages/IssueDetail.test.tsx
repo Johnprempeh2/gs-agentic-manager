@@ -4226,30 +4226,11 @@ describe("IssueDetail", () => {
     expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
   });
 
-  it("hides file viewer entry points by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(
-      container.querySelector('[aria-label="Open file in this issue"]'),
-    ).toBeNull();
-  });
-
-  it("shows file viewer entry points when the experimental flag is enabled", async () => {
+  it("shows file viewer entry points even with the old flag stored off (GRE-1623)", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIssuePlanDecompositions: false,
-      enableExperimentalFileViewer: true,
+      enableExperimentalFileViewer: false,
     });
 
     await act(async () => {

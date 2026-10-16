@@ -104,6 +104,10 @@ export interface InstanceSystemMemory {
 }
 
 export interface InstanceExperimentalSettings {
+  /**
+   * Compatibility key (GRE-1623): Environments graduated and reads as true.
+   * A managed config or the entitlement document can still turn it off.
+   */
   enableEnvironments: boolean;
   /**
    * @deprecated Compatibility-only (GRE-1436). The GS Agentic Manager Runner
@@ -163,6 +167,7 @@ export interface InstanceExperimentalSettings {
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
   enableIssuePlanDecompositions: boolean;
+  /** Compatibility key (GRE-1623): the task file viewer is always on; reads as true. */
   enableExperimentalFileViewer: boolean;
   enableExternalObjects: boolean;
   enableSmokeLab: boolean;
@@ -172,6 +177,7 @@ export interface InstanceExperimentalSettings {
   enableStatusCards: boolean;
   enableDecisions: boolean;
   enableGoalsSidebarLink: boolean;
+  /** Compatibility key (GRE-1623): the account drawer Server section always shows; reads as true. */
   enableServerInfoDebugView: boolean;
   /** Shows internal GS Agentic Manager maintainer tools and observability links. */
   enablePaperclipDeveloperMode: boolean;

@@ -285,8 +285,8 @@ export function useIssueDetailQueries({
     instanceGeneralSettings?.feedbackDataSharingPreference ?? "prompt";
   const showPlanDecompositionsSection =
     instanceExperimentalSettings?.enableIssuePlanDecompositions === true;
-  const fileViewerEnabled =
-    instanceExperimentalSettings?.enableExperimentalFileViewer === true;
+  // The file viewer graduated out of Experimental (GRE-1623): always on.
+  const fileViewerEnabled = true;
   const { orderedProjects } = useProjectOrder({
     projects: projects ?? [],
     companyId: selectedCompanyId,

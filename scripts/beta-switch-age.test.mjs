@@ -214,10 +214,13 @@ test("graduated switches from the real catalog show graduated, whatever their st
   const graduated = parseGraduatedKeys(source);
   assert.deepEqual(graduated, [
     "enableApps",
+    "enableEnvironments",
+    "enableExperimentalFileViewer",
     "enableGoalsSidebarLink",
     "enableIsolatedWorkspaces",
     "enableMcpAggregators",
     "enableNativeRunner",
+    "enableServerInfoDebugView",
     "enableStreamlinedLeftNavigation",
     "enableStreamlinedUi",
     "enableWorkspaceBranchReconcileForward",
@@ -226,10 +229,13 @@ test("graduated switches from the real catalog show graduated, whatever their st
   const settings = {
     ...SETTINGS,
     enableApps: true,
+    enableEnvironments: false,
+    enableExperimentalFileViewer: false,
     enableGoalsSidebarLink: false,
     enableIsolatedWorkspaces: false,
     enableMcpAggregators: true,
     enableNativeRunner: false,
+    enableServerInfoDebugView: false,
     enableStreamlinedLeftNavigation: true,
     enableStreamlinedUi: true,
     enableWorkspaceBranchReconcileForward: false,

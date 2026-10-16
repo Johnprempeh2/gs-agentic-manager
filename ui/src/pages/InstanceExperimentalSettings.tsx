@@ -253,7 +253,6 @@ export function InstanceExperimentalSettings() {
     experimentalQuery.data,
     getWorktreeInstanceId(),
   );
-  const enableEnvironments = experimentalQuery.data?.enableEnvironments === true;
   const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
   const enableIsolatedWorkspacesByDefault =
@@ -264,8 +263,6 @@ export function InstanceExperimentalSettings() {
   const enableClassicTaskInterface = experimentalQuery.data?.enableClassicTaskInterface === true;
   const enableIssuePlanDecompositions =
     experimentalQuery.data?.enableIssuePlanDecompositions === true;
-  const enableExperimentalFileViewer =
-    experimentalQuery.data?.enableExperimentalFileViewer === true;
   const enableExternalObjects = experimentalQuery.data?.enableExternalObjects === true;
   const enableBuiltInAgents = experimentalQuery.data?.enableBuiltInAgents === true;
   const enableBetaSkills = experimentalQuery.data?.enableBetaSkills === true;
@@ -289,7 +286,6 @@ export function InstanceExperimentalSettings() {
   const enableStrategyBoard = experimentalQuery.data?.enableStrategyBoard === true;
   const boardBlockedByManagedStrategy = managedKeys.enableStrategy?.managed === true && !enableStrategy;
   const strategyRequiredByManagedBoard = managedKeys.enableStrategyBoard?.managed === true && enableStrategyBoard;
-  const enableServerInfoDebugView = experimentalQuery.data?.enableServerInfoDebugView === true;
   const enablePaperclipDeveloperMode =
     experimentalQuery.data?.enablePaperclipDeveloperMode === true;
   const enableSimplifiedEnglishInteractions =
@@ -305,7 +301,6 @@ export function InstanceExperimentalSettings() {
     "autoRestartDevServerWhenIdle",
     "enableManagedSandboxOnly",
     "enablePaperclipDeveloperMode",
-    "enableServerInfoDebugView",
     "enableSmokeLab",
     "enableIssuePlanDecompositions",
   ] satisfies InstanceFeatureKey[]).some(isVisible);
@@ -475,17 +470,6 @@ export function InstanceExperimentalSettings() {
         />
 
         <ExperimentalToggleCard
-          title="Enable Environments"
-          description="Show environment management in company settings and allow project and agent environment assignment controls."
-          checked={enableEnvironments}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableEnvironments: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableEnvironments"
-          managed={managedKeys.enableEnvironments}
-          ariaLabel="Toggle environments experimental setting"
-        />
-
-        <ExperimentalToggleCard
           title="Enable External Objects"
           description="Detect external URLs in issues and show resolved status for pull requests, tickets, and other referenced work objects."
           checked={enableExternalObjects}
@@ -494,17 +478,6 @@ export function InstanceExperimentalSettings() {
           settingKey="enableExternalObjects"
           managed={managedKeys.enableExternalObjects}
           ariaLabel="Toggle external objects experimental setting"
-        />
-
-        <ExperimentalToggleCard
-          title="Experimental File Viewer"
-          description="Show task detail controls for browsing and previewing workspace files relative to a task."
-          checked={enableExperimentalFileViewer}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableExperimentalFileViewer: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableExperimentalFileViewer"
-          managed={managedKeys.enableExperimentalFileViewer}
-          ariaLabel="Toggle experimental file viewer setting"
         />
 
         <ExperimentalToggleCard
@@ -756,19 +729,6 @@ export function InstanceExperimentalSettings() {
               </div>
             </Card>
           ) : null}
-
-          <ExperimentalToggleCard
-            title="Server Info Debug View"
-            description='Show a "Server" section in the account drawer with the current server restart time and running commit.'
-            checked={enableServerInfoDebugView}
-            onCheckedChange={(checked) =>
-              toggleMutation.mutate({ enableServerInfoDebugView: checked })
-            }
-            disabled={toggleMutation.isPending}
-            settingKey="enableServerInfoDebugView"
-            managed={managedKeys.enableServerInfoDebugView}
-            ariaLabel="Toggle server info debug view experimental setting"
-          />
 
           <ExperimentalToggleCard
             title="Smoke Lab"

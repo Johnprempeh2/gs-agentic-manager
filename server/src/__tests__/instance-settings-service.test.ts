@@ -194,12 +194,13 @@ describe("instance settings service", () => {
     ).toBe(false);
   });
 
-  it("defaults enableServerInfoDebugView to false for empty and legacy stored settings", () => {
-    expect(normalizeExperimentalSettings(undefined).enableServerInfoDebugView).toBe(false);
-    expect(normalizeExperimentalSettings({}).enableServerInfoDebugView).toBe(false);
-    expect(
-      normalizeExperimentalSettings({ autoRestartDevServerWhenIdle: true }).enableServerInfoDebugView,
-    ).toBe(false);
+  it("keeps Environments, File Viewer and Server Info on for empty, legacy and stored-off settings (GRE-1623)", () => {
+    for (const key of ["enableEnvironments", "enableExperimentalFileViewer", "enableServerInfoDebugView"] as const) {
+      expect(normalizeExperimentalSettings(undefined)[key]).toBe(true);
+      expect(normalizeExperimentalSettings({})[key]).toBe(true);
+      expect(normalizeExperimentalSettings({ autoRestartDevServerWhenIdle: true })[key]).toBe(true);
+      expect(normalizeExperimentalSettings({ [key]: false })[key]).toBe(true);
+    }
   });
 
   it("defaults enablePaperclipDeveloperMode to false for empty and legacy settings", () => {

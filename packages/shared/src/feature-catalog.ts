@@ -43,12 +43,12 @@ export interface FeatureCatalogEntry {
 
 export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalogEntry> = {
   enableEnvironments: {
-    title: "Environments",
+    title: "Environments (compatibility)",
     description:
-      "Show environment management in company settings and allow project and agent environment assignment controls.",
+      "Deprecated compatibility key. Environment management is always enabled; stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableNativeRunner: {
     title: "GS Agentic Manager Runner (compatibility)",
@@ -225,12 +225,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableExperimentalFileViewer: {
-    title: "Experimental File Viewer",
+    title: "File Viewer (compatibility)",
     description:
-      "Show task detail controls for browsing and previewing workspace files relative to a task.",
+      "Deprecated compatibility key. The task file viewer is always enabled; stored and managed values are ignored.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableStatusCards: {
     title: "Status Cards",
@@ -303,12 +303,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableServerInfoDebugView: {
-    title: "Server Info Debug View",
+    title: "Server Info Debug View (compatibility)",
     description:
-      "Show a Server section in the account drawer with the current server restart time and running commit.",
+      "Deprecated compatibility key. The Server section in the account drawer always shows; stored and managed values are ignored.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enablePaperclipDeveloperMode: {
     title: "GS Agentic Manager Developer Mode",
@@ -445,10 +445,13 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
  */
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableEnvironments", issue: "GRE-1623" },
+  { key: "enableExperimentalFileViewer", issue: "GRE-1623" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
+  { key: "enableServerInfoDebugView", issue: "GRE-1623" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
   { key: "enableStreamlinedUi", issue: "GRE-1441" },
   { key: "enableWorkspaceBranchReconcileForward", issue: "GRE-1438" },

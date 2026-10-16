@@ -82,12 +82,14 @@ export const CLIENT_DEFAULT_OK = {
     "Compatibility key; branch reconcile forward graduated (GRE-1438), is always on and the app ignores the value.",
   enableWorkspaceDirtyQuarantineRepair:
     "Compatibility key; dirty quarantine repair graduated (GRE-1439), is always on and the app ignores the value.",
-  enableExperimentalFileViewer: "Off by default; experimental and its settings are hidden.",
+  enableExperimentalFileViewer:
+    "Compatibility key; the file viewer graduated (GRE-1623), is always on and the app ignores the value.",
   enableFirstTaskPlanProposal: "Off by default; experimental and its settings are hidden.",
   enableSimplifiedEnglishInteractions: "Off by default; a Greatstone house style, not a client setting.",
   enableBetaSkills: "Off by default; clients run released skills only.",
   enablePaperclipDeveloperMode: "Off by default; maintainer tools only.",
-  enableServerInfoDebugView: "Off by default; maintainer debug view only.",
+  enableServerInfoDebugView:
+    "Compatibility key; the Server Info view graduated (GRE-1623), is always on and the app ignores the value.",
   autoRestartDevServerWhenIdle: "Off by default; local development only.",
 } as const satisfies Partial<Record<InstanceFeatureKey, string>>;
 

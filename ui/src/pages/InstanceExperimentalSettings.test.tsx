@@ -56,8 +56,6 @@ const GOALS_SIDEBAR_LINK_TOGGLE_SELECTOR =
   'button[aria-label="Toggle goals sidebar link experimental setting"]';
 const DECISIONS_TOGGLE_SELECTOR =
   'button[aria-label="Toggle decisions experimental setting"]';
-const SERVER_INFO_TOGGLE_SELECTOR =
-  'button[aria-label="Toggle server info debug view experimental setting"]';
 const GSAM_DEVELOPER_MODE_TOGGLE_SELECTOR =
   'button[aria-label="Toggle GS Agentic Manager developer mode experimental setting"]';
 const BUILT_IN_AGENTS_TOGGLE_SELECTOR =
@@ -801,26 +799,16 @@ describe("InstanceExperimentalSettings — Conference Room Chat card (PAP-11233)
     expect(container.querySelector<HTMLButtonElement>(BOARD_TOGGLE_SELECTOR)?.getAttribute("aria-checked")).toBe("false");
   });
 
-  it("renders and patches the Server Info Debug View experimental toggle", async () => {
+  it("no longer shows Environments, File Viewer or Server Info toggles (graduated, GRE-1623)", async () => {
+    setWorktreeRuntimeMeta(true);
     await renderPage();
 
-    expect(container.textContent).toContain("Server Info Debug View");
-    expect(container.textContent).toContain(
-      'Show a "Server" section in the account drawer with the current server restart time and running commit.',
-    );
-
-    const toggle = container.querySelector<HTMLButtonElement>(SERVER_INFO_TOGGLE_SELECTOR);
-    expect(toggle?.getAttribute("aria-checked")).toBe("false");
-
-    await act(async () => {
-      toggle?.click();
-    });
-    await flushReact();
-
-    expect(mockInstanceSettingsApi.updateExperimental).toHaveBeenCalledWith({
-      enableServerInfoDebugView: true,
-    });
-    expect(toggle?.getAttribute("aria-checked")).toBe("true");
+    expect(container.textContent).not.toContain("Enable Environments");
+    expect(container.textContent).not.toContain("Experimental File Viewer");
+    expect(container.textContent).not.toContain("Server Info Debug View");
+    expect(container.querySelector('button[aria-label="Toggle environments experimental setting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle experimental file viewer setting"]')).toBeNull();
+    expect(container.querySelector('button[aria-label="Toggle server info debug view experimental setting"]')).toBeNull();
   });
 });
 
@@ -1037,7 +1025,8 @@ describe("InstanceExperimentalSettings — card ordering and headings (PAP-393)"
     expect(sections.at(-1)?.textContent).toContain("Run tasks in this worktree");
     expect(sections.at(-1)?.textContent).toContain("Managed Environment Only");
     expect(sections.at(-1)?.textContent).not.toContain("Auto-Restart Dev Server When Idle");
-    expect(sections.at(-1)?.textContent).toContain("Server Info Debug View");
+    // Server Info Debug View graduated (GRE-1623).
+    expect(sections.at(-1)?.textContent).not.toContain("Server Info Debug View");
     expect(sections.at(-1)?.textContent).not.toContain("Smoke Lab");
     expect(sections.at(-1)?.textContent).toContain("Task Plan Decomposition");
     // Classic Task Interface is retired (GRE-196) and Goals Sidebar Link graduated (GRE-191).
@@ -1115,9 +1104,9 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   }
 
   it("renders nothing for an operator-hidden toggle and keeps the rest", async () => {
-    await renderPage(["instance.experimental.enableEnvironments"]);
+    await renderPage(["instance.experimental.enableSimplifiedEnglishInteractions"]);
 
-    expect(container.textContent).not.toContain("Enable Environments");
+    expect(container.textContent).not.toContain("Simplified English Interactions");
     expect(container.textContent).toContain("Beta skills");
     expect(container.textContent).not.toContain("Show the Apps navigation");
   });
@@ -1151,9 +1140,9 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   });
 
   it("retains a section when one of its controls is visible", async () => {
-    const visible = new Set(["enableServerInfoDebugView"]);
+    const visible = new Set(["enableIssuePlanDecompositions"]);
     await renderPage(INSTANCE_FEATURE_KEYS.filter((key) => !visible.has(key)).map((key) => `instance.experimental.${key}`));
-    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Server Info Debug View");
+    expect(container.querySelector('[aria-labelledby="developer-mode-heading"] h3')?.textContent).toBe("Task Plan Decomposition");
     // Legacy has no visible cards now that Goals Sidebar Link graduated (GRE-191).
     expect(container.querySelector('[aria-labelledby="legacy-heading"]')).toBeNull();
   });
@@ -1161,7 +1150,7 @@ describe("InstanceExperimentalSettings — operator-hidden cards", () => {
   it("shows every toggle when nothing is hidden", async () => {
     await renderPage();
 
-    expect(container.textContent).toContain("Enable Environments");
+    expect(container.textContent).toContain("Simplified English Interactions");
     expect(container.textContent).toContain("Beta skills");
   });
 });

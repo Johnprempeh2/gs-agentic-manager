@@ -74,7 +74,9 @@ export const patchInstanceGeneralSettingsSchema = z
   .strict();
 
 export const instanceExperimentalSettingsSchema = z.object({
-  enableEnvironments: z.boolean().default(false),
+  // Greatstone (GRE-1623): compatibility only. Environments are always on;
+  // old stored values must still parse. A managed config can still pin it off.
+  enableEnvironments: z.boolean().default(true),
   enableNativeRunner: z.boolean().default(true),
   enableManagedSandboxOnly: z.boolean().default(false),
   // Greatstone (GRE-1437): compatibility only. Isolated workspaces are always
@@ -117,7 +119,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableConferenceRoomChat: z.boolean().default(false),
   enableClassicTaskInterface: z.boolean().default(false),
   enableIssuePlanDecompositions: z.boolean().default(false),
-  enableExperimentalFileViewer: z.boolean().default(false),
+  // Greatstone (GRE-1623): compatibility only; the file viewer is always on.
+  enableExperimentalFileViewer: z.boolean().default(true),
   enableExternalObjects: z.boolean().default(false),
   enableSmokeLab: z.boolean().default(false),
   enableBuiltInAgents: z.boolean().default(false),
@@ -126,7 +129,8 @@ export const instanceExperimentalSettingsSchema = z.object({
   enableStatusCards: z.boolean().default(false),
   enableDecisions: z.boolean().default(true),
   enableGoalsSidebarLink: z.boolean().default(false),
-  enableServerInfoDebugView: z.boolean().default(false),
+  // Greatstone (GRE-1623): compatibility only; the Server section always shows.
+  enableServerInfoDebugView: z.boolean().default(true),
   enablePaperclipDeveloperMode: z.boolean().default(false),
   enableSimplifiedEnglishInteractions: z.boolean().default(false),
   enableFirstTaskPlanProposal: z.boolean().default(false),

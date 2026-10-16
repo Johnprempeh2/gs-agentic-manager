@@ -21,10 +21,12 @@ describe("instance experimental settings validators", () => {
     ).toEqual({ enableStreamlinedUi: false });
   });
 
-  it("defaults the server info debug view off", () => {
+  it("defaults the graduated File Viewer, Server Info and Environments keys on (GRE-1623)", () => {
     const settings = instanceExperimentalSettingsSchema.parse({});
 
-    expect(settings.enableServerInfoDebugView).toBe(false);
+    expect(settings.enableServerInfoDebugView).toBe(true);
+    expect(settings.enableExperimentalFileViewer).toBe(true);
+    expect(settings.enableEnvironments).toBe(true);
   });
 
   it("defaults GS Agentic Manager developer mode off and accepts explicit patches", () => {
