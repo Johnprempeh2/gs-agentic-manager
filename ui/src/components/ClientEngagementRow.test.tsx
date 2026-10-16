@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientEngagement } from "@greatstone/shared";
+import { fireFiles } from "../fixtures/fileEvents";
 import { ClientEngagementRow, engagementSummary } from "./ClientEngagementRow";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -88,6 +89,21 @@ describe("ClientEngagementRow", () => {
     act(() => radio("Accepted").click());
     await flush();
     expect(api.setCaseEngagement).toHaveBeenCalledWith("case-1", "accepted");
+  });
+
+  it("files a dropped document as the pack before it is sent, and as the acceptance after", async () => {
+    api.uploadEngagementFile.mockResolvedValue({ engagement: notSent });
+    render(notSent, true);
+    const pack = new File(["%PDF"], "pack.pdf", { type: "application/pdf" });
+    fireFiles(container.querySelector("[aria-label='Drop or paste the engagement pack here']")!, "drop", [pack]);
+    await flush();
+    expect(api.uploadEngagementFile).toHaveBeenLastCalledWith("case-1", "pack", pack);
+
+    render({ ...notSent, status: "sent", sentAt: "2026-10-14T09:00:00.000Z" }, true);
+    const signed = new File(["%PDF"], "signed.pdf", { type: "application/pdf" });
+    fireFiles(container.querySelector("[aria-label='Drop or paste the signed acceptance here']")!, "drop", [signed]);
+    await flush();
+    expect(api.uploadEngagementFile).toHaveBeenLastCalledWith("case-1", "acceptance", signed);
   });
 
   it("shows the pack and the signed acceptance with their dates", () => {

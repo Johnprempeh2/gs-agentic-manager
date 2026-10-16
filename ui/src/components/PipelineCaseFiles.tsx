@@ -1,4 +1,4 @@
-import { useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, FileUp, Link2, Package, PaperclipIcon, Plus, Trash2 } from "lucide-react";
 import type {
@@ -8,6 +8,7 @@ import type {
   Deliverable,
 } from "@greatstone/shared";
 import { groupDeliverableDocuments } from "@greatstone/shared";
+import { useFileIntake } from "../hooks/useFileIntake";
 import { pipelinesApi } from "../api/pipelines";
 import { useToastActions } from "../context/ToastContext";
 import { Link } from "@/lib/router";
@@ -228,7 +229,7 @@ export function ClientUploadZone({
   caseId,
   stageId,
   label = "Upload files",
-  hint = "Drop files here, or choose them. PDFs, decks, documents and images up to the size limit.",
+  hint = "Drop files here, paste a screenshot, or choose them. PDFs, decks, documents and images up to the size limit.",
   onUploaded,
 }: {
   caseId: string;
@@ -240,14 +241,16 @@ export function ClientUploadZone({
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
 
   const uploadAll = async (files: File[]) => {
     if (files.length === 0) return;
     let done = 0;
     for (const file of files) {
       setUploading(files.length > 1 ? `Uploading ${done + 1} of ${files.length}: ${file.name}` : `Uploading ${file.name}`);
+      const url = file.type.startsWith("image/") && typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : null;
+      setPreview(url);
       try {
         const item = await pipelinesApi.uploadCaseEvidence(caseId, file, { stageId });
         done += 1;
@@ -258,9 +261,12 @@ export function ClientUploadZone({
           body: error instanceof Error ? error.message : undefined,
           tone: "error",
         });
+      } finally {
+        if (url) URL.revokeObjectURL(url);
       }
     }
     setUploading(null);
+    setPreview(null);
     if (done > 0) {
       pushToast({ title: done === 1 ? "File uploaded" : `${done} files uploaded`, tone: "success" });
     }
@@ -270,26 +276,16 @@ export function ClientUploadZone({
       queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseJourney(caseId) }),
     ]);
   };
-
-  const onDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    setDragging(false);
-    if (uploading) return;
-    void uploadAll(Array.from(event.dataTransfer.files ?? []));
-  };
+  const intake = useFileIntake((files) => void uploadAll(files), { disabled: uploading !== null });
 
   return (
     <div
       className={cn(
-        "flex flex-col items-start gap-2 rounded-md border border-dashed border-border p-3 transition-colors sm:flex-row sm:items-center",
-        dragging && "border-primary bg-accent",
+        "flex flex-col items-start gap-2 rounded-md border border-dashed border-border p-3 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex-row sm:items-center",
+        intake.dragging && "border-primary bg-accent",
       )}
-      onDragOver={(event) => {
-        event.preventDefault();
-        if (!dragging) setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={onDrop}
+      {...intake.targetProps}
+      aria-label={`${label}: drop files here, or paste a screenshot`}
       data-testid="client-upload-zone"
     >
       <Button
@@ -302,6 +298,9 @@ export function ClientUploadZone({
         <FileUp className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
         {label}
       </Button>
+      {preview ? (
+        <img src={preview} alt="" className="h-10 w-10 shrink-0 rounded-sm border border-border object-cover" data-testid="client-upload-preview" />
+      ) : null}
       <p className="min-w-0 text-xs text-muted-foreground" aria-live="polite">
         {uploading ?? hint}
       </p>

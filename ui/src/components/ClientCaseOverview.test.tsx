@@ -6,6 +6,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PipelineCaseDetail, PipelineStage } from "../api/pipelines";
+import { fireFiles } from "../fixtures/fileEvents";
 import { ClientCaseOverview } from "./ClientCaseOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
@@ -597,6 +598,14 @@ describe("client case page", () => {
     expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenNthCalledWith(1, "case-1", nda, { stageId: undefined });
     expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenNthCalledWith(2, "case-1", deck, { stageId: undefined });
     expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "2 files uploaded" }));
+
+    // A screenshot pasted on the box lands on the client with a readable name.
+    const zone = container.querySelector('[data-testid="client-upload-zone"]')!;
+    fireFiles(zone, "paste", [new File(["png"], "image.png", { type: "image/png" })]);
+    await flushReact();
+    await flushReact();
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenCalledTimes(3);
+    expect((mockPipelinesApi.uploadCaseEvidence.mock.calls[2]?.[1] as File).name).toMatch(/^Pasted image .+\.png$/);
   });
 
   it("shows an upload's size and stage, and says it will be deleted", async () => {
