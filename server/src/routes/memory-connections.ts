@@ -18,7 +18,7 @@ import { agentService, logActivity } from "../services/index.js";
 import type { MemoryEngine } from "../services/memory-gateway/engine.js";
 import { memoryGrantService } from "../services/memory-gateway/grants.js";
 import { memoryGatewayService, type MemoryCaller, type MemoryGatewayService } from "../services/memory-gateway/service.js";
-import { assertCompanyOwnerOrAdmin, getActorInfo } from "./authz.js";
+import { getActorInfo } from "./authz.js";
 import { memoryCallerFromRequest } from "./memory.js";
 
 type ConnectionMeta = { app: MemoryConnectionApp; createdByUserId: string | null };
@@ -32,9 +32,11 @@ function connectionMeta(metadata: unknown): ConnectionMeta | null {
 /**
  * Live links from Claude, Codex and other MCP apps to organization memory.
  * Built on memory-only keys (GRE-958): a link is a paused agent that never
- * runs, holds those keys and, if asked, a memory contribute grant. Only a
- * company owner or admin signed in as a person manages them; a memory-only
- * key reaches these paths but is refused here.
+ * runs, holds those keys and, if asked, a memory contribute grant. Since
+ * GRE-1081 every person connects their own apps, one link per person and
+ * app, each with its own key that can be cut off alone. A person sees and
+ * disconnects their own links; an owner or admin sees and disconnects all.
+ * A memory-only key reaches these paths but is refused here.
  */
 /**
  * Link agents and their memory-only keys. Shared by the connect button and the
@@ -84,7 +86,7 @@ export function memoryConnectionService(db: Db, gateway: MemoryGatewayService) {
     return result;
   }
 
-  /** One link agent per person and app, made on first use. The caller must be an owner or admin. */
+  /** One link agent per person and app, made on first use. The caller is that person. */
   async function connect(caller: MemoryCaller, app: MemoryConnectionApp, canContribute: boolean) {
     const userId = caller.userId;
     const existing = (await load(caller.companyId)).find(
@@ -137,23 +139,37 @@ export function memoryConnectionRoutes(db: Db, options: { engine?: MemoryEngine 
   const links = memoryConnectionService(db, gateway);
   const agentsSvc = agentService(db);
 
-  function ownerCaller(req: Request, companyId: string) {
+  function personCaller(req: Request, companyId: string) {
     const caller = memoryCallerFromRequest(req, companyId);
-    if (caller.actorType !== "user") throw forbidden("Only a person can manage memory connections");
-    assertCompanyOwnerOrAdmin(req, companyId);
+    if (caller.actorType !== "user" || !caller.userId) throw forbidden("Only a person can manage memory connections");
     return caller;
+  }
+
+  /** A person manages their own links; an owner or admin manages every link. */
+  function mayManage(caller: MemoryCaller, connection: MemoryConnection) {
+    return caller.isBoardAdmin || connection.createdByUserId === caller.userId;
+  }
+
+  async function loadManaged(req: Request, companyId: string) {
+    const caller = personCaller(req, companyId);
+    const agentId = req.params.agentId as string;
+    if (!/^[0-9a-f-]{36}$/i.test(agentId)) throw notFound("Memory connection not found");
+    const [connection] = await links.load(companyId, agentId);
+    // Someone else's link answers like a missing one.
+    if (!connection || !mayManage(caller, connection)) throw notFound("Memory connection not found");
+    return { caller, agentId, connection };
   }
 
   router.get("/companies/:companyId/memory/connections", async (req, res) => {
     const companyId = req.params.companyId as string;
-    ownerCaller(req, companyId);
+    const caller = personCaller(req, companyId);
     await gateway.assertEnabled(companyId);
-    res.json((await links.load(companyId)).filter((connection) => connection.keys.length > 0));
+    res.json((await links.load(companyId)).filter((connection) => connection.keys.length > 0 && mayManage(caller, connection)));
   });
 
   router.post("/companies/:companyId/memory/connections", validate(createMemoryConnectionSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
-    const caller = ownerCaller(req, companyId);
+    const caller = personCaller(req, companyId);
     await gateway.assertEnabled(companyId);
     const { app, canContribute } = req.body as CreateMemoryConnection;
     const { agentId } = await links.connect(caller, app, canContribute);
@@ -179,12 +195,9 @@ export function memoryConnectionRoutes(db: Db, options: { engine?: MemoryEngine 
   // sees the first search arrive after pasting the setup.
   router.get("/companies/:companyId/memory/connections/:agentId/activity", async (req, res) => {
     const companyId = req.params.companyId as string;
-    ownerCaller(req, companyId);
+    personCaller(req, companyId);
     await gateway.assertEnabled(companyId);
-    const agentId = req.params.agentId as string;
-    if (!/^[0-9a-f-]{36}$/i.test(agentId)) throw notFound("Memory connection not found");
-    const [connection] = await links.load(companyId, agentId);
-    if (!connection) throw notFound("Memory connection not found");
+    const { agentId, connection } = await loadManaged(req, companyId);
     const [operations, contributions] = await Promise.all([
       db
         .select({
@@ -216,11 +229,7 @@ export function memoryConnectionRoutes(db: Db, options: { engine?: MemoryEngine 
 
   router.delete("/companies/:companyId/memory/connections/:agentId", async (req, res) => {
     const companyId = req.params.companyId as string;
-    ownerCaller(req, companyId);
-    const agentId = req.params.agentId as string;
-    if (!/^[0-9a-f-]{36}$/i.test(agentId)) throw notFound("Memory connection not found");
-    const [connection] = await links.load(companyId, agentId);
-    if (!connection) throw notFound("Memory connection not found");
+    const { agentId, connection } = await loadManaged(req, companyId);
     for (const key of connection.keys) await agentsSvc.revokeKey(agentId, key.id);
     const actor = getActorInfo(req);
     await logActivity(db, {

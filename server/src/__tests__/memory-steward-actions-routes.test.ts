@@ -200,14 +200,33 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
   });
 
   it("shows the app a proposal came through, and filters by it (GRE-1124)", async () => {
-    const { board, steward, agent, mason, base, org, companyId, actor } = await setup("Apps");
+    const { board, steward, agent, base, org, companyId, actor } = await setup("Apps");
+    // Bea's own ChatGPT link (GRE-1081): a memory key belongs to one person.
+    const [beaLink] = await ctx.db
+      .insert(agents)
+      .values({
+        companyId,
+        name: "ChatGPT memory link",
+        role: "general",
+        status: "paused",
+        adapterType: "process",
+        adapterConfig: {},
+        runtimeConfig: {},
+        permissions: {},
+        metadata: { memoryConnection: { app: "chatgpt", createdByUserId: "user-backup" } },
+      })
+      .returning();
+    await ctx.db.insert(principalPermissionGrants).values([
+      { companyId, principalType: "agent", principalId: beaLink!.id, permissionKey: "memory:contribute", scope: null },
+      { companyId, principalType: "user", principalId: "user-backup", permissionKey: "memory:contribute", scope: null },
+    ]);
     const [key] = await ctx.db
       .insert(agentApiKeys)
-      .values({ agentId: mason.id, companyId, name: "ChatGPT", keyHash: "hash-chatgpt", responsibleUserId: "user-backup", scopeConfig: { kind: "memory_only" } })
+      .values({ agentId: beaLink!.id, companyId, name: "ChatGPT", keyHash: "hash-chatgpt", responsibleUserId: "user-backup", scopeConfig: { kind: "memory_only" } })
       .returning();
     const viaChatGpt = routeApp(
       ctx.db,
-      { type: "agent", agentId: mason.id, companyId, keyId: key!.id, keyScope: { kind: "memory_only" }, runId: null, source: "agent_key" } as never,
+      { type: "agent", agentId: beaLink!.id, companyId, keyId: key!.id, keyScope: { kind: "memory_only" }, runId: null, source: "agent_key" } as never,
       (db) => memoryRoutes(db, { engine: fakeEngine() }),
     );
     const fromApp = await contribute(viaChatGpt, base, { scopeId: org.id, content: "Invoices go out on the 1st.", topics: ["invoicing"] });
@@ -219,7 +238,8 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
 
     const queue = (await request(steward).get(`${base}/review-queue`)).body as MemoryReviewQueue;
     const byId = (id: string) => queue.items.find((item) => item.proposal.id === id)!;
-    expect(byId(fromApp.id).proposer).toEqual({ type: "agent", id: mason.id, name: "Mason", app: "ChatGPT" });
+    // A person's app shows as that person, with the app as the label (GRE-1081).
+    expect(byId(fromApp.id).proposer).toEqual({ type: "user", id: "user-backup", name: "Bea", app: "ChatGPT" });
     expect(byId(fromKey.id).proposer.app).toBe("Agent API key");
     // GSAM's own screens add no label: the person is the identity.
     expect(byId(fromWeb.id).proposer.app).toBeNull();
@@ -239,7 +259,7 @@ describeEmbeddedPostgres("shared memory M1: stewards, review queue and card acti
     const edit = await act(stewardByKey, base, fromApp.id, { action: "edit_and_confirm", expectedVersion: fromApp.version, content: "Invoices go out on the 1st working day.", reason: "Clearer" });
     expect(edit.status).toBe(200);
     const edited = ((await request(board).get(`${base}/review-queue`)).body as MemoryReviewQueue).items.find((item) => item.proposal.id === edit.body.newRecord.id)!;
-    expect(edited.proposer).toMatchObject({ type: "agent", id: mason.id, app: "ChatGPT" });
+    expect(edited.proposer).toMatchObject({ type: "user", id: "user-backup", app: "ChatGPT" });
     expect(edited.editedBy).toMatchObject({ type: "user", id: "user-steward", name: "Sam", app: "Board API key" });
     const ownerFiltered = async (app: string) =>
       ((await request(board).get(`${base}/review-queue?app=${encodeURIComponent(app)}`)).body as MemoryReviewQueue).items.map((item) => item.proposal.id);
