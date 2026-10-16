@@ -124,6 +124,7 @@ export const WHATS_NEW: WhatsNewRelease[] = [
           { text: "Tutorials has a Start here path of four short tours.", to: "/tutorials", linkLabel: "Open Tutorials" },
           { text: "Show me around is on every everyday page, and on task and agent pages." },
           { text: "New short tours for This week, Images, Integrations and the Calendar, and updated ones for client pages and phones.", to: "/tutorials", linkLabel: "See the tours" },
+          { text: "Show me around now also covers Blocked work, the Scorecard, the morning summary, Organisations with the Pipedrive import, Search and more of the client page.", to: "/tutorials", linkLabel: "See the tours" },
           { text: "Words with a dotted underline explain themselves when you tap them, and Tutorials lists them all.", to: "/tutorials#words" },
           { text: "Decisions, Projects, Costs and Approvals open with a plain sentence on what the page is for.", to: "/projects" },
           { text: "Light mode is easier on the eyes, with a proper daytime theme." },

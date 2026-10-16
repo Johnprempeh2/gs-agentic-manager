@@ -51,7 +51,10 @@ function Section({
   today?: string;
 }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-card p-4">
+    <section
+      className="space-y-2 rounded-lg border border-border bg-card p-4"
+      data-tour={`morning-${title.toLowerCase().replace(/[^a-z]+/g, "-")}`}
+    >
       <div className="flex items-center gap-2">
         <Icon
           className={cn(

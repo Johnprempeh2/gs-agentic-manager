@@ -9,6 +9,12 @@ describe("everyday page tours", () => {
     expect(coreTourForPath("/approvals/all")?.id).toBe("approvals");
     expect(coreTourForPath("/memory/review")?.id).toBe("memory");
     expect(coreTourForPath("/company/settings/integrations")?.id).toBe("integrations");
+    expect(coreTourForPath("/inbox/blocked")?.id).toBe("blocked");
+    expect(coreTourForPath("/scorecard")?.id).toBe("scorecard");
+    expect(coreTourForPath("/morning")?.id).toBe("morning");
+    expect(coreTourForPath("/organisations")?.id).toBe("organisations");
+    expect(coreTourForPath("/search")?.id).toBe("search");
+    expect(coreTourForPath("/inbox/mine")).toBeNull();
   });
 
   it("finds the item tours for a task and an agent", () => {

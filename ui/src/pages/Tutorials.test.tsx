@@ -114,7 +114,7 @@ describe("Tutorials", () => {
       "tutorial-client-case",
       "tutorial-website",
     ]);
-    for (const id of ["calendar", "weekly-report", "images", "integrations"]) {
+    for (const id of ["calendar", "weekly-report", "images", "integrations", "blocked", "scorecard", "morning", "organisations", "search"]) {
       expect(ids).toContain(`tutorial-${id}`);
     }
     expect(row("pipelines-list")!.textContent).toContain("Seen");

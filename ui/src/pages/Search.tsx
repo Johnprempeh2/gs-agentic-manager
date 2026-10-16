@@ -571,6 +571,7 @@ export function Search() {
             }}
             placeholder="Search tasks, comments, documents, artifacts, agents, projects…"
             aria-label="Search query"
+            data-tour="search-page-input"
             className="h-10 pl-9 pr-20 text-sm"
           />
           {draftQuery.length > 0 ? (

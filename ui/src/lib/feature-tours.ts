@@ -109,7 +109,7 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
   title: "Client page",
   description: "Where a client is in their journey, where things stand, the next action and who you deal with.",
-  version: 2,
+  version: 3,
   flag: "enablePipelines",
   label: "this client",
   steps: [
@@ -132,6 +132,21 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-contacts",
       title: "Contacts",
       body: "The people you deal with at this client, so anyone on your team can pick up the relationship.",
+    },
+    {
+      target: "client-evidence",
+      title: "Evidence",
+      body: "Files and links you keep for this client, such as a brief or signed papers. Upload a file or add a link so everyone works from the same copy.",
+    },
+    {
+      target: "client-deliverables",
+      title: "Journey by stage",
+      body: "What belongs in each stage. Upload a document to the stage it belongs to; uploading the signed NDA marks it accepted.",
+    },
+    {
+      target: "client-portal",
+      title: "What the client sees",
+      body: "A preview of the client's own portal, so you know exactly what they can see before you share anything.",
     },
     {
       target: "client-projects",
@@ -696,6 +711,163 @@ export const CALENDAR_TOUR: TourDefinition = {
   ],
 };
 
+export const BLOCKED_TOUR: TourDefinition = {
+  id: "blocked",
+  title: "Blocked work",
+  description: "What is holding work up, which tasks are on hold, and how to get them moving.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/inbox\/blocked\/?$/, path: "/inbox/blocked" },
+  label: "Blocked work",
+  steps: [
+    {
+      title: "Why work has stopped",
+      body: "This page lists every task that cannot go on, and what it is waiting for. Most need one answer or one decision from someone.",
+    },
+    {
+      target: "recovery-holds",
+      title: "Tasks on hold",
+      body: "GSAM puts a task on hold when it keeps failing, so it stops using time and money. Read the reason, fix it, then clear the hold to let the agent try again.",
+    },
+    {
+      target: "blocked-work-summary",
+      title: "What is holding work up",
+      body: "One line for each thing that is blocking other work, with how many tasks wait on it. Clear the top one first: it frees the most.",
+    },
+    {
+      target: "blocked-inbox",
+      title: "Every blocked task",
+      body: "Each row says who or what it is waiting on and for how long. Open a task to answer, reassign it or unblock it.",
+    },
+  ],
+};
+
+export const SCORECARD_TOUR: TourDefinition = {
+  id: "scorecard",
+  title: "Scorecard",
+  description: "What each agent finished, how that compares with before, and how to share it.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/scorecard\/?$/, path: "/scorecard" },
+  label: "Scorecard",
+  steps: [
+    {
+      target: "scorecard-totals",
+      title: "The team at a glance",
+      body: "Finished, under way, waiting for review, stuck and past due. The small line under Finished says whether that is up or down on the period before, so you can see if the team is speeding up.",
+    },
+    {
+      target: "scorecard-period",
+      title: "Choose the period",
+      body: "Switch between the last 7 and the last 30 days. Each comparison uses the same length of time just before it.",
+    },
+    {
+      target: "scorecard-agents",
+      title: "Each agent",
+      body: "One card per agent, with stuck work first. Each card says what they finished and are on now, and whether they finished more or less than before.",
+    },
+    {
+      target: "scorecard-actions",
+      title: "Ask and share",
+      body: "Ask about every stuck task in one go, download the numbers as a spreadsheet, or copy a short written update to paste into an email.",
+    },
+  ],
+};
+
+export const MORNING_TOUR: TourDefinition = {
+  id: "morning",
+  title: "Your morning summary",
+  description: "One page each morning: what needs you, what is due and what the team did.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/morning\/?$/, path: "/morning" },
+  label: "Morning summary",
+  steps: [
+    {
+      title: "Start your day here",
+      body: "A short summary of the last day, made for reading on a phone with a coffee. It reaches your phone each morning too.",
+    },
+    {
+      target: "morning-needs-you",
+      title: "Needs you",
+      body: "Questions and sign-offs waiting on you. Open Decisions to answer them all in one place.",
+    },
+    {
+      target: "morning-due-today",
+      title: "Due today",
+      body: "Tasks with today's due date, so nothing slips.",
+    },
+    {
+      target: "morning-finished-since-yesterday",
+      title: "What the team finished",
+      body: "Everything the agents completed in the last 24 hours.",
+    },
+    {
+      target: "morning-stuck",
+      title: "What is stuck",
+      body: "Tasks that cannot go on. Open the blocked page to see why and get them moving.",
+    },
+  ],
+};
+
+export const ORGANISATIONS_TOUR: TourDefinition = {
+  id: "organisations",
+  title: "Organisations",
+  description: "Every company you work with in one list, and bringing them in from Pipedrive, HubSpot or Notion.",
+  version: 1,
+  flag: "enablePipelines",
+  autoStart: false,
+  route: { match: /^\/organisations\/?$/, path: "/organisations" },
+  label: "Organisations",
+  steps: [
+    {
+      title: "Everyone you work with",
+      body: "Targets, prospects, clients and former clients, each with their contacts, owner and country. Open one to see its timeline and cases.",
+    },
+    {
+      target: "organisations-import",
+      title: "Bring in your CRM",
+      body: "Select Import from Pipedrive to copy your organisations, people, deals, notes and files across. You see a preview first, and running it again updates rather than duplicates. HubSpot and Notion work the same way.",
+    },
+    {
+      target: "organisations-search",
+      title: "Find one fast",
+      body: "Search by name, industry, country or contact, or pick a status such as Client to narrow the list.",
+    },
+  ],
+};
+
+export const SEARCH_PAGE_TOUR: TourDefinition = {
+  id: "search",
+  title: "Search",
+  description: "Find any task, comment, document or agent, and narrow the results.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/search\/?$/, path: "/search" },
+  label: "Search",
+  steps: [
+    {
+      target: "search-page-input",
+      title: "Type anything",
+      body: "A client, a task number or a few words from a document. Results update as you type.",
+    },
+    {
+      target: "search-filters",
+      title: "Narrow the results",
+      body: "When there are too many results, use the filters and the sort order to narrow the list.",
+    },
+    {
+      target: "search-results",
+      title: "Open what you need",
+      body: "The best matches come first. Select a result to open it.",
+    },
+    {
+      title: "From any page",
+      body: "Press Cmd or Ctrl and K to search from anywhere, or Cmd or Ctrl and J to ask Everest a question in plain words.",
+    },
+  ],
+};
+
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
   DASHBOARD_TOUR,
@@ -709,7 +881,12 @@ export const CORE_TOURS: TourDefinition[] = [
   ROUTINES_TOUR,
   APPROVALS_TOUR,
   MEMORY_TOUR,
+  MORNING_TOUR,
   WEEKLY_REPORT_TOUR,
+  SCORECARD_TOUR,
+  BLOCKED_TOUR,
+  ORGANISATIONS_TOUR,
+  SEARCH_PAGE_TOUR,
   IMAGES_TOUR,
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,

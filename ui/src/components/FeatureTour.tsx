@@ -12,9 +12,13 @@ import { queryKeys } from "@/lib/queryKeys";
 import { useSearchParams } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
-/** The first visible element for a step, or null when the page does not show it. */
+/**
+ * The first visible element for a step, or null when the page does not show it.
+ * A step names a `data-tour` anchor, or the `data-testid` a page already has, so
+ * tours can point at stable ids without touching pages other people are changing.
+ */
 export function findTourTarget(target: string): HTMLElement | null {
-  for (const el of document.querySelectorAll<HTMLElement>(`[data-tour="${target}"]`)) {
+  for (const el of document.querySelectorAll<HTMLElement>(`[data-tour="${target}"], [data-testid="${target}"]`)) {
     if (typeof el.checkVisibility !== "function" || el.checkVisibility()) return el;
   }
   return null;
