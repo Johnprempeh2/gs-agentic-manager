@@ -1395,6 +1395,7 @@ function PipelineCaseCard({
   const childrenSummary = getChildrenSummaryCount(caseItem);
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
   const { owner, nextAction } = readCardSummary(caseItem.fields);
+  const dealValue = formatDealTotals(sumDealValues([caseItem]));
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
   const covers = useImageCovers(caseItem.companyId);
   const cover = caseItem.organisationId ? covers.data?.organisations[caseItem.organisationId] : undefined;
@@ -1462,8 +1463,14 @@ function PipelineCaseCard({
             Built from {formatNumber(childrenSummary)} {childrenSummary === 1 ? "item" : "items"}
           </p>
         ) : null}
-        {owner || nextAction || daysLabel ? (
+        {owner || nextAction || daysLabel || dealValue ? (
           <dl className="mt-1.5 space-y-0.5 text-xs">
+            {dealValue ? (
+              <div className="flex gap-1">
+                <dt className="shrink-0 text-muted-foreground">Value</dt>
+                <dd className="min-w-0 truncate font-medium text-foreground">{dealValue}</dd>
+              </div>
+            ) : null}
             {owner ? (
               <div className="flex gap-1">
                 <dt className="shrink-0 text-muted-foreground">Owner</dt>

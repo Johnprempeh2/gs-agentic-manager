@@ -16,6 +16,8 @@ const LAST_CONTACT_FIELD_KEYS = [
   "lastContactDate",
   "last_contact_date",
   "Last contact",
+  // A deal imported from Pipedrive (DevTools clients, 16 Oct).
+  "lastActivityDate",
 ] as const;
 
 export interface ClientCardFlagInput {
