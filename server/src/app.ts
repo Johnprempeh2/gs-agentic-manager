@@ -92,6 +92,7 @@ import { caseRoutes } from "./routes/cases.js";
 import { fileResourceRoutes } from "./routes/file-resources.js";
 import { routineRoutes } from "./routes/routines.js";
 import { pipelineRoutes } from "./routes/pipelines.js";
+import { clientAcceptancePublicRoutes } from "./routes/client-acceptance-public.js";
 import { crmSyncRoutes } from "./routes/crm-sync.js";
 import { organisationRoutes } from "./routes/organisations.js";
 import { startCrmSyncScheduler } from "./services/crm-sync-runner.js";
@@ -126,6 +127,7 @@ import { blockedWorkRoutes } from "./routes/blocked-work.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { teamScorecardRoutes } from "./routes/team-scorecard.js";
 import { weeklyReportRoutes } from "./routes/weekly-report.js";
+import { agentDailyDigestRoutes } from "./routes/agent-daily-digests.js";
 import { recoveryHoldRoutes } from "./routes/recovery-holds.js";
 import { supportRoutes } from "./routes/support.js";
 import { clientSupportRoutes } from "./routes/client-support.js";
@@ -836,9 +838,11 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db, { storage: opts.storageService }));
+  const memoryEngine = memoryEngineFromGatewayConfig();
+  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine, publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(clientAcceptancePublicRoutes(db, opts.storageService));
   api.use(crmSyncRoutes(db));
-  api.use(organisationRoutes(db));
+  api.use(organisationRoutes(db, { storage: opts.storageService }));
   api.use(
     environmentRoutes(db, {
       pluginWorkerManager: workerManager,
@@ -861,7 +865,6 @@ export async function createApp(
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
-  const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
   api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
@@ -894,6 +897,7 @@ export async function createApp(
   api.use(calendarRoutes(db));
   api.use(teamScorecardRoutes(db));
   api.use(weeklyReportRoutes(db));
+  api.use(agentDailyDigestRoutes(db));
   api.use(recoveryHoldRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(clientSupportRoutes(db, { storage: opts.storageService }));

@@ -17,6 +17,7 @@ const ROUTES_DIR = path.resolve(__dirname, "../routes");
 
 const apiPrefixes: Record<string, string> = {
   "pipelines.ts": "/api",
+  "client-acceptance-public.ts": "/api",
   "client-version.ts": "/api",
   "cases.ts": "/api",
   "client-support.ts": "/api",
@@ -72,6 +73,7 @@ const apiPrefixes: Record<string, string> = {
   "calendar.ts": "/api",
   "team-scorecard.ts": "/api",
   "weekly-report.ts": "/api",
+  "agent-daily-digests.ts": "/api",
   "recovery-holds.ts": "/api",
   "push.ts": "/api",
   "environments.ts": "/api",

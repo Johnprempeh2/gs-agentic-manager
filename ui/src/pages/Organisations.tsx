@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Plus, Star } from "lucide-react";
+import { Building2, Mail, Phone, Plus, Star } from "lucide-react";
 import {
   ORGANISATION_STATUSES,
   ORGANISATION_STATUS_LABELS,
@@ -14,6 +14,7 @@ import { organisationsApi } from "@/api/organisations";
 import { EmptyState } from "@/components/EmptyState";
 import { HubspotImport } from "@/components/HubspotImport";
 import { NotionImport } from "@/components/NotionImport";
+import { ClientsExportButton } from "@/components/DataExport";
 import { PipedriveImport } from "@/components/PipedriveImport";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,7 @@ export function Organisations() {
           {selectedCompanyId ? <PipedriveImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <HubspotImport companyId={selectedCompanyId} /> : null}
           {selectedCompanyId ? <NotionImport companyId={selectedCompanyId} /> : null}
+          <ClientsExportButton rows={rows} />
           <Button onClick={() => setEditing("new")}>
             <Plus />
             Add organisation
@@ -211,6 +213,8 @@ export function Organisations() {
         </div>
       )}
 
+      {selectedCompanyId ? <UnassignedPeople companyId={selectedCompanyId} /> : null}
+
       <Dialog open={editing !== null} onOpenChange={(open) => !open && setEditing(null)}>
         {editing !== null && selectedCompanyId ? (
           <OrganisationDialogContent
@@ -222,6 +226,61 @@ export function Organisations() {
         ) : null}
       </Dialog>
     </div>
+  );
+}
+
+function crmValueText(value: NonNullable<OrganisationContact["crmFields"]>[number]["value"]) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+/** People a CRM held with no organisation, kept so nobody is dropped. Hidden when there are none. */
+export function UnassignedPeople({ companyId }: { companyId: string }) {
+  const query = useQuery({
+    queryKey: queryKeys.organisations.unassignedContacts(companyId),
+    queryFn: () => organisationsApi.unassignedContacts(companyId),
+  });
+  if (query.error) {
+    return <p className="text-sm text-destructive" role="alert">Could not load people with no organisation. {errorText(query.error)}</p>;
+  }
+  const people = query.data ?? [];
+  if (people.length === 0) return null;
+  return (
+    <section aria-label="People with no organisation" className="space-y-2">
+      <details className="rounded-lg border border-border">
+        <summary className="cursor-pointer px-3 py-2 text-sm font-medium">People with no organisation ({people.length})</summary>
+        <ul className="divide-y divide-border border-t border-border">
+          {people.map((person) => (
+            <li key={person.id} className="space-y-1 px-3 py-2 text-sm">
+              <div className="flex flex-wrap items-baseline gap-x-2">
+                <span className="font-medium">{person.name}</span>
+                {person.role ? <span className="text-muted-foreground">({person.role})</span> : null}
+              </div>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+                {person.email ? (
+                  <a href={`mailto:${person.email}`} className="flex min-w-0 items-center gap-1 hover:text-foreground">
+                    <Mail className="h-3.5 w-3.5 shrink-0" />
+                    <span className="break-all">{person.email}</span>
+                  </a>
+                ) : null}
+                {person.phone ? (
+                  <a href={`tel:${person.phone}`} className="flex items-center gap-1 hover:text-foreground">
+                    <Phone className="h-3.5 w-3.5 shrink-0" />
+                    {person.phone}
+                  </a>
+                ) : null}
+              </div>
+              {person.crmFields?.length ? (
+                <p className="break-words text-xs text-muted-foreground">
+                  {person.crmFields.map((field) => `${field.label}: ${crmValueText(field.value)}`).join(" · ")}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
   );
 }
 

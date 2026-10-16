@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GENERATED_IMAGE_PROMPT_MIN_LENGTH, type GeneratedImage, type ImageAspectRatio } from "@greatstone/shared";
+import {
+  GENERATED_IMAGE_PROMPT_MIN_LENGTH,
+  type GeneratedImage,
+  type ImageAspectRatio,
+  type ImageStylePresetId,
+} from "@greatstone/shared";
 import { AlertCircle, Check, ImageIcon, Loader2, PaperclipIcon, RotateCcw, Wand2 } from "lucide-react";
 import { imagesApi } from "../api/images";
 import { ApiError } from "../api/client";
@@ -48,6 +53,10 @@ interface MakeImageDialogProps {
   onAttach: (file: File) => Promise<unknown>;
   /** Names the place, for the button and the copy: "this task". */
   attachLabel?: string;
+  /** Links the image to this task, so the gallery can show where it came from. */
+  issueId?: string | null;
+  /** Links the image to this client. */
+  organisationId?: string | null;
 }
 
 type Step = "compose" | "making" | "ready" | "failed" | "attached";
@@ -56,11 +65,20 @@ type Step = "compose" | "making" | "ready" | "failed" | "attached";
  * Make an image without leaving the page: describe it, wait, then add it to the
  * task. The image is also kept in Images, so nothing is lost if the dialog closes.
  */
-export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attachLabel = "this task" }: MakeImageDialogProps) {
+export function MakeImageDialog({
+  companyId,
+  open,
+  onOpenChange,
+  onAttach,
+  attachLabel = "this task",
+  issueId = null,
+  organisationId = null,
+}: MakeImageDialogProps) {
   const queryClient = useQueryClient();
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("16:9");
+  const [style, setStyle] = useState<ImageStylePresetId | null>(null);
   const [imageId, setImageId] = useState<string | null>(null);
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attached, setAttached] = useState(false);
@@ -80,7 +98,14 @@ export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attac
   });
 
   const create = useMutation({
-    mutationFn: () => imagesApi.create(companyId, { prompt: prompt.trim(), aspectRatio }),
+    mutationFn: () =>
+      imagesApi.create(companyId, {
+        prompt: prompt.trim(),
+        aspectRatio,
+        ...(style ? { style } : {}),
+        ...(issueId ? { issueId } : {}),
+        ...(organisationId ? { organisationId } : {}),
+      }),
     onSuccess: (image) => {
       setImageId(image.id);
       queryClient.setQueryData(queryKeys.images.detail(image.id), image);
@@ -139,6 +164,8 @@ export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attac
               onPromptChange={setPrompt}
               aspectRatio={aspectRatio}
               onAspectRatioChange={setAspectRatio}
+              style={style}
+              onStyleChange={setStyle}
               onSubmitShortcut={submit}
               compact
             />
@@ -167,7 +194,7 @@ export function MakeImageDialog({ companyId, open, onOpenChange, onAttach, attac
                   <p className="text-sm text-muted-foreground">{image?.error ?? "This image could not be made."}</p>
                 </div>
               ) : image?.contentPath ? (
-                <img src={image.contentPath} alt={image.prompt} className="h-full w-full object-contain" />
+                <img src={image.contentPath} alt={image.altText} className="h-full w-full object-contain" />
               ) : null}
             </div>
             <p className="line-clamp-2 text-center text-xs text-muted-foreground">{image?.prompt ?? prompt}</p>
@@ -237,11 +264,18 @@ export function MakeImageButton({
   onAttach,
   attachLabel,
   disabled,
+  issueId,
+  organisationId,
+  variant = "button",
 }: {
   companyId: string;
   onAttach: (file: File) => Promise<unknown>;
   attachLabel?: string;
   disabled?: boolean;
+  issueId?: string | null;
+  organisationId?: string | null;
+  /** "icon" is a small square button for a composer toolbar. */
+  variant?: "button" | "icon";
 }) {
   const [open, setOpen] = useState(false);
   const status = useQuery({
@@ -253,19 +287,41 @@ export function MakeImageButton({
   if (status.data?.configured !== true) return null;
   return (
     <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="shadow-none"
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-        data-testid="make-image-button"
-      >
-        <ImageIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
-        <span className="hidden sm:inline">Make an image</span>
-        <span className="sm:hidden">Image</span>
-      </Button>
-      <MakeImageDialog companyId={companyId} open={open} onOpenChange={setOpen} onAttach={onAttach} attachLabel={attachLabel} />
+      {variant === "icon" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          aria-label="Make an image"
+          title="Make an image"
+          data-testid="make-image-button"
+          className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <ImageIcon className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ) : (
+        <Button
+          variant="outline"
+          size="sm"
+          className="shadow-none"
+          onClick={() => setOpen(true)}
+          disabled={disabled}
+          data-testid="make-image-button"
+        >
+          <ImageIcon className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
+          <span className="hidden sm:inline">Make an image</span>
+          <span className="sm:hidden">Image</span>
+        </Button>
+      )}
+      <MakeImageDialog
+        companyId={companyId}
+        open={open}
+        onOpenChange={setOpen}
+        onAttach={onAttach}
+        attachLabel={attachLabel}
+        issueId={issueId}
+        organisationId={organisationId}
+      />
     </>
   );
 }

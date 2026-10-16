@@ -10,12 +10,13 @@ import { WEEKLY_REPORT_FIXTURE } from "../lib/weekly-report.fixture";
 import { WeeklyReport, weeklyReportText } from "./WeeklyReport";
 import { OPEN_ASK_EVEREST_EVENT, type OpenAskEverestDetail } from "../lib/ask-everest-events";
 
-const api = vi.hoisted(() => ({ get: vi.fn() }));
+const api = vi.hoisted(() => ({ get: vi.fn(), listDigests: vi.fn() }));
 
 const memoryApi = vi.hoisted(() => ({ activityCounts: vi.fn(), activity: vi.fn() }));
 
 vi.mock("../api/weeklyReport", () => ({ weeklyReportApi: { get: api.get } }));
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: memoryApi }));
+vi.mock("../api/agentDailyDigests", () => ({ agentDailyDigestsApi: { list: api.listDigests } }));
 vi.mock("../context/CompanyContext", () => ({
   useCompany: () => ({ selectedCompanyId: "c1", selectedCompany: { id: "c1", name: "Greatstone", issuePrefix: "GRE" } }),
 }));
@@ -106,6 +107,58 @@ describe("WeeklyReport", () => {
     expect(opened[0]!.context?.label).toBe("This week at Greatstone");
     expect(opened[0]!.context?.summary).toContain("GRE-4 Pipedrive import, stuck for 9 days");
     expect(opened[0]!.context?.suggestions).toContain("What should I focus on this week?");
+  });
+
+  it("says the day by day view starts after the first night", async () => {
+    await render();
+    expect(container.querySelector("[data-testid='weekly-report-daily']")?.textContent).toContain(
+      "The first nightly digest is written just after midnight (UTC).",
+    );
+    expect(api.listDigests).not.toHaveBeenCalled();
+  });
+
+  it("shows each stored nightly digest, with each agent's part and the lead agent's task", async () => {
+    const counts = { tasksCompleted: 2, tasksMoved: 1, comments: 3, runs: 5, failures: 1, spendCents: 250 };
+    api.get.mockResolvedValue({
+      ...WEEKLY_REPORT_FIXTURE,
+      daily: [
+        { date: "2026-10-15", tasksCompleted: 2, tasksMoved: 1, comments: 3, runs: 5, failures: 1, spendCents: 250, busiestAgent: "Ridge" },
+        { date: "2026-10-16", tasksCompleted: 0, tasksMoved: 0, comments: 0, runs: 0, failures: 0, spendCents: 0, busiestAgent: null },
+      ],
+    });
+    api.listDigests.mockResolvedValue({
+      from: "2026-10-15",
+      to: "2026-10-16",
+      digests: [
+        {
+          id: "d1",
+          companyId: "c1",
+          date: "2026-10-15",
+          body: "",
+          leadAgentId: "a9",
+          deliveredIssueId: "i9",
+          deliveredIssueIdentifier: "GRE-40",
+          deliveredAt: "2026-10-16T00:10:00.000Z",
+          skippedReason: null,
+          createdAt: "2026-10-16T00:10:00.000Z",
+          payload: {
+            date: "2026-10-15",
+            windowStart: "2026-10-15T00:00:00.000Z",
+            windowEnd: "2026-10-16T00:00:00.000Z",
+            totals: counts,
+            agents: [{ agentId: "a1", name: "Ridge", counts, completed: [], moved: [], failed: [] }],
+          },
+        },
+      ],
+    });
+    await render();
+    expect(api.listDigests).toHaveBeenCalledWith("c1", { from: "2026-10-15", to: "2026-10-16" });
+    const section = container.querySelector("[data-testid='weekly-report-daily']")!;
+    const text = section.textContent ?? "";
+    expect(text).toContain("15 Oct: 2 finished, 1 moved, 3 comments, 5 runs (1 failed), $2.50. Busiest: Ridge.");
+    expect(text).toContain("16 Oct: 0 finished, 0 moved, 0 comments, 0 runs, $0.00.");
+    expect(section.querySelector("details li")?.textContent).toBe("Ridge: 2 finished, 1 moved, 3 comments, 5 runs (1 failed), $2.50.");
+    expect(section.querySelector("a[href$='/issues/GRE-40']")?.textContent).toBe("GRE-40");
   });
 
   it("copies as plain text for an email", () => {

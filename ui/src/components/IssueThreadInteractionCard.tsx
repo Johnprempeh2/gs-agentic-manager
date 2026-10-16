@@ -33,6 +33,7 @@ import {
 import { cn, formatDateTime, formatShortDate } from "../lib/utils";
 import { InteractionAudienceLine } from "./InteractionAudienceLine";
 import { MarkdownBody, type MarkdownExternalReferenceMap } from "./MarkdownBody";
+import { AgentQuestionCard } from "./AgentQuestionCard";
 import { CopyMarkdownButton } from "./CopyMarkdownButton";
 import { InteractionGuideSheet, InteractionGuideText } from "./InteractionGuide";
 import { interactionGuideSummary, needsInteractionGuide } from "../lib/interaction-guide";
@@ -223,6 +224,8 @@ function interactionKindLabel(kind: IssueThreadInteraction["kind"]) {
       return "Connection request";
     case "request_draft_review":
       return "Draft";
+    case "ask_agent":
+      return "Question for an agent";
     default:
       return kind;
   }
@@ -3717,6 +3720,9 @@ export function IssueThreadInteractionCard({
   // created and stored server-side; only the render is suppressed. Composition
   // sites additionally filter it so no empty slot lingers.
   if (shouldHideInteractionCard(interaction)) return null;
+  if (interaction.kind === "ask_agent") {
+    return <AgentQuestionCard interaction={interaction} agentMap={agentMap} />;
+  }
   const isPlan = isPlanConfirmation(interaction);
   const isToolAction =
     interaction.kind === "request_confirmation" && isToolActionConfirmation(interaction);

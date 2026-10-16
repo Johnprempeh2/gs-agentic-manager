@@ -1,7 +1,8 @@
+import type { StorageService } from "../storage/types.js";
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { organisations, toolConnections, type Db } from "@greatstone/db";
+import { assets, crmFiles, organisations, toolConnections, type Db } from "@greatstone/db";
 import {
   createOrganisationContactSchema,
   createOrganisationSchema,
@@ -13,6 +14,7 @@ import {
   updateOrganisationContactSchema,
   updateOrganisationSchema,
 } from "@greatstone/shared";
+import { contentDispositionHeader, isInlineAttachmentContentType, SVG_CONTENT_TYPE } from "../attachment-types.js";
 import { badRequest, conflict, forbidden, HttpError, notFound, unprocessable } from "../errors.js";
 import { validate } from "../middleware/validate.js";
 import { accessService } from "../services/access.js";
@@ -43,6 +45,8 @@ export interface OrganisationRouteDeps {
   /** Tests pass recorded Pipedrive pages and a stub credential. */
   pipedriveFetch?: PipedriveFetch;
   resolveCredential?: (connection: ConnectionRow) => Promise<string>;
+  /** Where imported CRM files are copied. Without it, files keep their details only. */
+  storage?: StorageService;
 }
 
 /** Companies with an import running in this process, so two clicks do not race. */
@@ -70,7 +74,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const router = Router();
   const svc = organisationService(db);
   const access = accessService(db);
-  const importer = pipedriveOrganisationImportService(db);
+  const importer = pipedriveOrganisationImportService(db, { storage: deps.storage });
   const exportImporter = pipedriveExportImportService(db);
   const hubspotImporter = hubspotExportImportService(db);
   const notionImporter = notionImportService(db);
@@ -78,6 +82,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
   router.use(ORGANISATION_ROUTE_PREFIX, requireEntitlement(db, "enablePipelines"));
+  router.use("/companies/:companyId/crm-files", requireEntitlement(db, "enablePipelines"));
 
   async function assertCrmWriter(req: Request, companyId: string) {
     assertCompanyAccess(req, companyId);
@@ -225,6 +230,13 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             connectionId: connection.id,
             organisations: result.organisations,
             contacts: result.contacts,
+            ...(result.pipelines ? { pipelines: result.pipelines } : {}),
+            ...(result.deals ? { deals: result.deals } : {}),
+            ...(result.activities ? { activities: result.activities } : {}),
+            ...(result.notes ? { notes: result.notes } : {}),
+            ...(result.calls ? { calls: result.calls } : {}),
+            ...(result.emails ? { emails: result.emails } : {}),
+            ...(result.stageChanges ? { stageChanges: result.stageChanges } : {}),
           },
         });
         res.json(result);
@@ -379,6 +391,43 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
       }
     },
   );
+
+  /** People with no organisation, such as Pipedrive people held on their own. Reads need company access only. */
+  router.get("/companies/:companyId/organisation-contacts/unassigned", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await svc.listUnassignedContacts(companyId));
+  });
+
+  // A file copied from a CRM import, served like a case upload: inline only when safe.
+  router.get("/companies/:companyId/crm-files/:fileId/content", async (req, res, next) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const fileId = parseId(req.params.fileId, "File");
+    if (!deps.storage) throw new HttpError(503, "File storage is not available");
+    const row = await db
+      .select({ name: crmFiles.name, objectKey: assets.objectKey, contentType: assets.contentType, byteSize: assets.byteSize, originalFilename: assets.originalFilename })
+      .from(crmFiles)
+      .innerJoin(assets, and(eq(assets.id, crmFiles.assetId), eq(assets.companyId, crmFiles.companyId)))
+      .where(and(eq(crmFiles.companyId, companyId), eq(crmFiles.id, fileId)))
+      .then((rows) => rows[0] ?? null);
+    if (!row) throw notFound("File not found");
+    const object = await deps.storage.getObject(companyId, row.objectKey);
+    const contentType = row.contentType || object.contentType || "application/octet-stream";
+    const mediaType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    const inlineSafe = mediaType !== SVG_CONTENT_TYPE && isInlineAttachmentContentType(mediaType);
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Length", String(row.byteSize || object.contentLength || 0));
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    if (!inlineSafe) res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
+    res.setHeader(
+      "Content-Disposition",
+      contentDispositionHeader(inlineSafe && req.query.download !== "1" ? "inline" : "attachment", row.originalFilename ?? row.name),
+    );
+    object.stream.on("error", (err) => next(err));
+    object.stream.pipe(res);
+  });
 
   router.get(`${ORGANISATION_ROUTE_PREFIX}/:organisationId`, async (req, res) => {
     const companyId = req.params.companyId as string;

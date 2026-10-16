@@ -27,6 +27,7 @@ import { EmptyState } from "../components/EmptyState";
 import { DASHBOARD_OPEN_TASK_STATUSES, DashboardOverview } from "../components/DashboardOverview";
 import { DashboardDigestCard } from "../components/AgentWorkDigest";
 import { DashboardDecisionsBox } from "../components/DashboardDecisionsBox";
+import { FirstWeekChecklist } from "../components/FirstWeekChecklist";
 import { usePublishSharedQueryData, useSharedPollingQuery } from "../hooks/useSharedPolling";
 import { useLiveAgents } from "../hooks/useLiveAgents";
 
@@ -414,6 +415,7 @@ export function Dashboard() {
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
 
       <DashboardDecisionsBox companyId={selectedCompanyId!} />
+      <FirstWeekChecklist companyId={selectedCompanyId!} currentUserId={currentUserId} />
       <DashboardDigestCard companyId={selectedCompanyId!} />
 
       {pausedBanner?.kind === "imported" ? (
@@ -489,7 +491,7 @@ export function Dashboard() {
               <p className="text-sm font-medium text-red-950 dark:text-red-50">
                 {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
               </p>
-              <p className="text-xs text-red-900/70 dark:text-red-100/70">
+              <p className="text-xs text-red-900/85 dark:text-red-100/70">
                 {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
               </p>
             </div>

@@ -1,5 +1,6 @@
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
 import { SEARCH_ASK_TOUR } from "./search-ask-tour";
+import { IMAGES_TOUR } from "./images-tour";
 
 /**
  * One stop on a tour: the element with `data-tour="<target>"`, a title and a
@@ -107,8 +108,8 @@ export const PIPELINE_BOARD_TOUR: TourDefinition = {
 export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
   title: "Client page",
-  description: "Where a client is in their journey, the next action and who you deal with.",
-  version: 1,
+  description: "Where a client is in their journey, where things stand, the next action and who you deal with.",
+  version: 2,
   flag: "enablePipelines",
   label: "this client",
   steps: [
@@ -116,6 +117,11 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-journey",
       title: "Where the client is",
       body: "The journey shows which stages are done, the stage the client is in now, and how long they have been there.",
+    },
+    {
+      target: "client-status",
+      title: "Where things stand",
+      body: "Each stage so far, what is done, what is waiting and on whom (the client or us), with the documents received. Read this first before a call.",
     },
     {
       target: "client-next-action",
@@ -295,8 +301,8 @@ export const DASHBOARD_TOUR: TourDefinition = {
 export const NEEDED_TOUR: TourDefinition = {
   id: "needed",
   title: "Needed from you",
-  description: "Everything the team is waiting on you for, on one page.",
-  version: 2,
+  description: "Everything the team is waiting on you for, on one page, and on your phone.",
+  version: 3,
   autoStart: false,
   route: { match: /^\/needed\/?$/, path: "/needed" },
   label: "Needed from you",
@@ -315,6 +321,10 @@ export const NEEDED_TOUR: TourDefinition = {
       target: "needed-meanwhile",
       title: "What the team did meanwhile",
       body: "Below the list, see what each agent finished and started since you were last here.",
+    },
+    {
+      title: "On your phone",
+      body: "This page works on a phone too. Swipe a row to the right to put it away until tomorrow, and select Undo if you change your mind. Your Inbox works the same way.",
     },
     {
       title: "When it is empty",
@@ -581,21 +591,129 @@ export const AGENT_DETAIL_TOUR: TourDefinition = {
   ],
 };
 
+export const INTEGRATIONS_TOUR: TourDefinition = {
+  id: "integrations",
+  title: "Integrations",
+  description: "What each integration is for: bringing work in, sending updates out, spreadsheets and keys.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/company\/settings\/integrations\/?$/, path: "/company/settings/integrations" },
+  label: "Integrations",
+  steps: [
+    {
+      title: "Work in and out of GSAM",
+      body: "Integrations connect GSAM to the tools your team already uses. Nothing is switched on until you turn it on, and you can turn anything off again.",
+    },
+    {
+      target: "integrations-apps",
+      title: "Your other tools",
+      body: "Each card says what it does and when you would want it. Connect lets agents work in that tool. Import copies your clients and notes in once, from a file, with no key.",
+    },
+    {
+      target: "integrations-builtin",
+      title: "Built in, no account needed",
+      body: "An incoming webhook turns a form or another tool's requests into tasks. Updates to Slack, Teams or Zapier tell your team when work is done. The calendar feed puts deadlines in your own calendar.",
+    },
+    {
+      target: "integrations-export",
+      title: "Download to a spreadsheet",
+      body: "Take your clients, tasks or this week's numbers into Excel or Google Sheets with one click.",
+    },
+    {
+      target: "integrations-keys",
+      title: "What needs a key",
+      body: "Some integrations wait on a key from the provider. This list names each one, the exact names to paste and where they go.",
+    },
+  ],
+};
+
 /** Everyday pages: their tours live in the page bar. */
+export const WEEKLY_REPORT_TOUR: TourDefinition = {
+  id: "weekly-report",
+  title: "This week",
+  description: "A one page report of the week to read or share with your team.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/weekly-report\/?$/, path: "/weekly-report" },
+  label: "This week",
+  steps: [
+    {
+      target: "weekly-report-headline",
+      title: "The week in one line",
+      body: "The first line sums up the last seven days: what was finished, what is stuck and what is waiting on you.",
+    },
+    {
+      target: "weekly-report-needs-you",
+      title: "What needs you",
+      body: "Anything the agents cannot finish without you. Select an item to open it and answer.",
+    },
+    {
+      target: "weekly-report-stuck",
+      title: "What is stuck",
+      body: "Work that has stopped, and why. These are the items to ask about in your next team meeting.",
+    },
+    {
+      target: "weekly-report-share",
+      title: "Share it",
+      body: "Download a PDF or copy the report as text to paste into an email or chat. Nobody needs a login to read it.",
+    },
+  ],
+};
+
+export const CALENDAR_TOUR: TourDefinition = {
+  id: "calendar",
+  title: "Calendar",
+  description: "Due dates, routines and meetings by month or by week.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/calendar\/?$/, path: "/calendar" },
+  label: "Calendar",
+  steps: [
+    {
+      title: "Everything with a date",
+      body: "Task due dates, routines and goals in one place. Select a day to see what is on it and move a due date.",
+    },
+    {
+      target: "calendar-view",
+      title: "Month or week",
+      body: "Switch to Week to see every item for seven days in one row, with nothing hidden. On a phone the calendar shows a list instead.",
+    },
+    {
+      target: "calendar-filters",
+      title: "Choose what to show",
+      body: "Turn tasks, routines or goals on or off so the calendar shows only what you care about.",
+    },
+    {
+      target: "calendar-copy-week",
+      title: "Share the week ahead",
+      body: "Copy the next seven days as text to paste into an email or chat.",
+    },
+    {
+      target: "calendar-add",
+      title: "Add it to your own calendar",
+      body: "Download a file for Outlook, Google Calendar or Apple Calendar so due dates show next to your meetings.",
+    },
+  ],
+};
+
 export const CORE_TOURS: TourDefinition[] = [
   NEEDED_TOUR,
   DASHBOARD_TOUR,
   DECISIONS_TOUR,
   MY_TASKS_TOUR,
   TASKS_TOUR,
+  CALENDAR_TOUR,
   AGENTS_TOUR,
   PROJECTS_TOUR,
   GOALS_TOUR,
   ROUTINES_TOUR,
   APPROVALS_TOUR,
   MEMORY_TOUR,
+  WEEKLY_REPORT_TOUR,
+  IMAGES_TOUR,
   TASK_DETAIL_TOUR,
   AGENT_DETAIL_TOUR,
+  INTEGRATIONS_TOUR,
 ];
 
 /** The everyday tour for a company relative path, if there is one. */

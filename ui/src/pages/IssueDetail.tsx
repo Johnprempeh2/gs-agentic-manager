@@ -46,6 +46,7 @@ import {
 } from "../components/IssueMonitorBanner";
 import { TaskActivityLine } from "../components/TaskActivityLine";
 import { TaskStopReasonLine } from "../components/TaskStopReasonLine";
+import { WhyBlockedCallout } from "../components/WhyBlockedCallout";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -901,6 +902,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       </Button>
       <MakeImageButton
         companyId={issue.companyId}
+        issueId={issue.id}
         onAttach={(file) => uploadAttachment.mutateAsync(file)}
         disabled={uploadAttachment.isPending}
       />
@@ -977,14 +979,34 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             agentNames={agentMap}
             userLabels={userLabelMap}
           />
-          <TaskStopReasonLine
-            issueId={issue.id}
-            issue={issue}
-            hasLiveRuns={hasLiveRuns}
-            currentUserId={currentUserId}
-            agentNames={agentMap}
-            userLabels={userLabelMap}
-          />
+          {issue.status === "blocked" ? (
+            <WhyBlockedCallout
+              className="mt-2"
+              issue={issue}
+              interactions={interactions}
+              pauseHold={
+                activePauseHold
+                  ? {
+                      isRoot: activePauseHold.isRoot,
+                      reason: activePauseHold.reason,
+                      rootIssue: activePauseHoldRoot,
+                    }
+                  : null
+              }
+              currentUserId={currentUserId}
+              agents={agentMap}
+              userLabels={userLabelMap}
+            />
+          ) : (
+            <TaskStopReasonLine
+              issueId={issue.id}
+              issue={issue}
+              hasLiveRuns={hasLiveRuns}
+              currentUserId={currentUserId}
+              agentNames={agentMap}
+              userLabels={userLabelMap}
+            />
+          )}
         </>
       }
       issue={issue}

@@ -2942,6 +2942,40 @@ export function recoveryService(
     );
   }
 
+  // Recovery may only add a blocker that keeps the blocking graph loop free.
+  // A child that already waits on its parent must not become the parent's
+  // blocker as well: the strict cycle check would refuse the write, and on
+  // startup that refusal stopped live from starting (16 Oct 2026). Such a
+  // blocker is skipped with a warning instead.
+  async function withoutCycleFormingBlockers(
+    issue: { id: string; companyId: string; identifier?: string | null },
+    existingBlockerIds: string[],
+    candidateBlockerIds: string[],
+  ) {
+    const existing = new Set(existingBlockerIds);
+    const added = [...new Set(candidateBlockerIds)].filter((id) => !existing.has(id));
+    const cyclic = new Set(
+      await issuesSvc.findCyclicBlockers(issue.companyId, issue.id, added),
+    );
+    if (cyclic.size > 0) {
+      logger.warn(
+        {
+          companyId: issue.companyId,
+          issueId: issue.id,
+          issueIdentifier: issue.identifier ?? null,
+          skippedBlockerIssueIds: [...cyclic],
+        },
+        "recovery skipped a blocker that would make tasks block each other in a loop",
+      );
+    }
+    return [
+      ...new Set([
+        ...existingBlockerIds,
+        ...added.filter((id) => !cyclic.has(id)),
+      ]),
+    ];
+  }
+
   async function openChildIssues(issue: typeof issues.$inferSelect) {
     return db
       .select({ id: issues.id, identifier: issues.identifier })
@@ -2992,12 +3026,11 @@ export function recoveryService(
       existingUnresolvedBlockerIssues(issue.companyId, issue.id),
       openChildIssues(issue),
     ]);
-    const blockedByIssueIds = [
-      ...new Set([
-        ...existingBlockers.map((row) => row.id),
-        ...openChildren.map((row) => row.id),
-      ]),
-    ];
+    const blockedByIssueIds = await withoutCycleFormingBlockers(
+      issue,
+      existingBlockers.map((row) => row.id),
+      openChildren.map((row) => row.id),
+    );
     if (blockedByIssueIds.length === 0) return null;
 
     const updated = await issuesSvc.update(issue.id, {
@@ -3007,7 +3040,7 @@ export function recoveryService(
     if (!updated) return null;
 
     const waitingOn = formatIssueLinksForComment([
-      ...openChildren,
+      ...openChildren.filter((child) => blockedByIssueIds.includes(child.id)),
       ...existingBlockers,
     ]);
     await issuesSvc.addComment(
@@ -3544,12 +3577,11 @@ export function recoveryService(
           );
           await issuesSvc.update(issue.id, {
             status: "blocked",
-            blockedByIssueIds: [
-              ...new Set([
-                ...blockerIds,
-                ...healthyChildren.map((child) => child.id),
-              ]),
-            ],
+            blockedByIssueIds: await withoutCycleFormingBlockers(
+              issue,
+              blockerIds,
+              healthyChildren.map((child) => child.id),
+            ),
           });
         }
         const resolved = await recoveryActionsSvc.resolveActiveForIssue({

@@ -1,22 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ImageCoverControls } from "../components/ImageCoverControls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
+  HIGGSFIELD_API_KEYS_URL,
   imageShapeLabel,
+  imageStyleLabel,
   type GeneratedImage,
+  type GeneratedImagesResponse,
   type ImageAspectRatio,
+  type ImageStylePresetId,
 } from "@greatstone/shared";
 import {
   AlertCircle,
   Download,
+  ExternalLink,
   ImageIcon,
   Loader2,
   RotateCcw,
+  Search,
   Trash2,
   Wand2,
 } from "lucide-react";
 import { imagesApi } from "../api/images";
 import { agentsApi } from "../api/agents";
+import { organisationsApi } from "../api/organisations";
 import { authApi } from "../api/auth";
 import { ApiError } from "../api/client";
 import { useCompany } from "../context/CompanyContext";
@@ -27,6 +35,9 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Link } from "@/lib/router";
 import {
   Dialog,
   DialogContent,
@@ -65,9 +76,20 @@ function NotSetUp({ provider }: { provider?: string | null }) {
       <details className="mt-3 text-muted-foreground">
         <summary className="cursor-pointer text-xs font-medium">For whoever runs GSAM</summary>
         <p className="mt-2 text-xs">
-          Set <code>HIGGSFIELD_API_KEY_ID</code> and <code>HIGGSFIELD_API_KEY_SECRET</code> (from cloud.higgsfield.ai) in the
-          server environment and restart. {provider ? null : "To try the page without a key, set GSAM_IMAGE_PROVIDER=mock."}
+          Make an API key in the Higgsfield console (no higgsfield.ai plan needed; the API uses its own prepaid balance), then
+          set <code>HIGGSFIELD_API_KEY_ID</code> and <code>HIGGSFIELD_API_KEY_SECRET</code> in the server environment and
+          restart. {provider ? null : "To try the page without a key, set GSAM_IMAGE_PROVIDER=mock."}
         </p>
+        <a
+          href={HIGGSFIELD_API_KEYS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+          data-testid="images-get-key-link"
+        >
+          Open the Higgsfield console
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+        </a>
       </details>
     </div>
   );
@@ -93,7 +115,7 @@ function ImageCard({
           <button type="button" onClick={onOpen} className="block h-full w-full" aria-label={`Open image: ${image.prompt}`}>
             <img
               src={image.contentPath}
-              alt={image.prompt}
+              alt={image.altText}
               loading="lazy"
               className="h-full w-full object-cover transition-transform motion-safe:duration-300 group-hover:scale-105"
             />
@@ -119,10 +141,39 @@ function ImageCard({
           {image.prompt}
         </p>
         <p className="text-xs text-muted-foreground">
-          {imageShapeLabel(image.aspectRatio)} · {makerName} · {relativeTime(image.createdAt)}
+          {[imageStyleLabel(image.style), imageShapeLabel(image.aspectRatio), makerName, relativeTime(image.createdAt)]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
+        <ImageLinks image={image} />
       </figcaption>
     </figure>
+  );
+}
+
+function taskHref(issue: { id: string; identifier: string | null }) {
+  return `/issues/${issue.identifier ?? issue.id}`;
+}
+
+/** Where an image belongs: the task it was made for and the client. */
+function ImageLinks({ image }: { image: GeneratedImage }) {
+  if (!image.issue && !image.organisation) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 pt-1">
+      {image.organisation ? (
+        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{image.organisation.name}</span>
+      ) : null}
+      {image.issue ? (
+        <Link
+          to={taskHref(image.issue)}
+          className="max-w-full truncate rounded-full border border-border px-2 py-0.5 text-xs text-foreground hover:bg-accent"
+          title={image.issue.title}
+        >
+          {image.issue.identifier ? `${image.issue.identifier} ` : ""}
+          {image.issue.title}
+        </Link>
+      ) : null}
+    </div>
   );
 }
 
@@ -135,6 +186,11 @@ export function Images() {
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("1:1");
+  const [style, setStyle] = useState<ImageStylePresetId | null>(null);
+  const [organisationId, setOrganisationId] = useState("");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [clientFilter, setClientFilter] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -142,15 +198,26 @@ export function Images() {
     setBreadcrumbs([{ label: "Images" }]);
   }, [setBreadcrumbs]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const companyId = selectedCompanyId ?? "";
+  const filters = useMemo(
+    () => ({ q: debouncedSearch || undefined, organisationId: clientFilter || undefined }),
+    [debouncedSearch, clientFilter],
+  );
+  const filtering = !!filters.q || !!filters.organisationId;
   const statusQuery = useQuery({
     queryKey: queryKeys.images.status(companyId),
     queryFn: () => imagesApi.status(companyId),
     enabled: !!selectedCompanyId,
   });
   const listQuery = useQuery({
-    queryKey: queryKeys.images.list(companyId),
-    queryFn: () => imagesApi.list(companyId, { limit: 120 }),
+    queryKey: queryKeys.images.list(companyId, filters),
+    queryFn: () => imagesApi.list(companyId, { limit: 120, ...filters }),
+    placeholderData: (previous) => previous,
     enabled: !!selectedCompanyId,
     // Keep checking while any image is still being made.
     refetchInterval: (query) =>
@@ -159,6 +226,11 @@ export function Images() {
   const { data: agents } = useQuery({
     queryKey: queryKeys.agents.list(companyId),
     queryFn: () => agentsApi.list(companyId),
+    enabled: !!selectedCompanyId,
+  });
+  const { data: organisations } = useQuery({
+    queryKey: queryKeys.organisations.list(companyId, {}),
+    queryFn: () => organisationsApi.list(companyId),
     enabled: !!selectedCompanyId,
   });
   const session = useQuery({ queryKey: queryKeys.auth.session, queryFn: () => authApi.getSession() });
@@ -175,9 +247,16 @@ export function Images() {
   );
 
   const create = useMutation({
-    mutationFn: (input: { prompt: string; aspectRatio: ImageAspectRatio }) => imagesApi.create(companyId, input),
+    mutationFn: (input: {
+      prompt: string;
+      aspectRatio: ImageAspectRatio;
+      style?: ImageStylePresetId | null;
+      organisationId?: string | null;
+      issueId?: string | null;
+    }) => imagesApi.create(companyId, input),
     onSuccess: (image) => {
-      queryClient.setQueryData(queryKeys.images.list(companyId), (current: Awaited<ReturnType<typeof imagesApi.list>> | undefined) =>
+      // Show the new image straight away in every gallery view; the refetch settles filters.
+      queryClient.setQueriesData<GeneratedImagesResponse>({ queryKey: queryKeys.images.list(companyId) }, (current) =>
         current ? { ...current, images: [image, ...current.images], total: current.total + 1 } : current,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
@@ -202,12 +281,17 @@ export function Images() {
 
   const submit = () => {
     if (!canSubmit) return;
-    create.mutate({ prompt: trimmed, aspectRatio }, { onSuccess: () => setPrompt("") });
+    create.mutate(
+      { prompt: trimmed, aspectRatio, style, organisationId: organisationId || null },
+      { onSuccess: () => setPrompt("") },
+    );
   };
 
   const reuse = (image: GeneratedImage) => {
     setPrompt(image.prompt);
     setAspectRatio(image.aspectRatio);
+    setStyle(image.style);
+    setOrganisationId(image.organisation?.id ?? "");
     setOpenId(null);
     promptRef.current?.focus();
     promptRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -234,7 +318,11 @@ export function Images() {
         </p>
       </header>
 
-      <section className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="images-composer-title">
+      <section
+        className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5"
+        aria-labelledby="images-composer-title"
+        data-tour="images-composer"
+      >
         <div className="flex items-center gap-2">
           <Wand2 className="h-4 w-4 text-primary" aria-hidden="true" />
           <h2 id="images-composer-title" className="text-sm font-semibold">Make an image</h2>
@@ -252,15 +340,40 @@ export function Images() {
           onPromptChange={setPrompt}
           aspectRatio={aspectRatio}
           onAspectRatioChange={setAspectRatio}
+          style={style}
+          onStyleChange={setStyle}
           onSubmitShortcut={submit}
           disabled={!configured}
         />
+
+        {organisations && organisations.length > 0 ? (
+          <div className="space-y-2">
+            <label htmlFor="image-client" className="text-sm font-medium">
+              Who is it for? <span className="font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <NativeSelect
+              id="image-client"
+              value={organisationId}
+              onChange={(event) => setOrganisationId(event.target.value)}
+              disabled={!configured}
+              className="sm:w-72"
+              data-testid="image-client"
+            >
+              <option value="">No particular client</option>
+              {organisations.map((organisation) => (
+                <option key={organisation.id} value={organisation.id}>
+                  {organisation.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
             Usually ready in under a minute. You can leave this page; it keeps going.
           </p>
-          <Button onClick={submit} disabled={!canSubmit} data-testid="make-image">
+          <Button onClick={submit} disabled={!canSubmit} data-testid="make-image" data-tour="images-make">
             {create.isPending ? (
               <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
             ) : (
@@ -271,26 +384,71 @@ export function Images() {
         </div>
       </section>
 
-      {images.length === 0 ? (
-        <EmptyState
-          icon={ImageIcon}
-          title="No images yet"
-          message="Images you and your agents make will appear here, ready to download or reuse."
-        />
-      ) : (
-        <section aria-label="Your images" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {images.map((image) => (
-            <ImageCard
-              key={image.id}
-              image={image}
-              makerName={makerName(image)}
-              onOpen={() => setOpenId(image.id)}
-              onRetry={() => create.mutate({ prompt: image.prompt, aspectRatio: image.aspectRatio })}
-              retrying={create.isPending || !configured}
+      <div className="space-y-4" data-tour="images-gallery">
+        {images.length > 0 || filtering ? (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative sm:w-80">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <Input
+                aria-label="Search images"
+                placeholder="Search by what the image shows"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="pl-8"
+                data-testid="image-search"
+              />
+            </div>
+            {organisations && organisations.length > 0 ? (
+              <NativeSelect
+                aria-label="Show images for a client"
+                value={clientFilter}
+                onChange={(event) => setClientFilter(event.target.value)}
+                className="sm:w-56"
+              >
+                <option value="">All clients</option>
+                {organisations.map((organisation) => (
+                  <option key={organisation.id} value={organisation.id}>
+                    {organisation.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            ) : null}
+          </div>
+        ) : null}
+
+        {images.length === 0 ? (
+          filtering ? (
+            <EmptyState icon={Search} title="No images match" message="Try other words, or show all clients." />
+          ) : (
+            <EmptyState
+              icon={ImageIcon}
+              title="No images yet"
+              message="Images you and your agents make will appear here, ready to download or reuse."
             />
-          ))}
-        </section>
-      )}
+          )
+        ) : (
+          <section aria-label="Your images" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {images.map((image) => (
+              <ImageCard
+                key={image.id}
+                image={image}
+                makerName={makerName(image)}
+                onOpen={() => setOpenId(image.id)}
+                onRetry={() =>
+                  create.mutate({
+                    prompt: image.prompt,
+                    aspectRatio: image.aspectRatio,
+                    style: image.style,
+                    organisationId: image.organisation?.id ?? null,
+                    issueId: image.issue?.id ?? null,
+                  })
+                }
+                retrying={create.isPending || !configured}
+              />
+            ))}
+          </section>
+        )}
+      </div>
 
       <Dialog open={!!opened} onOpenChange={(open) => (!open ? setOpenId(null) : undefined)}>
         <DialogContent className="max-w-4xl">
@@ -301,11 +459,15 @@ export function Images() {
                 <DialogDescription className="whitespace-pre-wrap">{opened.prompt}</DialogDescription>
               </DialogHeader>
               {opened.contentPath ? (
-                <img src={opened.contentPath} alt={opened.prompt} className="max-h-(--sz-70vh) w-full rounded-md object-contain" />
+                <img src={opened.contentPath} alt={opened.altText} className="max-h-(--sz-70vh) w-full rounded-md object-contain" />
               ) : null}
               <p className="text-xs text-muted-foreground">
-                {imageShapeLabel(opened.aspectRatio)} · Made by {makerName(opened)} · {relativeTime(opened.createdAt)}
+                {[imageStyleLabel(opened.style), imageShapeLabel(opened.aspectRatio), `Made by ${makerName(opened)}`, relativeTime(opened.createdAt)]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
+              <ImageLinks image={opened} />
+              <ImageCoverControls image={opened} />
               <DialogFooter className="gap-2 sm:justify-between">
                 <Button variant="ghost" onClick={() => setConfirmDeleteId(opened.id)}>
                   <Trash2 className="h-4 w-4" aria-hidden="true" />

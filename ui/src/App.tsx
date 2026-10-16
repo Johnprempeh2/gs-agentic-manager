@@ -4,7 +4,6 @@ import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, u
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/i18n";
 import { Layout } from "./components/Layout";
-import { ConferenceRoomChatGate } from "./components/ConferenceRoomChatGate";
 import { PipelinesExperimentalGate } from "./components/PipelinesExperimentalGate";
 import { CasesExperimentalGate } from "./components/CasesExperimentalGate";
 import { DeepDiveExperimentalGate } from "./components/DeepDiveExperimentalGate";
@@ -29,6 +28,7 @@ import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
 import { CliAuthPage } from "./pages/CliAuth";
 import { InviteLandingPage } from "./pages/InviteLanding";
+import { ClientAcceptancePage } from "./pages/ClientAcceptance";
 import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
@@ -42,6 +42,7 @@ import {
 } from "./lib/onboarding-route";
 import { filterHiddenInstanceSettingsPath, normalizeRememberedInstanceSettingsPath } from "./lib/instance-settings";
 import { useCloudInstance } from "./hooks/useCloudInstance";
+import { useIsPhone } from "./hooks/useIsPhone";
 import { cloudStackCreateUrl } from "./lib/cloudLinks";
 import { navigateTopLevel } from "@/lib/browserNavigation";
 
@@ -440,6 +441,7 @@ function boardRoutes() {
       <Route path="weekly-report" element={<WeeklyReport />} />
       <Route path="notifications" element={<NotificationSettings />} />
       <Route path="morning" element={<MorningSummary />} />
+      <Route path="today" element={<MorningSummary />} />
       <Route path="activity" element={<CompanyActivity />} />
       <Route path="activity/runs" element={<AuditHub section="runs" />} />
       <Route path="activity/costs" element={<AuditHub section="costs" />} />
@@ -454,15 +456,10 @@ function boardRoutes() {
       <Route path="runs" element={<AuditCompatibilityRedirect to="/activity/runs" />} />
       <Route path="costs" element={<AuditCompatibilityRedirect to="/activity/costs" />} />
       <Route path="budgets" element={<AuditCompatibilityRedirect to="/activity/budgets" />} />
-      {/* Conference Room Chat surfaces (PAP-136/PAP-137): routes stay
-          registered but redirect to the company home while the experimental
-          flag is off. The board-level `artifacts` mount below is the new
-          conference-room one; the master-level mount above it still serves
-          `/artifacts` in both modes. */}
-      <Route element={<ConferenceRoomChatGate />}>
-        <Route path="board-chat" element={<BoardChat />} />
-        <Route path="artifacts" element={<Artifacts />} />
-      </Route>
+      {/* Conference Room Chat (PAP-136/PAP-137) graduated from Experimental
+          (GRE-1624), so its route is no longer gated. `artifacts` is already
+          mounted above. */}
+      <Route path="board-chat" element={<BoardChat />} />
       {/* Task chat dev harness — dev builds only. */}
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
@@ -676,6 +673,7 @@ export function OnboardingRoutePage() {
 function CompanyRootRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
   const location = useLocation();
+  const isPhone = useIsPhone();
 
   if (loading) {
     return <BrandLoading />;
@@ -694,7 +692,8 @@ function CompanyRootRedirect() {
     return <NoCompaniesStartPage />;
   }
 
-  return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
+  // On a phone the day starts with what needs you, not the full dashboard.
+  return <Navigate to={`/${targetCompany.issuePrefix}/${isPhone ? "today" : "dashboard"}`} replace />;
 }
 
 function StatusCardsLegacyRedirect() {
@@ -801,6 +800,7 @@ export function App() {
         <Route path="board-claim/:token" element={<BoardClaimPage />} />
         <Route path="cli-auth/:id" element={<CliAuthPage />} />
         <Route path="invite/:token" element={<InviteLandingPage />} />
+        <Route path="accept/:token" element={<ClientAcceptancePage />} />
         <Route element={<CloudAccessGate allowMembershipRequest />}>
           {/* The identity APIs enforce the chat rollout flag. Nonmembers cannot
               read experimental settings, but a private invitation may request membership. */}

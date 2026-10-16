@@ -180,6 +180,96 @@ describe("Organisation company page", () => {
     expect(engagement.querySelector('a[href="/issues/GRE-9"]')?.textContent).toBe("GRE-9 Send the proposal");
   });
 
+  it("shows every field imported from Pipedrive under Pipedrive's names", async () => {
+    const base = detail();
+    mockApi.get.mockResolvedValue(detail({
+      source: "pipedrive",
+      crmFields: [
+        { key: "label_ids", label: "Labels", value: ["DevTools", "Partner"] },
+        { key: "employee_count", label: "Number of employees", value: 120 },
+      ],
+      contacts: [{ ...base.contacts[0]!, source: "pipedrive", crmFields: [{ key: "gh", label: "GitHub handle", value: "kofi-m" }] }],
+    }));
+    mockApi.history.mockResolvedValue(history());
+    await render();
+
+    const info = container.querySelector('section[aria-label="Company info"]')!;
+    expect(info.textContent).toContain("From Pipedrive");
+    expect(info.textContent).toContain("LabelsDevTools, Partner");
+    expect(info.textContent).toContain("Number of employees120");
+    const contacts = container.querySelector('section[aria-label="Contacts"]')!;
+    expect(contacts.querySelector("summary")?.textContent).toBe("From Pipedrive (1)");
+    expect(contacts.textContent).toContain("GitHub handlekofi-m");
+  });
+
+  it("lists imported activities, notes and calls", async () => {
+    mockApi.get.mockResolvedValue(detail());
+    mockApi.history.mockResolvedValue(history({
+      timeline: [
+        {
+          id: "t1", source: "pipedrive", kind: "activity", activityType: "meeting", subject: "DevTools demo",
+          body: "Showed the CLI.", occurredAt: "2026-10-01T10:00:00Z", durationMinutes: 45, done: true,
+          ownerName: "Ama Owusu", contactId: "c1", contactName: "Kofi Mensah", caseId: null, caseTitle: null, details: {},
+        },
+        {
+          id: "t2", source: "pipedrive", kind: "note", activityType: null, subject: null, body: "Wants a trial licence.",
+          occurredAt: "2026-09-30T08:00:00Z", durationMinutes: null, done: null, ownerName: null,
+          contactId: null, contactName: null, caseId: "case-1", caseTitle: "Acme DevTools", details: {},
+        },
+        {
+          id: "t3", source: "pipedrive", kind: "email", activityType: "email", subject: "Re: pricing", body: "Sounds good.",
+          occurredAt: "2026-09-29T08:00:00Z", durationMinutes: null, done: null, ownerName: null,
+          contactId: null, contactName: null, caseId: null, caseTitle: null,
+          details: { from: ["Kofi <kofi@acme.example>"], to: ["Ama <ama@greatstone.example>"] },
+        },
+      ],
+    }));
+    await render();
+    const section = container.querySelector('section[aria-label="Activities and notes"]')!;
+    const rows = section.querySelectorAll("li");
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.textContent).toContain("DevTools demo");
+    expect(rows[0]!.textContent).toContain("Done");
+    expect(rows[0]!.textContent).toContain("45 min");
+    expect(rows[0]!.textContent).toContain("with Kofi Mensah");
+    expect(rows[1]!.textContent).toContain("Note");
+    expect(rows[1]!.textContent).toContain("Acme DevTools");
+    expect(rows[1]!.textContent).toContain("Wants a trial licence.");
+    expect(rows[2]!.textContent).toContain("Re: pricing");
+    expect(rows[2]!.textContent).toContain("from Kofi <kofi@acme.example>");
+    expect(rows[2]!.textContent).toContain("to Ama <ama@greatstone.example>");
+  });
+
+  it("lists imported files, linking copies and Pipedrive links", async () => {
+    mockApi.get.mockResolvedValue(detail());
+    mockApi.history.mockResolvedValue(history({
+      files: [
+        {
+          id: "f1", source: "pipedrive", name: "Order form.pdf", contentType: "application/pdf", byteSize: 2048,
+          description: "Signed copy", ownerName: "Ama Owusu", addedAt: "2026-09-25T09:00:00Z",
+          contentPath: "/api/companies/company-1/crm-files/f1/content", remoteUrl: null, notCopied: null,
+          contactName: "Kofi Mensah", caseId: "case-1", caseTitle: "Acme DevTools",
+        },
+        {
+          id: "f2", source: "pipedrive", name: "Proposal deck", contentType: null, byteSize: null, description: null,
+          ownerName: null, addedAt: null, contentPath: null, remoteUrl: "https://docs.google.com/presentation/d/1AbC",
+          notCopied: "Linked from googledrive", contactName: null, caseId: null, caseTitle: null,
+        },
+      ],
+    }));
+    await render();
+    const section = container.querySelector('section[aria-label="Files"]')!;
+    const rows = section.querySelectorAll("li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.querySelector("a")?.getAttribute("href")).toBe("/api/companies/company-1/crm-files/f1/content");
+    expect(rows[0]!.textContent).toContain("2 KB");
+    expect(rows[0]!.textContent).toContain("on Kofi Mensah");
+    expect(rows[0]!.textContent).toContain("Acme DevTools");
+    expect(rows[0]!.textContent).toContain("Signed copy");
+    expect(rows[1]!.querySelector("a")?.getAttribute("href")).toBe("https://docs.google.com/presentation/d/1AbC");
+    expect(rows[1]!.textContent).toContain("Not copied into GSAM: Linked from googledrive");
+  });
+
   it("shows empty states when there are no contacts and no history", async () => {
     mockApi.get.mockResolvedValue(detail({ contacts: [] }));
     mockApi.history.mockResolvedValue(history({ lastContactAt: null, cases: [] }));
@@ -187,6 +277,8 @@ describe("Organisation company page", () => {
     expect(container.textContent).toContain("No contacts yet. Use Edit to add one.");
     expect(container.textContent).toContain("No pipeline items for this organisation yet.");
     expect(container.textContent).toContain("Last contactNo contact yet");
+    expect(container.querySelector('section[aria-label="Activities and notes"]')).toBeNull();
+    expect(container.querySelector('section[aria-label="Files"]')).toBeNull();
   });
 
   it("shows an error for the history without hiding the rest of the page", async () => {

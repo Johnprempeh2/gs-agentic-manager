@@ -474,6 +474,7 @@ export const queryKeys = {
       ["organisations", companyId, "detail", organisationId] as const,
     history: (companyId: string, organisationId: string) =>
       ["organisations", companyId, "history", organisationId] as const,
+    unassignedContacts: (companyId: string) => ["organisations", companyId, "unassigned-contacts"] as const,
   },
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
@@ -641,8 +642,10 @@ export const queryKeys = {
   images: {
     all: (companyId: string) => ["images", companyId] as const,
     status: (companyId: string) => ["images", companyId, "status"] as const,
-    list: (companyId: string) => ["images", companyId, "list"] as const,
+    list: (companyId: string, filters?: { q?: string; organisationId?: string }) =>
+      filters ? (["images", companyId, "list", filters] as const) : (["images", companyId, "list"] as const),
     detail: (imageId: string) => ["images", "detail", imageId] as const,
+    covers: (companyId: string) => ["images", companyId, "covers"] as const,
   },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
@@ -789,6 +792,7 @@ export const queryKeys = {
   notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
   morningSummary: (companyId: string) => ["morning-summary", companyId] as const,
   weeklyReport: (companyId: string) => ["weekly-report", companyId] as const,
+  agentDailyDigests: (companyId: string, from: string, to: string) => ["agent-daily-digests", companyId, from, to] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   /** One Decisions feed (GRE-263). Under the `attention` prefix so every
    *  existing attention invalidation also refreshes the feed and its count. */

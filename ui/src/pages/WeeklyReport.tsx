@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { WeeklyReport as WeeklyReportData, WeeklyReportTask } from "@greatstone/shared";
-import { AlertTriangle, Check, CircleCheck, ClipboardCopy, Coins, Download, GitBranch, Hand, Newspaper, Sparkles } from "lucide-react";
+import { AlertTriangle, CalendarDays, Check, CircleCheck, ClipboardCopy, Coins, Download, GitBranch, Hand, Newspaper, Sparkles } from "lucide-react";
+import { agentDailyDigestsApi } from "../api/agentDailyDigests";
 import { weeklyReportApi } from "../api/weeklyReport";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -12,6 +13,8 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import {
+  dailyDigestAgentLine,
+  dailyDigestLine,
   moveLabel,
   pipelineSummary,
   stuckForLabel,
@@ -22,6 +25,7 @@ import {
   weeklyReportSections,
 } from "../lib/weekly-report";
 import { downloadTextFile } from "../lib/issues-csv";
+import { setFirstWeekMark } from "../lib/first-week";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
 import { formatCents } from "../lib/utils";
@@ -62,7 +66,7 @@ function Section({
   testId: string;
 }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-card p-4" data-testid={testId}>
+    <section className="space-y-2 rounded-lg border border-border bg-card p-4 print:break-inside-avoid" data-testid={testId} data-tour={testId}>
       <h2 className="flex items-center gap-2 text-base font-semibold">
         <Icon className="size-4 text-muted-foreground" aria-hidden />
         {title}
@@ -88,16 +92,75 @@ function Quiet({ children }: { children: ReactNode }) {
 function More({ shown, total, to }: { shown: number; total: number; to: string }) {
   if (total <= shown) return null;
   return (
-    <Link to={to} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+    <Link to={to} className="text-sm text-muted-foreground hover:text-foreground hover:underline print:no-underline">
       and {total - shown} more
     </Link>
+  );
+}
+
+/** The nightly digests for the week, one line a day; open a day to see each agent. */
+function DayByDay({ report }: { report: WeeklyReportData }) {
+  const { selectedCompanyId } = useCompany();
+  const days = report.daily ?? [];
+  const from = days[0]?.date ?? "";
+  const to = days[days.length - 1]?.date ?? "";
+  const { data, error } = useQuery({
+    queryKey: queryKeys.agentDailyDigests(selectedCompanyId ?? "", from, to),
+    queryFn: () => agentDailyDigestsApi.list(selectedCompanyId!, { from, to }),
+    enabled: !!selectedCompanyId && days.length > 0,
+  });
+  const byDate = new Map((data?.digests ?? []).map((digest) => [digest.date, digest]));
+  const task = data?.digests.find((digest) => digest.deliveredIssueIdentifier)?.deliveredIssueIdentifier ?? null;
+
+  return (
+    <Section icon={CalendarDays} title="Day by day" testId="weekly-report-daily">
+      {days.length === 0 ? (
+        <Quiet>The first nightly digest is written just after midnight (UTC). Each day then shows here.</Quiet>
+      ) : (
+        <ul className="space-y-1 text-sm">
+          {days.map((day) => {
+            const agents = byDate.get(day.date)?.payload.agents ?? [];
+            return (
+              <li key={day.date}>
+                {agents.length === 0 ? (
+                  <span>{dailyDigestLine(day)}</span>
+                ) : (
+                  <details>
+                    <summary className="cursor-pointer">{dailyDigestLine(day)}</summary>
+                    <ul className="space-y-0.5 pl-4 pt-1 text-muted-foreground">
+                      {agents.map((agent) => (
+                        <li key={agent.agentId}>{dailyDigestAgentLine(agent)}</li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {error ? (
+        <p className="text-sm text-destructive">
+          Could not load each agent's part of the digests: {error instanceof Error ? error.message : "unknown error"}
+        </p>
+      ) : null}
+      {task ? (
+        <Quiet>
+          Each digest also goes to the lead agent on{" "}
+          <Link to={`/issues/${task}`} className="underline underline-offset-2 hover:text-foreground">
+            {task}
+          </Link>
+          .
+        </Quiet>
+      ) : null}
+    </Section>
   );
 }
 
 export function WeeklyReportView({ report }: { report: WeeklyReportData }) {
   return (
     <div className="space-y-4">
-      <p className="text-base" data-testid="weekly-report-headline">
+      <p className="text-base" data-testid="weekly-report-headline" data-tour="weekly-report-headline">
         {weeklyHeadline(report)}
       </p>
 
@@ -201,6 +264,8 @@ export function WeeklyReportView({ report }: { report: WeeklyReportData }) {
           </Link>
         </Quiet>
       </Section>
+
+      <DayByDay report={report} />
     </div>
   );
 }
@@ -220,6 +285,12 @@ export function WeeklyReport() {
     queryFn: () => weeklyReportApi.get(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  // Opening the report ticks "Read This week" on the Home checklist.
+  const reportLoaded = !!data;
+  useEffect(() => {
+    if (reportLoaded && selectedCompanyId) setFirstWeekMark(selectedCompanyId, "weekly-report");
+  }, [reportLoaded, selectedCompanyId]);
 
   async function copyReport() {
     if (!data) return;
@@ -243,7 +314,7 @@ export function WeeklyReport() {
             {data ? `${weekRangeLabel(data)}. ` : ""}What the agents finished, what is stuck, how the pipeline moved, what GSAM learned and what needs you.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 print:hidden" data-tour="weekly-report-share">
           <Button
             size="sm"
             variant="outline"

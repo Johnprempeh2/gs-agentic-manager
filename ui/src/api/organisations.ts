@@ -33,6 +33,9 @@ export const organisationsApi = {
   },
   get: (companyId: string, organisationId: string) =>
     api.get<OrganisationDetail>(`${base(companyId)}/${encodeURIComponent(organisationId)}`),
+  /** People with no organisation, such as Pipedrive people held on their own. */
+  unassignedContacts: (companyId: string) =>
+    api.get<OrganisationContact[]>(`/companies/${encodeURIComponent(companyId)}/organisation-contacts/unassigned`),
   history: (companyId: string, organisationId: string) =>
     api.get<OrganisationHistory>(`${base(companyId)}/${encodeURIComponent(organisationId)}/history`),
   create: (companyId: string, body: CreateOrganisation) => api.post<Organisation>(base(companyId), body),

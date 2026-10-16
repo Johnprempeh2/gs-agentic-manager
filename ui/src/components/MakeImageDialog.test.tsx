@@ -24,6 +24,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     companyId: "company-1",
     prompt: "A lighthouse at dawn",
     aspectRatio: "16:9",
+    style: null,
     provider: "mock",
     model: "practice",
     status: "completed",
@@ -32,6 +33,11 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     contentPath: "/api/assets/asset-1/content",
     createdByAgentId: null,
     createdByUserId: "user-1",
+    issue: null,
+    organisation: null,
+    altText: "A test image",
+    issueCover: false,
+    organisationCover: false,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,
@@ -54,7 +60,7 @@ async function render(onAttach: (file: File) => Promise<unknown>) {
   await act(async () => {
     root.render(
       <QueryClientProvider client={client}>
-        <MakeImageButton companyId="company-1" onAttach={onAttach} />
+        <MakeImageButton companyId="company-1" issueId="issue-1" onAttach={onAttach} />
       </QueryClientProvider>,
     );
   });
@@ -116,7 +122,11 @@ describe("Make an image from a task", () => {
 
     await act(async () => setTextarea(byTestId<HTMLTextAreaElement>("image-prompt")!, "A lighthouse at dawn"));
     await click(byTestId("make-image-dialog-submit"));
-    expect(imagesApiMock.create).toHaveBeenCalledWith("company-1", { prompt: "A lighthouse at dawn", aspectRatio: "16:9" });
+    expect(imagesApiMock.create).toHaveBeenCalledWith("company-1", {
+      prompt: "A lighthouse at dawn",
+      aspectRatio: "16:9",
+      issueId: "issue-1",
+    });
 
     await click(byTestId("make-image-dialog-attach"));
     expect(onAttach).toHaveBeenCalledTimes(1);

@@ -8,6 +8,7 @@ describe("everyday page tours", () => {
     expect(coreTourForPath("/agents/paused")?.id).toBe("agents");
     expect(coreTourForPath("/approvals/all")?.id).toBe("approvals");
     expect(coreTourForPath("/memory/review")?.id).toBe("memory");
+    expect(coreTourForPath("/company/settings/integrations")?.id).toBe("integrations");
   });
 
   it("finds the item tours for a task and an agent", () => {

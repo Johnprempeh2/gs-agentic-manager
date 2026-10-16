@@ -1,4 +1,5 @@
 import type {
+  CreateClientAcceptanceLinkResponse,
   ClientEvidenceCandidatesResponse,
   ClientEvidenceItem,
   ClientFilesResponse,
@@ -753,6 +754,10 @@ export const pipelinesApi = {
     api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
   setCaseEngagement: (caseId: string, status: EngagementStatus) =>
     api.put<{ engagement: ClientEngagement }>(`/cases/${caseId}/engagement`, { status }),
+  /** Make the client's online acceptance link (revokes any older one). The link is returned only here. */
+  createEngagementLink: (caseId: string) =>
+    api.post<CreateClientAcceptanceLinkResponse>(`/cases/${caseId}/engagement/online-link`, {}),
+  revokeEngagementLink: (caseId: string) => api.delete<void>(`/cases/${caseId}/engagement/online-link`),
   /** Upload the engagement pack (marks it sent) or the client's signed acceptance (marks it accepted). */
   uploadEngagementFile: (caseId: string, step: "pack" | "acceptance", file: File) => {
     const form = new FormData();

@@ -1626,6 +1626,19 @@ export interface RequestItemVerdictsResult {
   staleTarget?: RequestConfirmationTarget | null;
 }
 
+/** An agent asks another agent in the same company a question on its own task. */
+export interface AskAgentPayload {
+  version: 1;
+  question: string;
+}
+
+export interface AskAgentResult {
+  version: 1;
+  outcome: "answered" | "withdrawn" | "issue_closed" | "addressee_deleted" | "skipped";
+  answer?: string | null;
+  reason?: string | null;
+}
+
 export interface IssueThreadInteractionBase extends IssueThreadInteractionActorFields {
   id: string;
   companyId: string;
@@ -1699,7 +1712,14 @@ export interface ConnectionIntentInteraction extends IssueThreadInteractionBase 
   result?: ConnectionIntentResult | null;
 }
 
+export interface AskAgentInteraction extends IssueThreadInteractionBase {
+  kind: "ask_agent";
+  payload: AskAgentPayload;
+  result?: AskAgentResult | null;
+}
+
 export type IssueThreadInteraction =
+  | AskAgentInteraction
   | SuggestTasksInteraction
   | AskUserQuestionsInteraction
   | RequestConfirmationInteraction
@@ -1709,6 +1729,7 @@ export type IssueThreadInteraction =
   | RequestDraftReviewInteraction;
 
 export type IssueThreadInteractionPayload =
+  | AskAgentPayload
   | SuggestTasksPayload
   | AskUserQuestionsPayload
   | RequestConfirmationPayload
@@ -1718,6 +1739,7 @@ export type IssueThreadInteractionPayload =
   | RequestDraftReviewPayload;
 
 export type IssueThreadInteractionResult =
+  | AskAgentResult
   | SuggestTasksResult
   | AskUserQuestionsResult
   | RequestConfirmationResult

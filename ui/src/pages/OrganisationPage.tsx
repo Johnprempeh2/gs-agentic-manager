@@ -1,8 +1,11 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Building2, History, Mail, Pencil, Phone, Star } from "lucide-react";
+import { ArrowRightLeft, Building2, CalendarClock, FileText, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
+  type CrmFile,
+  type CrmRecordField,
+  type CrmTimelineEntry,
   type OrganisationContact,
   type OrganisationHistoryCase,
   type OrganisationHistoryStageChange,
@@ -17,6 +20,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link, useParams } from "@/lib/router";
+import { formatBytes } from "@/lib/issue-output";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { ORGANISATION_STATUS_BADGE, OrganisationDialogContent } from "./Organisations";
 
@@ -130,6 +134,12 @@ export function OrganisationPage() {
         {organisation.notes ? (
           <p className="mt-3 whitespace-pre-wrap border-t border-border pt-3 text-sm">{organisation.notes}</p>
         ) : null}
+        {organisation.crmFields?.length ? (
+          <div className="mt-3 border-t border-border pt-3">
+            <h2 className="mb-2 text-xs font-medium text-muted-foreground">{importedFieldsHeading(organisation.source)}</h2>
+            <CrmFieldList fields={organisation.crmFields} />
+          </div>
+        ) : null}
       </section>
 
       <section aria-label="Contacts" className="space-y-2">
@@ -162,6 +172,24 @@ export function OrganisationPage() {
         )}
       </section>
 
+      {history.data?.timeline?.length ? (
+        <section aria-label="Activities and notes" className="space-y-2">
+          <h2 className="text-sm font-semibold">Activities and notes</h2>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {history.data.timeline.map((entry) => <TimelineRow key={entry.id} entry={entry} />)}
+          </ul>
+        </section>
+      ) : null}
+
+      {history.data?.files?.length ? (
+        <section aria-label="Files" className="space-y-2">
+          <h2 className="text-sm font-semibold">Files</h2>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {history.data.files.map((file) => <FileRow key={file.id} file={file} />)}
+          </ul>
+        </section>
+      ) : null}
+
       <Dialog open={editing} onOpenChange={setEditing}>
         {editing && selectedCompanyId ? (
           <OrganisationDialogContent
@@ -175,29 +203,142 @@ export function OrganisationPage() {
   );
 }
 
+const TIMELINE_ICONS = { activity: CalendarClock, note: StickyNote, call: Phone, email: Mail, stage_change: ArrowRightLeft } as const;
+
+function timelineTitle(entry: CrmTimelineEntry) {
+  if (entry.subject) return entry.subject;
+  if (entry.kind === "note") return "Note";
+  if (entry.kind === "call") return "Call";
+  if (entry.kind === "email") return "Email";
+  if (entry.kind === "stage_change") return "Stage change";
+  return entry.activityType ? entry.activityType.charAt(0).toUpperCase() + entry.activityType.slice(1) : "Activity";
+}
+
+function timelineMeta(entry: CrmTimelineEntry) {
+  const parts: string[] = [];
+  if (entry.occurredAt) parts.push(formatDateTime(entry.occurredAt));
+  if (entry.kind === "activity") {
+    if (entry.activityType) parts.push(entry.activityType);
+    parts.push(entry.done ? "Done" : "Planned");
+  }
+  if (entry.durationMinutes) parts.push(`${entry.durationMinutes} min`);
+  if (entry.kind === "email") {
+    const from = Array.isArray(entry.details.from) ? entry.details.from.join(", ") : "";
+    const to = Array.isArray(entry.details.to) ? entry.details.to.join(", ") : "";
+    if (from) parts.push(`from ${from}`);
+    if (to) parts.push(`to ${to}`);
+  }
+  if (entry.ownerName) parts.push(entry.ownerName);
+  if (entry.contactName) parts.push(`with ${entry.contactName}`);
+  return parts.join(" · ");
+}
+
+/** One imported activity, note or call. */
+function TimelineRow({ entry }: { entry: CrmTimelineEntry }) {
+  const Icon = TIMELINE_ICONS[entry.kind] ?? CalendarClock;
+  return (
+    <li className="flex gap-2 px-3 py-2 text-sm">
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          <span className="font-medium">{timelineTitle(entry)}</span>
+          {entry.caseId && entry.caseTitle ? <span className="text-xs text-muted-foreground">{entry.caseTitle}</span> : null}
+        </div>
+        <p className="text-xs text-muted-foreground">{timelineMeta(entry)}</p>
+        {entry.body ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{entry.body}</p> : null}
+      </div>
+    </li>
+  );
+}
+
+/** One file imported from a CRM: opens the copy in GSAM, or the CRM's link when it was not copied. */
+function FileRow({ file }: { file: CrmFile }) {
+  const href = file.contentPath ?? file.remoteUrl;
+  const meta = [
+    file.addedAt ? formatDate(file.addedAt) : null,
+    file.byteSize ? formatBytes(file.byteSize) : null,
+    file.ownerName,
+    file.contactName ? `on ${file.contactName}` : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <li className="flex gap-2 px-3 py-2 text-sm">
+      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          {href ? (
+            <a href={href} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">{file.name}</a>
+          ) : (
+            <span className="font-medium">{file.name}</span>
+          )}
+          {file.caseId && file.caseTitle ? <span className="text-xs text-muted-foreground">{file.caseTitle}</span> : null}
+        </div>
+        {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
+        {file.notCopied ? <p className="text-xs text-muted-foreground">Not copied into GSAM: {file.notCopied}</p> : null}
+        {file.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{file.description}</p> : null}
+      </div>
+    </li>
+  );
+}
+
+function importedFieldsHeading(source: string) {
+  return source === "pipedrive" ? "From Pipedrive" : source === "hubspot" ? "From HubSpot" : "More details";
+}
+
+function crmFieldText(value: CrmRecordField["value"]) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+/** Fields imported from a CRM under the CRM's own names, in the CRM's order. */
+export function CrmFieldList({ fields }: { fields: CrmRecordField[] }) {
+  return (
+    <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      {fields.map((field) => (
+        <div key={field.key} className="min-w-0">
+          <dt className="text-xs text-muted-foreground">{field.label}</dt>
+          <dd className="mt-0.5 whitespace-pre-wrap break-words">{crmFieldText(field.value)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function ContactRow({ contact }: { contact: OrganisationContact }) {
   return (
-    <li className="flex flex-col gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
-      <div className="flex min-w-0 items-center gap-1.5 sm:w-1/3">
-        {contact.isKeyContact ? <Star className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Key contact" /> : null}
-        <span className="truncate font-medium">{contact.name}</span>
-        {contact.role ? <span className="truncate text-muted-foreground">({contact.role})</span> : null}
+    <li className="px-3 py-2 text-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 sm:w-1/3">
+          {contact.isKeyContact ? <Star className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Key contact" /> : null}
+          <span className="truncate font-medium">{contact.name}</span>
+          {contact.role ? <span className="truncate text-muted-foreground">({contact.role})</span> : null}
+        </div>
+        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+          {contact.email ? (
+            <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1 hover:text-foreground">
+              <Mail className="h-3.5 w-3.5 shrink-0" />
+              <span className="break-all">{contact.email}</span>
+            </a>
+          ) : null}
+          {contact.phone ? (
+            <a href={`tel:${contact.phone}`} className="flex items-center gap-1 hover:text-foreground">
+              <Phone className="h-3.5 w-3.5 shrink-0" />
+              {contact.phone}
+            </a>
+          ) : null}
+          {!contact.email && !contact.phone ? <span>No contact details</span> : null}
+        </div>
       </div>
-      <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-        {contact.email ? (
-          <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1 hover:text-foreground">
-            <Mail className="h-3.5 w-3.5 shrink-0" />
-            <span className="break-all">{contact.email}</span>
-          </a>
-        ) : null}
-        {contact.phone ? (
-          <a href={`tel:${contact.phone}`} className="flex items-center gap-1 hover:text-foreground">
-            <Phone className="h-3.5 w-3.5 shrink-0" />
-            {contact.phone}
-          </a>
-        ) : null}
-        {!contact.email && !contact.phone ? <span>No contact details</span> : null}
-      </div>
+      {contact.crmFields?.length ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            {importedFieldsHeading(contact.source)} ({contact.crmFields.length})
+          </summary>
+          <div className="mt-2">
+            <CrmFieldList fields={contact.crmFields} />
+          </div>
+        </details>
+      ) : null}
     </li>
   );
 }

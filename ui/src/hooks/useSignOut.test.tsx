@@ -76,6 +76,21 @@ describe("useSignOut", () => {
     flushSync(() => root.unmount());
   });
 
+  it("removes the lists saved on this device for offline use", async () => {
+    localStorage.setItem("gsam.offline-snapshot.v1:inbox", "{}");
+    localStorage.setItem("gsam.other-setting", "kept");
+    mockAuthApi.signOut.mockResolvedValue(undefined);
+    const root = renderHarness();
+
+    flushSync(() => captured?.mutate());
+
+    await vi.waitFor(() => expect(mockAuthApi.signOut).toHaveBeenCalledOnce());
+    expect(localStorage.getItem("gsam.offline-snapshot.v1:inbox")).toBeNull();
+    expect(localStorage.getItem("gsam.other-setting")).toBe("kept");
+    localStorage.clear();
+    flushSync(() => root.unmount());
+  });
+
   it("keeps self-hosted sign-out pending until the local request finishes, then clears account caches", async () => {
     let resolveSignOut: (() => void) | undefined;
     mockAuthApi.signOut.mockImplementation(() => new Promise<void>((resolve) => {

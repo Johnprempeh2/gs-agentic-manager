@@ -4,6 +4,7 @@ import type { Db } from "@greatstone/db";
 import { agents, companies, costEvents, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
 import type { NeedsMe, NotificationPreferences, WeeklyReport, WeeklyReportAgentWork } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
+import { agentDailyDigestService } from "./agent-daily-digest.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
 import { needsYouItems } from "./morning-summary.js";
@@ -79,13 +80,14 @@ const iso = (value: Date | string) => (value instanceof Date ? value : new Date(
 export function weeklyReportService(db: Db, options: { buildNeedsMe?: (companyId: string, userId: string) => Promise<NeedsMe> } = {}) {
   const needsMe = needsMeService(db);
   const buildNeedsMe = options.buildNeedsMe ?? ((companyId: string, userId: string) => needsMe.build(companyId, { userId }));
+  const dailyDigests = agentDailyDigestService(db);
   const fromStage = alias(pipelineStages, "from_stage");
   const toStage = alias(pipelineStages, "to_stage");
 
   async function build(companyId: string, userId: string, now = new Date()): Promise<WeeklyReport> {
     const since = new Date(now.getTime() - WEEK_MS);
     const stuckSince = sql<Date>`coalesce(${issues.blockedTransitionAt}, ${issues.updatedAt})`;
-    const [company, mine, finishedRows, stuckRows, stuckCount, moveRows, moveCounts, addedCount, costRows] = await Promise.all([
+    const [company, mine, finishedRows, stuckRows, stuckCount, moveRows, moveCounts, addedCount, costRows, daily] = await Promise.all([
       db.select({ name: companies.name }).from(companies).where(eq(companies.id, companyId)).then((rows) => rows[0]),
       buildNeedsMe(companyId, userId),
       db
@@ -168,6 +170,8 @@ export function weeklyReportService(db: Db, options: { buildNeedsMe?: (companyId
         .innerJoin(agents, eq(agents.id, costEvents.agentId))
         .where(and(eq(costEvents.companyId, companyId), gte(costEvents.occurredAt, since)))
         .groupBy(costEvents.agentId, agents.name),
+      // The nightly digests already stored for these days: what the agents did, day by day.
+      dailyDigests.weekDays(companyId, since, now),
     ]);
 
     const byAgent = new Map<string, WeeklyReportAgentWork>();
@@ -208,6 +212,7 @@ export function weeklyReportService(db: Db, options: { buildNeedsMe?: (companyId
         totalCents: costs.reduce((sum, row) => sum + row.cents, 0),
         agents: costs.map((row) => ({ agentId: row.agentId, name: row.name, cents: row.cents })),
       },
+      daily,
     };
   }
 

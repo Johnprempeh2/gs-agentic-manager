@@ -20,12 +20,13 @@
   /* Atmosphere (daylight): two emerald washes, a lime glint where the light
      comes in (top right) and a teal pool bottom left of centre. Strong enough
      to read as a lit room behind the white cards, never behind body copy at a
-     strength that moves a contrast pair (every wash stays under 16%). */
+     strength that moves a contrast pair (washes stay under 18%; the lime glint
+     reaches 24% only in the top corner, behind the header, never body copy). */
   --gs-atmosphere:
-    radial-gradient(42% 38% at 92% -6%, rgb(200 255 0 / 0.16), transparent 72%),
+    radial-gradient(42% 40% at 92% -6%, rgb(200 255 0 / 0.24), transparent 72%),
     radial-gradient(60% 55% at 78% -12%, rgb(27 80 57 / 0.14), transparent 70%),
     radial-gradient(50% 60% at -6% 28%, rgb(27 80 57 / 0.1), transparent 70%),
-    radial-gradient(55% 45% at 58% 118%, rgb(78 205 196 / 0.14), transparent 70%);
+    radial-gradient(55% 45% at 58% 118%, rgb(78 205 196 / 0.18), transparent 70%);
   --gs-grain-opacity: 0.03;
 
   /* Cards are near-solid white on the sage canvas: the canvas/card step does

@@ -513,35 +513,41 @@ export function agentService(db: Db) {
       agentId: agent.id,
       adapterConfig: agent.adapterConfig,
     });
-    const previousRefs = new Set([
-      ...collectSecretRefs(previousAdapterConfig).map((ref) => `secret:${ref.secretId}:${ref.configPath}`),
-      ...collectUserSecretRefs(previousAdapterConfig).map((ref) => `user:${ref.definitionKey}:${ref.configPath}`),
-    ]);
-    const createdRefs = [
-      ...collectSecretRefs(agent.adapterConfig).map((ref) => ({
+    const describeRefs = (adapterConfig: unknown) => [
+      ...collectSecretRefs(adapterConfig).map((ref) => ({
         key: `secret:${ref.secretId}:${ref.configPath}`,
         configPath: ref.configPath,
         bindingType: "secret_ref",
-        secretId: ref.secretId,
-        definitionKey: null,
+        secretId: ref.secretId as string | null,
+        definitionKey: null as string | null,
       })),
-      ...collectUserSecretRefs(agent.adapterConfig).map((ref) => ({
+      ...collectUserSecretRefs(adapterConfig).map((ref) => ({
         key: `user:${ref.definitionKey}:${ref.configPath}`,
         configPath: ref.configPath,
         bindingType: "user_secret_ref",
-        secretId: null,
-        definitionKey: ref.definitionKey,
+        secretId: null as string | null,
+        definitionKey: ref.definitionKey as string | null,
       })),
-    ].filter((ref) => !previousRefs.has(ref.key));
+    ];
+    const previousRefs = describeRefs(previousAdapterConfig);
+    const nextRefs = describeRefs(agent.adapterConfig);
+    const previousKeys = new Set(previousRefs.map((ref) => ref.key));
+    const nextKeys = new Set(nextRefs.map((ref) => ref.key));
+    const changes = [
+      ...nextRefs.filter((ref) => !previousKeys.has(ref.key)).map((ref) => ({ ...ref, action: "secret.binding.created" })),
+      // GRE-1609: a removed binding must leave a trace, or a lost grant only
+      // surfaces when the agent's next secret read fails.
+      ...previousRefs.filter((ref) => !nextKeys.has(ref.key)).map((ref) => ({ ...ref, action: "secret.binding.deleted" })),
+    ];
     const actorType = actor.createdByUserId ? "user" as const : actor.createdByAgentId ? "agent" as const : "system" as const;
     const actorId = actor.createdByUserId ?? actor.createdByAgentId ?? "system";
-    for (const ref of createdRefs) {
+    for (const ref of changes) {
       await logActivity(dbClient, {
         companyId: agent.companyId,
         actorType,
         actorId,
         agentId: actor.createdByAgentId ?? null,
-        action: "secret.binding.created",
+        action: ref.action,
         entityType: "agent",
         entityId: agent.id,
         details: {

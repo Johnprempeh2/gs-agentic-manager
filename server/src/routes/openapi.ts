@@ -55,10 +55,12 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   createGeneratedImageSchema,
+  updateGeneratedImageCoverSchema,
   generatedImagesQuerySchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
   setCaseEngagementSchema,
+  acceptClientEngagementSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -261,6 +263,8 @@ import {
   createAcceptedPlanDecompositionSchema,
   resolveIssueRecoveryActionSchema,
   cancelIssueThreadInteractionSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   // Secret provider configs and remote import
   createSecretProviderConfigSchema,
   updateSecretProviderConfigSchema,
@@ -1830,6 +1834,7 @@ const CREATED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/issues",
   "POST /api/issues/{id}/children",
   "POST /api/issues/{id}/interactions",
+  "POST /api/issues/{id}/agent-questions",
   "POST /api/issues/{id}/comments",
   "POST /api/companies/{companyId}/issues/{issueId}/attachments",
   "POST /api/companies/{companyId}/projects",
@@ -4573,6 +4578,24 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/generated-images/covers",
+  tags: ["assets"],
+  summary: "Cover pictures for task and client cards: issues and organisations, each keyed by id with imageId, contentPath and altText",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/generated-images/{id}/cover",
+  tags: ["assets"],
+  summary: "Show a finished image on the card of its linked task (issueCover) or client (organisationCover), or stop. Setting one clears that task's or client's previous cover. 422 when the image is not finished or has no such link",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedImageCoverSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/generated-images/{id}",
   tags: ["assets"],
   summary: "Get one generated image and its status",
@@ -4665,6 +4688,57 @@ registry.registerPath({
     body: jsonBody(setCaseEngagementSchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/online-link",
+  tags: ["issues"],
+  summary:
+    "Make the client's online acceptance link (board only). Returns the link once; a new link revokes the older " +
+    "one. Needs a cleared NDA and an uploaded pack (409)",
+  request: { params: z.object({ caseId: z.string() }) },
+  responses: { 201: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/cases/{caseId}/engagement/online-link",
+  tags: ["issues"],
+  summary: "Stop the client's online acceptance link (board only). 404 when there is no open link",
+  request: { params: z.object({ caseId: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-acceptance/{token}",
+  tags: ["issues"],
+  summary:
+    "Public, no sign-in: what a client sees on their acceptance page (company and client names, the pack, the " +
+    "acceptance). 404 when the link is unknown, revoked or expired",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/client-acceptance/{token}/pack",
+  tags: ["issues"],
+  summary: "Public, no sign-in: the engagement pack file behind an acceptance link",
+  request: { params: z.object({ token: z.string() }) },
+  responses: { 200: r.ok(), 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/client-acceptance/{token}/accept",
+  tags: ["issues"],
+  summary:
+    "Public, no sign-in: the client accepts the engagement pack with their name, optional role and email. The " +
+    "client's engagement moves to accepted. 409 when already accepted",
+  request: { params: z.object({ token: z.string() }), body: jsonBody(acceptClientEngagementSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({
@@ -7138,6 +7212,21 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/agent-daily-digests",
+  tags: ["inbox"],
+  summary: "The nightly digests of what each agent did, with spend, for a range of UTC days (default: the last seven)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/notification-preferences",
   tags: ["inbox"],
   summary: "The caller's notification choices in this company (defaults when never set)",
@@ -8235,7 +8324,7 @@ registry.registerPath({
   path: "/api/board/chat/stream",
   tags: ["instance"],
   summary:
-    "Stream a board-level chat response (requires enableConferenceRoomChat)",
+    "Stream a board-level chat response",
   request: {
     body: jsonBody(
       z.object({
@@ -8260,7 +8349,7 @@ registry.registerPath({
   path: "/api/board/chat/issue",
   tags: ["instance"],
   summary:
-    "Find or create the board conversation's issue, so files can be attached before the first message (requires enableConferenceRoomChat)",
+    "Find or create the board conversation's issue, so files can be attached before the first message",
   request: { body: jsonBody(z.object({ companyId: z.string() })) },
   responses: {
     200: r.ok(z.object({ issueId: z.string() })),
@@ -12424,6 +12513,22 @@ registerCurrentRoute({
   body: withdrawIssueThreadInteractionSchema,
 });
 
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/agent-questions",
+  tags: ["issues"],
+  summary: "Ask another agent in the same company a question on this task",
+  body: createAgentQuestionSchema,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/agent-questions/{interactionId}/answer",
+  tags: ["issues"],
+  summary: "Answer a question another agent asked you on its task",
+  body: answerAgentQuestionSchema,
+});
+
 for (const route of [
   ["get", "/api/routines/{id}/revisions", "List routine revisions"],
   [
@@ -14165,7 +14270,7 @@ registerCurrentRoute({
   method: "post",
   path: "/api/companies/{companyId}/organisations/import/pipedrive",
   tags: ["organisations"],
-  summary: "Import organisations from a Pipedrive connection (company owners); 409 while an import runs",
+  summary: "Import organisations, people, pipelines and every deal from a Pipedrive connection, read only (company owners); 409 while an import runs",
   body: importOrganisationsFromPipedriveSchema,
   responses: {
     200: r.ok(),
@@ -14240,6 +14345,22 @@ registerCurrentRoute({
   path: "/api/companies/{companyId}/organisations/{organisationId}/history",
   tags: ["organisations"],
   summary: "Get an organisation's change history",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts/unassigned",
+  tags: ["organisations"],
+  summary: "List people with no organisation (CRM imports)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-files/{fileId}/content",
+  tags: ["organisations"],
+  summary: "Download a file copied from a CRM import",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 

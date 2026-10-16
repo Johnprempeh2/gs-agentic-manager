@@ -31,6 +31,7 @@ vi.mock("@/components/OutboundWebhooks", async (importOriginal) => ({
   OutboundWebhooksDialog: () => null,
 }));
 vi.mock("@/components/IntegrationKeysPanel", () => ({ IntegrationKeysPanel: () => null }));
+vi.mock("@/components/DataExport", () => ({ DataExportPanel: () => null }));
 vi.mock("@/api/calendar", () => ({ calendarApi: { feedStatus: mocks.feedStatus } }));
 vi.mock("@/components/CalendarFeed", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/CalendarFeed")>()),
@@ -216,6 +217,19 @@ describe("Integrations", () => {
     await render();
     expect(card("calendar-feed").textContent).toContain("Turned off");
     expect(card("calendar-feed").textContent).toContain("Turn on");
+  });
+
+  it("says what the page and each built-in integration is for, and marks the tour stops", async () => {
+    mocks.listConnections.mockResolvedValue({ connections: [] });
+    mocks.listMailboxes.mockResolvedValue([]);
+    await render();
+    expect(container.querySelector("[data-testid=integrations-purpose]")?.textContent).toContain("move your work in and out of GSAM");
+    for (const slug of ["webhook", "outbound-webhook", "calendar-feed", "hubspot", "notion"]) {
+      expect(container.querySelector(`[data-testid=integration-${slug}-purpose]`)?.textContent).toMatch(/^Use it when /);
+    }
+    for (const stop of ["integrations-apps", "integrations-builtin", "integrations-export", "integrations-keys"]) {
+      expect(container.querySelector(`[data-tour=${stop}]`)).not.toBeNull();
+    }
   });
 
   it("works out states from connection and mailbox health", () => {

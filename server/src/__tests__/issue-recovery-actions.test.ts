@@ -1662,6 +1662,98 @@ describeEmbeddedPostgres("issue recovery actions", () => {
     expect((await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, action!.id)))[0]).toEqual(recorded);
   });
 
+  it("clears a replay-blocked hold on a task in review and keeps the review pending (GRE-1190)", async () => {
+    const { companyId, managerId, coderId, sourceIssueId } = await seedCompany();
+    const runId = randomUUID();
+    const stageId = randomUUID();
+    // The reviewer's run stopped part-way through its review.
+    await seedHeartbeatRun({ companyId, agentId: managerId, runId, issueId: sourceIssueId, status: "failed" });
+    const reviewer = { type: "agent" as const, agentId: managerId, userId: null };
+    const executionState = {
+      status: "pending",
+      currentStageId: stageId,
+      currentStageIndex: 0,
+      currentStageType: "review",
+      currentParticipant: reviewer,
+      returnAssignee: { type: "agent", agentId: coderId, userId: null },
+      completedStageIds: [],
+      lastDecisionId: null,
+      lastDecisionOutcome: null,
+    };
+    await db.update(issues).set({
+      status: "in_review",
+      assigneeAgentId: managerId,
+      executionPolicy: {
+        mode: "normal",
+        commentRequired: true,
+        stages: [{ id: stageId, type: "review", approvalsNeeded: 1, participants: [{ id: randomUUID(), ...reviewer }] }],
+      },
+      executionState,
+    }).where(eq(issues.id, sourceIssueId));
+    const [action] = await db.insert(issueRecoveryActions).values({
+      companyId, sourceIssueId, kind: "active_run_watchdog", status: "resolved", outcome: "blocked",
+      ownerType: "board", returnOwnerAgentId: managerId, cause: "uncertain_external_action", fingerprint: runId,
+      nextAction: "Preserve recorded work without replay.",
+      evidence: { runId, automaticRecovery: { replay: "blocked", actionOutcome: "unknown" } },
+    }).returning();
+    const app = createApp();
+    const reconciliation = { runId, providerStopped: true, actionOutcome: "not_performed",
+      outcomeEvidence: "The review comment was never posted; the stopped process has no remaining effects." };
+
+    // Moving the task back to todo would skip the review, so that stays refused.
+    await request(app).post(`/api/issues/${sourceIssueId}/recovery-actions/resolve`).send({
+      actionId: action!.id, outcome: "restored", sourceIssueStatus: "todo", executionReconciliation: reconciliation,
+    }).expect(409);
+
+    const resolved = await request(app).post(`/api/issues/${sourceIssueId}/recovery-actions/resolve`).send({
+      actionId: action!.id, outcome: "restored", sourceIssueStatus: "in_review", executionReconciliation: reconciliation,
+    }).expect(200);
+    expect(resolved.body.issue.status).toBe("in_review");
+    const [task] = await db.select().from(issues).where(eq(issues.id, sourceIssueId));
+    expect(task).toMatchObject({ status: "in_review", assigneeAgentId: managerId });
+    expect(task!.executionState).toMatchObject({ status: "pending", currentStageId: stageId, currentParticipant: reviewer });
+    const [recorded] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, action!.id));
+    expect(recorded).toMatchObject({ status: "resolved", outcome: "restored" });
+    expect(recorded!.evidence).not.toHaveProperty("automaticRecovery");
+    expect(recorded!.evidence).toMatchObject({ executionReconciliation: { runId }, continuationDelivery: "pending" });
+  });
+
+  it("lets a manager clear a replay-blocked hold on a task only agents work on, but not the held agent", async () => {
+    const { companyId, managerId, coderId, sourceIssueId } = await seedCompany();
+    const runId = randomUUID();
+    await seedHeartbeatRun({ companyId, agentId: coderId, runId, issueId: sourceIssueId, status: "failed" });
+    await db.update(issues).set({ status: "blocked" }).where(eq(issues.id, sourceIssueId));
+    const [action] = await db.insert(issueRecoveryActions).values({
+      companyId, sourceIssueId, kind: "active_run_watchdog", status: "resolved", outcome: "blocked",
+      ownerType: "board", returnOwnerAgentId: coderId, cause: "uncertain_external_action", fingerprint: runId,
+      nextAction: "Preserve recorded work without replay.",
+      evidence: { runId, automaticRecovery: { replay: "blocked", actionOutcome: "unknown" } },
+    }).returning();
+    const body = { actionId: action!.id, outcome: "restored", sourceIssueStatus: "todo",
+      executionReconciliation: { runId, providerStopped: true, actionOutcome: "not_performed",
+        outcomeEvidence: "The push never reached GitHub; the stopped process has no remaining effects." } };
+    const agentApp = async (agentId: string) => {
+      const agentRunId = randomUUID();
+      await seedHeartbeatRun({ companyId, agentId, runId: agentRunId, issueId: sourceIssueId });
+      return createApp({ type: "agent", agentId, companyId, runId: agentRunId, source: "agent_jwt" });
+    };
+
+    // The held agent cannot clear its own hold.
+    await request(await agentApp(coderId)).post(`/api/issues/${sourceIssueId}/recovery-actions/resolve`).send(body).expect(403);
+    expect((await db.select().from(issues).where(eq(issues.id, sourceIssueId)))[0]!.status).toBe("blocked");
+
+    // A person assigned alongside keeps the hold board only.
+    await db.update(issues).set({ assigneeUserId: "board-user" }).where(eq(issues.id, sourceIssueId));
+    await request(await agentApp(managerId)).post(`/api/issues/${sourceIssueId}/recovery-actions/resolve`).send(body).expect(403);
+    await db.update(issues).set({ assigneeUserId: null }).where(eq(issues.id, sourceIssueId));
+
+    const resolved = await request(await agentApp(managerId))
+      .post(`/api/issues/${sourceIssueId}/recovery-actions/resolve`).send(body).expect(200);
+    expect(resolved.body.issue.status).toBe("todo");
+    const [recorded] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.id, action!.id));
+    expect(recorded!.evidence).toMatchObject({ executionReconciliation: { runId } });
+  });
+
   async function seedReconciledDelivery() {
     const fixture = await seedCompany();
     const { companyId, coderId, sourceIssueId } = fixture;

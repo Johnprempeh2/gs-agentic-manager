@@ -180,6 +180,87 @@ Notes:
   cannot take (an unknown choice label, a read-only field) is not retried until the value
   changes. A 429 or refused credential stops the pass as for reads.
 
+## Full read-only import (Organisations > Import from Pipedrive)
+
+Separate from sync: it never writes to Pipedrive and needs no binding. After organisations and
+people it reads `/v1/pipelines`, `/v1/stages`, `/v1/users`, `/v1/dealFields` and every deal that
+is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/pipedrive-deal-import.ts`.
+
+- Each Pipedrive pipeline becomes a GSAM pipeline keyed `pipedrive-<id>` with Pipedrive's stages
+  (`pd_<stageId>`, working) in Pipedrive's order, then `won` (done) and `lost` (cancelled).
+- Each deal becomes a case keyed `pipedrive-<dealId>` in its pipeline: open deals in their stage,
+  won deals in Won, lost deals in Lost. It links to the imported organisation.
+- Pipedrive's own deal fields (status, value, currency, owner, contact, expected close, probability,
+  lost reason, labels, source, the dates) and every custom deal field become typed pipeline fields.
+  Custom fields are keyed `pd_<pipedrive key>` and labelled with the Pipedrive name. A choice
+  Pipedrive no longer lists is added to the field rather than dropped.
+- Organisations and people keep every Pipedrive field that has a value and no GSAM column, in
+  `crm_fields` (`[{ key, label, value }]`, migration `0356_crm_record_fields`), driven by
+  `/v1/organizationFields` and `/v1/personFields`, so custom fields, labels, the full address and
+  every email and phone come across under Pipedrive's names. The organisation page shows them
+  under "From Pipedrive". A Pipedrive website fills an empty website. Code:
+  `server/src/services/pipedrive-record-fields.ts`.
+- Activities (`/v1/activities?user_id=0`, every user), notes (`/v1/notes`) and call logs
+  (`/v1/callLogs`) land in `crm_timeline_entries` (migration `0357_crm_timeline_entries`), keyed
+  on source, kind and Pipedrive id, linked to the GSAM organisation, contact and deal case. The
+  organisation page lists them under "Activities and notes", newest first, with the ones linked
+  to its people and cases. A done activity, a note or a past call counts as last contact. An
+  account that cannot read call logs still imports everything else. Code:
+  `server/src/services/pipedrive-timeline-import.ts`.
+- Each imported deal's history (`/v1/deals/{id}/flow`, one read per deal) adds its emails
+  (subject, snippet, from, to, cc) and its stage, pipeline and status changes to the same
+  timeline, linked to the deal case (migration `0358_crm_timeline_email_history`). Other field
+  changes, and activities and notes already read above, are not added twice.
+- Emails on a person or organisation but not on a deal come from their own history
+  (`/v1/persons/{id}/flow`, `/v1/organizations/{id}/flow`), read only for records whose
+  `email_messages_count` is above 0. Each email is written once, linked to the person or
+  organisation; one already on a deal stays on the deal.
+- A person with no organisation in Pipedrive, or whose organisation was not imported, is kept as a
+  contact with no organisation (`organisation_contacts.organisation_id` is nullable from migration
+  `0359_contacts_without_organisation`). The Organisations page lists them under "People with no
+  organisation", from `GET /api/companies/:companyId/organisation-contacts/unassigned`. The export
+  file import does the same.
+- The product catalogue (`/v1/products`, `/v1/productFields`) lands in `crm_products` with its
+  code, unit, tax, owner, prices in every currency and every other field, custom fields included,
+  under Pipedrive's name (migration `0360_crm_products`). The products on each deal
+  (`/v1/deals/{id}/products`, read only for deals whose `products_count` is above 0) land in
+  `crm_deal_products` with quantity, price, discount, tax, sum and comments, linked to the case
+  and the catalogue product. The case also gets a "Products" field listing them with a total. A
+  product taken off a deal in Pipedrive comes off the case. An account without the Products
+  add-on still imports everything else, and a deal whose products cannot be read keeps what it
+  had. Code: `server/src/services/pipedrive-product-import.ts`.
+- The Leads inbox (`/v1/leads?archived_status=all`, `/v1/leadLabels`) becomes cases in one
+  "Pipedrive leads" pipeline, keyed `pipedrive-lead-<id>`, with stages Lead, Archived and
+  Converted or removed. Each lead keeps its value, owner, creator, person, organisation, labels,
+  source, seen flag and the custom deal fields Pipedrive shares with leads. Pipedrive removes a
+  lead when it is converted to a deal, so a lead no longer listed moves to Converted or removed.
+  Activities and notes on a lead link to its case. An account with no leads gets no empty
+  pipeline. Code: `server/src/services/pipedrive-lead-import.ts`.
+- Every file (`/v1/files`) lands in `crm_files` with its name, size, owner, description and the
+  deal, lead, person, organisation, activity or note it was on (migration `0361_crm_files`). The
+  bytes are downloaded (`/v1/files/{id}/download`) once and copied into GSAM storage as an
+  asset; a file on a deal or lead is also put on the case's files. A file linked from Google
+  Drive and the like, larger than the upload limit, or of a type GSAM does not accept keeps its
+  details and link without the bytes, with the reason. A failed download is tried again on the
+  next import. The organisation page lists the files under "Files", served by
+  `GET /api/companies/:companyId/crm-files/:fileId/content`. Code:
+  `server/src/services/pipedrive-file-import.ts`.
+- The people on each deal (`/v1/deals/{id}/participants`) become the case's contacts, the main
+  contact first, keyed on the Pipedrive person id (`pipeline_case_contacts.source` and
+  `external_id`, migration `0362_case_contact_sources`). A person taken off the deal in
+  Pipedrive leaves the case; contacts added by hand in GSAM are never touched. The users
+  following a deal (`/v1/deals/{id}/followers`) are named in a "Followers" field on the case.
+  Deals whose participant or follower count is 0 are not asked. Code:
+  `server/src/services/pipedrive-participant-import.ts`.
+- An organisation's Pipedrive owner links to the GSAM member with the same email (from the
+  owner link or `/v1/users`, case ignored, active members only) as its owner
+  (`countryOwnerUserId`). When Pipedrive hands the organisation to someone with no GSAM account,
+  the old member is unlinked and the name follows Pipedrive. Export files carry no owner email,
+  so they leave the link alone.
+- A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
+  status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
+  is, with its fields updated, and is listed in the import's error samples.
+
 ## Not in this slice
 
 - Stage write-back. A stage moved in Pipedrive still moves the case; a stage moved in GSAM is not

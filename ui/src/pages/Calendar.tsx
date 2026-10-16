@@ -400,6 +400,7 @@ export function Calendar() {
             variant="ghost"
             disabled={!data}
             title="Download this month as a calendar file for Outlook, Google Calendar or Apple Calendar"
+            data-tour="calendar-add"
             onClick={addToMyCalendar}
           >
             <CalendarPlus className="size-4" />
@@ -410,6 +411,7 @@ export function Calendar() {
             variant="ghost"
             disabled={!selectedCompanyId}
             title="Copy the next 7 days as text to paste into an email or chat"
+            data-tour="calendar-copy-week"
             aria-label={weekCopy.copied ? "Copied" : "Copy the week ahead"}
             onClick={() =>
               void copyWeekAhead().catch((err) =>
@@ -425,7 +427,7 @@ export function Calendar() {
           <Button size="sm" variant="outline" onClick={() => update({ month: null, day: null })}>
             Today
           </Button>
-          <div className="hidden rounded-md border border-border bg-card p-0.5 md:inline-flex" role="group" aria-label="View">
+          <div className="hidden rounded-md border border-border bg-card p-0.5 md:inline-flex" role="group" aria-label="View" data-tour="calendar-view">
             {(["month", "week"] as const).map((option) => (
               <button
                 key={option}
@@ -464,7 +466,7 @@ export function Calendar() {
         </div>
       </header>
 
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Show on the calendar">
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Show on the calendar" data-tour="calendar-filters">
         {ALL_KINDS.map((kind) => {
           const Icon = KIND_ICONS[kind];
           const shown = !hiddenKinds.has(kind);

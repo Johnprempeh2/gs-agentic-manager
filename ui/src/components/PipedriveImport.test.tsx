@@ -110,6 +110,8 @@ describe("PipedriveImport", () => {
       source: "pipedrive",
       organisations: { created: 12, updated: 3, skipped: 0, errors: 1 },
       contacts: { created: 40, updated: 5, skipped: 2, errors: 0 },
+      pipelines: { created: 2, updated: 0, skipped: 0, errors: 0 },
+      deals: { created: 85, updated: 0, skipped: 1, errors: 0 },
       errorSamples: [{ kind: "organisation", externalId: "77", message: "Name is missing" }],
       startedAt: "2026-10-14T00:00:00Z",
       finishedAt: "2026-10-14T00:01:00Z",
@@ -117,11 +119,14 @@ describe("PipedriveImport", () => {
     await render();
     await openDialog();
     expect(document.body.textContent).toContain("Nothing is written to Pipedrive");
+    expect(document.body.textContent).toContain("Each Pipedrive pipeline");
     await act(async () => { button("Start import")!.click(); });
     await flush();
     expect(mocks.importFromPipedrive).toHaveBeenCalledWith("company-1", "conn-1");
     expect(document.body.textContent).toContain("Organisations: 12 added, 3 updated, 0 skipped, 1 failed");
     expect(document.body.textContent).toContain("People: 40 added, 5 updated, 2 skipped, 0 failed");
+    expect(document.body.textContent).toContain("Pipelines: 2 added, 0 updated, 0 skipped, 0 failed");
+    expect(document.body.textContent).toContain("Deals: 85 added, 0 updated, 1 skipped, 0 failed");
     expect(document.body.textContent).toContain("Organisation 77: Name is missing");
   });
 

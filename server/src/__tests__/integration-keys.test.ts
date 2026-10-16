@@ -28,6 +28,10 @@ describe("integration keys", () => {
     const items = integrationKeyItems({ GSAM_TOOL_OAUTH_GOOGLE_CLIENT_ID: "x" });
     const state = Object.fromEntries(items.map((item) => [item.id, item.state]));
     expect(state).toEqual({ higgsfield: "needs_key", google: "needs_key", microsoft: "not_built", hubspot: "sign_in" });
+    expect(items.find((item) => item.id === "higgsfield")!.getKey).toEqual({
+      url: "https://console.higgsfield.ai",
+      label: "Open the Higgsfield console",
+    });
     expect(items.find((item) => item.id === "google")!.variables).toEqual([
       { name: "GSAM_TOOL_OAUTH_GOOGLE_CLIENT_ID", set: true },
       { name: "GSAM_TOOL_OAUTH_GOOGLE_CLIENT_SECRET", set: false },

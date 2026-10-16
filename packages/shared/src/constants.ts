@@ -92,6 +92,18 @@ export const ADAPTER_AGNOSTIC_KEYS = [
 ] as const;
 export type AdapterAgnosticKey = (typeof ADAPTER_AGNOSTIC_KEYS)[number];
 
+// Top-level `access.<ALIAS>` adapterConfig keys are the agent's API-only secret
+// grants. They belong to the agent, not one adapter, so they survive adapter swaps.
+export const AGENT_ACCESS_CONFIG_PATH_PREFIX = "access.";
+
+export function pickAgentAccessGrants(adapterConfig: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(adapterConfig).filter(
+      ([key, value]) => key.startsWith(AGENT_ACCESS_CONFIG_PATH_PREFIX) && value !== undefined,
+    ),
+  );
+}
+
 export const AGENT_ICON_NAMES = [
   "bot",
   "cpu",
@@ -269,8 +281,12 @@ export const ISSUE_THREAD_INTERACTION_KINDS = [
   "request_item_verdicts",
   "connection_intent",
   "request_draft_review",
+  "ask_agent",
 ] as const;
 export type IssueThreadInteractionKind = (typeof ISSUE_THREAD_INTERACTION_KINDS)[number];
+
+/** Most questions one task may have waiting on other agents at once. */
+export const AGENT_QUESTION_MAX_OPEN_PER_ISSUE = 3;
 
 export const ISSUE_THREAD_INTERACTION_CANONICAL_RESOLVER_POLICIES = [
   "anyone",
@@ -380,6 +396,8 @@ export const ISSUE_ORIGIN_KINDS = [
   "strategy_board_question",
   // A direct message or group chat of people and agents (enableTeamChat).
   "team_chat",
+  // The lead agent's standing "Daily digest" task. originId: the company id.
+  "agent_daily_digest",
 ] as const;
 export type BuiltInIssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 export type PluginIssueOriginKind = `plugin:${string}`;
@@ -999,6 +1017,9 @@ export type WakeupTriggerDetail = (typeof WAKEUP_TRIGGER_DETAILS)[number];
 export const WAKEUP_REQUEST_STATUSES = [
   "queued",
   "deferred_issue_execution",
+  // Kept at a budget hard stop in hold mode (GRE-1365); released once per task.
+  "budget_held",
+  "budget_releasing",
   "claimed",
   "coalesced",
   "skipped",

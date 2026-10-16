@@ -1,5 +1,11 @@
 import { forwardRef, type KeyboardEvent } from "react";
-import { GENERATED_IMAGE_PROMPT_MAX_LENGTH, IMAGE_SHAPE_OPTIONS, type ImageAspectRatio } from "@greatstone/shared";
+import {
+  GENERATED_IMAGE_PROMPT_MAX_LENGTH,
+  IMAGE_SHAPE_OPTIONS,
+  IMAGE_STYLE_PRESETS,
+  type ImageAspectRatio,
+  type ImageStylePresetId,
+} from "@greatstone/shared";
 import { Sparkles } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
@@ -47,6 +53,9 @@ interface ImagePromptFieldsProps {
   onPromptChange: (prompt: string) => void;
   aspectRatio: ImageAspectRatio;
   onAspectRatioChange: (aspectRatio: ImageAspectRatio) => void;
+  /** When given, shows the style choice. Picking a style also picks its usual shape. */
+  style?: ImageStylePresetId | null;
+  onStyleChange?: (style: ImageStylePresetId | null) => void;
   onSubmitShortcut?: () => void;
   disabled?: boolean;
   /** Fewer shape columns, for a dialog. */
@@ -56,7 +65,19 @@ interface ImagePromptFieldsProps {
 
 /** The description box, idea starters and shape picker shared by the Images page and the task dialog. */
 export const ImagePromptFields = forwardRef<HTMLTextAreaElement, ImagePromptFieldsProps>(function ImagePromptFields(
-  { idPrefix, prompt, onPromptChange, aspectRatio, onAspectRatioChange, onSubmitShortcut, disabled, compact, placeholder },
+  {
+    idPrefix,
+    prompt,
+    onPromptChange,
+    aspectRatio,
+    onAspectRatioChange,
+    style,
+    onStyleChange,
+    onSubmitShortcut,
+    disabled,
+    compact,
+    placeholder,
+  },
   ref,
 ) {
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -106,6 +127,41 @@ export const ImagePromptFields = forwardRef<HTMLTextAreaElement, ImagePromptFiel
           ))}
         </div>
       </div>
+
+      {onStyleChange ? (
+        <fieldset className="space-y-2" disabled={disabled}>
+          <legend className="text-sm font-medium">Style</legend>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Style" data-testid="image-style-picker">
+            {[{ id: null, label: "Just my words", hint: "No extra styling" }, ...IMAGE_STYLE_PRESETS].map((preset) => {
+              const selected = (style ?? null) === preset.id;
+              return (
+                <button
+                  key={preset.id ?? "none"}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  title={preset.hint}
+                  onClick={() => {
+                    onStyleChange(preset.id);
+                    if ("aspectRatio" in preset) onAspectRatioChange(preset.aspectRatio);
+                  }}
+                  className={cn(
+                    "rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                    selected
+                      ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
+                      : "border-border text-foreground hover:bg-accent/40",
+                  )}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {(IMAGE_STYLE_PRESETS.find((preset) => preset.id === style)?.hint ?? "Describe it your way; nothing is added.")}
+          </p>
+        </fieldset>
+      ) : null}
 
       <fieldset className="space-y-2" disabled={disabled}>
         <legend className="text-sm font-medium">Shape</legend>

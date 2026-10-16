@@ -231,7 +231,7 @@
   --brand-thinking-cycle: 1.2s;       /* BrandThinkingIcon pulse loop */
   color-scheme: light;
   --radius: 0.625rem;
-  --background: #f2f4ee;
+  --background: #e9ede3; /* warm stone: tinted so white cards lift off it */
   --foreground: #121512;
   --card: #ffffff;
   --card-foreground: #121512;
@@ -1334,6 +1334,19 @@
   --sidebar-action-rest-surface: var(--sidebar);
   background-color: var(--sidebar-action-rest-surface);
   box-shadow: inset -1px 0 0 var(--glass-card-border);
+}
+/* Charcoal rail: the navigation rail is always night-side. Layout puts
+   `gs-rail dark` on the rail wrappers, so the rail reads the dark token set in
+   both themes; in daylight the rail sits on brand charcoal (#252525, the
+   brand's deeper charcoal so lime status text on the active row clears AA) instead
+   of the near-black night rail, so it reads as Greatstone next to the light
+   workspace rather than as a hole in the page. Popovers portal out and stay
+   in the page theme. */
+:root:not(.dark) .gs-rail {
+  --sidebar: #252525;
+  --sidebar-accent: color-mix(in oklab, #c8ff00 8%, #252525);
+  --sidebar-border: rgb(255 255 255 / 8%);
+  --glass-card-border: rgb(255 255 255 / 8%);
 }
 .sidebar-action-row {
   --sidebar-action-surface: var(--sidebar-action-rest-surface, var(--background));
@@ -3633,4 +3646,57 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
 [data-tour-active] {
   outline: 2px solid var(--ring);
   outline-offset: 4px;
+}
+
+/* Print (browser print and "Save as PDF"). Paper is always daylight: a dark
+   screen theme would waste toner and print grey on grey, so the core surface
+   and text tokens take their light values whatever theme is on screen.
+   Layout.tsx hides the app chrome with print: utilities; pages mark actions
+   print:hidden and blocks print:break-inside-avoid. */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #121512;
+    --card: #ffffff;
+    --card-foreground: #121512;
+    --popover: #ffffff;
+    --popover-foreground: #121512;
+    --muted: #f2f4ee;
+    --muted-foreground: #4f5750;
+    --subtle-foreground: #5d655e;
+    --accent: #f2f4ee;
+    --accent-foreground: #121512;
+    --border: #cbd3c5;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: var(--foreground);
+  }
+
+  /* No glass, glow or scrollbars on paper. */
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  [data-secondary-sidebar] {
+    display: none !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
 }

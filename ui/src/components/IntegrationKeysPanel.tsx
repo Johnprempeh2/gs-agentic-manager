@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, X } from "lucide-react";
+import { Check, Copy, ExternalLink, KeyRound, X } from "lucide-react";
 import type { IntegrationKeyItem, IntegrationKeyState } from "@greatstone/shared";
 import { integrationKeysApi } from "@/api/integrationKeys";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -81,6 +81,18 @@ export function IntegrationKeysPanel({ companyId }: { companyId: string }) {
                   </ul>
                 ) : null}
                 <p className="text-xs text-muted-foreground">{item.howToGet}</p>
+                {item.getKey && item.state !== "ready" ? (
+                  <a
+                    href={item.getKey.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+                    data-testid={`integration-key-link-${item.id}`}
+                  >
+                    {item.getKey.label}
+                    <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                  </a>
+                ) : null}
                 {item.note ? <p className="text-xs text-muted-foreground">{item.note}</p> : null}
               </li>
             ))}

@@ -106,8 +106,20 @@ tokenize motion. Principles — reasoning only; values live in `ui/src/index.css
 
 ## Daylight (light mode) surfaces
 
-Light mode is a sage-stone canvas (`--background`) under white surfaces
-(`--card`). Depth comes from that step plus layered shadows, not extra borders.
+Light mode is a warm stone canvas (`--background`, `#e9ede3`) under white
+surfaces (`--card`), beside a charcoal navigation rail. Depth comes from that
+step plus layered shadows, not extra borders. Light mode is never plain white:
+the brand colour comes from the charcoal rail, the lime and teal light in
+`--gs-atmosphere` and the emerald `--primary`.
+
+- **Charcoal rail.** The navigation rail is night-side in both themes.
+  `Layout.tsx` puts `gs-rail dark` on the rail wrappers (desktop
+  `SidebarShell` and the phone drawer), so everything inside reads the dark
+  tokens and `dark:` utilities. In light mode `:root:not(.dark) .gs-rail`
+  (`index.css`) sets the rail to brand charcoal `#252525` with an 8% lime
+  active row. Do not add light-only colours inside the rail; style rail
+  content for dark mode and it is right in both. Popovers and menus opened
+  from the rail portal out and follow the page theme.
 
 - **Surfaces.** Use `bg-card` (or the `Card` component, `gs-glass-card`) for
   anything that holds content. A bare `rounded-* border border-border` box with
@@ -144,3 +156,20 @@ equal to `--background`.
   fill's foreground (`text-current`), never `text-muted-foreground`.
 - **Markdown.** Rendered markdown pins headings and table headers to
   `--foreground`, so prose defaults never leave near-black text on the void.
+
+## Print
+
+Browser print and "Save as PDF" always come out in daylight colours, whatever
+theme is on screen. `ThemeContext` drops the `dark` class on `beforeprint`
+and restores it on `afterprint`, so every token prints with its light value.
+The `@media print` block in `ui/src/index.css` backs that up for the core
+surface and text tokens, drops shadows and glass,
+and hides secondary sidebars; `Layout.tsx` hides the rest of the app chrome
+with `print:` utilities so only the page prints, as one flowing column.
+
+- **Actions.** Mark buttons and controls that mean nothing on paper
+  `print:hidden` (see the This week report header).
+- **Blocks.** Give each card or section `print:break-inside-avoid` so a page
+  break never splits it.
+- **No new colours.** Print uses the same tokens; never add print-only hex in
+  a component.

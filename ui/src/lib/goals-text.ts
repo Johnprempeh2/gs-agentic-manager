@@ -34,11 +34,24 @@ function goalLine(goal: GoalWithProgress, health: GoalHealth, lookups: GoalsText
   return `${goal.title}: ${details.join(", ")}`;
 }
 
+const SUMMARY_ORDER: readonly GoalHealth[] = ["blocked", "at_risk", "on_track", "not_started", "done"];
+
+/** "3 goals: 1 blocked, 2 on track." Counts the top-level goals only. */
+function goalsSummary(entries: readonly ScoreboardEntry[]): string {
+  const counts = new Map<GoalHealth, number>();
+  for (const entry of entries) counts.set(entry.health, (counts.get(entry.health) ?? 0) + 1);
+  const parts = SUMMARY_ORDER.filter((health) => counts.has(health)).map(
+    (health) => `${counts.get(health)} ${GOAL_HEALTH_LABEL[health].toLowerCase()}`,
+  );
+  return `${entries.length} ${entries.length === 1 ? "goal" : "goals"}: ${parts.join(", ")}.`;
+}
+
 /**
  * "Copy as an update" on Goals: every goal on the scoreboard as plain lines,
  * worst first, ready to paste into an email or a board pack.
  *
  *   Goals update, 16 Oct
+ *   2 goals: 2 at risk.
  *
  *   • Win three new clients: At risk, 40%, 4 of 10 tasks done, 1 blocked, due 31 Dec, Ridge
  *   • Launch the website: At risk, 80%, due 6 Oct, 10 days late
@@ -56,7 +69,7 @@ export function goalsUpdateText(
     `• ${goalLine(entry.goal, entry.health, lookups, now)}`,
     ...entry.subGoals.map((sub) => `  ◦ ${goalLine(sub.goal, sub.health, lookups, now)}`),
   ]);
-  return [header, "", ...lines].join("\n");
+  return [header, goalsSummary(entries), "", ...lines].join("\n");
 }
 
 export const GOALS_CSV_HEADERS = [

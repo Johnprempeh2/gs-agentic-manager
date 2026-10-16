@@ -94,6 +94,7 @@ export {
   pipelineAutomationExecutions,
 } from "./pipeline_cases.js";
 export { pipelineCaseEvents } from "./pipeline_case_events.js";
+export { clientAcceptanceLinks } from "./client_acceptance_links.js";
 export {
   crmSyncBindings,
   crmSyncFieldMaps,
@@ -102,7 +103,10 @@ export {
   crmSyncEvents,
   type CrmSyncStoredValue,
 } from "./crm_sync.js";
-export { organisations, organisationContacts } from "./organisations.js";
+export { organisations, organisationContacts, type CrmRecordField } from "./organisations.js";
+export { crmTimelineEntries } from "./crm_timeline.js";
+export { crmProducts, crmDealProducts, type CrmProductPrice, type CrmProductField } from "./crm_products.js";
+export { crmFiles } from "./crm_files.js";
 export { inboundTaskHooks } from "./inbound_task_hooks.js";
 export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks.js";
 export { calendarFeeds } from "./calendar_feeds.js";
@@ -264,3 +268,4 @@ export { clientSupportTickets, clientSupportReplies, clientSupportAttachments } 
 export { workflowTemplates } from "./workflow_templates.js";
 export { documentEvidenceLinks } from "./document_evidence_links.js";
 export { billingAccounts, billingInvoices } from "./billing_accounts.js";
+export { agentDailyDigests } from "./agent_daily_digests.js";

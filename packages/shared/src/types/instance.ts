@@ -35,6 +35,13 @@ export type TeamCatalogFilter = (typeof TEAM_CATALOG_FILTERS)[number];
 /** What adding a team does. `"request"` = an approval card for the board, no install. */
 export const TEAM_CATALOG_ADD_MODES = ["install", "request"] as const;
 export type TeamCatalogAddMode = (typeof TEAM_CATALOG_ADD_MODES)[number];
+/**
+ * What a budget hard stop does with queued task work (GRE-1365). `"stop"`
+ * (default) cancels it; `"hold"` keeps it and wakes each held task once when
+ * the scope resumes after an approved raise.
+ */
+export const BUDGET_HARD_STOP_MODES = ["stop", "hold"] as const;
+export type BudgetHardStopMode = (typeof BUDGET_HARD_STOP_MODES)[number];
 /** The tag that marks a Greatstone team in the catalogue. */
 export const GREATSTONE_TEAM_TAG = "greatstone";
 
@@ -65,6 +72,8 @@ export interface InstanceGeneralSettings {
   teamCatalogAddMode: TeamCatalogAddMode;
   /** Which board emails go out (GRE-1187). Default: all of them. */
   strategyBoardEmail: StrategyBoardEmailSettings;
+  /** Budget hard stop: cancel or hold queued task work (GRE-1365). Absent = `"stop"`. */
+  budgetHardStopMode?: BudgetHardStopMode;
 }
 
 /** Board emails by kind (GRE-1187). Off = that kind stays in-app only. */
@@ -160,6 +169,7 @@ export interface InstanceExperimentalSettings {
   enableAgentChat: boolean;
   /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
   enableTeamChat: boolean;
+  /** Compatibility key (GRE-1624): Conference Room Chat is always on; reads as true. */
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
   enableIssuePlanDecompositions: boolean;

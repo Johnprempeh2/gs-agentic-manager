@@ -1,5 +1,5 @@
 {
-  "id": "b54f2a4b-b157-4d1c-937d-46a9783e2ef9",
+  "id": "c2cd2d93-e77a-4fe7-9c54-8f0e92ec4095",
   "prevId": "16b164df-3159-4b74-93a5-aba252b60e7b",
   "version": "7",
   "dialect": "postgresql",
@@ -3136,99 +3136,6 @@
             "id"
           ],
           "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.asset_texts": {
-      "name": "asset_texts",
-      "schema": "",
-      "columns": {
-        "asset_id": {
-          "name": "asset_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "company_id": {
-          "name": "company_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "text": {
-          "name": "text",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "error": {
-          "name": "error",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "extracted_at": {
-          "name": "extracted_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "asset_texts_company_idx": {
-          "name": "asset_texts_company_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "asset_texts_asset_id_assets_id_fk": {
-          "name": "asset_texts_asset_id_assets_id_fk",
-          "tableFrom": "asset_texts",
-          "tableTo": "assets",
-          "columnsFrom": [
-            "asset_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "asset_texts_company_id_companies_id_fk": {
-          "name": "asset_texts_company_id_companies_id_fk",
-          "tableFrom": "asset_texts",
-          "tableTo": "companies",
-          "columnsFrom": [
-            "company_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -25564,6 +25471,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "style": {
+          "name": "style",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "provider": {
           "name": "provider",
           "type": "text",
@@ -25610,6 +25523,18 @@
         "created_by_user_id": {
           "name": "created_by_user_id",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issue_id": {
+          "name": "issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "organisation_id": {
+          "name": "organisation_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -25676,6 +25601,48 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "generated_images_company_issue_idx": {
+          "name": "generated_images_company_issue_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "generated_images_company_organisation_idx": {
+          "name": "generated_images_company_organisation_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "organisation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -25711,6 +25678,32 @@
           "tableTo": "agents",
           "columnsFrom": [
             "created_by_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "generated_images_issue_id_issues_id_fk": {
+          "name": "generated_images_issue_id_issues_id_fk",
+          "tableFrom": "generated_images",
+          "tableTo": "issues",
+          "columnsFrom": [
+            "issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "generated_images_organisation_id_organisations_id_fk": {
+          "name": "generated_images_organisation_id_organisations_id_fk",
+          "tableFrom": "generated_images",
+          "tableTo": "organisations",
+          "columnsFrom": [
+            "organisation_id"
           ],
           "columnsTo": [
             "id"

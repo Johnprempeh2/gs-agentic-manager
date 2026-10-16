@@ -56,7 +56,8 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
 
   const items = useMemo<MobileNavItem[]>(
     () => [
-      { type: "link", to: "/dashboard", label: "Home", icon: House },
+      // The phone home is Today: what needs you, what is due and what finished.
+      { type: "link", to: "/today", label: "Today", icon: House },
       { type: "link", to: "/issues", label: "Tasks", icon: CircleCheck },
       { type: "action", label: "New Task", icon: SquarePen, onClick: () => openNewIssue() },
       // Decisions replaced Agents (GRE-66): the bar holds the places a person
@@ -83,7 +84,7 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
   return (
     <nav
       className={cn(
-        "fixed bottom-0 left-0 right-0 z-chrome border-t border-border gs-glass-bar transition-[transform,visibility] duration-200 ease-out md:hidden pb-(--sz-safe-bottom)",
+        "fixed bottom-0 left-0 right-0 z-chrome border-t border-border gs-glass-bar transition-[transform,visibility] duration-200 ease-out md:hidden print:hidden pb-(--sz-safe-bottom)",
         // Sliding off is not enough: the iOS keyboard reveals the strip below
         // the viewport, so a hidden bar peeked above it. Visibility flips once
         // the slide ends, which also keeps hidden tabs out of focus order.

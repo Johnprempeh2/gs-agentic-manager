@@ -34,6 +34,8 @@ import { startVisualViewportSync } from "../lib/ios-keyboard";
 import { WorktreeBanner } from "./WorktreeBanner";
 import { DevRestartBanner } from "./DevRestartBanner";
 import { ConnectionNotice } from "./ConnectionNotice";
+import { NeedsYouAlert } from "./NeedsYouAlert";
+import { OfflineSnapshotSaver } from "./OfflineSnapshotSaver";
 import { StandaloneBrowserControls } from "./StandaloneBrowserControls";
 import { RouteErrorBoundary } from "./RouteErrorBoundary";
 import { SidebarShell } from "./SidebarShell";
@@ -642,6 +644,8 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         // computed as visible, so native body scroll + the sticky breadcrumb keep
         // working.
         isMobile ? "min-h-dvh overflow-x-clip" : "flex h-dvh flex-col overflow-clip",
+        // Print the page, not the app: one flowing column, no fixed viewport.
+        "print:block print:h-auto print:min-h-0 print:overflow-visible print:pt-0",
       )}
       >
       <a
@@ -653,7 +657,9 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <WorktreeBanner />
       <DevRestartBanner devServer={health?.devServer} />
       <ConnectionNotice />
-      <div className={cn("min-h-0 flex-1", isMobile ? "w-full" : "flex overflow-clip")}>
+      <NeedsYouAlert />
+      <OfflineSnapshotSaver />
+      <div className={cn("min-h-0 flex-1 print:block print:overflow-visible", isMobile ? "w-full" : "flex overflow-clip")}>
         {isMobile && sidebarOpen && (
           <button
             type="button"
@@ -666,7 +672,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
         {isMobile ? (
           <div
             className={cn(
-              "fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out",
+              "gs-rail dark fixed inset-y-0 left-0 z-drawer flex flex-col overflow-hidden pt-(--sz-safe-top) transition-transform duration-100 ease-out print:hidden",
               sidebarOpen ? "translate-x-0" : "-translate-x-full"
             )}
           >
@@ -686,6 +692,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </div>
         ) : (
           <SidebarShell
+            className="gs-rail dark print:hidden"
             open={sidebarOpen}
             collapsed={replacesPrimarySidebar ? false : collapsed}
             peeking={replacesPrimarySidebar ? false : peeking}
@@ -715,9 +722,10 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
           </SecondarySidebar>
         ) : null}
 
-        <div className={cn("flex min-w-0 flex-col", isMobile ? "w-full" : "h-full flex-1")}>
+        <div className={cn("flex min-w-0 flex-col print:block print:h-auto", isMobile ? "w-full" : "h-full flex-1")}>
           <div
             className={cn(
+              "print:hidden",
               !isMobile && useStreamlinedTaskDetailShell && "hidden",
               isMobile && "sticky top-0 z-sticky gs-glass-bar pt-(--sz-safe-top) translate-y-(--vv-offset-top)",
             )}
@@ -732,7 +740,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
             ) : null}
           </div>
           <div className={cn(
-            isMobile ? "block" : "flex flex-1 min-h-0",
+            isMobile ? "block" : "flex flex-1 min-h-0 print:block",
             !isMobile && useStreamlinedTaskDetailShell && "streamlined-task-detail-surface",
           )}>
             {!isMobile && keepsPrimarySidebar ? (
@@ -766,7 +774,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
                   : undefined
               }
               className={cn(
-                "flex-1 p-4 outline-none md:p-6",
+                "flex-1 p-4 outline-none md:p-6 print:overflow-visible print:p-0",
                 // The task thread owns its scrollable top spacing. Leaving the
                 // page shell's top padding in place creates a stationary dark
                 // strip below the breadcrumb while messages scroll behind it.
@@ -797,7 +805,9 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
               )}
               </main>
             </div>
-            <PropertiesPanel taskDetailLayout={!isMobile && useStreamlinedTaskDetailShell} />
+            <div className="contents print:hidden">
+              <PropertiesPanel taskDetailLayout={!isMobile && useStreamlinedTaskDetailShell} />
+            </div>
           </div>
         </div>
       </div>

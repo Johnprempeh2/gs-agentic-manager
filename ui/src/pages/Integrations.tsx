@@ -11,6 +11,7 @@ import { outboundWebhooksApi } from "@/api/outboundWebhooks";
 import { toolsApi } from "@/api/tools";
 import { CalendarFeedDialog, calendarFeedKey, calendarFeedStatusLine } from "@/components/CalendarFeed";
 import { InboundTaskHooksDialog, hookStatusLine, inboundHooksKey } from "@/components/InboundTaskHooks";
+import { DataExportPanel } from "@/components/DataExport";
 import { IntegrationKeysPanel } from "@/components/IntegrationKeysPanel";
 import { OutboundWebhooksDialog, outboundStatusLine, outboundWebhooksKey } from "@/components/OutboundWebhooks";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -41,6 +42,8 @@ export interface IntegrationCardDef {
   name: string;
   /** What it lets GSAM and the agents do, in one or two plain sentences. */
   does: string;
+  /** When someone would want it, in one sentence, for people new to the word (webhook, feed, import). */
+  purpose?: string;
   extra?: { label: string; to: string };
   /** A caveat shown under the description, such as a provider's own access step. */
   note?: string;
@@ -56,12 +59,14 @@ export const INTEGRATIONS: IntegrationCardDef[] = [
     slug: "pipedrive",
     name: "Pipedrive",
     does: "Brings your organisations, people, deals and activities into GSAM, so agents work from the same client list as you.",
+    purpose: "Use it when your client list lives in Pipedrive and you want agents to start from it.",
     extra: { label: "No API key? Upload a Pipedrive export", to: "/organisations" },
   },
   {
     slug: "hubspot",
     name: "HubSpot",
     does: "Brings your HubSpot companies, contacts and deals into GSAM from the files HubSpot exports. No HubSpot key needed.",
+    purpose: "Use it when your client list lives in HubSpot. Import again whenever you want to bring in what changed.",
     withoutConnection: { label: "Upload export", to: "/organisations" },
   },
   {
@@ -97,6 +102,7 @@ export const INTEGRATIONS: IntegrationCardDef[] = [
     slug: "notion",
     name: "Notion",
     does: "Lets agents read and update your Notion pages and databases, such as client notes.",
+    purpose: "Use it when your client notes live in Notion. The import copies them in once, with no Notion sign-in.",
     extra: { label: "No Notion access? Import a Notion export", to: "/organisations" },
   },
   {
@@ -211,6 +217,7 @@ const WEBHOOK_DEF: IntegrationCardDef = {
   slug: "webhook",
   name: "Tasks from other tools",
   does: "Lets a form, Zapier, Make or any outside tool create a task here, with files attached, by posting to a private address.",
+  purpose: "Use it when requests arrive somewhere else, such as a website form, and each one should become a task.",
 };
 
 /** Where the outbound webhooks stand: none, all off, every live one failing, or working. */
@@ -225,12 +232,14 @@ const OUTBOUND_DEF: IntegrationCardDef = {
   slug: "outbound-webhook",
   name: "Updates to Slack, Teams or Zapier",
   does: "Posts a message to a Slack or Teams channel, Zapier or Make when a task is done, a decision is needed or a client moves stage.",
+  purpose: "Use it when your team should hear about finished work and client moves without opening GSAM.",
 };
 
 const CALENDAR_FEED_DEF: IntegrationCardDef = {
   slug: "calendar-feed",
   name: "Deadlines in your calendar",
   does: "Shows task due dates and goal dates in Google Calendar, Outlook or Apple Calendar through a private subscription address. No Google or Microsoft keys needed.",
+  purpose: "Use it when you want deadlines next to your meetings in the calendar you already check.",
 };
 
 function IntegrationCard({
@@ -262,6 +271,11 @@ function IntegrationCard({
             {badge ? <StatusBadge status={badge.status} label={badge.label} /> : null}
           </div>
           <p className="text-sm text-muted-foreground">{def.does}</p>
+          {def.purpose ? (
+            <p className="text-xs text-foreground" data-testid={`integration-${def.slug}-purpose`}>
+              {def.purpose}
+            </p>
+          ) : null}
           {def.note && state !== "connected" ? <p className="text-xs text-muted-foreground">{def.note}</p> : null}
           {detail ? <p className="text-xs text-muted-foreground">{detail}</p> : null}
           {status?.map((line) => (
@@ -363,6 +377,10 @@ export function Integrations() {
           <Plug className="h-5 w-5 text-muted-foreground" />
           <h1 className="text-lg font-semibold">Integrations</h1>
         </div>
+        <p className="text-sm text-foreground" data-testid="integrations-purpose">
+          Integrations move your work in and out of GSAM: bring clients and notes in, send updates out, and see deadlines
+          in your own calendar.
+        </p>
         <p className="text-sm text-muted-foreground">
           Connect the tools your team already uses so agents can work with them on your behalf. Nothing is switched on
           until you connect it, and you choose which agents may use each one.
@@ -375,7 +393,7 @@ export function Integrations() {
         </p>
       ) : null}
 
-      <ul className="grid gap-3 md:grid-cols-2" aria-label="Integrations">
+      <ul className="grid gap-3 md:grid-cols-2" aria-label="Integrations" data-tour="integrations-apps">
         {INTEGRATIONS.map((def) => {
           if (def.slug === "mailboxes") {
             const list = mailboxes.data ?? [];
@@ -417,7 +435,7 @@ export function Integrations() {
         })}
       </ul>
 
-      <div className="space-y-1 pt-2">
+      <div className="space-y-1 pt-2" data-tour="integrations-builtin">
         <h2 className="text-sm font-semibold">Built into GSAM</h2>
         <p className="text-sm text-muted-foreground">These need no outside account or key. Each stays off until you turn it on.</p>
       </div>
@@ -448,7 +466,13 @@ export function Integrations() {
       <OutboundWebhooksDialog companyId={companyId} open={outboundOpen} onOpenChange={setOutboundOpen} />
       <CalendarFeedDialog companyId={companyId} open={feedOpen} onOpenChange={setFeedOpen} />
 
-      <IntegrationKeysPanel companyId={companyId} />
+      <div data-tour="integrations-export">
+        <DataExportPanel companyId={companyId} />
+      </div>
+
+      <div data-tour="integrations-keys">
+        <IntegrationKeysPanel companyId={companyId} />
+      </div>
 
       <p className="text-sm text-muted-foreground">
         Looking for something else? <Link to="/apps" className="underline underline-offset-2">Browse every app</Link>.

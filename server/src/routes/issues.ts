@@ -78,6 +78,8 @@ import {
   companySearchQuerySchema,
   createIssueAttachmentMetadataSchema,
   createIssueThreadInteractionSchema,
+  createAgentQuestionSchema,
+  answerAgentQuestionSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
   createAcceptedPlanDecompositionSchema,
@@ -312,7 +314,7 @@ import {
   readAcceptedPlanConfirmationTarget,
   type IssuePostCommitAction,
 } from "../services/issues.js";
-import { authorizationDeniedDetails } from "../services/authorization.js";
+import { authorizationDeniedDetails, isAgentInSubtree } from "../services/authorization.js";
 import { stalledReviewDecisionService } from "../services/stalled-review-decisions.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -1500,6 +1502,8 @@ const ISSUE_WAKE_DIAGNOSTIC_KNOWN_REASONS = new Set([
   "issue_commented",
   "issue_comment_mentioned",
   "issue_dependencies_blocked",
+  "agent_question",
+  "agent_question_answered",
   "issue_tree_hold_active",
   "missing_issue_comment",
   "process_lost_retry",
@@ -7031,6 +7035,39 @@ export function issueRoutes(
     return false;
   }
 
+  /**
+   * Recording what an interrupted run did, which clears its recovery hold, is
+   * the board's call. On a task only agents work on (an agent assignee and no
+   * person assigned), a manager of that agent in the reporting chain may clear
+   * it too. The held agent never clears its own hold.
+   */
+  async function assertBoardOrManagerOfAgentOnlyTask(
+    req: Request,
+    issue: {
+      companyId: string;
+      assigneeAgentId: string | null;
+      assigneeUserId: string | null;
+    },
+    dbOrTx: Db = db,
+  ) {
+    const actorAgentId =
+      req.actor.type === "agent" ? req.actor.agentId : null;
+    if (
+      actorAgentId &&
+      issue.assigneeAgentId &&
+      !issue.assigneeUserId &&
+      issue.assigneeAgentId !== actorAgentId &&
+      (await isAgentInSubtree(
+        dbOrTx,
+        issue.companyId,
+        actorAgentId,
+        issue.assigneeAgentId,
+      ))
+    )
+      return;
+    assertBoard(req);
+  }
+
   async function requireRecoveryActionAuthority(
     req: Request,
     issue: { id: string; companyId: string; assigneeAgentId: string | null },
@@ -7189,6 +7226,8 @@ export function issueRoutes(
       Awaited<ReturnType<typeof recoveryActionsSvc.getActiveForIssue>>
     >;
     dbOrTx?: Db;
+    /** The resolution keeps the task in review, so a pending review stage is expected. */
+    keepsPendingReviewStage?: boolean;
   }) {
     const dbOrTx = input.dbOrTx ?? db;
     const returnOwnerAgentId = input.recoveryAction.returnOwnerAgentId;
@@ -7227,6 +7266,7 @@ export function issueRoutes(
       );
     }
     if (
+      !input.keepsPendingReviewStage &&
       parseIssueExecutionState(input.issue.executionState)?.status === "pending"
     ) {
       throw conflict(
@@ -7666,9 +7706,13 @@ export function issueRoutes(
    * something the other assumed it had, the chain of blocked issues grows,
    * and no one tells the human. Humans are unaffected, and closed ancestors
    * do not count — re-engaging the creator of finished work is normal.
+   * Handing work up to the agent's own manager (anyone above it in the
+   * reporting chain) is an escalation, not a cycle, and is never refused.
    */
   async function assertNoAgentDelegationCycle(input: {
     actorType: string;
+    actorAgentId?: string | null;
+    companyId: string;
     parentIssueId: string | null | undefined;
     assigneeAgentId: string | null | undefined;
   }) {
@@ -7679,9 +7723,20 @@ export function issueRoutes(
       input.assigneeAgentId,
     );
     if (!ancestor) return;
+    if (
+      input.actorAgentId &&
+      input.actorAgentId !== input.assigneeAgentId &&
+      (await isAgentInSubtree(
+        db,
+        input.companyId,
+        input.assigneeAgentId,
+        input.actorAgentId,
+      ))
+    )
+      return;
     throw conflict(
       `Delegation cycle: ${ancestor.identifier ?? "an ancestor issue"} in this chain was created by the agent this child would be assigned to. ` +
-        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to a board operator. Do not delegate the work back to the agent that delegated it to you.",
+        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to your manager or a board operator. Do not delegate the work back to the agent that delegated it to you.",
       {
         code: "delegation_cycle",
         ancestorIssueId: ancestor.id,
@@ -9638,6 +9693,15 @@ export function issueRoutes(
 
       const actor = getActorInfo(req);
       const actionStatus = outcome === "cancelled" ? "cancelled" : "resolved";
+      // A held task that is in review keeps its review. Clearing the hold
+      // records what the stopped run did and leaves the review stage pending,
+      // so the reviewer picks it up again. It never moves the task back to
+      // todo, which would bypass the review (GRE-1190, 16 Oct 2026).
+      const keepsPendingReview = (issue: { status: string; executionState?: unknown }) =>
+        outcome === "restored" &&
+        sourceIssueStatus === "in_review" &&
+        issue.status === "in_review" &&
+        parseIssueExecutionState(issue.executionState)?.status === "pending";
       const postCommitActivityPublications: ActivityPublication[] = [];
       const postCommitIssueActions: IssuePostCommitAction[] = [];
       // Every read in this transaction goes through `tx`. A read through the
@@ -9691,10 +9755,14 @@ export function issueRoutes(
             if (automatic?.replay === "blocked" && executionReconciliation) {
               // An automatic no-replay disposition is final until new evidence
               // arrives. Keep the supported evidence API usable without a dialog.
-              assertBoard(req);
+              await assertBoardOrManagerOfAgentOnlyTask(
+                req,
+                lockedIssue,
+                tx as unknown as Db,
+              );
               if (
                 activeRecoveryAction ||
-                sourceIssueStatus !== "todo" ||
+                (sourceIssueStatus !== "todo" && !keepsPendingReview(lockedIssue)) ||
                 outcome !== "restored"
               ) {
                 throw conflict(
@@ -9791,11 +9859,29 @@ export function issueRoutes(
           }
         }
 
+        const reconcilesInReview =
+          keepsPendingReview(lockedIssue) &&
+          requiresExecutionReconciliation(activeRecoveryAction.cause);
+        if (reconcilesInReview) {
+          // The same gates as a hand-back to todo, except the pending review
+          // stage, which this resolution keeps instead of bypassing.
+          await assertSafeRecoveryHandBackGates({
+            req,
+            issue: lockedIssue,
+            recoveryAction: activeRecoveryAction,
+            dbOrTx: tx as unknown as Db,
+            keepsPendingReviewStage: true,
+          });
+        }
         if (
-          sourceIssueStatus === "todo" &&
+          (sourceIssueStatus === "todo" || reconcilesInReview) &&
           requiresExecutionReconciliation(activeRecoveryAction.cause)
         ) {
-          assertBoard(req);
+          await assertBoardOrManagerOfAgentOnlyTask(
+            req,
+            lockedIssue,
+            tx as unknown as Db,
+          );
           await validateExecutionReconciliation({
             db: tx as unknown as Db,
             companyId: lockedIssue.companyId,
@@ -12581,6 +12667,8 @@ export function issueRoutes(
         );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
+        actorAgentId: req.actor.agentId ?? null,
+        companyId,
         parentIssueId:
           typeof effectiveParentId === "string" ? effectiveParentId : null,
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
@@ -13023,6 +13111,8 @@ export function issueRoutes(
         );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
+        actorAgentId: req.actor.agentId ?? null,
+        companyId: parent.companyId,
         parentIssueId: parent.id,
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
       });
@@ -17166,6 +17256,199 @@ export function issueRoutes(
       }
 
       res.status(201).json(interaction);
+    },
+  );
+
+  // An agent asks another agent in the same company a question on its own
+  // task. The target is woken to answer; the answer lands on this task and
+  // wakes the asking agent.
+  router.post(
+    "/issues/:id/agent-questions",
+    validate(createAgentQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (req.actor.type !== "agent") {
+        throw forbidden("Only agents can ask another agent a question");
+      }
+      if (
+        !(await assertAgentIssueMutationAllowed(req, res, issue, {
+          allowVisibleIssueWrite: true,
+        }))
+      )
+        return;
+      if (
+        await assertLowTrustControlPlaneDenied(req, res, issue.companyId, issue)
+      )
+        return;
+      const runId = requireAgentRunId(req, res);
+      if (!runId) return;
+      const actor = getActorInfo(req);
+      const { interaction, targetAgent } = await issueThreadInteractionService(
+        db,
+      ).askAgent(issue, req.body, {
+        identityContextId: req.actor.identityContextId,
+        agentId: actor.agentId,
+        runId,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.agent_question_asked",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          interactionId: interaction.id,
+          targetAgentId: targetAgent.id,
+          targetAgentName: targetAgent.name,
+        },
+      });
+
+      void heartbeat
+        .wakeup(targetAgent.id, {
+          source: "automation",
+          triggerDetail: "system",
+          reason: "agent_question",
+          payload: {
+            issueId: issue.id,
+            interactionId: interaction.id,
+            interactionKind: interaction.kind,
+            mutation: "interaction",
+          },
+          idempotencyKey: `agent-question:${interaction.id}`,
+          requestedByActorType: actor.actorType,
+          requestedByActorId: actor.actorId,
+          contextSnapshot: {
+            issueId: issue.id,
+            taskId: issue.id,
+            interactionId: interaction.id,
+            interactionKind: interaction.kind,
+            interactionStatus: interaction.status,
+            wakeReason: "agent_question",
+            source: "issue.agent_question.asked",
+          },
+        })
+        .catch((err) =>
+          logger.warn(
+            {
+              err,
+              issueId: issue.id,
+              interactionId: interaction.id,
+              agentId: targetAgent.id,
+            },
+            "failed to wake agent asked a question",
+          ),
+        );
+
+      res.status(201).json(interaction);
+    },
+  );
+
+  router.post(
+    "/issues/:id/agent-questions/:interactionId/answer",
+    validate(answerAgentQuestionSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const interactionId = req.params.interactionId as string;
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(id),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (req.actor.type !== "agent") {
+        throw forbidden("Only the agent this question was asked of can answer it");
+      }
+      const runId = requireAgentRunId(req, res);
+      if (!runId) return;
+      // Answering on another run's task spends the same per-run budget as
+      // resolving any other interaction there.
+      if (
+        !(await assertCrossIssueInfluenceWithinRunCap(
+          req,
+          res,
+          issue,
+          "interaction_resolution",
+        ))
+      )
+        return;
+      const actor = getActorInfo(req);
+      const interaction = await issueThreadInteractionService(
+        db,
+      ).answerAgentQuestion(issue, interactionId, req.body, {
+        identityContextId: req.actor.identityContextId,
+        agentId: actor.agentId,
+        runId,
+      });
+
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.agent_question_answered",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          interactionId: interaction.id,
+          askedByAgentId: interaction.createdByAgentId ?? null,
+        },
+      });
+
+      const askerAgentId = interaction.createdByAgentId;
+      if (askerAgentId) {
+        void heartbeat
+          .wakeup(askerAgentId, {
+            source: "automation",
+            triggerDetail: "system",
+            reason: "agent_question_answered",
+            payload: {
+              issueId: issue.id,
+              interactionId: interaction.id,
+              interactionKind: interaction.kind,
+              mutation: "interaction",
+            },
+            idempotencyKey: `agent-question-answered:${interaction.id}`,
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: issue.id,
+              taskId: issue.id,
+              interactionId: interaction.id,
+              interactionKind: interaction.kind,
+              interactionStatus: interaction.status,
+              wakeReason: "agent_question_answered",
+              source: "issue.agent_question.answered",
+            },
+          })
+          .catch((err) =>
+            logger.warn(
+              {
+                err,
+                issueId: issue.id,
+                interactionId: interaction.id,
+                agentId: askerAgentId,
+              },
+              "failed to wake agent whose question was answered",
+            ),
+          );
+      }
+
+      res.json(interaction);
     },
   );
 

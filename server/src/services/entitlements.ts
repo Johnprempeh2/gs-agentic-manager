@@ -86,10 +86,6 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
     kind: "api",
     probes: [{ method: "get", path: `${COMPANY}/built-in-agents` }],
   },
-  enableConferenceRoomChat: {
-    kind: "api",
-    probes: [{ method: "post", path: "/board/chat/stream" }],
-  },
   enableChatConnectors: {
     kind: "api",
     probes: [
@@ -219,6 +215,10 @@ export const FEATURE_ENTITLEMENT_GATES: Record<InstanceFeatureKey, FeatureEntitl
   enableIsolatedWorkspacesByDefault: { kind: "runtime", reason: "Workspace policy resolution reads it per run." },
   enableApps: { kind: "runtime", reason: "Graduated: always on; stored and managed values are ignored." },
   enableMcpAggregators: { kind: "runtime", reason: "Graduated: always on; stored and managed values are ignored." },
+  enableConferenceRoomChat: {
+    kind: "runtime",
+    reason: "Graduated (GRE-1624): always on; stored and managed values are ignored.",
+  },
   enableWorkspaceBranchReconcileForward: {
     kind: "runtime",
     reason: "Graduated (GRE-1438): always on; stored and managed values are ignored.",

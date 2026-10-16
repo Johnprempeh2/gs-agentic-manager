@@ -1,17 +1,22 @@
-import { and, count, desc, eq, inArray, lt } from "drizzle-orm";
+import { and, count, desc, eq, ilike, inArray, lt, or, type SQL } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { assets, generatedImages } from "@greatstone/db";
+import { assets, generatedImages, issues, organisations } from "@greatstone/db";
 import {
+  composeImagePrompt,
+  imageAltText,
   createGeneratedImageSchema,
   generatedImagesQuerySchema,
   GENERATED_IMAGES_MAX_PENDING_PER_COMPANY,
   type CreateGeneratedImage,
   type GeneratedImage,
+  type GeneratedImageCovers,
   type GeneratedImagesQuery,
   type GeneratedImagesResponse,
   type GeneratedImageStatus,
   type ImageAspectRatio,
   type ImageGenerationProviderId,
+  type ImageStylePresetId,
+  type UpdateGeneratedImageCover,
 } from "@greatstone/shared";
 import { notFound, tooManyRequests, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -44,12 +49,18 @@ export interface GeneratedImageServiceOptions {
   now?: () => Date;
 }
 
-export function toGeneratedImage(row: GeneratedImageRow): GeneratedImage {
+export interface GeneratedImageLinks {
+  issue: { id: string; identifier: string | null; title: string } | null;
+  organisation: { id: string; name: string } | null;
+}
+
+export function toGeneratedImage(row: GeneratedImageRow, links?: GeneratedImageLinks): GeneratedImage {
   return {
     id: row.id,
     companyId: row.companyId,
     prompt: row.prompt,
     aspectRatio: row.aspectRatio as ImageAspectRatio,
+    style: (row.style as ImageStylePresetId | null) ?? null,
     provider: row.provider as ImageGenerationProviderId,
     model: row.model,
     status: row.status as GeneratedImageStatus,
@@ -58,6 +69,11 @@ export function toGeneratedImage(row: GeneratedImageRow): GeneratedImage {
     contentPath: row.status === "completed" && row.assetId ? `/api/assets/${row.assetId}/content` : null,
     createdByAgentId: row.createdByAgentId,
     createdByUserId: row.createdByUserId,
+    issue: links?.issue ?? null,
+    organisation: links?.organisation ?? null,
+    altText: imageAltText(row.prompt, row.style),
+    issueCover: row.issueCover,
+    organisationCover: row.organisationCover,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -118,7 +134,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     activeJobs.add(row.id);
     try {
       const result = await provider.generate({
-        prompt: row.prompt,
+        prompt: composeImagePrompt(row.prompt, row.style),
         aspectRatio: row.aspectRatio as ImageAspectRatio,
       });
       const stored = await storage.putFile({
@@ -216,17 +232,72 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       .where(and(inArray(generatedImages.id, lost), eq(generatedImages.status, "pending")));
   }
 
+  /** Task and client names for a set of rows, in one query each. */
+  async function loadLinks(rows: GeneratedImageRow[]): Promise<Map<string, GeneratedImageLinks>> {
+    const issueIds = [...new Set(rows.map((row) => row.issueId).filter((id): id is string => !!id))];
+    const organisationIds = [...new Set(rows.map((row) => row.organisationId).filter((id): id is string => !!id))];
+    const [issueRows, organisationRows] = await Promise.all([
+      issueIds.length
+        ? db.select({ id: issues.id, identifier: issues.identifier, title: issues.title }).from(issues).where(inArray(issues.id, issueIds))
+        : Promise.resolve([]),
+      organisationIds.length
+        ? db.select({ id: organisations.id, name: organisations.name }).from(organisations).where(inArray(organisations.id, organisationIds))
+        : Promise.resolve([]),
+    ]);
+    const issueById = new Map(issueRows.map((row) => [row.id, row]));
+    const organisationById = new Map(organisationRows.map((row) => [row.id, row]));
+    return new Map(
+      rows.map((row) => [
+        row.id,
+        {
+          issue: row.issueId ? issueById.get(row.issueId) ?? null : null,
+          organisation: row.organisationId ? organisationById.get(row.organisationId) ?? null : null,
+        },
+      ]),
+    );
+  }
+
+  async function withLinks(row: GeneratedImageRow) {
+    const links = await loadLinks([row]);
+    return toGeneratedImage(row, links.get(row.id));
+  }
+
+  /** A task or client named on a request must belong to the same company. */
+  async function assertLinksInCompany(companyId: string, issueId: string | null, organisationId: string | null) {
+    if (issueId) {
+      const issue = await db
+        .select({ id: issues.id })
+        .from(issues)
+        .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!issue) throw unprocessable("That task is not in this organisation", { code: "generated_image_issue_not_found" });
+    }
+    if (organisationId) {
+      const organisation = await db
+        .select({ id: organisations.id })
+        .from(organisations)
+        .where(and(eq(organisations.id, organisationId), eq(organisations.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!organisation) {
+        throw unprocessable("That client is not in this organisation", { code: "generated_image_organisation_not_found" });
+      }
+    }
+  }
+
   return {
     status: () => resolveProvider(),
 
     create: async (companyId: string, input: CreateGeneratedImage, actor: GeneratedImageActor) => {
       const parsed = createGeneratedImageSchema.parse(input);
+      const issueId = parsed.issueId ?? null;
+      const organisationId = parsed.organisationId ?? null;
       const provider = resolveProvider();
       if (!provider) {
         throw unprocessable("Image generation is not set up yet. Ask your admin to add an image service key.", {
           code: "image_generation_not_configured",
         });
       }
+      await assertLinksInCompany(companyId, issueId, organisationId);
       await failLostJobs(companyId);
       const [{ pending }] = await db
         .select({ pending: count() })
@@ -244,6 +315,9 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           companyId,
           prompt: parsed.prompt,
           aspectRatio: parsed.aspectRatio,
+          style: parsed.style ?? null,
+          issueId,
+          organisationId,
           provider: provider.id,
           model: provider.model,
           status: "pending",
@@ -263,16 +337,27 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
         action: "generated_image.requested",
         entityType: "generated_image",
         entityId: row!.id,
-        details: { provider: provider.id, model: provider.model, aspectRatio: parsed.aspectRatio },
+        details: {
+          provider: provider.id,
+          model: provider.model,
+          aspectRatio: parsed.aspectRatio,
+          style: parsed.style ?? null,
+          issueId,
+          organisationId,
+        },
       });
       schedule(() => run(row!, provider));
-      return toGeneratedImage(row!);
+      return withLinks(row!);
     },
 
     list: async (companyId: string, query: Partial<GeneratedImagesQuery> = {}): Promise<GeneratedImagesResponse> => {
-      const { limit, offset } = generatedImagesQuerySchema.parse(query);
+      const { limit, offset, q, issueId, organisationId } = generatedImagesQuerySchema.parse(query);
       await failLostJobs(companyId);
-      const where = eq(generatedImages.companyId, companyId);
+      const filters: SQL[] = [eq(generatedImages.companyId, companyId)];
+      if (q) filters.push(ilike(generatedImages.prompt, `%${q.replace(/[\\%_]/g, (match) => `\\${match}`)}%`));
+      if (issueId) filters.push(eq(generatedImages.issueId, issueId));
+      if (organisationId) filters.push(eq(generatedImages.organisationId, organisationId));
+      const where = and(...filters);
       const [rows, [{ total }]] = await Promise.all([
         db
           .select()
@@ -284,8 +369,9 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
         db.select({ total: count() }).from(generatedImages).where(where),
       ]);
       const totalCount = Number(total);
+      const links = await loadLinks(rows);
       return {
-        images: rows.map(toGeneratedImage),
+        images: rows.map((row) => toGeneratedImage(row, links.get(row.id))),
         total: totalCount,
         nextOffset: offset + rows.length < totalCount ? offset + rows.length : null,
       };
@@ -300,7 +386,78 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       return row;
     },
 
-    toResponse: toGeneratedImage,
+    toResponse: withLinks,
+
+    /**
+     * Make a finished image the cover of its task or client card, or stop. A
+     * task or client has at most one cover, so setting one clears the last.
+     */
+    setCover: async (row: GeneratedImageRow, patch: UpdateGeneratedImageCover) => {
+      if (row.status !== "completed" || !row.assetId) {
+        throw unprocessable("Only a finished image can be a cover", { code: "generated_image_not_ready" });
+      }
+      if (patch.issueCover && !row.issueId) {
+        throw unprocessable("Link the image to a task before using it as the task's cover", { code: "generated_image_no_task" });
+      }
+      if (patch.organisationCover && !row.organisationId) {
+        throw unprocessable("Link the image to a client before using it as the client's cover", {
+          code: "generated_image_no_client",
+        });
+      }
+      const updated = await db.transaction(async (tx) => {
+        if (patch.issueCover && row.issueId) {
+          await tx
+            .update(generatedImages)
+            .set({ issueCover: false })
+            .where(and(eq(generatedImages.companyId, row.companyId), eq(generatedImages.issueId, row.issueId), eq(generatedImages.issueCover, true)));
+        }
+        if (patch.organisationCover && row.organisationId) {
+          await tx
+            .update(generatedImages)
+            .set({ organisationCover: false })
+            .where(
+              and(
+                eq(generatedImages.companyId, row.companyId),
+                eq(generatedImages.organisationId, row.organisationId),
+                eq(generatedImages.organisationCover, true),
+              ),
+            );
+        }
+        return tx
+          .update(generatedImages)
+          .set({
+            ...(patch.issueCover !== undefined ? { issueCover: patch.issueCover } : {}),
+            ...(patch.organisationCover !== undefined ? { organisationCover: patch.organisationCover } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(generatedImages.id, row.id))
+          .returning()
+          .then((rows) => rows[0]!);
+      });
+      return updated;
+    },
+
+    /** Every cover in the company, keyed by task id and by client id, for the boards. */
+    covers: async (companyId: string): Promise<GeneratedImageCovers> => {
+      const rows = await db
+        .select()
+        .from(generatedImages)
+        .where(
+          and(
+            eq(generatedImages.companyId, companyId),
+            eq(generatedImages.status, "completed"),
+            or(eq(generatedImages.issueCover, true), eq(generatedImages.organisationCover, true)),
+          ),
+        );
+      const result: GeneratedImageCovers = { issues: {}, organisations: {} };
+      for (const row of rows) {
+        if (!row.assetId) continue;
+        const cover = { imageId: row.id, contentPath: `/api/assets/${row.assetId}/content`, altText: imageAltText(row.prompt, row.style) };
+        if (row.issueCover && row.issueId) result.issues[row.issueId] = cover;
+        if (row.organisationCover && row.organisationId) result.organisations[row.organisationId] = cover;
+      }
+      return result;
+    },
 
     remove: async (id: string) => {
       const row = await db

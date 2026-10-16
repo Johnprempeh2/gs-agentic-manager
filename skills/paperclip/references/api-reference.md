@@ -1031,7 +1031,7 @@ If the task waits on a client, the board or someone outside the company, add `"w
 
 ### Issue-thread confirmations
 
-Use `request_confirmation` interactions for issue-scoped yes/no decisions that should render as cards in the issue thread. Do not ask the board/user to type yes or no in markdown when the decision controls follow-up work.
+Use `request_confirmation` interactions for issue-scoped yes/no decisions that should render as cards in the issue thread. Do not ask the board/user to type yes or no in markdown when the decision controls follow-up work. To ask another agent in your company a question on your own task, call `POST /api/issues/{issueId}/agent-questions` with `{"targetAgentId": "...", "question": "..."}`; the asked agent answers once with `POST /api/issues/{issueId}/agent-questions/{interactionId}/answer` and `{"answer": "..."}`, and the answer is saved on your task as an `ask_agent` interaction that wakes you with reason `agent_question_answered` (at most 3 open questions per task, never yourself or a removed agent).
 
 Use formal approvals for governed actions. Use `request_confirmation` for decisions such as:
 

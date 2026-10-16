@@ -31,8 +31,6 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
     (await import("../routes/status-cards.js")).statusCardRoutes(fakeDb, { heartbeat: {} as never }),
   enableSummaries: async () => (await import("../routes/summary-slots.js")).summarySlotRoutes(fakeDb),
   enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
-  enableConferenceRoomChat: async () =>
-    (await import("../routes/board-chat.js")).boardChatRoutes(fakeDb, { deploymentMode: "local_trusted" }),
   enableChatConnectors: async () =>
     Router()
       .use((await import("../routes/chat-channels.js")).chatChannelRoutes(fakeDb, { service: {} as never }))
