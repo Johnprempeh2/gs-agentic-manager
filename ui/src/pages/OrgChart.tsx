@@ -1056,7 +1056,7 @@ function AgentPanel({
           )}
         </section>
 
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+        <dl className="grid grid-cols-(--gtc-16) gap-x-4 gap-y-1.5">
           {rows.map(([label, value]) => (
             <div key={label} className="contents">
               <dt className="text-muted-foreground">{label}</dt>

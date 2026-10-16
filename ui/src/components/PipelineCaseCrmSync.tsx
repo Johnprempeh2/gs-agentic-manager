@@ -4,7 +4,7 @@ import type { CrmSyncCaseSource } from "@greatstone/shared";
 import { pipelinesApi } from "../api/pipelines";
 import { queryKeys } from "../lib/queryKeys";
 import { CrmSyncConflictQueue, CrmSyncSuggestChange } from "./CrmSyncConflictQueue";
-import { cn, relativeTime } from "../lib/utils";
+import { cn, formatClockTime, relativeTime } from "../lib/utils";
 
 const PROVIDER_LABELS: Record<string, string> = { pipedrive: "Pipedrive" };
 
@@ -13,7 +13,7 @@ function providerLabel(providerKey: string) {
 }
 
 function clockTime(value: string) {
-  return new Date(value).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  return formatClockTime(value);
 }
 
 type Notice = { tone: "warning" | "danger"; text: string };

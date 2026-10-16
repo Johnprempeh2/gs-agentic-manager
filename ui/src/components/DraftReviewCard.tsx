@@ -197,7 +197,7 @@ export function DraftReviewCard({
           }
         }}
         disabled={working}
-        className="max-h-[60vh] min-h-32 overflow-y-auto leading-6"
+        className="max-h-(--sz-60vh) min-h-32 overflow-y-auto leading-6"
         spellCheck
       />
       <div className="mt-2 flex flex-wrap items-center gap-2">

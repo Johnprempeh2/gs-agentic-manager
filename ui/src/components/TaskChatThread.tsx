@@ -3124,7 +3124,7 @@ export function TaskChatThread(props: TaskChatThreadProps) {
                   // iOS often stops panning short of the page's bottom edge, so the
                   // dock also clears --vv-bottom-inset (lib/ios-keyboard.ts).
                   isMobile
-                    ? "bottom-[max(var(--tc-composer-bottom),calc(var(--vv-bottom-inset)_+_0.25rem))] z-sticky transition-[bottom] duration-200 ease-out"
+                    ? "tc-composer-dock-bottom z-sticky transition-[bottom] duration-200 ease-out"
                     : "bottom-0 z-raised",
                   "mx-auto flex w-full max-w-(--tc-shell-max-w) flex-col gap-2 px-1 pb-1 md:px-0 md:pb-0",
                   isMobile &&

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
+import { formatNumber } from "@/lib/utils";
 
 /** "" → null, otherwise the number (NaN when it is not one). */
 function numberOrNull(text: string): number | null {
@@ -139,7 +140,7 @@ export function formatMoney(cents: number, currency: string | null): string {
       // Unknown code: fall through to a plain number with the code after it.
     }
   }
-  const n = amount.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const n = formatNumber(amount, { maximumFractionDigits: 0 });
   return currency ? `${n} ${currency}` : n;
 }
 
