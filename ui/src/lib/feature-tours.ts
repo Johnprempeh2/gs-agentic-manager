@@ -109,7 +109,7 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
   title: "Client page",
   description: "Where a client is in their journey, where things stand, the next action and who you deal with.",
-  version: 3,
+  version: 4,
   flag: "enablePipelines",
   label: "this client",
   steps: [
@@ -132,6 +132,16 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-contacts",
       title: "Contacts",
       body: "The people you deal with at this client, so anyone on your team can pick up the relationship.",
+    },
+    {
+      target: "deal-outcome",
+      title: "Won or lost",
+      body: "For a client imported from Pipedrive, press Won when they sign or Lost when they say no. The client moves to that stage and the date is kept. Lost asks for a reason, which is optional.",
+    },
+    {
+      target: "case-crm-history",
+      title: "History from Pipedrive",
+      body: "Every note, email, call and file from Pipedrive, newest first. Use the buttons to show one kind at a time.",
     },
     {
       target: "client-evidence",
