@@ -245,7 +245,7 @@ export function TeamScorecard() {
   async function copyUpdate() {
     if (!data) return;
     try {
-      await copyTextToClipboard(scorecardUpdateText(data, selectedCompany?.name));
+      await copyTextToClipboard(scorecardUpdateText(data, selectedCompany?.name, twice));
       setCopyState("copied");
     } catch {
       setCopyState("failed");

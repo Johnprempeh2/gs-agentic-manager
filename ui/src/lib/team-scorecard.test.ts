@@ -83,6 +83,34 @@ describe("scorecardUpdateText", () => {
   });
 });
 
+describe("scorecardUpdateText with the period before", () => {
+  it("compares each finished count with the period before", () => {
+    const scorecard = {
+      since: "2026-10-09T00:00:00.000Z",
+      days: 7,
+      totals: { finished: 3, underWay: 0, inReview: 0, stuck: 0, overdue: 0 },
+      agents: [agent({ agentId: "a1", name: "Ridge", finished: 2 }), agent({ agentId: "a2", name: "Everest", finished: 1 })],
+    };
+    const overTwice = {
+      since: "2026-10-02T00:00:00.000Z",
+      days: 14,
+      totals: { finished: 7, underWay: 0, inReview: 0, stuck: 0, overdue: 0 },
+      agents: [agent({ agentId: "a1", name: "Ridge", finished: 2 }), agent({ agentId: "a2", name: "Everest", finished: 5 })],
+    };
+    expect(scorecardUpdateText(scorecard, null, overTwice)).toBe(
+      [
+        "Team update for the last 7 days",
+        "",
+        "Finished 3 tasks, down from 4 the week before.",
+        "",
+        "Ridge: Finished 2 tasks this week. Finished tasks: up from 0 the week before.",
+        "",
+        "Everest: Finished 1 task this week. Finished tasks: down from 4 the week before.",
+      ].join("\n"),
+    );
+  });
+});
+
 describe("scorecardToCsv", () => {
   it("writes one row per agent with the work value in dollars", () => {
     const csv = scorecardToCsv(
