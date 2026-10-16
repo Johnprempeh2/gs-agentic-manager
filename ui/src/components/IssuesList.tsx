@@ -76,9 +76,11 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Collapsible, CollapsibleContent } from "@/components/ui/collapsible";
 import { CircleDot, Plus, ArrowUpDown, Layers, Check, ChevronRight, List, ListTree, User, Search, CircleSlash2, ChevronsDownUp, PanelTopClose, RotateCcw, ListCollapse,
-  SquareKanban, Download,
+  SquareKanban, Download, ClipboardList,
 } from "lucide-react";
 import { downloadTextFile, issuesCsvFileName, issuesToCsv } from "../lib/issues-csv";
+import { issuesToPlainList } from "../lib/issues-text";
+import { useCopyAction } from "../lib/use-copy-action";
 import {
   KanbanBoard,
   KANBAN_BOARD_HIGH_VOLUME_THRESHOLD,
@@ -1309,6 +1311,18 @@ export function IssuesList({
     downloadTextFile(issuesCsvFileName(prefix, today), csv);
   }, [agents, companyUserLabelMap, filtered, projectById, selectedCompany?.issuePrefix]);
 
+  const listCopy = useCopyAction();
+  const copyAsList = useCallback(() => {
+    const agentNames = new Map((agents ?? []).map((agent) => [agent.id, agent.name]));
+    void listCopy.copy(
+      issuesToPlainList(filtered, {
+        statusLabel: (status) => issueStatusLabels[status] ?? status,
+        agentName: (agentId) => agentNames.get(agentId),
+        userLabel: (userId) => companyUserLabelMap.get(userId),
+      }),
+    );
+  }, [agents, companyUserLabelMap, filtered, listCopy.copy]);
+
   const progressSummary = useMemo(
     () => shouldRenderSubIssueProgressSummary(showProgressSummary, issues.length)
       ? buildSubIssueProgressSummary(issues)
@@ -2121,6 +2135,24 @@ export function IssuesList({
             onClick={downloadSpreadsheet}
           >
             <Download className="h-3.5 w-3.5" />
+          </Button>
+
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 shrink-0"
+            title={
+              listCopy.copied
+                ? "Copied"
+                : listCopy.failed
+                  ? "Could not copy"
+                  : `Copy ${filtered.length === 1 ? "this task" : `these ${filtered.length} tasks`} as a list to paste into an email or chat`
+            }
+            aria-label={listCopy.copied ? "Copied" : "Copy as a list"}
+            disabled={filtered.length === 0}
+            onClick={copyAsList}
+          >
+            {listCopy.copied ? <Check className="h-3.5 w-3.5" /> : <ClipboardList className="h-3.5 w-3.5" />}
           </Button>
           </>
         )}
