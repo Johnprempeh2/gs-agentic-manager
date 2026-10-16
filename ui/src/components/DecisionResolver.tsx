@@ -208,6 +208,18 @@ export function DecisionResolver({ companyId, decisionId, originIssue, agentMap,
       errorMessage={errorMessage}
       onDecide={(optionId, inputValues) => decideMutation.mutate({ optionId, inputValues, idempotencyKey: crypto.randomUUID() })}
       onDismiss={(reason) => dismissMutation.mutate(reason)}
+      onUploadFile={
+        originIssue
+          ? async (file) => {
+              const attachment = await issuesApi.uploadAttachment(companyId, originIssue.id, file);
+              return {
+                name: attachment.originalFilename ?? file.name,
+                href: attachment.contentPath,
+                isImage: attachment.contentType.startsWith("image/"),
+              };
+            }
+          : undefined
+      }
     />
   );
 }
