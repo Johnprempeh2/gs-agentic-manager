@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MorningSummary as Summary } from "@greatstone/shared";
-import { MorningSummary, greeting } from "./MorningSummary";
+import { MorningSummary, greeting, lateLabel } from "./MorningSummary";
 
 const server = vi.hoisted(() => ({ summary: null as Summary | null }));
 
@@ -48,6 +48,13 @@ describe("MorningSummary", () => {
       generatedAt: "",
       since: "",
       needsYou: { count: 5, items: [{ id: "a", identifier: "GRE-1", title: "Approve the brief" }] },
+      dueToday: {
+        count: 2,
+        items: [
+          { id: "c", identifier: "GRE-7", title: "Send the invoice", dueDate: "2020-01-02" },
+          { id: "d", identifier: "GRE-8", title: "Call the printer", dueDate: "2999-01-01" },
+        ],
+      },
       finished: { count: 1, items: [{ id: "b", identifier: "GRE-5", title: "Write the one-pager" }] },
       stuck: { count: 0, items: [] },
     };
@@ -58,6 +65,28 @@ describe("MorningSummary", () => {
     expect(text).toContain("Write the one-pager");
     expect(text).toContain("Nothing is stuck.");
     expect(container.querySelector('a[href="/issues/GRE-1"]')).not.toBeNull();
+    expect(text).toContain("Due today");
+    expect(text).toContain("Late, due 2 Jan");
+    expect(container.querySelector('a[href="/issues/GRE-8"]')?.textContent).not.toContain("Late");
+  });
+
+  it("still renders when the server sends no due today section", async () => {
+    server.summary = {
+      companyId: "company-1",
+      generatedAt: "",
+      since: "",
+      needsYou: { count: 0, items: [] },
+      finished: { count: 0, items: [] },
+      stuck: { count: 0, items: [] },
+    } as unknown as Summary;
+    await render();
+    expect(container.textContent).toContain("Nothing is due today.");
+  });
+
+  it("marks lines due before today as late", () => {
+    expect(lateLabel("2026-10-14", "2026-10-16")).toBe("Late, due 14 Oct");
+    expect(lateLabel("2026-10-16", "2026-10-16")).toBeNull();
+    expect(lateLabel(null, "2026-10-16")).toBeNull();
   });
 
   it("greets by the time of day", () => {

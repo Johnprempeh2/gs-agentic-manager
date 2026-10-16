@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { companies, issues, pushSubscriptions } from "@greatstone/db";
 import type { MorningSummary, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
@@ -52,6 +52,7 @@ export function morningSummaryMessage(summary: MorningSummary, prefix: string): 
   const needs = summary.needsYou.count;
   const title = needs === 0 ? "Good morning. Nothing needs you" : `Good morning. ${plural(needs, "thing needs", "things need")} you`;
   const parts = [
+    ...(summary.dueToday.count > 0 ? [`${plural(summary.dueToday.count, "task is", "tasks are")} due today.`] : []),
     summary.finished.count === 0 ? "No tasks finished since yesterday." : `${plural(summary.finished.count, "task", "tasks")} finished since yesterday.`,
     summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
   ];
@@ -85,7 +86,16 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
 
   async function build(companyId: string, userId: string, now = new Date()): Promise<MorningSummary> {
     const since = new Date(now.getTime() - DAY_MS);
-    const [mine, finishedRows, finishedCount, stuckRows, stuckCount] = await Promise.all([
+    // "Today" is the person's own date, not the server's.
+    const { date: today } = localClock((await preferences.get(companyId, userId)).timeZone, now);
+    const due = and(
+      eq(issues.companyId, companyId),
+      isNotNull(issues.dueDate),
+      lte(issues.dueDate, today),
+      notInArray(issues.status, ["done", "cancelled"]),
+      userWork(),
+    );
+    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount] = await Promise.all([
       buildNeedsMe(companyId, userId),
       db
         .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
@@ -107,6 +117,13 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
         .select({ count: sql<number>`count(*)::int` })
         .from(issues)
         .where(and(eq(issues.companyId, companyId), eq(issues.status, "blocked"), userWork())),
+      db
+        .select({ id: issues.id, identifier: issues.identifier, title: issues.title, dueDate: issues.dueDate })
+        .from(issues)
+        .where(due)
+        .orderBy(asc(issues.dueDate), desc(issues.updatedAt))
+        .limit(ITEM_LIMIT),
+      db.select({ count: sql<number>`count(*)::int` }).from(issues).where(due),
     ]);
     const needs = needsYouItems(mine);
     return {
@@ -114,6 +131,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       generatedAt: now.toISOString(),
       since: since.toISOString(),
       needsYou: { count: mine.count, items: needs.slice(0, ITEM_LIMIT) },
+      dueToday: { count: dueCount[0]?.count ?? 0, items: dueRows },
       finished: { count: finishedCount[0]?.count ?? 0, items: finishedRows },
       stuck: { count: stuckCount[0]?.count ?? 0, items: stuckRows },
     };
