@@ -137,6 +137,9 @@ the brand colour comes from the charcoal rail, the lime and teal light in
   `text-muted-foreground` renders brand emerald in light mode.
 - **Secondary navs.** `[data-secondary-sidebar]` panels sit on a teal-tinted
   stone in light mode, and their active row is the lime wash.
+- **Small brand touches.** In light mode the selected pill tab is a lime wash
+  (`--gs-tab-pill-bg`), an on switch glows lime, loading skeletons are teal
+  tinted and scrollbars are emerald tinted.
 - **Eyebrows.** Uppercase section labels (`h2` to `h4` with `uppercase
   text-muted-foreground`) render in `--eyebrow-foreground` (brand emerald)
   in light mode through one rule in `index.css`; keep writing them as
