@@ -218,8 +218,8 @@ export function NotificationSettings() {
             onChange={(assignedTasks) => change({ assignedTasks })}
           />
           <ChoiceRow
-            label="A task I asked for is done"
-            description="An agent or a teammate finishes a task you created. It opens that task."
+            label="A task I asked for is done, or a deal closes"
+            description="An agent or a teammate finishes a task you created, or moves a deal to won or lost. It opens that task or deal."
             checked={prefs.finishedWork}
             onChange={(finishedWork) => change({ finishedWork })}
           />
