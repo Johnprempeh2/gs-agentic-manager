@@ -211,6 +211,11 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   (subject, snippet, from, to, cc) and its stage, pipeline and status changes to the same
   timeline, linked to the deal case (migration `0358_crm_timeline_email_history`). Other field
   changes, and activities and notes already read above, are not added twice.
+- A person with no organisation in Pipedrive, or whose organisation was not imported, is kept as a
+  contact with no organisation (`organisation_contacts.organisation_id` is nullable from migration
+  `0359_contacts_without_organisation`). The Organisations page lists them under "People with no
+  organisation", from `GET /api/companies/:companyId/organisation-contacts/unassigned`. The export
+  file import does the same.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.

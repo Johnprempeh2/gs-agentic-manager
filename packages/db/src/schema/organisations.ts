@@ -58,7 +58,8 @@ export const organisationContacts = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     companyId: uuid("company_id").notNull().references(() => companies.id, { onDelete: "cascade" }),
-    organisationId: uuid("organisation_id").notNull().references(() => organisations.id, { onDelete: "cascade" }),
+    // Null for a person imported from a CRM with no organisation, so nobody is dropped.
+    organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     role: text("role"),
     email: text("email"),
