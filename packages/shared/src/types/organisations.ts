@@ -89,8 +89,12 @@ export interface OrganisationImportResult {
   emails?: OrganisationImportCounts;
   /** Connection import only: stage, pipeline and status changes from each deal's history. */
   stageChanges?: OrganisationImportCounts;
+  /** Connection import only: the product catalogue. */
+  products?: OrganisationImportCounts;
+  /** Connection import only: the products on each deal, with quantity, price and discount. */
+  dealProducts?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }

@@ -18,6 +18,7 @@ import type {
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
+import { pipedriveProductImportService } from "./pipedrive-product-import.js";
 import { pipedriveTimelineImportService } from "./pipedrive-timeline-import.js";
 import {
   ORGANISATION_COLUMN_KEYS,
@@ -394,6 +395,16 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         actor,
         organisationIdByExternalId,
         result,
+      });
+
+      // The product catalogue and the products on each deal.
+      await pipedriveProductImportService(db, { now }).run({
+        companyId,
+        client,
+        result,
+        users,
+        caseIdByDealId: deals.caseIdByDealId,
+        lineItemsByDealId: deals.lineItemsByDealId,
       });
 
       // Activities, notes and call logs, linked to the records above.

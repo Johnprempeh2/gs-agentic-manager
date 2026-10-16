@@ -290,6 +290,29 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return listV1Page<Record<string, unknown>>("/api/v1/callLogs", input.start ?? 0, 50);
     },
 
+    /** One page of the product catalogue (API v1, read only). */
+    async listProductsPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/products", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** Every product field, so custom product fields keep their names. */
+    async listProductFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/productFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
+    /** One page of the products on one deal, with quantity, price and discount (read only). */
+    async listDealProductsPage(input: { dealId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/products`, input.start ?? 0, 100);
+    },
+
     /** Every pipeline (API v1, read only). Used by the full deal import. */
     async listPipelines() {
       const body = await get("/api/v1/pipelines", {});

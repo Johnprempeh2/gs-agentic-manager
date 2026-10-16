@@ -5,6 +5,8 @@ import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  crmDealProducts,
+  crmProducts,
   crmTimelineEntries,
   activityLog,
   companies,
@@ -34,6 +36,7 @@ import {
   gsamKeyForCustomField,
   pipedriveDealFieldSpecs,
 } from "../services/pipedrive-deal-import.js";
+import { mapPipedriveDealProduct, summariseDealProducts } from "../services/pipedrive-product-import.js";
 
 const orgs = JSON.parse(
   readFileSync(new URL("./fixtures/pipedrive-organisations.json", import.meta.url), "utf8"),
@@ -67,6 +70,10 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/deals/701/flow": { 0: recorded.dealFlow701 },
   "/api/v1/deals/702/flow": { 0: recorded.dealFlow702 },
   "/api/v1/deals/703/flow": { 0: recorded.dealFlowEmpty },
+  "/api/v1/productFields": { 0: recorded.productFields },
+  "/api/v1/products": { 0: recorded.productsPage },
+  "/api/v1/deals/701/products": { 0: recorded.dealProducts701 },
+  "/api/v1/deals/702/products": { 0: recorded.dealProducts702 },
 });
 
 function fakePipedrive(pages: () => Pages) {
@@ -140,6 +147,22 @@ const ORG_FIELDS = [
 ];
 
 describe("Pipedrive organisation and person fields", () => {
+  it("lists a deal's products with quantity, price, discount and total", () => {
+    const items = recorded.dealProducts701.data.map((item: Record<string, unknown>, index: number) => mapPipedriveDealProduct(item, index)!);
+    expect(items[0]).toMatchObject({ externalId: "9101", productExternalId: "801", quantity: 20, discount: 10, discountType: "percentage", sum: 10800 });
+    expect(items[1]).toMatchObject({ discount: 200, discountType: "amount" });
+    expect(summariseDealProducts(items)).toBe([
+      "20 x Team seat at 600 GBP, 10% off: 10,800 GBP (Annual, billed upfront)",
+      "1 x Onboarding workshop at 1,500 GBP, 200 GBP off: 1,300 GBP",
+      "Total: 12,100 GBP",
+    ].join("\n"));
+    // A zero discount from an older account is no discount.
+    const older = mapPipedriveDealProduct(recorded.dealProducts702.data[0], 0)!;
+    expect(older).toMatchObject({ discount: null, discountType: null });
+    expect(summariseDealProducts([older])).toBe("40 x Team seat at 750 USD: 30,000 USD");
+    expect(summariseDealProducts([])).toBeNull();
+  });
+
   it("keeps every field with a value under Pipedrive's name, skipping the ones with a column", () => {
     const org = {
       id: 101,
@@ -452,6 +475,96 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(rerun.body.emails).toEqual({ created: 0, updated: 0, skipped: 1, errors: 0 });
     expect(rerun.body.stageChanges).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
     expect(await db.select().from(crmTimelineEntries).where(eq(crmTimelineEntries.companyId, companyId))).toHaveLength(7);
+  }, 60_000);
+
+  it("brings the product catalogue and each deal's products across, and a rerun updates in place", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    let pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+
+    const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    expect(first.body.products).toEqual({ created: 2, updated: 0, skipped: 0, errors: 0 });
+    expect(first.body.dealProducts).toEqual({ created: 3, updated: 0, skipped: 0, errors: 0 });
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+    // A deal with no products is not asked for them.
+    expect(pipedrive.calls.some((call) => call.url.includes("/deals/703/products"))).toBe(false);
+
+    const catalogue = await db.select().from(crmProducts).where(eq(crmProducts.companyId, companyId)).orderBy(asc(crmProducts.externalId));
+    expect(catalogue[0]).toMatchObject({
+      name: "Team seat",
+      code: "SEAT-T",
+      unit: "seat",
+      tax: 20,
+      active: true,
+      ownerName: "Ama Owusu",
+      prices: [
+        { currency: "GBP", price: 600, cost: 120, overheadCost: null },
+        { currency: "USD", price: 750, cost: 150, overheadCost: 10 },
+      ],
+    });
+    expect(catalogue[0]!.fields).toEqual([
+      { key: "category", label: "Category", value: "Licences" },
+      { key: "billing_frequency", label: "Billing frequency", value: "annually" },
+      { key: "9ab2c3d4e5f60718293a4b5c6d7e8f9012345678", label: "SKU family", value: "DevTools" },
+    ]);
+    expect(catalogue[1]).toMatchObject({ name: "Onboarding workshop", active: false, ownerName: "Kofi Mensah" });
+
+    const cases = await casesByKey(companyId);
+    expect(cases.get("pipedrive-701")!.fields).toMatchObject({
+      dealProducts: expect.stringContaining("20 x Team seat at 600 GBP, 10% off: 10,800 GBP"),
+    });
+    expect(cases.get("pipedrive-703")!.fields).not.toHaveProperty("dealProducts");
+    const lines = await db.select().from(crmDealProducts).where(eq(crmDealProducts.companyId, companyId)).orderBy(asc(crmDealProducts.externalId));
+    expect(lines.map((line) => [line.externalId, line.name, line.quantity, line.sum, line.currency])).toEqual([
+      ["9101", "Team seat", 20, 10800, "GBP"],
+      ["9102", "Onboarding workshop", 1, 1300, "GBP"],
+      ["9201", "Team seat", 40, 30000, "USD"],
+    ]);
+    expect(lines[0]!.productId).toBe(catalogue[0]!.id);
+    expect(lines[0]!.details).toMatchObject({ taxMethod: "exclusive", billingFrequency: "annually" });
+
+    // Same answers again: nothing changes.
+    const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.products).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
+    expect(rerun.body.dealProducts).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
+    expect(rerun.body.deals).toEqual({ created: 0, updated: 0, skipped: 4, errors: 0 });
+
+    // A price change and a product taken off a deal both come across.
+    pages = recordedPages();
+    pages["/api/v1/products"][0].data[1].prices[0].price = 1800;
+    pages["/api/v1/deals"][0].data[0].products_count = 1;
+    pages["/api/v1/deals/701/products"][0].data.pop();
+    const third = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(third.body.products).toEqual({ created: 0, updated: 1, skipped: 1, errors: 0 });
+    expect(third.body.dealProducts).toEqual({ created: 0, updated: 1, skipped: 2, errors: 0 });
+    expect(third.body.deals).toEqual({ created: 0, updated: 1, skipped: 3, errors: 0 });
+    expect(await db.select().from(crmDealProducts).where(eq(crmDealProducts.companyId, companyId))).toHaveLength(2);
+    const after = await casesByKey(companyId);
+    expect(after.get("pipedrive-701")!.fields.dealProducts).toBe("20 x Team seat at 600 GBP, 10% off: 10,800 GBP (Annual, billed upfront)");
+  }, 60_000);
+
+  it("still imports everything else when the account has no products, keeping what deals had", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    let pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+    await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+
+    pages = recordedPages();
+    delete pages["/api/v1/products"];
+    delete pages["/api/v1/deals/701/products"];
+    const res = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(res.status).toBe(200);
+    expect(res.body.products).toEqual({ created: 0, updated: 0, skipped: 0, errors: 1 });
+    expect(res.body.deals).toEqual({ created: 0, updated: 0, skipped: 4, errors: 0 });
+    expect(res.body.errorSamples).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "product", externalId: "all" }),
+      expect.objectContaining({ kind: "product", externalId: "701" }),
+    ]));
+    // Deal 701's products could not be read this time, so it keeps them.
+    expect(await db.select().from(crmDealProducts).where(eq(crmDealProducts.companyId, companyId))).toHaveLength(3);
+    const cases = await casesByKey(companyId);
+    expect(cases.get("pipedrive-701")!.fields.dealProducts).toEqual(expect.stringContaining("Total: 12,100 GBP"));
   }, 60_000);
 
   it("still imports everything else when the account cannot read call logs", async () => {
