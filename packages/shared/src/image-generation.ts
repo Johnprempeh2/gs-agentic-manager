@@ -13,6 +13,13 @@ export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId,
   mock: "Practice mode",
 };
 
+/**
+ * Where Higgsfield API keys are made (docs.higgsfield.ai/docs/authentication,
+ * checked 16 Oct 2026). API use needs no higgsfield.ai plan: it draws on its
+ * own prepaid US dollar balance.
+ */
+export const HIGGSFIELD_API_KEYS_URL = "https://console.higgsfield.ai";
+
 export const IMAGE_ASPECT_RATIOS = ["1:1", "16:9", "9:16", "4:3", "3:4"] as const;
 export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIOS)[number];
 export const DEFAULT_IMAGE_ASPECT_RATIO: ImageAspectRatio = "1:1";

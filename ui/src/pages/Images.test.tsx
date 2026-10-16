@@ -101,6 +101,7 @@ describe("Images page", () => {
     await render();
 
     expect(container.querySelector('[data-testid="images-not-set-up"]')?.textContent).toContain("not switched on yet");
+    expect(container.querySelector('[data-testid="images-get-key-link"]')?.getAttribute("href")).toBe("https://console.higgsfield.ai");
     expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).disabled).toBe(true);
     expect((container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).disabled).toBe(true);
     expect(container.textContent).toContain("No images yet");
