@@ -8,7 +8,7 @@ import {
   type SetMemoryGrants,
 } from "@greatstone/shared";
 import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
-import type { MemoryCaller, MemoryGatewayService } from "./service.js";
+import { memoryLinkPerson, type MemoryCaller, type MemoryGatewayService } from "./service.js";
 
 export type MemoryGrant = {
   principalType: "agent" | "user";
@@ -22,6 +22,9 @@ export type MemoryGrant = {
 // company) sets them, and only here: every other grant path leaves `memory:*`
 // rows alone. A grant made here always has a null scope, so it covers the
 // organization and project scopes and never a client or restricted scope.
+// One exception (GRE-1081): a person turns "suggest new entries" on or off for
+// their own app link. The gateway caps what the link does at what the person
+// may do, on every call, so this never gives the app more than its person.
 export function memoryGrantService(db: Db, gateway: MemoryGatewayService) {
   const { logOperation } = gateway.internals;
 
@@ -155,6 +158,20 @@ export function memoryGrantService(db: Db, gateway: MemoryGatewayService) {
     };
   }
 
+  /** The caller's own app link, asking for the one right a link may hold. */
+  async function isOwnLinkContribute(caller: MemoryCaller, body: unknown) {
+    const parsed = changeMemoryGrantSchema.safeParse(body);
+    if (!parsed.success || caller.actorType !== "user" || !caller.userId) return false;
+    if (parsed.data.principalType !== "agent" || parsed.data.permission !== "memory:contribute") return false;
+    if (!/^[0-9a-f-]{36}$/i.test(parsed.data.principalId)) return false;
+    const agent = await db
+      .select({ metadata: agents.metadata })
+      .from(agents)
+      .where(and(eq(agents.id, parsed.data.principalId), eq(agents.companyId, caller.companyId), ne(agents.status, "terminated")))
+      .then((rows) => rows[0] ?? null);
+    return agent !== null && memoryLinkPerson(agent.metadata) === caller.userId;
+  }
+
   /**
    * Turns one memory right on or off. A row for that key with its own scope
    * settings (named memory scopes, approval classes) is never replaced here:
@@ -165,7 +182,7 @@ export function memoryGrantService(db: Db, gateway: MemoryGatewayService) {
     const target = parsed.success
       ? { principalType: parsed.data.principalType, principalId: parsed.data.principalId }
       : {};
-    await assertOwner(caller, "grant_change", target);
+    if (!(await isOwnLinkContribute(caller, body))) await assertOwner(caller, "grant_change", target);
     if (!parsed.success) {
       await logOperation(caller, "grant_change", "denied", {
         detail: {

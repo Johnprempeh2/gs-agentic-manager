@@ -254,6 +254,7 @@ import {
 import { managedAgentProfileService } from "../services/managed-agent-profiles.js";
 import { remoteAgentProfileService } from "../services/remote-agent-profiles.js";
 import { ensureGoalCheckInRoutine } from "../services/goal-check-in-routine.js";
+import { memoryLinkPerson } from "../services/memory-gateway/service.js";
 
 const AGENT_SKILL_ASSIGNMENT_MODES = ["add", "remove", "replace"] as const;
 
@@ -5819,6 +5820,10 @@ export function agentRoutes(
       assertCompanyOwnerOrAdmin(req, agent.companyId);
       if (agent.status !== "paused") {
         throw conflict("Pause the agent before creating a memory-only key");
+      }
+      // GRE-1081: a memory key belongs to one person's app link, never to a shared agent.
+      if (!memoryLinkPerson(agent.metadata)) {
+        throw conflict("A memory key belongs to one person's app. Connect it from Memory > Claude and ChatGPT.");
       }
     }
     const key = await svc.createApiKey(id, req.body.name, req.body.scope, {
