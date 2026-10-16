@@ -291,6 +291,7 @@ describe("client case page", () => {
 
     await render(<ClientCaseOverview detail={detail} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
 
+    expect(container.querySelector('[data-testid="deal-next-step-flag"]')?.textContent).toBe("No next step scheduled for this open deal");
     const outcome = container.querySelector('[data-testid="deal-outcome"]')!;
     click([...outcome.querySelectorAll("button")].find((button) => button.textContent === "Lost") ?? null);
     const reason = container.querySelector("#deal-lost-reason") as HTMLTextAreaElement;
@@ -315,6 +316,7 @@ describe("client case page", () => {
       { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
     ] as PipelineStage[];
     await render(<ClientCaseOverview detail={caseDetail({ dealStatus: "Won" }, "pd-won")} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
+    expect(container.querySelector('[data-testid="deal-next-step-flag"]')).toBeNull();
     expect(container.querySelector('[data-testid="deal-outcome"]')).toBeNull();
   });
 
