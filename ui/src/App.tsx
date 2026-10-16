@@ -72,6 +72,7 @@ import { CompanyActivity } from "./pages/audit/CompanyActivity";
 import { SinceLastVisit } from "./pages/SinceLastVisit";
 import { Calendar } from "./pages/Calendar";
 import { TeamScorecard } from "./pages/TeamScorecard";
+import { NotificationSettings } from "./pages/NotificationSettings";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
@@ -416,6 +417,7 @@ function boardRoutes() {
       <Route path="since-last-visit" element={<SinceLastVisit />} />
       <Route path="calendar" element={<Calendar />} />
       <Route path="scorecard" element={<TeamScorecard />} />
+      <Route path="notifications" element={<NotificationSettings />} />
       <Route path="activity" element={<CompanyActivity />} />
       <Route path="activity/runs" element={<AuditHub section="runs" />} />
       <Route path="activity/costs" element={<AuditHub section="costs" />} />
