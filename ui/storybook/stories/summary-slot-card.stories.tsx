@@ -153,7 +153,6 @@ function revision(overrides: Partial<SummarySlotRevision> = {}): SummarySlotRevi
 }
 
 interface SeedInput {
-  enableSummaries?: boolean;
   agent?: BuiltInAgentState;
   slotResponse?: GetSummarySlotResponse;
   revisionsResponse?: ListSummarySlotRevisionsResponse;
@@ -161,9 +160,6 @@ interface SeedInput {
 
 function Seed({ seed, children }: { seed: SeedInput; children: ReactNode }) {
   const queryClient = useQueryClient();
-  queryClient.setQueryData(queryKeys.instance.experimentalSettings, {
-    enableSummaries: seed.enableSummaries ?? true,
-  });
   if (seed.agent) {
     queryClient.setQueryData(queryKeys.builtInAgents.list(COMPANY_ID), [seed.agent]);
   }
@@ -396,10 +392,6 @@ const failedSeed: SeedInput = {
     document: null,
     generatingIssue: issue({ status: "done" }),
   },
-};
-
-export const Disabled: Story = {
-  args: { seed: { enableSummaries: false, agent: readySummarizer() }, width: DESKTOP },
 };
 
 export const SetupCta: Story = { args: { seed: setupSeed, width: DESKTOP } };

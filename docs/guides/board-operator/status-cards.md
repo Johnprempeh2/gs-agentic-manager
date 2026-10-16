@@ -5,7 +5,7 @@ summary: Experimental watched-query summaries, refresh policies, costs, and agen
 
 Status cards are an experimental company-wide board of persistent summaries. Each card is set up with a single message such as “blocked launch work updated this week — tell me the next decision.” The card's agent (the built-in Summarizer by default, or a per-card override chosen at creation or in settings) compiles that prose into bounded company-search queries, stores the effective query set, and follows the same message as the instructions for every summary it writes. There is no separate summarization prompt to append to or replace.
 
-Enable **Status Cards** from **Instance Settings > Experimental**. When `enableStatusCards` is off, the UI routes and REST API return not found; the feature does not leak into non-enabled instances.
+Status Cards are always on (they graduated out of **Instance Settings > Experimental** in GRE-1622).
 
 ## How updates work
 
@@ -43,7 +43,7 @@ Agent authoring has additional guardrails:
 - an agent can author at most 20 cards; deleting a card frees a slot
 - an agent interest prompt is limited to 4,000 characters
 - board-authored prompts retain the general 20,000-character API limit
-- all routes remain company-scoped and behind `enableStatusCards`
+- all routes remain company-scoped
 
 Creating a card immediately queues the Summarizer compile run. Agents should not call the query or summary write-back endpoints themselves; those endpoints accept only the assigned Summarizer generation issue and run.
 

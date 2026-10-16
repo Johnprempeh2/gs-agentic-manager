@@ -108,10 +108,6 @@ describeEmbeddedPostgres("status card routes", () => {
       .then((rows) => rows[0]!);
   }
 
-  async function enableStatusCards() {
-    await instanceSettingsService(db).updateExperimental({ enableStatusCards: true });
-  }
-
   async function seedSummarizer(companyId: string) {
     return db.insert(agents).values({
       companyId,
@@ -132,16 +128,16 @@ describeEmbeddedPostgres("status card routes", () => {
     return { type: "agent", companyId, agentId, runId, source: "agent_jwt" };
   }
 
-  it("returns 403 not_entitled while the experimental flag is disabled", async () => {
+  it("serves status cards even when an old stored enableStatusCards is off (GRE-1622)", async () => {
+    // Status Cards graduated out of Experimental: a stored "off" from before is ignored.
+    await instanceSettingsService(db).updateExperimental({ enableStatusCards: false });
     const company = await seedCompany();
     const response = await request(createApp(db, localBoardActor())).get(`/api/companies/${company.id}/status-cards`);
-    expect(response.status).toBe(403);
-    expect(response.body).toMatchObject({ code: "not_entitled", feature: "enableStatusCards" });
+    expect(response.status).toBe(200);
   });
 
   it("rolls back a new card when compile wakeup fails", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const app = createApp(db, localBoardActor(), {
       wakeup: async () => {
@@ -161,7 +157,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("creates, patches, archives, restores, lists updates, and deletes a card", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const app = createApp(db, localBoardActor());
 
@@ -259,7 +254,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("normalizes legacy saved queries when hydrating watched-issue counts", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const service = statusCardService(db);
     const card = await service.create(
       company.id,
@@ -297,7 +291,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("keeps cards readable when a saved query cannot be normalized", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const service = statusCardService(db);
     const card = await service.create(
       company.id,
@@ -327,7 +320,6 @@ describeEmbeddedPostgres("status card routes", () => {
     // so `latestHumanCommentAt.toISOString()` threw and refresh 500'd whenever a
     // matched issue had a human comment. executeQueries now coerces the value.
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const service = statusCardService(db);
     const issueSvc = issueService(db);
@@ -367,7 +359,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("requires tasks:assign for mutations", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const response = await request(createApp(db, unprivilegedBoardActor(company.id)))
       .post(`/api/companies/${company.id}/status-cards`)
@@ -377,7 +368,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("attributes API-level authoring to an active company agent", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const agent = await db
       .insert(agents)
@@ -416,7 +406,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("limits agent prompt length and total authored cards", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const agent = await db.insert(agents).values({
       companyId: company.id,
@@ -449,7 +438,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("forces a full rebuild when restoring a manual card", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const service = statusCardService(db);
     const card = await service.create(
@@ -491,7 +479,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("cancels refresh tasks when assignment wakeup fails", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const service = statusCardService(db);
     const card = await service.create(
@@ -531,7 +518,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("cancels a refresh task when its optimistic claim loses to archival", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const summarizer = await seedSummarizer(company.id);
     const realIssuesSvc = issueService(db);
     const card = await statusCardService(db).create(
@@ -577,7 +563,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("finalizes cancelled generation tasks as failed ledger entries", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const service = statusCardService(db);
     const card = await service.create(
@@ -620,7 +605,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("fails the pending summary ledger row when compilation finishes without a summary", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const summarizer = await seedSummarizer(company.id);
     const boardApp = createApp(db, localBoardActor());
     const created = await request(boardApp)
@@ -652,7 +636,6 @@ describeEmbeddedPostgres("status card routes", () => {
   });
   it("prevents agents from managing cards authored by the board", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const boardApp = createApp(db, localBoardActor());
     const boardCard = await request(boardApp)
@@ -678,7 +661,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("deduplicates active compile tasks for the same prompt", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const app = createApp(db, localBoardActor());
     const created = await request(app).post(`/api/companies/${company.id}/status-cards`).send({ interestPrompt: "Blocked launch tasks" });
@@ -696,7 +678,6 @@ describeEmbeddedPostgres("status card routes", () => {
     // generatingIssueId stayed set, so the board tile spun forever and "Run now"
     // was suppressed, and recompile no-opped as "already generating".
     const company = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const app = createApp(db, localBoardActor());
     const created = await request(app)
@@ -732,7 +713,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("rejects status-card writes from the wrong agent, issue, or run", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const summarizer = await seedSummarizer(company.id);
     const plainAgent = await db.insert(agents).values({
       companyId: company.id,
@@ -792,7 +772,6 @@ describeEmbeddedPostgres("status card routes", () => {
   it("routes generation tasks to a per-card summarizer override and lets it write", async () => {
     const company = await seedCompany();
     const foreignCompany = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const foreignAgent = await seedSummarizer(foreignCompany.id);
     const override = await db.insert(agents).values({
@@ -856,7 +835,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("rejects status-card writes after the generation issue is cancelled", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const summarizer = await seedSummarizer(company.id);
     const created = await request(createApp(db, localBoardActor()))
       .post(`/api/companies/${company.id}/status-cards`)
@@ -889,7 +867,6 @@ describeEmbeddedPostgres("status card routes", () => {
   it("returns 404 for cross-company query and summary write probes", async () => {
     const company = await seedCompany();
     const foreignCompany = await seedCompany();
-    await enableStatusCards();
     await seedSummarizer(company.id);
     const foreignSummarizer = await seedSummarizer(foreignCompany.id);
     const created = await request(createApp(db, localBoardActor()))
@@ -918,7 +895,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("joins issues mentioned in the summary to the watched set and tracks their later changes", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const summarizer = await seedSummarizer(company.id);
     const boardApp = createApp(db, localBoardActor());
     const service = statusCardService(db);
@@ -1036,7 +1012,6 @@ describeEmbeddedPostgres("status card routes", () => {
 
   it("writes a compiled query and first summary, dry-runs live rows, and bumps the version after recompile", async () => {
     const company = await seedCompany();
-    await enableStatusCards();
     const summarizer = await seedSummarizer(company.id);
     const boardApp = createApp(db, localBoardActor());
     const created = await request(boardApp)

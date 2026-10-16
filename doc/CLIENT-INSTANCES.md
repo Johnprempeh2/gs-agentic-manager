@@ -99,7 +99,7 @@ scripts/client-instance.sh create --root /path/to/instances/c001 --edition manag
 
 # Managed plus: list ONLY features whose Beacon verdict on GRE-81 has passed
 scripts/client-instance.sh create --root /path/to/instances/c002 \
-  --edition managed-plus --passed-features enablePipelines,enableCases
+  --edition managed-plus --passed-features enablePipelines,enableWebsiteView
 
 # Greatstone's own install (no edition values; never for a client)
 scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition internal
@@ -107,7 +107,19 @@ scripts/client-instance.sh create --root /path/to/instances/pilot01 --edition in
 
 Managed and Managed plus pin `enableManagedSandboxOnly` off (GRE-160: with it
 on and no sandbox provider, every run is refused). `internal` sets no
-edition values. `verify` then checks only health,
+edition values.
+
+Graduated switches keep their client gate (Everest on GRE-1632, GRE-1633).
+Greatstone's own install and self-hosted read them on, and a stored "off" is
+ignored. Managed and Managed plus pin these off: Agent Chat, Built-in Agents,
+Task Plan Decomposition, Summaries, Status Cards, Cases, External Objects,
+Environments, Chat connectors and Memory connectors. Packaging v2 (GRE-1086)
+marks them "Needs configuration" (Memory connectors: "Parked"), so a client gets
+one only through `--passed-features` on Managed plus and, when the instance
+has an entitlement document, that document. Beta skills and Simplified English
+are preference switches a managed config cannot carry; a client install reads
+them off by the Cloud default (released skills only; Simplified English is a
+Greatstone house style). `verify` then checks only health,
 the one company, the client log-in and closed sign-up.
 
 Options: `--port` (default: first free from 3300), `--db-port` (default: first
@@ -1006,5 +1018,5 @@ A client install from the Stable image (GRE-138, see "Stable image" in
 
 ```sh
 scripts/client-instance.sh edition-env --edition managed
-scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableCases
+scripts/client-instance.sh edition-env --edition managed-plus --passed-features enableWebsiteView
 ```

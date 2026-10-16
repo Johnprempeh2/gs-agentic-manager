@@ -149,7 +149,9 @@ describe("built-in agent routes", () => {
     expect(mockBuiltInAgentService.list).not.toHaveBeenCalled();
   });
 
-  it("returns 403 not_entitled and does not load built-in state when the experimental flag is disabled", async () => {
+  // GRE-1633: a stored off is ignored (instance-settings tests), but a managed
+  // config or the entitlement document can still turn Built-in Agents off.
+  it("returns 403 not_entitled and does not load built-in state when Built-in Agents reads off", async () => {
     mockInstanceSettingsService.getExperimental.mockResolvedValue({ enableBuiltInAgents: false });
     const app = await createApp({
       type: "board",

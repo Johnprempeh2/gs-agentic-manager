@@ -75,12 +75,11 @@ describe("AgentChat with Agent Chat turned off", () => {
     ]);
   });
 
-  it("links to Experimental settings", async () => {
+  it("says Agent Chat is not in the plan, with no Experimental link (GRE-1633)", async () => {
     await render();
 
-    const link = container.querySelector("a");
-    expect(link?.textContent).toBe("Experimental settings");
-    expect(link?.getAttribute("href")).toBe("/company/settings/instance/experimental");
+    expect(container.textContent).toContain("Agent Chat is not part of this plan.");
+    expect(container.querySelector("a")).toBeNull();
     expect(mockAgentChatsApi.get).not.toHaveBeenCalled();
   });
 });

@@ -30,8 +30,7 @@ Write the channel-appropriate announcement for a release without churn. Differen
 
 ## GS Agentic Manager Cases output
 
-When this skill runs inside GS Agentic Manager and `experimental.enableCases` is enabled,
-emit durable release-content cases before handing off the copy. Cases preserve
+When this skill runs inside GS Agentic Manager, emit durable release-content cases before handing off the copy. Cases preserve
 the inspectable output; the issue coordinates the work.
 
 Use `skills/paperclip/references/cases.md` for the API contract. Include

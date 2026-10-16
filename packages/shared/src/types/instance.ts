@@ -113,6 +113,10 @@ export interface InstanceSystemMemory {
 }
 
 export interface InstanceExperimentalSettings {
+  /**
+   * Compatibility key (GRE-1623): Environments graduated and reads as true.
+   * A managed config or the entitlement document can still turn it off.
+   */
   enableEnvironments: boolean;
   /**
    * @deprecated Compatibility-only (GRE-1436). The GS Agentic Manager Runner
@@ -143,15 +147,25 @@ export interface InstanceExperimentalSettings {
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;
-  /** Exposes chat connector setup and Board surfaces; existing delivery continues when hidden. */
+  /**
+   * Compatibility key (GRE-1620): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn chat connectors off.
+   */
   enableChatConnectors: boolean;
   /** @deprecated Compatibility key only. MCP aggregators are always enabled. */
   enableMcpAggregators: boolean;
-  /** Show experimental memory connection setup. Existing connections remain usable. */
+  /**
+   * Compatibility key (GRE-1620): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn memory connectors off.
+   */
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Cases off.
+   */
   enableCases: boolean;
-  /** Greatstone: the Deep Dive page (Book V streams and GIF). Requires `enableCases`. */
+  /** Greatstone: the Deep Dive page (Book V streams and GIF), stored as Cases. */
   enableDeepDive: boolean;
   /** Greatstone: the Strategy module, the KPI cascade and KPI readings (GRE-1382). */
   enableStrategy: boolean;
@@ -166,30 +180,59 @@ export interface InstanceExperimentalSettings {
   enableWebsiteView: boolean;
   /** Greatstone: the Intelligence page (Daily Pulse and AI hub). Off = `403 not_entitled`. */
   enableIntelligence: boolean;
+  /**
+   * Compatibility key (GRE-1621): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Agent Chat off (GRE-1633).
+   */
   enableAgentChat: boolean;
   /** Greatstone: direct messages and group chats of people and agents. Off = `403 not_entitled`. */
   enableTeamChat: boolean;
   /** Compatibility key (GRE-1624): Conference Room Chat is always on; reads as true. */
   enableConferenceRoomChat: boolean;
   enableClassicTaskInterface: boolean;
+  /**
+   * Compatibility key (GRE-1621): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Task Plan Decomposition off (GRE-1633).
+   */
   enableIssuePlanDecompositions: boolean;
+  /** Compatibility key (GRE-1623): the task file viewer is always on; reads as true. */
   enableExperimentalFileViewer: boolean;
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn it off.
+   */
   enableExternalObjects: boolean;
   enableSmokeLab: boolean;
+  /**
+   * Compatibility key (GRE-1621): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Built-in Agents off (GRE-1633).
+   */
   enableBuiltInAgents: boolean;
+  /**
+   * Compatibility key (GRE-1621): a stored value is ignored. Reads true for
+   * Greatstone and self-hosted; off in client installs (Cloud default, GRE-1633).
+   */
   enableBetaSkills: boolean;
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Summaries off (GRE-1633).
+   */
   enableSummaries: boolean;
+  /**
+   * Compatibility key (GRE-1622): a stored value is ignored and reads as true.
+   * A managed config or the entitlement document can still turn Status Cards off (GRE-1633).
+   */
   enableStatusCards: boolean;
   enableDecisions: boolean;
   enableGoalsSidebarLink: boolean;
+  /** Compatibility key (GRE-1623): the account drawer Server section always shows; reads as true. */
   enableServerInfoDebugView: boolean;
   /** Shows internal GS Agentic Manager maintainer tools and observability links. */
   enablePaperclipDeveloperMode: boolean;
   /**
-   * Instructs agents to write user-interaction content (confirmations,
-   * questions, suggested tasks, checkbox prompts) in ASD-STE100 Simplified
-   * Technical English with brief decision context. Prompt-side only; no
-   * behavior change outside interaction wording.
+   * Compatibility key (GRE-1621): agents write user-interaction content in
+   * ASD-STE100 Simplified Technical English. A stored value is ignored. Reads
+   * true for Greatstone and self-hosted; off in client installs (Cloud default, GRE-1633).
    */
   enableSimplifiedEnglishInteractions: boolean;
   /**

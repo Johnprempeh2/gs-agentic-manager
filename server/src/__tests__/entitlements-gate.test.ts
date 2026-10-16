@@ -27,21 +27,22 @@ const fakeDb = {} as never;
 const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> = {
   enablePipelines: async () => (await import("../routes/pipelines.js")).pipelineRoutes(fakeDb),
   enableCases: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
+  // GRE-1633: graduated, but a managed config or the entitlement document can still turn these off.
   enableStatusCards: async () =>
     (await import("../routes/status-cards.js")).statusCardRoutes(fakeDb, { heartbeat: {} as never }),
   enableSummaries: async () => (await import("../routes/summary-slots.js")).summarySlotRoutes(fakeDb),
   enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
+  enableAgentChat: issueRouter,
+  enableIssuePlanDecompositions: issueRouter,
   enableChatConnectors: async () =>
     Router()
       .use((await import("../routes/chat-channels.js")).chatChannelRoutes(fakeDb, { service: {} as never }))
       .use((await import("../routes/slack-tools.js")).slackToolRoutes(fakeDb)),
-  enableAgentChat: issueRouter,
   enableMemoryConnectors: async () => (await import("../routes/tool-access.js")).toolAccessRoutes(fakeDb, {}),
   enableExternalObjects: async () =>
     Router()
       .use(await issueRouter())
       .use((await import("../routes/projects.js")).projectRoutes(fakeDb)),
-  enableIssuePlanDecompositions: issueRouter,
   enableDeepDive: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
   enableStrategy: async () => (await import("../routes/goals.js")).goalRoutes(fakeDb),
   enableStrategyBoard: async () => (await import("../routes/strategy-board.js")).strategyBoardRoutes(fakeDb),
@@ -167,13 +168,13 @@ describe("managed feature reads that stay open with the switch off (GRE-1090)", 
 
 describe("assertEntitled", () => {
   it("reads the effective setting and names the feature", async () => {
-    const reader = { getExperimental: async () => ({ enableStatusCards: false }) };
-    await expect(assertEntitled(reader, "enableStatusCards")).rejects.toMatchObject({
+    const reader = { getExperimental: async () => ({ enableWebsiteView: false }) };
+    await expect(assertEntitled(reader, "enableWebsiteView")).rejects.toMatchObject({
       status: 403,
-      details: { code: "not_entitled", feature: "enableStatusCards" },
+      details: { code: "not_entitled", feature: "enableWebsiteView" },
     });
     await expect(
-      assertEntitled({ getExperimental: async () => ({ enableStatusCards: true }) }, "enableStatusCards"),
+      assertEntitled({ getExperimental: async () => ({ enableWebsiteView: true }) }, "enableWebsiteView"),
     ).resolves.toBeUndefined();
   });
 });

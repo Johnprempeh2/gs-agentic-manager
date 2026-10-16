@@ -3089,7 +3089,7 @@ export function agentRoutes(
     if (requestedDesiredSkills.some((entry) => entry.versionId !== null)) {
       const betaSkillsEnabled = (await instanceSettings.getExperimental()).enableBetaSkills === true;
       if (!betaSkillsEnabled) {
-        throw badRequest("Beta skill version pins require the Beta skills experimental setting to be enabled.");
+        throw badRequest("Beta skill version pins are off on this instance; client installs run released skills only.");
       }
     }
 

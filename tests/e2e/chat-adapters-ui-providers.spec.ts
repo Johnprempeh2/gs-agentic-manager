@@ -122,7 +122,7 @@ test.describe.serial("native chat adapter UI", () => {
     seed = await seedCompanyAndAgent(request);
   });
 
-  test("GitHub: the default-off gate keeps direct tool setup and fences chat routes", async ({
+  test("GitHub: a managed-off Chat connectors gate keeps direct tool setup and fences chat routes (GRE-1633)", async ({
     page,
   }) => {
     const github = PROVIDERS.find(
@@ -166,7 +166,7 @@ test.describe.serial("native chat adapter UI", () => {
   });
 
   for (const enabled of [false, true]) {
-    test(`Agent Channels: one heading and current experiment gate (${enabled})`, async ({
+    test(`Agent Channels: one heading and the Chat connectors gate (${enabled}, GRE-1633)`, async ({
       page,
     }) => {
       const github = PROVIDERS.find(

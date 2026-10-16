@@ -9,7 +9,10 @@ import { queryKeys } from "@/lib/queryKeys";
 
 let detachedClient: QueryClient | null = null;
 
-/** One default-off visibility gate; this does not pause existing provider delivery. */
+/**
+ * On by default (GRE-1620). A managed config or the entitlement document can
+ * still turn it off (GRE-1633); this does not pause existing provider delivery.
+ */
 export function useChatConnectorsEnabled(): {
   enabled: boolean;
   loaded: boolean;

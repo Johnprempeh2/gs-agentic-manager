@@ -8,8 +8,7 @@ import { useCompany } from "@/context/CompanyContext";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { recordAgentChatVisit } from "@/lib/recent-agent-chats";
 import { queryKeys } from "@/lib/queryKeys";
-import { INSTANCE_SETTINGS_PATH_PREFIX } from "@/lib/instance-settings";
-import { Link, useParams } from "@/lib/router";
+import { useParams } from "@/lib/router";
 import { agentRouteRef } from "@/lib/utils";
 import { TaskDetailSurface } from "./IssueDetail";
 import type { Issue } from "@greatstone/shared";
@@ -79,15 +78,10 @@ export function AgentChat() {
     );
   if (!enabled && !chat.data)
     return (
+      // Agent Chat graduated (GRE-1621); only a managed config or the
+      // entitlement document can turn it off (GRE-1633), so there is no switch to link.
       <p className="text-sm text-muted-foreground">
-        Agent Chat is disabled. Enable it in{" "}
-        <Link
-          to={`${INSTANCE_SETTINGS_PATH_PREFIX}/experimental`}
-          className="font-medium text-foreground underline underline-offset-4"
-        >
-          Experimental settings
-        </Link>
-        . Existing history remains available through task links.
+        Agent Chat is not part of this plan. Existing history remains available through task links.
       </p>
     );
   if (agents.error || chat.error)

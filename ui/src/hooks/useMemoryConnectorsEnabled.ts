@@ -2,7 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { instanceSettingsApi } from "@/api/instanceSettings";
 import { queryKeys } from "@/lib/queryKeys";
 
-/** Default-off setup gate. Existing connections and their grants remain usable. */
+/**
+ * On by default (GRE-1620). A managed config or the entitlement document can
+ * still turn setup off (GRE-1633). Existing connections and their grants remain usable.
+ */
 export function useMemoryConnectorsEnabled() {
   const query = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,

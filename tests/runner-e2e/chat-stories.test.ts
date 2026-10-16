@@ -62,7 +62,7 @@ describe("active chat follow-up oracle", () => {
   });
   it("keeps setup and interruption stories native, local, opt-in, and outside API-tool overrides", () => {
     const cells = runnerMatrix.filter(cell => cell.suite.id === "agent-chat-stories");
-    expect(cells).toHaveLength(6);
+    expect(cells).toHaveLength(4);
     for (const cell of cells) {
       expect(cell.suite.manualOnly).toBe(true);
       expect(cell.profile.generation).toBe("native");

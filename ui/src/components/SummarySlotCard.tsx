@@ -153,6 +153,7 @@ export function SummarySlotCard({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
+  // GRE-1633: stored values are ignored, but a client plan can turn either off.
   const summariesEnabled = experimentalQuery.data?.enableSummaries === true;
   const builtInAgentsEnabled = experimentalQuery.data?.enableBuiltInAgents === true;
 

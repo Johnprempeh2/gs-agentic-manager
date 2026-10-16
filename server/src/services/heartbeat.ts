@@ -7897,8 +7897,9 @@ export async function buildPaperclipWakePayload(input: {
     executionPolicy?: unknown;
   } | null;
   exposeLowTrustRaw?: boolean;
-  // Experimental: agents write user-interaction content in ASD-STE100
-  // Simplified Technical English (rendered as a prompt directive downstream).
+  // Agents write user-interaction content in ASD-STE100 Simplified Technical
+  // English (rendered as a prompt directive downstream). On for Greatstone and
+  // self-hosted since GRE-1621; off in client installs (GRE-1633).
   simplifiedEnglishInteractions?: boolean;
 }) {
   const executionStage = parseObject(input.contextSnapshot.executionStage);
@@ -23194,17 +23195,6 @@ export function heartbeatService(
         throw new Error("Agent adapter changed during startup; start a new turn with the updated agent.");
       }
 
-      const dispatchIssueId = readNonEmptyString(parseObject(run.contextSnapshot).issueId);
-      const resumingAdmittedConversationTurn = !!runOptions.nativeLeaseOwner
-        && typeof run.contextSnapshot?.conversationSessionGeneration === "number";
-      if (dispatchIssueId && isConversation(await getIssueExecutionContext(run.companyId, dispatchIssueId))
-        && !resumingAdmittedConversationTurn && !(await instanceSettings.getExperimental()).enableAgentChat) {
-        await setRunStatus(run.id, "cancelled", { finishedAt: new Date(), error: "Agent Chat is disabled", errorCode: "agent_chat_disabled" });
-        await setWakeupStatus(run.wakeupRequestId, "cancelled", { finishedAt: new Date() });
-        await releaseIssueExecutionAndPromote((await getRun(run.id))!, { suppressImmediateRecovery: true });
-        await finalizeAgentStatus(agent.id, "cancelled");
-        return;
-      }
       const preparedConversation = await prepareConversationTurn(db, run);
       run = { ...run, contextSnapshot: preparedConversation.context };
       if (preparedConversation.reset) {
@@ -28898,7 +28888,6 @@ export function heartbeatService(
         }
         if (isConversationExecutionWake(conversation, reason ?? readNonEmptyString(enrichedContextSnapshot.wakeReason))) return null;
         if (agent.id !== conversation!.conversationAgentId) return null;
-        if (!(await instanceSettings.getExperimental()).enableAgentChat) return null;
         if (!wakeCommentId && isWaitingConversation(conversation) && !hasInteractionContinuationWakeContext(enrichedContextSnapshot)) return null;
       }
     }

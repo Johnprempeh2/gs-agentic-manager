@@ -212,7 +212,8 @@ vi.mock("../api/decisions", () => ({
 }));
 
 const mockEmailApi = vi.hoisted(() => ({
-  thread: vi.fn(),
+  // Chat connectors are on by default (GRE-1620), so every task asks for its email thread.
+  thread: vi.fn(async (_companyId: string, _issueId: string) => null),
 }));
 
 vi.mock("@/api/email", () => ({
@@ -4208,48 +4209,62 @@ describe("IssueDetail", () => {
     });
   });
 
-  it("hides the plan decomposition panel by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(container.textContent).not.toContain("Plan decomposition");
-    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
-  });
-
-  it("hides file viewer entry points by default", async () => {
-    mockIssuesApi.get.mockResolvedValue(createIssue());
-
-    await act(async () => {
-      root.render(
-        <QueryClientProvider client={queryClient}>
-          <IssueDetail />
-        </QueryClientProvider>,
-      );
-    });
-
-    await flushReact();
-    await flushReact();
-
-    expect(
-      container.querySelector('[aria-label="Open file in this issue"]'),
-    ).toBeNull();
-  });
-
-  it("shows file viewer entry points when the experimental flag is enabled", async () => {
+  // GRE-1633: the server ignores a stored off, so this reads off only when a
+  // managed config or the entitlement document turns it off.
+  it("does not load plan decompositions when Task Plan Decomposition reads off", async () => {
     mockIssuesApi.get.mockResolvedValue(createIssue());
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableIssuePlanDecompositions: false,
-      enableExperimentalFileViewer: true,
+      enableClassicTaskInterface: true,
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+
+    await flushReact();
+    await flushReact();
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).not.toHaveBeenCalled();
+  });
+
+  it("loads plan decompositions when Task Plan Decomposition reads on (GRE-1621)", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    // The classic page shows the section in the centre column; the chat shell
+    // shows it in the (mocked) properties pane.
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: true,
+      enableClassicTaskInterface: true,
+    });
+
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <IssueDetail />
+        </QueryClientProvider>,
+      );
+    });
+
+    await flushReact();
+    await flushReact();
+    // The query waits for the settings read first (GRE-1633).
+    await flushReact();
+    await flushReact();
+
+    expect(mockIssuesApi.listAcceptedPlanDecompositions).toHaveBeenCalledWith("issue-1");
+  });
+
+  it("shows file viewer entry points even with the old flag stored off (GRE-1623)", async () => {
+    mockIssuesApi.get.mockResolvedValue(createIssue());
+    mockInstanceSettingsApi.getExperimental.mockResolvedValue({
+      enableIssuePlanDecompositions: false,
+      enableExperimentalFileViewer: false,
     });
 
     await act(async () => {

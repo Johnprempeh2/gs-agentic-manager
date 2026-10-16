@@ -86,7 +86,8 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     enabled: Boolean(companyId),
   });
 
-  // Beta skills experimental flag — gates the per-agent release picker entirely.
+  // Beta skills (GRE-1621, GRE-1633): on for Greatstone and self-hosted, off in
+  // client installs. Gates the per-agent release picker entirely.
   const { data: experimentalSettings } = useQuery({
     queryKey: queryKeys.instance.experimentalSettings,
     queryFn: () => instanceSettingsApi.getExperimental(),
@@ -99,7 +100,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
   );
 
   // Seeded releases (release_id IS NOT NULL) for the paperclip core skill. Only
-  // fetched when the flag is on and the skill is present in the library.
+  // fetched when Beta skills reads on and the skill is present in the library.
   const { data: paperclipVersions } = useQuery({
     queryKey: queryKeys.companySkills.versions(companyId ?? "", paperclipCoreSkill?.id ?? ""),
     queryFn: () => companySkillsApi.versions(companyId!, paperclipCoreSkill!.id),
@@ -340,8 +341,8 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     syncSkills.mutate(toDesiredSkillPayload(skillDraft, nextPins));
   };
 
-  // The release picker only applies to the enabled paperclip core skill while the
-  // beta-skills flag is on and seeded releases exist.
+  // The release picker only applies to the enabled paperclip core skill while Beta
+  // skills reads on and seeded releases exist.
   const releasePickerActive = betaSkillsEnabled && paperclipReleases.length > 0;
 
   const renderRow = (row: AgentSkillRowData, variant: "enabled" | "available") => {

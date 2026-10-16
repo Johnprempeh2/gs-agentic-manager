@@ -428,7 +428,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
   it.each(["mem0", "zep", "supermemory", "cognee", "honcho"])("blocks direct %s setup while memory connectors are off", async (provider) => {
     mockSearch.value = `source=${provider}`;
     await render();
-    expect(container.textContent).toContain("Enable memory connectors");
+    expect(container.textContent).toContain("Memory connectors are turned off for this instance.");
     expect(connectAppMock).not.toHaveBeenCalled();
     expect(startOAuthMock).not.toHaveBeenCalled();
   });
@@ -438,7 +438,7 @@ describe("AppsConnect — Connect with a link (M4 frame)", () => {
     getConnectionMock.mockResolvedValue({ id: "existing-memory", status: "active", config: { sourceTemplateKey: "mem0" } });
     await render();
     expect(getConnectionMock).toHaveBeenCalledWith("existing-memory");
-    expect(container.textContent).not.toContain("Enable memory connectors");
+    expect(container.textContent).not.toContain("Memory connectors are turned off for this instance.");
   });
 
   it.each(["zapier", "arcade", "composio", "executor"])("opens direct %s setup with default settings", async (provider) => {

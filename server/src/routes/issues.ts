@@ -3781,8 +3781,8 @@ export function issueRoutes(
   const agentsSvc = agentService(db);
   const boardChats = strategyBoardChatService(db);
   const teamChats = teamChatService(db);
-  // GRE-1090: refuse these feature routes while their managed switch is off,
-  // before validation. Agent Chat on existing conversations checks per route.
+  // GRE-1622: External Objects ignores the stored switch, but a managed config
+  // or the entitlement document can still turn it off.
   router.use(
     [
       "/issues/:id/external-objects",
@@ -3791,6 +3791,9 @@ export function issueRoutes(
     ],
     requireEntitlement(instanceSettings, "enableExternalObjects"),
   );
+  // GRE-1090, GRE-1633: refuse these feature routes while a managed config or
+  // the entitlement document turns them off, before validation. Agent Chat on
+  // existing conversations checks per route.
   router.get(
     "/issues/:id/accepted-plan-decompositions",
     requireEntitlement(instanceSettings, "enableIssuePlanDecompositions"),

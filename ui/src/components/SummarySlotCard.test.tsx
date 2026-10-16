@@ -251,7 +251,9 @@ describe("SummarySlotCard", () => {
     vi.clearAllMocks();
   });
 
-  it("renders nothing and does not fetch slots when the summaries flag is off", async () => {
+  // GRE-1633: the server ignores a stored off, so this reads off only when a
+  // managed config or the entitlement document turns Summaries off.
+  it("renders nothing and fetches no slot when Summaries reads off", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({
       enableSummaries: false,
       enableBuiltInAgents: true,
@@ -262,7 +264,6 @@ describe("SummarySlotCard", () => {
 
     expect(container.textContent).toBe("");
     expect(mockSummarySlotsApi.get).not.toHaveBeenCalled();
-    expect(mockBuiltInAgentsApi.list).not.toHaveBeenCalled();
   });
 
   it("does not query built-in agents when their feature flag is off", async () => {

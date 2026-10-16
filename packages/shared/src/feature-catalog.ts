@@ -43,12 +43,12 @@ export interface FeatureCatalogEntry {
 
 export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalogEntry> = {
   enableEnvironments: {
-    title: "Environments",
+    title: "Environments (compatibility)",
     description:
-      "Show environment management in company settings and allow project and agent environment assignment controls.",
+      "Deprecated compatibility key. Environment management is always enabled; stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableNativeRunner: {
     title: "GS Agentic Manager Runner (compatibility)",
@@ -108,19 +108,20 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: true,
   },
   enableChatConnectors: {
-    title: "Chat connectors",
+    title: "Chat connectors (compatibility)",
     description:
-      "Show experimental chat connector setup and Board surfaces. Existing connections keep running when hidden; GitHub and other tool connectors are unaffected.",
+      "Deprecated compatibility key. Chat connectors are always enabled (GRE-1620); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableMemoryConnectors: {
-    title: "Memory connectors",
-    description: "Show experimental Mem0, Zep, Supermemory, Cognee, and Honcho setup. Existing connections keep running when hidden.",
+    title: "Memory connectors (compatibility)",
+    description:
+      "Deprecated compatibility key. Memory connectors are always enabled (GRE-1620); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableMcpAggregators: {
     title: "MCP aggregators (compatibility)",
@@ -137,17 +138,17 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableCases: {
-    title: "Cases",
+    title: "Cases (compatibility)",
     description:
-      "Durable work products that tasks create and iterate on. Adds the Cases tab and the agent case API.",
+      "Deprecated compatibility key. Cases are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableDeepDive: {
     title: "Deep Dive",
     description:
-      "Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with depth, status and visibility per stream. Requires Cases.",
+      "Record a client deep dive as Cases: the nine Investigation Streams by the five GIF questions, with depth, status and visibility per stream.",
     tier: "managed",
     cloudDefault: false,
     selfHostedDefault: false,
@@ -187,11 +188,12 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableAgentChat: {
-    title: "Agent Chat",
-    description: "Persistent task-backed conversations that clarify goals and hand work off to tasks.",
+    title: "Agent Chat (compatibility)",
+    description:
+      "Deprecated compatibility key. Agent Chat is always on (GRE-1621); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableTeamChat: {
     title: "Team Chat",
@@ -218,35 +220,36 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableIssuePlanDecompositions: {
-    title: "Task Plan Decomposition",
-    description: "Show accepted-plan decomposition history on task detail pages.",
+    title: "Task Plan Decomposition (compatibility)",
+    description:
+      "Deprecated compatibility key. Accepted-plan decomposition history always shows on task detail pages (GRE-1621); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableExperimentalFileViewer: {
-    title: "Experimental File Viewer",
+    title: "File Viewer (compatibility)",
     description:
-      "Show task detail controls for browsing and previewing workspace files relative to a task.",
+      "Deprecated compatibility key. The task file viewer is always enabled; stored and managed values are ignored.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableStatusCards: {
-    title: "Status Cards",
+    title: "Status Cards (compatibility)",
     description:
-      "Enable the experimental shared status-card board, update engine, and gated API.",
+      "Deprecated compatibility key. The status-card board, update engine and API are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableExternalObjects: {
-    title: "External Objects",
+    title: "External Objects (compatibility)",
     description:
-      "Detect external URLs in issues and show resolved status for pull requests, tickets, and other referenced work objects.",
+      "Deprecated compatibility key. External object detection and status are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableSmokeLab: {
     title: "Smoke Lab",
@@ -257,27 +260,28 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableBuiltInAgents: {
-    title: "Built-in Agents",
+    title: "Built-in Agents (compatibility)",
     description:
-      "Show GS Agentic Manager-managed built-in agent surfaces, including roster badges, the Built-in agents tab, and setup controls.",
+      "Deprecated compatibility key. Built-in agent surfaces are always on (GRE-1621); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableBetaSkills: {
-    title: "Beta skills",
-    description: "Allow agents to pin beta releases of the GS Agentic Manager core skill.",
+    title: "Beta skills (compatibility)",
+    description:
+      "Deprecated compatibility key. Agents can pin beta releases of the GS Agentic Manager core skill (GRE-1621); stored values are ignored. Off in client installs, which run released skills only (GRE-1633).",
     tier: "preference",
     cloudDefault: false,
-    selfHostedDefault: false,
+    selfHostedDefault: true,
   },
   enableSummaries: {
-    title: "Summaries",
+    title: "Summaries (compatibility)",
     description:
-      "Show Summarizer-generated status slots on project and workspace pages, with on-demand refresh and revision history.",
+      "Deprecated compatibility key. Summary slots are always enabled (GRE-1622); stored values are ignored. A managed config or the entitlement document can still turn it off.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableDecisions: {
     title: "Decisions",
@@ -295,20 +299,20 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: false,
   },
   enableSimplifiedEnglishInteractions: {
-    title: "Simplified English Interactions",
+    title: "Simplified English Interactions (compatibility)",
     description:
-      "Instruct agents to write user interactions (confirmations, questions, suggested tasks) in ASD-STE100 Simplified Technical English with brief decision context.",
+      "Deprecated compatibility key. Agents write user interactions in ASD-STE100 Simplified Technical English (GRE-1621); stored values are ignored. Off in client installs: it is a Greatstone house style (GRE-1633).",
     tier: "preference",
     cloudDefault: false,
-    selfHostedDefault: false,
+    selfHostedDefault: true,
   },
   enableServerInfoDebugView: {
-    title: "Server Info Debug View",
+    title: "Server Info Debug View (compatibility)",
     description:
-      "Show a Server section in the account drawer with the current server restart time and running commit.",
+      "Deprecated compatibility key. The Server section in the account drawer always shows; stored and managed values are ignored.",
     tier: "preference",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enablePaperclipDeveloperMode: {
     title: "GS Agentic Manager Developer Mode",
@@ -444,14 +448,28 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
  * issue that graduated it. Beta tools report these as `graduated`.
  */
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
+  { key: "enableAgentChat", issue: "GRE-1621" },
   { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableBetaSkills", issue: "GRE-1621" },
+  { key: "enableBuiltInAgents", issue: "GRE-1621" },
+  { key: "enableCases", issue: "GRE-1622" },
+  { key: "enableChatConnectors", issue: "GRE-1620" },
   { key: "enableConferenceRoomChat", issue: "GRE-1624" },
+  { key: "enableEnvironments", issue: "GRE-1623" },
+  { key: "enableExperimentalFileViewer", issue: "GRE-1623" },
+  { key: "enableExternalObjects", issue: "GRE-1622" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
+  { key: "enableIssuePlanDecompositions", issue: "GRE-1621" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
+  { key: "enableMemoryConnectors", issue: "GRE-1620" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
+  { key: "enableServerInfoDebugView", issue: "GRE-1623" },
+  { key: "enableSimplifiedEnglishInteractions", issue: "GRE-1621" },
+  { key: "enableStatusCards", issue: "GRE-1622" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },
   { key: "enableStreamlinedUi", issue: "GRE-1441" },
+  { key: "enableSummaries", issue: "GRE-1622" },
   { key: "enableWorkspaceBranchReconcileForward", issue: "GRE-1438" },
   { key: "enableWorkspaceDirtyQuarantineRepair", issue: "GRE-1439" },
 ] as const satisfies readonly { key: InstanceFeatureKey; issue: string }[];

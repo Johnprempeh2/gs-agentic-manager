@@ -107,6 +107,69 @@ test("client installs never show Deep Dive (deep dive design, section 5 rule 12)
   }
 });
 
+test("client installs keep Chat and Memory connectors off; Greatstone and self-hosted read them on (GRE-1620, GRE-1633)", () => {
+  const keys = ["enableChatConnectors", "enableMemoryConnectors"] as const;
+  for (const edition of ["managed", "managed-plus"] as const) {
+    const values = buildEditionValues({ edition, catalogVersion });
+    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+    assert.ok(parsed);
+    const { experimental } = applyManagedExperimentalOverlay(
+      applyCloudCatalogDefaults(normalizeExperimentalSettings({}), {}, parsed),
+      parsed,
+    );
+    for (const key of keys) {
+      assert.equal(parsed.features[key], false, `${edition}: ${key}`);
+      assert.ok(values.expectOff.includes(key), `${edition}: ${key}`);
+      assert.equal(experimental[key], false, `${edition}: ${key}`);
+    }
+  }
+  const selfHosted = normalizeExperimentalSettings({ enableChatConnectors: false, enableMemoryConnectors: false });
+  for (const key of keys) assert.equal(selfHosted[key], true, key);
+});
+
+test("client installs keep the GRE-1621 and GRE-1622 gates; Greatstone and self-hosted read them on (GRE-1633)", () => {
+  const pinned = [
+    "enableAgentChat",
+    "enableBuiltInAgents",
+    "enableIssuePlanDecompositions",
+    "enableSummaries",
+    "enableStatusCards",
+  ] as const;
+  const cloudOff = ["enableBetaSkills", "enableSimplifiedEnglishInteractions"] as const;
+  // An old stored row says on for every key; a client install still reads them off.
+  const stored = Object.fromEntries([...pinned, ...cloudOff].map((key) => [key, true]));
+  for (const edition of ["managed", "managed-plus"] as const) {
+    const values = buildEditionValues({ edition, catalogVersion });
+    const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
+    assert.ok(parsed);
+    const { experimental } = applyManagedExperimentalOverlay(
+      applyCloudCatalogDefaults(normalizeExperimentalSettings(stored), stored, parsed),
+      parsed,
+    );
+    for (const key of pinned) {
+      assert.equal(parsed.features[key], false, `${edition}: ${key}`);
+      assert.ok(values.expectOff.includes(key), `${edition}: ${key}`);
+      assert.equal(experimental[key], false, `${edition}: ${key}`);
+    }
+    for (const key of cloudOff) {
+      assert.equal(experimental[key], false, `${edition}: ${key}`);
+      assert.equal(key in parsed.features, false, `${edition}: ${key} is a preference key, never in the managed config`);
+    }
+  }
+  // Packaging v2 "Needs configuration": Managed plus can turn each pinned one on.
+  const plus = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: [...pinned], catalogVersion });
+  const plusParsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: plus.managedConfig });
+  assert.ok(plusParsed);
+  for (const key of pinned) {
+    assert.equal(plusParsed.features[key], true, key);
+    assert.ok(plus.expectOn.includes(key), key);
+  }
+  // Greatstone and self-hosted: no managed config, and a stored off is ignored.
+  const offRow = Object.fromEntries([...pinned, ...cloudOff].map((key) => [key, false]));
+  const selfHosted = applyCloudCatalogDefaults(normalizeExperimentalSettings(offRow), offRow, null);
+  for (const key of [...pinned, ...cloudOff]) assert.equal(selfHosted[key], true, key);
+});
+
 test("agents can run without a sandbox provider (GRE-160)", () => {
   for (const edition of ["managed", "managed-plus"] as const) {
     const values = buildEditionValues({ edition, catalogVersion });
@@ -122,7 +185,7 @@ test("hidden settings are exactly section 5", () => {
   const values = buildEditionValues({ edition: "managed", catalogVersion });
   assert.equal(values.hiddenSettings, MANAGED_HIDDEN_SETTINGS.join(","));
   assert.equal(
-    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }).hiddenSettings,
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }).hiddenSettings,
     values.hiddenSettings,
   );
 });
@@ -130,15 +193,15 @@ test("hidden settings are exactly section 5", () => {
 test("both editions hide Releases (GRE-129)", () => {
   for (const values of [
     buildEditionValues({ edition: "managed", catalogVersion }),
-    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases"], catalogVersion }),
+    buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }),
   ]) {
     assert.ok(values.hiddenSettings.split(",").includes("instance.releases"));
   }
 });
 
 test("the same input gives the same values", () => {
-  const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableCases", "enablePipelines"], catalogVersion });
-  const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableCases"], catalogVersion });
+  const a = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableWebsiteView", "enablePipelines"], catalogVersion });
+  const b = buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enablePipelines", "enableWebsiteView"], catalogVersion });
   assert.deepEqual(a, b);
 });
 
@@ -147,7 +210,7 @@ test("Managed plus turns on only the passed features", () => {
   const parsed = parseManagedConfigEnv({ GSAM_MANAGED_CONFIG: values.managedConfig });
   assert.ok(parsed);
   assert.equal(parsed.features.enablePipelines, true);
-  assert.equal(parsed.features.enableCases, false);
+  assert.equal(parsed.features.enableWebsiteView, false);
   assert.ok(values.expectOn.includes("enablePipelines"));
   assert.ok(!values.expectOff.includes("enablePipelines"));
 });
@@ -159,7 +222,7 @@ test("Managed plus with no passed features equals Managed features", () => {
 });
 
 test("rejects features without a place in section 5", () => {
-  assert.throws(() => buildEditionValues({ edition: "managed", passedBetaFeatures: ["enableCases"], catalogVersion }), /Managed edition/);
+  assert.throws(() => buildEditionValues({ edition: "managed", passedBetaFeatures: ["enableWebsiteView"], catalogVersion }), /Managed edition/);
   assert.throws(
     () => buildEditionValues({ edition: "managed-plus", passedBetaFeatures: ["enableApps"], catalogVersion }),
     /not a Managed "off" beta feature/,
