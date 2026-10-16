@@ -6,6 +6,7 @@ import {
   answerDecide,
   answerStuck,
   answerSubject,
+  organisationAskContext,
   answerFollowUp,
   classifyQuestion,
   followUpRefinement,
@@ -249,5 +250,22 @@ describe("asking about a page", () => {
       'and which are late? (Following up on: "What is stuck?")',
     );
     expect(liveQuestionText("What next?", { context })).toBe(`What next?\n\nAsked from Acme Ltd:\n${context.summary}`);
+  });
+});
+
+describe("organisationAskContext", () => {
+  it("sums up the organisation, its people and its deals", () => {
+    const context = organisationAskContext({
+      name: "Acme Ltd",
+      industry: "Mining",
+      country: "Ghana",
+      statusLabel: "Client",
+      contacts: [{ name: "Kofi Mensah", role: "CFO" }, { name: "Ama", role: null }],
+      deals: [{ title: "Drill rig", pipelineName: "Sales", stageName: "Won" }],
+    });
+    expect(context.label).toBe("Acme Ltd");
+    expect(context.subject).toBe("Acme Ltd");
+    expect(context.summary).toBe('The organisation "Acme Ltd" (Mining, Ghana). Status: Client.\nPeople: Kofi Mensah (CFO); Ama.\nDeals: Drill rig: Won in Sales.');
+    expect(context.suggestions?.[0]).toBe("What is happening with Acme Ltd?");
   });
 });

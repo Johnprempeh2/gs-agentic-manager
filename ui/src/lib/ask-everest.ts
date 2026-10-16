@@ -554,3 +554,31 @@ export function pipelineItemAskContext(item: {
     ],
   };
 }
+
+/** What Ask Everest gets when opened from an organisation page: who they are, the people and the deals. */
+export function organisationAskContext(org: {
+  name: string;
+  industry: string | null;
+  country: string | null;
+  statusLabel: string;
+  contacts: ReadonlyArray<{ name: string; role: string | null }>;
+  deals: ReadonlyArray<{ title: string; pipelineName: string; stageName: string }>;
+}): AskContext {
+  const about = [org.industry, org.country].filter(Boolean).join(", ");
+  const people = org.contacts.slice(0, 6).map((contact) => (contact.role ? `${contact.name} (${contact.role})` : contact.name));
+  const deals = org.deals.slice(0, 6).map((deal) => `${deal.title}: ${deal.stageName} in ${deal.pipelineName}`);
+  return {
+    label: org.name,
+    subject: org.name,
+    summary: [
+      `The organisation "${org.name}"${about ? ` (${about})` : ""}. Status: ${org.statusLabel}.`,
+      people.length > 0 ? `People: ${people.join("; ")}.` : null,
+      deals.length > 0 ? `Deals: ${deals.join("; ")}.` : null,
+    ].filter(Boolean).join("\n"),
+    suggestions: [
+      `What is happening with ${org.name}?`,
+      `What is stuck on ${org.name}?`,
+      `What should we do next with ${org.name}?`,
+    ],
+  };
+}

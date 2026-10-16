@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, Building2, CalendarClock, FileText, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
+import { ArrowRightLeft, Building2, CalendarClock, FileText, History, Mail, Pencil, Phone, Sparkles, Star, StickyNote } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
   type CrmFile,
@@ -19,6 +19,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
+import { organisationAskContext } from "@/lib/ask-everest";
+import { openAskEverest } from "@/lib/ask-everest-events";
 import { Link, useParams } from "@/lib/router";
 import { formatBytes } from "@/lib/issue-output";
 import { formatDate, formatDateTime } from "@/lib/utils";
@@ -116,10 +118,27 @@ export function OrganisationPage() {
             {organisation.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
           </div>
         </div>
-        <Button variant="outline" onClick={() => setEditing(true)}>
-          <Pencil />
-          Edit
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            data-testid="organisation-ask"
+            onClick={() => openAskEverest("", organisationAskContext({
+              name: organisation.name,
+              industry: organisation.industry,
+              country: organisation.country,
+              statusLabel: ORGANISATION_STATUS_LABELS[organisation.status],
+              contacts,
+              deals: history.data?.cases ?? [],
+            }))}
+          >
+            <Sparkles />
+            Ask Everest
+          </Button>
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            <Pencil />
+            Edit
+          </Button>
+        </div>
       </div>
 
       <section aria-label="Company info" className="rounded-lg border border-border p-4">
