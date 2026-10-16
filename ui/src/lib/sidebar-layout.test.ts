@@ -18,6 +18,7 @@ const EVERY_DESTINATION = [
   "agents", "scorecard", "weekly-report", "conference-room", "status",
   "skills", "connectors", "routines", "workflows", "workspaces", "artifacts", "cases",
   "website", "activity", "releases", "billing", "settings", "design-guide",
+  "whats-new", "tutorials",
 ];
 
 function itemsOf(layout: ReturnType<typeof resolveSidebarLayout>, sectionId: string) {
@@ -35,15 +36,15 @@ describe("default sidebar layout", () => {
 
   it("starts with what needs you and folds Admin away", () => {
     const resolved = resolveSidebarLayout({});
-    expect(resolved.sections.map((section) => section.id)).toEqual(["today", "chats", "clients", "work", "team", "admin"]);
-    expect(resolved.sections.map((section) => section.open)).toEqual([true, true, true, true, true, false]);
+    expect(resolved.sections.map((section) => section.id)).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
+    expect(resolved.sections.map((section) => section.open)).toEqual([true, true, true, true, true, true, false]);
     expect(resolved.hidden).toEqual([]);
     expect(resolved.pinned).toEqual([]);
   });
 
   it("slots the new sections into a section order saved before the reorganisation", () => {
     expect(mergeSectionOrder(SIDEBAR_SECTION_IDS, ["company", "team", "work", "build"])).toEqual([
-      "today", "chats", "clients", "team", "admin", "work",
+      "today", "chats", "clients", "team", "help", "admin", "work",
     ]);
   });
 });

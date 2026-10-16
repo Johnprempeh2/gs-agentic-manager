@@ -780,7 +780,8 @@ describe("Sidebar", () => {
 
     const headings = [...container.querySelectorAll("[data-sidebar-section]")]
       .map((section) => section.getAttribute("data-sidebar-section"));
-    expect(headings).toEqual(["today", "chats", "clients", "work", "team", "admin"]);
+    expect(headings).toEqual(["today", "chats", "clients", "work", "team", "help", "admin"]);
+    expect(sectionLabels("Help")).toEqual(["What's newNew", "Tutorials"]);
     expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
     expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);

@@ -24,6 +24,7 @@ export const SIDEBAR_SECTIONS: readonly SidebarSectionDefault[] = [
     items: ["dashboard", "tasks", "projects", "goals", "board", "intelligence", "memory"],
   },
   { id: "team", label: "Team", items: ["agents", "scorecard", "weekly-report", "conference-room", "status"] },
+  { id: "help", label: "Help", items: ["whats-new", "tutorials"] },
   {
     id: "admin",
     label: "Admin",
