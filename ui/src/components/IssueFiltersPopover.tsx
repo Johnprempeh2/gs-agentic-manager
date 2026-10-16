@@ -18,6 +18,7 @@ import {
   issueQuickFilterPresets,
   issueStatusOrder,
   issueWorkFilterOptions,
+  issueDueFilterOptions,
   searchIssueFilterOptions,
   toggleIssueFilterValue,
   type IssueFilterState,
@@ -338,6 +339,31 @@ export function IssueFiltersPopover({
                         : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
                     }`}
                     onClick={() => onChange({ work: option.value })}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-1.5" role="radiogroup" aria-label="Due date">
+            <span className="text-xs text-muted-foreground">Due date</span>
+            <div className="flex flex-wrap gap-1.5">
+              {issueDueFilterOptions.map((option) => {
+                const isActive = (state.due ?? null) === option.value;
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    role="radio"
+                    aria-checked={isActive}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      isActive
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
+                    }`}
+                    onClick={() => onChange({ due: option.value })}
                   >
                     {option.label}
                   </button>
