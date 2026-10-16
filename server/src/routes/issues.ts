@@ -104,6 +104,9 @@ import {
   ONBOARDING_FIRST_TASK_ORIGIN_KIND,
   rejectIssueThreadInteractionSchema,
   restoreIssueDocumentRevisionSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   respondIssueThreadInteractionSchema,
   stalledReviewDecisionSchema,
   submitIssueThreadInteractionVerdictsSchema,
@@ -6671,6 +6674,59 @@ export function issueRoutes(
     };
   }
 
+  /**
+   * True when an agent writes an existing document whose owning task named
+   * that agent as its maker. Any other case falls back to the normal issue
+   * write check, so this never widens access to the task itself.
+   */
+  async function isNamedDocumentMakerWrite(
+    req: Request,
+    issue: { id: string; companyId: string },
+    rawKey: string,
+  ) {
+    if (req.actor.type !== "agent" || !req.actor.agentId) return false;
+    if (req.actor.companyId && req.actor.companyId !== issue.companyId) {
+      return false;
+    }
+    const keyParsed = issueDocumentKeySchema.safeParse(
+      rawKey.trim().toLowerCase(),
+    );
+    if (!keyParsed.success) return false;
+    const access = await documentsSvc.getIssueDocumentWriteAccess(
+      issue.id,
+      keyParsed.data,
+    );
+    return Boolean(
+      access?.makerAgentId && access.makerAgentId === req.actor.agentId,
+    );
+  }
+
+  /**
+   * Board users, or the owning task's assignee, may name a document's maker
+   * and mark its approved version. Other agents are refused even when they
+   * could otherwise write the task.
+   */
+  async function assertDocumentOwnerControl(
+    req: Request,
+    res: Response,
+    issue: Parameters<typeof assertAgentIssueMutationAllowed>[2],
+  ) {
+    if (req.actor.type === "board") return true;
+    if (
+      req.actor.type !== "agent" ||
+      !req.actor.agentId ||
+      issue.assigneeAgentId !== req.actor.agentId
+    ) {
+      res.status(403).json({
+        error:
+          "Only the board or the task's assignee can change who writes this document or its approved version",
+        details: { issueId: issue.id },
+      });
+      return false;
+    }
+    return assertAgentIssueMutationAllowed(req, res, issue);
+  }
+
   async function assertDeliverableMutationAllowedByRunContext(
     req: Request,
     res: Response,
@@ -10729,7 +10785,18 @@ export function issueRoutes(
         "Issue not found",
       );
       if (!issue) return;
-      if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+      // The maker the owning task named for this document may update it. That
+      // is the only widening: it covers one existing document, not the task.
+      const makerWrite = await isNamedDocumentMakerWrite(
+        req,
+        issue,
+        String(req.params.key ?? ""),
+      );
+      if (
+        !makerWrite &&
+        !(await assertAgentIssueMutationAllowed(req, res, issue))
+      )
+        return;
       if (
         !(await assertDeliverableMutationAllowedByRunContext(req, res, issue))
       )
@@ -10763,8 +10830,11 @@ export function issueRoutes(
         createdByUserId: actor.actorType === "user" ? actor.actorId : null,
         createdByRunId: actor.runId ?? null,
         sourceTrust,
+        // A maker never creates a new document on someone else's task.
         lockedDocumentStrategy:
-          req.actor.type === "agent" ? "create_new_document" : "conflict",
+          req.actor.type === "agent" && !makerWrite
+            ? "create_new_document"
+            : "conflict",
       });
       const doc = result.document;
       const redirectedFromLockedDocument =
@@ -11025,6 +11095,201 @@ export function issueRoutes(
       keyParsed.data,
     );
     res.json(revisions);
+  });
+
+  // Shared documents: a document stays owned by one task; other tasks in the
+  // same company link to it, the owner can name one extra maker agent, and
+  // one revision can be marked as the approved version.
+  router.put(
+    "/issues/:id/documents/:key/maker",
+    validate(setIssueDocumentMakerSchema),
+    async (req, res) => {
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(req.params.id as string),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (!(await assertDocumentOwnerControl(req, res, issue))) return;
+      const key = parseDocumentKeyParam(req, res);
+      if (!key) return;
+      const makerAgentId = req.body.makerAgentId as string | null;
+      if (makerAgentId) {
+        const agent = await agentsSvc.getById(makerAgentId);
+        if (!agent || agent.companyId !== issue.companyId) {
+          res.status(422).json({ error: "Maker must be an agent in this company" });
+          return;
+        }
+      }
+      const { documentId } = await documentsSvc.setIssueDocumentMaker(
+        issue.id,
+        key,
+        makerAgentId,
+      );
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.document_maker_set",
+        entityType: "issue",
+        entityId: issue.id,
+        details: { key, documentId, makerAgentId },
+      });
+      const doc = await documentsSvc.getIssueDocumentByKey(issue.id, key);
+      res.json(doc);
+    },
+  );
+
+  router.put(
+    "/issues/:id/documents/:key/approved-revision",
+    validate(setIssueDocumentApprovedRevisionSchema),
+    async (req, res) => {
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(req.params.id as string),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (!(await assertDocumentOwnerControl(req, res, issue))) return;
+      const key = parseDocumentKeyParam(req, res);
+      if (!key) return;
+      const actor = getActorInfo(req);
+      const revisionId = req.body.revisionId as string | null;
+      const doc = await documentsSvc.setIssueDocumentApprovedRevision({
+        issueId: issue.id,
+        key,
+        revisionId,
+        approvedByAgentId: actor.agentId ?? null,
+        approvedByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: revisionId
+          ? "issue.document_approved_revision_set"
+          : "issue.document_approved_revision_cleared",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          key,
+          documentId: doc.id,
+          revisionId,
+          revisionNumber: doc.approvedRevisionNumber,
+        },
+      });
+      res.json(doc);
+    },
+  );
+
+  router.get("/issues/:id/document-links", async (req, res) => {
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      getIssueById(req, req.params.id as string),
+      "Issue not found",
+    );
+    if (!issue) return;
+    if (!(await assertIssueReadAllowed(req, res, issue))) return;
+    res.json(await documentsSvc.listIssueDocumentLinks(issue.id));
+  });
+
+  router.post(
+    "/issues/:id/document-links",
+    validate(createIssueDocumentLinkSchema),
+    async (req, res) => {
+      const issue = await getAccessibleResource(
+        req,
+        res,
+        svc.getById(req.params.id as string),
+        "Issue not found",
+      );
+      if (!issue) return;
+      if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+      const sourceIssue = await svc.getById(req.body.sourceIssueId as string);
+      // Another company's task reads as missing, never as forbidden.
+      if (!sourceIssue || sourceIssue.companyId !== issue.companyId) {
+        res.status(404).json({ error: "Source task not found" });
+        return;
+      }
+      if (!(await assertIssueReadAllowed(req, res, sourceIssue))) return;
+      const actor = getActorInfo(req);
+      const { link, key } = await documentsSvc.createIssueDocumentLink({
+        issue,
+        sourceIssue,
+        key: req.body.key as string,
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+      await logActivity(db, {
+        companyId: issue.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        runId: actor.runId,
+        agentApiKeyId: actor.agentApiKeyId,
+        action: "issue.document_link_created",
+        entityType: "issue",
+        entityId: issue.id,
+        details: {
+          linkId: link.id,
+          key,
+          documentId: link.documentId,
+          sourceIssueId: sourceIssue.id,
+          sourceIssueIdentifier: sourceIssue.identifier ?? null,
+        },
+      });
+      const links = await documentsSvc.listIssueDocumentLinks(issue.id);
+      res.status(201).json(links.find((row) => row.id === link.id) ?? link);
+    },
+  );
+
+  router.delete("/issues/:id/document-links/:linkId", async (req, res) => {
+    const issue = await getAccessibleResource(
+      req,
+      res,
+      svc.getById(req.params.id as string),
+      "Issue not found",
+    );
+    if (!issue) return;
+    if (!(await assertAgentIssueMutationAllowed(req, res, issue))) return;
+    const linkId = String(req.params.linkId ?? "");
+    if (!/^[0-9a-f-]{36}$/i.test(linkId)) {
+      res.status(400).json({ error: "Invalid link id" });
+      return;
+    }
+    const removed = await documentsSvc.deleteIssueDocumentLink(issue.id, linkId);
+    if (!removed) {
+      res.status(404).json({ error: "Document link not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "issue.document_link_removed",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        linkId: removed.id,
+        documentId: removed.documentId,
+        sourceIssueId: removed.sourceIssueId,
+      },
+    });
+    res.json({ ok: true });
   });
 
   router.post(

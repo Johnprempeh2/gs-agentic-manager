@@ -251,6 +251,9 @@ import {
   // Document annotations
   createDocumentAnnotationCommentSchema,
   createDocumentAnnotationThreadSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   updateDocumentAnnotationThreadSchema,
   // Document evidence trail
   upsertDocumentEvidenceSchema,
@@ -12151,6 +12154,44 @@ for (const route of [
 }
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/issues/{id}/document-links",
+  tags: ["issues"],
+  summary: "List documents linked into an issue from other issues",
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/issues/{id}/document-links",
+  tags: ["issues"],
+  summary: "Link another issue's document into this issue",
+  body: createIssueDocumentLinkSchema,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/issues/{id}/document-links/{linkId}",
+  tags: ["issues"],
+  summary: "Remove a linked document from an issue",
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/issues/{id}/documents/{key}/maker",
+  tags: ["issues"],
+  summary: "Name the maker agent allowed to write an issue document",
+  body: setIssueDocumentMakerSchema,
+});
+
+registerCurrentRoute({
+  method: "put",
+  path: "/api/issues/{id}/documents/{key}/approved-revision",
+  tags: ["issues"],
+  summary: "Mark or clear the approved revision of an issue document",
+  body: setIssueDocumentApprovedRevisionSchema,
+});
+
+registerCurrentRoute({
   method: "post",
   path: "/api/issues/{id}/documents/{key}/annotations",
   tags: ["issues"],
@@ -14728,6 +14769,14 @@ registerCurrentRoute({
   tags: ["inbound-task-hooks"],
   summary: "Delete an inbound task webhook (connection managers)",
   responses: inboundHookResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/integration-keys",
+  tags: ["integrations"],
+  summary: "Integrations waiting on an outside key or sign-in, with the variable names and whether each is set; values are never returned",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 const outboundWebhookResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };

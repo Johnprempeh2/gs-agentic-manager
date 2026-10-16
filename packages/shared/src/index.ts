@@ -1394,6 +1394,7 @@ export type {
   IssueThreadInteractionResult,
   IssueDocument,
   IssueDocumentSummary,
+  IssueDocumentLink,
   DocumentRevision,
   DocumentFormat,
   LegacyPlanDocument,
@@ -2313,6 +2314,9 @@ export {
   issueDocumentKeySchema,
   upsertIssueDocumentSchema,
   restoreIssueDocumentRevisionSchema,
+  createIssueDocumentLinkSchema,
+  setIssueDocumentMakerSchema,
+  setIssueDocumentApprovedRevisionSchema,
   tableIssueSchema,
   type TableIssue,
   createIssueTreeHoldSchema,
@@ -2357,6 +2361,9 @@ export {
   type IssueDocumentFormat,
   type UpsertIssueDocument,
   type RestoreIssueDocumentRevision,
+  type CreateIssueDocumentLink,
+  type SetIssueDocumentMaker,
+  type SetIssueDocumentApprovedRevision,
   type CreateIssueTreeHold,
   type PreviewIssueTreeControl,
   type ReleaseIssueTreeHold,
@@ -3092,6 +3099,7 @@ export * from "./validators/mailbox.js";
 export * from "./validators/inbound-task-hooks.js";
 export * from "./validators/outbound-webhooks.js";
 export * from "./validators/notion-import.js";
+export * from "./validators/integration-keys.js";
 export { configureRailwaySshSchema, type ConfigureRailwaySsh, type RailwaySshSetup } from "./railway-connection.js";
 export * from "./announcements.js";
 

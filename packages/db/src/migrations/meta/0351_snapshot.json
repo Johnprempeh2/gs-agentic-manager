@@ -1,5 +1,5 @@
 {
-  "id": "0f513914-e001-4ad0-bc4f-cd72995b68c4",
+  "id": "16b164df-3159-4b74-93a5-aba252b60e7b",
   "prevId": "1850e515-90f1-4823-b046-c675abcb3628",
   "version": "7",
   "dialect": "postgresql",
@@ -20672,6 +20672,36 @@
           "primaryKey": false,
           "notNull": false
         },
+        "approved_revision_id": {
+          "name": "approved_revision_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_revision_number": {
+          "name": "approved_revision_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by_agent_id": {
+          "name": "approved_by_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by_user_id": {
+          "name": "approved_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -20809,6 +20839,19 @@
           "tableTo": "agents",
           "columnsFrom": [
             "locked_by_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "documents_approved_by_agent_id_agents_id_fk": {
+          "name": "documents_approved_by_agent_id_agents_id_fk",
+          "tableFrom": "documents",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "approved_by_agent_id"
           ],
           "columnsTo": [
             "id"
@@ -30774,6 +30817,193 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.issue_document_links": {
+      "name": "issue_document_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "company_id": {
+          "name": "company_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_id": {
+          "name": "issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_issue_id": {
+          "name": "source_issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "document_id": {
+          "name": "document_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_by_agent_id": {
+          "name": "created_by_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_user_id": {
+          "name": "created_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "issue_document_links_issue_document_uq": {
+          "name": "issue_document_links_issue_document_uq",
+          "columns": [
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issue_document_links_company_issue_idx": {
+          "name": "issue_document_links_company_issue_idx",
+          "columns": [
+            {
+              "expression": "company_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "issue_document_links_document_idx": {
+          "name": "issue_document_links_document_idx",
+          "columns": [
+            {
+              "expression": "document_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "issue_document_links_company_id_companies_id_fk": {
+          "name": "issue_document_links_company_id_companies_id_fk",
+          "tableFrom": "issue_document_links",
+          "tableTo": "companies",
+          "columnsFrom": [
+            "company_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_document_links_issue_id_issues_id_fk": {
+          "name": "issue_document_links_issue_id_issues_id_fk",
+          "tableFrom": "issue_document_links",
+          "tableTo": "issues",
+          "columnsFrom": [
+            "issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_document_links_source_issue_id_issues_id_fk": {
+          "name": "issue_document_links_source_issue_id_issues_id_fk",
+          "tableFrom": "issue_document_links",
+          "tableTo": "issues",
+          "columnsFrom": [
+            "source_issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_document_links_document_id_documents_id_fk": {
+          "name": "issue_document_links_document_id_documents_id_fk",
+          "tableFrom": "issue_document_links",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "document_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_document_links_created_by_agent_id_agents_id_fk": {
+          "name": "issue_document_links_created_by_agent_id_agents_id_fk",
+          "tableFrom": "issue_document_links",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "created_by_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.issue_documents": {
       "name": "issue_documents",
       "schema": "",
@@ -30808,6 +31038,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "maker_agent_id": {
+          "name": "maker_agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -30933,6 +31169,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_documents_maker_agent_id_agents_id_fk": {
+          "name": "issue_documents_maker_agent_id_agents_id_fk",
+          "tableFrom": "issue_documents",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "maker_agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -39839,139 +40088,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "legal_name": {
-          "name": "legal_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "domain": {
-          "name": "domain",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "phone": {
-          "name": "phone",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_street": {
-          "name": "address_street",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_city": {
-          "name": "address_city",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_region": {
-          "name": "address_region",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "address_postal_code": {
-          "name": "address_postal_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "employee_count": {
-          "name": "employee_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "size_band": {
-          "name": "size_band",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "annual_revenue": {
-          "name": "annual_revenue",
-          "type": "numeric(20, 2)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "annual_revenue_currency": {
-          "name": "annual_revenue_currency",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ownership_type": {
-          "name": "ownership_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "parent_organisation_id": {
-          "name": "parent_organisation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "linkedin_url": {
-          "name": "linkedin_url",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_owner_user_id": {
-          "name": "account_owner_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "account_owner_agent_id": {
-          "name": "account_owner_agent_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "segment": {
-          "name": "segment",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tags": {
-          "name": "tags",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        },
-        "description": {
-          "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "registration_number": {
-          "name": "registration_number",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "tax_id": {
-          "name": "tax_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "source": {
           "name": "source",
           "type": "text",
@@ -40030,42 +40146,6 @@
             },
             {
               "expression": "name",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "organisations_company_domain_idx": {
-          "name": "organisations_company_domain_idx",
-          "columns": [
-            {
-              "expression": "company_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "domain",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "organisations_parent_idx": {
-          "name": "organisations_parent_idx",
-          "columns": [
-            {
-              "expression": "parent_organisation_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -40140,32 +40220,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "organisations_parent_organisation_id_organisations_id_fk": {
-          "name": "organisations_parent_organisation_id_organisations_id_fk",
-          "tableFrom": "organisations",
-          "tableTo": "organisations",
-          "columnsFrom": [
-            "parent_organisation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "organisations_account_owner_agent_id_agents_id_fk": {
-          "name": "organisations_account_owner_agent_id_agents_id_fk",
-          "tableFrom": "organisations",
-          "tableTo": "agents",
-          "columnsFrom": [
-            "account_owner_agent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
         "organisations_created_by_agent_id_agents_id_fk": {
           "name": "organisations_created_by_agent_id_agents_id_fk",
           "tableFrom": "organisations",
@@ -40191,22 +40245,6 @@
         "organisations_source_check": {
           "name": "organisations_source_check",
           "value": "\"organisations\".\"source\" in ('manual', 'pipedrive', 'csv', 'hubspot', 'notion')"
-        },
-        "organisations_size_band_check": {
-          "name": "organisations_size_band_check",
-          "value": "\"organisations\".\"size_band\" is null or \"organisations\".\"size_band\" in ('1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5001+')"
-        },
-        "organisations_ownership_type_check": {
-          "name": "organisations_ownership_type_check",
-          "value": "\"organisations\".\"ownership_type\" is null or \"organisations\".\"ownership_type\" in ('private', 'public', 'subsidiary', 'government', 'non_profit', 'partnership', 'other')"
-        },
-        "organisations_one_account_owner_check": {
-          "name": "organisations_one_account_owner_check",
-          "value": "\"organisations\".\"account_owner_user_id\" is null or \"organisations\".\"account_owner_agent_id\" is null"
-        },
-        "organisations_not_own_parent_check": {
-          "name": "organisations_not_own_parent_check",
-          "value": "\"organisations\".\"parent_organisation_id\" <> \"organisations\".\"id\""
         }
       },
       "isRLSEnabled": false

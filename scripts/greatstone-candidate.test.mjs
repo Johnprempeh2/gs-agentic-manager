@@ -3,11 +3,11 @@
 // temp folder; nothing under ~/GSAM is read or written.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { changeKind, cutCandidate, noteLine, tagMessage, titleProblem } from "./greatstone-candidate.mjs";
+import { changeKind, cutCandidate, noteLine, tagMessage, takeLock, titleProblem } from "./greatstone-candidate.mjs";
 
 const scriptsDir = new URL(".", import.meta.url).pathname.replace(/\/$/, "");
 const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -154,4 +154,42 @@ test("the release refuses an rc tag with no title", (t) => {
   const titled = release(dir, "rc-2026-09-02.3");
   assert.equal(titled.status, 1);
   assert.match(titled.stderr, /release: no live checkout at/);
+});
+
+// The candidate lock: one cut (and its test gate) at a time, as the preview.
+test("takeLock refuses a second holder, takes over a dead one's lock, and frees it", (t) => {
+  const root = mkdtempSync(join(tmpdir(), "gs-candidate-lock-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const lock = join(root, "locks", "candidate.lock");
+  const free = takeLock(root, "candidate", "greatstone-candidate.mjs rc-1");
+  assert.match(readFileSync(join(lock, "owner"), "utf8"), new RegExp(`^pid=${process.pid}\ncommand=greatstone-candidate.mjs rc-1\n`));
+  assert.throws(() => takeLock(root, "candidate", "x"), new RegExp(`another candidate step runs \\(pid=${process.pid} command=greatstone-candidate.mjs rc-1 `));
+  free();
+  assert.equal(existsSync(lock), false);
+
+  const dead = Number(execFileSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }));
+  mkdirSync(lock, { recursive: true });
+  writeFileSync(join(lock, "owner"), `pid=${dead}\n`);
+  takeLock(root, "candidate", "rc-2")();
+  assert.equal(existsSync(lock), false);
+});
+
+test("the candidate refuses to cut while another candidate holds the lock, and frees its own", (t) => {
+  const dir = fakeRepo();
+  const root = mkdtempSync(join(tmpdir(), "gs-candidate-lock-"));
+  t.after(() => { rmSync(dir, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); });
+  const cut = (tag) => spawnSync(process.execPath, [join(scriptsDir, "greatstone-candidate.mjs"), tag, "--title", "Focus mode", "--ref", "main", "--no-test-gate"], {
+    cwd: dir, encoding: "utf8", env: { ...process.env, GSAM_ROOT: root },
+  });
+  const free = takeLock(root, "candidate", "greatstone-candidate.mjs rc-2026-09-02.1");
+  const refused = cut("rc-2026-09-02.2");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /^candidate: another candidate step runs \(pid=\d+ command=greatstone-candidate\.mjs rc-2026-09-02\.1 /);
+  assert.equal(git(dir, "tag", "-l", "rc-*"), "");
+  free();
+
+  const ok = cut("rc-2026-09-02.2");
+  assert.equal(ok.status, 0, ok.stderr);
+  assert.equal(git(dir, "tag", "-l", "rc-*"), "rc-2026-09-02.2");
+  assert.equal(existsSync(join(root, "locks", "candidate.lock")), false, "the cut frees its lock");
 });

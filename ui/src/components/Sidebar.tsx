@@ -48,6 +48,8 @@ import {
   CalendarDays,
   Trophy,
   Newspaper,
+  GraduationCap,
+  Sparkles,
 } from "lucide-react";
 import {
   DndContext,
@@ -120,6 +122,7 @@ import { useHasBillingAccount } from "../hooks/useBillingAccount";
 import { SidebarCompanyMenu } from "./SidebarCompanyMenu";
 import { SidebarAskEverest } from "./MobileEverestButton";
 import { primarySidebarStyles } from "./primary-sidebar-styles";
+import { useWhatsNewUnseen } from "../lib/whats-new";
 
 /** One sidebar destination. `node` is null while its feature switch is off: it then shows nowhere. */
 interface SidebarItemDef {
@@ -344,6 +347,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     queryFn: () => instanceSettingsApi.getExperimental(),
   });
   const { liveAgents } = useLiveAgents(selectedCompanyId);
+  const whatsNewUnseen = useWhatsNewUnseen();
   const liveRunCount = liveAgents.length;
   const liveIssueIds = new Set(
     liveAgents.flatMap((agent) => agent.runs.flatMap((run) => run.issueId ? [run.issueId] : [])),
@@ -456,6 +460,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
     releases: gated(canRelease, link("/releases", "Releases", Rocket)),
     billing: gated(hasBillingAccount, link("/billing", "Billing", CreditCard)),
     settings: link("/company/settings", "Settings", Settings),
+    "whats-new": link("/whats-new", "What's new", Sparkles, whatsNewUnseen ? { textBadge: "New", textBadgeTone: "amber" } : undefined),
+    tutorials: link("/tutorials", "Tutorials", GraduationCap),
     "design-guide": link("/design-guide", "Design guide", Palette),
   };
   const available = (id: string) => Boolean(items[id]?.node);

@@ -7,6 +7,7 @@ import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
 import { mailboxRoutes } from "./routes/mailboxes.js";
 import { inboundTaskHookRoutes } from "./routes/inbound-task-hooks.js";
 import { outboundWebhookRoutes } from "./routes/outbound-webhooks.js";
+import { integrationKeyRoutes } from "./routes/integration-keys.js";
 import { toolActionDeliveryService } from "./services/tool-action-delivery.js";
 import { registerAssignedMcpGateway } from "./services/native-runtime/assigned-mcp-tools.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -854,6 +855,7 @@ export async function createApp(
   api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
   api.use(inboundTaskHookRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
   api.use(outboundWebhookRoutes(db, { publicBaseUrl: opts.authPublicBaseUrl }));
+  api.use(integrationKeyRoutes(db));
   startOutboundWebhookDispatch(db, addActivityListener, { publicBaseUrl: opts.authPublicBaseUrl });
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));

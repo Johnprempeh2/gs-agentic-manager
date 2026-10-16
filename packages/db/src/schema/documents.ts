@@ -21,6 +21,14 @@ export const documents = pgTable(
     lockedByAgentId: uuid("locked_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     lockedByUserId: text("locked_by_user_id"),
     sourceTrust: jsonb("source_trust").$type<SourceTrustMetadata | null>(),
+    // The revision a board user or the owning assignee marked as the current
+    // approved one. Revision numbers never change, so the number is kept here
+    // for display without a join.
+    approvedRevisionId: uuid("approved_revision_id"),
+    approvedRevisionNumber: integer("approved_revision_number"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvedByAgentId: uuid("approved_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
+    approvedByUserId: text("approved_by_user_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
