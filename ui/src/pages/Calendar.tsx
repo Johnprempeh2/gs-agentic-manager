@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { CalendarItem, CalendarItemKind } from "@greatstone/shared";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { CompanyCalendar, CalendarItem, CalendarItemKind } from "@greatstone/shared";
 import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
 import { calendarApi } from "../api/calendar";
+import { issuesApi } from "../api/issues";
+import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
@@ -13,6 +15,7 @@ import {
   CALENDAR_KIND_LABELS,
   WEEKDAY_LABELS,
   calendarItemHref,
+  canReschedule,
   dayOfMonth,
   dayTitle,
   groupByDate,
@@ -73,12 +76,25 @@ function itemSubtitle(item: CalendarItem, today: string, timeZone: string | unde
   return parts.join(" · ");
 }
 
+/** Drag data type for a task chip moved to another day. */
+const TASK_DRAG_TYPE = "application/x-gsam-calendar-task";
+
 function CalendarChip({ item, today }: { item: CalendarItem; today: string }) {
   const Icon = KIND_ICONS[item.kind];
+  const movable = canReschedule(item);
   return (
     <Link
       to={calendarItemHref(item)}
-      title={item.title}
+      title={movable ? `${item.title}. Drag to another day to change the due date.` : item.title}
+      draggable={movable}
+      onDragStart={
+        movable
+          ? (event) => {
+              event.dataTransfer.setData(TASK_DRAG_TYPE, JSON.stringify({ id: item.id, date: item.date }));
+              event.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
       className={cn(
         "flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 text-xs hover:opacity-80",
         chipClasses(item, today),
@@ -139,6 +155,9 @@ export function Calendar() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showEarlierDays, setShowEarlierDays] = useState(false);
+  const [dropDate, setDropDate] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const today = localToday();
 
   useEffect(() => {
@@ -160,6 +179,46 @@ export function Calendar() {
     queryFn: () => calendarApi.get(selectedCompanyId!, from, to),
     enabled: !!selectedCompanyId,
   });
+
+  const calendarKey = queryKeys.calendar(selectedCompanyId ?? "", from, to);
+  const reschedule = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string }) => issuesApi.update(id, { dueDate: date }),
+    onMutate: async ({ id, date }) => {
+      await queryClient.cancelQueries({ queryKey: calendarKey });
+      const previous = queryClient.getQueryData<CompanyCalendar>(calendarKey);
+      if (previous) {
+        queryClient.setQueryData<CompanyCalendar>(calendarKey, {
+          ...previous,
+          items: previous.items.map((item) => (item.kind === "task" && item.id === id ? { ...item, date } : item)),
+        });
+      }
+      return { previous };
+    },
+    onError: (err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(calendarKey, context.previous);
+      pushToast({ title: "Could not change the due date", body: err instanceof Error ? err.message : undefined, tone: "error" });
+    },
+    onSuccess: (_issue, { date }) => {
+      pushToast({ title: `Due date moved to ${dayTitle(date)}`, tone: "success" });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["calendar", selectedCompanyId ?? ""] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId ?? "") });
+    },
+  });
+
+  function dropTask(event: DragEvent, date: string) {
+    setDropDate(null);
+    const raw = event.dataTransfer.getData(TASK_DRAG_TYPE);
+    if (!raw) return;
+    event.preventDefault();
+    try {
+      const dragged = JSON.parse(raw) as { id: string; date: string };
+      if (dragged.date !== date) reschedule.mutate({ id: dragged.id, date });
+    } catch {
+      // Not one of our chips.
+    }
+  }
 
   const visibleItems = useMemo(
     () => (data?.items ?? []).filter((item) => !hiddenKinds.has(item.kind)),
@@ -303,10 +362,19 @@ export function Calendar() {
                   return (
                     <div
                       key={date}
+                      onDragOver={(event) => {
+                        if (!event.dataTransfer.types.includes(TASK_DRAG_TYPE)) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        if (dropDate !== date) setDropDate(date);
+                      }}
+                      onDragLeave={() => setDropDate((current) => (current === date ? null : current))}
+                      onDrop={(event) => dropTask(event, date)}
                       className={cn(
                         "min-h-24 min-w-0 border-r border-border p-1 last:border-r-0",
                         !inMonth && "bg-muted/30",
                         selected && "bg-accent",
+                        dropDate === date && "bg-accent ring-2 ring-inset ring-primary",
                       )}
                     >
                       <button
@@ -363,7 +431,7 @@ export function Calendar() {
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Give a task a due date and it appears here. Routines show on the days their schedule runs, and goals on
+            Give a task a due date and it appears here. Drag a task to another day to change its due date. Routines show on the days their schedule runs, and goals on
             their target date.
           </p>
         </>

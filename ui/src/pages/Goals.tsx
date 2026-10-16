@@ -22,6 +22,7 @@ import { StrategyCascadeView } from "../components/goals/StrategyCascade";
 import { Button } from "@/components/ui/button";
 import { Target, Plus, Network } from "lucide-react";
 import { ErrorState } from "../components/ErrorState";
+import { HelpTerm } from "../components/HelpTerm";
 
 /** "3 active goals · Everest checked in 2h ago" */
 export function scoreboardLede(goals: readonly GoalWithProgress[], shown: number, agentsById: AgentsById): string {
@@ -122,7 +123,7 @@ export function Goals() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0" data-tour="goals-header">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Goals</p>
-          <h1 className="text-xl font-bold">How far we are from each goal</h1>
+          <h1 className="text-xl font-bold">How far we are from each <HelpTerm term="goal" /></h1>
           {goals && goals.length > 0 ? (
             <p className="mt-1 text-sm text-muted-foreground">{scoreboardLede(goals, shownCount, agentsById)}</p>
           ) : null}

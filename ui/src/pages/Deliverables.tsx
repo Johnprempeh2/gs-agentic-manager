@@ -613,7 +613,7 @@ export function Deliverables() {
 
       {isLoading ? (
         <PageSkeleton variant="list" />
-      ) : deliverables.length === 0 ? (
+      ) : error && !data ? null : deliverables.length === 0 ? (
         filtered ? (
           <EmptyState
             icon={Search}

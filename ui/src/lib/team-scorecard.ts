@@ -54,3 +54,7 @@ export function scorecardUpdateText(scorecard: TeamScorecard, organisationName?:
   }
   return lines.join("\n");
 }
+
+/** The comment "Ask for an update" posts on a stuck task. It wakes the agent. */
+export const STUCK_TASK_UPDATE_REQUEST =
+  "Quick check-in from the Scorecard: this task shows as stuck. Please reply here in plain words: what is blocking it, and what do you need from me to move it forward?";

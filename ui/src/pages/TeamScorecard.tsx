@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { TeamScorecardAgent } from "@greatstone/shared";
-import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Eye, Loader, Trophy } from "lucide-react";
+import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Eye, Loader, MessageCircleQuestion, Trophy } from "lucide-react";
 import { teamScorecardApi } from "../api/teamScorecard";
 import { costsApi } from "../api/costs";
+import { issuesApi } from "../api/issues";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
@@ -12,7 +13,7 @@ import { deriveInitials } from "../components/Identity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
-import { scorecardSentence, scorecardUpdateText, workValueLabel } from "../lib/team-scorecard";
+import { STUCK_TASK_UPDATE_REQUEST, scorecardSentence, scorecardUpdateText, workValueLabel } from "../lib/team-scorecard";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { Button } from "@/components/ui/button";
 import { Link, useSearchParams } from "@/lib/router";
@@ -35,22 +36,62 @@ function Stat({ icon: Icon, value, label, tone }: { icon: typeof CircleCheck; va
   );
 }
 
-function TaskLinks({ title, tasks }: { title: string; tasks: TeamScorecardAgent["recentlyFinished"] }) {
+function TaskLinks({
+  title,
+  tasks,
+  askForUpdate = false,
+}: {
+  title: string;
+  tasks: TeamScorecardAgent["recentlyFinished"];
+  askForUpdate?: boolean;
+}) {
   if (tasks.length === 0) return null;
   return (
     <div className="min-w-0 space-y-1">
       <div className="text-xs font-medium text-muted-foreground">{title}</div>
       <ul className="space-y-0.5">
         {tasks.map((task) => (
-          <li key={task.id} className="truncate text-sm">
-            <Link to={`/issues/${task.identifier ?? task.id}`} className="hover:underline">
+          <li key={task.id} className="flex min-w-0 items-center gap-2 text-sm">
+            <Link to={`/issues/${task.identifier ?? task.id}`} className="min-w-0 truncate hover:underline">
               {task.identifier ? <span className="mr-1.5 text-muted-foreground">{task.identifier}</span> : null}
               {task.title}
             </Link>
+            {askForUpdate ? <AskForUpdateButton taskId={task.id} /> : null}
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * One click to ask the agent on a stuck task what is blocking it. The comment
+ * wakes the agent, and its answer lands on the task.
+ */
+function AskForUpdateButton({ taskId }: { taskId: string }) {
+  const ask = useMutation({
+    mutationFn: () => issuesApi.addComment(taskId, STUCK_TASK_UPDATE_REQUEST, undefined, undefined, undefined, crypto.randomUUID()),
+  });
+  if (ask.isSuccess) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        <Check className="size-3" aria-hidden />
+        Asked
+      </span>
+    );
+  }
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-6 shrink-0 px-2 text-xs"
+      disabled={ask.isPending}
+      title="Ask the agent what is blocking this task and what it needs from you"
+      onClick={() => ask.mutate()}
+    >
+      <MessageCircleQuestion className="size-3" aria-hidden />
+      {ask.isError ? "Try again" : "Ask for an update"}
+    </Button>
   );
 }
 
@@ -79,7 +120,7 @@ function AgentCard({ agent, days, workCents }: { agent: TeamScorecardAgent; days
       {agent.recentlyFinished.length > 0 || agent.stuckTasks.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <TaskLinks title="Recently finished" tasks={agent.recentlyFinished} />
-          <TaskLinks title="Stuck, needs a look" tasks={agent.stuckTasks} />
+          <TaskLinks title="Stuck, needs a look" tasks={agent.stuckTasks} askForUpdate />
         </div>
       ) : null}
     </li>

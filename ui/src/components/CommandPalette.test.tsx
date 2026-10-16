@@ -35,6 +35,12 @@ const mockIssuesApi = vi.hoisted(() => ({
   list: vi.fn(),
   listLabels: vi.fn(),
   update: vi.fn(),
+  create: vi.fn(),
+  get: vi.fn(),
+}));
+
+const mockDecisionsFeedApi = vi.hoisted(() => ({
+  table: vi.fn(),
 }));
 
 const toastState = vi.hoisted(() => ({
@@ -92,6 +98,10 @@ vi.mock("./search/GlobalSearchSources", () => ({
 
 vi.mock("../api/issues", () => ({
   issuesApi: mockIssuesApi,
+}));
+
+vi.mock("../api/decisionsFeed", () => ({
+  decisionsFeedApi: mockDecisionsFeedApi,
 }));
 
 vi.mock("../api/agents", () => ({
@@ -216,6 +226,9 @@ describe("CommandPalette", () => {
     mockIssuesApi.listLabels.mockReset();
     mockIssuesApi.update.mockReset();
     mockIssuesApi.update.mockResolvedValue({});
+    mockIssuesApi.create.mockReset();
+    mockIssuesApi.get.mockReset();
+    mockDecisionsFeedApi.table.mockReset();
     toastState.pushToast.mockReset();
     mockAgentsApi.list.mockReset();
     mockProjectsApi.list.mockReset();
@@ -619,6 +632,93 @@ describe("CommandPalette", () => {
     expect(asked).toHaveBeenCalledTimes(1);
     window.removeEventListener("gsam:open-ask-everest", asked);
     window.localStorage.removeItem("paperclip:recent-searches:company-1");
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  async function typeCommand(text: string) {
+    const agents = [
+      { id: "agent-ceo", name: "Everest", role: "ceo", status: "idle", reportsTo: null },
+      { id: "agent-1", name: "Mason", role: "engineer", status: "idle", reportsTo: "agent-ceo" },
+    ];
+    mockAgentsApi.list.mockResolvedValue(agents);
+    const rendered = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.agents.list("company-1"), agents);
+      queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
+    });
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: text } }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-suggestion"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="command-suggestion"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-preview"]')).not.toBeNull();
+    });
+    return rendered;
+  }
+
+  it("previews a plain-English task before creating it", async () => {
+    mockIssuesApi.create.mockResolvedValue({ id: "new-1", identifier: "GRE-30", title: "Draft the Indago pack" });
+    const { root } = await typeCommand("create a task for Mason to draft the Indago pack tomorrow");
+    expect(container.textContent).toContain("Nothing happens until you confirm.");
+    expect(container.textContent).toContain("Draft the Indago pack");
+    expect(container.textContent).toContain("Mason");
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
+    act(() => {
+      container.querySelector('[data-testid="command-confirm"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.create).toHaveBeenCalledWith("company-1", expect.objectContaining({
+        title: "Draft the Indago pack",
+        status: "todo",
+        assigneeAgentId: "agent-1",
+        description: expect.stringMatching(/^Due by /),
+      }));
+      expect(navigateState.navigate).toHaveBeenCalledWith("/issues/GRE-30");
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("goes back to the typed words without creating anything", async () => {
+    const { root } = await typeCommand("create a task to chase the Indago invoice");
+    act(() => {
+      container.querySelector('[data-testid="command-cancel"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
+      expect(input.value).toBe("create a task to chase the Indago invoice");
+    });
+    expect(mockIssuesApi.create).not.toHaveBeenCalled();
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("sets a reminder as a task put aside until that morning", async () => {
+    mockIssuesApi.create.mockResolvedValue({ id: "new-2", identifier: "GRE-31", title: "Call Ben" });
+    mockDecisionsFeedApi.table.mockResolvedValue({});
+    const { root } = await typeCommand("remind me on Monday to call Ben");
+    act(() => {
+      container.querySelector('[data-testid="command-confirm"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.create).toHaveBeenCalledWith("company-1", { title: "Call Ben", status: "todo", assigneeUserId: "user-1" });
+      expect(mockDecisionsFeedApi.table).toHaveBeenCalledWith("new-2", expect.any(String));
+    });
+    const returnAt = new Date(mockDecisionsFeedApi.table.mock.calls[0]![1] as string);
+    expect(returnAt.getDay()).toBe(1);
+    expect(returnAt.getHours()).toBe(9);
     act(() => {
       root.unmount();
     });

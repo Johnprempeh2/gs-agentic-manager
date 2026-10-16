@@ -73,6 +73,7 @@ import {
   useLocalInboxArchiveIssueIds,
 } from "../lib/inboxArchiveCache";
 import { EmptyState } from "../components/EmptyState";
+import { ErrorState } from "../components/ErrorState";
 import { BrandStoneIcon } from "../components/BrandMark";
 import { CollectionToolbar, type CollectionToolbarProps } from "../components/CollectionToolbar";
 import { IssueGroupHeader } from "../components/IssueGroupHeader";
@@ -952,7 +953,13 @@ export function Inbox() {
     queryKey: inboxIssuesQueryKey,
     enabled: !!selectedCompanyId,
   });
-  const { data: issues, isLoading: isIssuesLoading, dataUpdatedAt: issuesUpdatedAt } = useQuery({
+  const {
+    data: issues,
+    isLoading: isIssuesLoading,
+    dataUpdatedAt: issuesUpdatedAt,
+    error: issuesError,
+    refetch: refetchIssues,
+  } = useQuery({
     queryKey: inboxIssuesQueryKey,
     queryFn: () =>
       issuesApi.listCompact(selectedCompanyId!, {
@@ -972,6 +979,8 @@ export function Inbox() {
     data: mineIssuesRaw = [],
     isLoading: isMineIssuesLoading,
     dataUpdatedAt: mineIssuesUpdatedAt,
+    error: mineIssuesError,
+    refetch: refetchMineIssues,
   } = useQuery({
     queryKey: [...queryKeys.issues.listMineByMe(selectedCompanyId!), "compact", "with-routine-executions", "live-descendant-summary", INBOX_ISSUE_LIST_LIMIT] as const,
     queryFn: () =>
@@ -999,6 +1008,8 @@ export function Inbox() {
     data: touchedIssuesRaw = [],
     isLoading: isTouchedIssuesLoading,
     dataUpdatedAt: touchedIssuesUpdatedAt,
+    error: touchedIssuesError,
+    refetch: refetchTouchedIssues,
   } = useQuery({
     queryKey: [...queryKeys.issues.listTouchedByMe(selectedCompanyId!), "compact", "with-routine-executions", "live-descendant-summary", INBOX_ISSUE_LIST_LIMIT] as const,
     queryFn: () =>
@@ -2381,6 +2392,14 @@ export function Inbox() {
     !isTouchedIssuesLoading &&
     !isRunsLoading;
 
+  // A failed task list must not read as "Inbox zero": say it failed and offer a retry.
+  const inboxLoadError = issuesError ?? mineIssuesError ?? touchedIssuesError ?? null;
+  const retryInboxLoad = () => {
+    if (issuesError) void refetchIssues();
+    if (mineIssuesError) void refetchMineIssues();
+    if (touchedIssuesError) void refetchTouchedIssues();
+  };
+
   const showSeparatorBefore = (key: SectionKey) => visibleSections.indexOf(key) > 0;
   const markAllReadIssues = (tab === "mine" ? visibleMineIssues : unreadTouchedIssues)
     .filter((issue) => issue.isUnreadForMe && !fadingOutIssues.has(issue.id) && !archivingIssueIds.has(issue.id));
@@ -2727,11 +2746,20 @@ export function Inbox() {
         </div>
       ) : null}
 
+      {tab !== "blocked" && inboxLoadError ? (
+        <ErrorState
+          error={inboxLoadError}
+          title="The inbox could not load"
+          onRetry={retryInboxLoad}
+          compact={visibleSections.length > 0}
+        />
+      ) : null}
+
       {tab !== "blocked" && !allLoaded && visibleSections.length === 0 && (
         <PageSkeleton variant="inbox" />
       )}
 
-      {tab !== "blocked" && allLoaded && visibleSections.length === 0 && (
+      {tab !== "blocked" && allLoaded && !inboxLoadError && visibleSections.length === 0 && (
         <EmptyState
           icon={searchQuery.trim() ? Search : tab === "mine" ? BrandStoneIcon : InboxIcon}
           message={
