@@ -76,3 +76,15 @@ export function agentsUpdateText(agents: readonly Agent[], relative: (at: Date |
   }
   return lines.join("\n");
 }
+
+/**
+ * A warning on an agent row as its monthly budget runs low: "82% of budget"
+ * from 80%, "Budget used up" at 100%. Nothing below 80% or with no budget.
+ */
+export function budgetUseLabel(agent: Pick<Agent, "budgetMonthlyCents" | "spentMonthlyCents">): { text: string; tone: "warning" | "danger" } | null {
+  if (agent.budgetMonthlyCents <= 0) return null;
+  const percent = Math.floor((agent.spentMonthlyCents / agent.budgetMonthlyCents) * 100);
+  if (percent >= 100) return { text: "Budget used up", tone: "danger" };
+  if (percent >= 80) return { text: `${percent}% of budget`, tone: "warning" };
+  return null;
+}
