@@ -12,15 +12,16 @@ after changing it.
 
 | Variable | Meaning |
 | --- | --- |
-| `HIGGSFIELD_API_KEY_ID`, `HIGGSFIELD_API_KEY_SECRET` | Higgsfield key pair from cloud.higgsfield.ai. With these set, Higgsfield is used automatically. `HF_API_KEY_ID`/`HF_API_KEY_SECRET`, or one `HIGGSFIELD_API_KEY=id:secret`, also work. |
+| `HIGGSFIELD_API_KEY_ID`, `HIGGSFIELD_API_KEY_SECRET` | Higgsfield key pair, made at [console.higgsfield.ai](https://console.higgsfield.ai) (the secret is shown once). No higgsfield.ai plan is needed. With these set, Higgsfield is used automatically. `HF_API_KEY_ID`/`HF_API_KEY_SECRET`, or one `HIGGSFIELD_API_KEY=id:secret`, also work. |
 | `HIGGSFIELD_IMAGE_MODEL` | Optional. Model path, default `higgsfield-ai/soul/standard`. Any Higgsfield text-to-image model path that accepts `prompt` and `aspect_ratio` works, for example `higgsfield-ai/soul/v2/standard`. |
 | `HIGGSFIELD_IMAGE_RESOLUTION` | Optional. Sent as `resolution`. Soul standard accepts `720p` (its default) or `1080p`; other models may differ. |
 | `HIGGSFIELD_API_BASE_URL` | Optional. Default `https://api.higgsfield.ai`. |
 | `GSAM_IMAGE_PROVIDER` | Optional. `higgsfield`, `openai` or `mock`. `mock` draws labelled placeholder images with no service and no cost, for trying the flow. |
 | `GSAM_IMAGE_OPENAI_API_KEY`, `OPENAI_IMAGE_MODEL` | Used only with `GSAM_IMAGE_PROVIDER=openai` (falls back to `OPENAI_API_KEY`; default model `gpt-image-1`). OpenAI is never picked automatically, because `OPENAI_API_KEY` is usually there for agents. |
 
-Higgsfield is pay as you go: the account needs credits before requests
-succeed. A missing or rejected key, an empty account and a refused prompt each
+Higgsfield is pay as you go: the API runs on its own prepaid US dollar
+balance (5 dollars minimum top-up), separate from any higgsfield.ai plan, and
+only finished images are charged. Requests wait while the balance is empty. A missing or rejected key, an empty account and a refused prompt each
 show a plain message on the image card.
 
 ## How it works

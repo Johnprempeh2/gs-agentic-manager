@@ -3,6 +3,7 @@ import { ImageCoverControls } from "../components/ImageCoverControls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
+  HIGGSFIELD_API_KEYS_URL,
   imageShapeLabel,
   imageStyleLabel,
   type GeneratedImage,
@@ -13,6 +14,7 @@ import {
 import {
   AlertCircle,
   Download,
+  ExternalLink,
   ImageIcon,
   Loader2,
   RotateCcw,
@@ -74,9 +76,20 @@ function NotSetUp({ provider }: { provider?: string | null }) {
       <details className="mt-3 text-muted-foreground">
         <summary className="cursor-pointer text-xs font-medium">For whoever runs GSAM</summary>
         <p className="mt-2 text-xs">
-          Set <code>HIGGSFIELD_API_KEY_ID</code> and <code>HIGGSFIELD_API_KEY_SECRET</code> (from cloud.higgsfield.ai) in the
-          server environment and restart. {provider ? null : "To try the page without a key, set GSAM_IMAGE_PROVIDER=mock."}
+          Make an API key in the Higgsfield console (no higgsfield.ai plan needed; the API uses its own prepaid balance), then
+          set <code>HIGGSFIELD_API_KEY_ID</code> and <code>HIGGSFIELD_API_KEY_SECRET</code> in the server environment and
+          restart. {provider ? null : "To try the page without a key, set GSAM_IMAGE_PROVIDER=mock."}
         </p>
+        <a
+          href={HIGGSFIELD_API_KEYS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline"
+          data-testid="images-get-key-link"
+        >
+          Open the Higgsfield console
+          <ExternalLink className="h-3 w-3" aria-hidden="true" />
+        </a>
       </details>
     </div>
   );

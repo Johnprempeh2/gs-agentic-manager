@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Db } from "@greatstone/db";
-import type { IntegrationKeyItem, IntegrationKeysStatus } from "@greatstone/shared";
+import { HIGGSFIELD_API_KEYS_URL, type IntegrationKeyItem, type IntegrationKeysStatus } from "@greatstone/shared";
 import { resolvePaperclipEnvPath } from "../paths.js";
 import { higgsfieldCredentialsFromEnv } from "../services/image-generation/higgsfield.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
@@ -26,7 +26,9 @@ export function integrationKeyItems(env: NodeJS.ProcessEnv): IntegrationKeyItem[
         { name: "HIGGSFIELD_API_KEY_ID", set: higgsfield },
         { name: "HIGGSFIELD_API_KEY_SECRET", set: higgsfield },
       ],
-      howToGet: "Make a key pair at cloud.higgsfield.ai under API keys. Pay as you go: each image uses paid credits.",
+      howToGet:
+        "In the Higgsfield console, make an API key: you get an ID and a secret, and the secret is shown only once. No higgsfield.ai plan is needed. The API uses its own prepaid US dollar balance (5 dollars minimum), separate from plan credits, and only finished images are charged.",
+      getKey: { url: HIGGSFIELD_API_KEYS_URL, label: "Open the Higgsfield console" },
       note: higgsfield ? null : "Nothing is generated or charged until both are set.",
     },
     {

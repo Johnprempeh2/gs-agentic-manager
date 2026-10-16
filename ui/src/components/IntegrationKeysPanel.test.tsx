@@ -22,7 +22,8 @@ const ITEMS = [
       { name: "HIGGSFIELD_API_KEY_ID", set: false },
       { name: "HIGGSFIELD_API_KEY_SECRET", set: false },
     ],
-    howToGet: "Make a key pair at cloud.higgsfield.ai.",
+    howToGet: "Make a key pair in the Higgsfield console.",
+    getKey: { url: "https://console.higgsfield.ai", label: "Open the Higgsfield console" },
     note: null,
   },
   {
@@ -68,6 +69,11 @@ describe("IntegrationKeysPanel", () => {
     });
     for (let i = 0; i < 5; i += 1) await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
     expect(container.textContent).toContain("3 integrations are waiting on you.");
+    const link = container.querySelector<HTMLAnchorElement>('[data-testid="integration-key-link-higgsfield"]');
+    expect(link?.getAttribute("href")).toBe("https://console.higgsfield.ai");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toContain("noopener");
+    expect(link?.textContent).toContain("Open the Higgsfield console");
     expect(container.querySelector("[data-testid='integration-key-higgsfield']")?.textContent).toContain("Waiting for a key");
     expect(container.querySelector("[data-testid='integration-key-hubspot']")?.textContent).toContain("Needs a sign-in");
     expect(container.textContent).toContain("/home/john/.gsam/instances/default/.env");
