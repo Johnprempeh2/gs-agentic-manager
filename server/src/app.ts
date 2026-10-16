@@ -122,6 +122,7 @@ import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
 import { blockedWorkRoutes } from "./routes/blocked-work.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { teamScorecardRoutes } from "./routes/team-scorecard.js";
+import { weeklyReportRoutes } from "./routes/weekly-report.js";
 import { supportRoutes } from "./routes/support.js";
 import { clientSupportRoutes } from "./routes/client-support.js";
 import { pushRoutes } from "./routes/push.js";
@@ -881,6 +882,7 @@ export async function createApp(
   api.use(blockedWorkRoutes(db));
   api.use(calendarRoutes(db));
   api.use(teamScorecardRoutes(db));
+  api.use(weeklyReportRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(clientSupportRoutes(db, { storage: opts.storageService }));
   api.use(pushRoutes(db));

@@ -7033,6 +7033,15 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/weekly-report",
+  tags: ["inbox"],
+  summary: "This week at the company: finished work by agent, stuck tasks, pipeline moves, what needs the caller and spend by agent",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/notification-preferences",
   tags: ["inbox"],
   summary: "The caller's notification choices in this company (defaults when never set)",
