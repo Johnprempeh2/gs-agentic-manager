@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Archive } from "lucide-react";
+import { Archive, Clock } from "lucide-react";
 import { cn } from "../lib/utils";
 
 interface SwipeToArchiveProps {
   children: ReactNode;
   onArchive: () => void;
+  /** Swipe right to put the row away for later. Off when not given. */
+  onSnooze?: () => void;
+  snoozeLabel?: string;
   disabled?: boolean;
   selected?: boolean;
   className?: string;
@@ -17,6 +20,8 @@ const COMMIT_DELAY_MS = 140;
 export function SwipeToArchive({
   children,
   onArchive,
+  onSnooze,
+  snoozeLabel = "Later",
   disabled = false,
   selected = false,
   className,
@@ -78,17 +83,18 @@ export function SwipeToArchive({
     setOffsetX(0);
   };
 
-  const commitArchive = () => {
+  const commitSwipe = (direction: "left" | "right") => {
+    const action = direction === "right" && onSnooze ? onSnooze : onArchive;
     clearArchiveTimeout();
     const node = containerRef.current;
     if (!node) {
-      onArchive();
+      action();
       return;
     }
     startPointRef.current = null;
     setIsDragging(false);
     setLockedHeight(node.offsetHeight);
-    const commitOffset = -Math.max(widthRef.current, node.offsetWidth);
+    const commitOffset = (direction === "right" ? 1 : -1) * Math.max(widthRef.current, node.offsetWidth);
     offsetXRef.current = commitOffset;
     setOffsetX(commitOffset);
     window.requestAnimationFrame(() => {
@@ -98,7 +104,7 @@ export function SwipeToArchive({
     });
     archiveTimeoutRef.current = window.setTimeout(() => {
       archiveTimeoutRef.current = null;
-      onArchive();
+      action();
     }, COMMIT_DELAY_MS);
   };
 
@@ -133,7 +139,7 @@ export function SwipeToArchive({
       suppressClickRef.current = true;
     }
 
-    if (deltaX >= 0) {
+    if (deltaX >= 0 && !onSnooze) {
       event.preventDefault();
       setIsDragging(true);
       offsetXRef.current = 0;
@@ -144,7 +150,7 @@ export function SwipeToArchive({
     const maxSwipe = widthRef.current > 0 ? widthRef.current * MAX_SWIPE : Number.POSITIVE_INFINITY;
     event.preventDefault();
     setIsDragging(true);
-    const nextOffset = Math.max(deltaX, -maxSwipe);
+    const nextOffset = Math.min(Math.max(deltaX, -maxSwipe), maxSwipe);
     offsetXRef.current = nextOffset;
     setOffsetX(nextOffset);
   };
@@ -155,7 +161,7 @@ export function SwipeToArchive({
       widthRef.current > 0 && Math.abs(offsetXRef.current) >= widthRef.current * COMMIT_THRESHOLD;
     if (shouldCommit) {
       releaseClickSuppressionSoon();
-      commitArchive();
+      commitSwipe(offsetXRef.current > 0 ? "right" : "left");
       return;
     }
     if (isDragging) releaseClickSuppressionSoon();
@@ -168,7 +174,9 @@ export function SwipeToArchive({
     reset();
   };
 
-  const archiveReveal = widthRef.current > 0 ? Math.min(Math.abs(offsetX) / widthRef.current, 1) : 0;
+  const reveal = widthRef.current > 0 ? Math.min(Math.abs(offsetX) / widthRef.current, 1) : 0;
+  const archiveReveal = offsetX < 0 ? reveal : 0;
+  const snoozeReveal = offsetX > 0 ? reveal : 0;
 
   return (
     <div
@@ -203,6 +211,18 @@ export function SwipeToArchive({
           Archive
         </span>
       </div>
+      {onSnooze ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 flex items-center justify-start rounded-lg bg-status-info-soft px-4 text-status-info-foreground"
+          style={{ opacity: snoozeReveal }}
+        >
+          <span className="inline-flex items-center gap-2 text-sm font-medium">
+            <Clock className="h-4 w-4" />
+            {snoozeLabel}
+          </span>
+        </div>
+      ) : null}
       <div
         data-inbox-row-surface
         className={cn(
