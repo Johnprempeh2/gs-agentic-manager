@@ -26,6 +26,7 @@ const apiPrefixes: Record<string, string> = {
   "mailboxes.ts": "/api",
   "inbound-task-hooks.ts": "/api",
   "outbound-webhooks.ts": "/api",
+  "integration-keys.ts": "/api",
   "organisations.ts": "/api",
   "pipeline-access.ts": "/api",
   "website.ts": "/api",

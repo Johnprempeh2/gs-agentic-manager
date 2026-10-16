@@ -30,6 +30,7 @@ vi.mock("@/components/OutboundWebhooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/OutboundWebhooks")>()),
   OutboundWebhooksDialog: () => null,
 }));
+vi.mock("@/components/IntegrationKeysPanel", () => ({ IntegrationKeysPanel: () => null }));
 vi.mock("@/api/calendar", () => ({ calendarApi: { feedStatus: mocks.feedStatus } }));
 vi.mock("@/components/CalendarFeed", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/CalendarFeed")>()),

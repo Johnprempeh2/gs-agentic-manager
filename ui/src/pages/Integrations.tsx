@@ -11,6 +11,7 @@ import { outboundWebhooksApi } from "@/api/outboundWebhooks";
 import { toolsApi } from "@/api/tools";
 import { CalendarFeedDialog, calendarFeedKey, calendarFeedStatusLine } from "@/components/CalendarFeed";
 import { InboundTaskHooksDialog, hookStatusLine, inboundHooksKey } from "@/components/InboundTaskHooks";
+import { IntegrationKeysPanel } from "@/components/IntegrationKeysPanel";
 import { OutboundWebhooksDialog, outboundStatusLine, outboundWebhooksKey } from "@/components/OutboundWebhooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -446,6 +447,8 @@ export function Integrations() {
       <InboundTaskHooksDialog companyId={companyId} open={hooksOpen} onOpenChange={setHooksOpen} />
       <OutboundWebhooksDialog companyId={companyId} open={outboundOpen} onOpenChange={setOutboundOpen} />
       <CalendarFeedDialog companyId={companyId} open={feedOpen} onOpenChange={setFeedOpen} />
+
+      <IntegrationKeysPanel companyId={companyId} />
 
       <p className="text-sm text-muted-foreground">
         Looking for something else? <Link to="/apps" className="underline underline-offset-2">Browse every app</Link>.
