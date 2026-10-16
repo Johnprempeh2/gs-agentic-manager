@@ -99,6 +99,7 @@ export type {
   BlockedWorkRootCause,
   BlockedWorkTidyReason,
 } from "./blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./recovery-holds.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
