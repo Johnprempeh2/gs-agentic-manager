@@ -1,10 +1,12 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { useState, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "@/lib/router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { Issue } from "@greatstone/shared";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
+import { useToastActions } from "../context/ToastContext";
 import { issuesApi } from "../api/issues";
 import { authApi } from "../api/auth";
 import { agentsApi } from "../api/agents";
@@ -33,6 +35,11 @@ import {
   FileCode2,
   Plus,
   Search,
+  ArrowLeft,
+  CheckCircle2,
+  UserRound,
+  ExternalLink,
+  ChevronRight,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { agentUrl, projectUrl } from "../lib/utils";
@@ -42,6 +49,12 @@ import {
   parseSearchQuery,
   type SearchQueryParserContext,
 } from "../lib/search-query-parser";
+import {
+  OPEN_COMMAND_PALETTE_EVENT,
+  isOpenTaskStatus,
+  plainTaskStatus,
+} from "../lib/global-search";
+import { GlobalSearchSources } from "./search/GlobalSearchSources";
 
 const SEARCH_ALL_VALUE = "__paperclip-search-all__";
 
@@ -91,6 +104,10 @@ function scoreProjectMatch(name: string, description: string, q: string): number
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // The task whose quick actions are showing (Tab or the arrow on a task row).
+  const [actionIssue, setActionIssue] = useState<Issue | null>(null);
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const navigate = useNavigate();
   const location = useLocation();
   const { selectedCompanyId } = useCompany();
@@ -113,12 +130,25 @@ export function CommandPalette() {
         if (isMobile) setSidebarOpen(false);
       }
     }
+    function handleOpenRequest(event: Event) {
+      const preset = (event as CustomEvent<{ query?: string }>).detail?.query ?? "";
+      setOpen(true);
+      if (preset) setQuery(preset);
+      if (isMobile) setSidebarOpen(false);
+    }
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpenRequest);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, handleOpenRequest);
+    };
   }, [isMobile, setSidebarOpen]);
 
   useEffect(() => {
-    if (!open) setQuery("");
+    if (!open) {
+      setQuery("");
+      setActionIssue(null);
+    }
   }, [open]);
 
   const { data: agents = [] } = useQuery({
@@ -171,6 +201,28 @@ export function CommandPalette() {
     enabled: !!selectedCompanyId && open && quickSearchQuery.length > 0,
   });
 
+  const updateIssue = useMutation({
+    mutationFn: ({ issue, patch }: { issue: Issue; patch: Record<string, unknown>; doneLabel: string }) =>
+      issuesApi.update(issue.id, patch),
+    onSuccess: (_result, { issue, doneLabel }) => {
+      void queryClient.invalidateQueries({ queryKey: ["issues", selectedCompanyId] });
+      pushToast({ title: doneLabel, body: issue.title, tone: "success" });
+      setOpen(false);
+    },
+    onError: (error, { issue }) => {
+      pushToast({
+        title: `Could not update ${issue.identifier ?? "the task"}`,
+        body: error instanceof Error ? error.message : "Please try again.",
+        tone: "error",
+      });
+    },
+  });
+
+  function openActionsFor(issue: Issue) {
+    setActionIssue(issue);
+    setQuery("");
+  }
+
   function go(path: string) {
     setOpen(false);
     navigate(path);
@@ -218,15 +270,36 @@ export function CommandPalette() {
     showSearchAll && visibleIssues.length === 0 && matchedProjects.length === 0;
 
   return (
-    <CommandDialog open={open} onOpenChange={(v) => {
+    <CommandDialog className="sm:max-w-2xl" open={open} onOpenChange={(v) => {
         setOpen(v);
         if (v && isMobile) setSidebarOpen(false);
       }}>
       <CommandInput
-        placeholder="Search tasks, agents, projects..."
+        placeholder={actionIssue
+          ? `What should happen to ${actionIssue.identifier ?? "this task"}? Type to find an agent`
+          : "Search tasks, clients, documents, agents, memory..."}
         value={query}
         onValueChange={setQuery}
         onKeyDown={(event) => {
+          if (actionIssue) {
+            if (event.key === "Escape" || (event.key === "Backspace" && query.length === 0)) {
+              event.preventDefault();
+              event.stopPropagation();
+              setActionIssue(null);
+            }
+            return;
+          }
+          if (event.key === "Tab" && !event.shiftKey) {
+            const selectedId = document
+              .querySelector('[cmdk-item][data-selected="true"]')
+              ?.getAttribute("data-issue-id");
+            const issue = selectedId ? visibleIssues.find((candidate) => candidate.id === selectedId) : undefined;
+            if (issue) {
+              event.preventDefault();
+              openActionsFor(issue);
+              return;
+            }
+          }
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
             event.preventDefault();
             goFullSearch();
@@ -238,7 +311,20 @@ export function CommandPalette() {
           }
         }}
       />
-      <CommandList>
+      <CommandList className="max-h-(--sz-480px)">
+        {actionIssue ? (
+          <TaskQuickActions
+            issue={actionIssue}
+            query={searchQuery}
+            agents={agents}
+            currentUserId={currentUserId}
+            busy={updateIssue.isPending}
+            onBack={() => setActionIssue(null)}
+            onOpen={() => go(`/issues/${actionIssue.identifier ?? actionIssue.id}`)}
+            onUpdate={(patch, doneLabel) => updateIssue.mutate({ issue: actionIssue, patch, doneLabel })}
+          />
+        ) : (
+        <>
         <CommandEmpty>
           {showSearchAll ? (
             <span>
@@ -401,21 +487,46 @@ export function CommandPalette() {
                       : undefined
                   }
                   onSelect={() => go(`/issues/${issue.identifier ?? issue.id}`)}
+                  data-issue-id={issue.id}
+                  className="group/task"
                 >
                   <CircleDot className="mr-2 h-4 w-4" />
                   <span className="text-muted-foreground mr-2 font-mono text-xs">
                     {issue.identifier ?? issue.id.slice(0, 8)}
                   </span>
                   <span className="flex-1 truncate">{issue.title}</span>
+                  <span className="ml-2 hidden shrink-0 text-xs text-muted-foreground sm:inline">
+                    {plainTaskStatus(issue.status)}
+                  </span>
                   {issue.assigneeAgentId && (() => {
                     const name = agentName(issue.assigneeAgentId);
                     return name ? <AgentIdentity agent={agents?.find((agent) => agent.id === issue.assigneeAgentId) ?? { id: issue.assigneeAgentId, name }} size="sm" className="ml-2 hidden sm:inline-flex" /> : null;
                   })()}
+                  <button
+                    type="button"
+                    aria-label={`Actions for ${issue.identifier ?? issue.title}`}
+                    title="Actions (Tab)"
+                    data-testid="command-task-actions"
+                    className="ml-1 inline-flex shrink-0 items-center gap-0.5 rounded px-1.5 py-0.5 text-xs text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover/task:opacity-100 group-data-[selected=true]/task:opacity-100 pointer-coarse:opacity-100"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      openActionsFor(issue);
+                    }}
+                  >
+                    Actions
+                    <ChevronRight className="h-3 w-3" />
+                  </button>
                 </CommandItem>
               ))}
             </CommandGroup>
           </>
         )}
+
+        {selectedCompanyId ? (
+          <GlobalSearchSources companyId={selectedCompanyId} query={quickSearchQuery} onGo={go} />
+        ) : null}
 
         {agents.length > 0 && (
           <>
@@ -445,7 +556,104 @@ export function CommandPalette() {
             </CommandGroup>
           </>
         )}
+        </>
+        )}
       </CommandList>
     </CommandDialog>
+  );
+}
+
+type PaletteAgent = { id: string; name: string; role?: string | null; status?: string | null };
+
+/** Quick actions for one task: open, mark done, take it, or hand it to an agent. */
+function TaskQuickActions({
+  issue,
+  query,
+  agents,
+  currentUserId,
+  busy,
+  onBack,
+  onOpen,
+  onUpdate,
+}: {
+  issue: Issue;
+  query: string;
+  agents: readonly PaletteAgent[];
+  currentUserId: string | null;
+  busy: boolean;
+  onBack: () => void;
+  onOpen: () => void;
+  onUpdate: (patch: Record<string, unknown>, doneLabel: string) => void;
+}) {
+  const label = issue.identifier ?? "Task";
+  const q = query.toLowerCase();
+  const handOffAgents = agents
+    .filter((agent) => agent.status !== "terminated" && agent.id !== issue.assigneeAgentId)
+    .filter((agent) => !q || agent.name.toLowerCase().includes(q) || (agent.role ?? "").toLowerCase().includes(q))
+    .slice(0, 8);
+  const showTaskActions = !q;
+  return (
+    <>
+      <CommandEmpty>No agent matches that name.</CommandEmpty>
+      <CommandGroup heading={`${label}: ${issue.title}`}>
+        {showTaskActions ? (
+          <CommandItem value="__open" onSelect={onOpen} data-testid="command-action-open">
+            <ExternalLink className="mr-2 h-4 w-4" />
+            Open the task
+          </CommandItem>
+        ) : null}
+        {showTaskActions && isOpenTaskStatus(issue.status) ? (
+          <CommandItem
+            value="__done"
+            disabled={busy}
+            onSelect={() => onUpdate({ status: "done" }, `${label} marked as done`)}
+            data-testid="command-action-done"
+          >
+            <CheckCircle2 className="mr-2 h-4 w-4" />
+            Mark as done
+          </CommandItem>
+        ) : null}
+        {showTaskActions && currentUserId && issue.assigneeUserId !== currentUserId ? (
+          <CommandItem
+            value="__mine"
+            disabled={busy}
+            onSelect={() => onUpdate({ assigneeUserId: currentUserId, assigneeAgentId: null }, `${label} is now yours`)}
+            data-testid="command-action-assign-me"
+          >
+            <UserRound className="mr-2 h-4 w-4" />
+            Assign to me
+          </CommandItem>
+        ) : null}
+      </CommandGroup>
+      {handOffAgents.length > 0 ? (
+        <>
+          <CommandSeparator />
+          <CommandGroup heading="Hand it to an agent">
+            {handOffAgents.map((agent) => (
+              <CommandItem
+                key={agent.id}
+                value={`__agent ${agent.id} ${agent.name}`}
+                disabled={busy}
+                onSelect={() =>
+                  onUpdate({ assigneeAgentId: agent.id, assigneeUserId: null }, `${label} handed to ${agent.name}`)}
+                data-testid="command-action-assign-agent"
+              >
+                <Bot className="mr-2 h-4 w-4" />
+                Assign to {agent.name}
+                {agent.role ? <span className="ml-2 text-xs text-muted-foreground">{agent.role}</span> : null}
+              </CommandItem>
+            ))}
+          </CommandGroup>
+        </>
+      ) : null}
+      <CommandSeparator />
+      <CommandGroup>
+        <CommandItem value="__back" onSelect={onBack} data-testid="command-actions-back">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to results
+          <span className="ml-auto text-xs text-muted-foreground">⌫</span>
+        </CommandItem>
+      </CommandGroup>
+    </>
   );
 }

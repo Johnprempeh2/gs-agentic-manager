@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommandPalette } from "./CommandPalette";
 import { queryKeys } from "../lib/queryKeys";
+import { OPEN_COMMAND_PALETTE_EVENT } from "../lib/global-search";
 
 function act(callback: () => void | Promise<void>) {
   let result: void | Promise<void> | undefined;
@@ -33,6 +34,11 @@ const sidebarState = vi.hoisted(() => ({
 const mockIssuesApi = vi.hoisted(() => ({
   list: vi.fn(),
   listLabels: vi.fn(),
+  update: vi.fn(),
+}));
+
+const toastState = vi.hoisted(() => ({
+  pushToast: vi.fn(),
 }));
 
 const mockAgentsApi = vi.hoisted(() => ({
@@ -74,6 +80,14 @@ const locationState = vi.hoisted(() => ({
 vi.mock("@/lib/router", () => ({
   useNavigate: () => navigateState.navigate,
   useLocation: () => locationState.location,
+}));
+
+vi.mock("../context/ToastContext", () => ({
+  useToastActions: () => toastState,
+}));
+
+vi.mock("./search/GlobalSearchSources", () => ({
+  GlobalSearchSources: () => null,
 }));
 
 vi.mock("../api/issues", () => ({
@@ -200,6 +214,9 @@ describe("CommandPalette", () => {
     sidebarState.setSidebarOpen.mockReset();
     mockIssuesApi.list.mockReset();
     mockIssuesApi.listLabels.mockReset();
+    mockIssuesApi.update.mockReset();
+    mockIssuesApi.update.mockResolvedValue({});
+    toastState.pushToast.mockReset();
     mockAgentsApi.list.mockReset();
     mockProjectsApi.list.mockReset();
     mockInstanceSettingsApi.getExperimental.mockReset();
@@ -498,4 +515,85 @@ describe("CommandPalette", () => {
     });
   });
 
+
+  it("opens from the global open event with the query already typed", async () => {
+    const { root } = renderWithQueryClient(<CommandPalette />, container);
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "indago" } }));
+    });
+    await waitForAssertion(() => {
+      const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement | null;
+      expect(input?.value).toBe("indago");
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  const openTask = {
+    id: "issue-1",
+    identifier: "GRE-7",
+    title: "Send the Indago proposal",
+    status: "in_progress",
+    assigneeAgentId: null,
+    assigneeUserId: null,
+  };
+
+  async function openActionsForTask() {
+    mockIssuesApi.list.mockResolvedValue([openTask]);
+    const agents = [{ id: "agent-1", name: "Mason", role: "engineer", status: "idle" }];
+    mockAgentsApi.list.mockResolvedValue(agents);
+    const rendered = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.issues.list("company-1"), [openTask]);
+      queryClient.setQueryData(queryKeys.agents.list("company-1"), agents);
+      queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
+    });
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.textContent).toContain("Being worked on");
+      expect(container.querySelector('[data-testid="command-task-actions"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="command-task-actions"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-action-done"]')).not.toBeNull();
+    });
+    expect(navigateState.navigate).not.toHaveBeenCalled();
+    return rendered;
+  }
+
+  it("marks a task done from its quick actions", async () => {
+    const { root } = await openActionsForTask();
+    act(() => {
+      container.querySelector('[data-testid="command-action-done"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.update).toHaveBeenCalledWith("issue-1", { status: "done" });
+      expect(toastState.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "GRE-7 marked as done" }));
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
+
+  it("assigns a task to me or hands it to an agent", async () => {
+    const { root } = await openActionsForTask();
+    expect(container.querySelector('[data-testid="command-action-assign-me"]')).not.toBeNull();
+    const agentAction = container.querySelector('[data-testid="command-action-assign-agent"]');
+    expect(agentAction?.textContent).toContain("Assign to Mason");
+    act(() => {
+      agentAction!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(mockIssuesApi.update).toHaveBeenCalledWith("issue-1", { assigneeAgentId: "agent-1", assigneeUserId: null });
+    });
+    act(() => {
+      root.unmount();
+    });
+  });
 });

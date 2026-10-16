@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "@/lib/router";
-import { ChevronLeft, Menu, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ChevronLeft, Menu, PanelRightClose, PanelRightOpen, Search } from "lucide-react";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
@@ -19,6 +19,7 @@ import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 import { cn } from "../lib/utils";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
 import { MobileEverestButton } from "./MobileEverestButton";
+import { openCommandPalette } from "../lib/global-search";
 
 type GlobalToolbarContext = { companyId: string | null; companyPrefix: string | null };
 
@@ -44,6 +45,7 @@ function GlobalToolbar({
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-2 empty:hidden">
       {pageToolbar}
+      <GlobalSearchButton />
       {slots.length > 0 ? (
         <PluginSlotOutlet slotTypes={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
       ) : null}
@@ -51,6 +53,28 @@ function GlobalToolbar({
         <PluginLauncherOutlet placementZones={["globalToolbarButton"]} context={context} className="flex items-center gap-1" />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * "Search everything" on every page's top bar (desktop): opens the command
+ * palette, so nobody has to know Cmd/Ctrl+K to find a task, client or document.
+ */
+function GlobalSearchButton() {
+  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+  return (
+    <button
+      type="button"
+      onClick={() => openCommandPalette()}
+      data-testid="global-search-button"
+      aria-label="Search everything"
+      aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
+      className="hidden h-8 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-(length:--text-compact) text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex"
+    >
+      <Search className="h-4 w-4" aria-hidden="true" />
+      <span>Search</span>
+      <kbd className="rounded border border-border bg-muted px-1 font-sans text-(length:--text-nano)">{isMac ? "⌘K" : "Ctrl K"}</kbd>
+    </button>
   );
 }
 
