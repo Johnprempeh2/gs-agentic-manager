@@ -114,6 +114,9 @@ describe("Tutorials", () => {
       "tutorial-client-case",
       "tutorial-website",
     ]);
+    for (const id of ["calendar", "weekly-report", "images", "integrations"]) {
+      expect(ids).toContain(`tutorial-${id}`);
+    }
     expect(row("pipelines-list")!.textContent).toContain("Seen");
     expect(row("pipeline-board")!.textContent).toContain("Not seen yet");
     expect(row("website")!.textContent).toContain("Visitors and Google Search");
@@ -183,7 +186,7 @@ describe("Tutorials", () => {
   });
 
   it("leads a new person through the first four tours in order", async () => {
-    server.rows = [{ tourKey: "needed", tourVersion: 2, seenAt: "2026-10-01T00:00:00.000Z" }];
+    server.rows = [{ tourKey: "needed", tourVersion: 3, seenAt: "2026-10-01T00:00:00.000Z" }];
     await render();
     const card = document.querySelector<HTMLElement>('[data-testid="tutorials-start-here"]')!;
     expect(card.textContent).toContain("1 of 4 done");

@@ -63,7 +63,7 @@ function Section({
   testId: string;
 }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-card p-4 print:break-inside-avoid" data-testid={testId}>
+    <section className="space-y-2 rounded-lg border border-border bg-card p-4 print:break-inside-avoid" data-testid={testId} data-tour={testId}>
       <h2 className="flex items-center gap-2 text-base font-semibold">
         <Icon className="size-4 text-muted-foreground" aria-hidden />
         {title}
@@ -98,7 +98,7 @@ function More({ shown, total, to }: { shown: number; total: number; to: string }
 export function WeeklyReportView({ report }: { report: WeeklyReportData }) {
   return (
     <div className="space-y-4">
-      <p className="text-base" data-testid="weekly-report-headline">
+      <p className="text-base" data-testid="weekly-report-headline" data-tour="weekly-report-headline">
         {weeklyHeadline(report)}
       </p>
 
@@ -250,7 +250,7 @@ export function WeeklyReport() {
             {data ? `${weekRangeLabel(data)}. ` : ""}What the agents finished, what is stuck, how the pipeline moved, what GSAM learned and what needs you.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <div className="flex flex-wrap items-center gap-2 print:hidden" data-tour="weekly-report-share">
           <Button
             size="sm"
             variant="outline"
