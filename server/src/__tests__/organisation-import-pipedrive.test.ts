@@ -258,7 +258,8 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
     const first = await request(app(owner, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(first.status).toBe(200);
     expect(first.body.organisations).toEqual({ created: 3, updated: 0, skipped: 1, errors: 0 });
-    expect(first.body.contacts).toEqual({ created: 3, updated: 0, skipped: 2, errors: 0 });
+    // Everyone comes across, including people with no organisation or one that was not imported.
+    expect(first.body.contacts).toEqual({ created: 5, updated: 0, skipped: 0, errors: 0 });
 
     const rows = await db.select().from(organisations).where(eq(organisations.companyId, companyId));
     expect(rows.map((row) => [row.externalId, row.name, row.status, row.source]).sort()).toEqual([
@@ -271,6 +272,12 @@ describeEmbeddedPostgres("Pipedrive organisation import route (GRE-1479)", () =>
       .then((found) => found[0]!);
     expect(esi).toMatchObject({ name: "Esi Boateng", role: "Chief Financial Officer", email: "esi@example.test", source: "pipedrive" });
     expect(esi.organisationId).toBe(rows.find((row) => row.externalId === "101")!.id);
+    const unassigned = await request(app(owner, pipedrive.fetch)).get(`/api/companies/${companyId}/organisation-contacts/unassigned`);
+    expect(unassigned.status).toBe(200);
+    expect(unassigned.body.map((person: { name: string; organisationId: string | null }) => [person.name, person.organisationId])).toEqual([
+      ["Lone Freelancer", null],
+      ["Wanjiru Kamau", null],
+    ]);
 
     // Read only: every call to Pipedrive is a GET.
     expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);

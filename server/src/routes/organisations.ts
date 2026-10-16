@@ -387,6 +387,13 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
     },
   );
 
+  /** People with no organisation, such as Pipedrive people held on their own. Reads need company access only. */
+  router.get("/companies/:companyId/organisation-contacts/unassigned", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    res.json(await svc.listUnassignedContacts(companyId));
+  });
+
   router.get(`${ORGANISATION_ROUTE_PREFIX}/:organisationId`, async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

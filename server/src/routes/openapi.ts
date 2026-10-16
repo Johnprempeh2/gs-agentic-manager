@@ -14349,6 +14349,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts/unassigned",
+  tags: ["organisations"],
+  summary: "List people with no organisation (CRM imports)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
   method: "patch",
   path: "/api/companies/{companyId}/organisations/{organisationId}",
   tags: ["organisations"],

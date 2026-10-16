@@ -12,7 +12,8 @@ export interface CrmRecordField {
 export interface OrganisationContact {
   id: string;
   companyId: string;
-  organisationId: string;
+  /** Null for a person imported from a CRM with no organisation. */
+  organisationId: string | null;
   name: string;
   role: string | null;
   email: string | null;

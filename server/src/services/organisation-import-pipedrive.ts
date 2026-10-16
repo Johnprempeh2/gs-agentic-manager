@@ -267,11 +267,12 @@ export function pipedriveRecordWriter(
       }
     },
 
-    async writeContact(mapped: MappedPipedriveContact, organisation: OrganisationRow) {
+    /** `organisation` is null for a person Pipedrive holds with no organisation; they still come across. */
+    async writeContact(mapped: MappedPipedriveContact, organisation: OrganisationRow | null) {
       try {
         const existing = contactByExternalId.get(mapped.externalId);
-        const fields: Partial<ContactRow> & { organisationId: string; name: string } = {
-          organisationId: organisation.id,
+        const fields: Partial<ContactRow> & { organisationId: string | null; name: string } = {
+          organisationId: organisation?.id ?? null,
           name: mapped.name,
           role: mapped.role,
           email: mapped.email,
@@ -374,12 +375,12 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         const page: Awaited<ReturnType<PipedriveClient["listPersonsPage"]>> = await client.listPersonsPage({ start });
         for (const person of page.items) {
           const mapped = mapPipedrivePerson(person, personContext);
-          // A person with no organisation, or one whose organisation was not imported, has nowhere to go.
-          const organisation = mapped?.organisationExternalId ? writer.orgByExternalId.get(mapped.organisationExternalId) : undefined;
-          if (!mapped || !organisation) {
+          if (!mapped) {
             result.contacts.skipped += 1;
             continue;
           }
+          // A person with no organisation, or whose organisation was not imported, is kept on their own.
+          const organisation = mapped.organisationExternalId ? writer.orgByExternalId.get(mapped.organisationExternalId) ?? null : null;
           await writer.writeContact(mapped, organisation);
         }
         start = page.nextStart;

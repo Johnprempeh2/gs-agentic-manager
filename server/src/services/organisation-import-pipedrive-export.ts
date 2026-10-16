@@ -204,11 +204,8 @@ function crmExportImporter(db: Db, deps: { now?: () => Date } = {}) {
         await writer.loadContacts();
         result.contacts.skipped += peopleRows.skipped;
         for (const person of peopleRows.records) {
-          const organisation = findOrganisation(person.organisationExternalId, person.organisationName);
-          if (!organisation) {
-            result.contacts.skipped += 1;
-            continue;
-          }
+          // A person with no organisation, or whose organisation is not in the file, is kept on their own.
+          const organisation = findOrganisation(person.organisationExternalId, person.organisationName) ?? null;
           await writer.writeContact(person, organisation);
         }
       }

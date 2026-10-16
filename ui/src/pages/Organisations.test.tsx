@@ -18,6 +18,7 @@ const mockApi = vi.hoisted(() => ({
   createContact: vi.fn(),
   updateContact: vi.fn(),
   archiveContact: vi.fn(),
+  unassignedContacts: vi.fn(),
 }));
 
 const accessMock = vi.hoisted(() => ({ listMembers: vi.fn() }));
@@ -75,6 +76,7 @@ describe("Organisations page", () => {
     root = createRoot(container);
     state.isPhone = false;
     for (const fn of Object.values(mockApi)) fn.mockReset();
+    mockApi.unassignedContacts.mockResolvedValue([]);
     accessMock.listMembers.mockReset();
     accessMock.listMembers.mockResolvedValue({
       members: [
@@ -161,6 +163,27 @@ describe("Organisations page", () => {
     mockApi.list.mockRejectedValueOnce(new Error("Feature not enabled"));
     await render();
     expect(container.textContent).toContain("Could not load organisations. Feature not enabled");
+  });
+
+  it("lists people with no organisation, and hides the list when there are none", async () => {
+    mockApi.list.mockResolvedValue([]);
+    await render();
+    expect(container.querySelector('section[aria-label="People with no organisation"]')).toBeNull();
+
+    act(() => root.unmount());
+    root = createRoot(container);
+    mockApi.unassignedContacts.mockResolvedValue([{
+      id: "p1", companyId: "company-1", organisationId: null, name: "Lone Freelancer", role: "Consultant",
+      email: "lone@example.test", phone: null, isKeyContact: false, source: "pipedrive", externalId: "503",
+      crmFields: [{ key: "label", label: "Labels", value: ["DevTools"] }],
+      archivedAt: null, createdAt: "2026-10-16T09:00:00Z", updatedAt: "2026-10-16T09:00:00Z",
+    }]);
+    await render();
+    const section = container.querySelector('section[aria-label="People with no organisation"]')!;
+    expect(section.querySelector("summary")?.textContent).toBe("People with no organisation (1)");
+    expect(section.textContent).toContain("Lone Freelancer");
+    expect(section.textContent).toContain("lone@example.test");
+    expect(section.textContent).toContain("Labels: DevTools");
   });
 
   it("shows one card per organisation on a phone", async () => {
