@@ -57,6 +57,7 @@ In agent runtime settings, configure heartbeat policy:
 
 - `enabled`: allow scheduled heartbeats
 - `intervalSec`: timer interval (0 = disabled)
+- `skipTimerWhenNothingChanged`: skip a timer run when no task assigned to or made by the agent changed, and nobody else commented on its tasks, since its last run. The agent still runs at least once a day. New agents turn this on; existing agents keep it off until you turn it on in the Run Policy settings.
 - `wakeOnAssignment`: wake when assigned work
 - `wakeOnOnDemand`: allow ping-style on-demand wakeups
 - `wakeOnAutomation`: allow system automation wakeups
