@@ -18,7 +18,7 @@ const indagoTasks = [
   { ...storybookIssues[2]!, id: "issue-indago-3", identifier: "GRE-1370", title: "Book Indago discovery workshop", status: "in_review" },
 ];
 
-const responses: Array<[RegExp, () => unknown]> = [
+const responses: Array<[RegExp, (url: URL) => unknown]> = [
   [/\/api\/companies\/[^/]+\/pipelines$/, () => [
     { id: "pipeline-clients", companyId: "company-storybook", key: "clients", name: "Clients", archivedAt: null },
   ]],
@@ -28,7 +28,25 @@ const responses: Array<[RegExp, () => unknown]> = [
       stage: { id: "stage-proposal", pipelineId: "pipeline-clients", key: "proposal", name: "Proposal", kind: "open", position: 2 },
     },
   ]],
-  [/\/api\/companies\/[^/]+\/search$/, () => ({
+  [/\/api\/companies\/[^/]+\/search$/, (url) => (url.searchParams.get("scope") === "comments" ? {
+    query: "indago",
+    results: [
+      {
+        id: "issue-fee",
+        type: "issue",
+        score: 1,
+        title: "Pricing review for Q4 clients",
+        href: "/PAP/issues/GRE-1290",
+        matchedFields: ["comment"],
+        sourceLabel: null,
+        snippet: null,
+        snippets: [{ field: "comment", label: "Comment", text: "Indago asked for a fixed fee before they sign", highlights: [] }],
+        issue: { id: "issue-fee", identifier: "GRE-1290", title: "Pricing review for Q4 clients", status: "in_progress", priority: "high", assigneeAgentId: null, assigneeUserId: null, projectId: null, updatedAt: now },
+        updatedAt: now,
+        previewImageUrl: null,
+      },
+    ],
+  } : url.searchParams.get("scope") === "documents" ? { query: "indago", results: [] } : {
     query: "indago",
     results: [
       {
@@ -72,7 +90,7 @@ function installSearchFetch() {
     const url = new URL(raw, window.location.origin);
     if ((init?.method ?? "GET").toUpperCase() === "GET") {
       for (const [pattern, body] of responses) {
-        if (pattern.test(url.pathname)) return Response.json(body());
+        if (pattern.test(url.pathname)) return Response.json(body(url));
       }
     }
     return inner(input, init);
@@ -98,3 +116,10 @@ export default meta;
 type Story = StoryObj<typeof OpenPalette>;
 
 export const SearchEverything: Story = { args: { query: "indago" } };
+
+export const EmptyBox: Story = {
+  args: { query: "" },
+  beforeEach: () => {
+    window.localStorage.setItem("paperclip:recent-searches:company-storybook", JSON.stringify(["indago fee", "booking module"]));
+  },
+};

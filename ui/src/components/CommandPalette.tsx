@@ -56,6 +56,8 @@ import {
   plainTaskStatus,
 } from "../lib/global-search";
 import { GlobalSearchSources } from "./search/GlobalSearchSources";
+import { GlobalSearchEmptyState } from "./search/GlobalSearchEmptyState";
+import { pushRecentSearch } from "../lib/recent-searches";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { resolveLeadAgent } from "./MobileEverestButton";
 
@@ -229,6 +231,7 @@ export function CommandPalette() {
   }
 
   function go(path: string) {
+    if (selectedCompanyId && searchQuery.length > 0) pushRecentSearch(selectedCompanyId, searchQuery);
     setOpen(false);
     navigate(path);
   }
@@ -269,6 +272,7 @@ export function CommandPalette() {
   }, [projects, quickSearchQuery]);
 
   const showSearchAll = searchQuery.length > 0;
+  const titleMatchIds = useMemo(() => new Set(visibleIssues.map((issue) => issue.id)), [visibleIssues]);
   const showPromotedProjects = showSearchAll && matchedProjects.length > 0;
   const taskLimit = showPromotedProjects ? TASK_LIMIT_WITH_PROJECTS : TASK_LIMIT;
   const showEmptyHint =
@@ -378,6 +382,20 @@ export function CommandPalette() {
         ) : null}
 
         {showSearchAll ? <CommandSeparator /> : null}
+
+        {!showSearchAll && selectedCompanyId ? (
+          <GlobalSearchEmptyState
+            companyId={selectedCompanyId}
+            userId={currentUserId}
+            leadName={leadAgent?.name ?? null}
+            onGo={go}
+            onSearch={setQuery}
+            onAsk={(question) => {
+              setOpen(false);
+              openAskEverest(question);
+            }}
+          />
+        ) : null}
 
         <CommandGroup heading="Quick filters">
           {SEARCH_OPERATOR_QUICK_FILTERS.map((chip) => (
@@ -545,7 +563,12 @@ export function CommandPalette() {
         )}
 
         {selectedCompanyId ? (
-          <GlobalSearchSources companyId={selectedCompanyId} query={quickSearchQuery} onGo={go} />
+          <GlobalSearchSources
+            companyId={selectedCompanyId}
+            query={quickSearchQuery}
+            onGo={go}
+            excludeIssueIds={titleMatchIds}
+          />
         ) : null}
 
         {agents.length > 0 && (
