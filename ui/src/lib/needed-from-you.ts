@@ -202,3 +202,26 @@ export function waitedFor(ms: number): string {
   const days = Math.round(hours / 24);
   return days === 1 ? "a day" : `${days} days`;
 }
+
+/** The inbox-dismissal key that puts a Needed from you row away for later. */
+export function neededLaterKey(itemId: string): string {
+  return `attention:needed:${itemId}`;
+}
+
+/** Drops rows put away for later (still snoozed at `now`), and any group left empty. */
+export function withoutPutAway(
+  groups: NeededGroup[],
+  dismissals: ReadonlyArray<{ kind: string; itemKey: string; snoozedUntil?: string | Date | null }>,
+  now: number = Date.now(),
+): NeededGroup[] {
+  const away = new Set<string>();
+  for (const dismissal of dismissals) {
+    if (dismissal.kind !== "snooze" || !dismissal.snoozedUntil) continue;
+    if (new Date(dismissal.snoozedUntil).getTime() <= now) continue;
+    away.add(dismissal.itemKey);
+  }
+  if (away.size === 0) return groups;
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => !away.has(neededLaterKey(item.id))) }))
+    .filter((group) => group.items.length > 0);
+}

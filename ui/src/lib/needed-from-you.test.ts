@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionCard } from "@greatstone/shared";
 import type { PipelineAttentionFeed } from "@/api/pipelines";
-import { buildNeededFromYou, neededSummary, waitedFor } from "./needed-from-you";
+import { buildNeededFromYou, neededLaterKey, neededSummary, waitedFor, withoutPutAway, type NeededGroup, type NeededGroupId } from "./needed-from-you";
 
 function card(id: string, kind: DecisionCard["kind"], extra: Partial<DecisionCard> = {}): DecisionCard {
   return {
@@ -99,5 +99,27 @@ describe("neededSummary", () => {
     expect(waitedFor(30_000)).toBe("a minute");
     expect(waitedFor(90 * 60_000)).toBe("2 hours");
     expect(waitedFor(25 * 3_600_000)).toBe("a day");
+  });
+});
+
+describe("withoutPutAway", () => {
+  const group = (id: NeededGroupId, ids: string[]): NeededGroup => ({
+    id, title: id, explain: "", allHref: "/", allLabel: "All",
+    items: ids.map((itemId) => ({ id: itemId, title: itemId, reason: null, waiting: null, since: null, href: "/" })),
+  });
+  const now = Date.parse("2026-10-16T04:00:00Z");
+
+  it("drops rows still snoozed and groups left empty", () => {
+    const result = withoutPutAway(
+      [group("answer", ["a", "b"]), group("tasks", ["task:t1"])],
+      [
+        { kind: "snooze", itemKey: neededLaterKey("a"), snoozedUntil: "2026-10-17T08:00:00Z" },
+        { kind: "snooze", itemKey: neededLaterKey("task:t1"), snoozedUntil: "2026-10-17T08:00:00Z" },
+        { kind: "snooze", itemKey: neededLaterKey("b"), snoozedUntil: "2026-10-16T03:00:00Z" },
+        { kind: "dismiss", itemKey: neededLaterKey("b"), snoozedUntil: null },
+      ],
+      now,
+    );
+    expect(result.map((g) => [g.id, g.items.map((i) => i.id)])).toEqual([["answer", ["b"]]]);
   });
 });
