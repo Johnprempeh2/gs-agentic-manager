@@ -118,6 +118,7 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
 import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
+import { blockedWorkRoutes } from "./routes/blocked-work.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { teamScorecardRoutes } from "./routes/team-scorecard.js";
 import { supportRoutes } from "./routes/support.js";
@@ -875,6 +876,7 @@ export async function createApp(
   api.use(attentionRoutes(db));
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(agentWorkDigestRoutes(db));
+  api.use(blockedWorkRoutes(db));
   api.use(calendarRoutes(db));
   api.use(teamScorecardRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
