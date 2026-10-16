@@ -16,10 +16,7 @@ import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
 import { AskEverestPanel } from "./AskEverestPanel";
-import { NewIssueDialog } from "./NewIssueDialog";
-import { NewProjectDialog } from "./NewProjectDialog";
-import { NewGoalDialog } from "./NewGoalDialog";
-import { NewAgentDialog } from "./NewAgentDialog";
+import { OnDemandCreateDialogs } from "./OnDemandDialogs";
 import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
 import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "../lib/keyboardShortcuts";
 import { ToastViewport } from "./ToastViewport";
@@ -806,10 +803,7 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
       <AskEverestPanel />
-      <NewIssueDialog />
-      <NewProjectDialog />
-      <NewGoalDialog />
-      <NewAgentDialog />
+      <OnDemandCreateDialogs />
       <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />
       <ToastViewport />
       <TeamChatAlerts />

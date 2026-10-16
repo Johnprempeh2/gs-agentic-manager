@@ -98,3 +98,16 @@ export function scorecardCsvFileName(prefix: string | null | undefined, days: nu
   const slug = (prefix ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
   return `${slug ? `${slug}-` : ""}scorecard-${days}-days-${today}.csv`;
 }
+
+/**
+ * How this period's finished count compares with the period before, from the
+ * scorecard for this period and the scorecard for twice as long:
+ * "Up from 8 the week before". Null while the longer scorecard is loading.
+ */
+export function finishedTrend(finished: number, finishedOverTwice: number | null | undefined, days: number): string | null {
+  if (finishedOverTwice == null) return null;
+  const before = Math.max(0, finishedOverTwice - finished);
+  const period = days === 7 ? "the week before" : `the ${days} days before`;
+  if (before === finished) return `Same as ${period}`;
+  return `${finished > before ? "Up" : "Down"} from ${before} ${period}`;
+}

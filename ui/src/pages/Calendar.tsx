@@ -251,6 +251,18 @@ export function Calendar() {
     },
   });
 
+  // Several due dates at once: "Move to today" for overdue tasks, and its undo.
+  const moveMany = useMutation({
+    mutationFn: async (moves: ReadonlyArray<{ id: string; date: string }>) => {
+      const results = await Promise.allSettled(moves.map(({ id, date }) => issuesApi.update(id, { dueDate: date })));
+      return results.filter((result) => result.status === "fulfilled").length;
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["calendar", selectedCompanyId ?? ""] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId ?? "") });
+    },
+  });
+
   function moveTask(id: string, date: string) {
     reschedule.mutate({ id, date });
   }
@@ -275,6 +287,41 @@ export function Calendar() {
   );
   const byDate = useMemo(() => groupByDate(visibleItems), [visibleItems]);
   const overdueCount = visibleItems.filter((item) => isOverdue(item, today)).length;
+  const overdueTasks = visibleItems.filter((item) => canReschedule(item) && isOverdue(item, today));
+
+  function moveOverdueToToday() {
+    const originals = overdueTasks.map((item) => ({ id: item.id, date: item.date }));
+    const total = originals.length;
+    moveMany.mutate(
+      originals.map(({ id }) => ({ id, date: today })),
+      {
+        onSuccess: (moved) => {
+          if (moved === 0) {
+            pushToast({ title: "Could not change the due dates", body: "Try again in a moment.", tone: "error" });
+            return;
+          }
+          pushToast({
+            title:
+              moved === total
+                ? `${moved === 1 ? "1 overdue task" : `${moved} overdue tasks`} now due today`
+                : `${moved} of ${total} overdue tasks now due today`,
+            body: moved === total ? undefined : "The others could not be changed. Try them one by one.",
+            tone: moved === total ? "success" : "warn",
+            ttlMs: 10_000,
+            action: {
+              label: "Undo",
+              onClick: () =>
+                moveMany.mutate(originals, {
+                  onSuccess: () => pushToast({ title: "Due dates put back", tone: "success" }),
+                }),
+            },
+          });
+        },
+        onError: (err) =>
+          pushToast({ title: "Could not change the due dates", body: err instanceof Error ? err.message : undefined, tone: "error" }),
+      },
+    );
+  }
   const monthItemCount = visibleItems.filter((item) => monthKey(item.date) === month).length;
   const weekItemCount = visibleItems.filter((item) => selectedWeek.includes(item.date)).length;
   const monthDays = [...byDate.entries()].filter(([date]) => monthKey(date) === month);
@@ -451,6 +498,22 @@ export function Calendar() {
               <span className="text-status-danger">{` · ${overdueCount} overdue`}</span>
             ) : null}
           </span>
+        ) : null}
+        {data && overdueTasks.length > 0 ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={moveMany.isPending}
+            title="Give every overdue task in view a due date of today. You can undo this."
+            onClick={moveOverdueToToday}
+          >
+            <CalendarClock className="size-3.5" aria-hidden />
+            {moveMany.isPending
+              ? "Moving…"
+              : overdueTasks.length === 1
+                ? "Move the overdue task to today"
+                : `Move ${overdueTasks.length} overdue tasks to today`}
+          </Button>
         ) : null}
       </div>
 

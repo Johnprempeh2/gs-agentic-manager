@@ -294,6 +294,44 @@ describe("SwipeToArchive", () => {
     });
   });
 
+  it("offers only Later when archiving is not given", () => {
+    const onSnooze = vi.fn();
+    const root = createRoot(container);
+
+    act(() => {
+      root.render(
+        <SwipeToArchive onSnooze={onSnooze}>
+          <button type="button">Open item</button>
+        </SwipeToArchive>,
+      );
+    });
+
+    const wrapper = container.firstElementChild as HTMLDivElement;
+    Object.defineProperty(wrapper, "offsetWidth", { configurable: true, value: 200 });
+    Object.defineProperty(wrapper, "offsetHeight", { configurable: true, value: 48 });
+    expect(container.textContent).not.toContain("Archive");
+
+    act(() => {
+      dispatchTouchEvent(wrapper, "touchstart", { x: 120, y: 20 });
+      dispatchTouchEvent(wrapper, "touchmove", { x: 20, y: 22 });
+      dispatchTouchEvent(wrapper, "touchend", { x: 20, y: 22 });
+      vi.advanceTimersByTime(140);
+    });
+    expect(onSnooze).not.toHaveBeenCalled();
+
+    act(() => {
+      dispatchTouchEvent(wrapper, "touchstart", { x: 20, y: 20 });
+      dispatchTouchEvent(wrapper, "touchmove", { x: 120, y: 22 });
+      dispatchTouchEvent(wrapper, "touchend", { x: 120, y: 22 });
+      vi.advanceTimersByTime(140);
+    });
+    expect(onSnooze).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      root.unmount();
+    });
+  });
+
   it("renders the selected inbox treatment on the swipe surface", () => {
     const root = createRoot(container);
 

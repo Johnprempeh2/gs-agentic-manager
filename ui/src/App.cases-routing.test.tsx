@@ -60,8 +60,8 @@ vi.mock("./components/DeepDiveExperimentalGate", () => ({
 }));
 
 // Rendered by <App> outside <Routes> and needs DialogProvider; irrelevant here.
-vi.mock("./components/OnboardingWizardVariant", () => ({
-  OnboardingWizardVariant: () => null,
+vi.mock("./components/OnDemandDialogs", () => ({
+  OnDemandOnboarding: () => null,
 }));
 
 // Sentinel pages so we can assert *which* route resolved.

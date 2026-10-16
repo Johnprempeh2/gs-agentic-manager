@@ -102,13 +102,25 @@ test("memory pasted from ChatGPT waits in Review for someone else to confirm", a
   test.setTimeout(120_000);
   const company = await seedCompany(request, "Memory");
   await json(await request.patch(`/api/companies/${company.id}/memory/settings`, { data: { enabled: true } }));
-  const fact = `Acme renews its contract every March ${Date.now()}`;
+  // Letters only: a 13 digit timestamp can pass the card number check, and
+  // memory then holds the line back as sensitive.
+  const tag = Date.now().toString(36).replace(/\d/g, (digit) => "abcdefghij"[Number(digit)]!);
+  const fact = `Acme renews its contract every March, ref ${tag}`;
 
   await page.goto(`/${company.issuePrefix}/memory/apps`);
   await page.getByRole("textbox", { name: "ChatGPT's answer" }).fill(fact);
   const add = page.getByRole("button", { name: /^Add 1 to memory$/ });
   await expect(add).toBeEnabled({ timeout: 30_000 });
+  // Wait for the import to land before leaving the page, or the review
+  // queue can load before the proposal exists.
+  const imported = page.waitForResponse(
+    (response) => response.request().method() === "POST" && response.url().endsWith("/memory/import"),
+  );
   await add.click();
+  expect((await imported).ok()).toBe(true);
+  await expect
+    .poll(async () => (await request.get(`/api/companies/${company.id}/memory/review-queue`)).text(), { timeout: 15_000 })
+    .toContain(fact);
 
   await page.goto(`/${company.issuePrefix}/memory/review`);
   const queue = page.getByRole("region", { name: "Review queue" });

@@ -127,20 +127,8 @@ vi.mock("./CommandPalette", () => ({
   CommandPalette: () => null,
 }));
 
-vi.mock("./NewIssueDialog", () => ({
-  NewIssueDialog: () => null,
-}));
-
-vi.mock("./NewProjectDialog", () => ({
-  NewProjectDialog: () => null,
-}));
-
-vi.mock("./NewGoalDialog", () => ({
-  NewGoalDialog: () => null,
-}));
-
-vi.mock("./NewAgentDialog", () => ({
-  NewAgentDialog: () => null,
+vi.mock("./OnDemandDialogs", () => ({
+  OnDemandCreateDialogs: () => null,
 }));
 
 vi.mock("./KeyboardShortcutsCheatsheet", () => ({

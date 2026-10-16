@@ -4,7 +4,8 @@ import { agents, issues } from "@greatstone/db";
 import type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "@greatstone/shared";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 
-export const TEAM_SCORECARD_DAY_OPTIONS = [7, 30] as const;
+/** 7 and 30 are the periods people pick; 14 and 60 let the page compare with the period before. */
+export const TEAM_SCORECARD_DAY_OPTIONS = [7, 14, 30, 60] as const;
 const RECENT_LIMIT = 5;
 const STUCK_LIMIT = 3;
 

@@ -4,7 +4,7 @@ import { badRequest } from "../errors.js";
 import { TEAM_SCORECARD_DAY_OPTIONS, teamScorecardService } from "../services/team-scorecard.js";
 import { assertCompanyAccess } from "./authz.js";
 
-/** Team scorecard: each agent's finished work in the last 7 or 30 days, and what it holds now. */
+/** Team scorecard: each agent's finished work in the last 7, 14, 30 or 60 days, and what it holds now. */
 export function teamScorecardRoutes(db: Db) {
   const router = Router();
   const svc = teamScorecardService(db);
@@ -15,7 +15,7 @@ export function teamScorecardRoutes(db: Db) {
     const raw = req.query.days;
     const days = raw === undefined ? 7 : Number(raw);
     if (!(TEAM_SCORECARD_DAY_OPTIONS as readonly number[]).includes(days)) {
-      throw badRequest("`days` must be 7 or 30");
+      throw badRequest("`days` must be 7, 14, 30 or 60");
     }
     res.json(await svc.build(companyId, { days }));
   });

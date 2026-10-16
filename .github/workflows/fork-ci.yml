@@ -15,6 +15,8 @@
 #              binary built with cargo
 #   runner     the runner's Rust tests (the rebrand edits Rust sources)
 #   ui-tests   the ui and cli vitest suites, on every run
+#   server-security  the server's authz, cross-company and route contract
+#              tests (16 files, about 5 minutes), on every run
 #   journeys   the core journeys end to end in Chromium (tests/e2e/core-journeys.spec.ts and overnight-features.spec.ts)
 #   test       the vitest suites through scripts/run-vitest-stable.mjs,
 #              sharded across runners (the server suites run one file at a time)
@@ -27,7 +29,9 @@
 # jobs) run only when started by hand. The ui lane runs on every pull request
 # because two merges close together on 16 Oct 2026 broke ui tests on main with
 # the fast lanes still green. Agents run the relevant server tests in their
-# sandbox before opening a pull request.
+# sandbox before opening a pull request. The server security lane runs on
+# every pull request because two new routes reached main without their
+# cross-company test while every other lane was green (16 Oct 2026).
 #
 # No secrets, a read-only token, GitHub-hosted runners only.
 
@@ -185,6 +189,30 @@ jobs:
       - name: Run vitest (ui and cli)
         run: pnpm test:run:general -- --group general-workspaces-a
 
+  # The server's company boundary and route contract tests, by file name: every
+  # authz, cross-company and cross-tenant suite, the upload type rules and the
+  # API document. A new route with no company boundary test fails here, on the
+  # pull request that adds it. The rest of the server suite stays manual.
+  server-security:
+    name: Tests (server security)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup
+        uses: ./.github/actions/fork-setup
+
+      - name: Run the server security tests
+        run: |
+          pnpm run preflight:workspace-links
+          pnpm --filter @greatstone/plugin-sdk ensure-build-deps
+          cd server && npx vitest run authz cross-company cross-tenant attachment-types openapi-routes
+
   # Dashboard, new task, Needs you, a client, Inbox and Blocked, and the theme
   # switch, through the built UI against a throwaway local_trusted instance.
   journeys:
@@ -270,7 +298,7 @@ jobs:
   result:
     name: Fork CI
     if: always()
-    needs: [guard, typecheck, build, ui-tests, journeys, runner, test]
+    needs: [guard, typecheck, build, ui-tests, server-security, journeys, runner, test]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
