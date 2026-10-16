@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, dealsClosedThisMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -52,5 +52,20 @@ describe("deal value totals", () => {
     ]);
     expect(formatDealTotals(totals)).toBe("9,000 USD + 3,500 GBP");
     expect(formatDealTotals(sumDealValues([{ fields: {} }]))).toBe("");
+  });
+});
+
+describe("dealsClosedThisMonth", () => {
+  it("counts deals won or lost this calendar month with their values", () => {
+    const now = new Date("2026-10-16T18:00:00Z");
+    const cases = [
+      { fields: { dealStatus: "Won", wonOn: "2026-10-02", dealValue: 9000, dealCurrency: "USD" } },
+      { fields: { dealStatus: "won", wonOn: "2026-10-15T09:00:00Z", dealValue: 1000, dealCurrency: "USD" } },
+      { fields: { dealStatus: "Won", wonOn: "2026-09-30", dealValue: 5000, dealCurrency: "USD" } },
+      { fields: { dealStatus: "Lost", lostOn: "2026-10-10", dealValue: 2000, dealCurrency: "GBP" } },
+      { fields: { dealStatus: "Open", dealValue: 7000, dealCurrency: "USD" } },
+    ];
+    expect(dealsClosedThisMonth(cases, "won", now)).toEqual({ count: 2, totals: [{ currency: "USD", total: 10000 }] });
+    expect(dealsClosedThisMonth(cases, "lost", now)).toEqual({ count: 1, totals: [{ currency: "GBP", total: 2000 }] });
   });
 });
