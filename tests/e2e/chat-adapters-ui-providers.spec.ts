@@ -122,8 +122,51 @@ test.describe.serial("native chat adapter UI", () => {
     seed = await seedCompanyAndAgent(request);
   });
 
+  test("GitHub: a managed-off Chat connectors gate keeps direct tool setup and fences chat routes (GRE-1633)", async ({
+    page,
+  }) => {
+    const github = PROVIDERS.find(
+      (provider) => provider.provider === "github",
+    )!;
+    const mock = await installChatControlPlaneMock(page, github, seed, {
+      enableChatConnectors: false,
+    });
+
+    await page.goto(`/${seed.prefix}/apps`);
+    await expect(page.getByRole("heading", { name: "Connectors" })).toBeVisible(
+      { timeout: 30_000 },
+    );
+    const connector = page.locator(
+      `[role="listitem"][data-app-slug="${github.slug}"]`,
+    );
+    await expect(connector).toBeVisible();
+    await connector.getByRole("button", { name: "Connect GitHub" }).click();
+
+    await expect(page).toHaveURL(/\/apps\/connect\?/);
+    expect(new URL(page.url()).searchParams.get("source")).toBe("github");
+    await expect(
+      page.getByRole("heading", { name: "Connect GitHub as" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Choose how to connect" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByText("Chat with an agent", { exact: true }),
+    ).toHaveCount(0);
+
+    await page.goto(`/${seed.prefix}/apps/chat/connect?provider=github`);
+    await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/apps$`));
+    await expect(
+      page.getByRole("heading", { name: "Connectors" }),
+    ).toBeVisible();
+    await page.goto(`/${seed.prefix}/apps/chat/endpoint-github/settings`);
+    await expect(page).toHaveURL(new RegExp(`/${seed.prefix}/apps$`));
+    await expect.poll(() => mock.chatEndpointListReads).toBe(0);
+    expect(mock.createdWithAgentId).toBeNull();
+  });
+
   for (const enabled of [false, true]) {
-    test(`Agent Channels: one heading whatever the graduated switch says (${enabled}, GRE-1620)`, async ({
+    test(`Agent Channels: one heading and the Chat connectors gate (${enabled}, GRE-1633)`, async ({
       page,
     }) => {
       const github = PROVIDERS.find(
@@ -138,13 +181,22 @@ test.describe.serial("native chat adapter UI", () => {
         name: "Channels",
         exact: true,
       });
-      await expect(page).toHaveURL(/\/channels$/);
-      await expect(channelsHeading).toHaveCount(1);
-      await expect(channelsHeading).toBeVisible();
-      await expect(
-        page.getByRole("link", { name: "Connect a channel" }),
-      ).toBeVisible();
-      await expect.poll(() => mock.chatEndpointListReads).toBeGreaterThan(0);
+      if (enabled) {
+        await expect(page).toHaveURL(/\/channels$/);
+        await expect(channelsHeading).toHaveCount(1);
+        await expect(channelsHeading).toBeVisible();
+        await expect(
+          page.getByRole("link", { name: "Connect a channel" }),
+        ).toBeVisible();
+        await expect.poll(() => mock.chatEndpointListReads).toBeGreaterThan(0);
+      } else {
+        await expect(page).toHaveURL(/\/overview$/);
+        await expect(channelsHeading).toHaveCount(0);
+        await expect(
+          page.getByRole("link", { name: "Channels", exact: true }),
+        ).toHaveCount(0);
+        expect(mock.chatEndpointListReads).toBe(0);
+      }
     });
   }
 

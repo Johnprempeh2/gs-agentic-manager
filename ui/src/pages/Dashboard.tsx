@@ -34,13 +34,15 @@ import { useLiveAgents } from "../hooks/useLiveAgents";
 import { ActivityRow } from "../components/ActivityRow";
 import { cn, formatCents } from "../lib/utils";
 import { SHOW_TASK_PRIORITY_UI } from "../lib/ui-flags";
-import { Bot, ChevronDown, CircleDot, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
+import { Bot, Check, ChevronDown, CircleDot, ClipboardList, DollarSign, History, ShieldCheck, LayoutDashboard, PauseCircle, Users } from "lucide-react";
 import { ActiveAgentsPanel } from "../components/ActiveAgentsPanel";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart, chartWindowLabel } from "../components/ActivityCharts";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
+import { useCopyAction } from "@/lib/use-copy-action";
+import { dashboardNumbersText } from "../lib/dashboard-text";
 import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
@@ -217,6 +219,7 @@ export function Dashboard() {
     setBreadcrumbs([{ label: "Dashboard" }]);
   }, [setBreadcrumbs]);
 
+  const numbersCopy = useCopyAction();
   const dashboardQueryKey = queryKeys.dashboard(selectedCompanyId!);
   const sharedDashboard = useSharedPollingQuery({
     companyId: selectedCompanyId,
@@ -380,14 +383,14 @@ export function Dashboard() {
       return (
         <EmptyState
           icon={BrandStoneIcon}
-          message="Welcome to GS Agentic Manager. Set up your first organization and agent to get started."
+          message="Welcome to GS Agentic Manager. Set up your first organisation and agent to get started."
           action="Get Started"
           onAction={openOnboarding}
         />
       );
     }
     return (
-      <EmptyState icon={LayoutDashboard} message="Create or select an organization to view the dashboard." />
+      <EmptyState icon={LayoutDashboard} message="Choose an organisation to see its dashboard." />
     );
   }
 
@@ -511,17 +514,28 @@ export function Dashboard() {
           onClick={() => setPhoneDetailsOpen((open) => !open)}
           data-testid="dashboard-phone-details-toggle"
         >
-          {phoneDetailsOpen ? "Show less" : "Show runs, numbers and activity"}
+          {phoneDetailsOpen ? "Show less" : "Show recent work, numbers and activity"}
           <ChevronDown className={cn("transition-transform", phoneDetailsOpen && "rotate-180")} />
         </Button>
       ) : null}
 
       {showDetails ? (
         <div id="dashboard-details" className="space-y-6">
-          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent runs" />
+          <ActiveAgentsPanel companyId={selectedCompanyId!} title="Recent work" />
 
           {data && (
             <>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy the agents, tasks, spend and approvals numbers, ready to paste into a message"
+                  onClick={() => void numbersCopy.copy(dashboardNumbersText(data))}
+                >
+                  {numbersCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                  {numbersCopy.copied ? "Copied" : numbersCopy.failed ? "Could not copy" : "Copy the numbers"}
+                </Button>
+              </div>
               <div className="gs-stagger grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
                 <MetricCard
                   icon={Bot}
@@ -583,7 +597,7 @@ export function Dashboard() {
               <SmokeLabDashboardCard companyId={selectedCompanyId!} />
 
               <div className={cn("gs-stagger grid grid-cols-1 gap-4 sm:grid-cols-2", SHOW_TASK_PRIORITY_UI ? "lg:grid-cols-4" : "lg:grid-cols-3")}>
-                <ChartCard title="Run Activity" subtitle={chartWindowLabel(companyStart)}>
+                <ChartCard title="Work activity" subtitle={chartWindowLabel(companyStart)}>
                   <RunActivityChart activity={data.runActivity} start={companyStart} />
                 </ChartCard>
                 {/* PAP-411: "Tasks by Priority" chart hidden behind SHOW_TASK_PRIORITY_UI. */}

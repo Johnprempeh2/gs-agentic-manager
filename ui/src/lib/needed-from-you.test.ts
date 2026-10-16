@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DecisionCard } from "@greatstone/shared";
 import type { PipelineAttentionFeed } from "@/api/pipelines";
-import { buildNeededFromYou, neededLaterKey, neededSummary, waitedFor, withoutPutAway, type NeededGroup, type NeededGroupId } from "./needed-from-you";
+import { buildNeededFromYou, neededLaterKey, neededListText, neededSummary, waitedFor, withoutPutAway, type NeededGroup, type NeededGroupId } from "./needed-from-you";
 
 function card(id: string, kind: DecisionCard["kind"], extra: Partial<DecisionCard> = {}): DecisionCard {
   return {
@@ -121,5 +121,30 @@ describe("withoutPutAway", () => {
       now,
     );
     expect(result.map((g) => [g.id, g.items.map((i) => i.id)])).toEqual([["answer", ["b"]]]);
+  });
+});
+
+describe("neededListText", () => {
+  it("groups each row with who waits, how long and a link", () => {
+    const now = new Date(2026, 9, 16, 12).getTime();
+    const groups = [
+      {
+        id: "answer",
+        title: "Answer a question",
+        explain: "",
+        allHref: "/decisions",
+        allLabel: "",
+        items: [
+          { id: "1", title: "Which supplier?", reason: "Two quotes in", waiting: "Ridge", since: new Date(now - 2 * 86_400_000).toISOString(), href: "/decisions/1" },
+          { id: "2", title: "Logo sign-off", reason: null, waiting: null, since: null, href: "/decisions/2" },
+        ],
+      },
+    ] as NeededGroup[];
+    const lines = neededListText(groups, (href) => `https://gsam.test${href}`, now).split("\n");
+    expect(lines[0]).toBe("What needs me, 16 Oct");
+    expect(lines[1]).toBe("2 things need you. The oldest has waited 2 days.");
+    expect(lines[3]).toBe("Answer a question");
+    expect(lines[4]).toBe("• Which supplier?: Two quotes in (Ridge, waiting 2 days) https://gsam.test/decisions/1");
+    expect(lines[5]).toBe("• Logo sign-off https://gsam.test/decisions/2");
   });
 });

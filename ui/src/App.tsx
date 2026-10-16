@@ -20,6 +20,8 @@ import { CloudAccessGate } from "./components/CloudAccessGate";
 import { BrandLoading } from "./components/BrandLoading";
 import { AGENT_FILTER_TABS, Agents } from "./pages/Agents";
 import { StrategyBoardExperimentalGate } from "./components/StrategyBoardExperimentalGate";
+import { ChatConnectorsExperimentalGate } from "./components/ChatConnectorsExperimentalGate";
+import { useChatConnectorsEnabled } from "./hooks/useChatConnectorsEnabled";
 import { canEnterAppsConnect } from "./pages/apps/app-connect-policy";
 import { AuthPage } from "./pages/Auth";
 import { BoardClaimPage } from "./pages/BoardClaim";
@@ -120,6 +122,7 @@ const ProfileWizardRoute = lazyPage(() => import("./pages/tools/profiles/Profile
 const ProfileDetailRoute = lazyPage(() => import("./pages/tools/profiles/ProfileDetailRoute"), "ProfileDetailRoute");
 const Browse = lazyPage(() => import("./pages/apps/Browse"), "Browse");
 const Mailboxes = lazyPage(() => import("./pages/apps/Mailboxes"), "Mailboxes");
+const AgentAccess = lazyPage(() => import("./pages/apps/AgentAccess"), "AgentAccess");
 const AppsConnect = lazyPage(() => import("./pages/apps/AppsConnect"), "AppsConnect");
 const ChatEndpointSetup = lazyPage(() => import("./pages/apps/chat/ChatEndpointSetup"), "ChatEndpointSetup");
 const ChatEndpointDetail = lazyPage(() => import("./pages/apps/chat/ChatEndpointDetail"), "ChatEndpointDetail");
@@ -210,6 +213,7 @@ function boardRoutes() {
       <Route path="tools/:tab" element={<LegacyToolsRedirect />} />
       <Route path="apps" element={<Browse />} />
       <Route path="apps/mailboxes" element={<Mailboxes />} />
+      <Route path="apps/access" element={<AgentAccess />} />
       <Route path="apps/browse" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connections" element={<Navigate to="/apps" replace />} />
       <Route path="apps/byo" element={<AppsConnect byoOnly />} />
@@ -219,13 +223,13 @@ function boardRoutes() {
       />
       <Route path="apps/connect" element={<AppsConnectEntryRoute />} />
       <Route path="apps/chat/connect" element={
-        <ChatEndpointSetup />
+        <ChatConnectorsExperimentalGate><ChatEndpointSetup /></ChatConnectorsExperimentalGate>
       } />
       <Route path="apps/chat/:endpointId" element={
-        <Navigate to="settings" replace />
+        <ChatConnectorsExperimentalGate><Navigate to="settings" replace /></ChatConnectorsExperimentalGate>
       } />
       <Route path="apps/chat/:endpointId/:tab" element={
-        <ChatEndpointDetail />
+        <ChatConnectorsExperimentalGate><ChatEndpointDetail /></ChatConnectorsExperimentalGate>
       } />
       <Route path="apps/connect/:appKey" element={<Navigate to="/apps" replace />} />
       <Route path="apps/connect/:appKey/:stage" element={<Navigate to="/apps" replace />} />
@@ -483,7 +487,8 @@ function AppsConnectEntryRoute({
 } = {}) {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
-  return canEnterAppsConnect(searchParams)
+  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
+  return canEnterAppsConnect(searchParams, { chatConnectorsEnabled })
     ? <AppsConnect credentialSource={credentialSource} />
     : <Navigate to="/apps" replace />;
 }

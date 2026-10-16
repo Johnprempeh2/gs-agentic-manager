@@ -41,6 +41,8 @@ export const MANAGED_FEATURES_OFF = [
   "enableIntelligence",
   "enableTeamChat",
   "enableConferenceRoomChat",
+  "enableChatConnectors",
+  "enableMemoryConnectors",
   "enableExternalObjects",
   "enableSmokeLab",
   "enableWorktreeRunExecution",
@@ -66,8 +68,6 @@ export const MANAGED_FEATURES_OFF = [
 export const CLIENT_DEFAULT_OK = {
   enableApps: "Compatibility key; Apps is always on and the app ignores the value.",
   enableMcpAggregators: "Compatibility key; MCP aggregators are always on and the app ignores the value.",
-  enableChatConnectors: "Compatibility key; Chat connectors graduated (GRE-1620), are always on and the app ignores the value.",
-  enableMemoryConnectors: "Compatibility key; Memory connectors graduated (GRE-1620), are always on and the app ignores the value.",
   enableRunnerPreviewIngress: "Deprecated compatibility key; runner ingress follows the Runner setting.",
   enableDecisions: "Off in client installs (Cloud default). Turning it on needs a code change, not an edition value.",
   enableClassicTaskInterface: "Off by default; clients use the chat task page.",

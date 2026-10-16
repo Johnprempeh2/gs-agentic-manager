@@ -37,7 +37,7 @@ export function ProfileWizardRoute({ mode }: { mode: "new" | "edit" }) {
   }, [setBreadcrumbs, selectedCompany?.name, mode]);
 
   if (!selectedCompanyId) {
-    return <div className="p-6 text-sm text-muted-foreground">Select an organization to create a profile.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Choose an organisation to create a profile.</div>;
   }
 
   return (

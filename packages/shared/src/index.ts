@@ -298,6 +298,7 @@ export type {
   NeedsMe,
   NeedsMeTask,
   NeedsMeOverdueWait,
+  NeedsMeExpiredCard,
 } from "./types/decisions-feed.js";
 export { DECISION_CARD_KINDS } from "./types/decisions-feed.js";
 export type {
@@ -1146,6 +1147,8 @@ export type {
   CompanySearchHighlight,
   CompanySearchArtifactSummary,
   CompanySearchFileSummary,
+  CompanySearchRecordKind,
+  CompanySearchRecordSummary,
   CompanySearchIssueFilterKey,
   CompanySearchIssueSummary,
   CompanySearchResponse,
@@ -1458,6 +1461,7 @@ export type {
   BudgetOverview,
   BudgetPolicyUpsertInput,
   BudgetIncidentResolutionInput,
+  BudgetAuthority,
   CostEvent,
   CostSummary,
   IssueCostSummary,
@@ -1862,6 +1866,7 @@ export {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
   COMPANY_SEARCH_SCOPES,
+  COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SORTS,
   COMPANY_SEARCH_UPDATED_WITHIN_OPTIONS,
 } from "./types/index.js";
@@ -2411,6 +2416,8 @@ export {
   createApprovalSchema,
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
+  updateBudgetAuthoritySchema,
+  type UpdateBudgetAuthority,
   resolveApprovalSchema,
   requestApprovalRevisionSchema,
   resubmitApprovalSchema,
@@ -3107,6 +3114,7 @@ export { EXECUTION_RECONCILIATION_CAUSES, requiresExecutionReconciliation } from
 
 export * from "./agent-appearance.js";
 export * from "./ai-connections.js";
+export * from "./spending-authority.js";
 export * from "./member-handover.js";
 export * from "./types/email.js";
 export * from "./validators/email.js";

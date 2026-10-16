@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TourDefinition } from "@/lib/feature-tours";
 import { tourSeenKey } from "@/hooks/useTourSeen";
-import { FeatureTour } from "./FeatureTour";
+import { FeatureTour, findTourTarget } from "./FeatureTour";
 
 const flags = vi.hoisted(() => ({ enablePipelines: true }));
 // The server's copy of "seen", shared by every "device" (fresh storage + query cache) in a test.
@@ -274,5 +274,18 @@ describe("FeatureTour", () => {
       await act(async () => button("Show me around")!.click());
       expect(card()?.textContent).toContain("Step 1 of 1");
     });
+  });
+});
+
+describe("findTourTarget", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("finds a data-tour anchor, or a page's own data-testid when there is none", () => {
+    document.body.innerHTML = '<div data-testid="blocked-inbox">list</div><div data-tour="period">period</div>';
+    expect(findTourTarget("period")?.textContent).toBe("period");
+    expect(findTourTarget("blocked-inbox")?.textContent).toBe("list");
+    expect(findTourTarget("missing")).toBeNull();
   });
 });

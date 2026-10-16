@@ -94,6 +94,7 @@ const STATUS_WORD: Record<string, string> = {
   unreviewed: "Waiting for review",
   disputed: "Disputed",
   superseded: "Replaced",
+  retired: "Retired",
 };
 
 /** The same backup as plain text a person can read, grouped by where it lives. */

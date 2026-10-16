@@ -2,6 +2,7 @@ import { and, asc, desc, eq, ilike, inArray, isNull, or, sql, type SQL } from "d
 import type { Db } from "@greatstone/db";
 import { authUsers, companyMemberships, organisationContacts, organisations } from "@greatstone/db";
 import type {
+  OrganisationPerson,
   ListOrganisationsQuery,
   Organisation,
   OrganisationContact,
@@ -207,6 +208,32 @@ export function organisationService(db: Db) {
           contactCount: own.length,
         };
       });
+    },
+
+    /** Live people across every organisation matching a search on name, role, email, phone or organisation, by name. */
+    async searchContacts(companyId: string, q: string, limit = 100): Promise<OrganisationPerson[]> {
+      const pattern = likePattern(q);
+      const rows = await db
+        .select({ contact: organisationContacts, organisationName: organisations.name })
+        .from(organisationContacts)
+        .leftJoin(organisations, and(
+          eq(organisations.id, organisationContacts.organisationId),
+          eq(organisations.companyId, organisationContacts.companyId),
+        ))
+        .where(and(
+          eq(organisationContacts.companyId, companyId),
+          isNull(organisationContacts.archivedAt),
+          or(
+            ilike(organisationContacts.name, pattern),
+            ilike(organisationContacts.role, pattern),
+            ilike(organisationContacts.email, pattern),
+            ilike(organisationContacts.phone, pattern),
+            ilike(organisations.name, pattern),
+          )!,
+        ))
+        .orderBy(asc(organisationContacts.name))
+        .limit(limit);
+      return rows.map(({ contact, organisationName }) => ({ ...toContact(contact), organisationName }));
     },
 
     /** People with no organisation (imported from a CRM that held them on their own), by name. */

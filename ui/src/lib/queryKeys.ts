@@ -475,6 +475,8 @@ export const queryKeys = {
     history: (companyId: string, organisationId: string) =>
       ["organisations", companyId, "history", organisationId] as const,
     unassignedContacts: (companyId: string) => ["organisations", companyId, "unassigned-contacts"] as const,
+    products: (companyId: string) => ["organisations", companyId, "products"] as const,
+    people: (companyId: string, q: string) => ["organisations", companyId, "people", q] as const,
   },
   pipelines: {
     list: (companyId: string) => ["pipelines", companyId] as const,
@@ -502,6 +504,8 @@ export const queryKeys = {
       ["pipelines", "item", caseId, "contacts"] as const,
     projectCases: (projectId: string) =>
       ["pipelines", "project-cases", projectId] as const,
+    caseCrmHistory: (caseId: string) =>
+      ["pipelines", "item", caseId, "crm-history"] as const,
     caseOutputs: (caseId: string) =>
       ["pipelines", "item", caseId, "outputs"] as const,
     caseFiles: (caseId: string) =>

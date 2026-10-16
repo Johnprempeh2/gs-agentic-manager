@@ -212,7 +212,7 @@ vi.mock("../api/decisions", () => ({
 }));
 
 const mockEmailApi = vi.hoisted(() => ({
-  // Chat connectors are always on (GRE-1620), so every task asks for its email thread.
+  // Chat connectors are on by default (GRE-1620), so every task asks for its email thread.
   thread: vi.fn(async (_companyId: string, _issueId: string) => null),
 }));
 

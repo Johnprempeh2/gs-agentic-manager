@@ -14,6 +14,7 @@ import {
 } from "@greatstone/db";
 import { projectSafeChatPublication } from "./chat-publication-projection.js";
 import { logActivity } from "./activity-log.js";
+import { instanceSettingsService } from "./instance-settings.js";
 import { slackBoardAuthor } from "./slack-board-authority.js";
 import { forbidden } from "../errors.js";
 
@@ -44,6 +45,12 @@ export async function mirrorSlackBoardComment(
     comment.authorType !== "user" ||
     !comment.authorUserId ||
     comment.deletedAt
+  )
+    return;
+  if (
+    !options.wakeAgent &&
+    !(await instanceSettingsService(db as Db).getExperimental())
+      .enableChatConnectors
   )
     return;
   const bindings = await db

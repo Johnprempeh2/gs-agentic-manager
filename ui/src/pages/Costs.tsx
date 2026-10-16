@@ -10,7 +10,7 @@ import type {
   FinanceEvent,
   QuotaWindow,
 } from "@greatstone/shared";
-import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Coins, DollarSign, ReceiptText } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Check, ChevronDown, ChevronRight, ClipboardList, Coins, DollarSign, Download, ReceiptText } from "lucide-react";
 import { budgetsApi } from "../api/budgets";
 import { costsApi } from "../api/costs";
 import { ApiEquivalentCard } from "../components/ApiEquivalentCard";
@@ -33,6 +33,9 @@ import { useCompany } from "../context/CompanyContext";
 import { useDateRange, PRESET_KEYS, PRESET_LABELS } from "../hooks/useDateRange";
 import { queryKeys } from "../lib/queryKeys";
 import { billingTypeDisplayName, cn, formatCents, formatTokens, providerDisplayName } from "../lib/utils";
+import { costsByAgentSheet, costsByProjectSheet, costsFileName, costsUpdateText } from "../lib/costs-export";
+import { useCopyAction } from "../lib/use-copy-action";
+import { downloadBytes, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -167,7 +170,7 @@ export function Costs({
   lockTab = false,
   hideBudgetsTab = false,
 }: CostsProps = {}) {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
 
@@ -254,6 +257,7 @@ export function Costs({
     onSuccess: invalidateBudgetViews,
   });
 
+  const costsCopy = useCopyAction();
   const { data: spendData, isLoading: spendLoading, error: spendError } = useQuery({
     queryKey: queryKeys.costs(companyId, from || undefined, to || undefined),
     queryFn: async () => {
@@ -566,7 +570,7 @@ export function Costs({
   }), [budgetPolicies]);
 
   if (!selectedCompanyId) {
-    return <EmptyState icon={DollarSign} message="Select an organization to view costs." />;
+    return <EmptyState icon={DollarSign} message="Choose an organisation to view costs." />;
   }
 
   const showCustomPrompt = preset === "custom" && !customReady;
@@ -590,6 +594,38 @@ export function Costs({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {(spendData?.byAgent.length ?? 0) > 0 || (spendData?.byProject.length ?? 0) > 0 ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Download spend by agent and by project for this range, as an Excel workbook"
+                  onClick={() => {
+                    if (!spendData) return;
+                    downloadBytes(
+                      costsFileName(selectedCompany?.issuePrefix, from || undefined, to || undefined, localToday()),
+                      sheetsToXlsx([costsByAgentSheet(spendData.byAgent), costsByProjectSheet(spendData.byProject)]),
+                    );
+                  }}
+                >
+                  <Download className="size-3.5" />
+                  Download as spreadsheet
+                </Button>
+              ) : null}
+              {spendData ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  title="Copy spend against budget and the top agents and projects, ready to paste"
+                  onClick={() =>
+                    void costsCopy.copy(
+                      costsUpdateText(spendData, preset === "custom" && from && to ? `${from} to ${to}` : PRESET_LABELS[preset]),
+                    )
+                  }
+                >
+                  {costsCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+                  {costsCopy.copied ? "Copied" : costsCopy.failed ? "Could not copy" : "Copy as an update"}
+                </Button>
+              ) : null}
               {PRESET_KEYS.map((key) => (
                 <Button
                   key={key}

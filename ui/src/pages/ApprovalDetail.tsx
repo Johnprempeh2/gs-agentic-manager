@@ -8,6 +8,8 @@ import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { waitingLabel } from "../lib/approval-wait";
+import { formatDateTime } from "../lib/utils";
 import { StatusBadge } from "../components/StatusBadge";
 import { Identity } from "../components/Identity";
 import { approvalLabel, typeIcon, defaultTypeIcon, ApprovalPayloadRenderer } from "../components/ApprovalPayload";
@@ -94,7 +96,7 @@ export function ApprovalDetail() {
       refresh();
       navigate(`/approvals/${approvalId}?resolved=approved`, { replace: true });
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Approve failed"),
+    onError: (err) => setError(`We could not approve this. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const rejectMutation = useMutation({
@@ -103,7 +105,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Reject failed"),
+    onError: (err) => setError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const revisionMutation = useMutation({
@@ -112,7 +114,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Revision request failed"),
+    onError: (err) => setError(`We could not ask for changes. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const resubmitMutation = useMutation({
@@ -121,7 +123,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Resubmit failed"),
+    onError: (err) => setError(`We could not send this back for another look. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const addCommentMutation = useMutation({
@@ -131,7 +133,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Comment failed"),
+    onError: (err) => setError(`We could not post your comment. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const deleteAgentMutation = useMutation({
@@ -141,11 +143,16 @@ export function ApprovalDetail() {
       refresh();
       navigate("/approvals");
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Delete failed"),
+    onError: (err) => setError(`We could not delete this agent. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (!approval) return <p className="text-sm text-muted-foreground">Approval not found.</p>;
+  if (!approval) return (
+      <p className="text-sm text-muted-foreground">
+        This request could not be found. It may have been withdrawn.{" "}
+        <Link to="/approvals" className="underline underline-offset-2">Back to approvals</Link>
+      </p>
+    );
 
   const payload = approval.payload as Record<string, unknown>;
   const linkedAgentId = typeof payload.agentId === "string" ? payload.agentId : null;
@@ -209,7 +216,10 @@ export function ApprovalDetail() {
             <TypeIcon className="h-5 w-5 text-muted-foreground shrink-0" />
             <div>
               <h2 className="text-lg font-semibold">{approvalLabel(approval.type, approval.payload as Record<string, unknown> | null)}</h2>
-              <p className="text-xs text-muted-foreground font-mono">{approval.id}</p>
+              <p className="text-xs text-muted-foreground" title={`Reference ${approval.id}`} data-testid="approval-asked">
+                Asked {formatDateTime(approval.createdAt)}
+                {waitingLabel(approval) ? ` · ${waitingLabel(approval)}` : ""}
+              </p>
             </div>
           </div>
           <StatusBadge status={approval.status} />
@@ -245,7 +255,7 @@ export function ApprovalDetail() {
         {error && <p className="text-sm text-destructive">{error}</p>}
         {linkedIssues && linkedIssues.length > 0 && (
           <div className="pt-2 border-t border-border/60">
-            <p className="text-xs text-muted-foreground mb-1.5">Linked Tasks</p>
+            <p className="text-xs text-muted-foreground mb-1.5">Linked tasks</p>
             <div className="space-y-1.5">
               {linkedIssues.map((issue) => (
                 <Link
@@ -279,7 +289,15 @@ export function ApprovalDetail() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => rejectMutation.mutate()}
+                onClick={async () => {
+                  const confirmed = await confirmAction({
+                    title: isPermissionGrant ? "Deny this permission?" : "Reject this request?",
+                    description: "The agent is told no and will not go ahead.",
+                    confirmLabel: isPermissionGrant ? "Deny" : "Reject",
+                    tone: "destructive",
+                  });
+                  if (confirmed) rejectMutation.mutate();
+                }}
                 disabled={rejectMutation.isPending}
               >
                 {isPermissionGrant ? "Deny" : "Reject"}
@@ -288,7 +306,7 @@ export function ApprovalDetail() {
           )}
           {isBudgetApproval && approval.status === "pending" && (
             <p className="text-sm text-muted-foreground">
-              Resolve this budget stop from the budget controls on <Link to="/costs" className="underline underline-offset-2">/costs</Link>.
+              Resolve this budget stop from the budget controls on <Link to="/costs" className="underline underline-offset-2">Costs</Link>.
             </p>
           )}
           {approval.status === "pending" && !isPermissionGrant && (
@@ -345,7 +363,7 @@ export function ApprovalDetail() {
                   <Identity name="Board" size="sm" />
                 )}
                 <span className="text-xs text-muted-foreground">
-                  {new Date(comment.createdAt).toLocaleString()}
+                  {formatDateTime(comment.createdAt)}
                 </span>
               </div>
               <MarkdownBody className="text-sm">{comment.body}</MarkdownBody>

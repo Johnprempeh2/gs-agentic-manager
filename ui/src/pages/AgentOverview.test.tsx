@@ -72,7 +72,7 @@ describe("AgentOverview", () => {
     expect(markup).toContain("Simplify agent information architecture");
     expect(markup).toContain("PAP-42");
     expect(markup).toContain('href="/activity/costs?agentId=agent-1"');
-    expect(markup).not.toContain("Run Activity");
+    expect(markup).not.toContain("Work activity");
     expect(markup).not.toContain("Tasks by Status");
   });
 });

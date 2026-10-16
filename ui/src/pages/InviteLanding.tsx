@@ -824,7 +824,7 @@ export function InviteLandingPage() {
                 <div>
                   <h2 className="text-lg font-semibold">
                     {isCurrentMember
-                      ? "Already in this organization"
+                      ? "Already in this organisation"
                       : shouldAutoAcceptHumanInvite
                       ? "Completing organization access"
                       : invite.inviteType === "bootstrap_ceo"

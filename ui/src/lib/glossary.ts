@@ -81,6 +81,32 @@ export const GLOSSARY: GlossaryEntry[] = [
     term: "Pipeline",
     plain: "A board of stages that items move through, such as clients going from first call to signed.",
   },
+  {
+    id: "lead",
+    term: "Lead",
+    plain: "A possible client who has shown interest but has not become a deal yet.",
+    example: "Someone who filled in the contact form on your website.",
+  },
+  {
+    id: "deal",
+    term: "Deal",
+    plain: "A piece of business you are working to win with a client. It moves through the stages of a pipeline until it is won or lost.",
+  },
+  {
+    id: "devtools",
+    term: "DevTools journey",
+    plain: "The pipeline for clients brought over from Pipedrive. It keeps their Pipedrive stages, deal details and history.",
+  },
+  {
+    id: "hold",
+    term: "Hold",
+    plain: "A safety pause on a task. When a run stops part-way through something outside the app, such as sending an email, the task waits until a person says what happened.",
+  },
+  {
+    id: "clear-and-wake",
+    term: "Clear and wake",
+    plain: "The button that lifts a hold. You say what happened, and the agent picks the task up again.",
+  },
 ];
 
 const BY_ID = new Map(GLOSSARY.map((entry) => [entry.id, entry]));

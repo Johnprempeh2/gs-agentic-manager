@@ -13,15 +13,20 @@ import {
   daysInStage,
   formatDaysInStage,
   readClientRecord,
+  readDevtoolsDeal,
+  type DevtoolsDeal,
 } from "../lib/client-case";
 import { createIssueDetailPath } from "../lib/issueDetailBreadcrumb";
-import { cn, formatDate } from "../lib/utils";
+import { cn, formatDate, formatNumber } from "../lib/utils";
 import { PipelineCaseContacts } from "./PipelineCaseContacts";
 import { PipelineCaseCrmSync } from "./PipelineCaseCrmSync";
+import { PipelineCaseCrmHistory } from "./PipelineCaseCrmHistory";
 import { ClientJourneyOverview } from "./ClientJourneyOverview";
 import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages";
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
+import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
+import { getDealNextStepFlag, type DealNextStepFlag } from "../lib/client-card-flags";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 
@@ -118,6 +123,41 @@ function RecordRow({ label, tour, children }: { label: string; tour?: string; ch
   );
 }
 
+function NotSet() {
+  return <span className="text-muted-foreground">Not set</span>;
+}
+
+/** The deal behind a DevTools client, as Pipedrive held it. */
+function DealRecord({ deal, nextStep }: { deal: DevtoolsDeal; nextStep: DealNextStepFlag | null }) {
+  const value = deal.value != null ? `${formatNumber(deal.value, { maximumFractionDigits: 2 })}${deal.currency ? ` ${deal.currency}` : ""}` : null;
+  return (
+    <dl className="divide-y divide-border" aria-label="Deal">
+      <RecordRow label="Status">
+        {deal.status ?? <NotSet />}
+        {deal.closedOn ? <span className="block text-xs text-muted-foreground">on {formatDay(deal.closedOn)}</span> : null}
+      </RecordRow>
+      <RecordRow label="Value">{value ?? <NotSet />}</RecordRow>
+      <RecordRow label="Owner">{deal.owner ?? <NotSet />}</RecordRow>
+      <RecordRow label="Expected close">
+        {deal.expectedClose ? formatDay(deal.expectedClose) : <NotSet />}
+        {deal.probability != null ? <span className="block text-xs text-muted-foreground">{deal.probability}% likely</span> : null}
+      </RecordRow>
+      <RecordRow label="Next activity">
+        {deal.nextActivity ? formatDay(deal.nextActivity) : <NotSet />}
+        {nextStep ? (
+          <span data-testid="deal-next-step-flag" className="block text-xs text-status-danger-foreground">
+            {nextStep.kind === "none"
+              ? "No next step scheduled for this open deal"
+              : `Overdue by ${nextStep.days === 1 ? "1 day" : `${nextStep.days} days`}`}
+          </span>
+        ) : null}
+      </RecordRow>
+      <RecordRow label="Last activity">{deal.lastActivity ? formatDay(deal.lastActivity) : <NotSet />}</RecordRow>
+      {deal.lostReason ? <RecordRow label="Lost reason">{deal.lostReason}</RecordRow> : null}
+    </dl>
+  );
+}
+
 /**
  * One page for a client (GRE-1048): where the client is in the journey, who
  * owns it, what happens next, who to call, the client's files (GRE-1311), our
@@ -130,6 +170,7 @@ export function ClientCaseOverview({
   events,
   issueLinks,
   projects,
+  journey = "dx",
 }: {
   detail: PipelineCaseDetail;
   stages: PipelineStage[];
@@ -137,7 +178,14 @@ export function ClientCaseOverview({
   issueLinks: PipelineCaseIssueLinkWithIssue[];
   /** Linked projects, shown here below `lg` so they sit with the CRM overview on a phone. */
   projects?: ReactNode;
+  /**
+   * "dx" is the DX client journey this platform runs. "devtools" is a client
+   * imported from a Pipedrive pipeline: the deal, its people and its history,
+   * without the NDA, engagement pack, deliverables or portal.
+   */
+  journey?: "dx" | "devtools";
 }) {
+  const devtools = journey === "devtools";
   const record = readClientRecord(detail.case.fields);
   const history = buildStageHistory(events, stages);
   const openTasks = issueLinks
@@ -151,6 +199,18 @@ export function ClientCaseOverview({
     <div className="space-y-8">
       <StageStrip stages={stages} currentStageId={detail.case.stageId} stageEnteredAt={detail.stageEnteredAt} />
 
+      {devtools ? (
+        <OverviewSection title="Deal">
+          <DealRecord
+            deal={readDevtoolsDeal(detail.case.fields)}
+            nextStep={getDealNextStepFlag({
+              fields: detail.case.fields,
+              terminalKind: stages.find((stage) => stage.id === detail.case.stageId && (stage.kind === "done" || stage.kind === "cancelled"))?.kind ?? null,
+            })}
+          />
+          <DevtoolsDealOutcome detail={detail} stages={stages} />
+        </OverviewSection>
+      ) : (
       <OverviewSection title="Where things stand" tour="client-status">
         <ClientJourneyOverview
           caseId={detail.case.id}
@@ -161,7 +221,9 @@ export function ClientCaseOverview({
           nextAction={record.nextAction}
         />
       </OverviewSection>
+      )}
 
+      {devtools ? null : (
       <OverviewSection title="Client record">
         <dl className="divide-y divide-border">
           <RecordRow label="Country">{record.country ?? <span className="text-muted-foreground">Not set</span>}</RecordRow>
@@ -179,6 +241,7 @@ export function ClientCaseOverview({
           </RecordRow>
         </dl>
       </OverviewSection>
+      )}
 
       <PipelineCaseCrmSync
         caseId={detail.case.id}
@@ -190,6 +253,13 @@ export function ClientCaseOverview({
         <PipelineCaseContacts caseId={detail.case.id} recordFields={detail.case.fields} />
       </OverviewSection>
 
+      <PipelineCaseCrmHistory
+        caseId={detail.case.id}
+        wrap={(title, children) => <OverviewSection title={title}>{children}</OverviewSection>}
+      />
+
+      {devtools ? null : (
+        <>
       <OverviewSection title="Evidence" tour="client-evidence">
         <PipelineCaseEvidence caseId={detail.case.id} organisationId={detail.case.organisationId} />
       </OverviewSection>
@@ -201,6 +271,8 @@ export function ClientCaseOverview({
       <OverviewSection title="What the client sees on the portal" tour="client-portal">
         <ClientPortalPreview caseId={detail.case.id} />
       </OverviewSection>
+        </>
+      )}
 
       <OverviewSection title="Open tasks">
         {openTasks.length > 0 ? (

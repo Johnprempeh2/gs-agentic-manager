@@ -1,5 +1,6 @@
 import type {
   CreateClientAcceptanceLinkResponse,
+  PipelineCaseCrmHistory,
   ClientEvidenceCandidatesResponse,
   ClientEvidenceItem,
   ClientFilesResponse,
@@ -710,6 +711,8 @@ export const pipelinesApi = {
     api.delete<{ deleted: true }>(`/cases/${caseId}/contacts/${contactId}`),
   listProjectCases: (projectId: string) =>
     api.get<ProjectPipelineCase[]>(`/projects/${projectId}/pipeline-cases`),
+  getCaseCrmHistory: (caseId: string) =>
+    api.get<PipelineCaseCrmHistory>(`/cases/${caseId}/crm-history`),
   getCaseOutputs: (caseId: string) =>
     api.get<PipelineCaseOutputsResponse>(`/cases/${caseId}/outputs`),
   getCaseFiles: (caseId: string) =>

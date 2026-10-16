@@ -584,6 +584,18 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(lines[0]!.productId).toBe(catalogue[0]!.id);
     expect(lines[0]!.details).toMatchObject({ taxMethod: "exclusive", billingFrequency: "annually" });
 
+    // The catalogue reads back with the deals each product is on.
+    const listed = await request(app(actor, pipedrive.fetch)).get(`/api/companies/${companyId}/crm-products`);
+    expect(listed.status).toBe(200);
+    expect(listed.body.map((product: { name: string }) => product.name)).toEqual(["Onboarding workshop", "Team seat"]);
+    const seat = listed.body.find((product: { name: string }) => product.name === "Team seat");
+    expect(seat.prices).toHaveLength(2);
+    expect(seat.fields).toContainEqual({ key: "category", label: "Category", value: "Licences" });
+    expect(seat.deals.map((deal: { caseId: string; quantity: number; sum: number; currency: string }) => [deal.caseId, deal.quantity, deal.sum, deal.currency]).sort()).toEqual([
+      [cases.get("pipedrive-701")!.id, 20, 10800, "GBP"],
+      [cases.get("pipedrive-702")!.id, 40, 30000, "USD"],
+    ].sort());
+
     // Same answers again: nothing changes.
     const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
     expect(rerun.body.products).toEqual({ created: 0, updated: 0, skipped: 2, errors: 0 });
@@ -632,6 +644,19 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(cases.get("pipedrive-701")!.fields).toMatchObject({ dealFollowers: "Ama Owusu, Kofi Mensah" });
     expect(cases.get("pipedrive-702")!.fields).toMatchObject({ dealFollowers: "Kofi Mensah" });
     expect(cases.get("pipedrive-703")!.fields).not.toHaveProperty("dealFollowers");
+
+    // The organisation page shows each deal's people and its filled-in fields.
+    const [deal] = await db.select({ organisationId: pipelineCases.organisationId }).from(pipelineCases).where(eq(pipelineCases.id, caseId));
+    const history = await request(app(actor, pipedrive.fetch)).get(`/api/companies/${companyId}/organisations/${deal!.organisationId}/history`);
+    expect(history.status).toBe(200);
+    const onPage = history.body.cases.find((row: { id: string }) => row.id === caseId);
+    expect(onPage.people).toEqual([
+      { name: "Esi Boateng", role: "Main contact, Chief Financial Officer" },
+      { name: "Tunde Bakare", role: null },
+      { name: "Kwame Ofori", role: null },
+    ]);
+    expect(onPage.details).toContainEqual({ key: "dealFollowers", label: "Followers", value: "Ama Owusu, Kofi Mensah" });
+    expect(onPage.details.every((field: { value: unknown }) => field.value !== null && field.value !== "")).toBe(true);
 
     // A contact added by hand in GSAM is left alone by every rerun.
     await db.insert(pipelineCaseContacts).values({ companyId, caseId, name: "Added in GSAM", position: 9 });

@@ -2,6 +2,7 @@ import type { issuesApi } from "../../api/issues";
 import { DispositionRecoveryProvider } from "../../components/DispositionRecoveryNotice";
 import { ExecutionBlockerNotice } from "../../components/ExecutionBlockerNotice";
 import { EmailTaskActivity } from "../../components/EmailTaskActivity";
+import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import { TabledBanner } from "../../components/decisions-feed/TabledBanner";
 import { queryKeys } from "../../lib/queryKeys";
 import { createIssueDetailPath } from "../../lib/issueDetailBreadcrumb";
@@ -250,6 +251,7 @@ export function IssueDetailChatPanel({
   resolveRecoveryAction,
   casesChipsEnabled,
 }: IssueDetailChatPanelProps) {
+  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
   // A board question chat (GRE-1186) stays in Ask mode and runs under the Strategy Board switch.
   const questionsOnly = Boolean(conversation?.questionsOnly || issue.originKind === "strategy_board_question");
   return (
@@ -291,7 +293,7 @@ export function IssueDetailChatPanel({
         }}>
         <IssueDetailChatTab
           onOpenSkill={handleOpenSkill}
-          threadHeader={<>{taskChatThreadHeader}<EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} /></>}
+          threadHeader={<>{taskChatThreadHeader}{chatConnectorsEnabled && <EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} />}</>}
           issueBrief={
             // Suppress the seeded-description bubble for the onboarding first
             // task: its description is agent instructions, not something the

@@ -57,8 +57,10 @@ export {
 export {
   upsertBudgetPolicySchema,
   resolveBudgetIncidentSchema,
+  updateBudgetAuthoritySchema,
   type UpsertBudgetPolicy,
   type ResolveBudgetIncident,
+  type UpdateBudgetAuthority,
 } from "./budget.js";
 
 export {

@@ -414,7 +414,7 @@ describe("describeWorkspaceReadinessCause", () => {
           failurePhase: "cloned_membership_missing",
         },
       }),
-    ).toBe("No cloned user has an active organization membership.");
+    ).toBe("No cloned user has an active organisation membership.");
   });
 
   it("falls back to the reason and finally to null", () => {

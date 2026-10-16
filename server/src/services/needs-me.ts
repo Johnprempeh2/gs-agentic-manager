@@ -1,7 +1,7 @@
-import { and, asc, desc, eq, inArray, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { issues } from "@greatstone/db";
-import type { NeedsMe, NeedsMeOverdueWait } from "@greatstone/shared";
+import { issues, issueThreadInteractions } from "@greatstone/db";
+import type { NeedsMe, NeedsMeExpiredCard, NeedsMeOverdueWait } from "@greatstone/shared";
 import type { AttentionServiceOptions } from "./attention.js";
 import { viewerPrincipalUserIds } from "./board-identity.js";
 import { decisionsFeedService } from "./decisions-feed.js";
@@ -15,6 +15,9 @@ import {
 } from "./recovery/human-wait-deadline.js";
 
 const CLOSED_ISSUE_STATUSES = ["done", "cancelled"];
+/** How far back an expired question still shows in Needs you. */
+const EXPIRED_CARD_LOOKBACK_MS = 48 * 60 * 60 * 1000;
+const EXPIRED_CARD_LIMIT = 20;
 
 /**
  * One "needs me" list for the board user (GRE-355): the Decisions feed plus
@@ -31,7 +34,7 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
       const now = options.now ?? new Date();
       // An owner also answers for the legacy `local-board` user (board-identity.ts).
       const viewerUserIds = await viewerPrincipalUserIds(db, companyId, options.userId);
-      const [feed, assigned, waits] = await Promise.all([
+      const [feed, assigned, waits, expired] = await Promise.all([
         feeds.build(companyId, options),
         db
           .select({
@@ -72,6 +75,41 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
             executionIssueCondition(),
           ))
           .orderBy(asc(issues.blockedTransitionAt)),
+        // Questions agents asked people that expired unanswered on a task
+        // that is still open. Agent-to-agent questions are left out.
+        db
+          .select({
+            interactionId: issueThreadInteractions.id,
+            id: issues.id,
+            identifier: issues.identifier,
+            title: issues.title,
+            question: issueThreadInteractions.title,
+            expiredAt: issueThreadInteractions.updatedAt,
+          })
+          .from(issueThreadInteractions)
+          .innerJoin(issues, eq(issues.id, issueThreadInteractions.issueId))
+          .where(and(
+            eq(issueThreadInteractions.companyId, companyId),
+            eq(issues.companyId, companyId),
+            eq(issueThreadInteractions.status, "expired"),
+            isNotNull(issueThreadInteractions.createdByAgentId),
+            isNull(issueThreadInteractions.addresseeAgentId),
+            or(
+              isNull(issueThreadInteractions.addresseeUserId),
+              inArray(issueThreadInteractions.addresseeUserId, viewerUserIds),
+            ),
+            gte(issueThreadInteractions.updatedAt, new Date(now.getTime() - EXPIRED_CARD_LOOKBACK_MS)),
+            notInArray(issues.status, CLOSED_ISSUE_STATUSES),
+            executionIssueCondition(),
+            // A task whose agent has asked again shows the new card instead.
+            sql`not exists (
+              select 1 from ${issueThreadInteractions} as newer
+              where newer.issue_id = ${issueThreadInteractions.issueId}
+                and newer.status = 'pending'
+            )`,
+          ))
+          .orderBy(desc(issueThreadInteractions.updatedAt))
+          .limit(EXPIRED_CARD_LIMIT * 3),
       ]);
 
       const overdueWaits: NeedsMeOverdueWait[] = waits
@@ -101,16 +139,38 @@ export function needsMeService(db: Db, serviceOptions: AttentionServiceOptions =
         .filter((task) => !cardTaskIds.has(task.id) && !waitIds.has(task.id) && !isReleaseTask(task.title))
         .map((task) => ({ ...task, updatedAt: task.updatedAt.toISOString() }));
       const uncountedWaits = overdueWaits.filter((wait) => !cardTaskIds.has(wait.id));
+      // One expired question per task, newest first, and none for a task
+      // already listed above.
+      const listedTaskIds = new Set<string>([
+        ...cardTaskIds as Set<string>,
+        ...waitIds,
+        ...assignedTasks.map((task) => task.id),
+      ]);
+      const expiredCards: NeedsMeExpiredCard[] = [];
+      for (const card of expired) {
+        if (expiredCards.length >= EXPIRED_CARD_LIMIT) break;
+        if (listedTaskIds.has(card.id) || isReleaseTask(card.title)) continue;
+        listedTaskIds.add(card.id);
+        expiredCards.push({
+          interactionId: card.interactionId,
+          id: card.id,
+          identifier: card.identifier,
+          title: card.title,
+          question: card.question,
+          expiredAt: card.expiredAt.toISOString(),
+        });
+      }
 
       return {
         companyId,
         generatedAt: feed.generatedAt,
-        count: feed.count + assignedTasks.length + uncountedWaits.length,
+        count: feed.count + assignedTasks.length + uncountedWaits.length + expiredCards.length,
         decisionCount: feed.count,
         assignedTaskCount: assignedTasks.length,
         decisions: feed.cards,
         assignedTasks,
         overdueWaits,
+        expiredCards,
       };
     },
   };

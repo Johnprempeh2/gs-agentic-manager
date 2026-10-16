@@ -9,7 +9,7 @@ import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
 import { needsYouItems } from "./morning-summary.js";
 import { needsMeService } from "./needs-me.js";
-import { isQuietHour, localClock, notificationPreferencesService } from "./notification-preferences.js";
+import { isHeld, localClock, notificationPreferencesService } from "./notification-preferences.js";
 import type { DecisionPushMessage } from "./push-notifications.js";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -39,7 +39,7 @@ export function weeklyReportDue(
   if (!prefs.weeklyReport || lastSentOn === date || isoWeekday(date) !== 1) return { due: false, localDate: date };
   const sinceChosen = hour - prefs.morningSummaryHour;
   if (sinceChosen < 0 || sinceChosen > CATCH_UP_HOURS) return { due: false, localDate: date };
-  return { due: !isQuietHour(prefs, now), localDate: date };
+  return { due: !isHeld(prefs, now), localDate: date };
 }
 
 /** The phone message: the week in one line; tapping it opens the full report. */

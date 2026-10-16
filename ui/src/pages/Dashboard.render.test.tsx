@@ -153,7 +153,7 @@ describe("Dashboard layout", () => {
     const charts = Array.from(container.querySelectorAll('[data-testid="chart"]')).map((node) =>
       node.getAttribute("aria-label"),
     );
-    expect(charts).toEqual(expect.arrayContaining(["Run Activity", "Tasks by Status", "Success Rate"]));
+    expect(charts).toEqual(expect.arrayContaining(["Work activity", "Tasks by Status", "Success Rate"]));
 
     expect(text).toContain("Recent Activity");
     expect(container.querySelectorAll('[data-testid="activity-row"]')).toHaveLength(2);

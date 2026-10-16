@@ -88,7 +88,7 @@ const feed: MemoryActivityFeed = {
   nextCursor: null,
 };
 
-const zero = { unreviewed: 0, approved: 0, disputed: 0, superseded: 0, deleted: 0 };
+const zero = { unreviewed: 0, approved: 0, disputed: 0, superseded: 0, retired: 0, deleted: 0 };
 const counts: MemoryActivityCounts = {
   note: MEMORY_ACTIVITY_NOTE,
   contributors: [
@@ -216,7 +216,7 @@ describe("Memory contributions view", () => {
 
     memoryApiMock.activity.mockRejectedValue(new ApiError("Forbidden", 403, null));
     await renderAt("/memory/activity");
-    expect(text()).toContain("You do not have access to memory in this organization.");
+    expect(text()).toContain("You do not have access to memory in this organisation.");
   });
 });
 

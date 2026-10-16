@@ -40,27 +40,27 @@ export const BLOCKED_REASON_VARIANT_ORDER: BlockedReasonVariant[] = [
 
 export const BLOCKED_VARIANT_LABELS: Record<BlockedReasonVariant, string> = {
   needs_decision: "Needs decision",
-  stalled: "Blocked chain stalled",
+  stalled: "Waiting on stuck work",
   needs_attention: "Needs attention",
-  recovery_required: "Recovery required",
-  external_wait: "External wait",
-  owner_paused: "Owner paused",
+  recovery_required: "Needs fixing",
+  external_wait: "Waiting on someone outside",
+  owner_paused: "Owner is paused",
 };
 
 const REASON_LABELS: Record<IssueBlockedInboxReason, string> = {
-  pending_board_decision: "Pending board decision",
-  pending_user_decision: "Pending user decision",
-  missing_successful_run_disposition: "Pick disposition",
-  blocked_chain_stalled: "Blocked chain stalled",
-  blocked_by_unassigned_issue: "Unassigned blocker",
-  blocked_by_assigned_backlog_issue: "Parked blocker",
-  blocked_by_cancelled_issue: "Cancelled blocker",
-  blocked_without_action_path: "No unblock path",
-  in_review_without_action_path: "Review without action path",
-  invalid_review_participant: "Invalid review participant",
-  open_recovery_issue: "Recovery in progress",
-  external_owner_action: "External owner action",
-  blocked_by_uninvokable_assignee: "Owner paused",
+  pending_board_decision: "Waiting for your decision",
+  pending_user_decision: "Waiting for a person to decide",
+  missing_successful_run_disposition: "Say what happens next",
+  blocked_chain_stalled: "Waiting on stuck work",
+  blocked_by_unassigned_issue: "Waiting on a task nobody owns",
+  blocked_by_assigned_backlog_issue: "Waiting on a parked task",
+  blocked_by_cancelled_issue: "Waiting on a cancelled task",
+  blocked_without_action_path: "No clear way forward",
+  in_review_without_action_path: "Review with no next step",
+  invalid_review_participant: "Reviewer can no longer review",
+  open_recovery_issue: "Being fixed",
+  external_owner_action: "Waiting on someone outside",
+  blocked_by_uninvokable_assignee: "Owner is paused",
 };
 
 const SEVERITY_RANK: Record<IssueBlockedInboxSeverity, number> = {
@@ -122,6 +122,45 @@ export const BLOCKED_SORT_OPTIONS: readonly [BlockedInboxSort, string][] = [
   ["most_recent", "Most recent"],
   ["longest_stopped", "Longest stopped"],
 ];
+
+const BLOCKED_GROUP_BY_KEY = "gsam:inbox:blocked-group-by";
+const BLOCKED_SORT_BY_KEY = "gsam:inbox:blocked-sort-by";
+
+/** The Blocked tab's last Group choice, so "Root blocker" stays on between visits. */
+export function loadBlockedInboxGroupBy(): BlockedInboxGroupBy {
+  try {
+    const raw = localStorage.getItem(BLOCKED_GROUP_BY_KEY);
+    return BLOCKED_GROUP_OPTIONS.some(([value]) => value === raw) ? (raw as BlockedInboxGroupBy) : "none";
+  } catch {
+    return "none";
+  }
+}
+
+export function saveBlockedInboxGroupBy(groupBy: BlockedInboxGroupBy) {
+  try {
+    localStorage.setItem(BLOCKED_GROUP_BY_KEY, groupBy);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
+
+/** The Blocked tab's last Sort choice. */
+export function loadBlockedInboxSortBy(): BlockedInboxSort {
+  try {
+    const raw = localStorage.getItem(BLOCKED_SORT_BY_KEY);
+    return BLOCKED_SORT_OPTIONS.some(([value]) => value === raw) ? (raw as BlockedInboxSort) : "most_recent";
+  } catch {
+    return "most_recent";
+  }
+}
+
+export function saveBlockedInboxSortBy(sortBy: BlockedInboxSort) {
+  try {
+    localStorage.setItem(BLOCKED_SORT_BY_KEY, sortBy);
+  } catch {
+    // Ignore localStorage failures.
+  }
+}
 
 export interface BlockedInboxGroup {
   /** Stable id for React keys, collapse state and test ids. */

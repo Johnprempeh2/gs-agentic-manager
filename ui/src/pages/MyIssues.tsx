@@ -33,7 +33,7 @@ export function MyIssues() {
     return (
       <EmptyState
         icon={ListTodo}
-        message="Select an organization to view your tasks."
+        message="Choose an organisation to view your tasks."
       />
     );
   }

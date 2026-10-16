@@ -27,6 +27,11 @@ const fakeDb = {} as never;
 const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> = {
   enablePipelines: async () => (await import("../routes/pipelines.js")).pipelineRoutes(fakeDb),
   enableCases: async () => (await import("../routes/cases.js")).caseRoutes(fakeDb, {} as never),
+  enableChatConnectors: async () =>
+    Router()
+      .use((await import("../routes/chat-channels.js")).chatChannelRoutes(fakeDb, { service: {} as never }))
+      .use((await import("../routes/slack-tools.js")).slackToolRoutes(fakeDb)),
+  enableMemoryConnectors: async () => (await import("../routes/tool-access.js")).toolAccessRoutes(fakeDb, {}),
   enableExternalObjects: async () =>
     Router()
       .use(await issueRouter())

@@ -6,6 +6,8 @@ export interface NotificationPreferences {
   assignedTasks: boolean;
   /** New messages in team chats you are in. */
   teamChat: boolean;
+  /** A task you asked for was finished by an agent or a teammate. */
+  finishedWork: boolean;
   /** One message each morning: what needs you, what got done, what is stuck. */
   morningSummary: boolean;
   /** Local hour (0 to 23) the morning summary goes out. */
@@ -17,18 +19,25 @@ export interface NotificationPreferences {
   quietHoursEnd: number | null;
   /** IANA time zone the hours are read in. */
   timeZone: string;
+  /**
+   * Nothing goes to the phone before this time (ISO); null means not paused.
+   * What arrives meanwhile is held and goes out once the pause ends.
+   */
+  pausedUntil: string | null;
 }
 
 export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   decisions: true,
   assignedTasks: true,
   teamChat: true,
+  finishedWork: true,
   morningSummary: true,
   morningSummaryHour: 8,
   weeklyReport: false,
   quietHoursStart: null,
   quietHoursEnd: null,
   timeZone: "Europe/London",
+  pausedUntil: null,
 };
 
 /** One task line in the morning summary. */
@@ -51,4 +60,6 @@ export interface MorningSummary {
   dueToday: { count: number; items: MorningSummaryTask[] };
   finished: { count: number; items: MorningSummaryTask[] };
   stuck: { count: number; items: MorningSummaryTask[] };
+  /** Tasks an agent is working on right now. Optional: older servers do not send it. */
+  workingNow?: { count: number; items: MorningSummaryTask[] };
 }

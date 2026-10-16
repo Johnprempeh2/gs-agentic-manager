@@ -12,6 +12,7 @@ import {
   memoryScopeStewards,
 } from "@greatstone/db";
 import {
+  MEMORY_CONNECTION_APP_LABEL,
   MEMORY_IMPORT_SIMILAR_THRESHOLD,
   MEMORY_STEWARD_ACTIONS,
   memoryReviewAgeFlag,
@@ -19,6 +20,7 @@ import {
   memoryTextWords,
   type MemoryActorLabel,
   type MemoryCallerApp,
+  type MemoryConnectionApp,
   type MemoryReviewQueue,
   type MemoryReviewQueueItem,
   type MemoryRecordStatus,
@@ -32,12 +34,22 @@ import {
 } from "@greatstone/shared";
 import { badRequest, conflict, forbidden, notFound } from "../../errors.js";
 import { enqueueMemoryIngest } from "./ingest-outbox-db.js";
-import { authorRefusal, flagPossibleConflicts, insertRelationship, insertReviewEvent, loadEditChain } from "./review-store.js";
+import {
+  authorRefusal,
+  flagPossibleConflicts,
+  insertRelationship,
+  insertReviewEvent,
+  loadChainAuthorLinks,
+  loadEditChain,
+  type ChainAuthorLinks,
+} from "./review-store.js";
 import type { MemoryReviewService } from "./review.js";
 import { detectSensitiveContent, MEMORY_SENSITIVE_CONTENT_CODE, MemorySensitiveContentError } from "./sensitive-content.js";
 import {
+  isExternalApp,
   isHardBoundary,
   memoryEngineDocument,
+  memoryLinkPerson,
   toRecord,
   type MemoryCaller,
   type MemoryGatewayService,
@@ -74,6 +86,7 @@ const STEWARD_REFUSALS = {
   not_owner_or_admin: "Only the company owner or an admin can set stewards.",
   owner_only_scope: "Client and restricted scopes always route to the company owner.",
   incomplete_history: "This card's edit history cannot be fully checked, so it cannot be confirmed.",
+  external_app: "An app outside GSAM can read and propose only. A person confirms, rejects or merges cards in GSAM.",
 } as const;
 type StewardRefusal = keyof typeof STEWARD_REFUSALS;
 
@@ -102,9 +115,12 @@ const KEY_APP_FALLBACK: Partial<Record<MemoryCallerApp, string>> = {
   gsam_board_key: "Board API key",
 };
 
-/** Why the caller may not confirm: they wrote some version, or the full history cannot be read. */
-function confirmRefusal(caller: MemoryCaller, chain: RecordRow[] | null): StewardRefusal | null {
-  return chain ? authorRefusal(caller, chain) : "incomplete_history";
+/**
+ * Why the caller may not confirm: they wrote some version, themselves or
+ * through one of their apps (GRE-1081), or the full history cannot be read.
+ */
+function confirmRefusal(caller: MemoryCaller, chain: RecordRow[] | null, links: ChainAuthorLinks | undefined): StewardRefusal | null {
+  return chain ? authorRefusal(caller, chain, links) : "incomplete_history";
 }
 
 export function memoryStewardService(db: Db, gateway: MemoryGatewayService, reviews: MemoryReviewService) {
@@ -163,9 +179,26 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     return isStewardOf(caller, stewards.get(scope.id)) ? null : "not_steward";
   }
 
+  /**
+   * Names for the people and agents on a card. A person's app link shows as
+   * that person, with the app as the label (GRE-1081: "John · via Claude Code").
+   */
   async function labels(keys: Array<{ type: "user" | "agent"; id: string }>) {
-    const userIds = [...new Set(keys.filter((key) => key.type === "user").map((key) => key.id))];
     const agentIds = [...new Set(keys.filter((key) => key.type === "agent").map((key) => key.id))];
+    const agentRows =
+      agentIds.length === 0
+        ? []
+        : await db.select({ id: agents.id, name: agents.name, metadata: agents.metadata }).from(agents).where(inArray(agents.id, agentIds));
+    const agentNames = new Map(agentRows.map((agent) => [agent.id, agent.name]));
+    const linkPeople = new Map<string, { userId: string; app: string }>();
+    for (const agent of agentRows) {
+      const userId = memoryLinkPerson(agent.metadata);
+      const app = (agent.metadata as { memoryConnection?: { app?: string } } | null)?.memoryConnection?.app;
+      if (userId) linkPeople.set(agent.id, { userId, app: MEMORY_CONNECTION_APP_LABEL[app as MemoryConnectionApp] ?? "Memory key" });
+    }
+    const userIds = [
+      ...new Set([...keys.filter((key) => key.type === "user").map((key) => key.id), ...[...linkPeople.values()].map((link) => link.userId)]),
+    ];
     const users = new Map(
       userIds.length === 0
         ? []
@@ -173,19 +206,16 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
             (user) => [user.id, user.name],
           ),
     );
-    const agentNames = new Map(
-      agentIds.length === 0
-        ? []
-        : (await db.select({ id: agents.id, name: agents.name }).from(agents).where(inArray(agents.id, agentIds))).map(
-            (agent) => [agent.id, agent.name],
-          ),
-    );
-    return (key: { type: "user" | "agent"; id: string }, app: string | null = null): MemoryActorLabel => ({
-      type: key.type,
-      id: key.id,
-      name: (key.type === "user" ? users.get(key.id) : agentNames.get(key.id)) ?? (key.type === "user" ? "Unknown person" : "Unknown agent"),
-      app,
-    });
+    return (key: { type: "user" | "agent"; id: string }, app: string | null = null): MemoryActorLabel => {
+      const link = key.type === "agent" ? linkPeople.get(key.id) : undefined;
+      if (link) return { type: "user", id: link.userId, name: users.get(link.userId) ?? "Unknown person", app: link.app };
+      return {
+        type: key.type,
+        id: key.id,
+        name: (key.type === "user" ? users.get(key.id) : agentNames.get(key.id)) ?? (key.type === "user" ? "Unknown person" : "Unknown agent"),
+        app,
+      };
+    };
   }
 
   /**
@@ -323,14 +353,19 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     // Only proposals the caller may act on; the right is the same for one scope and class.
     const rights = new Map<string, StewardRefusal | null>();
     const reviewable: RecordRow[] = [];
-    for (const row of rows) {
+    for (const row of isExternalApp(caller) ? [] : rows) {
       const key = `${row.scopeId}:${row.decisionClass}`;
       if (!rights.has(key)) rights.set(key, await stewardRefusal(caller, access, scopesById.get(row.scopeId)!, row.decisionClass, stewards));
       if (rights.get(key) === null) reviewable.push(row);
     }
 
     const chains = new Map<string, RecordRow[] | null>();
-    for (const row of reviewable) chains.set(row.id, await loadEditChain(db, caller.companyId, row));
+    const authorLinks = new Map<string, ChainAuthorLinks>();
+    for (const row of reviewable) {
+      const chain = await loadEditChain(db, caller.companyId, row);
+      chains.set(row.id, chain);
+      authorLinks.set(row.id, await loadChainAuthorLinks(db, caller.companyId, chain ?? [row]));
+    }
 
     const ids = reviewable.map((row) => row.id);
     const conflictRows =
@@ -370,7 +405,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
       // The confirmed card it changes: the approved side of its open conflict.
       const currentRow = conflicts.map((c) => approvedRows.get(c.approvedRecordId)).find(Boolean) ?? null;
       const ageDays = Math.max(0, Math.floor((now - first.createdAt.getTime()) / DAY_MS));
-      const ownRefusal = confirmRefusal(caller, chain);
+      const ownRefusal = confirmRefusal(caller, chain, authorLinks.get(row.id));
       const blockedReason = ownRefusal
         ? STEWARD_REFUSALS[ownRefusal]
         : conflicts.length > 1
@@ -447,12 +482,15 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
 
   /**
    * Takes the proposal for this action: still unreviewed and at the version
-   * the caller saw. Null when another reviewer got there first.
+   * the caller saw. Null when another reviewer got there first. A step that
+   * leaves the card live (confirm, reject) moves its version on, so a call
+   * made against the old version is refused (GRE-1081); edit and merge end
+   * the card, and the new version is numbered from this one.
    */
-  async function claim(tx: DbOrTransaction, row: RecordRow, expectedVersion: number, now: Date) {
+  async function claim(tx: DbOrTransaction, row: RecordRow, expectedVersion: number, now: Date, bump: boolean) {
     const [claimed] = await tx
       .update(memoryRecords)
-      .set({ updatedAt: now })
+      .set({ updatedAt: now, ...(bump ? { version: expectedVersion + 1 } : {}) })
       .where(and(eq(memoryRecords.id, row.id), eq(memoryRecords.version, expectedVersion), eq(memoryRecords.status, "unreviewed")))
       .returning();
     return claimed ?? null;
@@ -469,6 +507,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
     const operation = `steward_${input.action}`;
     const { row, scope, access, stewards } = await loadForAction(caller, recordId, operation);
     const audit = { scopeIds: [scope.id], recordId: row.id };
+    if (isExternalApp(caller)) await refuse(caller, operation, "external_app", audit);
     const refusal = await stewardRefusal(caller, access, scope, row.decisionClass, stewards);
     if (refusal) await refuse(caller, operation, refusal, audit);
     const stale = async (reason: string): Promise<never> => {
@@ -481,7 +520,8 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
 
     switch (input.action) {
       case "confirm": {
-        const own = confirmRefusal(caller, await loadEditChain(db, caller.companyId, row));
+        const chain = await loadEditChain(db, caller.companyId, row);
+        const own = confirmRefusal(caller, chain, await loadChainAuthorLinks(db, caller.companyId, chain ?? [row]));
         if (own) await refuse(caller, operation, own, audit);
         const open = await db
           .select()
@@ -502,7 +542,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
           if (currentRefusal) await refuse(caller, operation, currentRefusal, audit);
         }
         const confirmed = await db.transaction(async (tx) => {
-          const claimed = await claim(tx, row, input.expectedVersion, now);
+          const claimed = await claim(tx, row, input.expectedVersion, now, true);
           if (!claimed) return null;
           if (current && current.status === "approved") {
             const result = await applySupersede(tx, caller, current, claimed, input.reason, now);
@@ -532,7 +572,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
         }
         const settings = await gateway.getSettings(caller.companyId);
         const result = await db.transaction(async (tx) => {
-          const claimed = await claim(tx, row, input.expectedVersion, now);
+          const claimed = await claim(tx, row, input.expectedVersion, now, false);
           if (!claimed) return null;
           // The new version is the editor's own proposal, back in the queue.
           const [inserted] = await tx
@@ -594,7 +634,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
 
       case "reject": {
         const rejected = await db.transaction(async (tx) => {
-          const claimed = await claim(tx, row, input.expectedVersion, now);
+          const claimed = await claim(tx, row, input.expectedVersion, now, true);
           if (!claimed) return null;
           const [next] = await tx
             .update(memoryRecords)
@@ -623,7 +663,7 @@ export function memoryStewardService(db: Db, gateway: MemoryGatewayService, revi
         }
         if (!["approved", "unreviewed"].includes(target.status)) throw conflict(`A ${target.status} card cannot take a merge.`);
         const merged = await db.transaction(async (tx) => {
-          const claimed = await claim(tx, row, input.expectedVersion, now);
+          const claimed = await claim(tx, row, input.expectedVersion, now, false);
           if (!claimed) return null;
           const [next] = await tx
             .update(memoryRecords)

@@ -52,7 +52,10 @@ import { KpiDraftNotice } from "../components/goals/KpiDraftNotice";
 import { GOAL_KIND_LABELS, GOAL_KIND_PARENTS, type StrategyBoardKpi } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Plus, SlidersHorizontal } from "lucide-react";
+import { Check, ClipboardList, FileText, Plus, SlidersHorizontal } from "lucide-react";
+import { goalDetailUpdateText } from "../lib/goals-text";
+import { localToday } from "../lib/calendar";
+import { useCopyAction } from "../lib/use-copy-action";
 import { ErrorState } from "../components/ErrorState";
 
 interface GoalPropertiesToggleButtonProps {
@@ -88,6 +91,7 @@ export function GoalDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
+  const goalCopy = useCopyAction();
   const [packDialogOpen, setPackDialogOpen] = useState(false);
 
   const {
@@ -280,6 +284,31 @@ export function GoalDetail() {
             </span>
           ) : null}
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy this goal and where each of its tasks stands, to paste into an email or a chat"
+              onClick={() =>
+                void goalCopy.copy(
+                  goalDetailUpdateText(
+                    goal,
+                    health,
+                    goal.milestones ?? [],
+                    {
+                      agentName: (id) => agentsById.get(id)?.name,
+                      userName: (id) => usersById.get(id)?.label,
+                    },
+                    localToday(),
+                  ),
+                )
+              }
+            >
+              {goalCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
+              <span className="hidden sm:inline">
+                {goalCopy.copied ? "Copied" : goalCopy.failed ? "Could not copy" : "Copy as an update"}
+              </span>
+              <span className="sr-only sm:hidden">Copy as an update</span>
+            </Button>
             <GoalOwnerPicker
               agents={agents ?? []}
               people={people}
@@ -447,7 +476,7 @@ export function GoalDetail() {
             ) : null}
           </div>
           {childGoals.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No sub-goals.</p>
+            <p className="text-sm text-muted-foreground">This goal has no smaller goals yet.</p>
           ) : (
             <GoalTree goals={childGoals} goalLink={(g) => `/goals/${g.id}`} />
           )}
@@ -455,7 +484,7 @@ export function GoalDetail() {
 
         <TabsContent value="projects" className="mt-4">
           {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No linked projects.</p>
+            <p className="text-sm text-muted-foreground">No projects are linked to this goal yet.</p>
           ) : (
             <div className="border border-border">
               {linkedProjects.map((project) => (

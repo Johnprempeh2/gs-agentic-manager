@@ -42,4 +42,22 @@ describe("ClientCardFlags", () => {
       "Same stage 40 days",
     );
   });
+
+  it("flags an open Pipedrive deal with no next step or an overdue one", () => {
+    const stageEnteredAt = "2026-10-01T00:00:00Z";
+    expect(render({ fields: { dealStatus: "Open", lastActivityDate: "2026-10-07" }, stageEnteredAt })).toBe(
+      "No next step",
+    );
+    expect(
+      render({ fields: { dealStatus: "Open", lastActivityDate: "2026-10-07", nextActivityDate: "2026-10-04" }, stageEnteredAt }),
+    ).toBe("Next step overdue 5 days");
+    expect(
+      render({ fields: { dealStatus: "Open", lastActivityDate: "2026-10-07", nextActivityDate: "2026-10-12" }, stageEnteredAt }),
+    ).toBe("");
+  });
+
+  it("leaves won, lost and closed deals alone", () => {
+    expect(render({ fields: { dealStatus: "Won", lastActivityDate: "2026-10-07" } })).toBe("");
+    expect(render({ fields: { dealStatus: "Open", lastActivityDate: "2026-10-07" }, terminalKind: "done" })).toBe("");
+  });
 });

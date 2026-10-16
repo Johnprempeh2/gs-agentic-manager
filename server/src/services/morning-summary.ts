@@ -1,12 +1,12 @@
-import { and, asc, desc, eq, gte, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, issues, pushSubscriptions } from "@greatstone/db";
+import { companies, heartbeatRuns, issues, pushSubscriptions } from "@greatstone/db";
 import type { MorningSummary, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
 import { needsMeService } from "./needs-me.js";
-import { isQuietHour, localClock, notificationPreferencesService } from "./notification-preferences.js";
+import { isHeld, localClock, notificationPreferencesService } from "./notification-preferences.js";
 import type { DecisionPushMessage } from "./push-notifications.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -69,7 +69,7 @@ export function morningSummaryDue(
   if (!prefs.morningSummary || lastSentOn === date) return { due: false, localDate: date };
   const sinceChosen = hour - prefs.morningSummaryHour;
   if (sinceChosen < 0 || sinceChosen > CATCH_UP_HOURS) return { due: false, localDate: date };
-  return { due: !isQuietHour(prefs, now), localDate: date };
+  return { due: !isHeld(prefs, now), localDate: date };
 }
 
 type Deliver = (companyId: string, userId: string, message: DecisionPushMessage) => Promise<{ targets: number; delivered: number }>;
@@ -95,7 +95,14 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       notInArray(issues.status, ["done", "cancelled"]),
       userWork(),
     );
-    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount] = await Promise.all([
+    // A task is being worked on when its execution run is still running.
+    const working = and(
+      eq(issues.companyId, companyId),
+      notInArray(issues.status, ["done", "cancelled"]),
+      inArray(heartbeatRuns.status, ["running", "queued"]),
+      userWork(),
+    );
+    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount, workingRows, workingCount] = await Promise.all([
       buildNeedsMe(companyId, userId),
       db
         .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
@@ -124,6 +131,18 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
         .orderBy(asc(issues.dueDate), desc(issues.updatedAt))
         .limit(ITEM_LIMIT),
       db.select({ count: sql<number>`count(*)::int` }).from(issues).where(due),
+      db
+        .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
+        .from(issues)
+        .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, issues.executionRunId))
+        .where(working)
+        .orderBy(desc(heartbeatRuns.createdAt))
+        .limit(ITEM_LIMIT),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(issues)
+        .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, issues.executionRunId))
+        .where(working),
     ]);
     const needs = needsYouItems(mine);
     return {
@@ -134,6 +153,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       dueToday: { count: dueCount[0]?.count ?? 0, items: dueRows },
       finished: { count: finishedCount[0]?.count ?? 0, items: finishedRows },
       stuck: { count: stuckCount[0]?.count ?? 0, items: stuckRows },
+      workingNow: { count: workingCount[0]?.count ?? 0, items: workingRows },
     };
   }
 

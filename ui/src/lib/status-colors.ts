@@ -144,6 +144,7 @@ export const statusBadge: Record<string, string> = {
   unreviewed: "bg-status-pending-soft text-status-pending-foreground",
   disputed: "bg-status-alert-soft text-status-alert-foreground",
   superseded: "bg-muted text-muted-foreground",
+  retired: "bg-muted text-muted-foreground",
   deleted: "bg-muted text-muted-foreground",
 };
 

@@ -40,6 +40,7 @@ function needsMe(overrides: Partial<NeedsMe> = {}): NeedsMe {
     decisions,
     assignedTasks,
     overdueWaits: overrides.overdueWaits ?? [],
+    expiredCards: overrides.expiredCards ?? [],
   };
 }
 
@@ -140,6 +141,28 @@ describe("NeedsMeList (GRE-358)", () => {
     expect(container.querySelector('section[aria-label="Needs you"]')).not.toBeNull();
     expect(container.textContent).toContain("Waiting 2d");
     expect(container.querySelector('a[href="/issues/GRE-7"]')).not.toBeNull();
+  });
+
+  it("lists an agent's expired question under Needs you, linking to its task", () => {
+    const data = needsMe({
+      assignedTasks: [],
+      expiredCards: [
+        {
+          interactionId: "card-1",
+          id: "issue-12",
+          identifier: "GRE-12",
+          title: "Book the Indago interviews",
+          question: "Which week suits you?",
+          expiredAt: "2026-10-02T04:00:00.000Z",
+        },
+      ],
+    });
+    render(<NeedsMeList needsMe={data} includeAssigned={false} />);
+    expect(container.querySelector('section[aria-label="Needs you"]')).not.toBeNull();
+    const row = container.querySelector('[data-testid="needs-me-expired-card"]');
+    expect(row?.textContent).toContain("Question expired");
+    expect(row?.textContent).toContain("Which week suits you?");
+    expect(row?.querySelector("a")?.getAttribute("href")).toBe("/issues/GRE-12");
   });
 
   it("formats wait ages in days and hours", () => {

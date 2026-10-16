@@ -37,10 +37,12 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 
+// On a loaded GitHub runner a run started straight after the same agent's
+// previous run was still queued at 5 seconds (16 Oct 2026), so allow 15.
 async function waitForRunToFinish(
   heartbeat: ReturnType<typeof heartbeatService>,
   runId: string,
-  timeoutMs = 5_000,
+  timeoutMs = 15_000,
 ) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -280,7 +282,7 @@ describeEmbeddedPostgres("heartbeat runtime skill version pins", () => {
       sourceStatus: "available",
     });
     expect((await fs.stat(firstSkillFile)).mtime.toISOString()).toBe(oldMtime.toISOString());
-  });
+  }, 60_000);
 
   it("delivers installed connections without exposing gateway bearers in adapter config or logs", async () => {
     const companyId = randomUUID();

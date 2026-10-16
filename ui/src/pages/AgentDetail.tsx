@@ -64,6 +64,7 @@ import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
 import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
+import { budgetUseLabel } from "../lib/agents-export";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -98,6 +99,7 @@ import { RunTranscriptView, type TranscriptMode } from "../components/transcript
 import { AgentToolsTab } from "./AgentToolsTab";
 import { AgentAccessTab } from "./AgentAccessTab";
 import { AgentChannelsPanel } from "../components/chat/AgentChannelsPanel";
+import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import {
   appendCapped,
   LIVE_TRANSCRIPT_RENDER_LIMIT,
@@ -777,9 +779,11 @@ export function AgentDetail() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { enabled: chatConnectorsEnabled, loaded: chatConnectorsLoaded } = useChatConnectorsEnabled();
   const [actionError, setActionError] = useState<string | null>(null);
   const [dismissedLeftAgentIds, setDismissedLeftAgentIds] = useState<Set<string>>(() => new Set());
-  const activeView: AgentDetailView = urlRunId ? "run-detail" : parseAgentDetailView(urlTab ?? null);
+  const activeView: AgentDetailView = urlRunId ? "run-detail"
+    : urlTab === "channels" && !chatConnectorsEnabled ? "overview" : parseAgentDetailView(urlTab ?? null);
   const legacyAuditSection = !urlRunId ? agentLegacyAuditSection(urlTab ?? null) : null;
   const legacyView = urlRunId
     ? "runs"
@@ -966,6 +970,13 @@ export function AgentDetail() {
 
   useEffect(() => {
     if (!agent) return;
+    if (!urlRunId && urlTab === "channels") {
+      if (!chatConnectorsLoaded) return;
+      if (!chatConnectorsEnabled) {
+        navigate(agentDetailHref(canonicalAgentRef, "overview"), { replace: true });
+        return;
+      }
+    }
     if (urlRunId) {
       if (routeAgentRef !== canonicalAgentRef) {
         navigate(`/agents/${canonicalAgentRef}/runs/${urlRunId}`, { replace: true });
@@ -978,7 +989,7 @@ export function AgentDetail() {
       navigate(agentDetailHref(canonicalAgentRef, canonicalTab), { replace: true });
       return;
     }
-  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate]);
+  }, [agent, routeAgentRef, canonicalAgentRef, urlRunId, urlTab, activeView, legacyAuditSection, navigate, chatConnectorsEnabled, chatConnectorsLoaded]);
 
   useEffect(() => {
     if (!agent?.companyId || agent.companyId === selectedCompanyId) return;
@@ -1258,7 +1269,7 @@ export function AgentDetail() {
               <p className="text-amber-900/85 dark:text-amber-100/85">{agent.orgChainHealth.repairGuidance}</p>
             ) : (
               <p className="text-amber-900/85 dark:text-amber-100/85">
-                Assign this agent to an active manager/root, or explicitly pause or terminate the affected agent/subtree.
+                Give this agent an active manager, or pause or remove this agent and the agents who report to it.
               </p>
             )}
           </div>
@@ -1345,7 +1356,15 @@ export function AgentDetail() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => resetBuiltIn.mutate()}
+              onClick={async () => {
+                const confirmed = await confirmAction({
+                  title: "Reset this agent to its original settings?",
+                  description: "Your changes to its instructions, model, budget and schedule will be replaced. This cannot be undone.",
+                  confirmLabel: "Reset agent",
+                  tone: "destructive",
+                });
+                if (confirmed) resetBuiltIn.mutate();
+              }}
               disabled={resetBuiltIn.isPending}
             >
               {resetBuiltIn.isPending ? "Resetting…" : "Reset to defaults"}
@@ -1749,6 +1768,7 @@ export function AgentOverview({
     ?? asNonEmptyString(agent.runtimeConfig?.model)
     ?? "Default model";
   const lastRun = runs[0] ?? null;
+  const budgetUse = budgetUseLabel(agent);
 
   return (
     <div className="space-y-6">
@@ -1758,7 +1778,17 @@ export function AgentOverview({
         <section className="gs-glass-card rounded-xl border p-4" aria-labelledby="agent-identity-heading">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h3 id="agent-identity-heading" className="text-sm font-medium">Identity</h3>
-            <StatusBadge status={agent.status} />
+            <div className="flex items-center gap-2">
+              {budgetUse ? (
+                <span
+                  className={cn("whitespace-nowrap text-xs font-medium", budgetUse.tone === "danger" ? "text-status-danger" : "text-status-warning")}
+                  title="How much of this month's budget the agent has spent"
+                >
+                  {budgetUse.text}
+                </span>
+              ) : null}
+              <StatusBadge status={agent.status} />
+            </div>
           </div>
           <div className="space-y-3">
             <SummaryRow label="Role"><span className="text-sm">{roleLabels[agent.role] ?? agent.role}</span></SummaryRow>
@@ -2405,7 +2435,7 @@ export function PromptsTab({
 
   const uploadMarkdownImage = useMutation({
     mutationFn: async ({ file, namespace }: { file: File; namespace: string }) => {
-      if (!selectedCompanyId) throw new Error("Select an organization to upload images");
+      if (!selectedCompanyId) throw new Error("Choose an organisation to upload images");
       return assetsApi.uploadImage(selectedCompanyId, file, namespace);
     },
   });
@@ -3198,7 +3228,7 @@ function RunsTab({
   const { isMobile } = useSidebar();
 
   if (runs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No runs yet.</p>;
+    return <p className="text-sm text-muted-foreground">This agent has not done any work yet. Give it a task to get started.</p>;
   }
 
   // Sort by created descending
@@ -3491,10 +3521,19 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive text-xs h-6 px-2"
-                  onClick={() => cancelRun.mutate()}
+                  onClick={async () => {
+                    const confirmed = await confirmAction({
+                      title: "Stop this piece of work?",
+                      description: "The agent stops straight away. Anything it has not saved yet will be lost.",
+                      confirmLabel: "Stop work",
+                      cancelLabel: "Keep working",
+                      tone: "destructive",
+                    });
+                    if (confirmed) cancelRun.mutate();
+                  }}
                   disabled={cancelRun.isPending}
                 >
-                  {cancelRun.isPending ? "Cancelling…" : "Cancel"}
+                  {cancelRun.isPending ? "Stopping…" : "Stop work"}
                 </Button>
               )}
               {canResumeLostRun && (
@@ -4524,6 +4563,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
 /* ---- Keys Tab ---- */
 
 export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: string }) {
+  const confirmAction = useConfirm();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [newKeyName, setNewKeyName] = useState("");
@@ -4643,7 +4683,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
       {isLoading && <p className="text-sm text-muted-foreground">Loading keys...</p>}
 
       {!isLoading && activeKeys.length === 0 && !newToken && (
-        <p className="text-sm text-muted-foreground">No active API keys.</p>
+        <p className="text-sm text-muted-foreground">No access keys yet. Make one above if another tool needs to connect to this agent.</p>
       )}
 
       {activeKeys.length > 0 && (
@@ -4664,7 +4704,15 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
                   variant="ghost"
                   size="sm"
                   className="text-destructive hover:text-destructive text-xs"
-                  onClick={() => revokeKey.mutate(key.id)}
+                  onClick={async () => {
+                    const confirmed = await confirmAction({
+                      title: `Revoke the key "${key.name}"?`,
+                      description: "Anything using this key stops working at once. This cannot be undone.",
+                      confirmLabel: "Revoke key",
+                      tone: "destructive",
+                    });
+                    if (confirmed) revokeKey.mutate(key.id);
+                  }}
                   disabled={revokeKey.isPending}
                 >
                   Revoke

@@ -49,7 +49,7 @@ export function IntegrationKeysPanel({ companyId }: { companyId: string }) {
           {keys.data
             ? waiting === 0
               ? "Everything here has what it needs."
-              : `${waiting} ${waiting === 1 ? "integration is" : "integrations are"} waiting on you. Keys go in the server's env file, then restart GSAM.`
+              : `${waiting} ${waiting === 1 ? "integration is" : "integrations are"} waiting on a key. Keys are added on the computer that runs GSAM, so copy the lines below and send them to whoever looks after it.`
             : "Integrations waiting on an outside key or sign-in."}
         </p>
       </div>
@@ -101,7 +101,7 @@ export function IntegrationKeysPanel({ companyId }: { companyId: string }) {
             <div className="space-y-2 rounded-lg border border-border bg-card p-4">
               <p className="text-sm">
                 Paste these into <code className="font-mono text-xs">{keys.data.envFile}</code>, put each key after its
-                equals sign, then restart GSAM.
+                equals sign, then restart GSAM. If that is not you, copy the lines and send them to whoever looks after the computer that runs GSAM.
               </p>
               <pre className="overflow-x-auto rounded-md border border-border bg-muted p-2 text-xs">{snippet}</pre>
               <Button type="button" size="sm" variant="outline" onClick={() => void copyToast(snippet, "Lines copied")}>

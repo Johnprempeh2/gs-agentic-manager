@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Project } from "@greatstone/shared";
-import { projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "./projects-text";
+import { isProjectLate, projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "./projects-text";
 
 function project(overrides: Partial<Project> = {}): Project {
   return {
@@ -75,5 +75,17 @@ describe("projectsToCsv", () => {
       project({ id: "live", name: "Live" }),
     ]).map((p) => p.id);
     expect(order).toEqual(["live", "done"]);
+  });
+});
+
+describe("isProjectLate", () => {
+  const now = new Date(2026, 9, 16, 12);
+  const p = (over: Partial<Project>) => ({ status: "in_progress", targetDate: "2026-10-10", archivedAt: null, ...over }) as Project;
+  it("is late only when open and past the target date", () => {
+    expect(isProjectLate(p({}), now)).toBe(true);
+    expect(isProjectLate(p({ targetDate: "2026-10-16" }), now)).toBe(false);
+    expect(isProjectLate(p({ targetDate: null }), now)).toBe(false);
+    expect(isProjectLate(p({ status: "completed" }), now)).toBe(false);
+    expect(isProjectLate(p({ archivedAt: new Date() }), now)).toBe(false);
   });
 });

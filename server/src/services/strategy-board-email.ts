@@ -496,6 +496,7 @@ export async function runScheduledStrategyBoardEmails(
   lastEmailSweepAt = now.getTime();
   if (!(await isEntitled(db, "enableStrategyBoard"))) return results;
   const settings = instanceSettingsService(db);
+  if (!(await settings.getExperimental()).enableChatConnectors) return results;
   const kinds = (await settings.getGeneral()).strategyBoardEmail;
   if (!kinds.meetingReminders && !kinds.slippageAlerts && !kinds.whyRequests) return results;
   const companies = await db

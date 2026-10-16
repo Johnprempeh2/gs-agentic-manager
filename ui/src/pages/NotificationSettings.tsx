@@ -8,6 +8,7 @@ import { useCompany } from "../context/CompanyContext";
 import { usePushNotifications } from "../hooks/usePushNotifications";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { EmptyState } from "../components/EmptyState";
+import { PauseNotifications } from "../components/PauseNotifications";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
@@ -200,6 +201,8 @@ export function NotificationSettings() {
 
       <ThisDevice companyId={selectedCompanyId} />
 
+      <PauseNotifications companyId={selectedCompanyId} />
+
       <Section title="Tell me when">
         <div className="divide-y divide-border">
           <ChoiceRow
@@ -213,6 +216,12 @@ export function NotificationSettings() {
             description="Someone or an agent hands a task to you."
             checked={prefs.assignedTasks}
             onChange={(assignedTasks) => change({ assignedTasks })}
+          />
+          <ChoiceRow
+            label="A task I asked for is done, or a deal closes"
+            description="An agent or a teammate finishes a task you created, or moves a deal to won or lost. It opens that task or deal."
+            checked={prefs.finishedWork}
+            onChange={(finishedWork) => change({ finishedWork })}
           />
           <ChoiceRow
             label="Someone messages a team chat I am in"

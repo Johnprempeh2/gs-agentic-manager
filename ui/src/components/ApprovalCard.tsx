@@ -12,6 +12,7 @@ import {
   typeLabel,
 } from "./ApprovalPayload";
 import { timeAgo } from "../lib/timeAgo";
+import { waitingLabel } from "../lib/approval-wait";
 import type { Approval, Agent } from "@greatstone/shared";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
@@ -84,6 +85,9 @@ export function ApprovalCard({
                 </h3>
                 <p className="text-xs leading-5 text-muted-foreground">
                   Approval request created {timeAgo(approval.createdAt)}
+                  {waitingLabel(approval) ? (
+                    <span className="font-medium text-foreground"> · {waitingLabel(approval)}</span>
+                  ) : null}
                 </p>
               </div>
             </div>

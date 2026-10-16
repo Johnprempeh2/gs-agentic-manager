@@ -162,7 +162,7 @@ export function InstanceAccess() {
                   ) : null}
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">
-                  {user.activeCompanyMembershipCount} active organization memberships
+                  {user.activeCompanyMembershipCount} active organisation memberships
                 </div>
               </button>
             ))}
@@ -202,7 +202,7 @@ export function InstanceAccess() {
                 <div>
                   <h2 className="text-sm font-semibold">Organization access</h2>
                   <p className="text-sm text-muted-foreground">
-                    Toggle organization membership for this user. New access defaults to an active operator membership.
+                    Toggle organisation membership for this user. New access defaults to an active operator membership.
                   </p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">

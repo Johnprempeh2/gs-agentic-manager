@@ -8,15 +8,17 @@ import {
   issues,
   organisationContacts,
   organisations,
+  pipelineCaseContacts,
   pipelineCaseEvents,
   pipelineCaseIssueLinks,
   pipelineCaseProjectLinks,
   pipelineCases,
+  pipelineFieldDefinitions,
   pipelineStages,
   pipelines,
   projects,
 } from "@greatstone/db";
-import type { CrmFile, CrmTimelineEntry, OrganisationHistory, OrganisationHistoryCase } from "@greatstone/shared";
+import type { CrmFile, CrmRecordField, CrmTimelineEntry, OrganisationHistory, OrganisationHistoryCase } from "@greatstone/shared";
 
 /** Newest timeline entries shown on the organisation page. */
 const MAX_TIMELINE_ENTRIES = 300;
@@ -32,6 +34,18 @@ const STAGE_CHANGE_TYPES = ["transitioned", "transition_forced"];
 function iso(value: Date | string | null | undefined) {
   if (!value) return null;
   return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+/** A case field value as an imported field, or null when it is empty or not a plain value. */
+function fieldValue(value: unknown): CrmRecordField["value"] | null {
+  if (typeof value === "string") return value.trim() ? value : null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "boolean") return value;
+  if (Array.isArray(value)) {
+    const items = value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
+    return items.length ? items : null;
+  }
+  return null;
 }
 
 function latest(values: Array<string | null>) {
@@ -69,6 +83,7 @@ export function organisationHistoryService(db: Db) {
           terminalKind: pipelineCases.terminalKind,
           ndaStatus: pipelineCases.ndaStatus,
           engagementStatus: pipelineCases.engagementStatus,
+          fields: pipelineCases.fields,
           createdAt: pipelineCases.createdAt,
           updatedAt: pipelineCases.updatedAt,
         })
@@ -168,7 +183,8 @@ export function organisationHistoryService(db: Db) {
 
       const fromStage = alias(pipelineStages, "from_stage");
       const toStage = alias(pipelineStages, "to_stage");
-      const [stageChanges, lastEvents, projectRows, taskRows] = await Promise.all([
+      const pipelineIds = [...new Set(caseRows.map((row) => row.pipelineId))];
+      const [stageChanges, lastEvents, projectRows, taskRows, fieldDefs, peopleRows] = await Promise.all([
         db
           .select({
             id: pipelineCaseEvents.id,
@@ -228,7 +244,31 @@ export function organisationHistoryService(db: Db) {
             ),
           )
           .orderBy(desc(issues.updatedAt)),
+        db
+          .select({
+            pipelineId: pipelineFieldDefinitions.pipelineId,
+            key: pipelineFieldDefinitions.key,
+            label: pipelineFieldDefinitions.label,
+          })
+          .from(pipelineFieldDefinitions)
+          .where(and(
+            eq(pipelineFieldDefinitions.companyId, companyId),
+            inArray(pipelineFieldDefinitions.pipelineId, pipelineIds),
+            isNull(pipelineFieldDefinitions.archivedAt),
+          ))
+          .orderBy(asc(pipelineFieldDefinitions.position), asc(pipelineFieldDefinitions.label)),
+        db
+          .select({ caseId: pipelineCaseContacts.caseId, name: pipelineCaseContacts.name, role: pipelineCaseContacts.role })
+          .from(pipelineCaseContacts)
+          .where(and(eq(pipelineCaseContacts.companyId, companyId), inArray(pipelineCaseContacts.caseId, caseIds)))
+          .orderBy(asc(pipelineCaseContacts.position), asc(pipelineCaseContacts.name)),
       ]);
+      const defsByPipeline = new Map<string, Array<{ key: string; label: string }>>();
+      for (const def of fieldDefs) {
+        const defs = defsByPipeline.get(def.pipelineId) ?? [];
+        defs.push({ key: def.key, label: def.label });
+        defsByPipeline.set(def.pipelineId, defs);
+      }
 
       const cases = new Map<string, OrganisationHistoryCase>();
       for (const row of caseRows) {
@@ -245,10 +285,18 @@ export function organisationHistoryService(db: Db) {
           engagementStatus: row.engagementStatus === "sent" || row.engagementStatus === "accepted" ? row.engagementStatus : "not_sent",
           createdAt: iso(row.createdAt)!,
           updatedAt: iso(row.updatedAt)!,
+          details: (defsByPipeline.get(row.pipelineId) ?? []).flatMap((def) => {
+            const value = fieldValue(row.fields?.[def.key]);
+            return value === null ? [] : [{ key: def.key, label: def.label, value }];
+          }),
+          people: [],
           stageChanges: [],
           projects: [],
           tasks: [],
         });
+      }
+      for (const row of peopleRows) {
+        cases.get(row.caseId)?.people?.push({ name: row.name, role: row.role });
       }
       for (const row of stageChanges) {
         cases.get(row.caseId)?.stageChanges.push({

@@ -120,6 +120,8 @@ import {
   dismissMemoryLinkLeadSchema,
   resolveMemoryConflictSchema,
   reviewMemoryRecordSchema,
+  reviseMemoryRecordSchema,
+  retireMemoryRecordSchema,
   runMemoryRetentionSchema,
   supersedeMemoryRecordSchema,
   createMemoryScopeSchema,
@@ -160,6 +162,8 @@ import {
   createFinanceEventSchema,
   updateBudgetSchema,
   upsertBudgetPolicySchema,
+  updateBudgetAuthoritySchema,
+  requestAiRouteChangeSchema,
   createCompanySubscriptionSchema,
   updateCompanySubscriptionSchema,
   resolveBudgetIncidentSchema,
@@ -5762,6 +5766,24 @@ registry.registerPath({
 
 registry.registerPath({
   method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/revise",
+  tags: ["memory"],
+  summary: "Propose a new version of a card at the version the caller saw; it waits for review and a changed card refuses the call (GRE-1081)",
+  request: { params: memoryRecordParams, body: jsonBody(reviseMemoryRecordSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/records/{recordId}/retire",
+  tags: ["memory"],
+  summary: "Mark a confirmed or disputed card as no longer true at the version the caller saw; it stays as history (GRE-1081)",
+  request: { params: memoryRecordParams, body: jsonBody(retireMemoryRecordSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "post",
   path: "/api/companies/{companyId}/memory/records/{recordId}/delete",
   tags: ["memory"],
   summary: "Delete a record's content everywhere and leave a tombstone; the engine document delete is queued and retried",
@@ -6915,6 +6937,39 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/budgets/authority",
+  tags: ["costs"],
+  summary: "Read the operator budget ceiling and named override approvers",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "put",
+  path: "/api/companies/{companyId}/budgets/authority",
+  tags: ["costs"],
+  summary: "Set the budget ceiling and named override approvers (hosting operator only)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(updateBudgetAuthoritySchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/ai-route-change-requests",
+  tags: ["instance"],
+  summary: "Ask the hosting operator to change the AI route (applies at once for the operator)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(requestAiRouteChangeSchema),
+  },
+  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/budget-incidents/{incidentId}/resolve",
   tags: ["costs"],
@@ -7334,7 +7389,7 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/needs-me",
   tags: ["inbox"],
-  summary: "List what needs the board user: open decisions, tasks assigned to them that are not done, and waits on them or the board older than 24h with their age",
+  summary: "List what needs the board user: open decisions, tasks assigned to them that are not done, waits on them or the board older than 24h with their age, and agents' questions that expired unanswered in the last two days",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -14179,6 +14234,14 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/cases/{caseId}/crm-history",
+  tags: ["pipelines"],
+  summary: "Get the CRM history filed on a client case: activities, notes, calls, emails, stage changes and files",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/cases/{caseId}/journey",
   tags: ["pipelines"],
   summary: "Get a client's journey by stage: each stage's templates and the deliverables filed under it",
@@ -14350,9 +14413,25 @@ registerCurrentRoute({
 
 registerCurrentRoute({
   method: "get",
+  path: "/api/companies/{companyId}/organisation-contacts",
+  tags: ["organisations"],
+  summary: "Search people across every organisation (q, two characters or more)",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
   path: "/api/companies/{companyId}/organisation-contacts/unassigned",
   tags: ["organisations"],
   summary: "List people with no organisation (CRM imports)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-products",
+  tags: ["organisations"],
+  summary: "List the CRM product catalogue with the deals each product is on",
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 

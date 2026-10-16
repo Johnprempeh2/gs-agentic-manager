@@ -2535,6 +2535,20 @@
       "when": 1792169885298,
       "tag": "0363_asset_texts",
       "breakpoints": true
+    },
+    {
+      "idx": 364,
+      "version": "7",
+      "when": 1792171060969,
+      "tag": "0364_budget_spending_authority",
+      "breakpoints": true
+    },
+    {
+      "idx": 365,
+      "version": "7",
+      "when": 1792173157445,
+      "tag": "0365_notification_pause_and_done",
+      "breakpoints": true
     }
   ]
 }

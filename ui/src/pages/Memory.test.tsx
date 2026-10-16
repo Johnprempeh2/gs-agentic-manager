@@ -453,12 +453,12 @@ describe("Memory page", () => {
   it("shows restricted and memory-off states instead of an error", async () => {
     memoryApiMock.graph.mockRejectedValue(new ApiError("Forbidden", 403, null));
     await renderAt("/memory");
-    expect(text()).toContain("You do not have access to memory in this organization.");
+    expect(text()).toContain("You do not have access to memory in this organisation.");
     expect(container.querySelector("[data-memory-row]")).toBeNull();
 
     memoryApiMock.graph.mockRejectedValue(new ApiError("Memory is not enabled for this company", 404, null));
     await renderAt("/memory");
-    expect(text()).toContain("Memory is turned off for this organization.");
+    expect(text()).toContain("Memory is turned off for this organisation.");
   });
 });
 

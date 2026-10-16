@@ -29,7 +29,7 @@ const KIND_LABEL: Record<AgentAccessItem["kind"], string> = {
   channel: "Channel",
 };
 
-const ATTENTION_STATES: ReadonlySet<AgentAccessItemState> = new Set(["failing", "missing", "expiring"]);
+export const ATTENTION_STATES: ReadonlySet<AgentAccessItemState> = new Set(["failing", "missing", "expiring"]);
 
 /** Where a row sends the user to fix or look at the thing it describes. */
 export function agentAccessItemHref(item: AgentAccessItem, agent: AgentRef): { to: string; label: string } {
@@ -53,7 +53,7 @@ export function agentAccessHeadline(items: AgentAccessItem[]): string {
   return needsAttention === 1 ? "1 thing needs attention" : `${needsAttention} things need attention`;
 }
 
-function AccessRow({ item, agent }: { item: AgentAccessItem; agent: AgentRef }) {
+export function AccessRow({ item, agent }: { item: AgentAccessItem; agent: AgentRef }) {
   const badge = STATE_BADGE[item.state];
   const link = agentAccessItemHref(item, agent);
   const detail = item.reason

@@ -10,7 +10,6 @@ import { GlobalSearchSources } from "./GlobalSearchSources";
 const searchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../../api/search", () => ({ searchApi: { search: searchMock } }));
-vi.mock("../../api/pipelines", () => ({ pipelinesApi: { list: vi.fn(async () => []), listCases: vi.fn(async () => []) } }));
 vi.mock("../../api/routines", () => ({ routinesApi: { list: vi.fn(async () => []) } }));
 vi.mock("../../api/memoryGraph", () => ({ memoryGraphApi: { graph: vi.fn(async () => ({ nodes: [] })) } }));
 
@@ -95,6 +94,54 @@ describe("GlobalSearchSources", () => {
       (rows[0] as HTMLElement).click();
     });
     expect(onGo).toHaveBeenCalledWith("/PAP/pipelines/p-1/items/c-1");
+
+    act(() => root.unmount());
+  });
+
+  it("lists organisations, people and clients found on the server", async () => {
+    searchMock.mockImplementation(async (_companyId: string, params: { scope: string }) => {
+      if (params.scope !== "records") return emptyResponse();
+      return {
+        results: [
+          { id: "organisation:o1", type: "record", title: "Acme Ltd", href: "/PAP/organisations/o1", snippets: [], record: { kind: "organisation", subtitle: "Finance, UK" } },
+          { id: "person:p1", type: "record", title: "Ada Lovelace", href: "/PAP/organisations/o1", snippets: [], record: { kind: "person", subtitle: "CFO at Acme Ltd" } },
+          { id: "client:c1", type: "record", title: "Acme renewal", href: "/PAP/pipelines/p1/items/c1", snippets: [], record: { kind: "client", subtitle: "Proposal in Sales" } },
+          { id: "activity:a1", type: "record", title: "Pricing call", href: "/PAP/pipelines/p1/items/c1", snippets: [], record: { kind: "activity", subtitle: "Call, Acme renewal, 12 Oct 2026" } },
+        ],
+      };
+    });
+    const onGo = vi.fn();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Command>
+            <CommandList>
+              <GlobalSearchSources companyId="company-1" query="acme" onGo={onGo} />
+            </CommandList>
+          </Command>
+        </QueryClientProvider>,
+      );
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(searchMock).toHaveBeenCalledWith("company-1", { q: "acme", scope: "records", limit: 10 });
+    expect(container.textContent).toContain("Clients, people and records");
+    const people = container.querySelectorAll('[data-testid="global-search-record"]');
+    expect(people[0]?.textContent).toContain("Organisation: Finance, UK");
+    expect(people[1]?.textContent).toContain("Person: CFO at Acme Ltd");
+    expect(people[2]?.textContent).toContain("Note or activity: Call, Acme renewal, 12 Oct 2026");
+    const clientRow = container.querySelector('[data-testid="global-search-client"]') as HTMLElement;
+    expect(clientRow.textContent).toContain("Client: Proposal in Sales");
+    await act(async () => {
+      clientRow.click();
+    });
+    expect(onGo).toHaveBeenCalledWith("/PAP/pipelines/p1/items/c1");
 
     act(() => root.unmount());
   });

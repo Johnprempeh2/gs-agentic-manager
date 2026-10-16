@@ -24,7 +24,8 @@ export function formatWaitAge(ms: number) {
 /**
  * The one "needs me" list (GRE-358), compact: tasks that have waited on the
  * user or the board for more than 24h, with their age (GRE-500), then open
- * decisions and tasks assigned to the user. Renders nothing when there is
+ * decisions, agents' questions that expired unanswered, and tasks assigned
+ * to the user. Renders nothing when there is
  * nothing to show.
  */
 export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned = true, title }: NeedsMeListProps) {
@@ -36,10 +37,13 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
     ? needsMe.decisions.filter((card) => !card.atDesk && !(card.task && waitIds.has(card.task.id)))
     : [];
   const tasks = includeAssigned ? needsMe.assignedTasks : [];
-  const shown = waits.length + decisions.length + tasks.length;
+  // Questions from agents that expired before anyone answered them.
+  const expiredCards = needsMe.expiredCards ?? [];
+  const shown = waits.length + decisions.length + tasks.length + expiredCards.length;
   if (shown === 0) return null;
 
-  const heading = title ?? (includeDecisions || waits.length > 0 ? "Needs you" : "Assigned to you");
+  const heading = title
+    ?? (includeDecisions || waits.length > 0 || expiredCards.length > 0 ? "Needs you" : "Assigned to you");
 
   return (
     <section aria-label={heading} className="space-y-2">
@@ -79,6 +83,23 @@ export function NeedsMeList({ needsMe, includeDecisions = false, includeAssigned
               <span className="min-w-0 truncate font-medium">{card.task?.title ?? card.title}</span>
               {card.task?.identifier ? (
                 <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{card.task.identifier}</span>
+              ) : null}
+            </Link>
+          </li>
+        ))}
+        {expiredCards.map((card) => (
+          <li key={card.interactionId} data-testid="needs-me-expired-card">
+            <Link
+              to={issueUrl(card)}
+              className="flex min-w-0 items-center gap-3 px-4 py-2.5 text-sm hover:bg-accent/50"
+              title={card.question ? `Unanswered: ${card.question}` : undefined}
+            >
+              <span className="shrink-0 rounded-sm bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
+                Question expired
+              </span>
+              <span className="min-w-0 truncate font-medium">{card.question ?? card.title}</span>
+              {card.identifier ? (
+                <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">{card.identifier}</span>
               ) : null}
             </Link>
           </li>

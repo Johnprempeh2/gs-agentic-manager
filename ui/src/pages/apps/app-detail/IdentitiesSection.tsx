@@ -475,7 +475,7 @@ function IdentityRow({
 
 /**
  * "Who can use this identity" (PAP-17835 Surface C). Scope is a two-option
- * radio: all organization members, persisted as no audience members, or a
+ * radio: all organisation members, persisted as no audience members, or a
  * selected set. The dialog stays open on a denial so the selection survives.
  */
 export function AudienceDialog({
@@ -524,8 +524,8 @@ export function AudienceDialog({
             options={[
               {
                 value: "all",
-                title: "All organization members",
-                description: "Anyone in this organization can have work use this identity.",
+                title: "All organisation members",
+                description: "Anyone in this organisation can have work use this identity.",
               },
               {
                 value: "selected",

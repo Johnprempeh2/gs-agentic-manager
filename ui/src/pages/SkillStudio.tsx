@@ -331,7 +331,7 @@ export function SkillStudio() {
   }, [skill?.id]);
 
   if (!companyId) {
-    return <StudioMessage message="Select an organization to open Skill Studio." />;
+    return <StudioMessage message="Choose an organisation to open Skill Studio." />;
   }
   if (isCreateMode) {
     return (
@@ -662,7 +662,7 @@ function StudioNewSkillPanel({
             >
               <span className="block font-medium">{scope === "company" ? "Organization" : "Private"}</span>
               <span className="mt-1 block text-xs text-muted-foreground">
-                {scope === "company" ? "Visible inside this organization." : "Only visible in your library."}
+                {scope === "company" ? "Visible inside this organisation." : "Only visible in your library."}
               </span>
             </button>
           ))}

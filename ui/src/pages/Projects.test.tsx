@@ -255,4 +255,21 @@ describe("Projects", () => {
     expect(labels).toContain("Copy as an update");
     expect(labels.some((label) => label.includes("Download as spreadsheet"))).toBe(true);
   });
+
+  it("filters to late projects and back", async () => {
+    mockProjectsApi.list.mockResolvedValue([
+      makeProject({ id: "late", urlKey: "late", name: "Latecomer", targetDate: "2020-01-01" }),
+      makeProject({ id: "fine", urlKey: "fine", name: "Ontime", targetDate: null }),
+    ]);
+    await renderProjects();
+    const lateButton = () => Array.from(container.querySelectorAll("button")).find((button) => /^Late \(1\)$|Show every project/.test(button.textContent ?? ""));
+    expect(lateButton()?.textContent).toBe("Late (1)");
+    await act(async () => {
+      lateButton()?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushReact();
+    expect(container.textContent).toContain("Latecomer");
+    expect(container.textContent).not.toContain("Ontime");
+    expect(lateButton()?.textContent).toBe("Show every project");
+  });
 });

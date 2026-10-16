@@ -137,7 +137,7 @@ export function mailboxState(mailboxes: MailboxSummary[]): IntegrationState {
   return mailboxes.every((mailbox) => failing(mailbox.healthStatus)) ? "attention" : "connected";
 }
 
-type ImportCounts = { created?: number; updated?: number; errors?: number };
+type ImportCounts = { created?: number; updated?: number; skipped?: number; errors?: number };
 
 const IMPORT_PARTS: Array<{ key: string; one: string; many: string }> = [
   { key: "organisations", one: "organisation", many: "organisations" },
@@ -145,6 +145,16 @@ const IMPORT_PARTS: Array<{ key: string; one: string; many: string }> = [
   { key: "deals", one: "deal", many: "deals" },
   { key: "activities", one: "activity", many: "activities" },
   { key: "tasks", one: "task", many: "tasks" },
+  { key: "pipelines", one: "pipeline", many: "pipelines" },
+  { key: "notes", one: "note", many: "notes" },
+  { key: "calls", one: "call", many: "calls" },
+  { key: "emails", one: "email", many: "emails" },
+  { key: "stageChanges", one: "stage change", many: "stage changes" },
+  { key: "products", one: "product", many: "products" },
+  { key: "dealProducts", one: "product on a deal", many: "products on deals" },
+  { key: "leads", one: "lead", many: "leads" },
+  { key: "files", one: "file", many: "files" },
+  { key: "participants", one: "person on a deal", many: "people on deals" },
 ];
 
 function joinWords(parts: string[]) {
@@ -169,6 +179,9 @@ export function describeImport(event: Pick<ActivityEvent, "createdAt" | "details
   const parts: string[] = [];
   if (added.length) parts.push(`${joinWords(added)} added`);
   if (updated.length) parts.push(`${joinWords(updated)} updated`);
+  // A re-import says how much it left as it was, so "nothing new" reads as checked, not skipped.
+  const unchanged = IMPORT_PARTS.reduce((sum, { key }) => sum + (details[key]?.skipped ?? 0), 0);
+  if (unchanged > 0) parts.push(`${unchanged} unchanged`);
   const what = parts.length ? parts.join("; ") : "nothing new";
   const failed = errors > 0 ? ` ${errors} ${errors === 1 ? "row" : "rows"} could not be imported.` : "";
   return `Last import ${when}: ${what}.${failed}`;

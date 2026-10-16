@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   ensureChat: vi.fn(),
   experimental: vi.fn(),
   uploadAttachment: vi.fn(),
+  search: vi.fn(async () => ({ results: [] })),
 }));
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
@@ -29,6 +30,7 @@ vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecar
 vi.mock("../api/issues", () => ({
   issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
+vi.mock("../api/search", () => ({ searchApi: { search: mocks.search } }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
 vi.mock("@/lib/router", () => ({
@@ -237,6 +239,7 @@ describe("AskEverestPanel", () => {
 
     typeQuestion("What is happening?");
     await waitFor(() => expect(mocks.issuesList).toHaveBeenCalledWith("company-1", { q: "Acme Ltd", limit: 50 }));
+    expect(mocks.search).toHaveBeenCalledWith("company-1", { q: "Acme Ltd", scope: "records", limit: 4 });
     await waitFor(() => expect(container.querySelector('[data-testid="ask-everest-live"]')).not.toBeNull());
     act(() => {
       (container.querySelector('[data-testid="ask-everest-live"]') as HTMLButtonElement).click();

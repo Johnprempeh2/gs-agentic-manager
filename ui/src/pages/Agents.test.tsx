@@ -1150,8 +1150,8 @@ describe("Agents", () => {
 
 describe("agentWeekLine", () => {
   it("says what the week's work is worth and how many runs did it", () => {
-    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 12_345, runCount: 41 })).toBe("$123 of work · 41 runs this week");
-    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 0, runCount: 1 })).toBe("1 run this week");
-    expect(agentWeekLine(undefined)).toBe("No runs this week");
+    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 12_345, runCount: 41 })).toBe("$123 of work · Worked 41 times this week");
+    expect(agentWeekLine({ agentId: "a", apiEquivalentCents: 0, runCount: 1 })).toBe("Worked 1 time this week");
+    expect(agentWeekLine(undefined)).toBe("No work this week");
   });
 });

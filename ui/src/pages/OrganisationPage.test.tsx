@@ -81,6 +81,11 @@ function history(overrides: Partial<OrganisationHistory> = {}): OrganisationHist
         terminalKind: "done",
         ndaStatus: "accepted",
         engagementStatus: "sent",
+        details: [
+          { key: "dealValue", label: "Value", value: 45000 },
+          { key: "dealOwner", label: "Owner", value: "Ama Owusu" },
+        ],
+        people: [{ name: "Esi Boateng", role: "Main contact" }, { name: "Tunde Bakare", role: null }],
         createdAt: "2026-09-30T09:00:00Z",
         updatedAt: "2026-10-05T09:00:00Z",
         stageChanges: [
@@ -172,12 +177,36 @@ describe("Organisation company page", () => {
     const engagement = container.querySelector('section[aria-label="Engagement history"]')!;
     expect(engagement.querySelector('a[href="/pipelines/pipe-1/items/case-1"]')?.textContent).toBe("Acme drill rig");
     expect(engagement.textContent).toContain("Sales · Stage: Won");
+    expect(engagement.querySelector("[data-testid='organisation-case-people']")?.textContent).toBe(
+      "People: Esi Boateng (Main contact), Tunde Bakare",
+    );
+    expect(engagement.querySelector("details summary")?.textContent).toBe("Details (2)");
+    expect(engagement.textContent).toContain("Ama Owusu");
     expect(engagement.querySelector("[data-testid='organisation-case-agreements']")?.textContent).toBe(
       "NDA: accepted · Engagement pack: sent",
     );
     expect(engagement.textContent).toContain("Proposal → Won by Sales Agent");
     expect(engagement.querySelector('a[href="/projects/proj-1"]')?.textContent).toBe("Acme onboarding");
     expect(engagement.querySelector('a[href="/issues/GRE-9"]')?.textContent).toBe("GRE-9 Send the proposal");
+  });
+
+  it("opens Ask Everest with the organisation, its people and its deals", async () => {
+    mockApi.get.mockResolvedValue(detail());
+    mockApi.history.mockResolvedValue(history());
+    const opened: Array<{ question?: string; context?: { label: string; summary: string } }> = [];
+    const listener = (event: Event) => opened.push((event as CustomEvent).detail);
+    window.addEventListener("gsam:open-ask-everest", listener);
+    await render();
+
+    await act(async () => {
+      (container.querySelector('[data-testid="organisation-ask"]') as HTMLButtonElement).click();
+    });
+    window.removeEventListener("gsam:open-ask-everest", listener);
+
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.context?.label).toBe(detail().name);
+    expect(opened[0]?.context?.summary).toContain("Kofi Mensah");
+    expect(opened[0]?.context?.summary).toContain("Acme drill rig: Won in Sales");
   });
 
   it("shows every field imported from Pipedrive under Pipedrive's names", async () => {
