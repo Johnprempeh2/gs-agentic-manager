@@ -12,7 +12,21 @@ Two ways in, both parsed in the browser by `packages/shared/src/memory-import.ts
 - **Upload past conversations.** The `conversations.json` file from a ChatGPT
   or Claude data export (Claude's `memories.json` also works). Each
   conversation becomes one entry, trimmed to its first 6,000 characters. The
-  app is detected from the file's shape.
+  app is detected from the file's shape. Several files can be picked at once
+  (an export split into parts); their entries are merged.
+
+ChatGPT exports also hold hidden system turns and tool output (browsing,
+code results, images). Only visible text, multimodal text and code turns are
+kept.
+
+Before anything is sent, the page asks
+`POST /api/companies/:companyId/memory/import/check` (read-only, up to 500
+entries per call) which candidates are already in the chosen scope. Each one
+comes back as `already_imported` (same `sourceId`), `similar` (word overlap of
+0.7 or more with an existing entry, see `memoryTextSimilarity`) or no match.
+Matches start unticked with a note saying why. The check compares against the
+newest 2,000 entries in the scope and yields between batches so a large paste
+cannot stall the server.
 
 Only the entries the person ticks are sent, at most 50 per call, to
 `POST /api/companies/:companyId/memory/import`. Each one goes through the
@@ -27,6 +41,21 @@ A second import of the same line or conversation into the same scope is
 skipped. No model is called by the import itself; the memory engine retains
 each entry as it does any contribution. Agent working-note scopes are not
 offered as a destination.
+
+## Review, clients and search
+
+- **Quick review** (`/memory/review`). Each waiting entry is compared with
+  approved entries in the same scope and with earlier waiting ones. A close
+  match is tagged "Looks like one in memory" and offered first as the merge
+  target. Rows can be ticked and confirmed or rejected in one go; entries the
+  person may not act on (their own proposals) are skipped and listed.
+- **Clients** (`/memory/clients`). Lists client scopes, with an Add client form
+  for owners and admins. Each client page shows what GSAM remembers about that
+  client, confirmed apart from waiting, with links to import into or review
+  that client's memory (`?scope=<id>` on Claude and ChatGPT and on Review).
+- **Search.** Typing in the Memory search box shows a plain list by default,
+  with matching words highlighted and the matching text shown under each
+  title. The graph is still one click away.
 
 ## Live connection
 
