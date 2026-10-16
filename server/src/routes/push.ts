@@ -5,6 +5,8 @@ import type { Db } from "@greatstone/db";
 import { companies } from "@greatstone/db";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
+import { updateNotificationPreferencesSchema, type UpdateNotificationPreferences } from "@greatstone/shared";
+import { notificationPreferencesService } from "../services/notification-preferences.js";
 import { pushNotificationService } from "../services/push-notifications.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 
@@ -28,9 +30,36 @@ function boardUserId(req: Request, res: Response, companyId: string) {
   return req.actor.userId;
 }
 
-/** Phone notifications for decisions (Web Push). Company-scoped, board users only. */
+/** Phone notifications (Web Push) and each person's notification choices. Company-scoped, board users only. */
 export function pushRoutes(db: Db, service = pushNotificationService(db)) {
   const router = Router();
+  const preferences = notificationPreferencesService(db);
+
+  // What this person wants to hear about, and when. Their own choices only.
+  router.get("/companies/:companyId/notification-preferences", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const userId = boardUserId(req, res, companyId);
+    if (!userId) return;
+    res.json(await preferences.get(companyId, userId));
+  });
+
+  router.patch("/companies/:companyId/notification-preferences", validate(updateNotificationPreferencesSchema), async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const userId = boardUserId(req, res, companyId);
+    if (!userId) return;
+    const patch = req.body as UpdateNotificationPreferences;
+    const saved = await preferences.update(companyId, userId, patch);
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: userId,
+      action: "notification_preferences.updated",
+      entityType: "notification_preferences",
+      entityId: companyId,
+      details: { changed: Object.keys(patch) },
+    });
+    res.json(saved);
+  });
 
   router.get("/companies/:companyId/push/config", async (req, res) => {
     const companyId = req.params.companyId as string;

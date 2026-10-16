@@ -773,6 +773,7 @@ export const queryKeys = {
   agentWorkDigest: (companyId: string) => ["agent-work-digest", companyId] as const,
   calendar: (companyId: string, from: string, to: string) => ["calendar", companyId, from, to] as const,
   teamScorecard: (companyId: string, days: number) => ["team-scorecard", companyId, days] as const,
+  notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
   /** One Decisions feed (GRE-263). Under the `attention` prefix so every
    *  existing attention invalidation also refreshes the feed and its count. */
