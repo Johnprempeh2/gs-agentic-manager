@@ -43,6 +43,10 @@ vi.mock("../api/projects", () => ({
   projectsApi: mockProjectsApi,
 }));
 
+vi.mock("../api/agents", () => ({
+  agentsApi: { list: vi.fn().mockResolvedValue([]) },
+}));
+
 vi.mock("../api/resourceMemberships", () => ({
   resourceMembershipsApi: mockResourceMembershipsApi,
 }));
@@ -243,5 +247,12 @@ describe("Projects", () => {
 
     expect(hiddenDescriptionLine).not.toBeNull();
     expect(hiddenDescriptionLine?.className).toContain("min-h-4");
+  });
+
+  it("offers to copy the projects as an update and to download them", async () => {
+    await renderProjects();
+    const labels = Array.from(container.querySelectorAll("button")).map((button) => button.textContent ?? "");
+    expect(labels).toContain("Copy as an update");
+    expect(labels.some((label) => label.includes("Download as spreadsheet"))).toBe(true);
   });
 });
