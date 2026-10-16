@@ -234,6 +234,47 @@ describe("client case page", () => {
     expect(file?.textContent).toBe("Signed SOW.pdf");
   });
 
+  it("shows a DevTools client's deal without the DX steps", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([contact]);
+    const devtoolsStages: PipelineStage[] = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-2", pipelineId: "pipe-pd", key: "pd_2", name: "Demo", kind: "working", position: 1 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 2 },
+      { id: "pd-lost", pipelineId: "pipe-pd", key: "lost", name: "Lost", kind: "cancelled", position: 3 },
+    ] as PipelineStage[];
+
+    await render(
+      <ClientCaseOverview
+        detail={caseDetail({
+          dealStatus: "Open",
+          dealValue: 12500,
+          dealCurrency: "GBP",
+          dealOwner: "John",
+          expectedCloseDate: "2026-11-30",
+          probability: 60,
+          nextActivityDate: "2026-10-20",
+        }, "pd-2")}
+        stages={devtoolsStages}
+        events={[]}
+        issueLinks={[]}
+        journey="devtools"
+      />,
+    );
+
+    expect(container.querySelector('[aria-current="step"]')?.textContent).toContain("Demo");
+    const deal = container.querySelector('dl[aria-label="Deal"]')!;
+    expect(deal.textContent).toContain("Open");
+    expect(deal.textContent).toContain("12,500 GBP");
+    expect(deal.textContent).toContain("John");
+    expect(deal.textContent).toContain("60% likely");
+    expect(container.textContent).toContain("Ama Mensah");
+    expect(container.textContent).not.toContain("Where things stand");
+    expect(container.textContent).not.toContain("Journey by stage");
+    expect(container.textContent).not.toContain("What the client sees on the portal");
+    expect(mockPipelinesApi.getCaseJourney).not.toHaveBeenCalled();
+    expect(mockPipelinesApi.getCasePortal).not.toHaveBeenCalled();
+  });
+
   it("leaves the CRM history out when the case has none", async () => {
     mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
     await render(<ClientCaseOverview detail={caseDetail({})} stages={stages} events={[]} issueLinks={[]} />);

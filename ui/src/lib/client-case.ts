@@ -129,3 +129,75 @@ export function buildStageHistory(
       forced: event.type === "transition_forced",
     }));
 }
+
+// DevTools clients (John, 16 Oct): the deals imported from Pipedrive came
+// through the DevTools journey, not the DX journey, so each Pipedrive pipeline
+// (key `pipedrive-<id>`) and the Pipedrive leads inbox (`pipedrive-leads`) gets
+// a client page of its own: the deal, its people and its history, without the
+// DX steps (NDA, engagement pack, deliverables by stage, portal).
+
+export const DEVTOOLS_CASE_TYPE_PREFIX = "pipedrive-";
+
+export function isDevtoolsCaseType(caseType: string | null | undefined) {
+  return typeof caseType === "string" && caseType.startsWith(DEVTOOLS_CASE_TYPE_PREFIX);
+}
+
+/** Deal fields the DevTools client page shows in its "Deal" section. */
+export const DEVTOOLS_DEAL_FIELD_KEYS = new Set([
+  "dealStatus",
+  "dealValue",
+  "dealCurrency",
+  "dealOwner",
+  "expectedCloseDate",
+  "probability",
+  "nextActivityDate",
+  "lastActivityDate",
+  "lostReason",
+  "wonOn",
+  "lostOn",
+  "leadValue",
+  "leadCurrency",
+  "leadOwner",
+]);
+
+export interface DevtoolsDeal {
+  status: string | null;
+  value: number | null;
+  currency: string | null;
+  owner: string | null;
+  expectedClose: string | null;
+  probability: number | null;
+  nextActivity: string | null;
+  lastActivity: string | null;
+  lostReason: string | null;
+  closedOn: string | null;
+}
+
+function fieldText(value: unknown) {
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  return null;
+}
+
+function fieldNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
+  return null;
+}
+
+export function readDevtoolsDeal(fields: Record<string, unknown> | null | undefined): DevtoolsDeal {
+  const record = fields ?? {};
+  const status = fieldText(record.dealStatus);
+  return {
+    status,
+    value: fieldNumber(record.dealValue) ?? fieldNumber(record.leadValue),
+    currency: fieldText(record.dealCurrency) ?? fieldText(record.leadCurrency),
+    owner: fieldText(record.dealOwner) ?? fieldText(record.leadOwner) ?? fieldText(record.ownerPerson) ?? fieldText(record.owner),
+    expectedClose: fieldText(record.expectedCloseDate),
+    probability: fieldNumber(record.probability),
+    nextActivity: fieldText(record.nextActivityDate),
+    lastActivity: fieldText(record.lastActivityDate),
+    lostReason: fieldText(record.lostReason),
+    closedOn: status?.toLowerCase() === "won" ? fieldText(record.wonOn) : status?.toLowerCase() === "lost" ? fieldText(record.lostOn) : null,
+  };
+}

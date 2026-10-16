@@ -95,6 +95,8 @@ import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
 import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
+  DEVTOOLS_DEAL_FIELD_KEYS,
+  isDevtoolsCaseType,
   daysInStage,
   formatDaysInStage,
   readCardSummary,
@@ -2958,13 +2960,14 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
 
   const workReferences = extractWorkReferences(detail.case);
   const referenceKeys = referenceFieldKeys(detail.case.fields);
-  const isClientCase = detail.caseType === CLIENT_CASE_TYPE;
+  const isDevtoolsCase = isDevtoolsCaseType(detail.caseType);
+  const isClientCase = detail.caseType === CLIENT_CASE_TYPE || isDevtoolsCase;
   const projectsPanel = (
     <PipelineCaseProjects caseId={caseId} companyId={item.data?.case.companyId ?? selectedCompanyId ?? null} />
   );
   const { shortFields: itemFields, longFields: mainPaneFields } = splitPipelineItemFields(
     displayPipelineItemFields(detail.case.fields).filter((field) =>
-      !referenceKeys.has(field.key) && !(isClientCase && CLIENT_RECORD_FIELD_KEYS.has(field.key))
+      !referenceKeys.has(field.key) && !(isClientCase && (isDevtoolsCase ? DEVTOOLS_DEAL_FIELD_KEYS : CLIENT_RECORD_FIELD_KEYS).has(field.key))
     ),
   );
   const banner = getPendingTransitionBannerState(detail.case, stageLookup);
@@ -3079,7 +3082,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         </div>
         <div className="flex w-full flex-col gap-5">
           <div className="flex items-center gap-2 lg:justify-end">
-            {isClientCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
+            {isClientCase && !isDevtoolsCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
             <Button
               variant="outline"
               title={`Ask Everest a question about ${detail.case.title}`}
@@ -3502,6 +3505,7 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               events={eventRows}
               issueLinks={issueLinks.data ?? []}
               projects={projectsPanel}
+              journey={isDevtoolsCase ? "devtools" : "dx"}
             />
           ) : (
             <>
