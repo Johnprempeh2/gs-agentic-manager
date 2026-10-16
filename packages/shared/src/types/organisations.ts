@@ -97,8 +97,10 @@ export interface OrganisationImportResult {
   leads?: OrganisationImportCounts;
   /** Connection import only: files on deals, leads, people and organisations. */
   files?: OrganisationImportCounts;
+  /** Connection import only: the people on each deal, kept as the case's contacts. */
+  participants?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product" | "lead" | "file"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call" | "email" | "product" | "lead" | "file" | "participant"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }

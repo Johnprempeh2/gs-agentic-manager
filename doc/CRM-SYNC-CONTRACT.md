@@ -241,6 +241,13 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   next import. The organisation page lists the files under "Files", served by
   `GET /api/companies/:companyId/crm-files/:fileId/content`. Code:
   `server/src/services/pipedrive-file-import.ts`.
+- The people on each deal (`/v1/deals/{id}/participants`) become the case's contacts, the main
+  contact first, keyed on the Pipedrive person id (`pipeline_case_contacts.source` and
+  `external_id`, migration `0362_case_contact_sources`). A person taken off the deal in
+  Pipedrive leaves the case; contacts added by hand in GSAM are never touched. The users
+  following a deal (`/v1/deals/{id}/followers`) are named in a "Followers" field on the case.
+  Deals whose participant or follower count is 0 are not asked. Code:
+  `server/src/services/pipedrive-participant-import.ts`.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.

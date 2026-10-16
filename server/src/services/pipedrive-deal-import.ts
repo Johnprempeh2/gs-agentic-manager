@@ -28,6 +28,11 @@ import {
   type PipedriveUser,
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
+import {
+  readPipedriveDealFollowers,
+  readPipedriveDealParticipants,
+  type PipedriveParticipant,
+} from "./pipedrive-participant-import.js";
 import { readPipedriveDealProducts, summariseDealProducts, type MappedDealProduct } from "./pipedrive-product-import.js";
 import {
   createPipelineFieldDefinition,
@@ -52,6 +57,9 @@ export function stageKeyForPipedrive(stageId: number | string) {
 /** The case field that lists a deal's products. */
 export const PRODUCTS_FIELD_KEY = "dealProducts";
 
+/** The case field that names the users following a deal. */
+export const FOLLOWERS_FIELD_KEY = "dealFollowers";
+
 export function caseKeyForPipedriveDealId(dealId: number | string) {
   return `pipedrive-${dealId}`;
 }
@@ -71,6 +79,8 @@ type Lookups = {
   stageNames: Map<string, string>;
   /** Each deal's products as one readable block, by Pipedrive deal id. */
   productSummaries?: Map<string, string>;
+  /** The users following each deal, by Pipedrive deal id. */
+  followerNames?: Map<string, string>;
 };
 
 function str(value: unknown): string | null {
@@ -208,6 +218,13 @@ export function pipedriveDealFieldSpecs(dealFields: PipedriveDealField[], lookup
       options: [],
       read: (deal) => lookups.productSummaries?.get(String(deal.id)) ?? null,
     },
+    {
+      key: FOLLOWERS_FIELD_KEY,
+      label: labelOf("followers_count", "Followers"),
+      type: "text",
+      options: [],
+      read: (deal) => lookups.followerNames?.get(String(deal.id)) ?? null,
+    },
   ];
 
   for (const field of dealFields) {
@@ -304,6 +321,8 @@ type DealImportResult = Required<Pick<OrganisationImportResult, "deals" | "pipel
   caseIdByDealId: Map<string, string>;
   /** The products on each deal whose products could be read, by Pipedrive deal id. */
   lineItemsByDealId: Map<string, MappedDealProduct[]>;
+  /** The people on each deal whose participants could be read, by Pipedrive deal id. */
+  participantsByDealId: Map<string, PipedriveParticipant[]>;
 };
 
 /**
@@ -323,10 +342,10 @@ export function pipedriveDealImportService(db: Db) {
       result: OrganisationImportResult;
     }): Promise<DealImportResult> {
       const { companyId, client, result } = input;
-      const counts: DealImportResult = { deals: emptyImportCounts(), pipelines: emptyImportCounts(), caseIdByDealId: new Map(), lineItemsByDealId: new Map() };
+      const counts: DealImportResult = { deals: emptyImportCounts(), pipelines: emptyImportCounts(), caseIdByDealId: new Map(), lineItemsByDealId: new Map(), participantsByDealId: new Map() };
       result.deals = counts.deals;
       result.pipelines = counts.pipelines;
-      const pushError = (kind: "deal" | "pipeline" | "product", externalId: string, error: unknown) => {
+      const pushError = (kind: "deal" | "pipeline" | "product" | "participant", externalId: string, error: unknown) => {
         if (result.errorSamples.length < MAX_ERROR_SAMPLES) {
           result.errorSamples.push({ kind, externalId, message: error instanceof Error ? error.message : String(error) });
         }
@@ -344,8 +363,11 @@ export function pipedriveDealImportService(db: Db) {
         users: new Map(users.map((user: PipedriveUser) => [String(user.id), user.name?.trim() || user.email || String(user.id)])),
         stageNames: new Map(pdStages.map((stage: PipedriveStage) => [String(stage.id), stage.name?.trim() || String(stage.id)])),
         productSummaries: new Map(),
+        followerNames: new Map(),
       };
       let canReadDealProducts = true;
+      let canReadParticipants = true;
+      let canReadFollowers = true;
       const specs = pipedriveDealFieldSpecs(dealFields, lookups);
 
       // Pipeline and field set-up, one Pipedrive pipeline at a time.
@@ -420,9 +442,39 @@ export function pipedriveDealImportService(db: Db) {
                 pushError("product", externalId, new Error(`Could not read the deal's products: ${error.message}`));
               }
             }
+            // The people on the deal, read only for deals that have some.
+            const participantCount = num(deal.participants_count);
+            if (participantCount === 0) {
+              counts.participantsByDealId.set(externalId, []);
+            } else if (participantCount !== null && canReadParticipants) {
+              try {
+                counts.participantsByDealId.set(externalId, await readPipedriveDealParticipants(client, externalId, linkedId(deal.person_id)));
+              } catch (error) {
+                if (!(error instanceof PipedriveAuthError || error instanceof PipedriveApiError)) throw error;
+                if (error instanceof PipedriveAuthError) canReadParticipants = false;
+                pushError("participant", externalId, new Error(`Could not read the deal's participants: ${error.message}`));
+              }
+            }
+            // The users following the deal.
+            let followersKnown = false;
+            const followerCount = num(deal.followers_count);
+            if (followerCount === 0) {
+              followersKnown = true;
+            } else if (followerCount !== null && canReadFollowers) {
+              try {
+                const names = await readPipedriveDealFollowers(client, externalId, lookups.users);
+                if (names.length > 0) lookups.followerNames!.set(externalId, names.join(", "));
+                followersKnown = true;
+              } catch (error) {
+                if (!(error instanceof PipedriveAuthError || error instanceof PipedriveApiError)) throw error;
+                if (error instanceof PipedriveAuthError) canReadFollowers = false;
+                pushError("participant", externalId, new Error(`Could not read the deal's followers: ${error.message}`));
+              }
+            }
             const fields = await this.dealFields(companyId, deal, specs, defs);
-            // Products that could not be read keep what the case had.
+            // Products and followers that could not be read keep what the case had.
             if (!productsKnown) delete fields[PRODUCTS_FIELD_KEY];
+            if (!followersKnown) delete fields[FOLLOWERS_FIELD_KEY];
             const orgExternalId = linkedId(deal.org_id);
             const organisationId = orgExternalId ? input.organisationIdByExternalId.get(orgExternalId) ?? null : null;
             const caseKey = caseKeyForPipedriveDealId(externalId);
