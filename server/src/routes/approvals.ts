@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { heartbeatRuns, type Db } from "@greatstone/db";
 import {
   AI_ROUTE_CHANGE_APPROVAL_TYPE,
+  BUDGET_TOP_UP_APPROVAL_TYPE,
   OPERATOR_APPROVAL_REQUIRED_ERROR_CODE,
   addApprovalCommentSchema,
   createApprovalSchema,
@@ -26,10 +27,12 @@ import {
   getAccessibleResource,
   getActorInfo,
   hasCompanyAccess,
+  hasCompanyOwnerOrAdminRole,
   isHostingOperator,
 } from "./authz.js";
 import { assertCanResolveBudgetOverride, budgetAuthorityService } from "../services/budget-authority.js";
 import { requestedAiRoute } from "../services/ai-route-change.js";
+import { budgetTopUpService } from "../services/budget-top-ups.js";
 import { redactEventPayload } from "../redaction.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import { issueService } from "../services/issues.js";
@@ -71,6 +74,12 @@ export function approvalRoutes(
   const issuesSvc = issueService(db);
   const permissionGrants = permissionGrantRequestService(db);
   const secretsSvc = secretService(db);
+  const topUps = budgetTopUpService(db, {
+    cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
+    noticeHardStop: heartbeat.noticeBudgetHardStop,
+    releaseHeldWorkForScope: (scope: { companyId: string }) =>
+      heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
+  });
   const strictSecretsMode = process.env.GSAM_SECRETS_STRICT_MODE === "true";
 
   async function lostReviewPathIssueIds(
@@ -191,6 +200,15 @@ export function approvalRoutes(
       assertCanResolveBudgetOverride(authority, { userId: req.actor.userId ?? null, operator: isHostingOperator(req) });
       return;
     }
+    // GRE-1371: a top-up card is decided only by the side it waits on.
+    if (approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) {
+      await topUps.assertCanDecide(approval, {
+        userId: req.actor.userId ?? null,
+        operator: isHostingOperator(req),
+        clientAdmin: hasCompanyOwnerOrAdminRole(req, approval.companyId),
+      });
+      return;
+    }
     if (approval.type !== AI_ROUTE_CHANGE_APPROVAL_TYPE) return;
     if (!isHostingOperator(req)) {
       throw forbidden("Only the hosting operator can decide an AI route change.", {
@@ -283,6 +301,9 @@ export function approvalRoutes(
     if (approvalInput.type === AI_ROUTE_CHANGE_APPROVAL_TYPE) {
       throw unprocessable("Ask for an AI route change with POST /api/companies/:companyId/ai-route-change-requests");
     }
+    if (approvalInput.type === BUDGET_TOP_UP_APPROVAL_TYPE) {
+      throw unprocessable("Ask for a top-up with POST /api/companies/:companyId/budgets/top-ups");
+    }
     const normalizedPayload =
       approvalInput.type === "hire_agent"
         ? await secretsSvc.normalizeHireApprovalPayloadForPersistence(
@@ -348,6 +369,8 @@ export function approvalRoutes(
     await assertCanDecideSpendingApproval(req, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.approve(id, decidedByUserId, req.body.decisionNote);
+    // Applied after the card: the budget sweep settles it if the server stops in between.
+    if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
     if (applied) {
       const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);
@@ -467,6 +490,7 @@ export function approvalRoutes(
     await assertCanDecideSpendingApproval(req, existing);
     const decidedByUserId = req.actor.userId ?? "board";
     const { approval, applied } = await svc.reject(id, decidedByUserId, req.body.decisionNote);
+    if (applied && approval.type === BUDGET_TOP_UP_APPROVAL_TYPE) await topUps.settleApproval(approval);
 
     if (applied) {
       const linkedIssues = await issueApprovalsSvc.listIssuesForApproval(approval.id);

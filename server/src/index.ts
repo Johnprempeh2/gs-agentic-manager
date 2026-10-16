@@ -73,6 +73,7 @@ import { setupEnvironmentCustomImageTerminalWebSocketServer } from "./realtime/e
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
 import { setupRunnerPrpWebSocketServer } from "./realtime/runner-prp-ws.js";
 import { cloudActorHeaderSourceFromHeaders, resolveCloudTenantActor } from "./middleware/auth.js";
+import { budgetTopUpService } from "./services/budget-top-ups.js";
 import {
   feedbackService,
   applyManagedEnvironments,
@@ -1335,6 +1336,14 @@ async function startServerWithDatabaseTeardown(
           heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
       }
     : {});
+  const budgetTopUps = budgetTopUpService(db, heartbeat
+    ? {
+        cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
+        noticeHardStop: heartbeat.noticeBudgetHardStop,
+        releaseHeldWorkForScope: (scope: { companyId: string }) =>
+          heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
+      }
+    : {});
   // The drain's engine reads the owner-only gateway config on first use, like the routes' engine.
   const memoryIngestEngine = memoryEngineFromGatewayConfig();
   const executionControlSweeps = [
@@ -1346,6 +1355,8 @@ async function startServerWithDatabaseTeardown(
     ["local_ai_login_cleanup", () => localAiLoginService(db).reapExpired()],
     // GRE-1363: a dated budget change takes effect on its date, with no restart.
     ["budget_scheduled_changes", () => budgets.applyDueChanges(new Date())],
+    // GRE-1371: a top-up whose card was decided but not applied (stop between the two writes).
+    ["budget_top_up_settlement", () => budgetTopUps.settleDecidedApprovals()],
     // GRE-933: Everest's renew reminder 3 days before a live steward grant ends.
     ["memory_steward_grant_renewal", () => remindStewardGrantRenewals(db)],
     // Memory linking: the link check, at most every 6 hours per company with memory on.

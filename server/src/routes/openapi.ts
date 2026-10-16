@@ -163,6 +163,9 @@ import {
   updateBudgetSchema,
   upsertBudgetPolicySchema,
   updateBudgetAuthoritySchema,
+  attachBudgetTopUpInvoiceSchema,
+  recordBudgetPreAuthorisationSchema,
+  requestBudgetTopUpSchema,
   requestAiRouteChangeSchema,
   createCompanySubscriptionSchema,
   updateCompanySubscriptionSchema,
@@ -6957,6 +6960,54 @@ registry.registerPath({
     body: jsonBody(updateBudgetAuthoritySchema),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/budgets/top-ups",
+  tags: ["costs"],
+  summary: "List one month's top-ups and pre-authorised ceilings, with the headroom left",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({ windowStart: z.string().optional() }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/budgets/top-ups",
+  tags: ["costs"],
+  summary: "Ask for a top-up of this month (applies at once when approved or pre-authorised, else 202)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(requestBudgetTopUpSchema),
+  },
+  responses: { 200: r.ok(), 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/budgets/pre-authorisations",
+  tags: ["costs"],
+  summary: "Pre-authorise top-ups for one month up to an amount (operator or named approver)",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: jsonBody(recordBudgetPreAuthorisationSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/budgets/top-ups/{topUpId}/invoice-line",
+  tags: ["costs"],
+  summary: "Name the invoice line that bills a top-up or ceiling (hosting operator only)",
+  request: {
+    params: z.object({ companyId: z.string(), topUpId: z.string() }),
+    body: jsonBody(attachBudgetTopUpInvoiceSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
 });
 
 registry.registerPath({

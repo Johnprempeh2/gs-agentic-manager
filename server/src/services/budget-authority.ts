@@ -8,6 +8,7 @@ import {
   type BudgetAuthority,
   type BudgetScopeType,
   type BudgetWindowKind,
+  type TopUpApprovalRule,
   type UpdateBudgetAuthority,
 } from "@greatstone/shared";
 import { forbidden } from "../errors.js";
@@ -36,6 +37,7 @@ const NO_AUTHORITY = (companyId: string): BudgetAuthority => ({
   companyId,
   ceilingCents: null,
   approverUserIds: [],
+  topUpApprovalByRoute: {},
   updatedByUserId: null,
   updatedAt: null,
 });
@@ -80,6 +82,24 @@ export function assertCanResolveBudgetOverride(authority: BudgetAuthority, actor
   });
 }
 
+/**
+ * The operator side of a top-up (GRE-1371): the operator or a named approver.
+ * Unlike a budget override, an empty approver list does not open it to every
+ * board user, so the client can never accept its own top-up on this side.
+ */
+export function isTopUpOperatorSide(authority: BudgetAuthority, actor: SpendingActor) {
+  if (actor.operator) return true;
+  return actor.userId !== null && authority.approverUserIds.includes(actor.userId);
+}
+
+/**
+ * The per-route rules as a list for the activity log: it redacts any key that
+ * looks like a secret, and route names such as `claude_api_key` do.
+ */
+function auditableRules(rules: BudgetAuthority["topUpApprovalByRoute"]) {
+  return Object.entries(rules).map(([route, rule]) => ({ route, rule }));
+}
+
 export function budgetAuthorityService(db: Db) {
   async function get(companyId: string): Promise<BudgetAuthority> {
     const row = await db
@@ -92,6 +112,7 @@ export function budgetAuthorityService(db: Db) {
       companyId: row.companyId,
       ceilingCents: row.ceilingCents ?? null,
       approverUserIds: row.approverUserIds ?? [],
+      topUpApprovalByRoute: (row.topUpApprovalByRoute ?? {}) as Partial<Record<string, TopUpApprovalRule>>,
       updatedByUserId: row.updatedByUserId ?? null,
       updatedAt: row.updatedAt,
     };
@@ -132,12 +153,14 @@ export function budgetAuthorityService(db: Db) {
       const previous = await get(companyId);
       const now = new Date();
       const approverUserIds = [...new Set(input.approverUserIds)];
+      const topUpApprovalByRoute = (input.topUpApprovalByRoute ?? previous.topUpApprovalByRoute) as Record<string, string>;
       await db
         .insert(budgetAuthorities)
         .values({
           companyId,
           ceilingCents: input.ceilingCents,
           approverUserIds,
+          topUpApprovalByRoute,
           updatedByUserId: actorUserId,
           updatedAt: now,
         })
@@ -146,6 +169,7 @@ export function budgetAuthorityService(db: Db) {
           set: {
             ceilingCents: input.ceilingCents,
             approverUserIds,
+            topUpApprovalByRoute,
             updatedByUserId: actorUserId,
             updatedAt: now,
           },
@@ -196,8 +220,16 @@ export function budgetAuthorityService(db: Db) {
         entityType: "company",
         entityId: companyId,
         details: {
-          oldValue: { ceilingCents: previous.ceilingCents, approverUserIds: previous.approverUserIds },
-          newValue: { ceilingCents: next.ceilingCents, approverUserIds: next.approverUserIds },
+          oldValue: {
+            ceilingCents: previous.ceilingCents,
+            approverUserIds: previous.approverUserIds,
+            topUpApprovalRules: auditableRules(previous.topUpApprovalByRoute),
+          },
+          newValue: {
+            ceilingCents: next.ceilingCents,
+            approverUserIds: next.approverUserIds,
+            topUpApprovalRules: auditableRules(next.topUpApprovalByRoute),
+          },
           effectiveFrom: now.toISOString(),
           reason: input.reason,
         },

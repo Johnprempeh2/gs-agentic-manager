@@ -22,6 +22,7 @@ export { joinRequests } from "./join_requests.js";
 export { budgetPolicies } from "./budget_policies.js";
 export { budgetIncidents } from "./budget_incidents.js";
 export { budgetAuthorities } from "./budget_authorities.js";
+export { budgetTopUps } from "./budget_top_ups.js";
 export { agentConfigRevisions } from "./agent_config_revisions.js";
 export { agentApiKeys } from "./agent_api_keys.js";
 export { agentRuntimeState } from "./agent_runtime_state.js";

@@ -800,6 +800,8 @@ export const APPROVAL_TYPES = [
   "permission_grant",
   // Opened by a client board user to change the AI route; the operator decides (GRE-1363).
   "ai_route_change",
+  // A top-up the requester could not approve alone and no pre-authorised ceiling covered (GRE-1371).
+  "budget_top_up",
 ] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
@@ -960,6 +962,8 @@ export const FINANCE_EVENT_KINDS = [
   "custom_model_import_charge",
   "custom_model_storage_charge",
   "manual_adjustment",
+  // Extra AI allowance for one month, bought by the client and approved (GRE-1371).
+  "allowance_top_up",
 ] as const;
 export type FinanceEventKind = (typeof FINANCE_EVENT_KINDS)[number];
 
@@ -989,6 +993,16 @@ export type BudgetMetric = (typeof BUDGET_METRICS)[number];
 
 export const BUDGET_WINDOW_KINDS = ["calendar_month_utc", "lifetime"] as const;
 export type BudgetWindowKind = (typeof BUDGET_WINDOW_KINDS)[number];
+
+/**
+ * Who must accept a budget top-up (GRE-1371). John sets one rule per AI route
+ * as a setting on the company's spending authority; it is never chosen here.
+ * - `operator`: the hosting operator or a named budget approver.
+ * - `client`: a company owner or admin.
+ * - `operator_and_client`: one of each. The requester counts for their side.
+ */
+export const TOP_UP_APPROVAL_RULES = ["operator", "client", "operator_and_client"] as const;
+export type TopUpApprovalRule = (typeof TOP_UP_APPROVAL_RULES)[number];
 
 /** Warn level of a budget policy that sets none, in percent of the amount. The policy's own value wins. */
 export const DEFAULT_BUDGET_WARN_PERCENT = 80;
