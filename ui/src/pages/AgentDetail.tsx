@@ -3224,7 +3224,7 @@ function RunsTab({
   const { isMobile } = useSidebar();
 
   if (runs.length === 0) {
-    return <p className="text-sm text-muted-foreground">No runs yet.</p>;
+    return <p className="text-sm text-muted-foreground">This agent has not done any work yet. Give it a task to get started.</p>;
   }
 
   // Sort by created descending
