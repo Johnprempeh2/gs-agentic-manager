@@ -8213,11 +8213,28 @@ registry.registerPath({
         companyId: z.string(),
         message: z.string(),
         taskId: z.string().optional(),
+        attachmentIds: z.array(z.string()).max(5).optional(),
       }),
     ),
   },
   responses: {
     200: r.ok(),
+    400: r.badRequest,
+    401: r.unauthorized,
+    403: r.forbidden,
+    422: r.unprocessable,
+  },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/board/chat/issue",
+  tags: ["instance"],
+  summary:
+    "Find or create the board conversation's issue, so files can be attached before the first message (requires enableConferenceRoomChat)",
+  request: { body: jsonBody(z.object({ companyId: z.string() })) },
+  responses: {
+    200: r.ok(z.object({ issueId: z.string() })),
     400: r.badRequest,
     401: r.unauthorized,
     403: r.forbidden,
