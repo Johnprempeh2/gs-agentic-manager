@@ -6,6 +6,7 @@ import type {
   BudgetThresholdType,
   BudgetWindowKind,
   PauseReason,
+  TopUpApprovalRule,
 } from "../constants.js";
 
 export interface BudgetPolicy {
@@ -56,6 +57,8 @@ export interface BudgetPolicySummary {
   pendingEffectiveFrom?: Date | null;
   /** Tasks whose queued work this scope's hard stop holds (GRE-1365). Absent = 0. */
   heldTaskCount?: number;
+  /** This month's applied top-ups, already in `amount` (GRE-1371). */
+  topUpCents?: number;
 }
 
 export interface BudgetIncident {
@@ -113,6 +116,11 @@ export interface BudgetAuthority {
   ceilingCents: number | null;
   /** Users who may resolve a budget override. Empty: any board user. */
   approverUserIds: string[];
+  /**
+   * Who accepts a budget top-up, per AI route (GRE-1371). A route with no
+   * entry, or no route set, needs the operator side.
+   */
+  topUpApprovalByRoute: Partial<Record<string, TopUpApprovalRule>>;
   updatedByUserId: string | null;
   updatedAt: Date | null;
 }

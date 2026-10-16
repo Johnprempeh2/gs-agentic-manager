@@ -6,6 +6,7 @@ import {
   approvals,
   budgetIncidents,
   budgetPolicies,
+  budgetTopUps,
   companies,
   costEvents,
   projects,
@@ -120,6 +121,43 @@ function budgetStatusFromObserved(
 function inForce(policy: PolicyRow, now = new Date()): PolicyRow {
   if (policy.pendingAmount == null || !policy.pendingEffectiveFrom || policy.pendingEffectiveFrom > now) return policy;
   return { ...policy, amount: policy.pendingAmount, isActive: policy.pendingAmount > 0 };
+}
+
+/** `YYYY-MM-01` of the calendar month (UTC) that holds `now`. */
+export function topUpWindowStartOn(now: Date) {
+  return currentUtcMonthWindow(now).start.toISOString().slice(0, 10);
+}
+
+/** Applied top-ups of the company in the month that holds `now` (GRE-1371). */
+export async function appliedTopUpCents(db: Db, companyId: string, now = new Date()) {
+  const [row] = await db
+    .select({ total: sql<number>`coalesce(sum(${budgetTopUps.amountCents}), 0)::double precision` })
+    .from(budgetTopUps)
+    .where(
+      and(
+        eq(budgetTopUps.companyId, companyId),
+        eq(budgetTopUps.windowStart, topUpWindowStartOn(now)),
+        eq(budgetTopUps.kind, "top_up"),
+        eq(budgetTopUps.status, "applied"),
+      ),
+    );
+  return Number(row?.total ?? 0);
+}
+
+/** A top-up raises the company's monthly cap for its month only. No cap (0) stays no cap. */
+function takesTopUps(policy: PolicyRow) {
+  return policy.scopeType === "company"
+    && policy.windowKind === "calendar_month_utc"
+    && policy.isActive
+    && policy.amount > 0;
+}
+
+/** The policy in force at `now`, with this month's top-ups added to a company monthly cap. */
+async function inForceWithTopUps(db: Db, policy: PolicyRow, now = new Date()): Promise<PolicyRow & { topUpCents: number }> {
+  const current = inForce(policy, now);
+  if (!takesTopUps(current)) return { ...current, topUpCents: 0 };
+  const topUpCents = await appliedTopUpCents(db, current.companyId, now);
+  return { ...current, amount: current.amount + topUpCents, topUpCents };
 }
 
 const CLEARED_PENDING_CHANGE = {
@@ -395,8 +433,9 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
   }
 
   async function buildPolicySummary(storedPolicy: PolicyRow): Promise<BudgetPolicySummary> {
-    const policy = inForce(storedPolicy);
-    const pending = policy === storedPolicy ? pendingChangeOf(storedPolicy) : null;
+    const policy = await inForceWithTopUps(db, storedPolicy);
+    const dueNow = inForce(storedPolicy) !== storedPolicy;
+    const pending = dueNow ? null : pendingChangeOf(storedPolicy);
     const scope = await resolveScopeRecord(db, policy.scopeType as BudgetScopeType, policy.scopeId);
     const observedAmount = await computeObservedAmount(db, policy);
     const { start, end } = resolveWindow(policy.windowKind as BudgetWindowKind);
@@ -432,6 +471,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         scopeType: policy.scopeType as BudgetScopeType,
         scopeId: policy.scopeId,
       }),
+      topUpCents: policy.topUpCents,
     };
   }
 
@@ -599,7 +639,8 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
   }
 
   /** After the amount in force changes: resume the scope under it, or warn and stop it over it. */
-  async function reconcileScopeAfterAmountChange(row: PolicyRow, actorUserId: string | null) {
+  async function reconcileScopeAfterAmountChange(storedRow: PolicyRow, actorUserId: string | null) {
+    const row = await inForceWithTopUps(db, storedRow);
     if (row.amount > 0) {
       const observedAmount = await computeObservedAmount(db, row);
       if (observedAmount < row.amount) {
@@ -843,6 +884,30 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
     },
 
     /**
+     * After a top-up (GRE-1371): measure the company's monthly cap again with
+     * the month's top-ups, and resume the company if it is now under it.
+     */
+    reconcileCompanyCap: async (companyId: string, actorUserId: string | null) => {
+      const stored = await db
+        .select()
+        .from(budgetPolicies)
+        .where(
+          and(
+            eq(budgetPolicies.companyId, companyId),
+            eq(budgetPolicies.scopeType, "company"),
+            eq(budgetPolicies.scopeId, companyId),
+            eq(budgetPolicies.metric, "billed_cents"),
+            eq(budgetPolicies.windowKind, "calendar_month_utc"),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!stored) return;
+      const { row } = await applyPendingIfDue(stored);
+      if (!row.isActive || row.amount <= 0) return;
+      await reconcileScopeAfterAmountChange(row, actorUserId);
+    },
+
+    /**
      * The budget sweep: write each due dated change into its policy, resume
      * or stop the scope, and log it. Safe to run again or in parallel.
      */
@@ -898,7 +963,8 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
         );
 
       const now = new Date();
-      const relevantPolicies = candidatePolicies.map((policy) => inForce(policy, now)).filter((policy) => {
+      const inForcePolicies = await Promise.all(candidatePolicies.map((policy) => inForceWithTopUps(db, policy, now)));
+      const relevantPolicies = inForcePolicies.filter((policy) => {
         if (policy.scopeType === "company") return policy.scopeId === event.companyId;
         if (policy.scopeType === "agent") return policy.scopeId === event.agentId;
         if (policy.scopeType === "project") return Boolean(event.projectId) && policy.scopeId === event.projectId;
@@ -1012,7 +1078,7 @@ export function budgetService(db: Db, hooks: BudgetServiceHooks = {}) {
           ),
         )
         .then((rows) => rows[0] ?? null);
-      const companyPolicy = companyPolicyRow ? inForce(companyPolicyRow) : null;
+      const companyPolicy = companyPolicyRow ? await inForceWithTopUps(db, companyPolicyRow) : null;
       if (companyPolicy && companyPolicy.hardStopEnabled && companyPolicy.amount > 0) {
         const observed = await computeObservedAmount(db, companyPolicy);
         if (observed >= companyPolicy.amount) {

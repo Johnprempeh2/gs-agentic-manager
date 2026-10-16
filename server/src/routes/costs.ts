@@ -10,6 +10,9 @@ import {
   updateCompanySubscriptionSchema,
   upsertBudgetPolicySchema,
   updateBudgetAuthoritySchema,
+  attachBudgetTopUpInvoiceSchema,
+  recordBudgetPreAuthorisationSchema,
+  requestBudgetTopUpSchema,
   type BudgetScopeType,
   type BudgetWindowKind,
 } from "@greatstone/shared";
@@ -34,6 +37,7 @@ import {
   assertInstanceAdmin,
   getAccessibleResource,
   getActorInfo,
+  hasCompanyOwnerOrAdminRole,
   isHostingOperator,
 } from "./authz.js";
 import {
@@ -44,6 +48,8 @@ import {
   type BudgetChange,
   type SpendingActor,
 } from "../services/budget-authority.js";
+import { budgetTopUpService, type TopUpActor } from "../services/budget-top-ups.js";
+import type { BudgetServiceHooks } from "../services/budgets.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
 import { badRequest } from "../errors.js";
 import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
@@ -70,13 +76,17 @@ export function parseCostLimit(query: Record<string, unknown>) {
 
 export function costRoutes(
   db: Db,
-  options: { pluginWorkerManager?: PluginWorkerManager } = {},
+  options: {
+    pluginWorkerManager?: PluginWorkerManager;
+    /** Tests replace the heartbeat's budget hooks to watch them. */
+    budgetHooks?: BudgetServiceHooks;
+  } = {},
 ) {
   const router = Router();
   const heartbeat = heartbeatService(db, {
     pluginWorkerManager: options.pluginWorkerManager,
   });
-  const budgetHooks = {
+  const budgetHooks: BudgetServiceHooks = options.budgetHooks ?? {
     cancelWorkForScope: heartbeat.cancelBudgetScopeWork,
     noticeHardStop: heartbeat.noticeBudgetHardStop,
     releaseHeldWorkForScope: (scope: { companyId: string }) =>
@@ -91,6 +101,11 @@ export function costRoutes(
   const issues = issueService(db);
   const access = accessService(db);
   const authority = budgetAuthorityService(db);
+  const topUps = budgetTopUpService(db, budgetHooks);
+
+  function topUpActor(req: Parameters<typeof assertCompanyAccess>[0], companyId: string): TopUpActor {
+    return { ...spendingActor(req), clientAdmin: hasCompanyOwnerOrAdminRole(req, companyId) };
+  }
 
   function spendingActor(req: Parameters<typeof assertCompanyAccess>[0]): SpendingActor {
     return { userId: req.actor.userId ?? null, operator: isHostingOperator(req) };
@@ -472,6 +487,58 @@ export function costRoutes(
       assertCompanyAccess(req, companyId);
       assertInstanceAdmin(req);
       res.json(await authority.update(companyId, req.body, req.actor.userId ?? "board"));
+    },
+  );
+
+  // GRE-1371: top-ups and pre-authorised extra ceilings, one ledger per company.
+  router.get("/companies/:companyId/budgets/top-ups", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    if (!(await assertCompanyCostReadAllowed(req, res, companyId))) return;
+    const windowStart = typeof req.query.windowStart === "string" ? req.query.windowStart : undefined;
+    if (windowStart !== undefined && !/^\d{4}-(0[1-9]|1[0-2])-01$/.test(windowStart)) {
+      throw badRequest("windowStart must be the first day of a month, YYYY-MM-01");
+    }
+    res.json(await topUps.window(companyId, new Date(), windowStart));
+  });
+
+  router.post(
+    "/companies/:companyId/budgets/top-ups",
+    validate(requestBudgetTopUpSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      const result = await topUps.request(companyId, req.body, topUpActor(req, companyId), new Date());
+      res.status(result.status === "applied" ? 200 : 202).json(result);
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/budgets/pre-authorisations",
+    validate(recordBudgetPreAuthorisationSchema),
+    async (req, res) => {
+      assertBoard(req);
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      res.json(await topUps.preAuthorise(companyId, req.body, topUpActor(req, companyId), new Date()));
+    },
+  );
+
+  router.post(
+    "/companies/:companyId/budgets/top-ups/:topUpId/invoice-line",
+    validate(attachBudgetTopUpInvoiceSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertInstanceAdmin(req);
+      res.json(await topUps.attachInvoice(
+        companyId,
+        req.params.topUpId as string,
+        req.body.invoiceReference,
+        req.actor.userId ?? "board",
+        new Date(),
+      ));
     },
   );
 

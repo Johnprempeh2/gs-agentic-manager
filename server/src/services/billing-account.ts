@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { billingAccounts, billingInvoices, budgetPolicies, companies, costEvents } from "@greatstone/db";
 import { computeApiEquivalentCents, DEFAULT_BUDGET_WARN_PERCENT } from "@greatstone/shared";
 import { logActivity } from "./activity-log.js";
+import { appliedTopUpCents } from "./budgets.js";
 import {
   accessEndWhenRenewalStops,
   billingStatusOn,
@@ -162,16 +163,23 @@ export function billingAccountService(db: Db) {
     return { usedCents: Number(used?.total ?? 0), apiEquivalentCents: Math.round(apiEquivalent) };
   }
 
-  /** The usage block for the window that holds `now`. Null with no account or no company. */
+  /**
+   * The usage block for the window that holds `now`. Null with no account or
+   * no company. The month's applied top-ups add to its allowance (GRE-1371).
+   */
   async function usageFor(account: BillingAccount, now: Date) {
     const company = await instanceCompany();
     if (!company) return null;
     const window = billingUsageWindowOn(now);
-    const [sums, warnPercent] = await Promise.all([usageSums(company.id, window.start, window.end), warnPercentFor(company.id)]);
+    const [sums, warnPercent, topUpCents] = await Promise.all([
+      usageSums(company.id, window.start, window.end),
+      warnPercentFor(company.id),
+      appliedTopUpCents(db, company.id, now),
+    ]);
     const usage = billingUsageOn(now, {
       ...sums,
       warnPercent,
-      account,
+      account: { ...account, allowanceMonthlyCents: account.allowanceMonthlyCents + topUpCents },
       pausedSince: company.status === "paused" && company.pausedAt ? company.pausedAt.toISOString() : null,
     });
     return { companyId: company.id, usage };

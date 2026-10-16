@@ -5,7 +5,9 @@ import {
   BUDGET_SCOPE_TYPES,
   BUDGET_WINDOW_KINDS,
   DEFAULT_BUDGET_WARN_PERCENT,
+  TOP_UP_APPROVAL_RULES,
 } from "../constants.js";
+import { AI_ACCESS_ROUTES } from "../ai-connections.js";
 
 export const upsertBudgetPolicySchema = z.object({
   scopeType: z.enum(BUDGET_SCOPE_TYPES),
@@ -42,6 +44,8 @@ export type ResolveBudgetIncident = z.infer<typeof resolveBudgetIncidentSchema>;
 export const updateBudgetAuthoritySchema = z.object({
   ceilingCents: z.number().int().nonnegative().nullable(),
   approverUserIds: z.array(z.string().trim().min(1).max(200)).max(50),
+  /** Who accepts a top-up, per AI route (GRE-1371). Absent: keep the current rules. */
+  topUpApprovalByRoute: z.partialRecord(z.enum(AI_ACCESS_ROUTES), z.enum(TOP_UP_APPROVAL_RULES)).optional(),
   reason: z.string().trim().min(1).max(1000),
 });
 

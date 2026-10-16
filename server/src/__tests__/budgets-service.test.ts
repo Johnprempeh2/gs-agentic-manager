@@ -47,7 +47,11 @@ function createDbStub(selectResults: SelectResult[]) {
   }));
 
   const updateSet = vi.fn();
-  const updateWhere = vi.fn(async () => pendingUpdates.shift() ?? []);
+  // Awaitable as is, or through `.returning()` (a guarded update reads what it changed).
+  const updateWhere = vi.fn(() => {
+    const rows = pendingUpdates.shift() ?? [];
+    return Object.assign(Promise.resolve(rows), { returning: vi.fn(async () => rows) });
+  });
   const update = vi.fn(() => ({
     set: updateSet.mockImplementation(() => ({
       where: updateWhere,

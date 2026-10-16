@@ -56,6 +56,8 @@ export const lanes = {
       `${server}parked-handoff-wake-restart.test.ts`,
       // GRE-753: a repair give-up wakes the assignee's manager once, then the board.
       `${server}disposition-repair-manager-escalation.test.ts`,
+      // GRE-1371: an approved top-up lifts the budget stop; the hold release wakes each held task once.
+      `${server}budget-top-ups.test.ts`,
     ],
   },
   grading: {
@@ -258,6 +260,7 @@ export const scenarios = [
         "cap|gate|ownership|before adapter",
       ),
       integ("heartbeat-retry-scheduling", "budget|pause|cancel|gate"),
+      integ("budget-top-ups", "AT-1.5"),
     ],
     live: [
       "lifecycle-baseline:stop-new-resume",
