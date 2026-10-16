@@ -24,6 +24,8 @@ export type PipedriveFetch = (url: string, init: {
   status: number;
   headers: { get(name: string): string | null };
   json(): Promise<unknown>;
+  /** The raw body, for file downloads. */
+  arrayBuffer?(): Promise<ArrayBuffer>;
 }>;
 
 /** Pipedrive answered 429 on every try. `retryAfterMs` is how long it asked us to wait. */
@@ -169,7 +171,8 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
     ? { Authorization: `Bearer ${options.token}`, Accept: "application/json" }
     : { "x-api-token": options.token, Accept: "application/json" };
 
-  async function send(
+  /** One request with retries on 429; throws on any answer that is not 2xx. */
+  async function fetchOk(
     method: "GET" | "PATCH",
     path: string,
     query: Record<string, string | number | undefined>,
@@ -203,12 +206,22 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
           response.status,
         );
       }
-      const body = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
-      if (!body || body.success === false) {
-        throw new PipedriveApiError(`Pipedrive returned an error for ${path}: ${body?.error ?? "no body"}`, response.status);
-      }
-      return body as Record<string, unknown>;
+      return response;
     }
+  }
+
+  async function send(
+    method: "GET" | "PATCH",
+    path: string,
+    query: Record<string, string | number | undefined>,
+    payload?: Record<string, unknown>,
+  ) {
+    const response = await fetchOk(method, path, query, payload);
+    const body = await response.json().catch(() => null) as { success?: boolean; error?: string } | null;
+    if (!body || body.success === false) {
+      throw new PipedriveApiError(`Pipedrive returned an error for ${path}: ${body?.error ?? "no body"}`, response.status);
+    }
+    return body as Record<string, unknown>;
   }
 
   const get = (path: string, query: Record<string, string | number | undefined>) => send("GET", path, query);
@@ -324,6 +337,19 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       const extra = body.additional_data as { more_items_in_collection?: boolean; pagination?: { more_items_in_collection?: boolean } } | undefined;
       const more = extra?.more_items_in_collection ?? extra?.pagination?.more_items_in_collection ?? false;
       return { items, nextStart: more && items.length > 0 ? start + items.length : null };
+    },
+
+    /** One page of every file: uploads on deals, people, organisations, activities and notes (read only). */
+    async listFilesPage(input: { start?: number } = {}) {
+      return listV1Page<Record<string, unknown>>("/api/v1/files", input.start ?? 0, V1_LIST_PAGE_SIZE);
+    },
+
+    /** The bytes of one file (read only). */
+    async downloadFile(fileId: string) {
+      const path = `/api/v1/files/${encodeURIComponent(fileId)}/download`;
+      const response = await fetchOk("GET", path, {});
+      if (!response.arrayBuffer) throw new PipedriveApiError(`Pipedrive sent no file body for ${path}`, response.status);
+      return { body: Buffer.from(await response.arrayBuffer()), contentType: response.headers.get("content-type") };
     },
 
     /** Every lead label, so leads show label names. */

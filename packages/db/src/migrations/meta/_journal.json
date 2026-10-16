@@ -2514,6 +2514,13 @@
       "when": 1792151592806,
       "tag": "0360_crm_products",
       "breakpoints": true
+    },
+    {
+      "idx": 361,
+      "version": "7",
+      "when": 1792154341275,
+      "tag": "0361_crm_files",
+      "breakpoints": true
     }
   ]
 }

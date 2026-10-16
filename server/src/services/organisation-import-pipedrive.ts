@@ -18,6 +18,8 @@ import type {
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
+import type { StorageService } from "../storage/types.js";
+import { pipedriveFileImportService } from "./pipedrive-file-import.js";
 import { pipedriveLeadImportService } from "./pipedrive-lead-import.js";
 import { pipedriveProductImportService } from "./pipedrive-product-import.js";
 import { pipedriveTimelineImportService } from "./pipedrive-timeline-import.js";
@@ -337,7 +339,7 @@ export function newImportResult(startedAt: Date, source: CrmImportSource = SOURC
  * Runs one full import for a company. The caller checks permissions and
  * builds the client from the company's own Pipedrive connection.
  */
-export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => Date } = {}) {
+export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => Date; storage?: StorageService } = {}) {
   const now = deps.now ?? (() => new Date());
 
   return {
@@ -420,6 +422,23 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         organisationNames: new Map([...writer.orgByExternalId].map(([externalId, row]) => [externalId, row.name])),
       });
 
+      const contactIdByExternalId = new Map([...writer.contactByExternalId].map(([externalId, row]) => [externalId, row.id]));
+
+      // Files on deals, leads, people and organisations, copied into GSAM storage.
+      await pipedriveFileImportService(db, { storage: deps.storage, now }).run({
+        companyId,
+        client,
+        result,
+        userId: actor.userId ?? null,
+        links: {
+          organisationIdByExternalId,
+          contactIdByExternalId,
+          caseIdByDealId: deals.caseIdByDealId,
+          caseIdByLeadId: leads.caseIdByLeadId,
+          users,
+        },
+      });
+
       // Activities, notes and call logs, linked to the records above.
       await pipedriveTimelineImportService(db, { now }).run({
         companyId,
@@ -427,7 +446,7 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
         result,
         links: {
           organisationIdByExternalId,
-          contactIdByExternalId: new Map([...writer.contactByExternalId].map(([externalId, row]) => [externalId, row.id])),
+          contactIdByExternalId,
           caseIdByDealId: deals.caseIdByDealId,
           caseIdByLeadId: leads.caseIdByLeadId,
           users,

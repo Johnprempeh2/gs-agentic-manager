@@ -106,6 +106,7 @@ export {
 export { organisations, organisationContacts, type CrmRecordField } from "./organisations.js";
 export { crmTimelineEntries } from "./crm_timeline.js";
 export { crmProducts, crmDealProducts, type CrmProductPrice, type CrmProductField } from "./crm_products.js";
+export { crmFiles } from "./crm_files.js";
 export { inboundTaskHooks } from "./inbound_task_hooks.js";
 export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks.js";
 export { calendarFeeds } from "./calendar_feeds.js";

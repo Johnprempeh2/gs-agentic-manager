@@ -14357,6 +14357,14 @@ registerCurrentRoute({
 });
 
 registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/crm-files/{fileId}/content",
+  tags: ["organisations"],
+  summary: "Download a file copied from a CRM import",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registerCurrentRoute({
   method: "patch",
   path: "/api/companies/{companyId}/organisations/{organisationId}",
   tags: ["organisations"],

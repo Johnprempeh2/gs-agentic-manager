@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import express from "express";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  assets,
+  crmFiles,
+  pipelineCaseEvidence,
   crmDealProducts,
   crmProducts,
   crmTimelineEntries,
@@ -30,6 +35,7 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { organisationRoutes } from "../routes/organisations.js";
 import type { PipedriveDealField, PipedriveFetch } from "../services/crm-sync-pipedrive.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import type { StorageService } from "../storage/types.js";
 import { pipedriveRecordFields } from "../services/pipedrive-record-fields.js";
 import {
   coerceForField,
@@ -76,7 +82,42 @@ const recordedPages = (): Pages => structuredClone({
   "/api/v1/deals/702/products": { 0: recorded.dealProducts702 },
   "/api/v1/leadLabels": { 0: recorded.leadLabels },
   "/api/v1/leads": { 0: recorded.leadsPage },
+  "/api/v1/files": { 0: recorded.filesPage },
+  "/api/v1/files/6001/download": { 0: { file: "%PDF-1.4 order form\n", contentType: "application/pdf" } },
+  "/api/v1/files/6002/download": { 0: { file: "PNGBYTES", contentType: "image/png" } },
+  "/api/v1/files/6005/download": { 0: { file: "Asked re SSO", contentType: "text/plain; charset=utf-8" } },
 });
+
+/** Storage held in memory, so file copies can be checked and served. */
+function memoryStorage() {
+  const objects = new Map<string, { body: Buffer; contentType: string }>();
+  const storage: StorageService = {
+    provider: "local_disk",
+    async putFile(input) {
+      const objectKey = `${input.namespace}/${randomUUID()}`;
+      objects.set(`${input.companyId}:${objectKey}`, { body: input.body, contentType: input.contentType });
+      return {
+        provider: "local_disk",
+        objectKey,
+        contentType: input.contentType,
+        byteSize: input.body.length,
+        sha256: createHash("sha256").update(input.body).digest("hex"),
+        originalFilename: input.originalFilename,
+      };
+    },
+    async getObject(companyId, objectKey) {
+      const object = objects.get(`${companyId}:${objectKey}`)!;
+      return { stream: Readable.from(object.body), contentType: object.contentType, contentLength: object.body.length };
+    },
+    async headObject(companyId, objectKey) {
+      return { exists: objects.has(`${companyId}:${objectKey}`) };
+    },
+    async deleteObject(companyId, objectKey) {
+      objects.delete(`${companyId}:${objectKey}`);
+    },
+  };
+  return { storage, objects };
+}
 
 function fakePipedrive(pages: () => Pages) {
   const calls: Array<{ method: string; url: string }> = [];
@@ -84,6 +125,15 @@ function fakePipedrive(pages: () => Pages) {
     calls.push({ method: init.method, url });
     const parsed = new URL(url);
     const body = pages()[parsed.pathname]?.[Number(parsed.searchParams.get("start") ?? 0)];
+    if (body && typeof body.file === "string") {
+      const bytes = Buffer.from(body.file);
+      return {
+        status: 200,
+        headers: { get: (name: string) => (name.toLowerCase() === "content-type" ? body.contentType : null) },
+        json: async () => null,
+        arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+      };
+    }
     return {
       status: body ? 200 : 404,
       headers: { get: () => null },
@@ -221,7 +271,9 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
   afterEach(async () => {
     await db.delete(activityLog);
     await db.delete(crmTimelineEntries);
+    await db.delete(crmFiles);
     await db.delete(pipelines);
+    await db.delete(assets);
     await db.delete(organisations);
     await db.delete(toolConnections);
     await db.delete(toolApplications);
@@ -234,14 +286,14 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     await tempDb?.cleanup();
   });
 
-  function app(actor: Express.Request["actor"], fetch: PipedriveFetch) {
+  function app(actor: Express.Request["actor"], fetch: PipedriveFetch, storage?: StorageService) {
     const instance = express();
     instance.use(express.json());
     instance.use((req, _res, next) => {
       req.actor = actor;
       next();
     });
-    instance.use("/api", organisationRoutes(db, { pipedriveFetch: fetch, resolveCredential: async () => "test-token" }));
+    instance.use("/api", organisationRoutes(db, { pipedriveFetch: fetch, resolveCredential: async () => "test-token", storage }));
     instance.use(errorHandler);
     return instance;
   }
@@ -619,6 +671,100 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(empty.body.leads).toEqual({ created: 0, updated: 0, skipped: 0, errors: 0 });
     const keys = (await db.select().from(pipelines).where(eq(pipelines.companyId, companyId))).map((row) => row.key);
     expect(keys).not.toContain("pipedrive-leads");
+  }, 60_000);
+
+  it("copies every file into GSAM, puts deal and lead files on the case, and never copies one twice", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    const pages = recordedPages();
+    const pipedrive = fakePipedrive(() => pages);
+    const { storage, objects } = memoryStorage();
+
+    const first = await request(app(actor, pipedrive.fetch, storage)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    expect(first.body.files).toEqual({ created: 4, updated: 0, skipped: 1, errors: 0 });
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+    // Linked and deleted files are not downloaded.
+    expect(pipedrive.calls.filter((call) => call.url.includes("/download")).map((call) => new URL(call.url).pathname).sort()).toEqual([
+      "/api/v1/files/6001/download",
+      "/api/v1/files/6002/download",
+      "/api/v1/files/6005/download",
+    ]);
+    expect(objects.size).toBe(3);
+
+    const rows = new Map((await db.select().from(crmFiles).where(eq(crmFiles.companyId, companyId))).map((row) => [row.externalId, row]));
+    const northwindCase = await db.select().from(pipelineCases)
+      .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.caseKey, "pipedrive-701")))
+      .then((found) => found[0]!);
+    const leadCase = await db.select().from(pipelineCases)
+      .where(and(eq(pipelineCases.companyId, companyId), eq(pipelineCases.caseKey, "pipedrive-lead-adf21080-0e10-11eb-879b-05d71fb426ec")))
+      .then((found) => found[0]!);
+    expect(rows.get("6001")).toMatchObject({ name: "Northwind order form.pdf", contentType: "application/pdf", caseId: northwindCase.id, ownerName: "Ama Owusu", description: "Signed copy" });
+    expect(rows.get("6001")!.assetId).toBeTruthy();
+    expect(rows.get("6001")!.evidenceId).toBeTruthy();
+    expect(rows.get("6002")).toMatchObject({ contentType: "image/png", caseId: null, evidenceId: null });
+    expect(rows.get("6002")!.assetId).toBeTruthy();
+    expect(rows.get("6003")).toMatchObject({ assetId: null, remoteUrl: "https://docs.google.com/presentation/d/1AbC" });
+    expect(rows.get("6003")!.details).toMatchObject({ notCopied: "Linked from googledrive" });
+    expect(rows.get("6005")).toMatchObject({ caseId: leadCase.id, contentType: "text/plain" });
+    expect(rows.has("6004")).toBe(false);
+
+    // Deal and lead files show on the case's files.
+    const evidence = await db.select().from(pipelineCaseEvidence).where(eq(pipelineCaseEvidence.companyId, companyId));
+    expect(evidence.map((row) => [row.caseId, row.title, row.kind]).sort()).toEqual([
+      [leadCase.id, "Enquiry notes.txt", "upload"],
+      [northwindCase.id, "Northwind order form.pdf", "upload"],
+    ].sort());
+
+    // The organisation page lists them, and the copy downloads.
+    const northwind = await db.select().from(organisations)
+      .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "101")))
+      .then((found) => found[0]!);
+    const history = await request(app(actor, pipedrive.fetch, storage)).get(`/api/companies/${companyId}/organisations/${northwind.id}/history`);
+    expect(history.status).toBe(200);
+    expect(history.body.files.map((file: { name: string }) => file.name)).toEqual(["Northwind order form.pdf", "Proposal deck", "Northwind logo.png"]);
+    const order = history.body.files[0];
+    expect(order).toMatchObject({ caseTitle: "Northwind CLI trial", contactName: "Esi Boateng", notCopied: null });
+    expect(history.body.files[1]).toMatchObject({ contentPath: null, notCopied: "Linked from googledrive" });
+    const download = await request(app(actor, pipedrive.fetch, storage)).get(order.contentPath).buffer(true);
+    expect(download.status).toBe(200);
+    expect(download.headers["content-type"]).toBe("application/pdf");
+    expect(download.headers["x-content-type-options"]).toBe("nosniff");
+    expect(Buffer.from(download.body).toString()).toBe("%PDF-1.4 order form\n");
+
+    // A rerun downloads nothing again.
+    const before = pipedrive.calls.length;
+    const rerun = await request(app(actor, pipedrive.fetch, storage)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.files).toEqual({ created: 0, updated: 0, skipped: 5, errors: 0 });
+    expect(pipedrive.calls.slice(before).some((call) => call.url.includes("/download"))).toBe(false);
+    expect(objects.size).toBe(3);
+  }, 60_000);
+
+  it("keeps file details when storage is missing or a download fails, and copies it on a later run", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    const pages = recordedPages();
+    delete pages["/api/v1/files/6002/download"];
+    const pipedrive = fakePipedrive(() => pages);
+    const { storage } = memoryStorage();
+
+    const noStorage = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(noStorage.body.files).toEqual({ created: 4, updated: 0, skipped: 1, errors: 0 });
+    expect(pipedrive.calls.some((call) => call.url.includes("/download"))).toBe(false);
+    let logo = await db.select().from(crmFiles).where(and(eq(crmFiles.companyId, companyId), eq(crmFiles.externalId, "6002"))).then((found) => found[0]!);
+    expect(logo.details).toMatchObject({ notCopied: "File storage is not available" });
+
+    const withStorage = await request(app(actor, pipedrive.fetch, storage)).post(importPath(companyId)).send({ connectionId });
+    expect(withStorage.body.files).toEqual({ created: 0, updated: 3, skipped: 2, errors: 0 });
+    expect(withStorage.body.errorSamples).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "file", externalId: "6002" })]));
+    logo = await db.select().from(crmFiles).where(and(eq(crmFiles.companyId, companyId), eq(crmFiles.externalId, "6002"))).then((found) => found[0]!);
+    expect(logo.assetId).toBeNull();
+    expect(logo.details).toMatchObject({ notCopied: "Download failed; the next import tries again" });
+
+    pages["/api/v1/files/6002/download"] = { 0: { file: "PNGBYTES", contentType: "image/png" } };
+    const third = await request(app(actor, pipedrive.fetch, storage)).post(importPath(companyId)).send({ connectionId });
+    expect(third.body.files.updated).toBe(1);
+    logo = await db.select().from(crmFiles).where(and(eq(crmFiles.companyId, companyId), eq(crmFiles.externalId, "6002"))).then((found) => found[0]!);
+    expect(logo.assetId).toBeTruthy();
+    expect(logo.details).not.toHaveProperty("notCopied");
   }, 60_000);
 
   it("still imports everything else when the account has no products, keeping what deals had", async () => {

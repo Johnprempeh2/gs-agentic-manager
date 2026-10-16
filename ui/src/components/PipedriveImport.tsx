@@ -54,6 +54,7 @@ const SAMPLE_LABELS: Record<OrganisationImportResult["errorSamples"][number]["ki
   email: "Email",
   product: "Product",
   lead: "Lead",
+  file: "File",
 };
 
 /** One CRM's export files and where they go, so the upload form serves Pipedrive and HubSpot alike. */
@@ -127,6 +128,7 @@ export function ImportResultSummary({ result }: { result: OrganisationImportResu
         {result.products ? <li>{countsText("Products", result.products)}</li> : null}
         {result.dealProducts ? <li>{countsText("Products on deals", result.dealProducts)}</li> : null}
         {result.leads ? <li>{countsText("Leads", result.leads)}</li> : null}
+        {result.files ? <li>{countsText("Files", result.files)}</li> : null}
       </ul>
       {result.errorSamples.length > 0 ? (
         <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border border-border p-2 text-xs text-muted-foreground" aria-label="Import errors">

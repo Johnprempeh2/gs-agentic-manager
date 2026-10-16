@@ -232,6 +232,15 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   lead when it is converted to a deal, so a lead no longer listed moves to Converted or removed.
   Activities and notes on a lead link to its case. An account with no leads gets no empty
   pipeline. Code: `server/src/services/pipedrive-lead-import.ts`.
+- Every file (`/v1/files`) lands in `crm_files` with its name, size, owner, description and the
+  deal, lead, person, organisation, activity or note it was on (migration `0361_crm_files`). The
+  bytes are downloaded (`/v1/files/{id}/download`) once and copied into GSAM storage as an
+  asset; a file on a deal or lead is also put on the case's files. A file linked from Google
+  Drive and the like, larger than the upload limit, or of a type GSAM does not accept keeps its
+  details and link without the bytes, with the reason. A failed download is tried again on the
+  next import. The organisation page lists the files under "Files", served by
+  `GET /api/companies/:companyId/crm-files/:fileId/content`. Code:
+  `server/src/services/pipedrive-file-import.ts`.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.

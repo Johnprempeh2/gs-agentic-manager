@@ -3,6 +3,7 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "@greatstone/db";
 import {
   agents,
+  crmFiles,
   crmTimelineEntries,
   issues,
   organisationContacts,
@@ -15,10 +16,16 @@ import {
   pipelines,
   projects,
 } from "@greatstone/db";
-import type { CrmTimelineEntry, OrganisationHistory, OrganisationHistoryCase } from "@greatstone/shared";
+import type { CrmFile, CrmTimelineEntry, OrganisationHistory, OrganisationHistoryCase } from "@greatstone/shared";
 
 /** Newest timeline entries shown on the organisation page. */
 const MAX_TIMELINE_ENTRIES = 300;
+/** Newest CRM files shown on the organisation page. */
+const MAX_FILES = 200;
+
+export function crmFileContentPath(companyId: string, fileId: string) {
+  return `/api/companies/${companyId}/crm-files/${fileId}/content`;
+}
 
 const STAGE_CHANGE_TYPES = ["transitioned", "transition_forced"];
 
@@ -120,13 +127,44 @@ export function organisationHistoryService(db: Db) {
         caseTitle,
         details: entry.details ?? {},
       }));
+      const fileRows = await db
+        .select({ file: crmFiles, contactName: organisationContacts.name, caseTitle: pipelineCases.title })
+        .from(crmFiles)
+        .leftJoin(organisationContacts, eq(organisationContacts.id, crmFiles.contactId))
+        .leftJoin(pipelineCases, eq(pipelineCases.id, crmFiles.caseId))
+        .where(and(
+          eq(crmFiles.companyId, companyId),
+          or(
+            eq(crmFiles.organisationId, organisationId),
+            inArray(crmFiles.contactId, contactIds),
+            ...(caseIds.length > 0 ? [inArray(crmFiles.caseId, caseIds)] : []),
+          ),
+        ))
+        .orderBy(sql`${crmFiles.addedAt} desc nulls last`, desc(crmFiles.createdAt))
+        .limit(MAX_FILES);
+      const files: CrmFile[] = fileRows.map(({ file, contactName, caseTitle }) => ({
+        id: file.id,
+        source: file.source,
+        name: file.name,
+        contentType: file.contentType,
+        byteSize: file.byteSize,
+        description: file.description,
+        ownerName: file.ownerName,
+        addedAt: iso(file.addedAt),
+        contentPath: file.assetId ? crmFileContentPath(companyId, file.id) : null,
+        remoteUrl: file.remoteUrl,
+        notCopied: typeof file.details?.notCopied === "string" ? file.details.notCopied : null,
+        contactName,
+        caseId: file.caseId,
+        caseTitle,
+      }));
       // A done activity, a note, a call or an email in the past counts as contact; a planned activity or a stage change does not.
       const nowIso = new Date().toISOString();
       const timelineContact = timeline
         .filter((entry) => entry.occurredAt && entry.occurredAt <= nowIso && entry.kind !== "stage_change" && (entry.kind !== "activity" || entry.done))
         .map((entry) => entry.occurredAt);
 
-      if (caseRows.length === 0) return { organisationId, lastContactAt: latest(timelineContact), cases: [], timeline };
+      if (caseRows.length === 0) return { organisationId, lastContactAt: latest(timelineContact), cases: [], timeline, files };
 
       const fromStage = alias(pipelineStages, "from_stage");
       const toStage = alias(pipelineStages, "to_stage");
@@ -242,7 +280,7 @@ export function organisationHistoryService(db: Db) {
         ...taskRows.map((row) => iso(row.updatedAt)),
         ...timelineContact,
       ]);
-      return { organisationId, lastContactAt, cases: [...cases.values()], timeline };
+      return { organisationId, lastContactAt, cases: [...cases.values()], timeline, files };
     },
   };
 }

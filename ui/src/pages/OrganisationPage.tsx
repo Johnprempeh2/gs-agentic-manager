@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRightLeft, Building2, CalendarClock, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
+import { ArrowRightLeft, Building2, CalendarClock, FileText, History, Mail, Pencil, Phone, Star, StickyNote } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
+  type CrmFile,
   type CrmRecordField,
   type CrmTimelineEntry,
   type OrganisationContact,
@@ -19,6 +20,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useCompany } from "@/context/CompanyContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link, useParams } from "@/lib/router";
+import { formatBytes } from "@/lib/issue-output";
 import { formatDate, formatDateTime } from "@/lib/utils";
 import { ORGANISATION_STATUS_BADGE, OrganisationDialogContent } from "./Organisations";
 
@@ -179,6 +181,15 @@ export function OrganisationPage() {
         </section>
       ) : null}
 
+      {history.data?.files?.length ? (
+        <section aria-label="Files" className="space-y-2">
+          <h2 className="text-sm font-semibold">Files</h2>
+          <ul className="divide-y divide-border rounded-md border border-border">
+            {history.data.files.map((file) => <FileRow key={file.id} file={file} />)}
+          </ul>
+        </section>
+      ) : null}
+
       <Dialog open={editing} onOpenChange={setEditing}>
         {editing && selectedCompanyId ? (
           <OrganisationDialogContent
@@ -235,6 +246,35 @@ function TimelineRow({ entry }: { entry: CrmTimelineEntry }) {
         </div>
         <p className="text-xs text-muted-foreground">{timelineMeta(entry)}</p>
         {entry.body ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{entry.body}</p> : null}
+      </div>
+    </li>
+  );
+}
+
+/** One file imported from a CRM: opens the copy in GSAM, or the CRM's link when it was not copied. */
+function FileRow({ file }: { file: CrmFile }) {
+  const href = file.contentPath ?? file.remoteUrl;
+  const meta = [
+    file.addedAt ? formatDate(file.addedAt) : null,
+    file.byteSize ? formatBytes(file.byteSize) : null,
+    file.ownerName,
+    file.contactName ? `on ${file.contactName}` : null,
+  ].filter(Boolean).join(" · ");
+  return (
+    <li className="flex gap-2 px-3 py-2 text-sm">
+      <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2">
+          {href ? (
+            <a href={href} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">{file.name}</a>
+          ) : (
+            <span className="font-medium">{file.name}</span>
+          )}
+          {file.caseId && file.caseTitle ? <span className="text-xs text-muted-foreground">{file.caseTitle}</span> : null}
+        </div>
+        {meta ? <p className="text-xs text-muted-foreground">{meta}</p> : null}
+        {file.notCopied ? <p className="text-xs text-muted-foreground">Not copied into GSAM: {file.notCopied}</p> : null}
+        {file.description ? <p className="whitespace-pre-wrap break-words text-muted-foreground">{file.description}</p> : null}
       </div>
     </li>
   );
