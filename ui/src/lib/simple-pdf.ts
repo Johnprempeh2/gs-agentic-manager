@@ -31,14 +31,14 @@ const HELVETICA_WIDTHS = [
 ];
 
 const REPLACEMENTS: Record<string, string> = {
-  "‘": "'",
-  "’": "'",
-  "“": '"',
-  "”": '"',
-  "–": "-",
-  "—": "-",
-  "…": "...",
-  " ": " ",
+  "\u2018": "'",
+  "\u2019": "'",
+  "\u201C": '"',
+  "\u201D": '"',
+  "\u2013": "-",
+  "\u2014": "-",
+  "\u2026": "...",
+  "\u00A0": " ",
 };
 
 /** Text the standard fonts can draw: Latin-1, with curly quotes and dashes made plain. */

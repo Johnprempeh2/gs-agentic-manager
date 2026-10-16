@@ -67,6 +67,7 @@ const apiPrefixes: Record<string, string> = {
   "blocked-work.ts": "/api",
   "calendar.ts": "/api",
   "team-scorecard.ts": "/api",
+  "weekly-report.ts": "/api",
   "recovery-holds.ts": "/api",
   "push.ts": "/api",
   "environments.ts": "/api",
