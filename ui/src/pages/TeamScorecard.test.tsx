@@ -86,6 +86,8 @@ describe("TeamScorecard", () => {
     await render();
     expect(api.scorecard).toHaveBeenCalledWith("c1", 14);
     expect(container.textContent).toContain("Down from 3 the week before");
+    // Ridge finished 1 this week; the 14 day scorecard has no extra rows for Ridge, so 0 the week before.
+    expect(container.textContent).toContain("Finished tasks: up from 0 the week before.");
   });
 
   it("asks the agent on a stuck task for an update", async () => {
