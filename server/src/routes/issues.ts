@@ -314,7 +314,7 @@ import {
   readAcceptedPlanConfirmationTarget,
   type IssuePostCommitAction,
 } from "../services/issues.js";
-import { authorizationDeniedDetails } from "../services/authorization.js";
+import { authorizationDeniedDetails, isAgentInSubtree } from "../services/authorization.js";
 import { stalledReviewDecisionService } from "../services/stalled-review-decisions.js";
 import { environmentService } from "../services/environments.js";
 import { environmentRuntimeService } from "../services/environment-runtime.js";
@@ -7035,6 +7035,39 @@ export function issueRoutes(
     return false;
   }
 
+  /**
+   * Recording what an interrupted run did, which clears its recovery hold, is
+   * the board's call. On a task only agents work on (an agent assignee and no
+   * person assigned), a manager of that agent in the reporting chain may clear
+   * it too. The held agent never clears its own hold.
+   */
+  async function assertBoardOrManagerOfAgentOnlyTask(
+    req: Request,
+    issue: {
+      companyId: string;
+      assigneeAgentId: string | null;
+      assigneeUserId: string | null;
+    },
+    dbOrTx: Db = db,
+  ) {
+    const actorAgentId =
+      req.actor.type === "agent" ? req.actor.agentId : null;
+    if (
+      actorAgentId &&
+      issue.assigneeAgentId &&
+      !issue.assigneeUserId &&
+      issue.assigneeAgentId !== actorAgentId &&
+      (await isAgentInSubtree(
+        dbOrTx,
+        issue.companyId,
+        actorAgentId,
+        issue.assigneeAgentId,
+      ))
+    )
+      return;
+    assertBoard(req);
+  }
+
   async function requireRecoveryActionAuthority(
     req: Request,
     issue: { id: string; companyId: string; assigneeAgentId: string | null },
@@ -7670,9 +7703,13 @@ export function issueRoutes(
    * something the other assumed it had, the chain of blocked issues grows,
    * and no one tells the human. Humans are unaffected, and closed ancestors
    * do not count — re-engaging the creator of finished work is normal.
+   * Handing work up to the agent's own manager (anyone above it in the
+   * reporting chain) is an escalation, not a cycle, and is never refused.
    */
   async function assertNoAgentDelegationCycle(input: {
     actorType: string;
+    actorAgentId?: string | null;
+    companyId: string;
     parentIssueId: string | null | undefined;
     assigneeAgentId: string | null | undefined;
   }) {
@@ -7683,9 +7720,20 @@ export function issueRoutes(
       input.assigneeAgentId,
     );
     if (!ancestor) return;
+    if (
+      input.actorAgentId &&
+      input.actorAgentId !== input.assigneeAgentId &&
+      (await isAgentInSubtree(
+        db,
+        input.companyId,
+        input.assigneeAgentId,
+        input.actorAgentId,
+      ))
+    )
+      return;
     throw conflict(
       `Delegation cycle: ${ancestor.identifier ?? "an ancestor issue"} in this chain was created by the agent this child would be assigned to. ` +
-        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to a board operator. Do not delegate the work back to the agent that delegated it to you.",
+        "Complete the remaining work in your own issue, leave the child unassigned, or escalate to your manager or a board operator. Do not delegate the work back to the agent that delegated it to you.",
       {
         code: "delegation_cycle",
         ancestorIssueId: ancestor.id,
@@ -9695,7 +9743,11 @@ export function issueRoutes(
             if (automatic?.replay === "blocked" && executionReconciliation) {
               // An automatic no-replay disposition is final until new evidence
               // arrives. Keep the supported evidence API usable without a dialog.
-              assertBoard(req);
+              await assertBoardOrManagerOfAgentOnlyTask(
+                req,
+                lockedIssue,
+                tx as unknown as Db,
+              );
               if (
                 activeRecoveryAction ||
                 sourceIssueStatus !== "todo" ||
@@ -9799,7 +9851,11 @@ export function issueRoutes(
           sourceIssueStatus === "todo" &&
           requiresExecutionReconciliation(activeRecoveryAction.cause)
         ) {
-          assertBoard(req);
+          await assertBoardOrManagerOfAgentOnlyTask(
+            req,
+            lockedIssue,
+            tx as unknown as Db,
+          );
           await validateExecutionReconciliation({
             db: tx as unknown as Db,
             companyId: lockedIssue.companyId,
@@ -12585,6 +12641,8 @@ export function issueRoutes(
         );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
+        actorAgentId: req.actor.agentId ?? null,
+        companyId,
         parentIssueId:
           typeof effectiveParentId === "string" ? effectiveParentId : null,
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
@@ -13027,6 +13085,8 @@ export function issueRoutes(
         );
       await assertNoAgentDelegationCycle({
         actorType: req.actor.type,
+        actorAgentId: req.actor.agentId ?? null,
+        companyId: parent.companyId,
         parentIssueId: parent.id,
         assigneeAgentId: normalizedAssigneeAgentId ?? null,
       });
