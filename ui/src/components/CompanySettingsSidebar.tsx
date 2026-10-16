@@ -7,6 +7,7 @@ import {
   KeyRound,
   LifeBuoy,
   MonitorCog,
+  Plug,
   Puzzle,
   Server,
   Shield,
@@ -146,6 +147,7 @@ export function CompanySettingsSidebar() {
                 end
               />
             ))}
+          <SidebarNavItem to="/company/settings/integrations" label="Integrations" icon={Plug} end />
           {showPage("company.secrets") && (
             <SidebarNavItem to="/company/settings/secrets" label="Secrets" icon={KeyRound} end />
           )}
