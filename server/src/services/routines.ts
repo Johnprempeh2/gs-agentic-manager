@@ -1553,6 +1553,35 @@ export function routineService(
     );
   }
 
+  /**
+   * The routine's most recent task, open or done, for routines that keep one
+   * standing task instead of opening a new one each run.
+   */
+  async function findLatestStandingIssue(
+    routine: typeof routines.$inferSelect,
+    executor: Db,
+    dispatchFingerprint: string | null | undefined,
+    origin: { kind: string; id: string | null },
+  ) {
+    const fingerprintCondition = routineExecutionFingerprintCondition(dispatchFingerprint);
+    return executor
+      .select()
+      .from(issues)
+      .where(
+        and(
+          eq(issues.companyId, routine.companyId),
+          eq(issues.originKind, origin.kind),
+          eq(issues.originId, origin.id ?? routine.id),
+          inArray(issues.status, [...OPEN_ISSUE_STATUSES, "done"]),
+          visibleIssueCondition(),
+          ...(fingerprintCondition ? [fingerprintCondition] : []),
+        ),
+      )
+      .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
+      .limit(1)
+      .then((rows) => rows[0] ?? null);
+  }
+
   async function findLiveExecutionIssue(
     routine: typeof routines.$inferSelect,
     executor: Db = db,
@@ -1949,6 +1978,53 @@ export function routineService(
             nextRunAt,
           }, txDb);
           return updated ?? createdRun;
+        }
+
+        if (input.routine.concurrencyPolicy === "reuse_standing_task") {
+          const standing = await findLatestStandingIssue(input.routine, txDb, dispatchFingerprint, {
+            kind: issueOriginKind,
+            id: issueOriginId,
+          });
+          // A finished standing task is opened again; an open one gets the new run.
+          // Either way no new task is created.
+          if (standing) {
+            const wasDone = standing.status === "done";
+            // Reopen outside the dispatch transaction: the wakeup links the run to
+            // this existing row from its own connection and would wait on our row lock.
+            const reopened = wasDone
+              ? await issueSvc.update(
+                standing.id,
+                { status: "todo", companyGuard: input.routine.companyId },
+                db,
+              )
+              : standing;
+            if (reopened) {
+              await queueIssueAssignmentWakeup({
+                heartbeat,
+                issue: reopened,
+                reason: "routine_standing_task_reopened",
+                mutation: "update",
+                contextSource: "routine.dispatch",
+                requestedByActorType: input.source === "schedule" ? "system" : undefined,
+                rethrowOnError: true,
+              });
+              const standingStatus = wasDone ? "issue_reopened" : "coalesced";
+              const updated = await finalizeRun(createdRun.id, {
+                status: standingStatus,
+                linkedIssueId: reopened.id,
+                completedAt: triggeredAt,
+              }, txDb);
+              await updateRoutineTouchedState({
+                routineId: input.routine.id,
+                triggerId: input.trigger?.id ?? null,
+                triggeredAt,
+                status: standingStatus,
+                issueId: reopened.id,
+                nextRunAt,
+              }, txDb);
+              return updated ?? createdRun;
+            }
+          }
         }
 
         try {
