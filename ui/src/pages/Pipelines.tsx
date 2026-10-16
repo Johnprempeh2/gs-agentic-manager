@@ -21,7 +21,9 @@ import type {
   RequestConfirmationInteraction,
   SuggestTasksInteraction,
 } from "@greatstone/shared";
-import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowUpDown, ArrowUpRight, BookOpenText, Check, ChevronDown, ChevronRight, ChevronUp, CircleDot, Download, ExternalLink, FileText, GitBranch, Hexagon, Image as ImageIcon, Info, Layers, List, ListTree, Loader2, MessageSquare, MoreHorizontal, Package, PaperclipIcon, Plus, Search, Settings, Sparkles, Trash2, X } from "lucide-react";
+import { openAskEverest } from "../lib/ask-everest-events";
+import { pipelineItemAskContext } from "../lib/ask-everest";
 import {
   DndContext,
   DragOverlay,
@@ -3072,6 +3074,21 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
         <div className="flex w-full flex-col gap-5">
           <div className="flex items-center gap-2 lg:justify-end">
             {isClientCase ? <FeatureTour tour={CLIENT_CASE_TOUR} /> : null}
+            <Button
+              variant="outline"
+              title={`Ask Everest a question about ${detail.case.title}`}
+              data-testid="pipeline-item-ask"
+              onClick={() => openAskEverest(undefined, pipelineItemAskContext({
+                title: detail.case.title,
+                pipelineName: pipeline.data.name,
+                stageName: detail.stage.name,
+                statusLabel,
+                isClient: isClientCase,
+              }))}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              Ask Everest
+            </Button>
             {primaryAction}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

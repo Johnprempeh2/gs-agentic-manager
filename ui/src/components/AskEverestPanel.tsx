@@ -25,11 +25,20 @@ import {
   answerOverview,
   answerStuck,
   answerSubject,
+  answerFollowUp,
   classifyQuestion,
+  followUpRefinement,
+  intentWithContext,
+  liveQuestionText,
+  narrowTasks,
+  taskSetLabel,
   type AskAnswer,
+  type AskContext,
   type AskIntent,
+  type AskRefinement,
+  type AskTaskSet,
 } from "../lib/ask-everest";
-import { OPEN_ASK_EVEREST_EVENT } from "../lib/ask-everest-events";
+import { OPEN_ASK_EVEREST_EVENT, type OpenAskEverestDetail } from "../lib/ask-everest-events";
 import { leadChatHref, resolveLeadAgent } from "./MobileEverestButton";
 import { AgentAvatar } from "./AgentAvatar";
 import { MarkdownBody } from "./MarkdownBody";
@@ -46,10 +55,17 @@ const LIVE_REPLY_WAIT_MS = 5 * 60 * 1000;
 export function AskEverestPanel() {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [question, setQuestion] = useState<string | null>(null);
+  const [turns, setTurns] = useState<AskTurn[]>([]);
+  const [context, setContext] = useState<AskContext | null>(null);
   const [files, setFiles] = useState<File[]>([]);
-  const [questionFiles, setQuestionFiles] = useState<File[]>([]);
+  const [taskSets, setTaskSets] = useState<Record<number, AskTaskSet>>({});
+  const nextId = useRef(1);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  function addTurn(question: string, turnFiles: File[], followUp: AskTurn["followUp"] = null, reset = false) {
+    const turn: AskTurn = { id: nextId.current++, question, files: turnFiles, followUp };
+    setTurns((current) => (reset ? [turn] : [...current, turn]).slice(-MAX_TURNS));
+  }
 
   useEffect(() => {
     function handleKey(event: KeyboardEvent) {
@@ -59,12 +75,19 @@ export function AskEverestPanel() {
       }
     }
     function handleOpen(event: Event) {
-      const preset = (event as CustomEvent<{ question?: string }>).detail?.question?.trim() ?? "";
+      const detail = (event as CustomEvent<OpenAskEverestDetail>).detail ?? {};
+      const preset = detail.question?.trim() ?? "";
       setOpen(true);
+      if (detail.context) {
+        // A page asked: start a fresh conversation about it.
+        setContext(detail.context);
+        setTurns([]);
+        setTaskSets({});
+        setDraft("");
+      }
       if (preset) {
         setDraft("");
-        setQuestion(preset);
-        setQuestionFiles([]);
+        addTurn(preset, [], null, true);
       }
     }
     document.addEventListener("keydown", handleKey);
@@ -90,19 +113,22 @@ export function AskEverestPanel() {
           <AskEverestBody
             draft={draft}
             setDraft={setDraft}
-            question={question}
+            turns={turns}
+            context={context}
+            onClearContext={() => setContext(null)}
             files={files}
             setFiles={setFiles}
-            questionFiles={questionFiles}
-            onAsk={(text) => {
-              setQuestion(text);
-              setQuestionFiles(files);
+            taskSets={taskSets}
+            onTaskSet={(turnId, set) => setTaskSets((current) => ({ ...current, [turnId]: set }))}
+            onAsk={(text, followUp) => {
+              addTurn(text, files, followUp);
               setFiles([]);
               setDraft("");
             }}
             onReset={() => {
-              setQuestion(null);
-              setQuestionFiles([]);
+              setTurns([]);
+              setTaskSets({});
+              setContext(null);
             }}
             onNavigate={() => setOpen(false)}
             inputRef={inputRef}
@@ -113,13 +139,28 @@ export function AskEverestPanel() {
   );
 }
 
+/** One question in the conversation, with the files sent with it. */
+interface AskTurn {
+  id: number;
+  question: string;
+  files: File[];
+  /** Set when the question narrows the answer before it ("and which of those are overdue?"). */
+  followUp: { refinement: AskRefinement; set: AskTaskSet; previous: string } | null;
+}
+
+/** The panel keeps this many questions on screen. */
+const MAX_TURNS = 8;
+
 function AskEverestBody({
   draft,
   setDraft,
   files,
   setFiles,
-  questionFiles,
-  question,
+  turns,
+  context,
+  onClearContext,
+  taskSets,
+  onTaskSet,
   onAsk,
   onReset,
   onNavigate,
@@ -130,10 +171,13 @@ function AskEverestBody({
   /** Files waiting to go with the next question. */
   files: File[];
   setFiles: (files: File[]) => void;
-  /** Files sent with the current question. */
-  questionFiles: File[];
-  question: string | null;
-  onAsk: (question: string) => void;
+  turns: AskTurn[];
+  context: AskContext | null;
+  onClearContext: () => void;
+  /** The tasks behind each answer, by turn, so a follow-up can narrow them. */
+  taskSets: Record<number, AskTaskSet>;
+  onTaskSet: (turnId: number, set: AskTaskSet) => void;
+  onAsk: (question: string, followUp: AskTurn["followUp"]) => void;
   onReset: () => void;
   onNavigate: () => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
@@ -147,10 +191,24 @@ function AskEverestBody({
   const lead = useMemo(() => resolveLeadAgent(agents), [agents]);
   const leadName = lead?.name ?? "Everest";
   const exampleAgent = agents.find((agent) => agent.id !== lead?.id && agent.status !== "terminated");
-  const suggestions = [
-    ...SUGGESTED_QUESTIONS,
-    ...(exampleAgent ? [`What did ${exampleAgent.name} do today?`] : []),
-  ];
+  const suggestions = context?.suggestions?.length
+    ? context.suggestions
+    : [...SUGGESTED_QUESTIONS, ...(exampleAgent ? [`What did ${exampleAgent.name} do today?`] : [])];
+  const lastTurn = turns[turns.length - 1] ?? null;
+
+  // A question like "and which of those are overdue?" narrows the last answer's tasks.
+  function ask(text: string) {
+    const set = lastTurn ? taskSets[lastTurn.id] : undefined;
+    const refinement = set ? followUpRefinement(text, agents) : null;
+    onAsk(text, refinement && set && lastTurn ? { refinement, set, previous: lastTurn.question } : null);
+  }
+
+  // Keep the newest answer in view.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (element && turns.length > 1) element.scrollTop = element.scrollHeight;
+  }, [turns.length]);
 
   // Speak the question where the browser supports it (Chrome, Safari, Edge).
   const draftRef = useRef(draft);
@@ -173,7 +231,7 @@ function AskEverestBody({
     event.preventDefault();
     if (dictation.listening) dictation.stop();
     const text = draft.trim() || (files.length > 0 ? filesOnlyQuestion(files.length) : "");
-    if (text) onAsk(text);
+    if (text) ask(text);
   }
 
   return (
@@ -188,17 +246,22 @@ function AskEverestBody({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        {question && selectedCompanyId ? (
-          <AskConversation
-            key={question}
-            companyId={selectedCompanyId}
-            question={question}
-            files={questionFiles}
-            agents={agents}
-            lead={lead}
-            onNavigate={onNavigate}
-          />
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+        {turns.length > 0 && selectedCompanyId ? (
+          <div className="space-y-6">
+            {turns.map((turn) => (
+              <AskConversation
+                key={turn.id}
+                companyId={selectedCompanyId}
+                turn={turn}
+                context={context}
+                agents={agents}
+                lead={lead}
+                onTaskSet={(set) => onTaskSet(turn.id, set)}
+                onNavigate={onNavigate}
+              />
+            ))}
+          </div>
         ) : (
           <div className="space-y-3" data-testid="ask-everest-suggestions">
             <p className="text-sm text-muted-foreground">Try one of these:</p>
@@ -207,7 +270,7 @@ function AskEverestBody({
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => onAsk(suggestion)}
+                  onClick={() => ask(suggestion)}
                   className="rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
                 >
                   {suggestion}
@@ -225,6 +288,21 @@ function AskEverestBody({
         data-dragging={intake.dragging || undefined}
         className={cn("space-y-2 border-t border-border px-4 py-3 transition-colors", intake.dragging && "bg-accent")}
       >
+        {context ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid="ask-everest-context">
+            <span className="min-w-0 truncate">
+              About: <span className="font-medium text-foreground">{context.label}</span>
+            </span>
+            <button
+              type="button"
+              onClick={onClearContext}
+              aria-label={`Stop asking about ${context.label}`}
+              className="rounded p-0.5 hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
         {files.length > 0 ? (
           <ul className="flex flex-wrap gap-2" data-testid="ask-everest-files" aria-label="Files to send">
             {files.map((file, index) => (
@@ -253,7 +331,9 @@ function AskEverestBody({
             onChange={(event) => setDraft(event.target.value)}
             placeholder={dictation.listening
               ? (dictation.interim || "Listening…")
-              : question ? "Ask something else" : "What is stuck on the Indago work?"}
+              : lastTurn
+                ? (lastTurn && taskSets[lastTurn.id] ? "Ask a follow-up, like: which of those are overdue?" : "Ask something else")
+                : context ? `Ask about ${context.label}` : "What is stuck on the Indago work?"}
             aria-label={`Ask ${leadName} a question`}
             className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
           />
@@ -285,7 +365,7 @@ function AskEverestBody({
           <Button type="submit" size="sm" disabled={!draft.trim() && files.length === 0} aria-label="Ask">
             <Send className="h-4 w-4" />
           </Button>
-          {question ? (
+          {turns.length > 0 || context ? (
             <Button type="button" variant="ghost" size="sm" onClick={onReset}>
               Clear
             </Button>
@@ -338,23 +418,45 @@ function FileChip({ file, onRemove }: { file: File; onRemove: () => void }) {
 
 function AskConversation({
   companyId,
-  question,
-  files,
+  turn,
+  context,
   agents,
   lead,
+  onTaskSet,
   onNavigate,
 }: {
   companyId: string;
-  question: string;
-  files: File[];
+  turn: AskTurn;
+  context: AskContext | null;
   agents: readonly PanelAgent[];
   lead: PanelAgent | null;
+  onTaskSet: (set: AskTaskSet) => void;
   onNavigate: () => void;
 }) {
-  const intent = useMemo<AskIntent>(() => classifyQuestion(question, agents), [question, agents]);
-  const answer = useInstantAnswer(companyId, intent, agents);
+  const { question, files, followUp } = turn;
+  const intent = useMemo<AskIntent>(
+    () => intentWithContext(classifyQuestion(question, agents), context),
+    [question, agents, context],
+  );
+  const agentName = (id: string | null) => (id ? agents.find((agent) => agent.id === id)?.name ?? null : null);
+  // A follow-up narrows the tasks already on screen, so it answers without fetching.
+  const narrowed = useMemo(() => {
+    if (!followUp) return null;
+    const value = answerFollowUp(followUp.refinement, followUp.set, agentName);
+    const issues = narrowTasks(followUp.refinement, followUp.set.issues);
+    return { value, set: { about: followUp.set.about, issues } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followUp]);
+  const instant = useInstantAnswer(companyId, intent, agents, !followUp);
+  const answer = narrowed ? { value: narrowed.value } : instant;
+  const set = narrowed?.set ?? instant.set ?? null;
+  useEffect(() => {
+    if (set) onTaskSet(set);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [set]);
+  const liveQuestion = liveQuestionText(question, { context, followsUp: followUp?.previous ?? null });
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="ask-everest-turn">
       <div className="ml-auto w-fit max-w-full rounded-2xl rounded-br-sm bg-primary px-3.5 py-2 text-sm text-primary-foreground">
         {question}
         {files.length > 0 ? (
@@ -364,17 +466,17 @@ function AskConversation({
         ) : null}
       </div>
       <section aria-live="polite" className="space-y-3" data-testid="ask-everest-answer">
-        {answer.loading ? (
+        {"loading" in answer && answer.loading ? (
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Looking through GSAM…
           </p>
-        ) : answer.error ? (
+        ) : "error" in answer && answer.error ? (
           <p className="text-sm text-destructive">I could not read that from GSAM: {answer.error}</p>
-        ) : answer.value ? (
+        ) : "value" in answer && answer.value ? (
           <AnswerCard answer={answer.value} onNavigate={onNavigate} />
         ) : null}
       </section>
-      {lead ? <LiveAsk companyId={companyId} question={question} files={files} lead={lead} onNavigate={onNavigate} /> : null}
+      {lead ? <LiveAsk companyId={companyId} question={liveQuestion} files={files} lead={lead} onNavigate={onNavigate} /> : null}
     </div>
   );
 }
@@ -416,14 +518,19 @@ function AnswerCard({ answer, onNavigate }: { answer: AskAnswer; onNavigate: () 
   );
 }
 
-function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly PanelAgent[]) {
-  const needsNeedsMe = intent.kind === "decide" || intent.kind === "overview" || intent.kind === "away";
+type InstantAnswer =
+  | { loading: true; set?: undefined }
+  | { error: string; set?: undefined }
+  | { value: AskAnswer; set?: AskTaskSet };
+
+function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly PanelAgent[], active = true): InstantAnswer {
+  const needsNeedsMe = active && (intent.kind === "decide" || intent.kind === "overview" || intent.kind === "away");
   const digest = useQuery({
     queryKey: queryKeys.agentWorkDigest(companyId),
     queryFn: () => agentWorkDigestApi.get(companyId),
-    enabled: intent.kind === "away",
+    enabled: active && intent.kind === "away",
   });
-  const needsScorecard = intent.kind === "agent" || intent.kind === "overview";
+  const needsScorecard = active && (intent.kind === "agent" || intent.kind === "overview");
   const needsMe = useQuery({
     queryKey: queryKeys.decisionsFeed.needsMe(companyId),
     queryFn: () => decisionsFeedApi.needsMe(companyId),
@@ -448,8 +555,13 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       if (intent.kind === "subject") return issuesApi.list(companyId, { q: intent.subject, limit: 50 });
       return Promise.resolve([]);
     },
-    enabled: intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away",
+    enabled: active && (intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away"),
   });
+  const setLabel = taskSetLabel(intent);
+  const set = useMemo(
+    () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
+    [setLabel, issues.data],
+  );
 
   const agentName = (id: string | null) => (id ? agents.find((agent) => agent.id === id)?.name ?? null : null);
   const pending = (needsNeedsMe && needsMe.isPending)
@@ -457,16 +569,17 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
     || (intent.kind === "away" && digest.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error) || (intent.kind === "away" && digest.error) || issues.error;
+  if (!active) return { loading: true };
   if (pending) return { loading: true as const };
   if (error) return { error: error instanceof Error ? error.message : "Unknown error" };
 
   switch (intent.kind) {
     case "away":
-      return { value: answerAway(digest.data!, issues.data ?? [], needsMe.data ?? null) };
+      return { value: answerAway(digest.data!, issues.data ?? [], needsMe.data ?? null), set };
     case "decide":
       return { value: answerDecide(needsMe.data!) };
     case "stuck":
-      return { value: answerStuck(issues.data ?? [], intent.subject, agentName) };
+      return { value: answerStuck(issues.data ?? [], intent.subject, agentName), set };
     case "agent":
       return {
         value: answerAgent(
@@ -475,9 +588,10 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
           scorecard.data ?? null,
           issues.data ?? [],
         ),
+        set,
       };
     case "subject":
-      return { value: answerSubject(intent.subject, issues.data ?? []) };
+      return { value: answerSubject(intent.subject, issues.data ?? []), set };
     default:
       return { value: answerOverview(scorecard.data ?? null, needsMe.data ?? null) };
   }
