@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { TeamScorecardAgent } from "@greatstone/shared";
-import { scorecardCsvFileName, scorecardSentence, scorecardToCsv, scorecardUpdateText, workValueLabel } from "./team-scorecard";
+import {
+  finishedTrend,
+  scorecardCsvFileName,
+  scorecardSentence,
+  scorecardToCsv,
+  scorecardUpdateText,
+  workValueLabel,
+} from "./team-scorecard";
 
 function agent(overrides: Partial<TeamScorecardAgent>): TeamScorecardAgent {
   return {
@@ -100,5 +107,17 @@ describe("scorecardToCsv", () => {
   it("names the file after the organisation, period and day", () => {
     expect(scorecardCsvFileName("GRE", 30, "2026-10-16")).toBe("gre-scorecard-30-days-2026-10-16.csv");
     expect(scorecardCsvFileName(null, 7, "2026-10-16")).toBe("scorecard-7-days-2026-10-16.csv");
+  });
+});
+
+describe("finishedTrend", () => {
+  it("compares this period with the one before", () => {
+    expect(finishedTrend(12, 20, 7)).toBe("Up from 8 the week before");
+    expect(finishedTrend(3, 10, 30)).toBe("Down from 7 the 30 days before");
+    expect(finishedTrend(4, 8, 7)).toBe("Same as the week before");
+  });
+
+  it("says nothing until the longer scorecard has loaded", () => {
+    expect(finishedTrend(5, undefined, 7)).toBeNull();
   });
 });

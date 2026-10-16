@@ -79,6 +79,15 @@ describe("TeamScorecard", () => {
     await flushReact();
   }
 
+  it("compares what was finished with the week before", async () => {
+    api.scorecard.mockImplementation(async (_companyId: string, days: number) =>
+      days === 14 ? { ...scorecard, days: 14, totals: { ...scorecard.totals, finished: 4 } } : scorecard,
+    );
+    await render();
+    expect(api.scorecard).toHaveBeenCalledWith("c1", 14);
+    expect(container.textContent).toContain("Down from 3 the week before");
+  });
+
   it("asks the agent on a stuck task for an update", async () => {
     await render();
     const buttons = Array.from(container.querySelectorAll("button")).filter((button) =>

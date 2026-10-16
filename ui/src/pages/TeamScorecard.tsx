@@ -20,6 +20,7 @@ import {
   scorecardToCsv,
   scorecardUpdateText,
   workValueLabel,
+  finishedTrend,
 } from "../lib/team-scorecard";
 import { downloadTextFile } from "../lib/issues-csv";
 import { localToday } from "../lib/calendar";
@@ -33,7 +34,19 @@ const PERIODS = [
   { days: 30, label: "Last 30 days" },
 ] as const;
 
-function Stat({ icon: Icon, value, label, tone }: { icon: typeof CircleCheck; value: number; label: string; tone?: "danger" | "success" }) {
+function Stat({
+  icon: Icon,
+  value,
+  label,
+  tone,
+  note,
+}: {
+  icon: typeof CircleCheck;
+  value: number;
+  label: string;
+  tone?: "danger" | "success";
+  note?: string | null;
+}) {
   return (
     <div className="rounded-md border border-border bg-card px-3 py-2">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -41,6 +54,7 @@ function Stat({ icon: Icon, value, label, tone }: { icon: typeof CircleCheck; va
         {label}
       </div>
       <div className={cn("text-2xl font-semibold tabular-nums", tone === "danger" && value > 0 && "text-status-danger")}>{value}</div>
+      {note ? <div className="text-xs text-muted-foreground">{note}</div> : null}
     </div>
   );
 }
@@ -185,6 +199,14 @@ export function TeamScorecard() {
     enabled: !!selectedCompanyId,
   });
 
+  // Twice the period, to say how this period compares with the one before.
+  const { data: twice } = useQuery({
+    queryKey: queryKeys.teamScorecard(selectedCompanyId ?? "", days * 2),
+    queryFn: () => teamScorecardApi.get(selectedCompanyId!, (days * 2) as 14 | 60),
+    enabled: !!selectedCompanyId,
+    retry: false,
+  });
+
   // Work value is a nice-to-have: people without cost access simply do not see it.
   const from = data?.since;
   const { data: value } = useQuery({
@@ -296,7 +318,13 @@ export function TeamScorecard() {
       ) : data ? (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <Stat icon={CircleCheck} value={data.totals.finished} label="Finished" tone="success" />
+            <Stat
+              icon={CircleCheck}
+              value={data.totals.finished}
+              label="Finished"
+              tone="success"
+              note={finishedTrend(data.totals.finished, twice?.totals.finished, data.days)}
+            />
             <Stat icon={Loader} value={data.totals.underWay} label="Under way" />
             <Stat icon={Eye} value={data.totals.inReview} label="Waiting for review" />
             <Stat icon={AlertTriangle} value={data.totals.stuck} label="Stuck" tone="danger" />
