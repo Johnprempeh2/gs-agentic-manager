@@ -56,6 +56,7 @@ import {
   markDeliverableSchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
+  setCaseEngagementSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -353,6 +354,8 @@ import {
   clientFilesQuerySchema,
   clientFilesSearchSchema,
   createClientEvidenceSchema,
+  createClientDocumentRequestsSchema,
+  addStandardClientDocumentRequestsSchema,
   createClientJourneyDeliverableSchema,
   createCrmSyncBindingSchema,
   createCrmSyncSuggestionSchema,
@@ -4572,6 +4575,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "put",
+  path: "/api/cases/{caseId}/engagement",
+  tags: ["issues"],
+  summary: "Set the client's engagement pack status (board only): not_sent, sent or accepted. It cannot go out while the NDA is required (409)",
+  request: {
+    params: z.object({ caseId: z.string() }),
+    body: jsonBody(setCaseEngagementSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/deliverables/{id}/screenshot",
   tags: ["issues"],
@@ -7087,6 +7102,15 @@ registry.registerPath({
   path: "/api/companies/{companyId}/blocked-work",
   tags: ["issues"],
   summary: "Blocked work overview: how long each blocked task has waited, who must act, and the root task holding each chain",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/recovery-holds",
+  tags: ["issues"],
+  summary: "Tasks held until someone records what their last run did",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
@@ -13827,7 +13851,8 @@ registerCurrentRoute({
   tags: ["pipelines"],
   summary:
     "Upload a file straight onto a pipeline case as evidence (Work cases). multipart/form-data: a `file` field, " +
-    "with optional `title`, `note` and `stageId` (a stage on the case's own pipeline)",
+    "with optional `title`, `note`, `stageId` (a stage on the case's own pipeline) and `requestId` (a document " +
+    "request this file meets)",
   responses: pipelineCreateResponses,
 });
 
@@ -13837,6 +13862,53 @@ registerCurrentRoute({
   tags: ["pipelines"],
   summary: "Get the file behind an uploaded evidence item; ?download=1 asks for a download",
   responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/document-requests",
+  tags: ["pipelines"],
+  summary:
+    "Ask the client for documents at one stage (Work cases). Titles the stage already asks for are skipped",
+  body: createClientDocumentRequestsSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/document-requests/standard",
+  tags: ["pipelines"],
+  summary: "Add a stage's standard document list (stage config `requestedDocuments`) to the client (Work cases)",
+  body: addStandardClientDocumentRequestsSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{caseId}/document-requests/{requestId}",
+  tags: ["pipelines"],
+  summary: "Remove a document request from a client (Work cases)",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/pack",
+  tags: ["pipelines"],
+  summary:
+    "Upload the engagement pack sent to the client (board only). multipart/form-data: a `file` field. The file is " +
+    "filed in the client's evidence and the pack is marked sent; refused while the NDA is required",
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/acceptance",
+  tags: ["pipelines"],
+  summary:
+    "Upload the client's signed acceptance of the engagement pack (board only). multipart/form-data: a `file` " +
+    "field. The file is filed in the client's evidence and the pack is marked accepted",
+  responses: pipelineCreateResponses,
 });
 
 registerCurrentRoute({

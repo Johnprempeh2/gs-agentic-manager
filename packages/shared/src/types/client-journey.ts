@@ -1,4 +1,5 @@
 import type { Deliverable, DeliverableConfidentiality, DeliverableKind } from "./deliverable.js";
+import type { EngagementStatus } from "../validators/client-journey.js";
 
 // Client journey by stage (GRE-1473): each stage of a client's journey
 // (Executive Discovery, GITA, Deep Dive, GDXP, playback) lists the standard
@@ -45,6 +46,37 @@ export interface ClientJourneyStage {
   templates: ClientJourneyStageTemplate[];
   deliverables: ClientJourneyStageDeliverable[];
   expected: ClientJourneyExpectedDeliverable[];
+  /** Documents asked of the client at this stage, in order. */
+  requests?: ClientDocumentRequest[];
+  /** The stage config's standard document list, less what is already requested. */
+  suggestedRequests?: ClientJourneySuggestedRequest[];
+}
+
+/**
+ * A document asked of the client at one stage (Ben, 12 Oct: the deep dive's
+ * document request stage). It is received once an upload is linked to it.
+ */
+export interface ClientDocumentRequest {
+  id: string;
+  stageId: string;
+  title: string;
+  note: string | null;
+  createdAt: string;
+  /** The file that met the request, or null while it is outstanding. */
+  received: ClientDocumentRequestReceived | null;
+}
+
+export interface ClientDocumentRequestReceived {
+  evidenceId: string;
+  title: string;
+  /** API path that returns the file; null for a link or a task file. */
+  contentPath: string | null;
+  receivedAt: string;
+}
+
+export interface ClientJourneySuggestedRequest {
+  title: string;
+  note: string | null;
 }
 
 /** A case's NDA: required (the default), accepted (with its date) or suspended (with its reason). */
@@ -69,6 +101,29 @@ export interface ClientNdaSignedDocument {
   uploadedAt: string;
 }
 
+/** A file on the client that the NDA or engagement pack points at. */
+export interface ClientJourneyFileRef {
+  evidenceId: string;
+  title: string;
+  /** API path that returns the file. */
+  contentPath: string;
+  uploadedAt: string;
+}
+
+/**
+ * The engagement pack after the NDA (Ben, 8 and 12 Oct): not sent, sent or
+ * accepted, with the pack that went out and the client's signed acceptance.
+ */
+export interface ClientEngagement {
+  status: EngagementStatus;
+  sentAt: string | null;
+  acceptedAt: string | null;
+  changedBy: string | null;
+  changedAt: string | null;
+  pack: ClientJourneyFileRef | null;
+  acceptance: ClientJourneyFileRef | null;
+}
+
 /** GET /api/cases/:caseId/journey — the internal, per-stage view of a client. */
 export interface ClientJourneyResponse {
   caseId: string;
@@ -76,6 +131,8 @@ export interface ClientJourneyResponse {
   ndaAcceptedAt: string | null;
   /** The NDA: client-labelled items reach the portal once it is accepted or suspended. */
   nda: ClientNda;
+  /** The engagement pack; it can go out once the NDA is accepted or suspended. */
+  engagement?: ClientEngagement;
   stages: ClientJourneyStage[];
   /** Deliverables on the client's tasks and projects that are not filed under a stage yet. */
   unfiled: Deliverable[];

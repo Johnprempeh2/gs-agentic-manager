@@ -61,6 +61,7 @@ import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
 import { MemoryApps } from "./pages/MemoryApps";
+import { MemoryClientDetail, MemoryClients } from "./pages/MemoryClients";
 import { GoalDetail } from "./pages/GoalDetail";
 import { StrategyBoard } from "./pages/StrategyBoard";
 import { Tutorials } from "./pages/Tutorials";
@@ -132,6 +133,7 @@ import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -411,6 +413,8 @@ function boardRoutes() {
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
       <Route path="memory/apps" element={<MemoryApps />} />
+      <Route path="memory/clients" element={<MemoryClients />} />
+      <Route path="memory/clients/:scopeId" element={<MemoryClientDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -834,6 +838,8 @@ export function App() {
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/apps" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients/:scopeId" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           <Route path="audit/*" element={<UnprefixedBoardRedirect />} />
           <Route path="activity" element={<UnprefixedBoardRedirect />} />
@@ -875,6 +881,9 @@ export function App() {
           <Route path="execution-workspaces/:workspaceId/runtime-logs" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/issues" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/routines" element={<UnprefixedExecutionWorkspaceRedirect />} />
+          {UNPREFIXED_BOARD_ROOTS.map((root) => (
+            <Route key={`unprefixed-${root}`} path={`${root}/*`} caseSensitive element={<UnprefixedBoardRedirect />} />
+          ))}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>

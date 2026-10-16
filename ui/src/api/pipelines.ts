@@ -3,7 +3,9 @@ import type {
   ClientEvidenceItem,
   ClientFilesResponse,
   ClientJourneyResponse,
+  ClientEngagement,
   ClientNda,
+  EngagementStatus,
   NdaStatus,
   ClientPortalJourneyResponse,
   CreateClientJourneyDeliverableInput,
@@ -716,15 +718,27 @@ export const pipelinesApi = {
   addCaseEvidence: (caseId: string, input: CreateClientEvidence) =>
     api.post<ClientEvidenceItem>(`/cases/${caseId}/evidence`, input),
   /** Upload a file straight onto the client, optionally filed under a journey stage. */
-  uploadCaseEvidence: (caseId: string, file: File, input: { title?: string; note?: string; stageId?: string | null } = {}) => {
+  uploadCaseEvidence: (
+    caseId: string,
+    file: File,
+    input: { title?: string; note?: string; stageId?: string | null; requestId?: string | null } = {},
+  ) => {
     const form = new FormData();
     if (input.title) form.append("title", input.title);
     if (input.note) form.append("note", input.note);
     if (input.stageId) form.append("stageId", input.stageId);
+    if (input.requestId) form.append("requestId", input.requestId);
     // The file goes last so the text fields are parsed before it.
     form.append("file", file);
     return api.postForm<ClientEvidenceItem>(`/cases/${caseId}/evidence/upload`, form);
   },
+  /** Ask the client for documents at a stage; titles already asked for are skipped. */
+  requestCaseDocuments: (caseId: string, input: { stageId: string; titles: string[]; note?: string | null }) =>
+    api.post<{ created: number }>(`/cases/${caseId}/document-requests`, input),
+  addStandardCaseDocumentRequests: (caseId: string, stageId: string) =>
+    api.post<{ created: number }>(`/cases/${caseId}/document-requests/standard`, { stageId }),
+  removeCaseDocumentRequest: (caseId: string, requestId: string) =>
+    api.delete<{ deleted: true }>(`/cases/${caseId}/document-requests/${requestId}`),
   removeCaseEvidence: (caseId: string, evidenceId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/evidence/${evidenceId}`),
   getCaseJourney: (caseId: string) =>
@@ -737,6 +751,17 @@ export const pipelinesApi = {
     api.patch<{ id: string }>(`/cases/${caseId}/journey/deliverables/${linkId}`, input),
   removeCaseJourneyDeliverable: (caseId: string, linkId: string) =>
     api.delete<{ deleted: true }>(`/cases/${caseId}/journey/deliverables/${linkId}`),
+  setCaseEngagement: (caseId: string, status: EngagementStatus) =>
+    api.put<{ engagement: ClientEngagement }>(`/cases/${caseId}/engagement`, { status }),
+  /** Upload the engagement pack (marks it sent) or the client's signed acceptance (marks it accepted). */
+  uploadEngagementFile: (caseId: string, step: "pack" | "acceptance", file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return api.postForm<{ engagement: ClientEngagement; evidence: ClientEvidenceItem }>(
+      `/cases/${caseId}/engagement/${step}`,
+      form,
+    );
+  },
   /** Upload the client's signed NDA; it is filed in their evidence and the NDA is marked accepted. */
   uploadSignedNda: (caseId: string, file: File) => {
     const form = new FormData();

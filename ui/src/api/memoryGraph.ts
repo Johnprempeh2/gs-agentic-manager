@@ -1,6 +1,7 @@
 import type {
   ChangeMemoryGrant,
   CreateMemoryConnection,
+  CreateMemoryScope,
   CreatedMemoryConnection,
   MemoryConnection,
   MemoryConnectionActivity,
@@ -69,6 +70,8 @@ export const memoryGraphApi = {
     ),
   /** Scopes the caller may read; the import picker offers these. */
   scopes: (companyId: string) => api.get<MemoryScope[]>(`/companies/${companyId}/memory/scopes`),
+  /** Owner or admin only; others get 403. */
+  createScope: (companyId: string, body: CreateMemoryScope) => api.post<MemoryScope>(`/companies/${companyId}/memory/scopes`, body),
   /** Adds picked Claude or ChatGPT entries as unreviewed contributions. */
   importEntries: (companyId: string, body: ImportMemory) =>
     api.post<MemoryImportResult>(`/companies/${companyId}/memory/import`, body),

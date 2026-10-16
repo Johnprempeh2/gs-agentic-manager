@@ -109,11 +109,15 @@ import {
   clientFilesQuerySchema,
   clientFilesSearchSchema,
   uploadClientEvidenceFieldsSchema,
+  createClientDocumentRequestsSchema,
+  addStandardClientDocumentRequestsSchema,
   computePipelineHealth,
   createClientEvidenceSchema,
   createClientJourneyDeliverableSchema,
   resolveSetCaseNda,
   setCaseNdaSchema,
+  setCaseEngagementSchema,
+  type SetCaseEngagement,
   type SetCaseNda,
   updateClientJourneyDeliverableSchema,
   type CreateClientEvidence,
@@ -155,6 +159,7 @@ import {
 } from "../services/pipeline-case-outputs.js";
 import { pipelineCaseFilesService, type ClientEvidenceSourceIssue } from "../services/pipeline-case-files.js";
 import { pipelineCaseJourneyService } from "../services/pipeline-case-journey.js";
+import { pipelineCaseDocumentRequestsService } from "../services/pipeline-case-document-requests.js";
 
 /** Per-stage instructions document keys look like `stage-instructions:{stageId}`. */
 const STAGE_INSTRUCTIONS_PREFIX = "stage-instructions:";
@@ -763,6 +768,12 @@ async function getStagesByKey(db: Db, pipelineId: string) {
   return new Map(rows.map((stage) => [stage.key, stage]));
 }
 
+function requestActorOf(actor: PipelineActor) {
+  return actor.type === "agent"
+    ? { type: "agent" as const, agentId: actor.agentId }
+    : { type: "user" as const, userId: actor.type === "user" ? actor.userId : "board" };
+}
+
 async function writeRouteEvent(
   db: Pick<Db, "insert">,
   input: {
@@ -963,6 +974,7 @@ export function pipelineRoutes(
   const outputsSvc = pipelineCaseOutputsService(db);
   const filesSvc = pipelineCaseFilesService(db);
   const journeySvc = pipelineCaseJourneyService(db);
+  const requestsSvc = pipelineCaseDocumentRequestsService(db);
   const access = accessService(db);
   const issuesSvc = issueService(db);
   const documentAnnotationsSvc = documentAnnotationService(db);
@@ -2835,6 +2847,11 @@ export function pipelineRoutes(
     if (!isAllowedContentType(contentType)) {
       throw unprocessable(`Files of type ${contentType} cannot be uploaded here`);
     }
+    if (fields.data.requestId) {
+      const request = await requestsSvc.get(companyId, caseId, fields.data.requestId);
+      if (!request) throw notFound("Document request not found");
+      fields.data.stageId = fields.data.stageId ?? request.stageId;
+    }
     if (fields.data.stageId) await filesSvc.assertStageOnCase(companyId, caseId, fields.data.stageId);
     const stored = await storage.putFile({
       companyId,
@@ -2859,10 +2876,9 @@ export function pipelineRoutes(
       caseId,
       stored,
       fields,
-      actor.type === "agent"
-        ? { type: "agent", agentId: actor.agentId }
-        : { type: "user", userId: actor.type === "user" ? actor.userId : "board" },
+      requestActorOf(actor),
     );
+    if (fields.requestId) await requestsSvc.markReceived(companyId, caseId, fields.requestId, item.id);
     await writeRouteEvent(db, {
       companyId,
       caseId,
@@ -2873,6 +2889,7 @@ export function pipelineRoutes(
         evidenceId: item.id,
         kind: item.kind,
         ...(item.stageId ? { stageId: item.stageId } : {}),
+        ...(fields.requestId ? { requestId: fields.requestId } : {}),
       },
     });
     res.status(201).json(item);
@@ -2923,6 +2940,69 @@ export function pipelineRoutes(
       type: "updated",
       actor,
       payload: { action: "evidence_removed", evidenceId: removed.id },
+    });
+    res.json({ deleted: true });
+  });
+
+  // Documents to collect from the client at a stage (Ben, 12 Oct). Each
+  // request is met by an upload sent with its requestId; the journey lists
+  // them per stage with what has arrived.
+  router.post("/cases/:caseId/document-requests", validate(createClientDocumentRequestsSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const body = req.body as z.infer<typeof createClientDocumentRequestsSchema>;
+    const created = await requestsSvc.create(
+      companyId,
+      caseId,
+      { stageId: body.stageId, items: body.titles.map((title) => ({ title, note: body.note ?? null })) },
+      requestActorOf(actor),
+    );
+    if (created.length > 0) {
+      await writeRouteEvent(db, {
+        companyId,
+        caseId,
+        type: "updated",
+        actor,
+        payload: { action: "documents_requested", stageId: body.stageId, titles: created.map((row) => row.title) },
+      });
+    }
+    res.status(201).json({ created: created.length });
+  });
+
+  router.post(
+    "/cases/:caseId/document-requests/standard",
+    validate(addStandardClientDocumentRequestsSchema),
+    async (req, res) => {
+      const caseId = req.params.caseId as string;
+      const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+      const { stageId } = req.body as z.infer<typeof addStandardClientDocumentRequestsSchema>;
+      const created = await requestsSvc.addStandard(companyId, caseId, stageId, requestActorOf(actor));
+      if (created.length > 0) {
+        await writeRouteEvent(db, {
+          companyId,
+          caseId,
+          type: "updated",
+          actor,
+          payload: { action: "documents_requested", stageId, titles: created.map((row) => row.title) },
+        });
+      }
+      res.status(201).json({ created: created.length });
+    },
+  );
+
+  router.delete("/cases/:caseId/document-requests/:requestId", async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const parsedId = z.string().guid().safeParse(req.params.requestId);
+    if (!parsedId.success) throw notFound("Document request not found");
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    const removed = await requestsSvc.remove(companyId, caseId, parsedId.data);
+    if (!removed) throw notFound("Document request not found");
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: "document_request_removed", requestId: removed.id, title: removed.title },
     });
     res.json({ deleted: true });
   });
@@ -3003,6 +3083,62 @@ export function pipelineRoutes(
     });
     res.status(201).json({ ...result, evidence: item });
   });
+
+  // The engagement pack (Ben, 8 and 12 Oct): it goes out after the NDA is
+  // accepted or suspended, and the client accepts it. Board only, like the
+  // NDA. Uploading the pack marks it sent; uploading the client's signed
+  // acceptance marks it accepted.
+  router.put("/cases/:caseId/engagement", validate(setCaseEngagementSchema), async (req, res) => {
+    const caseId = req.params.caseId as string;
+    const companyId = await assertCaseAccess(db, req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's engagement pack");
+    const { status } = req.body as SetCaseEngagement;
+    const result = await journeySvc.setEngagement(companyId, caseId, { status }, req.actor.userId ?? null);
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor: actorForMutation(req),
+      payload: { action: `engagement_${status}` },
+    });
+    res.json(result);
+  });
+
+  async function receiveEngagementFile(req: Request, res: Response, step: "pack" | "acceptance") {
+    const caseId = req.params.caseId as string;
+    const { companyId, actor } = await assertCaseContactWriteAccess(req, caseId);
+    if (req.actor.type !== "board") throw forbidden("Only board users can change a client's engagement pack");
+    // Refuse before the file is stored, so a blocked upload leaves nothing behind.
+    await journeySvc.assertNdaCleared(companyId, caseId);
+    const { stored, fields } = await receiveCaseUpload(req, res, companyId, caseId);
+    const label = step === "pack" ? "Engagement pack" : "Signed engagement acceptance";
+    const item = await filesSvc.addUpload(
+      companyId,
+      caseId,
+      stored,
+      { ...fields, title: fields.title ?? `${label} (${stored.originalFilename ?? "file"})` },
+      { type: "user", userId: req.actor.userId ?? "board" },
+    );
+    const result = await journeySvc.setEngagement(
+      companyId,
+      caseId,
+      step === "pack"
+        ? { status: "sent", packEvidenceId: item.id }
+        : { status: "accepted", acceptanceEvidenceId: item.id },
+      req.actor.userId ?? null,
+    );
+    await writeRouteEvent(db, {
+      companyId,
+      caseId,
+      type: "updated",
+      actor,
+      payload: { action: step === "pack" ? "engagement_sent" : "engagement_accepted", evidenceId: item.id },
+    });
+    res.status(201).json({ ...result, evidence: item });
+  }
+
+  router.post("/cases/:caseId/engagement/pack", (req, res) => receiveEngagementFile(req, res, "pack"));
+  router.post("/cases/:caseId/engagement/acceptance", (req, res) => receiveEngagementFile(req, res, "acceptance"));
 
   router.post("/cases/:caseId/journey/deliverables", validate(createClientJourneyDeliverableSchema), async (req, res) => {
     const caseId = req.params.caseId as string;

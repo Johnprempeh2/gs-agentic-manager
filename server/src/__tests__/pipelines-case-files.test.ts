@@ -481,4 +481,146 @@ describeEmbeddedPostgres("client files", () => {
     const files = await http.get(`/api/cases/${caseId}/evidence`).expect(200);
     expect(files.body.evidence.map((item: { id: string }) => item.id)).toContain(result.body.evidence.id);
   });
+
+  it("keeps a checklist of documents to collect at a stage and ticks one off when its file arrives", async () => {
+    const { company } = await seedCompany("Greatstone");
+    const caseId = await seedClientCase(company.id, "Indago");
+    const http = request(app());
+    const [leadStage] = await db.select().from(pipelineStages).where(sql`${pipelineStages.key} = 'lead'`);
+    const leadStageId = leadStage!.id;
+    await db
+      .update(pipelineStages)
+      .set({
+        config: {
+          ...(leadStage!.config as Record<string, unknown>),
+          requestedDocuments: [{ title: "Organisation chart" }, { title: "Latest accounts", note: "Last two years" }],
+        },
+      })
+      .where(sql`${pipelineStages.id} = ${leadStageId}`);
+
+    const stageOf = async () => {
+      const journey = await http.get(`/api/cases/${caseId}/journey`).expect(200);
+      return journey.body.stages.find((stage: { id: string }) => stage.id === leadStageId);
+    };
+    expect((await stageOf()).suggestedRequests).toEqual([
+      { title: "Organisation chart", note: null },
+      { title: "Latest accounts", note: "Last two years" },
+    ]);
+
+    // One ad hoc request, then the standard list; a repeat title is skipped.
+    const asked = await http
+      .post(`/api/cases/${caseId}/document-requests`)
+      .send({ stageId: leadStageId, titles: ["IT strategy", "organisation chart "] })
+      .expect(201);
+    expect(asked.body).toEqual({ created: 2 });
+    const standard = await http
+      .post(`/api/cases/${caseId}/document-requests/standard`)
+      .send({ stageId: leadStageId })
+      .expect(201);
+    expect(standard.body).toEqual({ created: 1 });
+    let stage = await stageOf();
+    expect(stage.suggestedRequests).toEqual([]);
+    expect(stage.requests.map((item: { title: string }) => item.title)).toEqual([
+      "IT strategy",
+      "organisation chart",
+      "Latest accounts",
+    ]);
+    expect(stage.requests.every((item: { received: unknown }) => item.received === null)).toBe(true);
+
+    // An upload sent against a request meets it, and lands on the request's stage.
+    const strategy = stage.requests[0];
+    const uploaded = await http
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .field("requestId", strategy.id)
+      .attach("file", Buffer.from("%PDF-1.4 strategy"), { filename: "IT strategy.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(uploaded.body.stageId).toBe(leadStageId);
+    stage = await stageOf();
+    expect(stage.requests[0].received).toMatchObject({
+      evidenceId: uploaded.body.id,
+      title: "IT strategy.pdf",
+      contentPath: `/api/cases/${caseId}/evidence/${uploaded.body.id}/content`,
+    });
+
+    // Deleting the file reopens the request; deleting the request removes it.
+    await http.delete(`/api/cases/${caseId}/evidence/${uploaded.body.id}`).expect(200);
+    stage = await stageOf();
+    expect(stage.requests[0].received).toBeNull();
+    await http.delete(`/api/cases/${caseId}/document-requests/${strategy.id}`).expect(200);
+    stage = await stageOf();
+    expect(stage.requests).toHaveLength(2);
+
+    // Requests stay inside their client: an unknown request or another client's stage is refused.
+    await http
+      .post(`/api/cases/${caseId}/evidence/upload`)
+      .field("requestId", randomUUID())
+      .attach("file", Buffer.from("x"), { filename: "x.pdf", contentType: "application/pdf" })
+      .expect(404);
+    const other = await seedCompany("Other");
+    const otherCase = await seedClientCase(other.company.id, "Rival");
+    await request(app())
+      .post(`/api/cases/${otherCase}/document-requests`)
+      .send({ stageId: leadStageId, titles: ["Anything"] })
+      .expect(404);
+    await http.post(`/api/cases/${caseId}/document-requests`).send({ stageId: leadStageId, titles: [] }).expect(400);
+  });
+
+  it("holds the engagement pack until the NDA clears, then tracks it sent and accepted", async () => {
+    const { company, agent } = await seedCompany("Greatstone");
+    const caseId = await seedClientCase(company.id, "Omni Group");
+    const http = request(app());
+    const pack = Buffer.from("%PDF-1.4 engagement pack");
+
+    // Not sent by default; it cannot go out while the NDA is required, and a blocked upload stores nothing.
+    let journey = await http.get(`/api/cases/${caseId}/journey`).expect(200);
+    expect(journey.body.engagement).toMatchObject({ status: "not_sent", sentAt: null, pack: null, acceptance: null });
+    await http.put(`/api/cases/${caseId}/engagement`).send({ status: "sent" }).expect(409);
+    await http
+      .post(`/api/cases/${caseId}/engagement/pack`)
+      .attach("file", pack, { filename: "Pack.pdf", contentType: "application/pdf" })
+      .expect(409);
+    expect(storedObjects.size).toBe(0);
+
+    await http.put(`/api/cases/${caseId}/nda`).send({ status: "accepted" }).expect(200);
+    const sent = await http
+      .post(`/api/cases/${caseId}/engagement/pack`)
+      .attach("file", pack, { filename: "Pack.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(sent.body.engagement).toMatchObject({
+      status: "sent",
+      pack: { evidenceId: sent.body.evidence.id, title: "Engagement pack (Pack.pdf)" },
+      acceptance: null,
+    });
+    const sentAt = sent.body.engagement.sentAt;
+    expect(sentAt).toBeTruthy();
+
+    // Accepting keeps the sent date and the pack, and adds the signed copy.
+    const accepted = await http
+      .post(`/api/cases/${caseId}/engagement/acceptance`)
+      .attach("file", Buffer.from("%PDF-1.4 signed"), { filename: "Signed.pdf", contentType: "application/pdf" })
+      .expect(201);
+    expect(accepted.body.engagement).toMatchObject({
+      status: "accepted",
+      sentAt,
+      pack: { evidenceId: sent.body.evidence.id },
+      acceptance: { evidenceId: accepted.body.evidence.id, title: "Signed engagement acceptance (Signed.pdf)" },
+    });
+    expect(accepted.body.engagement.acceptedAt).toBeTruthy();
+    journey = await http.get(`/api/cases/${caseId}/journey`).expect(200);
+    expect(journey.body.engagement.status).toBe("accepted");
+
+    // Agents cannot move it; back to not sent clears the dates and links but keeps the files.
+    const agentHttp = request(app({
+      type: "agent",
+      agentId: agent.id,
+      companyId: company.id,
+      runId: randomUUID(),
+      source: "agent_key",
+    }));
+    await agentHttp.put(`/api/cases/${caseId}/engagement`).send({ status: "not_sent" }).expect(403);
+    const reset = await http.put(`/api/cases/${caseId}/engagement`).send({ status: "not_sent" }).expect(200);
+    expect(reset.body.engagement).toMatchObject({ status: "not_sent", sentAt: null, acceptedAt: null, pack: null, acceptance: null });
+    const files = await http.get(`/api/cases/${caseId}/evidence`).expect(200);
+    expect(files.body.evidence).toHaveLength(2);
+  });
 });
