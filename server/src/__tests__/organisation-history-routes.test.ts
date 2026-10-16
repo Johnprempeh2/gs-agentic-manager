@@ -200,6 +200,8 @@ describeEmbeddedPostgres("organisation history route (GRE-1480)", () => {
       stageName: "Won",
       stageKind: "done",
       terminalKind: "done",
+      ndaStatus: "required",
+      engagementStatus: "not_sent",
     });
     expect(history.stageChanges).toEqual([
       expect.objectContaining({ fromStageName: "Lead", toStageName: "Proposal", forced: false, actorType: "user", actorAgentName: null }),

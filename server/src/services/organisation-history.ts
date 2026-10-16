@@ -55,6 +55,8 @@ export function organisationHistoryService(db: Db) {
           stageName: pipelineStages.name,
           stageKind: pipelineStages.kind,
           terminalKind: pipelineCases.terminalKind,
+          ndaStatus: pipelineCases.ndaStatus,
+          engagementStatus: pipelineCases.engagementStatus,
           createdAt: pipelineCases.createdAt,
           updatedAt: pipelineCases.updatedAt,
         })
@@ -148,6 +150,8 @@ export function organisationHistoryService(db: Db) {
           stageName: row.stageName,
           stageKind: row.stageKind,
           terminalKind: row.terminalKind === "done" || row.terminalKind === "cancelled" ? row.terminalKind : null,
+          ndaStatus: row.ndaStatus === "accepted" || row.ndaStatus === "suspended" ? row.ndaStatus : "required",
+          engagementStatus: row.engagementStatus === "sent" || row.engagementStatus === "accepted" ? row.engagementStatus : "not_sent",
           createdAt: iso(row.createdAt)!,
           updatedAt: iso(row.updatedAt)!,
           stageChanges: [],
