@@ -65,6 +65,7 @@ import {
 import { validate } from "../middleware/validate.js";
 import type { StorageService } from "../storage/types.js";
 import {
+  contentDispositionHeader,
   formatAttachmentSize,
   isAllowedContentType,
   isInlineAttachmentContentType,
@@ -2914,10 +2915,9 @@ export function pipelineRoutes(
     res.setHeader("Cache-Control", "private, max-age=60");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (!inlineSafe) res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'");
-    const filename = (upload.originalFilename ?? "file").replaceAll("\"", "");
     res.setHeader(
       "Content-Disposition",
-      `${inlineSafe && !wantsDownload ? "inline" : "attachment"}; filename="${filename}"`,
+      contentDispositionHeader(inlineSafe && !wantsDownload ? "inline" : "attachment", upload.originalFilename ?? "file"),
     );
     object.stream.on("error", (err) => next(err));
     object.stream.pipe(res);

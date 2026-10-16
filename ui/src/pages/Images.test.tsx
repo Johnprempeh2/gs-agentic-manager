@@ -1,0 +1,140 @@
+// @vitest-environment jsdom
+
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { GeneratedImage } from "@greatstone/shared";
+import { Images, IMAGE_IDEA_STARTERS } from "./Images";
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
+const imagesApiMock = vi.hoisted(() => ({
+  status: vi.fn(),
+  list: vi.fn(),
+  create: vi.fn(),
+  get: vi.fn(),
+  remove: vi.fn(),
+}));
+vi.mock("../api/images", () => ({ imagesApi: imagesApiMock }));
+vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn(async () => [{ id: "agent-1", name: "Everest" }]) } }));
+vi.mock("../api/auth", () => ({ authApi: { getSession: vi.fn(async () => ({ user: { id: "user-1" } })) } }));
+vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
+vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
+vi.mock("../context/ToastContext", () => ({ useOptionalToastActions: () => ({ pushToast: vi.fn() }) }));
+
+function image(overrides: Partial<GeneratedImage>): GeneratedImage {
+  return {
+    id: "image-1",
+    companyId: "company-1",
+    prompt: "A lighthouse at dawn",
+    aspectRatio: "16:9",
+    provider: "higgsfield",
+    model: "higgsfield-ai/soul/standard",
+    status: "completed",
+    error: null,
+    assetId: "asset-1",
+    contentPath: "/api/assets/asset-1/content",
+    createdByAgentId: "agent-1",
+    createdByUserId: null,
+    createdAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+let container: HTMLDivElement;
+let root: Root;
+
+async function render() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={client}>
+        <Images />
+      </QueryClientProvider>,
+    );
+  });
+  // Let the queries settle.
+  for (let index = 0; index < 5; index += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
+function setTextarea(element: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+  setter.call(element, value);
+  element.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+describe("Images page", () => {
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  it("explains in plain words when image making is off", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: false, provider: null, providerLabel: null, model: null });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    await render();
+
+    expect(container.querySelector('[data-testid="images-not-set-up"]')?.textContent).toContain("not switched on yet");
+    expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).disabled).toBe(true);
+    expect((container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).disabled).toBe(true);
+    expect(container.textContent).toContain("No images yet");
+  });
+
+  it("fills the description from an idea and makes the image in the chosen shape", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.create.mockResolvedValue(image({ id: "image-2", status: "pending", contentPath: null, assetId: null }));
+    await render();
+
+    expect(container.textContent).toContain("Using Higgsfield");
+    const starter = IMAGE_IDEA_STARTERS.find((item) => item.label === "Event poster")!;
+    const starterButton = [...container.querySelectorAll("button")].find((button) => button.textContent === starter.label)!;
+    await act(async () => starterButton.click());
+    const textarea = container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement;
+    expect(textarea.value).toBe(starter.prompt);
+    expect(container.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toContain("Portrait");
+
+    await act(async () => setTextarea(textarea, "  A red bicycle by a canal  "));
+    const wide = [...container.querySelectorAll('[role="radio"]')].find((button) => button.textContent?.startsWith("Wide")) as HTMLButtonElement;
+    await act(async () => wide.click());
+    await act(async () => (container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).click());
+
+    expect(imagesApiMock.create).toHaveBeenCalledWith("company-1", { prompt: "A red bicycle by a canal", aspectRatio: "16:9" });
+  });
+
+  it("shows finished, in-progress and failed images with who made them", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({
+      images: [
+        image({ id: "a" }),
+        image({ id: "b", status: "pending", contentPath: null, assetId: null, createdByAgentId: null, createdByUserId: "user-1" }),
+        image({ id: "c", status: "failed", contentPath: null, assetId: null, error: "The Higgsfield account has run out of credits." }),
+      ],
+      total: 3,
+      nextOffset: null,
+    });
+    await render();
+
+    const cards = container.querySelectorAll('[data-testid="generated-image-card"]');
+    expect(cards).toHaveLength(3);
+    expect(cards[0]!.querySelector("img")?.getAttribute("src")).toBe("/api/assets/asset-1/content");
+    expect(cards[0]!.textContent).toContain("Everest");
+    expect(cards[1]!.textContent).toContain("Making your image");
+    expect(cards[1]!.textContent).toContain("You");
+    expect(cards[2]!.textContent).toContain("run out of credits");
+    expect(cards[2]!.textContent).toContain("Try again");
+  });
+});

@@ -7,6 +7,7 @@ import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn, formatDate } from "../lib/utils";
 import { Button } from "./ui/button";
+import { FileDropArea } from "./FileDropArea";
 
 // The engagement pack after the NDA (Ben, 8 and 12 Oct): it goes out once the
 // NDA is accepted or suspended, then the client accepts it. Each step can be
@@ -156,7 +157,13 @@ export function ClientEngagementRow({
       {engagement.pack ? <FileLine file={engagement.pack} label="Pack" /> : null}
       {engagement.acceptance ? <FileLine file={engagement.acceptance} label="Signed acceptance" /> : null}
       {ndaCleared ? (
-        <div className="flex flex-wrap gap-2">
+        <FileDropArea
+          label={status === "not_sent" ? "Drop or paste the engagement pack here" : "Drop or paste the signed acceptance here"}
+          disabled={busy}
+          onFiles={([file]) => upload.mutate({ step: status === "not_sent" ? "pack" : "acceptance", file })}
+          className="-m-1 flex flex-wrap gap-2 p-1"
+          testId="journey-engagement-drop"
+        >
           {status !== "accepted" ? (
             <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => packInput.current?.click()}>
               <FileUp className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
@@ -171,7 +178,7 @@ export function ClientEngagementRow({
           ) : null}
           {fileInput("pack", packInput, "Upload the engagement pack")}
           {fileInput("acceptance", acceptanceInput, "Upload the signed acceptance")}
-        </div>
+        </FileDropArea>
       ) : null}
     </div>
   );

@@ -8,6 +8,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
 import { formatDate } from "../lib/utils";
 import { Button } from "./ui/button";
+import { FileDropArea } from "./FileDropArea";
 import { Input } from "./ui/input";
 
 // Documents to collect from the client at one stage (Ben, 12 Oct: the deep
@@ -44,8 +45,8 @@ function RequestRow({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const received = request.received;
-  return (
-    <li className="flex items-start gap-2 py-1 text-sm" data-testid="document-request">
+  const row = (
+    <>
       {received ? (
         <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-status-success" aria-hidden="true" />
       ) : (
@@ -109,6 +110,23 @@ function RequestRow({
       >
         <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
       </Button>
+    </>
+  );
+  // An outstanding line takes a file dropped or pasted on it, so it lands on the right request.
+  return (
+    <li className="py-0.5 text-sm" data-testid="document-request">
+      {received ? (
+        <div className="flex items-start gap-2 py-0.5">{row}</div>
+      ) : (
+        <FileDropArea
+          label={`Drop or paste ${request.title} here`}
+          disabled={busy}
+          onFiles={([file]) => onUpload(file)}
+          className="flex items-start gap-2 px-1 py-0.5"
+        >
+          {row}
+        </FileDropArea>
+      )}
     </li>
   );
 }
@@ -227,7 +245,7 @@ export function ClientDocumentRequests({
         </ul>
       ) : (
         <p className="mt-1 text-xs text-muted-foreground">
-          List what you need from the client here. Each item is ticked off when its file is uploaded.
+          List what you need from the client here. Each item is ticked off when its file is uploaded, dropped or pasted on it.
         </p>
       )}
       {suggested.length > 0 ? (

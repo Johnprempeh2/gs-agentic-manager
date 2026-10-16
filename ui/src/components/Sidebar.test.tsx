@@ -592,7 +592,7 @@ describe("Sidebar", () => {
     const chats = container.querySelector('[data-sidebar-section="chats"]');
     expect(chats?.querySelector('section[aria-label="Chats"]')?.getAttribute("data-inline")).toBe("true");
     expect(container.querySelectorAll('section[aria-label="Chats"]')).toHaveLength(1);
-    expect(sectionLabels("Clients")).toEqual(["Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
 
     flushSync(() => {
       root.unmount();
@@ -782,7 +782,7 @@ describe("Sidebar", () => {
       .map((section) => section.getAttribute("data-sidebar-section"));
     expect(headings).toEqual(["today", "chats", "clients", "work", "team", "admin"]);
     expect(sectionLabels("Today")).toEqual(["Needed from you", "Decisions", "My tasks", "Inbox", "Calendar"]);
-    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Organisations", "Pipelines", "Deep Divebeta", "Deliverables", "Images"]);
     expect(sectionLabels("Work")).toEqual(["Dashboard", "Tasks", "Projects", "Goals"]);
     expect(sectionLabels("Team")).toEqual(["Agents", "Scorecard", "This week", "Conference Room", "Statusbeta"]);
     expect(sectionLabels("Admin")).toEqual([
@@ -823,7 +823,7 @@ describe("Sidebar", () => {
     expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
     expect(button("Expand Admin")).not.toBeNull();
     // Pipelines and Deep Dive are off, so Clients holds only Deliverables; chats are off, so no Chats section.
-    expect(sectionLabels("Clients")).toEqual(["Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
     expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
 
     flushSync(() => {
@@ -834,7 +834,7 @@ describe("Sidebar", () => {
   it("shows Deep Dive in Clients only while both flags are on", async () => {
     mockInstanceSettingsApi.getExperimental.mockResolvedValue({ enableCases: true, enableDeepDive: true });
     let root = await renderSidebar();
-    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables"]);
+    expect(sectionLabels("Clients")).toEqual(["Deep Divebeta", "Deliverables", "Images"]);
     flushSync(() => {
       root.unmount();
     });

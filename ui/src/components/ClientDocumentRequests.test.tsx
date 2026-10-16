@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ClientDocumentRequest } from "@greatstone/shared";
+import { fireFiles } from "../fixtures/fileEvents";
 import { ClientDocumentRequests, outstandingRequestsText, splitRequestTitles } from "./ClientDocumentRequests";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -97,6 +98,19 @@ describe("ClientDocumentRequests", () => {
     await flush();
     expect(api.uploadCaseEvidence).toHaveBeenCalledWith("case-1", file, { stageId: "stage-1", requestId: "req-1" });
     expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "IT strategy received" }));
+  });
+
+  it("takes a screenshot pasted on an outstanding line, against that request", async () => {
+    api.uploadCaseEvidence.mockResolvedValue({ id: "ev-3" });
+    render({ id: "stage-1", name: "Deep Dive", state: "current", requests: [strategy, accounts], suggestedRequests: [] });
+    expect(container.querySelector("[aria-label='Drop or paste Latest accounts here']")).toBeNull();
+    const line = container.querySelector("[aria-label='Drop or paste IT strategy here']")!;
+    fireFiles(line, "paste", [new File(["png"], "image.png", { type: "image/png" })]);
+    await flush();
+    const [caseId, file, options] = api.uploadCaseEvidence.mock.lastCall!;
+    expect(caseId).toBe("case-1");
+    expect((file as File).name).toMatch(/^Pasted image /);
+    expect(options).toEqual({ stageId: "stage-1", requestId: "req-1" });
   });
 
   it("offers the stage's usual list and takes new requests, one per pasted line", async () => {

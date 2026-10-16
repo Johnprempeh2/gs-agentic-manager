@@ -296,21 +296,33 @@ export function memoryRoutes(
     const sourceKind = MEMORY_IMPORT_SOURCE_KIND[app];
     const bySource = new Map(rows.filter((row) => row.sourceKind === sourceKind && row.sourceId).map((row) => [row.sourceId!, row]));
     const words = rows.map((row) => ({ row, words: memoryTextWords(`${row.title ?? ""} ${row.content ?? ""}`) }));
-    const result: MemoryImportCheckResult = {
-      entries: entries.map((entry) => {
-        const same = bySource.get(entry.sourceId);
-        if (same) return { sourceId: entry.sourceId, match: "already_imported", existing: { recordId: same.id, title: same.title, status: same.status } };
-        const target = memoryTextWords(entry.content);
-        let best: { row: (typeof rows)[number]; score: number } | null = null;
-        for (const candidate of words) {
-          const score = memoryTextSimilarity(target, candidate.words);
-          if (score >= MEMORY_IMPORT_SIMILAR_THRESHOLD && (!best || score > best.score)) best = { row: candidate.row, score };
-        }
-        return best
+    // Up to 500 long entries against 2,000 records is a lot of word lookups:
+    // skip records whose size alone rules out the threshold (Jaccard is at
+    // most smaller/larger) and give the event loop back between batches, so
+    // one big check cannot stall every other request on the server.
+    const checked: MemoryImportCheckResult["entries"] = [];
+    for (const [index, entry] of entries.entries()) {
+      if (index > 0 && index % 25 === 0) await new Promise((resolve) => setImmediate(resolve));
+      const same = bySource.get(entry.sourceId);
+      if (same) {
+        checked.push({ sourceId: entry.sourceId, match: "already_imported", existing: { recordId: same.id, title: same.title, status: same.status } });
+        continue;
+      }
+      const target = memoryTextWords(entry.content);
+      let best: { row: (typeof rows)[number]; score: number } | null = null;
+      for (const candidate of words) {
+        const size = candidate.words.size;
+        if (Math.min(target.size, size) < Math.max(target.size, size) * MEMORY_IMPORT_SIMILAR_THRESHOLD) continue;
+        const score = memoryTextSimilarity(target, candidate.words);
+        if (score >= MEMORY_IMPORT_SIMILAR_THRESHOLD && (!best || score > best.score)) best = { row: candidate.row, score };
+      }
+      checked.push(
+        best
           ? { sourceId: entry.sourceId, match: "similar", existing: { recordId: best.row.id, title: best.row.title, status: best.row.status } }
-          : { sourceId: entry.sourceId, match: null, existing: null };
-      }),
-    };
+          : { sourceId: entry.sourceId, match: null, existing: null },
+      );
+    }
+    const result: MemoryImportCheckResult = { entries: checked };
     res.json(result);
   });
 

@@ -3,10 +3,12 @@ import {
   connectionEventDeliveries,
   connectionGrants,
   externalObjects,
+  issueWorkProducts,
+  issues,
   toolConnections,
   type Db,
 } from "@greatstone/db";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import {
   logActivity,
   publishActivity,
@@ -19,6 +21,7 @@ import {
   type SealedConnectorEvents,
 } from "./paperclip-cloud-connector.js";
 import { issueThreadInteractionService } from "./issue-thread-interactions.js";
+import { extractGitHubPullRequestReferences } from "./github-pull-request-merge.js";
 import { logger } from "../middleware/logger.js";
 
 type LeasedEvent = SealedConnectorEvents["events"][number];
@@ -39,6 +42,12 @@ export type GitHubConnectionEventPollResult = {
   ignored: number;
   failed: number;
 };
+
+export const PULL_REQUEST_MERGED_WAKE_REASON = "pull_request_merged";
+const MERGED_PULL_REQUEST_ACTOR_ID = "system:pr-merged";
+// Open tasks that may still be waiting on their pull request. Done, cancelled
+// and not-yet-started tasks are left alone.
+const MERGED_PULL_REQUEST_WAKE_STATUSES = ["in_progress", "in_review", "blocked"] as const;
 
 const MAX_POLL_BACKOFF_MS = 5 * 60_000;
 // A healthy poll is a few bounded (15 second) broker calls plus database
@@ -275,13 +284,130 @@ export function githubConnectionEventService(
       sql`lower(${externalObjects.externalId}) = lower(${snapshot.externalId})`,
     ));
     if (snapshot.merged && event.action === "closed") {
-      await issueThreadInteractionService(db, { wakeup: options.wakeup })
+      const sweep = await issueThreadInteractionService(db, { wakeup: options.wakeup })
         .sweepMergedPullRequestConfirmations([{
           companyId,
           owner: snapshot.owner,
           repo: snapshot.repo,
           number: snapshot.number,
         }]);
+      await moveOnTasksForMergedPullRequest(companyId, snapshot, new Set(sweep.acceptedIssueIds));
+    }
+  }
+
+  /**
+   * A merged pull request is news for every open task that carries it as a
+   * work product. Mark the work product merged and wake the assignee so it can
+   * close the task or carry on. The task status itself is left to the agent
+   * or the board.
+   */
+  async function moveOnTasksForMergedPullRequest(
+    companyId: string,
+    snapshot: { owner: string; repo: string; number: number; data: { url?: string | null } },
+    alreadyWokenIssueIds: ReadonlySet<string>,
+  ) {
+    const pullRequest = `${snapshot.owner}/${snapshot.repo}#${snapshot.number}`;
+    const pullRequestKey = pullRequest.toLowerCase();
+    const rows = await db.select({
+      workProductId: issueWorkProducts.id,
+      workProductStatus: issueWorkProducts.status,
+      url: issueWorkProducts.url,
+      externalId: issueWorkProducts.externalId,
+      metadata: issueWorkProducts.metadata,
+      issueId: issues.id,
+      assigneeAgentId: issues.assigneeAgentId,
+    })
+      .from(issueWorkProducts)
+      .innerJoin(issues, and(
+        eq(issues.id, issueWorkProducts.issueId),
+        eq(issues.companyId, issueWorkProducts.companyId),
+      ))
+      .where(and(
+        eq(issueWorkProducts.companyId, companyId),
+        eq(issueWorkProducts.type, "pull_request"),
+        inArray(issues.status, [...MERGED_PULL_REQUEST_WAKE_STATUSES]),
+        isNull(issues.hiddenAt),
+        isNotNull(issues.assigneeAgentId),
+      ));
+
+    const wakeTargets = new Map<string, { agentId: string; workProductIds: string[] }>();
+    for (const row of rows) {
+      const metadata = row.metadata ?? {};
+      const repo = typeof metadata.repo === "string" ? metadata.repo : null;
+      const number = typeof metadata.number === "number" ? metadata.number : null;
+      const matches = extractGitHubPullRequestReferences([
+        row.url,
+        row.externalId,
+        repo && number ? `${repo}#${number}` : null,
+      ]).some((reference) =>
+        `${reference.owner}/${reference.repo}#${reference.number}`.toLowerCase() === pullRequestKey);
+      if (!matches || !row.assigneeAgentId) continue;
+
+      if (row.workProductStatus !== "merged" && row.workProductStatus !== "archived") {
+        const updatedAt = now();
+        const [updated] = await db.update(issueWorkProducts)
+          .set({ status: "merged", updatedAt })
+          .where(and(
+            eq(issueWorkProducts.id, row.workProductId),
+            eq(issueWorkProducts.companyId, companyId),
+            eq(issueWorkProducts.status, row.workProductStatus),
+          ))
+          .returning({ id: issueWorkProducts.id });
+        if (updated) {
+          await logActivity(db, {
+            companyId,
+            actorType: "system",
+            actorId: MERGED_PULL_REQUEST_ACTOR_ID,
+            action: "issue.work_product_updated",
+            entityType: "issue",
+            entityId: row.issueId,
+            issueId: row.issueId,
+            details: {
+              workProductId: row.workProductId,
+              changedKeys: ["status"],
+              previousStatus: row.workProductStatus,
+              status: "merged",
+              pullRequest,
+              source: "github_pull_request_merged",
+            },
+          });
+        }
+      }
+
+      const target = wakeTargets.get(row.issueId);
+      if (target) target.workProductIds.push(row.workProductId);
+      else wakeTargets.set(row.issueId, { agentId: row.assigneeAgentId, workProductIds: [row.workProductId] });
+    }
+
+    if (!options.wakeup) return;
+    for (const [issueId, target] of wakeTargets) {
+      // The confirmation sweep already woke this task for the same merge.
+      if (alreadyWokenIssueIds.has(issueId)) continue;
+      const details = {
+        pullRequest,
+        pullRequestUrl: snapshot.data.url ?? null,
+        workProductIds: target.workProductIds,
+      };
+      await options.wakeup(target.agentId, {
+        source: "automation",
+        triggerDetail: "system",
+        reason: PULL_REQUEST_MERGED_WAKE_REASON,
+        payload: { issueId, ...details },
+        idempotencyKey: `${PULL_REQUEST_MERGED_WAKE_REASON}:${issueId}:${pullRequestKey}`,
+        requestedByActorType: "system",
+        requestedByActorId: MERGED_PULL_REQUEST_ACTOR_ID,
+        issueStateGuard: {
+          statuses: [...MERGED_PULL_REQUEST_WAKE_STATUSES],
+          assigneeAgentId: target.agentId,
+        },
+        contextSnapshot: {
+          issueId,
+          taskId: issueId,
+          wakeReason: PULL_REQUEST_MERGED_WAKE_REASON,
+          source: "github.pull_request_merged",
+          ...details,
+        },
+      });
     }
   }
 

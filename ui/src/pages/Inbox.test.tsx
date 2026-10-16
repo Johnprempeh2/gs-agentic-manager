@@ -466,7 +466,7 @@ describe("Inbox toolbar", () => {
       );
     });
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("Hire Agent: New teammate");
+      expect(container.textContent).toContain("Hire an agent: New teammate");
       expect(container.textContent).toContain("Failed run");
       expect(container.textContent).toContain("Jordan Example");
     });
@@ -475,7 +475,7 @@ describe("Inbox toolbar", () => {
       [...container.querySelectorAll("[data-inbox-item]")]
         .find((row) => row.textContent?.includes(text));
 
-    for (const text of ["Hire Agent: New teammate", "Failed run", "Jordan Example"]) {
+    for (const text of ["Hire an agent: New teammate", "Failed run", "Jordan Example"]) {
       const row = rowFor(text);
       expect(row, `missing inbox row for ${text}`).toBeDefined();
       expect(row?.querySelector('button[aria-label="Mark as read"]')).not.toBeNull();
@@ -486,7 +486,7 @@ describe("Inbox toolbar", () => {
       expect(row?.querySelector("[data-inbox-row-surface]")).not.toBeNull();
     }
 
-    const approvalRow = rowFor("Hire Agent: New teammate");
+    const approvalRow = rowFor("Hire an agent: New teammate");
     const approvalActions = [...(approvalRow?.querySelectorAll("button") ?? [])]
       .filter((button) => button.textContent === "Approve" || button.textContent === "Reject");
     expect(approvalActions.length).toBeGreaterThanOrEqual(2);

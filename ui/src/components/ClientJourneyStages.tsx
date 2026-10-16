@@ -24,6 +24,7 @@ import { ToggleSwitch } from "./ui/toggle-switch";
 import { ConfidentialityBadge } from "./deliverables/DeliverableBadges";
 import { ClientUploadZone, formatFileSize } from "./PipelineCaseFiles";
 import { ClientDocumentRequests } from "./ClientDocumentRequests";
+import { FileDropArea } from "./FileDropArea";
 import { ClientEngagementRow } from "./ClientEngagementRow";
 import { ErrorState } from "./ErrorState";
 
@@ -393,7 +394,13 @@ export function NdaRow({
         </p>
       ) : null}
       {onUploadSigned && nda.status !== "suspended" ? (
-        <div>
+        <FileDropArea
+          label="Drop or paste the signed NDA here"
+          disabled={busy}
+          onFiles={([file]) => onUploadSigned(file)}
+          className="-m-1 p-1"
+          testId="journey-nda-drop"
+        >
           <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => signedInput.current?.click()}>
             <FileUp className="mr-1.5 h-3.5 w-3.5" aria-hidden="true" />
             {nda.signedDocument ? "Replace the signed NDA" : "Upload the signed NDA"}
@@ -411,9 +418,9 @@ export function NdaRow({
             }}
           />
           {nda.status === "required" ? (
-            <p className="mt-1 text-xs text-muted-foreground">Uploading the signed copy marks the NDA accepted and keeps the file with this client.</p>
+            <p className="mt-1 text-xs text-muted-foreground">Uploading the signed copy marks the NDA accepted and keeps the file with this client. You can drop or paste it here too.</p>
           ) : null}
-        </div>
+        </FileDropArea>
       ) : null}
       {nda.status === "suspended" && nda.suspendedReason && !suspending ? (
         <p className="text-xs text-foreground" data-testid="journey-nda-reason">

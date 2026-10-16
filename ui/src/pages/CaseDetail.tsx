@@ -17,6 +17,7 @@ import {
   type CaseStatus,
   type CaseSummary,
 } from "@/api/cases";
+import { assetsApi } from "@/api/assets";
 import { issuesApi } from "@/api/issues";
 import type { IssueDocument } from "@greatstone/shared";
 import { PROJECT_COLORS, type IssueLabel } from "@greatstone/shared";
@@ -679,6 +680,11 @@ export function CaseDetail() {
               subject={caseDocumentSubject}
               canDeleteDocuments
               canManageDocumentLocks
+              imageUploadHandler={async (file) => {
+                // Pasted or dropped images in a case document are stored as company assets.
+                const asset = await assetsApi.uploadImage(selectedCompanyId!, file, `cases/${caseData.id}/documents`);
+                return asset.contentPath;
+              }}
             />
           ) : null}
 

@@ -100,6 +100,8 @@ const SinceLastVisit = lazyPage(() => import("./pages/SinceLastVisit"), "SinceLa
 const Calendar = lazyPage(() => import("./pages/Calendar"), "Calendar");
 const TeamScorecard = lazyPage(() => import("./pages/TeamScorecard"), "TeamScorecard");
 const WeeklyReport = lazyPage(() => import("./pages/WeeklyReport"), "WeeklyReport");
+const Integrations = lazyPage(() => import("./pages/Integrations"), "Integrations");
+const Images = lazyPage(() => import("./pages/Images"), "Images");
 const NotificationSettings = lazyPage(() => import("./pages/NotificationSettings"), "NotificationSettings");
 const MorningSummary = lazyPage(() => import("./pages/MorningSummary"), "MorningSummary");
 const AuditHub = lazyPage(() => import("./pages/audit/AuditHub"), "AuditHub");
@@ -202,6 +204,7 @@ function boardRoutes() {
         path="company/settings/pipelines-access"
         element={<PipelinesExperimentalGate><PipelineAccessOverview /></PipelinesExperimentalGate>}
       />
+      <Route path="company/settings/integrations" element={<Integrations />} />
       <Route path="company/settings/tools" element={<LegacyToolsSettingsRedirect />} />
       <Route path="company/settings/tools/:tab" element={<LegacyToolsSettingsRedirect />} />
       <Route path="tools" element={<LegacyToolsRedirect />} />
@@ -414,6 +417,7 @@ function boardRoutes() {
         element={<StrategyBoardExperimentalGate><BoardAgentChat /></StrategyBoardExperimentalGate>}
       />
       <Route path="deliverables" element={<Deliverables />} />
+      <Route path="images" element={<Images />} />
       <Route path="website" element={<Website />} />
       <Route path="intelligence" element={<Intelligence />} />
       <Route path="tutorials" element={<Tutorials />} />
@@ -841,6 +845,7 @@ export function App() {
           <Route path="calendar" element={<UnprefixedBoardRedirect />} />
           <Route path="scorecard" element={<UnprefixedBoardRedirect />} />
           <Route path="weekly-report" element={<UnprefixedBoardRedirect />} />
+          <Route path="images" element={<UnprefixedBoardRedirect />} />
           <Route path="website" element={<UnprefixedBoardRedirect />} />
           <Route path="tutorials" element={<UnprefixedBoardRedirect />} />
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
