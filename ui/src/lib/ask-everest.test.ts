@@ -268,4 +268,23 @@ describe("organisationAskContext", () => {
     expect(context.summary).toBe('The organisation "Acme Ltd" (Mining, Ghana). Status: Client.\nPeople: Kofi Mensah (CFO); Ama.\nDeals: Drill rig: Won in Sales.');
     expect(context.suggestions?.[0]).toBe("What is happening with Acme Ltd?");
   });
+
+  it("adds the latest imported notes and calls, without stage changes", () => {
+    const context = organisationAskContext({
+      name: "Acme Ltd",
+      industry: null,
+      country: null,
+      statusLabel: "Client",
+      contacts: [],
+      deals: [],
+      history: [
+        { kind: "stage_change", activityType: null, subject: "Moved to Won", body: null, occurredAt: "2026-10-14T09:00:00Z" },
+        { kind: "activity", activityType: "call", subject: "Pricing call", body: "<p>Agreed the <b>gold</b> tier</p>", occurredAt: "2026-10-12T10:00:00Z" },
+        { kind: "note", activityType: null, subject: null, body: "Budget signed off", occurredAt: null },
+      ],
+    });
+    expect(context.summary).toContain("Latest history: 2026-10-12, call: Pricing call (Agreed the gold tier); note: Budget signed off.");
+    expect(context.summary).not.toContain("Moved to Won");
+    expect(context.suggestions).toContain("What did we last discuss with Acme Ltd?");
+  });
 });

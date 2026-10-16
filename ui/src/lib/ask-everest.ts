@@ -564,8 +564,15 @@ export function organisationAskContext(org: {
   statusLabel: string;
   contacts: ReadonlyArray<{ name: string; role: string | null }>;
   deals: ReadonlyArray<{ title: string; pipelineName: string; stageName: string }>;
+  /** Imported CRM history (Pipedrive notes, calls, meetings, emails), newest first. */
+  history?: ReadonlyArray<{ kind: string; activityType: string | null; subject: string | null; body: string | null; occurredAt: string | null }>;
 }): AskContext {
   const about = [org.industry, org.country].filter(Boolean).join(", ");
+  const history = (org.history ?? [])
+    .filter((entry) => entry.kind !== "stage_change")
+    .slice(0, 5)
+    .map(historyLine)
+    .filter(Boolean);
   const people = org.contacts.slice(0, 6).map((contact) => (contact.role ? `${contact.name} (${contact.role})` : contact.name));
   const deals = org.deals.slice(0, 6).map((deal) => `${deal.title}: ${deal.stageName} in ${deal.pipelineName}`);
   return {
@@ -575,11 +582,25 @@ export function organisationAskContext(org: {
       `The organisation "${org.name}"${about ? ` (${about})` : ""}. Status: ${org.statusLabel}.`,
       people.length > 0 ? `People: ${people.join("; ")}.` : null,
       deals.length > 0 ? `Deals: ${deals.join("; ")}.` : null,
+      history.length > 0 ? `Latest history: ${history.join("; ")}.` : null,
     ].filter(Boolean).join("\n"),
     suggestions: [
       `What is happening with ${org.name}?`,
+      ...(history.length > 0 ? [`What did we last discuss with ${org.name}?`] : []),
       `What is stuck on ${org.name}?`,
       `What should we do next with ${org.name}?`,
     ],
   };
+}
+
+/** One imported CRM entry as a short line: "2026-10-12, call: Pricing call (Talked through the tiers)". */
+function historyLine(entry: { kind: string; activityType: string | null; subject: string | null; body: string | null; occurredAt: string | null }): string {
+  const text = (entry.body ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const short = text.length > 120 ? `${text.slice(0, 119)}…` : text;
+  const what = entry.subject?.trim() || short;
+  if (!what) return "";
+  const when = entry.occurredAt ? `${entry.occurredAt.slice(0, 10)}, ` : "";
+  const kind = (entry.activityType ?? entry.kind).replace(/_/g, " ");
+  const extra = entry.subject?.trim() && short ? ` (${short})` : "";
+  return `${when}${kind}: ${what}${extra}`;
 }
