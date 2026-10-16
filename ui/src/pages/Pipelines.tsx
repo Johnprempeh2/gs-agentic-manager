@@ -890,6 +890,11 @@ export function PipelinesIndexTable({
                         >
                           {row.pipeline.name}
                         </Link>
+                        {isDevtoolsCaseType(row.pipeline.key) ? (
+                          <Badge variant="outline" className="shrink-0 text-(length:--text-nano)" title="Imported from Pipedrive: the DevTools journey">
+                            DevTools
+                          </Badge>
+                        ) : null}
                         {onToggleStar && !row.pipeline.archivedAt ? (
                           <span className="inline-flex" data-tour="pipelines-pin">
                             <StarToggle
@@ -1974,7 +1979,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     <div className="w-full space-y-4 px-6 py-8">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">Pipeline</p>
+          <p className="text-xs font-semibold uppercase tracking-(--tracking-eyebrow) text-muted-foreground">
+            {isDevtoolsCaseType(pipeline.key) ? "DevTools journey · from Pipedrive" : "Pipeline"}
+          </p>
           <div className="flex items-center gap-1">
             <h1 className="text-2xl font-semibold text-foreground">{pipeline.name}</h1>
             {pipeline.archivedAt ? null : (
