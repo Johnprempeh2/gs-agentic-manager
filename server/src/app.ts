@@ -6,6 +6,7 @@ import { emailChannelService } from "./services/email-channels.js";
 import { emailRoutes, emailWebhookRoutes } from "./routes/email.js";
 import { mailboxRoutes } from "./routes/mailboxes.js";
 import { inboundTaskHookRoutes } from "./routes/inbound-task-hooks.js";
+import { outboundWebhookRoutes } from "./routes/outbound-webhooks.js";
 import { toolActionDeliveryService } from "./services/tool-action-delivery.js";
 import { registerAssignedMcpGateway } from "./services/native-runtime/assigned-mcp-tools.js";
 import express, { Router, type Request as ExpressRequest } from "express";
@@ -212,7 +213,8 @@ import {
   flushPluginLogBuffer,
 } from "./services/plugin-host-services.js";
 import { createPluginEventBus } from "./services/plugin-event-bus.js";
-import { setPluginEventBus } from "./services/activity-log.js";
+import { addActivityListener, setPluginEventBus } from "./services/activity-log.js";
+import { startOutboundWebhookDispatch } from "./services/outbound-webhooks.js";
 import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
 import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
@@ -851,6 +853,8 @@ export async function createApp(
   api.use(emailRoutes(db, emailChannels));
   api.use(mailboxRoutes(db, opts.storageService, { authPublicBaseUrl: opts.authPublicBaseUrl }));
   api.use(inboundTaskHookRoutes(db, { storage: opts.storageService, heartbeat: connectionIntentHeartbeat }));
+  api.use(outboundWebhookRoutes(db, { publicBaseUrl: opts.authPublicBaseUrl }));
+  startOutboundWebhookDispatch(db, addActivityListener, { publicBaseUrl: opts.authPublicBaseUrl });
   api.use(goalRoutes(db));
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));

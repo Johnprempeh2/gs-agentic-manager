@@ -371,6 +371,8 @@ import {
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
   createInboundTaskHookSchema,
+  createOutboundWebhookSchema,
+  updateOutboundWebhookSchema,
   inboundTaskSchema,
   updateInboundTaskHookSchema,
   importHubspotExportSchema,
@@ -1509,6 +1511,12 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "GET /api/companies/{companyId}/calendar-feed",
   "POST /api/companies/{companyId}/calendar-feed",
   "DELETE /api/companies/{companyId}/calendar-feed",
+  "GET /api/companies/{companyId}/outbound-webhooks",
+  "POST /api/companies/{companyId}/outbound-webhooks",
+  "PATCH /api/companies/{companyId}/outbound-webhooks/{webhookId}",
+  "POST /api/companies/{companyId}/outbound-webhooks/{webhookId}/test",
+  "GET /api/companies/{companyId}/outbound-webhooks/{webhookId}/deliveries",
+  "DELETE /api/companies/{companyId}/outbound-webhooks/{webhookId}",
   "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
   "POST /api/companies/{companyId}/website/properties",
   "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
@@ -14702,6 +14710,58 @@ registerCurrentRoute({
   tags: ["inbound-task-hooks"],
   summary: "Delete an inbound task webhook (connection managers)",
   responses: inboundHookResponses,
+});
+
+const outboundWebhookResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/outbound-webhooks",
+  tags: ["outbound-webhooks"],
+  summary: "List the company's outbound webhooks, with their addresses masked (connection managers)",
+  responses: outboundWebhookResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/outbound-webhooks",
+  tags: ["outbound-webhooks"],
+  summary: "Add an outbound webhook; the answer holds its signing secret, shown this once (connection managers)",
+  body: createOutboundWebhookSchema,
+  responses: outboundWebhookResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/outbound-webhooks/{webhookId}",
+  tags: ["outbound-webhooks"],
+  summary: "Rename, change the address or events of, or turn an outbound webhook on or off (connection managers)",
+  body: updateOutboundWebhookSchema,
+  responses: outboundWebhookResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/outbound-webhooks/{webhookId}/test",
+  tags: ["outbound-webhooks"],
+  summary: "Send a sample payload to an outbound webhook now and return the delivery (connection managers)",
+  responses: outboundWebhookResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/outbound-webhooks/{webhookId}/deliveries",
+  tags: ["outbound-webhooks"],
+  summary: "The last 50 deliveries to an outbound webhook, newest first (connection managers)",
+  responses: outboundWebhookResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/outbound-webhooks/{webhookId}",
+  tags: ["outbound-webhooks"],
+  summary: "Remove an outbound webhook and its delivery log (connection managers)",
+  responses: outboundWebhookResponses,
 });
 
 registerCurrentRoute({

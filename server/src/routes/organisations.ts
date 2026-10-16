@@ -1,7 +1,7 @@
 import { Router, type Request } from "express";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { toolConnections, type Db } from "@greatstone/db";
+import { organisations, toolConnections, type Db } from "@greatstone/db";
 import {
   createOrganisationContactSchema,
   createOrganisationSchema,
@@ -353,9 +353,22 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
       const companyId = req.params.companyId as string;
       await assertCrmWriter(req, companyId);
       const organisationId = parseId(req.params.organisationId, "Organisation");
+      const previousStatus = req.body.status === undefined
+        ? null
+        : await db
+            .select({ status: organisations.status })
+            .from(organisations)
+            .where(and(eq(organisations.companyId, companyId), eq(organisations.id, organisationId)))
+            .then((rows) => rows[0]?.status ?? null);
       const organisation = await svc.update(companyId, organisationId, req.body);
       if (!organisation) throw notFound("Organisation not found");
-      await audit(req, companyId, "organisation.updated", organisation.id, { fields: Object.keys(req.body) });
+      await audit(req, companyId, "organisation.updated", organisation.id, {
+        fields: Object.keys(req.body),
+        // Stage moves are sent to outbound webhooks as client.stage_changed.
+        ...(previousStatus && previousStatus !== organisation.status
+          ? { status: organisation.status, previousStatus }
+          : {}),
+      });
       res.json(organisation);
     },
   );

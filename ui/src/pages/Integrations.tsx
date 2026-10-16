@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
-import type { ActivityEvent, InboundTaskHookSummary, MailboxSummary, ToolConnection } from "@greatstone/shared";
+import type { ActivityEvent, InboundTaskHookSummary, MailboxSummary, OutboundWebhookSummary, ToolConnection } from "@greatstone/shared";
 import { isToolConnectionAttentionHealth } from "@greatstone/shared";
 import { activityApi } from "@/api/activity";
 import { calendarApi } from "@/api/calendar";
 import { inboundTaskHooksApi } from "@/api/inboundTaskHooks";
 import { mailboxesApi } from "@/api/mailboxes";
+import { outboundWebhooksApi } from "@/api/outboundWebhooks";
 import { toolsApi } from "@/api/tools";
 import { CalendarFeedDialog, calendarFeedKey, calendarFeedStatusLine } from "@/components/CalendarFeed";
 import { InboundTaskHooksDialog, hookStatusLine, inboundHooksKey } from "@/components/InboundTaskHooks";
+import { OutboundWebhooksDialog, outboundStatusLine, outboundWebhooksKey } from "@/components/OutboundWebhooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -208,6 +210,20 @@ const WEBHOOK_DEF: IntegrationCardDef = {
   does: "Lets a form, Zapier, Make or any outside tool create a task here, with files attached, by posting to a private address.",
 };
 
+/** Where the outbound webhooks stand: none, all off, every live one failing, or working. */
+export function outboundState(webhooks: OutboundWebhookSummary[]): IntegrationState {
+  const live = webhooks.filter((webhook) => webhook.enabled);
+  if (webhooks.length === 0) return "not_connected";
+  if (live.length === 0) return "off";
+  return live.every((webhook) => webhook.lastDeliveryOk === false) ? "attention" : "connected";
+}
+
+const OUTBOUND_DEF: IntegrationCardDef = {
+  slug: "outbound-webhook",
+  name: "Updates to Slack, Teams or Zapier",
+  does: "Posts a message to a Slack or Teams channel, Zapier or Make when a task is done, a decision is needed or a client moves stage.",
+};
+
 const CALENDAR_FEED_DEF: IntegrationCardDef = {
   slug: "calendar-feed",
   name: "Deadlines in your calendar",
@@ -313,6 +329,12 @@ export function Integrations() {
     queryFn: () => inboundTaskHooksApi.list(companyId),
     enabled: Boolean(selectedCompanyId),
   });
+  const [outboundOpen, setOutboundOpen] = useState(false);
+  const outbound = useQuery({
+    queryKey: outboundWebhooksKey(companyId),
+    queryFn: () => outboundWebhooksApi.list(companyId),
+    enabled: Boolean(selectedCompanyId),
+  });
   const [feedOpen, setFeedOpen] = useState(false);
   const feed = useQuery({
     queryKey: calendarFeedKey(companyId),
@@ -405,6 +427,13 @@ export function Integrations() {
           primary={{ label: hooks.data?.length ? "Manage" : "Set up", onClick: () => setHooksOpen(true) }}
         />
         <IntegrationCard
+          def={OUTBOUND_DEF}
+          state={outbound.isLoading || outbound.error ? null : outboundState(outbound.data ?? [])}
+          detail={outbound.data?.length ? `${outbound.data.length} ${outbound.data.length === 1 ? "address" : "addresses"}: ${outbound.data.map((webhook) => webhook.name).join(", ")}` : null}
+          status={(outbound.data ?? []).slice(0, 2).map((webhook) => `${webhook.name}: ${outboundStatusLine(webhook)}`)}
+          primary={{ label: outbound.data?.length ? "Manage" : "Set up", onClick: () => setOutboundOpen(true) }}
+        />
+        <IntegrationCard
           def={CALENDAR_FEED_DEF}
           state={feed.isLoading || feed.error ? null : feed.data?.enabled ? "connected" : "off"}
           detail={null}
@@ -413,6 +442,7 @@ export function Integrations() {
         />
       </ul>
       <InboundTaskHooksDialog companyId={companyId} open={hooksOpen} onOpenChange={setHooksOpen} />
+      <OutboundWebhooksDialog companyId={companyId} open={outboundOpen} onOpenChange={setOutboundOpen} />
       <CalendarFeedDialog companyId={companyId} open={feedOpen} onOpenChange={setFeedOpen} />
 
       <p className="text-sm text-muted-foreground">
