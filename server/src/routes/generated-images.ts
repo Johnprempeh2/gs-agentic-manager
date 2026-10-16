@@ -48,7 +48,7 @@ export function generatedImageRoutes(
   router.get("/generated-images/:id", async (req, res) => {
     const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Image not found");
     if (!row) return;
-    res.json(svc.toResponse(row));
+    res.json(await svc.toResponse(row));
   });
 
   router.delete("/generated-images/:id", async (req, res) => {

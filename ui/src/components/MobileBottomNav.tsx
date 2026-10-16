@@ -56,7 +56,8 @@ export function MobileBottomNav({ visible }: MobileBottomNavProps) {
 
   const items = useMemo<MobileNavItem[]>(
     () => [
-      { type: "link", to: "/dashboard", label: "Home", icon: House },
+      // The phone home is Today: what needs you, what is due and what finished.
+      { type: "link", to: "/today", label: "Today", icon: House },
       { type: "link", to: "/issues", label: "Tasks", icon: CircleCheck },
       { type: "action", label: "New Task", icon: SquarePen, onClick: () => openNewIssue() },
       // Decisions replaced Agents (GRE-66): the bar holds the places a person

@@ -102,6 +102,53 @@ what was applied, refused and ignored.
 
 Issue execution may also use project execution workspace policies and workspace runtime services for per-project worktrees, preview servers, and managed dev commands. Configure those through the project workspace/runtime surfaces rather than starting long-running unmanaged processes when a task needs a reusable service.
 
+### Sandbox screenshots (`pnpm screenshots`)
+
+For before and after evidence of a UI change, one command starts a throwaway
+sandbox, seeds demo data, captures a list of routes and stops the sandbox again:
+
+```sh
+pnpm screenshots                                   # default key pages, light and dark
+pnpm screenshots --routes "dashboard,issues/{issue}" --dark
+pnpm screenshots --routes-file ./tmp/routes.json --out ./tmp/shots/after
+pnpm screenshots --attach <issueId>                # also upload to that task
+```
+
+What it does (`scripts/sandbox-screenshots.mjs`):
+
+- Starts `pnpm dev:once --data-dir ./tmp/screenshots-<stamp>` on the first free
+  port from 3300 (never 3100), with the scheduler, backups and telemetry off and
+  without the caller's `DATABASE_URL`, `GSAM_HOME` or `GSAM_CONFIG`. It records
+  the PID and always stops the sandbox at the end, also on failure or Ctrl+C:
+  first `pnpm dev:stop --data-dir <same dir>`, then the process group it started,
+  by that PID. The data dir is removed afterwards unless you pass `--data-dir`
+  or `--keep-data`.
+- Seeds a demo company (Northwind Robotics) with four agents (process adapter,
+  heartbeats off), a project and five tasks through the normal API.
+- Captures each route at desktop (1440x900) and phone (390x844) width, in light
+  and dark (`--light` or `--dark` for one), by setting the UI's
+  `paperclip.theme` localStorage value. Routes are relative to the company
+  prefix, which is added for you; global roots such as `instance/...` are left
+  alone. `{issue}`, `{agent}` and `{project}` are filled from the seed.
+- Writes `<route>--<viewport>--<theme>.png`, `index.md` (with console error
+  counts per page), `contact-sheet.html` and `sandbox.log` to
+  `./tmp/screenshots/<stamp>` (or `--out`). `tmp/` is ignored by version
+  control; do not commit screenshots.
+- `--attach <issueId>` uploads `index.md` as the work product and each PNG as an
+  attachment with `skills/paperclip/scripts/paperclip-upload-artifact.sh` when
+  `GSAM_API_URL`, `GSAM_API_KEY`, `GSAM_RUN_ID` and `GSAM_COMPANY_ID` are set;
+  otherwise it prints the folder and skips the upload.
+- `--base-url <url>` captures a sandbox you already run instead (add `--seed`
+  to seed it). It refuses port 3100, the live app.
+
+Notes: the first start builds the server and UI, so allow a few minutes. A
+linked worktree needs `.gsam/.env` (from `gsam worktree init`) before the dev
+runner starts. Embedded PostgreSQL refuses to run as root, so run it as an
+unprivileged user. If Playwright's own Chromium build is not installed, the
+newest installed build under `PLAYWRIGHT_BROWSERS_PATH` is used; set
+`GSAM_SCREENSHOTS_CHROMIUM` to pick a browser binary yourself. Argument
+parsing and route resolution are covered by `pnpm test:screenshots`.
+
 ### Mobile-friendly preview (`pnpm dev:mobile`)
 
 The vite dev server serves an unbundled module graph. This is fast to reload on a local machine but too heavy for phones and tablets on slow links (airplane wifi, mobile data, distant tailnet peers). `pnpm dev:mobile` builds the UI once and serves the small production bundle on port `3101` via `vite preview`, proxying `/api` requests to the dev API on `3100`.

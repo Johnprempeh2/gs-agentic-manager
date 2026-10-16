@@ -901,6 +901,7 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
       </Button>
       <MakeImageButton
         companyId={issue.companyId}
+        issueId={issue.id}
         onAttach={(file) => uploadAttachment.mutateAsync(file)}
         disabled={uploadAttachment.isPending}
       />

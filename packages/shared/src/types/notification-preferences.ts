@@ -36,6 +36,8 @@ export interface MorningSummaryTask {
   id: string;
   identifier: string | null;
   title: string;
+  /** Set on "due today" lines: the date it is due (YYYY-MM-DD), earlier than today when late. */
+  dueDate?: string | null;
 }
 
 /** What needs you, what the agents finished and what is stuck, for one person in one company. */
@@ -45,6 +47,8 @@ export interface MorningSummary {
   /** Start of the "finished" window: 24 hours before `generatedAt`. */
   since: string;
   needsYou: { count: number; items: MorningSummaryTask[] };
+  /** Open tasks due today in the person's time zone, and any that are late. */
+  dueToday: { count: number; items: MorningSummaryTask[] };
   finished: { count: number; items: MorningSummaryTask[] };
   stuck: { count: number; items: MorningSummaryTask[] };
 }

@@ -2,6 +2,8 @@ import { pgTable, uuid, text, timestamp, index } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { assets } from "./assets.js";
+import { issues } from "./issues.js";
+import { organisations } from "./organisations.js";
 
 // Images made from a written description (image generation). The picture
 // itself is an ordinary company asset; this row keeps the prompt, the shape,
@@ -13,6 +15,8 @@ export const generatedImages = pgTable(
     companyId: uuid("company_id").notNull().references(() => companies.id),
     prompt: text("prompt").notNull(),
     aspectRatio: text("aspect_ratio").notNull(),
+    /** A style preset id; its guidance was added to the prompt sent to the provider. */
+    style: text("style"),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     status: text("status").notNull().default("pending"),
@@ -21,6 +25,8 @@ export const generatedImages = pgTable(
     assetId: uuid("asset_id").references(() => assets.id, { onDelete: "set null" }),
     createdByAgentId: uuid("created_by_agent_id").references(() => agents.id, { onDelete: "set null" }),
     createdByUserId: text("created_by_user_id"),
+    issueId: uuid("issue_id").references(() => issues.id, { onDelete: "set null" }),
+    organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -28,5 +34,7 @@ export const generatedImages = pgTable(
   (table) => ({
     companyCreatedIdx: index("generated_images_company_created_idx").on(table.companyId, table.createdAt),
     companyStatusIdx: index("generated_images_company_status_idx").on(table.companyId, table.status),
+    companyIssueIdx: index("generated_images_company_issue_idx").on(table.companyId, table.issueId),
+    companyOrganisationIdx: index("generated_images_company_organisation_idx").on(table.companyId, table.organisationId),
   }),
 );

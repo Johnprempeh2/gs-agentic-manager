@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MorningSummaryTask } from "@greatstone/shared";
-import { AlertTriangle, CircleCheck, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CalendarClock, CircleCheck, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -10,7 +10,7 @@ import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import { Link } from "@/lib/router";
-import { cn } from "@/lib/utils";
+import { cn, formatCalendarDay } from "@/lib/utils";
 
 /** "Good morning", "Good afternoon" or "Good evening" by the person's own clock. */
 export function greeting(now: Date) {
@@ -18,6 +18,17 @@ export function greeting(now: Date) {
   if (hour < 12) return "Good morning";
   if (hour < 18) return "Good afternoon";
   return "Good evening";
+}
+
+/** "Late, due 14 Oct" for a line due before today; nothing for one due today. */
+export function lateLabel(dueDate: string | null | undefined, today: string) {
+  return dueDate && dueDate < today ? `Late, due ${formatCalendarDay(dueDate)}` : null;
+}
+
+/** Today's date on this device as YYYY-MM-DD. */
+function localToday(now: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 function Section({
@@ -28,6 +39,7 @@ function Section({
   items,
   more,
   tone,
+  today,
 }: {
   icon: LucideIcon;
   title: string;
@@ -36,6 +48,7 @@ function Section({
   items: MorningSummaryTask[];
   more: { label: string; to: string };
   tone?: "attention" | "danger" | "success";
+  today?: string;
 }) {
   return (
     <section className="space-y-2 rounded-lg border border-border bg-card p-4">
@@ -60,6 +73,9 @@ function Section({
             <li key={item.id}>
               <Link to={`/issues/${item.identifier ?? item.id}`} className="flex min-h-11 items-center gap-2 py-2 text-sm hover:underline">
                 <span className="min-w-0 flex-1 truncate">{item.title}</span>
+                {today && lateLabel(item.dueDate, today) ? (
+                  <span className="shrink-0 text-xs font-medium text-status-danger">{lateLabel(item.dueDate, today)}</span>
+                ) : null}
                 {item.identifier ? <span className="shrink-0 text-xs text-muted-foreground">{item.identifier}</span> : null}
               </Link>
             </li>
@@ -76,16 +92,17 @@ function Section({
 }
 
 /**
- * The morning summary as a page: what needs you, what the agents finished
- * since yesterday, and what is stuck. The morning phone notification opens
- * here, so it reads well on a phone first.
+ * Today (also the morning summary): what needs you, what is due today, what
+ * the agents finished since yesterday, and what is stuck. It is the landing
+ * page on a phone and the morning notification opens here, so it reads well
+ * on a phone first.
  */
 export function MorningSummary() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Your morning" }]);
+    setBreadcrumbs([{ label: "Today" }]);
   }, [setBreadcrumbs]);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -98,10 +115,14 @@ export function MorningSummary() {
   if (isLoading) return <PageSkeleton variant="detail" />;
   if (error || !data) return <ErrorState error={error} title="Could not load your morning summary" onRetry={() => void refetch()} />;
 
+  const now = new Date();
+  // Older servers do not send this section yet.
+  const dueToday = data.dueToday ?? { count: 0, items: [] };
+
   return (
     <div className="mx-auto w-full max-w-2xl space-y-4">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold">{greeting(new Date())}</h1>
+        <h1 className="text-xl font-semibold">{greeting(now)}</h1>
         <p className="text-sm text-muted-foreground">
           {data.needsYou.count === 0
             ? "Nothing needs you right now. Here is what the team did since yesterday."
@@ -117,6 +138,16 @@ export function MorningSummary() {
         items={data.needsYou.items}
         more={{ label: "Open Decisions", to: "/decisions" }}
         tone="attention"
+      />
+      <Section
+        icon={CalendarClock}
+        title="Due today"
+        count={dueToday.count}
+        empty="Nothing is due today."
+        items={dueToday.items}
+        more={{ label: "Open the calendar", to: "/calendar" }}
+        tone="danger"
+        today={localToday(now)}
       />
       <Section
         icon={CircleCheck}

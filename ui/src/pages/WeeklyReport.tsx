@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { WeeklyReport as WeeklyReportData, WeeklyReportTask } from "@greatstone/shared";
-import { AlertTriangle, Check, CircleCheck, ClipboardCopy, Coins, Download, GitBranch, Hand, Newspaper } from "lucide-react";
+import { AlertTriangle, Check, CircleCheck, ClipboardCopy, Coins, Download, GitBranch, Hand, Newspaper, Sparkles } from "lucide-react";
 import { weeklyReportApi } from "../api/weeklyReport";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -25,6 +25,8 @@ import { downloadTextFile } from "../lib/issues-csv";
 import { Button } from "@/components/ui/button";
 import { Link } from "@/lib/router";
 import { formatCents } from "../lib/utils";
+import { openAskEverest } from "../lib/ask-everest-events";
+import type { AskContext } from "../lib/ask-everest";
 
 /** The report as plain text, to paste into an email or chat. */
 export function weeklyReportText(report: WeeklyReportData): string {
@@ -33,6 +35,19 @@ export function weeklyReportText(report: WeeklyReportData): string {
     [section.title, ...section.lines.map((line) => (line.startsWith("  ") ? line : `- ${line}`))].join("\n"),
   );
   return [title, weeklyHeadline(report), ...body].join("\n\n");
+}
+
+/** What Everest is told when asked about this report. */
+export function weeklyReportAskContext(report: WeeklyReportData): AskContext {
+  return {
+    label: `This week at ${report.companyName || "the company"}`,
+    summary: weeklyReportText(report),
+    suggestions: [
+      "What should I focus on this week?",
+      "Why are these tasks stuck?",
+      "Which of the stuck tasks can I unblock?",
+    ],
+  };
 }
 
 function Section({
@@ -229,6 +244,17 @@ export function WeeklyReport() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!data}
+            title="Ask Everest a question about this report"
+            onClick={() => data && openAskEverest(undefined, weeklyReportAskContext(data))}
+            data-testid="weekly-report-ask"
+          >
+            <Sparkles className="size-4" />
+            Ask Everest about this
+          </Button>
           <Button
             size="sm"
             variant="outline"
