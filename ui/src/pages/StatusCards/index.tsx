@@ -5,6 +5,7 @@ import { FlaskConical, Loader2, Plus } from "lucide-react";
 import { statusCardsApi } from "@/api/statusCards";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
+import { useToastActions } from "@/context/ToastContext";
 import { useNavigate, useParams } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ export function StatusCards() {
   // actions deep-link into Settings).
   const [detailTab, setDetailTab] = useState("summary");
   const [actionError, setActionError] = useState<string | null>(null);
+  const { pushToast } = useToastActions();
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Status" }]);
@@ -86,7 +88,19 @@ export function StatusCards() {
   const archiveMutation = useMutation({
     mutationFn: (id: string) => statusCardsApi.patch(id, { archived: true }),
     onMutate: () => setActionError(null),
-    onSuccess: () => invalidateLists(),
+    onSuccess: (_data, id) => {
+      invalidateLists();
+      const name = activeCards.find((card) => card.id === id)?.title;
+      // Archiving is one click, so say what happened and offer the way back.
+      pushToast({
+        id: `status-card-archived-${id}`,
+        title: name ? `Archived "${name}"` : "Card archived",
+        body: "You can find it under Archived.",
+        tone: "success",
+        ttlMs: 6000,
+        action: { label: "Undo", onClick: () => restoreMutation.mutate(id) },
+      });
+    },
     onError: (err) => setActionError(err instanceof Error ? err.message : "Could not archive the card."),
   });
   const restoreMutation = useMutation({
