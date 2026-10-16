@@ -11,6 +11,7 @@ import { EmptyState } from "../components/EmptyState";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
+import { Link } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -175,6 +176,12 @@ export function NotificationSettings() {
   const zone = browserTimeZone();
   const change = (patch: UpdateNotificationPreferences) =>
     save.mutate(zone && prefs && zone !== prefs.timeZone ? { ...patch, timeZone: zone } : patch);
+  // The morning summary goes by the saved time zone, so fix a stale one on arrival.
+  const staleZone = Boolean(zone && prefs && zone !== prefs.timeZone);
+  useEffect(() => {
+    if (staleZone && zone && !save.isPending) save.mutate({ timeZone: zone });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [staleZone, zone]);
 
   if (!selectedCompanyId) return <EmptyState icon={Bell} message="Select an organisation to choose your notifications." />;
   if (isLoading) return <PageSkeleton variant="detail" />;
@@ -214,6 +221,23 @@ export function NotificationSettings() {
             onChange={(teamChat) => change({ teamChat })}
           />
         </div>
+      </Section>
+
+      <Section title="Morning summary" description="One message a day: what needs you, what got done since yesterday, and what is stuck.">
+        <ChoiceRow
+          label="Send me a morning summary"
+          description={prefs.morningSummary ? `Every day at ${hourLabel(prefs.morningSummaryHour)}, your time.` : "Off."}
+          checked={prefs.morningSummary}
+          onChange={(morningSummary) => change({ morningSummary })}
+        />
+        {prefs.morningSummary ? (
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="w-32">
+              <HourPicker label="At" value={prefs.morningSummaryHour} onChange={(morningSummaryHour) => change({ morningSummaryHour })} />
+            </div>
+            <Link to="/morning" className="inline-flex min-h-9 items-center text-sm font-medium text-primary hover:underline">See today's summary</Link>
+          </div>
+        ) : null}
       </Section>
 
       <Section title="Quiet hours" description="Nothing is sent in these hours. Anything that came in goes out once they end.">

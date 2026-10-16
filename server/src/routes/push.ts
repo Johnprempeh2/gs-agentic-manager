@@ -6,6 +6,7 @@ import { companies } from "@greatstone/db";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
 import { updateNotificationPreferencesSchema, type UpdateNotificationPreferences } from "@greatstone/shared";
+import { morningSummaryService } from "../services/morning-summary.js";
 import { notificationPreferencesService } from "../services/notification-preferences.js";
 import { pushNotificationService } from "../services/push-notifications.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
@@ -34,6 +35,15 @@ function boardUserId(req: Request, res: Response, companyId: string) {
 export function pushRoutes(db: Db, service = pushNotificationService(db)) {
   const router = Router();
   const preferences = notificationPreferencesService(db);
+  const morningSummaries = morningSummaryService(db);
+
+  // The morning summary as a page: what needs you, what got done, what is stuck.
+  router.get("/companies/:companyId/morning-summary", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const userId = boardUserId(req, res, companyId);
+    if (!userId) return;
+    res.json(await morningSummaries.build(companyId, userId));
+  });
 
   // What this person wants to hear about, and when. Their own choices only.
   router.get("/companies/:companyId/notification-preferences", async (req, res) => {
