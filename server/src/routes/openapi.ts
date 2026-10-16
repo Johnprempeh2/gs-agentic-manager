@@ -6999,6 +6999,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/team-scorecard",
+  tags: ["agents"],
+  summary: "Each agent's finished tasks in the last 7 or 30 days, and the tasks it holds now",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({ days: z.enum(["7", "30"]).optional() }),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/agent-work-digest/visit",
   tags: ["inbox"],

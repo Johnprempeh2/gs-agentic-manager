@@ -89,6 +89,7 @@ export type {
   AgentWorkDigestVisit,
 } from "./agent-work-digest.js";
 export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./calendar.js";
+export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./team-scorecard.js";
 export type {
   DecisionQueue,
   DecisionQueueItem,
