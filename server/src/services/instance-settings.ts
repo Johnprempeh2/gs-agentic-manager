@@ -269,8 +269,10 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
       // continuing to accept the compatibility key in stored settings.
       enableApps: true,
       enableMcpAggregators: true,
-      enableChatConnectors: parsed.data.enableChatConnectors ?? false,
-      enableMemoryConnectors: parsed.data.enableMemoryConnectors ?? false,
+      // Greatstone (GRE-1620): Chat and Memory connectors graduated; a stored
+      // off value is ignored.
+      enableChatConnectors: true,
+      enableMemoryConnectors: true,
       enablePipelines: parsed.data.enablePipelines ?? false,
       enableCases: parsed.data.enableCases ?? false,
       enableDeepDive: parsed.data.enableDeepDive ?? false,
@@ -323,8 +325,8 @@ function normalizeStoredExperimentalSettings(raw: unknown): InstanceExperimental
     enableStreamlinedUi: true,
     enableApps: true,
     enableMcpAggregators: true,
-    enableChatConnectors: false,
-    enableMemoryConnectors: false,
+    enableChatConnectors: true,
+    enableMemoryConnectors: true,
     enablePipelines: false,
     enableCases: false,
     enableDeepDive: false,
@@ -398,6 +400,8 @@ export function applyManagedExperimentalOverlay(
     if (key === "enableNativeRunner") continue;
     // Greatstone (GRE-1437): Isolated Workspaces is always on; a managed "off" is ignored.
     if (key === "enableIsolatedWorkspaces") continue;
+    // Greatstone (GRE-1620): Chat and Memory connectors are always on; a managed "off" is ignored.
+    if (key === "enableChatConnectors" || key === "enableMemoryConnectors") continue;
     // Greatstone (GRE-196): retired flags stay off even if a managed config sets them.
     if (isRetiredInstanceFeatureKey(key)) continue;
     next[key] = value;

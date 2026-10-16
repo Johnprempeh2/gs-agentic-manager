@@ -91,10 +91,14 @@ export const instanceExperimentalSettingsSchema = z.object({
   // always enabled; this remains accepted so older stored rows and managed
   // configs continue to load during upgrades.
   enableApps: z.boolean().default(true),
-  enableChatConnectors: z.boolean().default(false),
+  // Greatstone (GRE-1620): compatibility only. Chat connectors are always
+  // on; old stored and managed values must still parse.
+  enableChatConnectors: z.boolean().default(true),
   // Compatibility only: old stored and managed values must still parse.
   enableMcpAggregators: z.boolean().default(true),
-  enableMemoryConnectors: z.boolean().default(false),
+  // Greatstone (GRE-1620): compatibility only. Memory connectors are always
+  // on; old stored and managed values must still parse.
+  enableMemoryConnectors: z.boolean().default(true),
   enablePipelines: z.boolean().default(false),
   enableCases: z.boolean().default(false),
   // Greatstone: Deep Dive record (Book V). Requires Cases; the UI turns Cases on with it.

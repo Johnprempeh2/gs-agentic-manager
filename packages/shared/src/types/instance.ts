@@ -138,11 +138,11 @@ export interface InstanceExperimentalSettings {
   enableStreamlinedUi: boolean;
   /** @deprecated Compatibility key only. Apps is always enabled. */
   enableApps: boolean;
-  /** Exposes chat connector setup and Board surfaces; existing delivery continues when hidden. */
+  /** Compatibility key (GRE-1620): chat connectors are always on; reads as true. */
   enableChatConnectors: boolean;
   /** @deprecated Compatibility key only. MCP aggregators are always enabled. */
   enableMcpAggregators: boolean;
-  /** Show experimental memory connection setup. Existing connections remain usable. */
+  /** Compatibility key (GRE-1620): memory connectors are always on; reads as true. */
   enableMemoryConnectors: boolean;
   enablePipelines: boolean;
   enableCases: boolean;

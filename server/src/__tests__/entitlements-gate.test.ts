@@ -33,12 +33,7 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
   enableBuiltInAgents: async () => (await import("../routes/built-in-agents.js")).builtInAgentRoutes(fakeDb),
   enableConferenceRoomChat: async () =>
     (await import("../routes/board-chat.js")).boardChatRoutes(fakeDb, { deploymentMode: "local_trusted" }),
-  enableChatConnectors: async () =>
-    Router()
-      .use((await import("../routes/chat-channels.js")).chatChannelRoutes(fakeDb, { service: {} as never }))
-      .use((await import("../routes/slack-tools.js")).slackToolRoutes(fakeDb)),
   enableAgentChat: issueRouter,
-  enableMemoryConnectors: async () => (await import("../routes/tool-access.js")).toolAccessRoutes(fakeDb, {}),
   enableExternalObjects: async () =>
     Router()
       .use(await issueRouter())

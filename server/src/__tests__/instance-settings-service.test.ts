@@ -15,14 +15,18 @@ describe("instance settings service", () => {
     const patched = applyExperimentalSettingsPatch({}, { enableNativeRunner: false });
     expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(patched))).enableNativeRunner).toBe(true);
   });
-  it("keeps chat connectors opt-in across legacy storage and patches without disabling Apps", () => {
-    for (const stored of [undefined, {}, { enableApps: true }, { enableConferenceRoomChat: true }]) {
-      expect(normalizeExperimentalSettings(stored).enableChatConnectors).toBe(false);
+  it("always reads the graduated Chat and Memory connectors flags as on (GRE-1620)", () => {
+    for (const stored of [
+      undefined,
+      {},
+      { enableChatConnectors: false, enableMemoryConnectors: false },
+      { enableChatConnectors: true, enableMemoryConnectors: true },
+    ]) {
+      expect(normalizeExperimentalSettings(stored)).toMatchObject({ enableChatConnectors: true, enableMemoryConnectors: true });
     }
-    const enabled = applyExperimentalSettingsPatch({}, { enableChatConnectors: true });
-    expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(enabled))).enableChatConnectors).toBe(true);
-    const disabled = applyExperimentalSettingsPatch(enabled, { enableChatConnectors: false });
-    expect(disabled).toMatchObject({ enableApps: true, enableChatConnectors: false });
+    const patched = applyExperimentalSettingsPatch({}, { enableChatConnectors: false, enableMemoryConnectors: false });
+    expect(normalizeExperimentalSettings(JSON.parse(JSON.stringify(patched))))
+      .toMatchObject({ enableApps: true, enableChatConnectors: true, enableMemoryConnectors: true });
   });
   it("ignores retired experimental flags without resetting current settings", () => {
     expect(normalizeExperimentalSettings({
@@ -51,8 +55,8 @@ describe("instance settings service", () => {
       enableApps: true,
     enableMcpAggregators: true,
       enableAgentChat: false,
-      enableChatConnectors: false,
-      enableMemoryConnectors: false,
+      enableChatConnectors: true,
+      enableMemoryConnectors: true,
       enableConferenceRoomChat: false,
       enableClassicTaskInterface: false,
       enableExternalObjects: false,

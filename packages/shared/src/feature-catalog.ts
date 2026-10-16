@@ -108,19 +108,20 @@ export const INSTANCE_FEATURE_CATALOG: Record<InstanceFeatureKey, FeatureCatalog
     selfHostedDefault: true,
   },
   enableChatConnectors: {
-    title: "Chat connectors",
+    title: "Chat connectors (compatibility)",
     description:
-      "Show experimental chat connector setup and Board surfaces. Existing connections keep running when hidden; GitHub and other tool connectors are unaffected.",
+      "Deprecated compatibility key. Chat connectors are always enabled (GRE-1620); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableMemoryConnectors: {
-    title: "Memory connectors",
-    description: "Show experimental Mem0, Zep, Supermemory, Cognee, and Honcho setup. Existing connections keep running when hidden.",
+    title: "Memory connectors (compatibility)",
+    description:
+      "Deprecated compatibility key. Memory connectors are always enabled (GRE-1620); stored and managed values are ignored.",
     tier: "managed",
-    cloudDefault: false,
-    selfHostedDefault: false,
+    cloudDefault: true,
+    selfHostedDefault: true,
   },
   enableMcpAggregators: {
     title: "MCP aggregators (compatibility)",
@@ -445,11 +446,13 @@ export function isRetiredInstanceFeatureKey(key: string): key is RetiredInstance
  */
 export const GRADUATED_INSTANCE_FEATURE_KEYS = [
   { key: "enableApps", issue: "upstream #12728" },
+  { key: "enableChatConnectors", issue: "GRE-1620" },
   { key: "enableEnvironments", issue: "GRE-1623" },
   { key: "enableExperimentalFileViewer", issue: "GRE-1623" },
   { key: "enableGoalsSidebarLink", issue: "GRE-191" },
   { key: "enableIsolatedWorkspaces", issue: "GRE-1437" },
   { key: "enableMcpAggregators", issue: "upstream #12728" },
+  { key: "enableMemoryConnectors", issue: "GRE-1620" },
   { key: "enableNativeRunner", issue: "GRE-1436" },
   { key: "enableServerInfoDebugView", issue: "GRE-1623" },
   { key: "enableStreamlinedLeftNavigation", issue: "GRE-1440" },

@@ -253,7 +253,6 @@ export function InstanceExperimentalSettings() {
     experimentalQuery.data,
     getWorktreeInstanceId(),
   );
-  const enableChatConnectors = experimentalQuery.data?.enableChatConnectors === true;
   const enableManagedSandboxOnly = experimentalQuery.data?.enableManagedSandboxOnly === true;
   const enableIsolatedWorkspacesByDefault =
     experimentalQuery.data?.enableIsolatedWorkspacesByDefault === true;
@@ -427,17 +426,6 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle cases experimental setting"
         />
 
-        <ExperimentalToggleCard
-          title="Chat connectors"
-          description="Connect agents to Slack, GitHub, Discord, Microsoft Teams, and Telegram conversations."
-          footnote="Turning this off hides chat setup, channels, and connected-task controls. Existing chat connections keep running. GitHub and other tool connectors stay available."
-          checked={enableChatConnectors}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableChatConnectors: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableChatConnectors"
-          managed={managedKeys.enableChatConnectors}
-          ariaLabel="Toggle chat connectors experimental setting"
-        />
 
         {/* Greatstone (GRE-230): upstream hid this opt-in (PAP-11233); John turns it on and off here. */}
         <ExperimentalToggleCard
@@ -505,17 +493,6 @@ export function InstanceExperimentalSettings() {
           ariaLabel="Toggle intelligence experimental setting"
         />
 
-        <ExperimentalToggleCard
-          title="Memory connectors"
-          description="Connect Mem0, Zep, Supermemory, Cognee, and Honcho for long-term memory and context."
-          footnote="Turning this off hides setup for these connectors. Existing connections keep running."
-          checked={experimentalQuery.data?.enableMemoryConnectors === true}
-          onCheckedChange={(checked) => toggleMutation.mutate({ enableMemoryConnectors: checked })}
-          disabled={toggleMutation.isPending}
-          settingKey="enableMemoryConnectors"
-          managed={managedKeys.enableMemoryConnectors}
-          ariaLabel="Toggle memory connectors experimental setting"
-        />
 
         <ExperimentalToggleCard
           title="Simplified English Interactions"

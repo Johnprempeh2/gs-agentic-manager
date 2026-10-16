@@ -1,5 +1,4 @@
 import { RemoteMcpProductionSetup } from "./remote-mcp/RemoteMcpProductionSetup";
-import { useMemoryConnectorsEnabled } from "@/hooks/useMemoryConnectorsEnabled";
 import { AiConnectionCredentialStep } from "@/components/ai-connections/AiConnectionCredentialStep";
 import { ConnectionChoiceList } from "./ConnectionChoiceList";
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
@@ -53,7 +52,6 @@ import { useNavigate, useParams, useSearchParams } from "@/lib/router";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useToast } from "@/context/ToastContext";
-import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 import { queryKeys } from "@/lib/queryKeys";
 import { RadioCardGroup } from "@/components/ui/radio-card";
 import { ApiError } from "@/api/client";
@@ -79,7 +77,6 @@ import { appApplicationSourceSlug } from "@/pages/apps/app-definition-display";
 import { UnverifiedServerBadge } from "@/pages/apps/UnverifiedServerBadge";
 import {
   appSourceConnectHref,
-  appSupportsToolCatalogSetup,
   isMcpDirectOAuthConnectSlug,
   resolveAppsConnectRouteKey,
   vercelConnectSourceHref,
@@ -539,7 +536,6 @@ export function ConnectionSetupFlow(props: ConnectionSetupFlowProps = {}) {
   const [searchParams] = useSearchParams();
   const params = useParams<{ appKey?: string }>();
   const { selectedCompanyId } = useCompany();
-  const memory = useMemoryConnectorsEnabled();
   const interactionId = props.interactionId || searchParams.get("intent") || undefined;
   const source = props.serviceSlug || searchParams.get("source") || params.appKey || searchParams.get("appKey");
   const draftId = useMemo(() => {
@@ -555,10 +551,6 @@ export function ConnectionSetupFlow(props: ConnectionSetupFlowProps = {}) {
   const method = searchParams.get("method") || existing.data?.config?.connectionMethodKey;
   if (lookup && existing.isPending) return <p className="p-6 text-sm text-muted-foreground">Loading connection…</p>;
   if (lookup && existing.isError) return <div role="alert" className="space-y-3 p-6"><p>Could not load this connection. Your saved access and credentials have not changed.</p><Button variant="outline" onClick={() => void existing.refetch()}>Try again</Button></div>;
-  if (isMemoryConnectorId(provider) && !(existing.data && existing.data.status !== "draft" && existing.data.config?.sourceTemplateKey === provider)) {
-    if (!memory.loaded) return <p className="p-6 text-sm text-muted-foreground">Loading connection settings…</p>;
-    if (!memory.enabled) return <p role="status" className="p-6 text-sm text-muted-foreground">Enable memory connectors in Settings → Experimental to set up this connection.</p>;
-  }
   if (!props.byoOnly && (props.credentialSource ?? "paperclip_vault") === "paperclip_vault"
     && isRemoteMcpConnectorId(provider) && (!method || isRemoteMcpConnectorMethod(provider, method))) {
     return <RemoteMcpProductionSetup key={`${interactionId || "page"}:${provider}`} {...props} interactionId={interactionId} providerId={provider} connection={existing.data} />;
@@ -592,8 +584,6 @@ function StandardConnectionSetupFlow({
   }, [host, routeNavigate]);
   const routeParams = useParams<{ appKey?: string }>();
   const { selectedCompany, selectedCompanyId } = useCompany();
-  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
-  const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
   const [searchParams] = useSearchParams();
@@ -970,15 +960,7 @@ function StandardConnectionSetupFlow({
     enabled: !!selectedCompanyId,
   });
   // Use the same visible catalog for cards and every branded URL shortcut.
-  // Generic custom URLs remain usable without selecting a hidden provider.
-  const visibleGalleryApps = useMemo(
-    () => (galleryQuery.data?.apps ?? []).filter((app) => memoryConnectorsEnabled || !isMemoryConnectorId(app.slug)).filter((app) =>
-      chatConnectorsEnabled ||
-      !app.methods.some((method) => method.transport === "chat_sdk") ||
-      appSupportsToolCatalogSetup(app),
-    ),
-    [galleryQuery.data, chatConnectorsEnabled, memoryConnectorsEnabled],
-  );
+  const visibleGalleryApps = useMemo(() => galleryQuery.data?.apps ?? [], [galleryQuery.data]);
   const fullRequestedDefinition = requestedAppKey
     ? getConnectableAppDefinition(requestedAppKey)
     : null;

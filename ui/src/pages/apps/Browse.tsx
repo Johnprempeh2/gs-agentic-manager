@@ -22,16 +22,12 @@ import {
 import type { ToolApplication, ToolConnection } from "@greatstone/shared";
 import {
   getAppDefinitionForUrl,
-  isMemoryConnectorId,
   getAppStoreDefinition,
   isToolConnectionAttentionHealth,
   aiSubscriptionNeedsIsolatedLogin,
   aiCredentialExpired,
 } from "@greatstone/shared";
 import { useNavigate } from "@/lib/router";
-import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
-import { useMemoryConnectorsEnabled } from "@/hooks/useMemoryConnectorsEnabled";
-import { appCopyFor } from "@/lib/app-gallery-copy";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { useToast } from "@/context/ToastContext";
@@ -259,7 +255,6 @@ function chatEndpointState(endpoint: ChatEndpoint): ConnectionState {
 
 function connectorAction(
   row: ConnectorRowModel,
-  chatConnectorsEnabled: boolean,
   agentId?: string | null,
 ): {
   label: string;
@@ -267,13 +262,11 @@ function connectorAction(
   title?: string;
 } {
   const applicationId = row.applications[0]?.id ?? null;
-  const chatHref = chatConnectorsEnabled
-    ? chatConnectHref(
-        row.slug,
-        row.entry ? connectHrefFor(row.entry) : null,
-        agentId,
-      )
-    : null;
+  const chatHref = chatConnectHref(
+    row.slug,
+    row.entry ? connectHrefFor(row.entry) : null,
+    agentId,
+  );
   if (row.connections.length > 0 || row.chatEndpoints.length > 0) {
     if (chatHref) return { label: "Add connection", href: chatHref };
     if (row.entry && applicationId) {
@@ -376,8 +369,6 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   const { pushToast } = useToast();
   const { selectedCompanyId } = useCompany();
   const [resumeErrors, setResumeErrors] = useState<Record<string, string>>({});
-  const { enabled: chatConnectorsEnabled } = useChatConnectorsEnabled();
-  const { enabled: memoryConnectorsEnabled } = useMemoryConnectorsEnabled();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [query, setQuery] = useState("");
   const [showCatalogue, setShowCatalogue] = useState(false);
@@ -407,7 +398,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   const chatEndpointsQuery = useQuery({
     queryKey: queryKeys.chatEndpoints.list(selectedCompanyId ?? "__none__"),
     queryFn: () => chatEndpointsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId && chatConnectorsEnabled,
+    enabled: !!selectedCompanyId,
   });
   const mailboxesQuery = useQuery({
     queryKey: queryKeys.mailboxes.list(selectedCompanyId ?? "__none__"),
@@ -545,17 +536,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       }),
   });
 
-  const gallery = (
-    (galleryQuery.data?.apps ?? []) as AppGalleryDisplayEntry[]
-  ).filter((entry) => {
-    if (!memoryConnectorsEnabled && isMemoryConnectorId(appDefinitionSlug(entry))) return false;
-    const definition = getAppStoreDefinition(appDefinitionSlug(entry));
-    return (
-      chatConnectorsEnabled ||
-      !definition?.methods.some((method) => method.purpose === "channel") ||
-      appSupportsToolCatalogSetup(definition)
-    );
-  });
+  const gallery = (galleryQuery.data?.apps ?? []) as AppGalleryDisplayEntry[];
   const userProfileById = useMemo(
     () => buildCompanyUserProfileMap(userDirectoryQuery.data?.users),
     [userDirectoryQuery.data],
@@ -574,10 +555,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     ).filter(
       (application) =>
         application.status !== "archived" &&
-        application.metadata?.sourceTemplateKey !== "imap_mailbox" &&
-        (chatConnectorsEnabled ||
-          (application.type !== "chat" &&
-            application.metadata?.purpose !== "channel")),
+        application.metadata?.sourceTemplateKey !== "imap_mailbox",
     );
     const connectionsByApplicationId = new Map<string, ToolConnection[]>();
     for (const connection of activeConnections) {
@@ -603,10 +581,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
         key: `gallery:${slug}`,
         slug,
         name: appDefinitionName(entry),
-        description:
-          !chatConnectorsEnabled && chatProviderForSlug(slug)
-            ? appCopyFor(slug).tagline
-            : appDefinitionDescription(entry),
+        description: appDefinitionDescription(entry),
         brandKey: slug,
         logoUrl: appDefinitionLogoUrl(entry),
         darkLogoUrl: appDefinitionDarkLogoUrl(entry),
@@ -648,7 +623,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
           "Chat with agents from Telegram direct messages, groups, and topics.",
       },
     ] as const;
-    for (const item of chatConnectorsEnabled ? nativeChatProviders : []) {
+    for (const item of nativeChatProviders) {
       if (
         [...rowsBySlug.values()].some(
           (row) => chatProviderForSlug(row.slug) === item.provider,
@@ -727,9 +702,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
       });
     }
 
-    for (const endpoint of chatConnectorsEnabled
-      ? (chatEndpointsQuery.data ?? [])
-      : []) {
+    for (const endpoint of chatEndpointsQuery.data ?? []) {
       if (endpoint.status === "archived") continue;
       let target = [...rowsBySlug.values()].find(
         (row) => chatProviderForSlug(row.slug) === endpoint.provider,
@@ -778,7 +751,6 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
   }, [
     applicationsQuery.data,
     chatEndpointsQuery.data,
-    chatConnectorsEnabled,
     connectionsQuery.data,
     gallery,
   ]);
@@ -829,12 +801,12 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
     galleryQuery.isLoading ||
     applicationsQuery.isLoading ||
     connectionsQuery.isLoading ||
-    (chatConnectorsEnabled && chatEndpointsQuery.isLoading);
+    chatEndpointsQuery.isLoading;
   const loadFailed =
     galleryQuery.isError ||
     applicationsQuery.isError ||
     connectionsQuery.isError ||
-    (chatConnectorsEnabled && chatEndpointsQuery.isError);
+    chatEndpointsQuery.isError;
   const nothingMatches = visibleRows.length === 0 && !showCustomConnector;
 
   return (
@@ -880,7 +852,7 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
               void galleryQuery.refetch();
               void applicationsQuery.refetch();
               void connectionsQuery.refetch();
-              if (chatConnectorsEnabled) void chatEndpointsQuery.refetch();
+              void chatEndpointsQuery.refetch();
             }}
           >
             Try again
@@ -925,7 +897,6 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
                     onReconnectOAuth={reconnectOAuth.mutate}
                     reconnectingId={reconnectOAuth.isPending ? (reconnectOAuth.variables?.id ?? null) : null}
                     preselectedAgentId={preselectedChatAgentId}
-                    chatConnectorsEnabled={chatConnectorsEnabled}
                   />
                 ))}
               </div>
@@ -964,7 +935,6 @@ export function Browse({ renderAccountDetails = (connection) => connection.conne
                   onNavigate={navigate}
                   onRequestRemove={setConnectionToRemove}
                   preselectedAgentId={preselectedChatAgentId}
-                  chatConnectorsEnabled={chatConnectorsEnabled}
                 />
               ))}
               {showCustomConnector ? (
@@ -1037,7 +1007,6 @@ export function ConnectorCard({
   onReconnectOAuth,
   reconnectingId = null,
   preselectedAgentId,
-  chatConnectorsEnabled,
 }: {
   renderAccountDetails?: (connection: ToolConnection) => ReactNode;
   section?: CardSection;
@@ -1053,13 +1022,8 @@ export function ConnectorCard({
   onReconnectOAuth?: (connection: ToolConnection) => void;
   reconnectingId?: string | null;
   preselectedAgentId?: string | null;
-  chatConnectorsEnabled: boolean;
 }) {
-  const action = connectorAction(
-    row,
-    chatConnectorsEnabled,
-    preselectedAgentId,
-  );
+  const action = connectorAction(row, preselectedAgentId);
   const unfinished = section === "unfinished";
   const connections = row.connections.filter(
     (connection) => (connection.status === "draft") === unfinished,

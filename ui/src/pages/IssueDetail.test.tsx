@@ -212,7 +212,8 @@ vi.mock("../api/decisions", () => ({
 }));
 
 const mockEmailApi = vi.hoisted(() => ({
-  thread: vi.fn(),
+  // Chat connectors are always on (GRE-1620), so every task asks for its email thread.
+  thread: vi.fn(async () => null),
 }));
 
 vi.mock("@/api/email", () => ({

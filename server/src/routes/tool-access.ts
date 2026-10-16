@@ -4,7 +4,6 @@ import { agents, companies, connectionGrants, issueThreadInteractions, toolConne
 import { and, eq, or } from "drizzle-orm";
 import {
   APP_STORE_DEFINITIONS,
-  isMemoryConnectorId,
   GITHUB_CONNECTOR_PROFILES,
   GOOGLE_WORKSPACE_CONNECTOR_PROFILES,
   isAgentStatusAssignableToWork,
@@ -67,7 +66,6 @@ import {
   paperclipCloudConnectorCapabilitiesFromEnv,
 } from "../services/paperclip-cloud-connector.js";
 import { runtimeCanonicalOrigin } from "../services/cloud-runtime-identity.js";
-import { instanceSettingsService } from "../services/instance-settings.js";
 import {
   completePaperclipCloudConnectorEnrollment,
   loadPaperclipCloudConnectorIdentity,
@@ -835,7 +833,6 @@ function connectorEnrollmentPrincipal(req: Request): string {
         ? await options.paperclipCloudConnector.getCapabilities()
         : [];
     const vercelConnect = vercelConnectIntegrationStatus();
-    const { enableMemoryConnectors } = await instanceSettingsService(db).getExperimental();
     res.json({
       capabilities: await describeConnectionCreateCapabilities(req, companyId),
       credentialSources: {
@@ -851,7 +848,7 @@ function connectorEnrollmentPrincipal(req: Request): string {
             : "Vercel Connect setup is disabled on this GS Agentic Manager instance.",
         },
       },
-      apps: APP_STORE_DEFINITIONS.filter((app) => (enableMemoryConnectors || !isMemoryConnectorId(app.slug))).map((app) =>
+      apps: APP_STORE_DEFINITIONS.map((app) =>
         appWithPaperclipCloudConnectorAvailability(app, advertisedProfiles)
       ),
     });

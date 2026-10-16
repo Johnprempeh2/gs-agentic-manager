@@ -293,7 +293,7 @@ export function IssueDetailChatPanel({
         }}>
         <IssueDetailChatTab
           onOpenSkill={handleOpenSkill}
-          threadHeader={<>{taskChatThreadHeader}{instanceExperimentalSettings?.enableChatConnectors && <EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} />}</>}
+          threadHeader={<>{taskChatThreadHeader}<EmailTaskActivity key={issue.id} companyId={issue.companyId} issueId={issue.id} /></>}
           issueBrief={
             // Suppress the seeded-description bubble for the onboarding first
             // task: its description is agent instructions, not something the

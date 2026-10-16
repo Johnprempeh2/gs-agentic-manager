@@ -5,9 +5,8 @@ import {
 } from "./instance.js";
 
 describe("instance experimental settings validators", () => {
-  it("defaults chat connectors off independently of Apps and accepts only explicit boolean patches", () => {
-    expect(instanceExperimentalSettingsSchema.parse({}).enableChatConnectors).toBe(false);
-    expect(instanceExperimentalSettingsSchema.parse({ enableApps: true }).enableChatConnectors).toBe(false);
+  it("defaults the graduated chat connectors key on and still parses explicit boolean patches (GRE-1620)", () => {
+    expect(instanceExperimentalSettingsSchema.parse({}).enableChatConnectors).toBe(true);
     expect(patchInstanceExperimentalSettingsSchema.parse({ enableChatConnectors: true }))
       .toEqual({ enableChatConnectors: true });
     expect(patchInstanceExperimentalSettingsSchema.parse({ enableChatConnectors: false }))

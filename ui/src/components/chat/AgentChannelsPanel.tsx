@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/StatusBadge";
 import { queryKeys } from "@/lib/queryKeys";
 import { Link } from "@/lib/router";
-import { useChatConnectorsEnabled } from "@/hooks/useChatConnectorsEnabled";
 
 const providerNames: Record<ChatProvider, string> = {
   slack: "Slack",
@@ -24,13 +23,10 @@ export function AgentChannelsPanel({
   companyId: string;
   agentId: string;
 }) {
-  const { enabled } = useChatConnectorsEnabled();
   const query = useQuery({
     queryKey: queryKeys.chatEndpoints.list(companyId),
     queryFn: () => chatEndpointsApi.list(companyId),
-    enabled,
   });
-  if (!enabled) return null;
   const endpoints = (query.data ?? []).filter(
     (endpoint) =>
       endpoint.assignedAgentId === agentId && endpoint.status !== "archived",

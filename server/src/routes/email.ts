@@ -51,7 +51,6 @@ export function emailRoutes(db: Db, service: EmailChannelService) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       await manager(req, companyId);
-      await service.requireEnabled();
       res
         .status(201)
         .json(
@@ -68,7 +67,6 @@ export function emailRoutes(db: Db, service: EmailChannelService) {
     async (req, res) => {
       const companyId = req.params.companyId as string;
       await manager(req, companyId);
-      await service.requireEnabled();
       const saved = await emailConnectionService(db).credential(
         companyId,
         req.params.connectionId as string,
