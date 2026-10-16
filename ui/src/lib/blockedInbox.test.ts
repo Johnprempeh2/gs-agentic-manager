@@ -20,6 +20,8 @@ import {
   compareBlockedRows,
   formatStoppedAge,
   groupBlockedInboxRows,
+  groupBlockedInboxRowsByRoot,
+  NO_ROOT_BLOCKER_GROUP_KEY,
   sortBlockedInboxRows,
   type BlockedInboxIssueRow,
 } from "./blockedInbox";
@@ -189,6 +191,34 @@ describe("blockedInbox", () => {
     ]);
     const stalled = groups.find((g) => g.variant === "stalled")!;
     expect(stalled.rows.map((r) => r.issue.id)).toEqual(["stalled-2", "stalled-1"]);
+  });
+
+  it("groupBlockedInboxRowsByRoot puts tasks waiting on the same root task together, biggest first", () => {
+    const leaf = (id: string, identifier: string, title: string) => ({
+      id,
+      identifier,
+      title,
+      status: "in_progress" as const,
+      priority: "medium" as const,
+      assigneeAgentId: null,
+      assigneeUserId: null,
+    });
+    const root1463 = leaf("leaf-1463", "GRE-1463", "Fix login");
+    const root7 = leaf("leaf-7", "GRE-7", "Write copy");
+    const issues = [
+      makeIssue({ id: "a" }, makeAttention({ leafIssue: root7 })),
+      makeIssue({ id: "b" }, makeAttention({ leafIssue: root1463 })),
+      makeIssue({ id: "c" }, makeAttention({ leafIssue: root1463 })),
+      makeIssue({ id: "d" }, makeAttention({ reason: "pending_board_decision", leafIssue: null })),
+      makeIssue({ id: "leaf-1463" }, makeAttention({ leafIssue: root1463 })),
+    ];
+    const groups = groupBlockedInboxRowsByRoot(buildBlockedInboxRows(issues));
+    expect(groups.map((g) => [g.key, g.label, g.rows.length])).toEqual([
+      ["root-leaf-1463", "Waiting on GRE-1463 Fix login", 2],
+      ["root-leaf-7", "Waiting on GRE-7 Write copy", 1],
+      [NO_ROOT_BLOCKER_GROUP_KEY, "No single blocker", 2],
+    ]);
+    expect(groups[2]!.rows.map((r) => r.issue.id).sort()).toEqual(["d", "leaf-1463"]);
   });
 
   it("sortBlockedInboxRows supports recent and longest-stopped ordering", () => {

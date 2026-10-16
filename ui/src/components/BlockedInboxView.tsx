@@ -13,6 +13,7 @@ import {
   buildBlockedInboxRows,
   formatStoppedAge,
   groupBlockedInboxRows,
+  groupBlockedInboxRowsByRoot,
   sortBlockedInboxRows,
   type BlockedInboxGroupBy,
   type BlockedInboxIssueRow,
@@ -127,8 +128,11 @@ export function BlockedInboxView({
   }, [currentUserId, filteredRows, issueFilters, liveIssueIds, workspaceFilterContext]);
   const sortedRows = useMemo(() => sortBlockedInboxRows(issueFilteredRows, sortBy), [issueFilteredRows, sortBy]);
   const groups = useMemo(
-    () => groupBlockedInboxRows(issueFilteredRows, sortBy),
-    [issueFilteredRows, sortBy],
+    () =>
+      groupBy === "root_blocker"
+        ? groupBlockedInboxRowsByRoot(issueFilteredRows, sortBy)
+        : groupBlockedInboxRows(issueFilteredRows, sortBy),
+    [groupBy, issueFilteredRows, sortBy],
   );
 
   const toggleVariant = (variant: string) => {
@@ -254,15 +258,15 @@ export function BlockedInboxView({
           ))
         ) : (
           groups.map((group) => {
-            const isCollapsed = collapsedVariants.has(group.variant);
+            const isCollapsed = collapsedVariants.has(group.key);
             return (
-              <div key={group.variant} data-testid={`blocked-inbox-group-${group.variant}`}>
+              <div key={group.key} data-testid={`blocked-inbox-group-${group.key}`}>
                 <div className={presentation === "task" ? "rounded-lg px-3 sm:pl-0 sm:pr-4" : "px-3 sm:px-4"}>
                   <IssueGroupHeader
                     label={`${group.label} · ${group.rows.length}`}
                     collapsible
                     collapsed={isCollapsed}
-                    onToggle={() => toggleVariant(group.variant)}
+                    onToggle={() => toggleVariant(group.key)}
                   />
                 </div>
                 {!isCollapsed && (
