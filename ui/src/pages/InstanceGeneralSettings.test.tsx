@@ -89,7 +89,7 @@ describe("InstanceGeneralSettings sign-out", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Deployment and auth"));
+    await vi.waitFor(() => expect(container.textContent).toContain("Who can open GSAM"));
     expect(container.querySelector('[data-slot="card"]')).toBeNull();
   }
 
@@ -248,7 +248,7 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Backup retention"));
+    await vi.waitFor(() => expect(container.textContent).toContain("How long backups are kept"));
   }
 
   it("hides an operator-hidden field-backed section and a UI-only section", async () => {
@@ -260,9 +260,9 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
       ],
     });
 
-    expect(container.textContent).not.toContain("Censor username in logs");
-    expect(container.textContent).not.toContain("Deployment and auth");
-    expect(container.textContent).toContain("Backup retention");
+    expect(container.textContent).not.toContain("Hide your computer username in logs");
+    expect(container.textContent).not.toContain("Who can open GSAM");
+    expect(container.textContent).toContain("How long backups are kept");
     expect(container.textContent).toContain("AI feedback sharing");
     expect(container.textContent).toContain("Sign out");
   });
@@ -270,9 +270,9 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
   it("shows every section when nothing is hidden", async () => {
     await renderPage(SELF_HOSTED_HEALTH);
 
-    expect(container.textContent).toContain("Deployment and auth");
-    expect(container.textContent).toContain("Censor username in logs");
-    expect(container.textContent).toContain("Backup retention");
+    expect(container.textContent).toContain("Who can open GSAM");
+    expect(container.textContent).toContain("Hide your computer username in logs");
+    expect(container.textContent).toContain("How long backups are kept");
   });
 
   it("renders only the sections a Settings tab asks for", async () => {
@@ -286,11 +286,11 @@ describe("InstanceGeneralSettings operator-hidden sections", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Backup retention"));
+    await vi.waitFor(() => expect(container.textContent).toContain("How long backups are kept"));
 
     expect(container.textContent).toContain("AI feedback sharing");
-    expect(container.textContent).not.toContain("Deployment and auth");
-    expect(container.textContent).not.toContain("Censor username in logs");
+    expect(container.textContent).not.toContain("Who can open GSAM");
+    expect(container.textContent).not.toContain("Hide your computer username in logs");
     expect(container.textContent).not.toContain("How much agents run at once");
     expect(container.textContent).not.toContain("Sign out");
   });
@@ -495,7 +495,7 @@ describe("InstanceGeneralSettings run limits (GRE-114)", () => {
         </QueryClientProvider>,
       );
     });
-    await vi.waitFor(() => expect(container.textContent).toContain("Backup retention"));
+    await vi.waitFor(() => expect(container.textContent).toContain("How long backups are kept"));
     expect(container.textContent).not.toContain("How much agents run at once");
   });
 });
