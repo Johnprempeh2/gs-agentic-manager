@@ -123,3 +123,8 @@ export const EmptyBox: Story = {
     window.localStorage.setItem("paperclip:recent-searches:company-storybook", JSON.stringify(["indago fee", "booking module"]));
   },
 };
+
+/** "Create a task for CodexCoder…" shows a preview; press Enter on "Do this" to see it. */
+export const PlainEnglishCommand: Story = {
+  args: { query: "create a task for CodexCoder to tidy the Indago pricing page by Friday" },
+};
