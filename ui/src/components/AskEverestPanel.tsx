@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowRight, FileText, Loader2, MessageCircle, Mic, MicOff, Paperclip, Send, Sparkles, X } from "lucide-react";
+import { ArrowRight, FileText, Loader2, MessageCircle, Mic, MicOff, PaperclipIcon, Send, Sparkles, X } from "lucide-react";
 import type { Agent, IssueComment } from "@greatstone/shared";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
@@ -245,7 +245,7 @@ function AskEverestBody({
             title="Add a file. You can also drop one here or paste a screenshot."
             data-testid="ask-everest-attach"
           >
-            <Paperclip className="h-4 w-4" />
+            <PaperclipIcon className="h-4 w-4" />
           </Button>
           <input
             ref={inputRef}
