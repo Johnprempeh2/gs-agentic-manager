@@ -62,7 +62,7 @@ function Section({
   testId: string;
 }) {
   return (
-    <section className="space-y-2 rounded-lg border border-border bg-card p-4" data-testid={testId}>
+    <section className="space-y-2 rounded-lg border border-border bg-card p-4 print:break-inside-avoid" data-testid={testId}>
       <h2 className="flex items-center gap-2 text-base font-semibold">
         <Icon className="size-4 text-muted-foreground" aria-hidden />
         {title}
@@ -88,7 +88,7 @@ function Quiet({ children }: { children: ReactNode }) {
 function More({ shown, total, to }: { shown: number; total: number; to: string }) {
   if (total <= shown) return null;
   return (
-    <Link to={to} className="text-sm text-muted-foreground hover:text-foreground hover:underline">
+    <Link to={to} className="text-sm text-muted-foreground hover:text-foreground hover:underline print:no-underline">
       and {total - shown} more
     </Link>
   );
@@ -243,7 +243,7 @@ export function WeeklyReport() {
             {data ? `${weekRangeLabel(data)}. ` : ""}What the agents finished, what is stuck, how the pipeline moved, what GSAM learned and what needs you.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
           <Button
             size="sm"
             variant="outline"

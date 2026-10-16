@@ -3634,3 +3634,56 @@ span.paperclip-mention-chip[data-mention-kind="external-object"] {
   outline: 2px solid var(--ring);
   outline-offset: 4px;
 }
+
+/* Print (browser print and "Save as PDF"). Paper is always daylight: a dark
+   screen theme would waste toner and print grey on grey, so the core surface
+   and text tokens take their light values whatever theme is on screen.
+   Layout.tsx hides the app chrome with print: utilities; pages mark actions
+   print:hidden and blocks print:break-inside-avoid. */
+@media print {
+  @page {
+    margin: 16mm 14mm;
+  }
+
+  :root,
+  .dark {
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #121512;
+    --card: #ffffff;
+    --card-foreground: #121512;
+    --popover: #ffffff;
+    --popover-foreground: #121512;
+    --muted: #f2f4ee;
+    --muted-foreground: #4f5750;
+    --subtle-foreground: #5d655e;
+    --accent: #f2f4ee;
+    --accent-foreground: #121512;
+    --border: #cbd3c5;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: var(--foreground);
+  }
+
+  /* No glass, glow or scrollbars on paper. */
+  *,
+  *::before,
+  *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    backdrop-filter: none !important;
+  }
+
+  [data-secondary-sidebar] {
+    display: none !important;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+}
