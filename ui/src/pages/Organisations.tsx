@@ -145,6 +145,15 @@ export function Organisations() {
           icon={Building2}
           message={filtered ? "No organisations match this search." : "No organisations yet."}
           description={filtered ? undefined : "Add the companies you work with, or import them from your CRM later."}
+          action={filtered ? "Clear search" : "Add organisation"}
+          onAction={() => {
+            if (filtered) {
+              setSearch("");
+              setStatus("");
+            } else {
+              setEditing("new");
+            }
+          }}
         />
       ) : isPhone ? (
         <ul className="space-y-3" aria-label="Organisations">

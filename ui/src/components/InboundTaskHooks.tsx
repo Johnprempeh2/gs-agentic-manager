@@ -19,6 +19,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useCopyToast } from "@/lib/use-copy-action";
+import { useConfirm } from "@/context/ConfirmContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/utils";
 
@@ -57,10 +58,10 @@ function TokenReveal({ hook, onDone }: { hook: InboundTaskHookWithToken; onDone:
   };
   return (
     <div className="space-y-3 text-sm" role="status">
-      <p>Copy these now. The token is shown only once; if you lose it, make a new one.</p>
+      <p>Copy both now. The private key is shown only once. If you lose it, you can make a new one.</p>
       {[
-        ["URL", url],
-        ["Token", hook.token],
+        ["Address", url],
+        ["Private key", hook.token],
       ].map(([label, value]) => (
         <div key={label} className="space-y-1">
           <Label>{label}</Label>
@@ -74,7 +75,7 @@ function TokenReveal({ hook, onDone }: { hook: InboundTaskHookWithToken; onDone:
         </div>
       ))}
       <div className="space-y-1">
-        <Label>Try it</Label>
+        <Label>For whoever connects the tool</Label>
         <pre className="overflow-x-auto rounded-md border border-border bg-muted p-2 text-xs">{curlExample(url, hook.token)}</pre>
         <p className="text-xs text-muted-foreground">
           Send `title` (required), and optionally `description`, `priority` (low, medium, high or critical), `dueDate`
@@ -95,6 +96,7 @@ function TokenReveal({ hook, onDone }: { hook: InboundTaskHookWithToken; onDone:
  */
 export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { companyId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
   const copyToast = useCopyToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const hooks = useQuery({
     queryKey: inboundHooksKey(companyId),
@@ -142,7 +144,7 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
     <Dialog open={open} onOpenChange={(next) => { if (!next) setRevealed(null); onOpenChange(next); }}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Webhook for other tools</DialogTitle>
+          <DialogTitle>Tasks from other tools</DialogTitle>
           <DialogDescription>
             Give a form, Zapier or your CRM a private address to send work to. Each request becomes a task, with any files
             attached.
@@ -153,7 +155,7 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
         ) : (
           <div className="space-y-4 text-sm">
             {(hooks.data ?? []).length > 0 ? (
-              <ul className="space-y-2" aria-label="Webhooks">
+              <ul className="space-y-2" aria-label="Addresses">
                 {hooks.data!.map((hook) => (
                   <li key={hook.id} className="space-y-1 rounded-md border border-border p-3" data-testid={`inbound-hook-${hook.id}`}>
                     <div className="flex items-center justify-between gap-2">
@@ -172,13 +174,28 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
                     <div className="flex flex-wrap gap-2 pt-1">
                       <Button type="button" size="sm" variant="outline" onClick={() => void copyToast(hookUrl(hook), "Address copied")}>
                         <Copy />
-                        Copy URL
+                        Copy address
                       </Button>
-                      <Button type="button" size="sm" variant="outline" disabled={rotate.isPending} onClick={() => rotate.mutate(hook.id)}>
+                      <Button type="button" size="sm" variant="outline" disabled={rotate.isPending} onClick={async () => {
+                        const ok = await confirm({
+                          title: `Make a new key for ${hook.name}?`,
+                          description: "The old key stops working at once, so you will need to paste the new one into every tool that uses it.",
+                          confirmLabel: "Make a new key",
+                        });
+                        if (ok) rotate.mutate(hook.id);
+                      }}>
                         <KeyRound />
-                        New token
+                        Replace key
                       </Button>
-                      <Button type="button" size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate(hook.id)} aria-label={`Delete ${hook.name}`}>
+                      <Button type="button" size="sm" variant="ghost" disabled={remove.isPending} onClick={async () => {
+                        const ok = await confirm({
+                          title: `Delete ${hook.name}?`,
+                          description: "Anything still sending work to this address will stop working. This cannot be undone.",
+                          confirmLabel: "Delete",
+                          tone: "destructive",
+                        });
+                        if (ok) remove.mutate(hook.id);
+                      }} aria-label={`Delete ${hook.name}`}>
                         <Trash2 />
                         Delete
                       </Button>
@@ -187,7 +204,7 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
                 ))}
               </ul>
             ) : hooks.isLoading ? null : (
-              <p className="text-muted-foreground">No webhooks yet.</p>
+              <p className="text-muted-foreground">No addresses yet. Make one below, then paste it into your form or Zapier so each request becomes a task.</p>
             )}
 
             <form
@@ -197,7 +214,7 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
                 if (name.trim()) create.mutate();
               }}
             >
-              <p className="font-medium">Make a new webhook</p>
+              <p className="font-medium">Make a new address</p>
               <div className="space-y-1">
                 <Label htmlFor="inbound-hook-name">Name</Label>
                 <Input id="inbound-hook-name" value={name} placeholder="Website enquiry form" onChange={(event) => setName(event.target.value)} />
@@ -214,13 +231,13 @@ export function InboundTaskHooksDialog({ companyId, open, onOpenChange }: { comp
               </div>
               <DialogFooter>
                 <Button type="submit" disabled={!name.trim() || create.isPending}>
-                  {create.isPending ? "Making…" : "Make webhook"}
+                  {create.isPending ? "Making…" : "Make address"}
                 </Button>
               </DialogFooter>
             </form>
           </div>
         )}
-        {error ? <p className="text-sm text-destructive" role="alert">{(error as Error).message}</p> : null}
+        {error ? <p className="text-sm text-destructive" role="alert">That did not work. Please try again in a moment. ({(error as Error).message})</p> : null}
       </DialogContent>
     </Dialog>
   );
