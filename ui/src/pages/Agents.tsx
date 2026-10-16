@@ -26,14 +26,15 @@ import { costsApi } from "../api/costs";
 import { agentTeamsApi } from "../api/agentTeams";
 import { AgentTeamsDialog, TeamColorDot } from "../components/AgentTeamsDialog";
 import { filterAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "../lib/agent-teams";
-import { agentsSheet } from "../lib/agents-export";
+import { agentsSheet, agentsUpdateText } from "../lib/agents-export";
+import { useCopyAction } from "../lib/use-copy-action";
 import { downloadBytes, exportFileName, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AgentTeam, ApiEquivalentAgentRow } from "@greatstone/shared";
 import { PageTabBar } from "../components/PageTabBar";
 import { Tabs } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { AlertTriangle, Bot, Download, Plus, List, Network, Users } from "lucide-react";
+import { AlertTriangle, Bot, Check, ClipboardList, Download, Plus, List, Network, Users } from "lucide-react";
 import { AGENT_ROLE_LABELS, type Agent, type Environment, type EnvironmentCapabilities } from "@greatstone/shared";
 import {
   isStarred,
@@ -203,6 +204,7 @@ export type AgentsView = "list" | "org";
 export function Agents({ initialView = "list" }: { initialView?: AgentsView } = {}) {
   const agentChat = useAgentChatEnabled();
   const { selectedCompanyId, selectedCompany } = useCompany();
+  const teamCopy = useCopyAction();
   const { openNewAgent } = useDialogActions();
   const { setBreadcrumbs } = useBreadcrumbs();
   const navigate = useNavigate();
@@ -580,6 +582,17 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
                 <SelectItem value={NO_TEAM_FILTER}>No team</SelectItem>
               </SelectContent>
             </Select>
+          )}
+          {filtered.length > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              title="Copy how each agent on screen is doing, ready to paste"
+              onClick={() => void teamCopy.copy(agentsUpdateText(filtered, (at) => relativeTime(at)))}
+            >
+              {teamCopy.copied ? <Check className="h-3.5 w-3.5 mr-1.5" /> : <ClipboardList className="h-3.5 w-3.5 mr-1.5" />}
+              {teamCopy.copied ? "Copied" : teamCopy.failed ? "Could not copy" : "Copy as an update"}
+            </Button>
           )}
           {filtered.length > 0 && (
             <Button

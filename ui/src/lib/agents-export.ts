@@ -1,5 +1,6 @@
 import { AGENT_ROLE_LABELS, type Agent, type AgentStatus, type AgentTeam } from "@greatstone/shared";
 import type { Sheet } from "./spreadsheet-export";
+import { formatShortDate } from "./utils";
 
 /**
  * "Download as spreadsheet" on Agents: the team as it stands today, one row
@@ -47,4 +48,31 @@ export function agentsSheet(
         isoDay(agent.lastHeartbeatAt),
       ]),
   };
+}
+
+/**
+ * "Copy as an update" on Agents: how the team stands right now.
+ *
+ *   Team, 16 Oct
+ *   3 agents: 1 working now, 1 needs attention, 1 idle.
+ *
+ *   • Ridge, Head of sales: Working now
+ */
+export function agentsUpdateText(agents: readonly Agent[], relative: (at: Date | string) => string, now: Date = new Date()): string {
+  const live = agents.filter((agent) => agent.status !== "terminated");
+  const lines = [`Team, ${formatShortDate(now)}`];
+  if (live.length === 0) return `${lines[0]}\n\nNo agents yet.`;
+  const order: AgentStatus[] = ["error", "running", "pending_approval", "active", "idle", "paused"];
+  const counts = order
+    .map((status) => [status, live.filter((agent) => agent.status === status).length] as const)
+    .filter(([, count]) => count > 0)
+    .map(([status, count]) => `${count} ${AGENT_STATUS_WORDS[status].toLowerCase()}`);
+  lines.push(`${live.length} ${live.length === 1 ? "agent" : "agents"}: ${counts.join(", ")}.`, "");
+  const sorted = [...live].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status) || a.name.localeCompare(b.name));
+  for (const agent of sorted) {
+    const who = agent.title ? `${agent.name}, ${agent.title}` : agent.name;
+    const last = agent.lastHeartbeatAt && agent.status !== "running" ? `, last active ${relative(agent.lastHeartbeatAt)}` : "";
+    lines.push(`• ${who}: ${AGENT_STATUS_WORDS[agent.status]}${last}`);
+  }
+  return lines.join("\n");
 }
