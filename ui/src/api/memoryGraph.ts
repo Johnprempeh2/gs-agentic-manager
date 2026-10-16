@@ -47,6 +47,8 @@ export interface MemoryActivityFilters {
   from?: string;
   to?: string;
   cursor?: string;
+  /** Entries per page, at most 200. */
+  limit?: string;
 }
 
 function toQuery(params: object) {

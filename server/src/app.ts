@@ -836,7 +836,8 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db, { storage: opts.storageService }));
+  const memoryEngine = memoryEngineFromGatewayConfig();
+  api.use(pipelineRoutes(db, { storage: opts.storageService, memoryEngine }));
   api.use(crmSyncRoutes(db));
   api.use(organisationRoutes(db));
   api.use(
@@ -861,7 +862,6 @@ export async function createApp(
   api.use(strategyBoardRoutes(db));
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
-  const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
   api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
