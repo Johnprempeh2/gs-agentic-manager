@@ -120,7 +120,7 @@ export function Goals() {
   return (
     <div className="mx-auto max-w-6xl space-y-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="min-w-0">
+        <div className="min-w-0" data-tour="goals-header">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Goals</p>
           <h1 className="text-xl font-bold">How far we are from each goal</h1>
           {goals && goals.length > 0 ? (

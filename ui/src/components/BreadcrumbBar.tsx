@@ -19,6 +19,7 @@ import { PluginLauncherOutlet, usePluginLaunchers } from "@/plugins/launchers";
 import { cn } from "../lib/utils";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
 import { MobileEverestButton, useLeadAgent } from "./MobileEverestButton";
+import { PageTourButton } from "./PageTourButton";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { openCommandPalette } from "../lib/global-search";
 
@@ -45,6 +46,7 @@ function GlobalToolbar({
   const { launchers } = usePluginLaunchers({ placementZones: ["globalToolbarButton"], companyId: context.companyId, enabled: !!context.companyId });
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-2 empty:hidden">
+      <PageTourButton />
       {pageToolbar}
       <GlobalSearchButton />
       <GlobalAskButton />

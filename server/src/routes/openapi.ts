@@ -107,6 +107,7 @@ import {
   // Organization memory
   confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
+  importMemorySchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
   dismissMemoryLinkLeadSchema,
@@ -5490,6 +5491,16 @@ registry.registerPath({
   summary: "Contribute a memory record under the caller's identity; kept as pending when the engine is down",
   request: { params: memoryCompanyParams, body: jsonBody(contributeMemorySchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/import",
+  tags: ["memory"],
+  summary:
+    "Add up to 50 entries brought in from Claude or ChatGPT as unreviewed contributions with app provenance; repeats in the scope are skipped and entries with sensitive content are held back",
+  request: { params: memoryCompanyParams, body: jsonBody(importMemorySchema) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

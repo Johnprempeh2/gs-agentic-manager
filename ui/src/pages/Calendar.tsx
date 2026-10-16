@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { CalendarItem, CalendarItemKind } from "@greatstone/shared";
-import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
+import { CalendarDays, CalendarPlus, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
 import { calendarApi } from "../api/calendar";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -26,6 +26,8 @@ import {
   routineTimesLabel,
   shiftMonth,
 } from "../lib/calendar";
+import { calendarIcsFileName, calendarToIcs } from "../lib/calendar-ics";
+import { downloadTextFile } from "../lib/issues-csv";
 import { Link, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -133,7 +135,7 @@ function DayList({ date, items, today }: { date: string; items: CalendarItem[]; 
  * runs and goal target dates for a month, with the chosen day listed below.
  */
 export function Calendar() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showEarlierDays, setShowEarlierDays] = useState(false);
@@ -181,6 +183,16 @@ export function Calendar() {
     setSearchParams(params, { replace: true });
   }
 
+  function addToMyCalendar() {
+    const prefix = selectedCompany?.issuePrefix ?? "";
+    const monthItems = visibleItems.filter((item) => monthKey(item.date) === month);
+    const ics = calendarToIcs(monthItems, {
+      calendarName: selectedCompany?.name ? `${selectedCompany.name} calendar` : "Calendar",
+      itemUrl: (item) => `${window.location.origin}/${prefix}${calendarItemHref(item)}`,
+    });
+    downloadTextFile(calendarIcsFileName(prefix, month), ics, "text/calendar;charset=utf-8");
+  }
+
   function toggleKind(kind: CalendarItemKind) {
     const next = new Set(hiddenKinds);
     if (next.has(kind)) next.delete(kind);
@@ -202,6 +214,16 @@ export function Calendar() {
           </p>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!data}
+            title="Download this month as a calendar file for Outlook, Google Calendar or Apple Calendar"
+            onClick={addToMyCalendar}
+          >
+            <CalendarPlus className="size-4" />
+            <span className="hidden sm:inline">Add to my calendar</span>
+          </Button>
           <Button size="sm" variant="outline" onClick={() => update({ month: null, day: null })}>
             Today
           </Button>

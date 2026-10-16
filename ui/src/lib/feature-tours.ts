@@ -1,8 +1,12 @@
 import type { InstanceExperimentalSettings } from "@greatstone/shared";
 
-/** One stop on a tour: the element with `data-tour="<target>"`, a title and a sentence or two. */
+/**
+ * One stop on a tour: the element with `data-tour="<target>"`, a title and a
+ * sentence or two. A step with no target is a plain card near the top of the
+ * screen, for explaining the page as a whole.
+ */
 export interface TourStep {
-  target: string;
+  target?: string;
   title: string;
   body: string;
 }
@@ -11,8 +15,15 @@ export interface TourDefinition {
   id: string;
   /** Bump to show the tour again to everyone who has seen it. */
   version: number;
-  /** The feature switch the tour belongs to; no tour while it is off. */
-  flag: keyof InstanceExperimentalSettings;
+  /** The feature switch the tour belongs to; no tour while it is off. None = always on. */
+  flag?: keyof InstanceExperimentalSettings;
+  /**
+   * Pages every organisation has: the tour lives in the page bar for the
+   * matching route (company prefix removed), and Tutorials opens `path`.
+   */
+  route?: { match: RegExp; path: string };
+  /** Open by itself on the first visit. Off for everyday pages: the button shows a dot instead. */
+  autoStart?: boolean;
   label: string;
   /** Name and one line for the Tutorials list. */
   title: string;
@@ -242,8 +253,267 @@ export const TEAM_CHAT_TOUR: TourDefinition = {
   ],
 };
 
+/** The closing step on everyday tours: where help lives. */
+const HELP_EVERYWHERE: TourStep = {
+  title: "Help on every page",
+  body: "Select Show me around at the top of any page to see this again. Tutorials, in your account menu, lists every tour.",
+};
+
+export const DASHBOARD_TOUR: TourDefinition = {
+  id: "dashboard",
+  title: "Home",
+  description: "What needs you today, what the agents did and how to give them work.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/dashboard\/?$/, path: "/dashboard" },
+  label: "Home",
+  steps: [
+    {
+      title: "Your home page",
+      body: "A summary of your organisation today: what is waiting on you, what the agents have done and what is running now.",
+    },
+    {
+      target: "dashboard-decisions",
+      title: "What is waiting on you",
+      body: "Agents stop and ask when they cannot go on without you. The most urgent one is shown here. Open decisions to answer them all.",
+    },
+    {
+      target: "dashboard-digest",
+      title: "What the agents did",
+      body: "Since you were last here gives one line per agent on what they did, so you never need to read the activity log.",
+    },
+    {
+      target: "new-task",
+      title: "Give the team work",
+      body: "Select New Task and describe what you want in plain words. An agent picks it up and reports back in the task.",
+    },
+    HELP_EVERYWHERE,
+  ],
+};
+
+export const DECISIONS_TOUR: TourDefinition = {
+  id: "decisions",
+  title: "Decisions",
+  description: "Answering the questions agents ask you, in a list or one at a time.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/decisions\/?$/, path: "/decisions" },
+  label: "Decisions",
+  steps: [
+    {
+      title: "What a decision is",
+      body: "When an agent cannot go on without you, it stops and asks here. Each card says what is held up, why, and what happens next.",
+    },
+    {
+      title: "Answer and move on",
+      body: "Use the buttons on a card to answer. The agent starts again as soon as you do. Not now sets a card aside without losing it.",
+    },
+    {
+      target: "decisions-view",
+      title: "List or Focus",
+      body: "List shows every card. Focus shows one at a time, large, so you can clear them quickly, even on a phone.",
+    },
+    {
+      target: "decisions-history",
+      title: "What you already decided",
+      body: "Your past answers are kept under Decided, so you can check what you said and when.",
+    },
+  ],
+};
+
+export const MY_TASKS_TOUR: TourDefinition = {
+  id: "my-tasks",
+  title: "My tasks",
+  description: "Work assigned to you rather than to an agent.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/my-tasks\/?$/, path: "/my-tasks" },
+  label: "My tasks",
+  steps: [
+    {
+      title: "Tasks that are yours",
+      body: "Work assigned to you, not to an agent. Questions from agents live in Decisions; this list is the work only you can do.",
+    },
+    {
+      title: "Hand it over",
+      body: "Open a task to finish it, comment on it or assign it to an agent. Once an agent has it, it leaves this list.",
+    },
+  ],
+};
+
+export const TASKS_TOUR: TourDefinition = {
+  id: "tasks",
+  title: "Tasks",
+  description: "Every piece of work in your organisation and how to follow it.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/issues\/?$/, path: "/issues" },
+  label: "Tasks",
+  steps: [
+    {
+      title: "Every task in one list",
+      body: "All the work in your organisation, by agents and by people. Select a task to read its conversation and see how far it has got.",
+    },
+    {
+      title: "Narrow the list",
+      body: "Use the status chips, such as Active or Blocked, and the search box at the top to find a task.",
+    },
+    {
+      target: "new-task",
+      title: "Start a new task",
+      body: "Describe the outcome you want in plain words and pick who should do it.",
+    },
+  ],
+};
+
+export const AGENTS_TOUR: TourDefinition = {
+  id: "agents",
+  title: "Agents",
+  description: "Your team of AI agents: who they are, what they cost and what they are doing.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/agents\/(all|active|paused|error|builtin)\/?$/, path: "/agents/all" },
+  label: "Agents",
+  steps: [
+    {
+      title: "Your team of agents",
+      body: "Each agent is an AI worker with a role, like a member of staff. Select one to see what it is doing, its instructions and its recent work.",
+    },
+    {
+      title: "Reading a row",
+      body: "Each row shows what the agent's work this week would cost, the model it uses and when it last checked in. Live means it is working right now.",
+    },
+    {
+      title: "Pausing an agent",
+      body: "A paused agent does no work and spends nothing until you resume it. Open the agent to pause or resume.",
+    },
+  ],
+};
+
+export const PROJECTS_TOUR: TourDefinition = {
+  id: "projects",
+  title: "Projects",
+  description: "Groups of tasks with one aim, and where to see their progress.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/projects\/?$/, path: "/projects" },
+  label: "Projects",
+  steps: [
+    {
+      title: "What a project is",
+      body: "A project groups the tasks that share one aim, such as a client engagement or a product launch. Open one to see its tasks, its goal and its budget.",
+    },
+    {
+      title: "Sort to find one",
+      body: "Use Sort to order projects by name, by when they last changed or by target date.",
+    },
+  ],
+};
+
+export const GOALS_TOUR: TourDefinition = {
+  id: "goals",
+  title: "Goals",
+  description: "How far you are from each goal and which work serves it.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/goals\/?$/, path: "/goals" },
+  label: "Goals",
+  steps: [
+    {
+      target: "goals-header",
+      title: "How far we are",
+      body: "Each goal shows its progress and the projects and tasks that serve it, so you can see whether the work adds up to what you want.",
+    },
+    {
+      title: "Off course first",
+      body: "Goals that are slipping come first. Open one to see why and who is responsible.",
+    },
+  ],
+};
+
+export const ROUTINES_TOUR: TourDefinition = {
+  id: "routines",
+  title: "Routines",
+  description: "Work that repeats on a schedule, such as a weekly report.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/routines\/?$/, path: "/routines" },
+  label: "Routines",
+  steps: [
+    {
+      title: "Work on a schedule",
+      body: "A routine is work that repeats, such as a Monday report or a daily inbox check. Each time it runs, it makes a task you can follow like any other.",
+    },
+    {
+      target: "routines-create",
+      title: "Make a routine",
+      body: "Say what should happen, who does it and how often. You can pause a routine at any time without deleting it.",
+    },
+  ],
+};
+
+export const APPROVALS_TOUR: TourDefinition = {
+  id: "approvals",
+  title: "Approvals",
+  description: "Sign-offs agents need before a governed step, such as hiring or spending.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/approvals\/(pending|all)\/?$/, path: "/approvals/pending" },
+  label: "Approvals",
+  steps: [
+    {
+      title: "Sign-offs",
+      body: "Some steps need a person's yes before an agent may take them, such as hiring an agent or going over budget. They wait here.",
+    },
+    {
+      title: "Approve, reject or ask for changes",
+      body: "Open an approval to read what is asked and why. Add a note when you reject or ask for changes, so the agent knows what to do next.",
+    },
+  ],
+};
+
+export const MEMORY_TOUR: TourDefinition = {
+  id: "memory",
+  title: "Memory",
+  description: "What your agents remember and how to check it.",
+  version: 1,
+  autoStart: false,
+  route: { match: /^\/memory(\/(activity|review))?\/?$/, path: "/memory" },
+  label: "Memory",
+  steps: [
+    {
+      title: "Shared memory",
+      body: "What agents and people have saved for later: facts about clients, decisions and how you like things done. Agents read it before they work.",
+    },
+    {
+      title: "Three views",
+      body: "Connections shows how entries link. Contributions shows who added what. Review lists entries waiting for a person to check them.",
+    },
+  ],
+};
+
+/** Everyday pages: their tours live in the page bar. */
+export const CORE_TOURS: TourDefinition[] = [
+  DASHBOARD_TOUR,
+  DECISIONS_TOUR,
+  MY_TASKS_TOUR,
+  TASKS_TOUR,
+  AGENTS_TOUR,
+  PROJECTS_TOUR,
+  GOALS_TOUR,
+  ROUTINES_TOUR,
+  APPROVALS_TOUR,
+  MEMORY_TOUR,
+];
+
+/** The everyday tour for a company relative path, if there is one. */
+export function coreTourForPath(pathname: string): TourDefinition | null {
+  return CORE_TOURS.find((tour) => tour.route?.match.test(pathname)) ?? null;
+}
+
 /** Every tour, in the order the Tutorials list shows them. */
 export const ALL_TOURS: TourDefinition[] = [
+  ...CORE_TOURS,
   PIPELINES_LIST_TOUR,
   PIPELINE_BOARD_TOUR,
   CLIENT_CASE_TOUR,
