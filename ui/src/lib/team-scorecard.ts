@@ -1,4 +1,5 @@
 import type { TeamScorecard, TeamScorecardAgent } from "@greatstone/shared";
+import { csvCell } from "./issues-csv";
 
 function count(value: number, one: string, many: string) {
   return `${value} ${value === 1 ? one : many}`;
@@ -58,3 +59,42 @@ export function scorecardUpdateText(scorecard: TeamScorecard, organisationName?:
 /** The comment "Ask for an update" posts on a stuck task. It wakes the agent. */
 export const STUCK_TASK_UPDATE_REQUEST =
   "Quick check-in from the Scorecard: this task shows as stuck. Please reply here in plain words: what is blocking it, and what do you need from me to move it forward?";
+
+export const SCORECARD_CSV_HEADERS = [
+  "Agent",
+  "Role",
+  "Finished",
+  "Under way",
+  "Waiting for review",
+  "Stuck",
+  "Past due date",
+  "Work value (USD)",
+] as const;
+
+/**
+ * "Download as spreadsheet" on the Scorecard: one row per agent, with the
+ * work value in whole dollars when it is known.
+ */
+export function scorecardToCsv(scorecard: TeamScorecard, workCents: (agentId: string) => number | null | undefined): string {
+  const rows = scorecard.agents.map((agent) => {
+    const cents = workCents(agent.agentId);
+    return [
+      agent.name,
+      agent.title ?? "",
+      String(agent.finished),
+      String(agent.underWay),
+      String(agent.inReview),
+      String(agent.stuck),
+      String(agent.overdue),
+      cents != null && cents > 0 ? String(Math.round(cents / 100)) : "",
+    ];
+  });
+  // The byte order mark makes Excel read the file as UTF-8, so names keep their accents.
+  return `﻿${[SCORECARD_CSV_HEADERS as readonly string[], ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+
+/** "gre-scorecard-7-days-2026-10-16.csv" */
+export function scorecardCsvFileName(prefix: string | null | undefined, days: number, today: string): string {
+  const slug = (prefix ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `${slug ? `${slug}-` : ""}scorecard-${days}-days-${today}.csv`;
+}
