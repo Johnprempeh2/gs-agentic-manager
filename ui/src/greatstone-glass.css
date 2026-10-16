@@ -52,8 +52,8 @@
 
   /* The liquid rim: bright where light enters (top-left), gone by mid-edge. */
   --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.95), rgb(255 255 255 / 0.2) 38%, transparent 60%, rgb(27 80 57 / 0.14));
-  --glass-scrim: rgb(18 21 18 / 0.26);
-  --glass-scrim-blur: 6px;
+  --glass-scrim: rgb(11 42 28 / 0.2); /* daylight: an emerald-ink veil, so the page dims without turning to grey mud */
+  --glass-scrim-blur: 4px;
 
   /* Active nav marker: emerald on paper (lime is 1.15:1 here). */
   --gs-nav-marker: #1b5039;
@@ -164,6 +164,7 @@
 
   --glass-rim: linear-gradient(135deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0.05) 38%, transparent 60%, rgb(200 255 0 / 0.1));
   --glass-scrim: rgb(5 7 5 / 0.55);
+  --glass-scrim-blur: 6px;
 
   --gs-nav-marker: #c8ff00;
   --gs-nav-active-shadow: var(--glass-highlight);
