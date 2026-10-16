@@ -27,3 +27,21 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   quietHoursEnd: null,
   timeZone: "Europe/London",
 };
+
+/** One task line in the morning summary. */
+export interface MorningSummaryTask {
+  id: string;
+  identifier: string | null;
+  title: string;
+}
+
+/** What needs you, what the agents finished and what is stuck, for one person in one company. */
+export interface MorningSummary {
+  companyId: string;
+  generatedAt: string;
+  /** Start of the "finished" window: 24 hours before `generatedAt`. */
+  since: string;
+  needsYou: { count: number; items: MorningSummaryTask[] };
+  finished: { count: number; items: MorningSummaryTask[] };
+  stuck: { count: number; items: MorningSummaryTask[] };
+}
