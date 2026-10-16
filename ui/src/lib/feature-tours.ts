@@ -109,7 +109,7 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
   id: "client-case",
   title: "Client page",
   description: "Where a client is in their journey, where things stand, the next action and who you deal with.",
-  version: 2,
+  version: 3,
   flag: "enablePipelines",
   label: "this client",
   steps: [
@@ -132,6 +132,21 @@ export const CLIENT_CASE_TOUR: TourDefinition = {
       target: "client-contacts",
       title: "Contacts",
       body: "The people you deal with at this client, so anyone on your team can pick up the relationship.",
+    },
+    {
+      target: "client-evidence",
+      title: "Evidence",
+      body: "Files and links you keep for this client, such as a brief or signed papers. Upload a file or add a link so everyone works from the same copy.",
+    },
+    {
+      target: "client-deliverables",
+      title: "Journey by stage",
+      body: "What belongs in each stage. Upload a document to the stage it belongs to; uploading the signed NDA marks it accepted.",
+    },
+    {
+      target: "client-portal",
+      title: "What the client sees",
+      body: "A preview of the client's own portal, so you know exactly what they can see before you share anything.",
     },
     {
       target: "client-projects",
