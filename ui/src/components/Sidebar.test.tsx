@@ -817,9 +817,10 @@ describe("Sidebar", () => {
 
     expect(container.querySelector('a[href="/company/settings"]')).toBeNull();
     expect(button("Expand Admin")).not.toBeNull();
-    // Pipelines and Deep Dive are off, so Clients holds only Deliverables; chats are off, so no Chats section.
+    // Pipelines and Deep Dive are off, so Clients holds only Deliverables.
     expect(sectionLabels("Clients")).toEqual(["Deliverables", "Images"]);
-    expect(container.querySelector('[data-sidebar-section="chats"]')).toBeNull();
+    // Agent Chat graduated (GRE-1621), so the Chats section shows with every switch stored off.
+    expect(container.querySelector('[data-sidebar-section="chats"]')).not.toBeNull();
 
     flushSync(() => {
       root.unmount();

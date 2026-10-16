@@ -40,6 +40,10 @@ const GATED_ROUTERS: Partial<Record<InstanceFeatureKey, () => Promise<Router>>> 
   enableTeamChat: async () => (await import("../routes/team-chats.js")).teamChatRoutes(fakeDb, { service: {} as never }),
 };
 
+async function issueRouter() {
+  return (await import("../routes/issues.js")).issueRoutes(fakeDb, {} as never);
+}
+
 const allOff = Object.fromEntries(INSTANCE_FEATURE_KEYS.map((key) => [key, false]));
 const onlyOff = (feature: InstanceFeatureKey) => ({ ...Object.fromEntries(INSTANCE_FEATURE_KEYS.map((key) => [key, true])), [feature]: false });
 
