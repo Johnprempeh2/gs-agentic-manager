@@ -111,7 +111,7 @@ describe("SinceLastVisit", () => {
     render();
     await flush();
 
-    expect(container.textContent).toContain("No new agent work since your last visit.");
+    expect(container.textContent).toContain("Nothing new since your last visit.");
     expect(container.querySelector('a[href="/activity"]')).not.toBeNull();
   });
 

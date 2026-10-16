@@ -67,7 +67,7 @@ export function SinceLastVisit() {
       </header>
 
       {digest.agents.length === 0 ? (
-        <EmptyState icon={History} message="No new agent work since your last visit." />
+        <EmptyState icon={History} message="Nothing new since your last visit." description="When agents finish or update work, a summary shows here." />
       ) : (
         <div className="space-y-6">
           {digest.agents.map((agent) => (

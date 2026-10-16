@@ -179,7 +179,7 @@ export function Projects() {
         </Popover>
         <Button size="sm" variant="outline" onClick={openNewProject}>
           <Plus className="h-4 w-4 mr-1" />
-          Add Project
+          Add project
         </Button>
       </div>
 
@@ -189,7 +189,8 @@ export function Projects() {
         <EmptyState
           icon={Hexagon}
           message="No projects yet."
-          action="Add Project"
+          description="A project groups related tasks, like a client engagement or a launch, so you can see progress in one place."
+          action="Add project"
           onAction={openNewProject}
         />
       )}

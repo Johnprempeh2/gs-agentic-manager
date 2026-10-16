@@ -1131,6 +1131,7 @@ function PipelinesIndex() {
         <EmptyState
           icon={Hexagon}
           message="No pipelines yet."
+          description="A pipeline tracks clients or deals stage by stage, from first contact to signed work."
           action={canCreatePipelines ? "New pipeline" : undefined}
           onAction={canCreatePipelines ? () => setNewPipelineOpen(true) : undefined}
         />
