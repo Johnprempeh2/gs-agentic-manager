@@ -40,6 +40,6 @@ export const crmTimelineEntries = pgTable(
     companyOrganisationIdx: index("crm_timeline_entries_company_organisation_idx").on(table.companyId, table.organisationId, table.occurredAt),
     companyCaseIdx: index("crm_timeline_entries_company_case_idx").on(table.companyId, table.caseId, table.occurredAt),
     companyContactIdx: index("crm_timeline_entries_company_contact_idx").on(table.companyId, table.contactId),
-    kindCheck: check("crm_timeline_entries_kind_check", sql`${table.kind} in ('activity', 'note', 'call', 'email', 'stage_change')`),
+    kindCheck: check("crm_timeline_entries_kind_check", sql`${table.kind} in ('activity', 'note', 'call', 'email', 'stage_change', 'field_change')`),
   }),
 );
