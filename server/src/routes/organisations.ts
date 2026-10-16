@@ -6,6 +6,7 @@ import {
   createOrganisationContactSchema,
   createOrganisationSchema,
   importOrganisationsFromPipedriveSchema,
+  importHubspotExportSchema,
   importPipedriveExportSchema,
   listOrganisationsQuerySchema,
   updateOrganisationContactSchema,
@@ -27,7 +28,10 @@ import {
 import { requireEntitlement } from "../services/entitlements.js";
 import { organisationHistoryService } from "../services/organisation-history.js";
 import { pipedriveOrganisationImportService } from "../services/organisation-import-pipedrive.js";
-import { pipedriveExportImportService } from "../services/organisation-import-pipedrive-export.js";
+import {
+  hubspotExportImportService,
+  pipedriveExportImportService,
+} from "../services/organisation-import-pipedrive-export.js";
 import { organisationService } from "../services/organisations.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, hasCompanyBoardRole } from "./authz.js";
 
@@ -66,6 +70,7 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
   const access = accessService(db);
   const importer = pipedriveOrganisationImportService(db);
   const exportImporter = pipedriveExportImportService(db);
+  const hubspotImporter = hubspotExportImportService(db);
   const history = organisationHistoryService(db);
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
 
@@ -266,6 +271,53 @@ export function organisationRoutes(db: Db, deps: OrganisationRouteDeps = {}) {
             contacts: result.contacts,
             deals: result.deals ?? null,
             activities: result.activities ?? null,
+          },
+        });
+        res.json(result);
+      } finally {
+        runningImports.delete(companyId);
+      }
+    },
+  );
+
+  /**
+   * Import of the CSV files HubSpot exports (companies, contacts, deals), for
+   * teams without a HubSpot key. Company owners only. Rows keep source
+   * "hubspot" and the HubSpot record id, so a rerun updates them.
+   */
+  router.post(
+    `${ORGANISATION_ROUTE_PREFIX}/import/hubspot-export`,
+    validate(importHubspotExportSchema),
+    async (req, res) => {
+      const companyId = req.params.companyId as string;
+      assertCompanyAccess(req, companyId);
+      assertBoard(req);
+      if (!hasCompanyBoardRole(req, companyId)) {
+        throw forbidden("Only a company owner may run the HubSpot import", { code: "owner_required" });
+      }
+      if (runningImports.has(companyId)) {
+        throw conflict("An import is already running for this company", { code: "import_running" });
+      }
+      runningImports.add(companyId);
+      try {
+        const result = await hubspotImporter.run(companyId, req.body, actorIds(req));
+        const actor = getActorInfo(req);
+        await logActivity(db, {
+          companyId,
+          actorType: actor.actorType,
+          actorId: actor.actorId,
+          agentId: actor.agentId,
+          runId: actor.runId,
+          action: "organisation.import_completed",
+          entityType: "company",
+          entityId: companyId,
+          details: {
+            source: "hubspot",
+            via: "export",
+            pipelineId: req.body.pipelineId ?? null,
+            organisations: result.organisations,
+            contacts: result.contacts,
+            deals: result.deals ?? null,
           },
         });
         res.json(result);

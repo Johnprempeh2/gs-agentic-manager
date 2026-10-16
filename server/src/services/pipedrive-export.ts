@@ -115,12 +115,12 @@ function hasColumn(headers: string[], aliases: string[]) {
   return aliases.some((alias) => headers.includes(normaliseHeader(alias)));
 }
 
-function cut(value: string | null, max: number) {
+export function cut(value: string | null, max: number) {
   return value ? value.slice(0, max) : null;
 }
 
 /** Pipedrive ids are whole numbers; spreadsheet tools sometimes add ".0". */
-function cleanId(value: string | null) {
+export function cleanId(value: string | null) {
   if (!value) return null;
   const match = /^(\d+)(?:\.0+)?$/.exec(value.replace(/,/g, ""));
   return match ? match[1]! : null;
@@ -133,7 +133,7 @@ function count(value: string | null) {
 }
 
 /** The first of several comma-separated values (Pipedrive joins multiple emails and phones). */
-function firstOf(value: string | null) {
+export function firstOf(value: string | null) {
   if (!value) return null;
   return value.split(/[,;]/).map((part) => part.trim()).find(Boolean) ?? null;
 }
@@ -183,12 +183,17 @@ const ACTIVITY_DEAL_ID = ["Deal - ID", "Activity - Deal ID", "Deal ID"];
 const ACTIVITY_DEAL_TITLE = ["Activity - Deal", "Deal", "Deal - Title"];
 const ACTIVITY_ORG_NAME = ["Activity - Organization", "Organization", "Organization - Name"];
 
-function requireColumns(file: string, headers: string[], required: Array<[string, string[]]>) {
+export function requireColumns(
+  file: string,
+  headers: string[],
+  required: Array<[string, string[]]>,
+  app = "Pipedrive",
+) {
   if (headers.length === 0) throw new PipedriveExportError(`The ${file} file is empty.`);
   const missing = required.filter(([, aliases]) => !hasColumn(headers, aliases)).map(([label]) => label);
   if (missing.length > 0) {
     throw new PipedriveExportError(
-      `The ${file} file has no ${missing.join(" or ")} column. In Pipedrive, add the column to the list view and export again.`,
+      `The ${file} file has no ${missing.join(" or ")} column. In ${app}, add the column to the list view and export again.`,
     );
   }
 }

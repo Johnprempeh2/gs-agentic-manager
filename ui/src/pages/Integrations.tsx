@@ -17,10 +17,11 @@ import { AppLogo } from "@/pages/apps/AppLogo";
 import { appSourceConnectHref, appSourceResumeHref } from "@/pages/apps/app-connect-policy";
 
 /** Where one integration stands, in words a non-technical person can act on. */
-export type IntegrationState = "connected" | "attention" | "off" | "unfinished" | "not_connected";
+export type IntegrationState = "connected" | "imported" | "attention" | "off" | "unfinished" | "not_connected";
 
 const STATE_BADGE: Record<IntegrationState, { status: string; label: string }> = {
   connected: { status: "ok", label: "Connected" },
+  imported: { status: "ok", label: "Imported from a file" },
   attention: { status: "error", label: "Needs attention" },
   off: { status: "unchecked", label: "Turned off" },
   unfinished: { status: "warning", label: "Setup not finished" },
@@ -36,6 +37,8 @@ export interface IntegrationCardDef {
   extra?: { label: string; to: string };
   /** A caveat shown under the description, such as a provider's own access step. */
   note?: string;
+  /** For tools not in the Apps catalogue: the button when nothing is connected. */
+  withoutConnection?: { label: string; to: string };
 }
 
 const GOOGLE_PREVIEW_NOTE = "Google still limits this to its preview programme, so setup asks you to request access first.";
@@ -47,6 +50,12 @@ export const INTEGRATIONS: IntegrationCardDef[] = [
     name: "Pipedrive",
     does: "Brings your organisations, people, deals and activities into GSAM, so agents work from the same client list as you.",
     extra: { label: "No API key? Upload a Pipedrive export", to: "/organisations" },
+  },
+  {
+    slug: "hubspot",
+    name: "HubSpot",
+    does: "Brings your HubSpot companies, contacts and deals into GSAM from the files HubSpot exports. No HubSpot key needed.",
+    withoutConnection: { label: "Upload export", to: "/organisations" },
   },
   {
     slug: "mailboxes",
@@ -312,13 +321,14 @@ export function Integrations() {
             );
           }
           const connection = connectionForSlug(connectionList, def.slug);
-          const state = connections.isLoading || connections.error ? null : connectionState(connection);
+          const imported = lastImport(def.slug);
+          const baseState = connections.isLoading || connections.error ? null : connectionState(connection);
+          const state = baseState === "not_connected" && def.withoutConnection && imported ? "imported" : baseState;
           const primary = !connection
-            ? { label: "Connect", to: appSourceConnectHref(def.slug) }
+            ? def.withoutConnection ?? { label: "Connect", to: appSourceConnectHref(def.slug) }
             : state === "unfinished"
               ? { label: "Finish setup", to: appSourceResumeHref(def.slug, connection.id) }
               : { label: state === "attention" ? "Fix" : "Manage", to: `/apps/${connection.id}` };
-          const imported = lastImport(def.slug);
           const status = [
             connection && state ? connectionStatusLine(connection, state) : null,
             imported ? describeImport(imported) : null,
