@@ -723,4 +723,48 @@ describe("CommandPalette", () => {
       root.unmount();
     });
   });
+
+  it("saves a search and pins the page, then offers both in an empty box", async () => {
+    window.localStorage.clear();
+    locationState.location.pathname = "/PAP/issues";
+    locationState.location.search = "?status=blocked";
+    const { root } = renderWithQueryClient(<CommandPalette />, container, (queryClient) => {
+      queryClient.setQueryData(queryKeys.auth.session, { user: { id: "user-1" }, session: { userId: "user-1" } });
+    });
+    act(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMAND_PALETTE_EVENT, { detail: { query: "indago fee" } }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-save-search"]')).not.toBeNull();
+    }, 80);
+    act(() => {
+      container.querySelector('[data-testid="command-save-search"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      expect(container.querySelector('[data-testid="command-save-search"]')).toBeNull();
+      expect(toastState.pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Search saved" }));
+    });
+    act(() => {
+      container.querySelector('[data-testid="command-pin-view"]')!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const input = container.querySelector('input[aria-label="Command search"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+      setter.call(input, "");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await waitForAssertion(() => {
+      const saved = [...container.querySelectorAll('[data-testid="global-search-saved"]')].map((node) => node.textContent);
+      expect(saved).toHaveLength(2);
+      expect(saved[1]).toContain("indago fee");
+    });
+    act(() => {
+      container.querySelectorAll('[data-testid="global-search-saved"]')[0]!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    expect(navigateState.navigate).toHaveBeenCalledWith("/issues?status=blocked");
+    window.localStorage.clear();
+    act(() => {
+      root.unmount();
+    });
+  });
 });

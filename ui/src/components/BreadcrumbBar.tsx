@@ -20,6 +20,8 @@ import { cn } from "../lib/utils";
 import { goBackOr, mobileBackFallback } from "../lib/mobile-back";
 import { MobileEverestButton, useLeadAgent } from "./MobileEverestButton";
 import { PageTourButton } from "./PageTourButton";
+import { FeatureTour } from "./FeatureTour";
+import { SEARCH_ASK_TOUR } from "../lib/search-ask-tour";
 import { openAskEverest } from "../lib/ask-everest-events";
 import { openCommandPalette } from "../lib/global-search";
 
@@ -47,6 +49,7 @@ function GlobalToolbar({
   return (
     <div className="ml-auto flex shrink-0 items-center gap-1 pl-2 empty:hidden">
       <PageTourButton />
+      <FeatureTour tour={SEARCH_ASK_TOUR} className="hidden" />
       {pageToolbar}
       <GlobalSearchButton />
       <GlobalAskButton />
@@ -71,6 +74,7 @@ function GlobalSearchButton() {
       type="button"
       onClick={() => openCommandPalette()}
       data-testid="global-search-button"
+      data-tour="global-search"
       aria-label="Search everything"
       aria-keyshortcuts={isMac ? "Meta+K" : "Control+K"}
       className="hidden h-8 items-center gap-2 rounded-lg border border-border bg-background px-2.5 text-(length:--text-compact) text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex"
@@ -91,6 +95,7 @@ function GlobalAskButton() {
       type="button"
       onClick={() => openAskEverest()}
       data-testid="global-ask-button"
+      data-tour="global-ask"
       aria-keyshortcuts="Control+J Meta+J"
       className="hidden h-8 items-center gap-1.5 rounded-lg bg-primary px-2.5 text-(length:--text-compact) font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring md:inline-flex"
     >

@@ -42,9 +42,22 @@ import {
   ChevronRight,
   MessageCircle,
   Keyboard,
+  Pin,
+  Star,
 } from "lucide-react";
 import { Identity } from "./Identity";
 import { openShortcutsSheet } from "./KeyboardShortcutsCheatsheet";
+import { useOptionalBreadcrumbs } from "../context/BreadcrumbContext";
+import { toCompanyRelativePath } from "../lib/company-routes";
+import {
+  isSaved,
+  loadSavedSearches,
+  removeSavedSearch,
+  saveSearchItem,
+  viewLabel,
+  type NewSavedSearchItem,
+  type SavedSearchItem,
+} from "../lib/saved-searches";
 import { agentUrl, projectUrl } from "../lib/utils";
 import {
   SEARCH_OPERATOR_QUICK_FILTERS,
@@ -125,6 +138,8 @@ export function CommandPalette() {
   // A plain-English command waiting for confirmation ("create a task for Mason...").
   const [pendingCommand, setPendingCommand] = useState<PaletteCommand | null>(null);
   const [commandText, setCommandText] = useState("");
+  const [savedItems, setSavedItems] = useState<SavedSearchItem[]>([]);
+  const breadcrumbs = useOptionalBreadcrumbs();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const navigate = useNavigate();
@@ -202,6 +217,25 @@ export function CommandPalette() {
   });
 
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
+
+  useEffect(() => {
+    if (open && selectedCompanyId) setSavedItems(loadSavedSearches(selectedCompanyId, currentUserId));
+  }, [open, selectedCompanyId, currentUserId]);
+
+  const currentViewPath = `${toCompanyRelativePath(location.pathname)}${location.search ?? ""}`;
+  const searchIsSaved = isSaved(savedItems, { kind: "search", label: searchQuery, query: searchQuery });
+  const viewIsPinned = isSaved(savedItems, { kind: "view", label: "", path: currentViewPath });
+
+  function saveItem(item: NewSavedSearchItem, doneLabel: string) {
+    if (!selectedCompanyId) return;
+    setSavedItems(saveSearchItem(selectedCompanyId, currentUserId, item));
+    pushToast({ title: doneLabel, body: item.label, tone: "success" });
+  }
+
+  function removeItem(id: string) {
+    if (!selectedCompanyId) return;
+    setSavedItems(removeSavedSearch(selectedCompanyId, currentUserId, id));
+  }
   const parserContext = useMemo<SearchQueryParserContext>(() => ({
     currentUserId,
     agents,
@@ -472,6 +506,18 @@ export function CommandPalette() {
                 <kbd className="rounded border border-border bg-background px-1 py-0.5 text-(length:--text-nano)">↵</kbd>
               </span>
             </CommandItem>
+            {!searchIsSaved ? (
+              <CommandItem
+                value={`__save-search ${searchQuery}`}
+                onSelect={() => saveItem({ kind: "search", label: searchQuery, query: searchQuery }, "Search saved")}
+                data-testid="command-save-search"
+              >
+                <Star className="mr-2 h-4 w-4" />
+                <span className="flex-1 truncate">
+                  Save this search: <span className="font-semibold">&ldquo;{searchQuery}&rdquo;</span>
+                </span>
+              </CommandItem>
+            ) : null}
             {leadAgent ? (
               <CommandItem
                 value={`__ask-everest ${searchQuery}`}
@@ -497,6 +543,8 @@ export function CommandPalette() {
             companyId={selectedCompanyId}
             userId={currentUserId}
             leadName={leadAgent?.name ?? null}
+            saved={savedItems}
+            onRemoveSaved={removeItem}
             onGo={go}
             onSearch={setQuery}
             onAsk={(question) => {
@@ -582,6 +630,16 @@ export function CommandPalette() {
             <Plus className="mr-2 h-4 w-4" />
             Create new project
           </CommandItem>
+          {!viewIsPinned ? (
+            <CommandItem
+              value="pin this page view save bookmark"
+              onSelect={() => saveItem({ kind: "view", label: viewLabel(breadcrumbs, currentViewPath), path: currentViewPath }, "Page pinned")}
+              data-testid="command-pin-view"
+            >
+              <Pin className="mr-2 h-4 w-4" />
+              Pin this page to search
+            </CommandItem>
+          ) : null}
           <CommandItem
             value="keyboard shortcuts help keys"
             onSelect={() => {
