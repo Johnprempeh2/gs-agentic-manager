@@ -183,7 +183,7 @@ export function ClientCaseOverview({
       <PipelineCaseCrmSync
         caseId={detail.case.id}
         companyId={detail.case.companyId}
-        wrap={(children) => <OverviewSection title="CRM sync">{children}</OverviewSection>}
+        wrap={(children) => <OverviewSection title="Sync with your CRM">{children}</OverviewSection>}
       />
 
       <OverviewSection title="Contacts" tour="client-contacts">

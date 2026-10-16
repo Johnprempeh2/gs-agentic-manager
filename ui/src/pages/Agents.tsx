@@ -891,7 +891,7 @@ function AgentMetaColumns({
   return (
     <>
       {week !== undefined && (
-        <div className="w-28 min-w-0 text-right leading-tight" title="What this agent's work in the last 7 days would cost on the API">
+        <div className="w-28 min-w-0 text-right leading-tight" title="What this agent's work in the last 7 days would cost if it were paid for task by task">
           <div className="truncate text-xs font-medium tabular-nums text-foreground">
             {week && week.apiEquivalentCents > 0 ? formatWorkValue(week.apiEquivalentCents) : "$0"}
           </div>
