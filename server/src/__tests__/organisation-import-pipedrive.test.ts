@@ -43,8 +43,8 @@ const recordedPages = (): Pages => ({
   persons: { 0: recorded.personsPage1, 2: recorded.personsPage2 },
 });
 
-/** The deal import's reads; these tests cover organisations and people, so the account has no deals. */
-const NO_DEAL_PATHS = new Set(["/api/v1/pipelines", "/api/v1/stages", "/api/v1/users", "/api/v1/dealFields", "/api/v1/deals"]);
+/** Reads these tests do not cover: no person fields, users or deals on the account. */
+const NO_DEAL_PATHS = new Set(["/api/v1/personFields", "/api/v1/pipelines", "/api/v1/stages", "/api/v1/users", "/api/v1/dealFields", "/api/v1/deals"]);
 
 /** Answers v1 list calls from recorded pages by `start`. Records every call so tests can prove nothing is written. */
 function fakePipedrive(pages: () => Pages) {

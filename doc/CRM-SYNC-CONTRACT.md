@@ -194,6 +194,12 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   lost reason, labels, source, the dates) and every custom deal field become typed pipeline fields.
   Custom fields are keyed `pd_<pipedrive key>` and labelled with the Pipedrive name. A choice
   Pipedrive no longer lists is added to the field rather than dropped.
+- Organisations and people keep every Pipedrive field that has a value and no GSAM column, in
+  `crm_fields` (`[{ key, label, value }]`, migration `0356_crm_record_fields`), driven by
+  `/v1/organizationFields` and `/v1/personFields`, so custom fields, labels, the full address and
+  every email and phone come across under Pipedrive's names. The organisation page shows them
+  under "From Pipedrive". A Pipedrive website fills an empty website. Code:
+  `server/src/services/pipedrive-record-fields.ts`.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.

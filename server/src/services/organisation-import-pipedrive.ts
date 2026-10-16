@@ -7,7 +7,7 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { organisationContacts, organisations } from "@greatstone/db";
-import type { OrganisationImportCounts, OrganisationImportResult, OrganisationStatus } from "@greatstone/shared";
+import type { CrmRecordField, OrganisationImportCounts, OrganisationImportResult, OrganisationStatus } from "@greatstone/shared";
 import type {
   PipedriveClient,
   PipedriveContactValue,
@@ -18,6 +18,12 @@ import type {
 } from "./crm-sync-pipedrive.js";
 import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealImportService } from "./pipedrive-deal-import.js";
+import {
+  ORGANISATION_COLUMN_KEYS,
+  PERSON_COLUMN_KEYS,
+  pipedriveRecordFields,
+  sameRecordFields,
+} from "./pipedrive-record-fields.js";
 
 const SOURCE = "pipedrive";
 
@@ -33,6 +39,10 @@ export interface MappedPipedriveOrganisation {
   countryOwner: string | null;
   /** Used only when the organisation is created; a rerun never changes the GSAM status. */
   status: OrganisationStatus;
+  /** Website, when Pipedrive has one. Fills an empty website; never overwrites one typed in GSAM. */
+  website?: string | null;
+  /** Every other field, custom fields included. Undefined when the source has none (export files). */
+  crmFields?: CrmRecordField[];
 }
 
 export interface MappedPipedriveContact {
@@ -42,6 +52,14 @@ export interface MappedPipedriveContact {
   role: string | null;
   email: string | null;
   phone: string | null;
+  /** Every other field, custom fields included. Undefined when the source has none (export files). */
+  crmFields?: CrmRecordField[];
+}
+
+/** What the API import knows about the account's fields and users. */
+export interface PipedriveFieldContext {
+  fields: PipedriveDealField[];
+  users: Map<string, string>;
 }
 
 /** Trimmed text cut to the API limit, or null when blank. */
@@ -84,6 +102,7 @@ export function industryLabels(fields: PipedriveDealField[]) {
 export function mapPipedriveOrganization(
   org: PipedriveOrganization,
   industries: Map<string, string> = new Map(),
+  context?: PipedriveFieldContext,
 ): MappedPipedriveOrganisation | null {
   const name = text(org.name, 300);
   if (!name) return null;
@@ -97,11 +116,30 @@ export function mapPipedriveOrganization(
     country: text(org.address_country, 120),
     countryOwner: linkName(org.owner_id),
     status: won > 0 ? "client" : open > 0 ? "prospect" : "target",
+    ...(context
+      ? {
+        website: websiteOf(org.website),
+        crmFields: pipedriveRecordFields(org, context.fields, { skip: ORGANISATION_COLUMN_KEYS, users: context.users }),
+      }
+      : {}),
   };
 }
 
+/** An http(s) address, adding https:// to a bare domain. Null otherwise. */
+function websiteOf(value: unknown): string | null {
+  const raw = text(value, 2_000);
+  if (!raw) return null;
+  const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(candidate);
+    return url.hostname.includes(".") ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Pipedrive person -> GSAM contact. Null when it has no name. */
-export function mapPipedrivePerson(person: PipedrivePerson): MappedPipedriveContact | null {
+export function mapPipedrivePerson(person: PipedrivePerson, context?: PipedriveFieldContext): MappedPipedriveContact | null {
   const name = text(person.name, 300);
   if (!name) return null;
   return {
@@ -111,6 +149,9 @@ export function mapPipedrivePerson(person: PipedrivePerson): MappedPipedriveCont
     role: text(person.job_title, 200),
     email: primaryValue(person.email, 320),
     phone: primaryValue(person.phone, 80),
+    ...(context
+      ? { crmFields: pipedriveRecordFields(person, context.fields, { skip: PERSON_COLUMN_KEYS, users: context.users }) }
+      : {}),
   };
 }
 
@@ -180,6 +221,8 @@ export function pipedriveRecordWriter(
               industry: mapped.industry,
               country: mapped.country,
               countryOwner: mapped.countryOwner,
+              website: mapped.website ?? null,
+              crmFields: mapped.crmFields ?? [],
               status: mapped.status,
               source,
               externalId: mapped.externalId,
@@ -191,17 +234,21 @@ export function pipedriveRecordWriter(
           result.organisations.created += 1;
           return;
         }
-        const fields = {
+        const fields: Partial<OrganisationRow> = {
           name: mapped.name,
           industry: mapped.industry,
           country: mapped.country,
           countryOwner: mapped.countryOwner,
         };
+        if (mapped.website && !existing.website) fields.website = mapped.website;
+        if (mapped.crmFields && !sameRecordFields(mapped.crmFields, existing.crmFields)) fields.crmFields = mapped.crmFields;
         if (
           existing.name === fields.name &&
           existing.industry === fields.industry &&
           existing.country === fields.country &&
-          existing.countryOwner === fields.countryOwner
+          existing.countryOwner === fields.countryOwner &&
+          fields.website === undefined &&
+          fields.crmFields === undefined
         ) {
           result.organisations.skipped += 1;
           return;
@@ -221,12 +268,13 @@ export function pipedriveRecordWriter(
     async writeContact(mapped: MappedPipedriveContact, organisation: OrganisationRow) {
       try {
         const existing = contactByExternalId.get(mapped.externalId);
-        const fields = {
+        const fields: Partial<ContactRow> & { organisationId: string; name: string } = {
           organisationId: organisation.id,
           name: mapped.name,
           role: mapped.role,
           email: mapped.email,
           phone: mapped.phone,
+          ...(mapped.crmFields ? { crmFields: mapped.crmFields } : {}),
         };
         if (!existing) {
           const [row] = await db
@@ -249,7 +297,8 @@ export function pipedriveRecordWriter(
           existing.name === fields.name &&
           existing.role === fields.role &&
           existing.email === fields.email &&
-          existing.phone === fields.phone
+          existing.phone === fields.phone &&
+          (fields.crmFields === undefined || sameRecordFields(fields.crmFields, existing.crmFields))
         ) {
           result.contacts.skipped += 1;
           return;
@@ -292,14 +341,20 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       const writer = pipedriveRecordWriter(db, companyId, actor, result, now);
 
       // Organisations first, so persons can link to them by Pipedrive id.
-      const industries = industryLabels(await client.listOrganizationFields());
+      const organizationFields = await client.listOrganizationFields();
+      const industries = industryLabels(organizationFields);
+      // Owner and user fields read as names. A token that may not list users still imports.
+      const users = new Map(
+        (await client.listUsers().catch(() => [])).map((user) => [String(user.id), user.name?.trim() || user.email || String(user.id)]),
+      );
+      const orgContext: PipedriveFieldContext = { fields: organizationFields, users };
       await writer.loadOrganisations();
 
       let start: number | null = 0;
       while (start !== null) {
         const page: Awaited<ReturnType<PipedriveClient["listOrganizationsPage"]>> = await client.listOrganizationsPage({ start });
         for (const org of page.items) {
-          const mapped = mapPipedriveOrganization(org, industries);
+          const mapped = mapPipedriveOrganization(org, industries, orgContext);
           if (!mapped) {
             result.organisations.skipped += 1;
             continue;
@@ -310,12 +365,13 @@ export function pipedriveOrganisationImportService(db: Db, deps: { now?: () => D
       }
 
       await writer.loadContacts();
+      const personContext: PipedriveFieldContext = { fields: await client.listPersonFields(), users };
 
       start = 0;
       while (start !== null) {
         const page: Awaited<ReturnType<PipedriveClient["listPersonsPage"]>> = await client.listPersonsPage({ start });
         for (const person of page.items) {
-          const mapped = mapPipedrivePerson(person);
+          const mapped = mapPipedrivePerson(person, personContext);
           // A person with no organisation, or one whose organisation was not imported, has nowhere to go.
           const organisation = mapped?.organisationExternalId ? writer.orgByExternalId.get(mapped.organisationExternalId) : undefined;
           if (!mapped || !organisation) {

@@ -180,6 +180,28 @@ describe("Organisation company page", () => {
     expect(engagement.querySelector('a[href="/issues/GRE-9"]')?.textContent).toBe("GRE-9 Send the proposal");
   });
 
+  it("shows every field imported from Pipedrive under Pipedrive's names", async () => {
+    const base = detail();
+    mockApi.get.mockResolvedValue(detail({
+      source: "pipedrive",
+      crmFields: [
+        { key: "label_ids", label: "Labels", value: ["DevTools", "Partner"] },
+        { key: "employee_count", label: "Number of employees", value: 120 },
+      ],
+      contacts: [{ ...base.contacts[0]!, source: "pipedrive", crmFields: [{ key: "gh", label: "GitHub handle", value: "kofi-m" }] }],
+    }));
+    mockApi.history.mockResolvedValue(history());
+    await render();
+
+    const info = container.querySelector('section[aria-label="Company info"]')!;
+    expect(info.textContent).toContain("From Pipedrive");
+    expect(info.textContent).toContain("LabelsDevTools, Partner");
+    expect(info.textContent).toContain("Number of employees120");
+    const contacts = container.querySelector('section[aria-label="Contacts"]')!;
+    expect(contacts.querySelector("summary")?.textContent).toBe("From Pipedrive (1)");
+    expect(contacts.textContent).toContain("GitHub handlekofi-m");
+  });
+
   it("shows empty states when there are no contacts and no history", async () => {
     mockApi.get.mockResolvedValue(detail({ contacts: [] }));
     mockApi.history.mockResolvedValue(history({ lastContactAt: null, cases: [] }));

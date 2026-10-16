@@ -254,6 +254,19 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return fields;
     },
 
+    /** Every person field, so custom person fields keep their names. */
+    async listPersonFields() {
+      const fields: PipedriveDealField[] = [];
+      let start: number | null = 0;
+      while (start !== null) {
+        const page: { items: PipedriveDealField[]; nextStart: number | null } =
+          await listV1Page<PipedriveDealField>("/api/v1/personFields", start, 500);
+        fields.push(...page.items);
+        start = page.nextStart;
+      }
+      return fields;
+    },
+
     /** Every pipeline (API v1, read only). Used by the full deal import. */
     async listPipelines() {
       const body = await get("/api/v1/pipelines", {});

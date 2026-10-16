@@ -2479,6 +2479,13 @@
       "when": 1792137642975,
       "tag": "0355_client_acceptance_links",
       "breakpoints": true
+    },
+    {
+      "idx": 356,
+      "version": "7",
+      "when": 1792143487005,
+      "tag": "0356_crm_record_fields",
+      "breakpoints": true
     }
   ]
 }

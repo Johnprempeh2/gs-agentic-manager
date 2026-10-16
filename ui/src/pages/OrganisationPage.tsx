@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Building2, History, Mail, Pencil, Phone, Star } from "lucide-react";
 import {
   ORGANISATION_STATUS_LABELS,
+  type CrmRecordField,
   type OrganisationContact,
   type OrganisationHistoryCase,
   type OrganisationHistoryStageChange,
@@ -130,6 +131,12 @@ export function OrganisationPage() {
         {organisation.notes ? (
           <p className="mt-3 whitespace-pre-wrap border-t border-border pt-3 text-sm">{organisation.notes}</p>
         ) : null}
+        {organisation.crmFields?.length ? (
+          <div className="mt-3 border-t border-border pt-3">
+            <h2 className="mb-2 text-xs font-medium text-muted-foreground">{importedFieldsHeading(organisation.source)}</h2>
+            <CrmFieldList fields={organisation.crmFields} />
+          </div>
+        ) : null}
       </section>
 
       <section aria-label="Contacts" className="space-y-2">
@@ -175,29 +182,65 @@ export function OrganisationPage() {
   );
 }
 
+function importedFieldsHeading(source: string) {
+  return source === "pipedrive" ? "From Pipedrive" : source === "hubspot" ? "From HubSpot" : "More details";
+}
+
+function crmFieldText(value: CrmRecordField["value"]) {
+  if (Array.isArray(value)) return value.join(", ");
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
+/** Fields imported from a CRM under the CRM's own names, in the CRM's order. */
+export function CrmFieldList({ fields }: { fields: CrmRecordField[] }) {
+  return (
+    <dl className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+      {fields.map((field) => (
+        <div key={field.key} className="min-w-0">
+          <dt className="text-xs text-muted-foreground">{field.label}</dt>
+          <dd className="mt-0.5 whitespace-pre-wrap break-words">{crmFieldText(field.value)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function ContactRow({ contact }: { contact: OrganisationContact }) {
   return (
-    <li className="flex flex-col gap-1 px-3 py-2 text-sm sm:flex-row sm:items-center sm:gap-3">
-      <div className="flex min-w-0 items-center gap-1.5 sm:w-1/3">
-        {contact.isKeyContact ? <Star className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Key contact" /> : null}
-        <span className="truncate font-medium">{contact.name}</span>
-        {contact.role ? <span className="truncate text-muted-foreground">({contact.role})</span> : null}
+    <li className="px-3 py-2 text-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex min-w-0 items-center gap-1.5 sm:w-1/3">
+          {contact.isKeyContact ? <Star className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label="Key contact" /> : null}
+          <span className="truncate font-medium">{contact.name}</span>
+          {contact.role ? <span className="truncate text-muted-foreground">({contact.role})</span> : null}
+        </div>
+        <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
+          {contact.email ? (
+            <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1 hover:text-foreground">
+              <Mail className="h-3.5 w-3.5 shrink-0" />
+              <span className="break-all">{contact.email}</span>
+            </a>
+          ) : null}
+          {contact.phone ? (
+            <a href={`tel:${contact.phone}`} className="flex items-center gap-1 hover:text-foreground">
+              <Phone className="h-3.5 w-3.5 shrink-0" />
+              {contact.phone}
+            </a>
+          ) : null}
+          {!contact.email && !contact.phone ? <span>No contact details</span> : null}
+        </div>
       </div>
-      <div className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
-        {contact.email ? (
-          <a href={`mailto:${contact.email}`} className="flex min-w-0 items-center gap-1 hover:text-foreground">
-            <Mail className="h-3.5 w-3.5 shrink-0" />
-            <span className="break-all">{contact.email}</span>
-          </a>
-        ) : null}
-        {contact.phone ? (
-          <a href={`tel:${contact.phone}`} className="flex items-center gap-1 hover:text-foreground">
-            <Phone className="h-3.5 w-3.5 shrink-0" />
-            {contact.phone}
-          </a>
-        ) : null}
-        {!contact.email && !contact.phone ? <span>No contact details</span> : null}
-      </div>
+      {contact.crmFields?.length ? (
+        <details className="mt-1">
+          <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+            {importedFieldsHeading(contact.source)} ({contact.crmFields.length})
+          </summary>
+          <div className="mt-2">
+            <CrmFieldList fields={contact.crmFields} />
+          </div>
+        </details>
+      ) : null}
     </li>
   );
 }
