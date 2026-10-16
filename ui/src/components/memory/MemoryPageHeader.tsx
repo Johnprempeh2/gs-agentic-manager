@@ -1,6 +1,7 @@
 import { useNavigate } from "@/lib/router";
 import { Tabs } from "@/components/ui/tabs";
 import { PageTabBar } from "../PageTabBar";
+import { MemoryBackupButton } from "./MemoryBackupButton";
 
 export type MemoryTab = "connections" | "contributions" | "review" | "clients" | "apps";
 
@@ -18,11 +19,14 @@ export function MemoryPageHeader({ tab }: { tab: MemoryTab }) {
   const onChange = (value: string) => navigate(TAB_PATH[value as MemoryTab] ?? "/memory");
   return (
     <div className="space-y-3">
-      <div className="space-y-1">
-        <h1 className="text-xl font-bold">Memory</h1>
-        <p className="text-sm text-muted-foreground">
-          What agents and people have added to shared memory, and how entries connect.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="text-xl font-bold">Memory</h1>
+          <p className="text-sm text-muted-foreground">
+            What agents and people have added to shared memory, and how entries connect.
+          </p>
+        </div>
+        <MemoryBackupButton />
       </div>
       <Tabs value={tab} onValueChange={onChange}>
         <PageTabBar
