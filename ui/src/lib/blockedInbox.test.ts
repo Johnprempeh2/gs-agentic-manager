@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   Issue,
   IssueBlockedInboxAttention,
@@ -21,6 +21,10 @@ import {
   formatStoppedAge,
   groupBlockedInboxRows,
   groupBlockedInboxRowsByRoot,
+  loadBlockedInboxGroupBy,
+  loadBlockedInboxSortBy,
+  saveBlockedInboxGroupBy,
+  saveBlockedInboxSortBy,
   NO_ROOT_BLOCKER_GROUP_KEY,
   sortBlockedInboxRows,
   type BlockedInboxIssueRow,
@@ -301,5 +305,41 @@ describe("blockedInbox", () => {
     expect(formatStoppedAge("2026-05-09T20:00:00.000Z", now)).toBe("stopped 4h");
     expect(formatStoppedAge("2026-05-07T00:00:00.000Z", now)).toBe("stopped 3d");
     expect(formatStoppedAge("2026-04-15T00:00:00.000Z", now)).toBe("stopped 3w");
+  });
+});
+
+describe("remembered Blocked tab choices", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function stubStorage() {
+    const store = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    });
+    return store;
+  }
+
+  it("keeps the last group and sort choice between visits", () => {
+    stubStorage();
+    expect(loadBlockedInboxGroupBy()).toBe("none");
+    expect(loadBlockedInboxSortBy()).toBe("most_recent");
+    saveBlockedInboxGroupBy("root_blocker");
+    saveBlockedInboxSortBy("longest_stopped");
+    expect(loadBlockedInboxGroupBy()).toBe("root_blocker");
+    expect(loadBlockedInboxSortBy()).toBe("longest_stopped");
+  });
+
+  it("falls back to the defaults for unknown values or no storage", () => {
+    const store = stubStorage();
+    store.set("gsam:inbox:blocked-group-by", "owner");
+    store.set("gsam:inbox:blocked-sort-by", "nonsense");
+    expect(loadBlockedInboxGroupBy()).toBe("none");
+    expect(loadBlockedInboxSortBy()).toBe("most_recent");
+    vi.stubGlobal("localStorage", undefined);
+    expect(loadBlockedInboxGroupBy()).toBe("none");
+    expect(() => saveBlockedInboxGroupBy("root_blocker")).not.toThrow();
   });
 });

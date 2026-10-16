@@ -17,6 +17,10 @@ import { instanceSettingsApi } from "../api/instanceSettings";
 import { projectsApi } from "../api/projects";
 import {
   BLOCKED_GROUP_OPTIONS,
+  loadBlockedInboxGroupBy,
+  loadBlockedInboxSortBy,
+  saveBlockedInboxGroupBy,
+  saveBlockedInboxSortBy,
   BLOCKED_SORT_OPTIONS,
   type BlockedInboxGroupBy,
   type BlockedInboxSort,
@@ -824,8 +828,8 @@ export function Inbox() {
     () => loadInboxCollectionPreferences(selectedCompanyId).viewState,
   );
   const [groupBy, setGroupBy] = useState<InboxWorkItemGroupBy>(() => loadInboxWorkItemGroupBy());
-  const [blockedGroupBy, setBlockedGroupBy] = useState<BlockedInboxGroupBy>("none");
-  const [blockedSortBy, setBlockedSortBy] = useState<BlockedInboxSort>("most_recent");
+  const [blockedGroupBy, setBlockedGroupBy] = useState<BlockedInboxGroupBy>(() => loadBlockedInboxGroupBy());
+  const [blockedSortBy, setBlockedSortBy] = useState<BlockedInboxSort>(() => loadBlockedInboxSortBy());
   const [visibleIssueColumns, setVisibleIssueColumns] = useState<InboxIssueColumn[]>(
     () => loadInboxCollectionPreferences(selectedCompanyId).columns,
   );
@@ -2581,7 +2585,10 @@ export function Inbox() {
                           "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
                           blockedGroupBy === value ? "bg-accent/50 text-foreground" : "text-muted-foreground hover:bg-accent/50",
                         )}
-                        onClick={() => setBlockedGroupBy(value)}
+                        onClick={() => {
+                          setBlockedGroupBy(value);
+                          saveBlockedInboxGroupBy(value);
+                        }}
                       >
                         <span>{label}</span>
                         {blockedGroupBy === value ? <Check className="h-3.5 w-3.5" /> : null}
@@ -2627,7 +2634,10 @@ export function Inbox() {
                           "flex w-full items-center justify-between rounded-sm px-2 py-1.5 text-sm",
                           blockedSortBy === value ? "bg-accent/50 text-foreground" : "text-muted-foreground hover:bg-accent/50",
                         )}
-                        onClick={() => setBlockedSortBy(value)}
+                        onClick={() => {
+                          setBlockedSortBy(value);
+                          saveBlockedInboxSortBy(value);
+                        }}
                       >
                         <span>{label}</span>
                         {blockedSortBy === value ? <Check className="h-3.5 w-3.5" /> : null}
