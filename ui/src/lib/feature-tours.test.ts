@@ -10,15 +10,24 @@ describe("everyday page tours", () => {
     expect(coreTourForPath("/memory/review")?.id).toBe("memory");
   });
 
-  it("has no tour for an item page or a page with its own tour", () => {
-    expect(coreTourForPath("/issues/GRE-12")).toBeNull();
+  it("finds the item tours for a task and an agent", () => {
+    expect(coreTourForPath("/issues/GRE-12")?.id).toBe("task-detail");
+    expect(coreTourForPath("/agents/everest")?.id).toBe("agent-detail");
+    expect(coreTourForPath("/agents/everest/instructions")?.id).toBe("agent-detail");
+    expect(coreTourForPath("/agents/all")?.id).toBe("agents");
+  });
+
+  it("has no tour for a page without one or a page with its own tour", () => {
     expect(coreTourForPath("/agents/new")).toBeNull();
+    expect(coreTourForPath("/agents/everest/runs/r1")).toBeNull();
     expect(coreTourForPath("/decisions/queues/sales")).toBeNull();
     expect(coreTourForPath("/pipelines")).toBeNull();
   });
 
   it("opens every everyday tour on the page it matches", () => {
-    for (const tour of CORE_TOURS) expect(coreTourForPath(tour.route!.path)?.id).toBe(tour.id);
+    for (const tour of CORE_TOURS.filter((t) => !t.id.endsWith("-detail"))) {
+      expect(coreTourForPath(tour.route!.path)?.id).toBe(tour.id);
+    }
   });
 
   it("keeps tour ids unique and the copy free of dashes", () => {
