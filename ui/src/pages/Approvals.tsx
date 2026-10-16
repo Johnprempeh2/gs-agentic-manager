@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
+import { useConfirm } from "@/context/ConfirmContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -45,6 +46,7 @@ export function Approvals() {
     enabled: !!selectedCompanyId,
   });
 
+  const confirm = useConfirm();
   const approveMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.approve(id),
     onSuccess: (_approval, id) => {
@@ -53,7 +55,7 @@ export function Approvals() {
       navigate(`/approvals/${id}?resolved=approved`);
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to approve");
+      setActionError(`We could not approve this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
     },
   });
 
@@ -64,7 +66,7 @@ export function Approvals() {
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
     },
     onError: (err) => {
-      setActionError(err instanceof Error ? err.message : "Failed to reject");
+      setActionError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
     },
   });
 
@@ -79,7 +81,7 @@ export function Approvals() {
   ).length;
 
   if (!selectedCompanyId) {
-    return <p className="text-sm text-muted-foreground">Select an organization first.</p>;
+    return <p className="text-sm text-muted-foreground">Choose an organisation first.</p>;
   }
 
   if (isLoading) {
@@ -134,7 +136,15 @@ export function Approvals() {
               approval={approval}
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
-              onReject={() => rejectMutation.mutate(approval.id)}
+              onReject={async () => {
+                const confirmed = await confirm({
+                  title: "Reject this request?",
+                  description: "The agent is told no and will not go ahead.",
+                  confirmLabel: "Reject",
+                  tone: "destructive",
+                });
+                if (confirmed) rejectMutation.mutate(approval.id);
+              }}
               detailLink={`/approvals/${approval.id}`}
               isPending={approveMutation.isPending || rejectMutation.isPending}
               pendingAction={

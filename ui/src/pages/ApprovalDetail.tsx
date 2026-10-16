@@ -94,7 +94,7 @@ export function ApprovalDetail() {
       refresh();
       navigate(`/approvals/${approvalId}?resolved=approved`, { replace: true });
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Approve failed"),
+    onError: (err) => setError(`We could not approve this. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const rejectMutation = useMutation({
@@ -103,7 +103,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Reject failed"),
+    onError: (err) => setError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const revisionMutation = useMutation({
@@ -112,7 +112,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Revision request failed"),
+    onError: (err) => setError(`We could not ask for changes. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const resubmitMutation = useMutation({
@@ -121,7 +121,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Resubmit failed"),
+    onError: (err) => setError(`We could not send this back for another look. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const addCommentMutation = useMutation({
@@ -131,7 +131,7 @@ export function ApprovalDetail() {
       setError(null);
       refresh();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Comment failed"),
+    onError: (err) => setError(`We could not post your comment. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   const deleteAgentMutation = useMutation({
@@ -141,7 +141,7 @@ export function ApprovalDetail() {
       refresh();
       navigate("/approvals");
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Delete failed"),
+    onError: (err) => setError(`We could not delete this agent. Please try again. (${err instanceof Error ? err.message : "no details"})`),
   });
 
   if (isLoading) return <PageSkeleton variant="detail" />;
@@ -279,7 +279,15 @@ export function ApprovalDetail() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={() => rejectMutation.mutate()}
+                onClick={async () => {
+                  const confirmed = await confirmAction({
+                    title: isPermissionGrant ? "Deny this permission?" : "Reject this request?",
+                    description: "The agent is told no and will not go ahead.",
+                    confirmLabel: isPermissionGrant ? "Deny" : "Reject",
+                    tone: "destructive",
+                  });
+                  if (confirmed) rejectMutation.mutate();
+                }}
                 disabled={rejectMutation.isPending}
               >
                 {isPermissionGrant ? "Deny" : "Reject"}
@@ -288,7 +296,7 @@ export function ApprovalDetail() {
           )}
           {isBudgetApproval && approval.status === "pending" && (
             <p className="text-sm text-muted-foreground">
-              Resolve this budget stop from the budget controls on <Link to="/costs" className="underline underline-offset-2">/costs</Link>.
+              Resolve this budget stop from the budget controls on <Link to="/costs" className="underline underline-offset-2">Costs</Link>.
             </p>
           )}
           {approval.status === "pending" && !isPermissionGrant && (
