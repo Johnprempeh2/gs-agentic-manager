@@ -44,7 +44,7 @@ const recordedPages = (): Pages => ({
 });
 
 /** Reads these tests do not cover: no person fields, users or deals on the account. */
-const NO_DEAL_PATHS = new Set(["/api/v1/personFields", "/api/v1/pipelines", "/api/v1/stages", "/api/v1/users", "/api/v1/dealFields", "/api/v1/deals"]);
+const NO_DEAL_PATHS = new Set(["/api/v1/personFields", "/api/v1/pipelines", "/api/v1/stages", "/api/v1/users", "/api/v1/dealFields", "/api/v1/deals", "/api/v1/activities", "/api/v1/notes", "/api/v1/callLogs"]);
 
 /** Answers v1 list calls from recorded pages by `start`. Records every call so tests can prove nothing is written. */
 function fakePipedrive(pages: () => Pages) {

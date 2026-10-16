@@ -200,6 +200,13 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   every email and phone come across under Pipedrive's names. The organisation page shows them
   under "From Pipedrive". A Pipedrive website fills an empty website. Code:
   `server/src/services/pipedrive-record-fields.ts`.
+- Activities (`/v1/activities?user_id=0`, every user), notes (`/v1/notes`) and call logs
+  (`/v1/callLogs`) land in `crm_timeline_entries` (migration `0357_crm_timeline_entries`), keyed
+  on source, kind and Pipedrive id, linked to the GSAM organisation, contact and deal case. The
+  organisation page lists them under "Activities and notes", newest first, with the ones linked
+  to its people and cases. A done activity, a note or a past call counts as last contact. An
+  account that cannot read call logs still imports everything else. Code:
+  `server/src/services/pipedrive-timeline-import.ts`.
 - A rerun updates names, adds new stages before Won, moves cases whose deal changed stage or
   status, and updates changed fields. A deal moved to another pipeline in Pipedrive stays where it
   is, with its fields updated, and is listed in the import's error samples.

@@ -202,6 +202,35 @@ describe("Organisation company page", () => {
     expect(contacts.textContent).toContain("GitHub handlekofi-m");
   });
 
+  it("lists imported activities, notes and calls", async () => {
+    mockApi.get.mockResolvedValue(detail());
+    mockApi.history.mockResolvedValue(history({
+      timeline: [
+        {
+          id: "t1", source: "pipedrive", kind: "activity", activityType: "meeting", subject: "DevTools demo",
+          body: "Showed the CLI.", occurredAt: "2026-10-01T10:00:00Z", durationMinutes: 45, done: true,
+          ownerName: "Ama Owusu", contactId: "c1", contactName: "Kofi Mensah", caseId: null, caseTitle: null, details: {},
+        },
+        {
+          id: "t2", source: "pipedrive", kind: "note", activityType: null, subject: null, body: "Wants a trial licence.",
+          occurredAt: "2026-09-30T08:00:00Z", durationMinutes: null, done: null, ownerName: null,
+          contactId: null, contactName: null, caseId: "case-1", caseTitle: "Acme DevTools", details: {},
+        },
+      ],
+    }));
+    await render();
+    const section = container.querySelector('section[aria-label="Activities and notes"]')!;
+    const rows = section.querySelectorAll("li");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.textContent).toContain("DevTools demo");
+    expect(rows[0]!.textContent).toContain("Done");
+    expect(rows[0]!.textContent).toContain("45 min");
+    expect(rows[0]!.textContent).toContain("with Kofi Mensah");
+    expect(rows[1]!.textContent).toContain("Note");
+    expect(rows[1]!.textContent).toContain("Acme DevTools");
+    expect(rows[1]!.textContent).toContain("Wants a trial licence.");
+  });
+
   it("shows empty states when there are no contacts and no history", async () => {
     mockApi.get.mockResolvedValue(detail({ contacts: [] }));
     mockApi.history.mockResolvedValue(history({ lastContactAt: null, cases: [] }));
@@ -209,6 +238,7 @@ describe("Organisation company page", () => {
     expect(container.textContent).toContain("No contacts yet. Use Edit to add one.");
     expect(container.textContent).toContain("No pipeline items for this organisation yet.");
     expect(container.textContent).toContain("Last contactNo contact yet");
+    expect(container.querySelector('section[aria-label="Activities and notes"]')).toBeNull();
   });
 
   it("shows an error for the history without hiding the rest of the page", async () => {

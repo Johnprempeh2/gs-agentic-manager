@@ -284,7 +284,10 @@ function sameFields(a: Record<string, unknown>, b: Record<string, unknown>) {
   return keys.every((key) => key in b && JSON.stringify(a[key] ?? null) === JSON.stringify(b[key] ?? null));
 }
 
-type DealImportResult = Required<Pick<OrganisationImportResult, "deals" | "pipelines">>;
+type DealImportResult = Required<Pick<OrganisationImportResult, "deals" | "pipelines">> & {
+  /** GSAM case id of every imported deal, by Pipedrive deal id, so activities and notes can link to it. */
+  caseIdByDealId: Map<string, string>;
+};
 
 /**
  * Imports every Pipedrive pipeline, stage and deal for one company. Callers
@@ -303,7 +306,7 @@ export function pipedriveDealImportService(db: Db) {
       result: OrganisationImportResult;
     }): Promise<DealImportResult> {
       const { companyId, client, result } = input;
-      const counts: DealImportResult = { deals: emptyImportCounts(), pipelines: emptyImportCounts() };
+      const counts: DealImportResult = { deals: emptyImportCounts(), pipelines: emptyImportCounts(), caseIdByDealId: new Map() };
       result.deals = counts.deals;
       result.pipelines = counts.pipelines;
       const pushError = (kind: "deal" | "pipeline", externalId: string, error: unknown) => {
@@ -442,6 +445,7 @@ export function pipedriveDealImportService(db: Db) {
         }
         start = page.nextStart;
       }
+      for (const [caseKey, row] of caseByKey) counts.caseIdByDealId.set(caseKey.slice("pipedrive-".length), row.id);
       return counts;
     },
 

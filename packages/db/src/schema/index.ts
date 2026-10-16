@@ -104,6 +104,7 @@ export {
   type CrmSyncStoredValue,
 } from "./crm_sync.js";
 export { organisations, organisationContacts, type CrmRecordField } from "./organisations.js";
+export { crmTimelineEntries } from "./crm_timeline.js";
 export { inboundTaskHooks } from "./inbound_task_hooks.js";
 export { outboundWebhooks, outboundWebhookDeliveries } from "./outbound_webhooks.js";
 export { calendarFeeds } from "./calendar_feeds.js";

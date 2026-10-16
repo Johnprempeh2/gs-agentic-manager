@@ -78,10 +78,14 @@ export interface OrganisationImportResult {
   deals?: OrganisationImportCounts;
   /** Connection import only: Pipedrive pipelines made into GSAM pipelines with their stages. */
   pipelines?: OrganisationImportCounts;
-  /** Export import only: activities attached to the imported deals' cases. */
+  /** Activities: attached to the deals' cases (export), or on the timeline (connection). */
   activities?: OrganisationImportCounts;
+  /** Connection import only: notes on the timeline. */
+  notes?: OrganisationImportCounts;
+  /** Connection import only: call logs on the timeline. */
+  calls?: OrganisationImportCounts;
   /** Up to 20 errors, so a person can see what failed without reading the logs. */
-  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline"; externalId: string; message: string }>;
+  errorSamples: Array<{ kind: "organisation" | "contact" | "deal" | "activity" | "pipeline" | "note" | "call"; externalId: string; message: string }>;
   startedAt: string;
   finishedAt: string;
 }
@@ -128,4 +132,28 @@ export interface OrganisationHistory {
   /** Latest activity on any of its cases or linked tasks; null when there is none. */
   lastContactAt: string | null;
   cases: OrganisationHistoryCase[];
+  /** Activities, notes and calls about it, its people or its cases, newest first. */
+  timeline?: CrmTimelineEntry[];
+}
+
+/** One activity, note or call imported from a CRM. */
+export interface CrmTimelineEntry {
+  id: string;
+  source: string;
+  kind: "activity" | "note" | "call";
+  /** The CRM's activity type, such as call, meeting, task or email. */
+  activityType: string | null;
+  subject: string | null;
+  body: string | null;
+  occurredAt: string | null;
+  durationMinutes: number | null;
+  /** Activities only: done or still planned. */
+  done: boolean | null;
+  ownerName: string | null;
+  contactId: string | null;
+  contactName: string | null;
+  caseId: string | null;
+  caseTitle: string | null;
+  /** Location, participants, outcome and anything else the CRM held. */
+  details: Record<string, unknown>;
 }
