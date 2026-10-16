@@ -370,6 +370,9 @@ import {
   createWorkflowTemplateSchema,
   dismissCrmSyncConflictSchema,
   importOrganisationsFromPipedriveSchema,
+  createInboundTaskHookSchema,
+  inboundTaskSchema,
+  updateInboundTaskHookSchema,
   importHubspotExportSchema,
   importPipedriveExportSchema,
   listCrmSyncConflictsQuerySchema,
@@ -1498,6 +1501,11 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/organisations/import/pipedrive",
   "POST /api/companies/{companyId}/organisations/import/pipedrive-export",
   "POST /api/companies/{companyId}/organisations/import/hubspot-export",
+  "GET /api/companies/{companyId}/inbound-task-hooks",
+  "POST /api/companies/{companyId}/inbound-task-hooks",
+  "PATCH /api/companies/{companyId}/inbound-task-hooks/{hookId}",
+  "POST /api/companies/{companyId}/inbound-task-hooks/{hookId}/rotate",
+  "DELETE /api/companies/{companyId}/inbound-task-hooks/{hookId}",
   "PUT /api/companies/{companyId}/pipeline-access/agents/{agentId}",
   "POST /api/companies/{companyId}/website/properties",
   "PATCH /api/companies/{companyId}/website/properties/{propertyId}",
@@ -14615,6 +14623,59 @@ registerCurrentRoute({
   summary: "Turn agent email drafts on or off for a mailbox (connection managers). Off by default.",
   body: mailboxDraftsSettingSchema,
   responses: mailboxResponses,
+});
+
+const inboundHookResponses = { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable };
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/companies/{companyId}/inbound-task-hooks",
+  tags: ["inbound-task-hooks"],
+  summary: "List the company's inbound task webhooks (connection managers)",
+  responses: inboundHookResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/inbound-task-hooks",
+  tags: ["inbound-task-hooks"],
+  summary: "Make an inbound task webhook; the answer holds its token, shown this once (connection managers)",
+  body: createInboundTaskHookSchema,
+  responses: inboundHookResponses,
+});
+
+registerCurrentRoute({
+  method: "patch",
+  path: "/api/companies/{companyId}/inbound-task-hooks/{hookId}",
+  tags: ["inbound-task-hooks"],
+  summary: "Rename, reassign, or turn an inbound task webhook on or off (connection managers)",
+  body: updateInboundTaskHookSchema,
+  responses: inboundHookResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/companies/{companyId}/inbound-task-hooks/{hookId}/rotate",
+  tags: ["inbound-task-hooks"],
+  summary: "Replace an inbound task webhook's token; the old one stops working (connection managers)",
+  responses: inboundHookResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/companies/{companyId}/inbound-task-hooks/{hookId}",
+  tags: ["inbound-task-hooks"],
+  summary: "Delete an inbound task webhook (connection managers)",
+  responses: inboundHookResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/inbound/tasks/{publicId}",
+  tags: ["inbound-task-hooks"],
+  summary: "Create a task from an outside tool, with files as base64. Authenticated by the hook token (Authorization: Bearer).",
+  body: inboundTaskSchema,
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 413: r.unprocessable, 415: r.unprocessable, 422: r.unprocessable },
 });
 
 registerCurrentRoute({

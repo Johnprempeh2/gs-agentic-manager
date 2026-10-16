@@ -1,11 +1,13 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
-import type { ActivityEvent, MailboxSummary, ToolConnection } from "@greatstone/shared";
+import type { ActivityEvent, InboundTaskHookSummary, MailboxSummary, ToolConnection } from "@greatstone/shared";
 import { isToolConnectionAttentionHealth } from "@greatstone/shared";
 import { activityApi } from "@/api/activity";
+import { inboundTaskHooksApi } from "@/api/inboundTaskHooks";
 import { mailboxesApi } from "@/api/mailboxes";
 import { toolsApi } from "@/api/tools";
+import { InboundTaskHooksDialog, hookStatusLine, inboundHooksKey } from "@/components/InboundTaskHooks";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
@@ -188,6 +190,22 @@ export function mailboxStatusLine(mailboxes: MailboxSummary[]) {
   return checked ? `Last checked ${relativeTime(checked)}.` : null;
 }
 
+/** Where the incoming webhooks stand: none, all off, a recent problem, or working. */
+export function webhookState(hooks: InboundTaskHookSummary[]): IntegrationState {
+  const live = hooks.filter((hook) => hook.enabled);
+  if (hooks.length === 0) return "not_connected";
+  if (live.length === 0) return "off";
+  const failing = (hook: InboundTaskHookSummary) =>
+    Boolean(hook.lastErrorAt) && (!hook.lastUsedAt || hook.lastErrorAt! > hook.lastUsedAt);
+  return live.every(failing) ? "attention" : "connected";
+}
+
+const WEBHOOK_DEF: IntegrationCardDef = {
+  slug: "webhook",
+  name: "Incoming webhook",
+  does: "Lets a form, Zapier, Make or any outside tool create a task here, with files attached, by posting to a private address.",
+};
+
 function IntegrationCard({
   def,
   state,
@@ -200,7 +218,8 @@ function IntegrationCard({
   detail: string | null;
   /** Last sync, what came in, or what is wrong, in one or two plain sentences. */
   status?: string[];
-  primary: { label: string; to: string };
+  /** A link, or a button that opens a dialog on this page. */
+  primary: { label: string; to?: string; onClick?: () => void };
 }) {
   const badge = state ? STATE_BADGE[state] : null;
   return (
@@ -235,9 +254,15 @@ function IntegrationCard({
             {def.extra.label}
           </Link>
         ) : <span />}
-        <Button asChild size="sm" variant={state === "connected" ? "outline" : "default"}>
-          <Link to={primary.to}>{primary.label}</Link>
-        </Button>
+        {primary.to ? (
+          <Button asChild size="sm" variant={state === "connected" ? "outline" : "default"}>
+            <Link to={primary.to}>{primary.label}</Link>
+          </Button>
+        ) : (
+          <Button size="sm" variant={state === "connected" ? "outline" : "default"} onClick={primary.onClick}>
+            {primary.label}
+          </Button>
+        )}
       </div>
     </li>
   );
@@ -271,6 +296,13 @@ export function Integrations() {
   const imports = useQuery({
     queryKey: [...queryKeys.activity(companyId), "integration-imports"],
     queryFn: () => activityApi.list(companyId, { action: ["organisation.import_completed"], limit: 20 }),
+    enabled: Boolean(selectedCompanyId),
+  });
+
+  const [hooksOpen, setHooksOpen] = useState(false);
+  const hooks = useQuery({
+    queryKey: inboundHooksKey(companyId),
+    queryFn: () => inboundTaskHooksApi.list(companyId),
     enabled: Boolean(selectedCompanyId),
   });
 
@@ -345,6 +377,21 @@ export function Integrations() {
           );
         })}
       </ul>
+
+      <div className="space-y-1 pt-2">
+        <h2 className="text-sm font-semibold">Built into GSAM</h2>
+        <p className="text-sm text-muted-foreground">These need no outside account or key. Each stays off until you turn it on.</p>
+      </div>
+      <ul className="grid gap-3 md:grid-cols-2" aria-label="Built-in integrations">
+        <IntegrationCard
+          def={WEBHOOK_DEF}
+          state={hooks.isLoading || hooks.error ? null : webhookState(hooks.data ?? [])}
+          detail={hooks.data?.length ? `${hooks.data.length} ${hooks.data.length === 1 ? "address" : "addresses"}: ${hooks.data.map((hook) => hook.name).join(", ")}` : null}
+          status={(hooks.data ?? []).slice(0, 2).map((hook) => `${hook.name}: ${hookStatusLine(hook)}`)}
+          primary={{ label: hooks.data?.length ? "Manage" : "Set up", onClick: () => setHooksOpen(true) }}
+        />
+      </ul>
+      <InboundTaskHooksDialog companyId={companyId} open={hooksOpen} onOpenChange={setHooksOpen} />
 
       <p className="text-sm text-muted-foreground">
         Looking for something else? <Link to="/apps" className="underline underline-offset-2">Browse every app</Link>.

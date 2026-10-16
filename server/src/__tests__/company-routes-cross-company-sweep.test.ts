@@ -107,6 +107,7 @@ const ID_ROUTES_NOT_SWEPT: Record<string, string> = {
   "/api/chat-webhooks/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
   "/api/chat-webhooks/agentmail/:publicId": "Inbound provider webhook; authenticated by provider signature, not a session.",
   "/api/routine-triggers/public/:publicId": "Public routine webhook; authenticated by the trigger secret, not a session.",
+  "/api/inbound/tasks/:publicId": "Inbound task webhook; authenticated by the hook's own token, not a session.",
   "/api/companies/import/": "Import jobs and transfers belong to the user who started them, before a company exists.",
   "/api/agents/me/": "Acts on the calling agent's own company; there is no other company's id to pass.",
   "/api/environment-custom-image-setup-sessions/:sessionId": "Instance-admin only: every handler calls "
