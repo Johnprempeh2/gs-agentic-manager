@@ -649,6 +649,53 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect((await casesByKey(companyId)).get("pipedrive-701")!.fields.dealFollowers).toBe("Ama Owusu");
   }, 60_000);
 
+  it("brings emails on a person or organisation that are not on a deal, once each", async () => {
+    const { companyId, actor, connectionId } = await seed();
+    const pages = recordedPages();
+    pages["/api/v1/persons"][0].data[0].email_messages_count = 2;
+    pages["/api/v1/organizations"][0].data[0].email_messages_count = 2;
+    const mail = (id: number, subject: string, extra: Record<string, unknown> = {}) => ({
+      object: "mailMessage",
+      timestamp: "2026-09-25 10:00:00",
+      data: { id, subject, snippet: `${subject} body`, message_time: "2026-09-25 10:00:00", from: [{ email_address: "esi@northwind.example", name: "Esi Boateng" }], to: [], ...extra },
+    });
+    const page = (data: unknown[]) => ({ success: true, data, additional_data: { pagination: { start: 0, limit: 100, more_items_in_collection: false } } });
+    // The deal's email again, one only on the person, and an activity the timeline import already has.
+    pages["/api/v1/persons/501/flow"] = { 0: page([
+      recorded.dealFlow701.data.find((item: { object: string }) => item.object === "mailMessage"),
+      mail(88101, "Invoice address"),
+      { object: "activity", data: { id: 1 } },
+    ]) };
+    // The person's email again, and one only on the organisation.
+    pages["/api/v1/organizations/101/flow"] = { 0: page([mail(88101, "Invoice address"), mail(88102, "Board pack")]) };
+    const pipedrive = fakePipedrive(() => pages);
+
+    const first = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(first.status).toBe(200);
+    expect(first.body.emails).toEqual({ created: 3, updated: 0, skipped: 0, errors: 0 });
+    expect(pipedrive.calls.every((call) => call.method === "GET")).toBe(true);
+    // Records with no emails are not asked.
+    expect(pipedrive.calls.some((call) => call.url.includes("/persons/502/flow"))).toBe(false);
+
+    const emails = await db.select().from(crmTimelineEntries)
+      .where(and(eq(crmTimelineEntries.companyId, companyId), eq(crmTimelineEntries.kind, "email")))
+      .orderBy(asc(crmTimelineEntries.externalId));
+    const esi = await db.select().from(organisationContacts)
+      .where(and(eq(organisationContacts.companyId, companyId), eq(organisationContacts.externalId, "501")))
+      .then((rows) => rows[0]!);
+    const northwind = await db.select().from(organisations)
+      .where(and(eq(organisations.companyId, companyId), eq(organisations.externalId, "101")))
+      .then((rows) => rows[0]!);
+    expect(emails.map((row) => [row.externalId, row.subject, Boolean(row.caseId), row.contactId, row.organisationId])).toEqual([
+      ["88001", "Re: CLI trial", true, null, null],
+      ["88101", "Invoice address", false, esi.id, null],
+      ["88102", "Board pack", false, null, northwind.id],
+    ]);
+
+    const rerun = await request(app(actor, pipedrive.fetch)).post(importPath(companyId)).send({ connectionId });
+    expect(rerun.body.emails).toEqual({ created: 0, updated: 0, skipped: 3, errors: 0 });
+  }, 60_000);
+
   it("brings the Leads inbox across as cases, links notes to them, and moves converted leads", async () => {
     const { companyId, actor, connectionId } = await seed();
     let pages = recordedPages();

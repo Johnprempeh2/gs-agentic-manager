@@ -298,6 +298,16 @@ export function createPipedriveClient(options: PipedriveClientOptions) {
       return listV1Page<Record<string, unknown>>(`/api/v1/deals/${encodeURIComponent(input.dealId)}/flow`, input.start ?? 0, 100);
     },
 
+    /** One page of a person's history, which holds emails not linked to a deal (API v1, read only). */
+    async listPersonFlowPage(input: { personId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/persons/${encodeURIComponent(input.personId)}/flow`, input.start ?? 0, 100);
+    },
+
+    /** One page of an organisation's history, which holds emails not linked to a deal (API v1, read only). */
+    async listOrganizationFlowPage(input: { organizationId: string; start?: number }) {
+      return listV1Page<Record<string, unknown>>(`/api/v1/organizations/${encodeURIComponent(input.organizationId)}/flow`, input.start ?? 0, 100);
+    },
+
     /** One page of call logs (API v1, read only; Pipedrive allows 50 a page). */
     async listCallLogsPage(input: { start?: number } = {}) {
       return listV1Page<Record<string, unknown>>("/api/v1/callLogs", input.start ?? 0, 50);

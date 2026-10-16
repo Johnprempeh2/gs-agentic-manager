@@ -211,6 +211,10 @@ is not deleted (`/v1/deals?status=all_not_deleted`). Code: `server/src/services/
   (subject, snippet, from, to, cc) and its stage, pipeline and status changes to the same
   timeline, linked to the deal case (migration `0358_crm_timeline_email_history`). Other field
   changes, and activities and notes already read above, are not added twice.
+- Emails on a person or organisation but not on a deal come from their own history
+  (`/v1/persons/{id}/flow`, `/v1/organizations/{id}/flow`), read only for records whose
+  `email_messages_count` is above 0. Each email is written once, linked to the person or
+  organisation; one already on a deal stays on the deal.
 - A person with no organisation in Pipedrive, or whose organisation was not imported, is kept as a
   contact with no organisation (`organisation_contacts.organisation_id` is nullable from migration
   `0359_contacts_without_organisation`). The Organisations page lists them under "People with no
