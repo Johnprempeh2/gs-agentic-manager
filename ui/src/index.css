@@ -339,7 +339,7 @@
   --status-agent-error: var(--color-red-600);
   /* Dashboard agent card: translucent running treatment from the Paper design. */
   --dashboard-run-accent: #1b5039; /* Greatstone: a live run glows emerald on paper, lime on the void */
-  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
+  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 5%, var(--card)); /* daylight: a white card with an emerald wash, not a grey film over the canvas */
   --dashboard-run-border: color-mix(in oklab, var(--dashboard-run-accent) 25%, transparent);
   --dashboard-list-leading-width: calc(var(--spacing) * 6);
   --dashboard-list-id-width: calc(var(--spacing) * 20);
@@ -588,6 +588,7 @@
      from the brand ramp. Contrast audited: every text pair AA. */
   --brand-mark: #c8ff00;
   --dashboard-run-accent: #c8ff00;
+  --dashboard-run-background: color-mix(in oklab, var(--dashboard-run-accent) 4%, transparent);
   --background: #121212;
   --foreground: #f5f5f5;
   --side-panel-bg: var(--gs-panel-bg); /* Greatstone: a translucent panel over the atmosphere */
