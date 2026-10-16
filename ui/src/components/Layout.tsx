@@ -15,11 +15,13 @@ import { SkillsContextualSidebar } from "./SkillsContextualSidebar";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
+import { AskEverestPanel } from "./AskEverestPanel";
 import { NewIssueDialog } from "./NewIssueDialog";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
-import { KeyboardShortcutsCheatsheet } from "./KeyboardShortcutsCheatsheet";
+import { KeyboardShortcutsCheatsheet, OPEN_SHORTCUTS_EVENT } from "./KeyboardShortcutsCheatsheet";
+import { hasBlockingShortcutDialog, isKeyboardShortcutTextInputTarget } from "../lib/keyboardShortcuts";
 import { ToastViewport } from "./ToastViewport";
 import { TeamChatAlerts } from "./team-chat/TeamChatAlerts";
 import { BlockedDependentsDialogHost } from "./BlockedDependentsDialog";
@@ -442,6 +444,27 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
     onGoToInbox: () => navigate("/inbox"),
   });
 
+  // "?" opens the shortcuts sheet even when single-key shortcuts are off,
+  // so everyone can find Cmd/Ctrl+K and Cmd/Ctrl+J.
+  useEffect(() => {
+    function openSheet() {
+      setShortcutsOpen(true);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (keyboardShortcutsEnabled) return;
+      if (event.key !== "?" || event.metaKey || event.ctrlKey || event.altKey || event.defaultPrevented) return;
+      if (isKeyboardShortcutTextInputTarget(event.target) || hasBlockingShortcutDialog()) return;
+      event.preventDefault();
+      openSheet();
+    }
+    window.addEventListener(OPEN_SHORTCUTS_EVENT, openSheet);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener(OPEN_SHORTCUTS_EVENT, openSheet);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [keyboardShortcutsEnabled]);
+
   useEffect(() => {
     if (!isMobile) {
       setMobileNavVisible(true);
@@ -776,11 +799,12 @@ export function Layout({ sidebarSections }: { sidebarSections?: ReactNode }) {
       {isMobile && <MobileBottomNav visible={showMobileNav} />}
       <PullToRefresh enabled={isMobile && !sidebarOpen} />
       <CommandPalette />
+      <AskEverestPanel />
       <NewIssueDialog />
       <NewProjectDialog />
       <NewGoalDialog />
       <NewAgentDialog />
-      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <KeyboardShortcutsCheatsheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} singleKeysEnabled={keyboardShortcutsEnabled} />
       <ToastViewport />
       <TeamChatAlerts />
       <BlockedDependentsDialogHost />

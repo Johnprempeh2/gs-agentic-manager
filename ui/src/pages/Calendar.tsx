@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { CalendarItem, CalendarItemKind } from "@greatstone/shared";
-import { CalendarDays, ChevronLeft, ChevronRight, CircleCheck, Repeat, Target } from "lucide-react";
+import { useEffect, useMemo, useState, type DragEvent } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { CompanyCalendar, CalendarItem, CalendarItemKind } from "@greatstone/shared";
+import { CalendarClock, CalendarDays, CalendarPlus, Check, ChevronLeft, ChevronRight, CircleCheck, ClipboardList, Repeat, Target } from "lucide-react";
 import { calendarApi } from "../api/calendar";
+import { issuesApi } from "../api/issues";
+import { useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
@@ -11,8 +13,11 @@ import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
 import {
   CALENDAR_KIND_LABELS,
+  addDays,
   WEEKDAY_LABELS,
   calendarItemHref,
+  canReschedule,
+  rescheduleOptions,
   dayOfMonth,
   dayTitle,
   groupByDate,
@@ -26,8 +31,13 @@ import {
   routineTimesLabel,
   shiftMonth,
 } from "../lib/calendar";
+import { calendarIcsFileName, calendarToIcs } from "../lib/calendar-ics";
+import { weekAheadText } from "../lib/calendar-text";
+import { useCopyAction } from "../lib/use-copy-action";
+import { downloadTextFile } from "../lib/issues-csv";
 import { Link, useSearchParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 const KIND_ICONS: Record<CalendarItemKind, typeof CircleCheck> = {
@@ -71,12 +81,25 @@ function itemSubtitle(item: CalendarItem, today: string, timeZone: string | unde
   return parts.join(" · ");
 }
 
+/** Drag data type for a task chip moved to another day. */
+const TASK_DRAG_TYPE = "application/x-gsam-calendar-task";
+
 function CalendarChip({ item, today }: { item: CalendarItem; today: string }) {
   const Icon = KIND_ICONS[item.kind];
+  const movable = canReschedule(item);
   return (
     <Link
       to={calendarItemHref(item)}
-      title={item.title}
+      title={movable ? `${item.title}. Drag to another day to change the due date.` : item.title}
+      draggable={movable}
+      onDragStart={
+        movable
+          ? (event) => {
+              event.dataTransfer.setData(TASK_DRAG_TYPE, JSON.stringify({ id: item.id, date: item.date }));
+              event.dataTransfer.effectAllowed = "move";
+            }
+          : undefined
+      }
       className={cn(
         "flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 text-xs hover:opacity-80",
         chipClasses(item, today),
@@ -89,7 +112,39 @@ function CalendarChip({ item, today }: { item: CalendarItem; today: string }) {
   );
 }
 
-function DayList({ date, items, today }: { date: string; items: CalendarItem[]; today: string }) {
+function MoveTaskMenu({ item, today, onMove }: { item: CalendarItem; today: string; onMove: (id: string, date: string) => void }) {
+  const options = rescheduleOptions(item.date, today);
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="icon-sm" className="mr-2 mt-1.5 shrink-0" aria-label={`Change the due date of ${item.title}`} title="Change the due date">
+          <CalendarClock className="size-4" aria-hidden />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Move the due date to</DropdownMenuLabel>
+        {options.map((option) => (
+          <DropdownMenuItem key={option.date} onSelect={() => onMove(item.id, option.date)}>
+            {option.label}
+            <span className="ml-auto pl-3 text-xs text-muted-foreground">{dayTitle(option.date)}</span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function DayList({
+  date,
+  items,
+  today,
+  onMove,
+}: {
+  date: string;
+  items: CalendarItem[];
+  today: string;
+  onMove: (id: string, date: string) => void;
+}) {
   const timeZone = viewerTimeZone();
   return (
     <section aria-labelledby={`day-${date}`} className="space-y-2">
@@ -104,8 +159,8 @@ function DayList({ date, items, today }: { date: string; items: CalendarItem[]; 
           {items.map((item) => {
             const Icon = KIND_ICONS[item.kind];
             return (
-              <li key={`${item.kind}:${item.id}:${item.date}`}>
-                <Link to={calendarItemHref(item)} className="flex items-start gap-3 px-3 py-2 hover:bg-accent">
+              <li key={`${item.kind}:${item.id}:${item.date}`} className="flex items-start">
+                <Link to={calendarItemHref(item)} className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2 hover:bg-accent">
                   <span className={cn("mt-0.5 rounded-sm p-1", chipClasses(item, today))}>
                     <Icon className="size-3.5" aria-hidden />
                   </span>
@@ -119,6 +174,7 @@ function DayList({ date, items, today }: { date: string; items: CalendarItem[]; 
                     </span>
                   </span>
                 </Link>
+                {canReschedule(item) ? <MoveTaskMenu item={item} today={today} onMove={onMove} /> : null}
               </li>
             );
           })}
@@ -133,10 +189,13 @@ function DayList({ date, items, today }: { date: string; items: CalendarItem[]; 
  * runs and goal target dates for a month, with the chosen day listed below.
  */
 export function Calendar() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showEarlierDays, setShowEarlierDays] = useState(false);
+  const [dropDate, setDropDate] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const today = localToday();
 
   useEffect(() => {
@@ -158,6 +217,50 @@ export function Calendar() {
     queryFn: () => calendarApi.get(selectedCompanyId!, from, to),
     enabled: !!selectedCompanyId,
   });
+
+  const calendarKey = queryKeys.calendar(selectedCompanyId ?? "", from, to);
+  const reschedule = useMutation({
+    mutationFn: ({ id, date }: { id: string; date: string }) => issuesApi.update(id, { dueDate: date }),
+    onMutate: async ({ id, date }) => {
+      await queryClient.cancelQueries({ queryKey: calendarKey });
+      const previous = queryClient.getQueryData<CompanyCalendar>(calendarKey);
+      if (previous) {
+        queryClient.setQueryData<CompanyCalendar>(calendarKey, {
+          ...previous,
+          items: previous.items.map((item) => (item.kind === "task" && item.id === id ? { ...item, date } : item)),
+        });
+      }
+      return { previous };
+    },
+    onError: (err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(calendarKey, context.previous);
+      pushToast({ title: "Could not change the due date", body: err instanceof Error ? err.message : undefined, tone: "error" });
+    },
+    onSuccess: (_issue, { date }) => {
+      pushToast({ title: `Due date moved to ${dayTitle(date)}`, tone: "success" });
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ["calendar", selectedCompanyId ?? ""] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId ?? "") });
+    },
+  });
+
+  function moveTask(id: string, date: string) {
+    reschedule.mutate({ id, date });
+  }
+
+  function dropTask(event: DragEvent, date: string) {
+    setDropDate(null);
+    const raw = event.dataTransfer.getData(TASK_DRAG_TYPE);
+    if (!raw) return;
+    event.preventDefault();
+    try {
+      const dragged = JSON.parse(raw) as { id: string; date: string };
+      if (dragged.date !== date) reschedule.mutate({ id: dragged.id, date });
+    } catch {
+      // Not one of our chips.
+    }
+  }
 
   const visibleItems = useMemo(
     () => (data?.items ?? []).filter((item) => !hiddenKinds.has(item.kind)),
@@ -181,6 +284,37 @@ export function Calendar() {
     setSearchParams(params, { replace: true });
   }
 
+  function addToMyCalendar() {
+    const prefix = selectedCompany?.issuePrefix ?? "";
+    const monthItems = visibleItems.filter((item) => monthKey(item.date) === month);
+    const ics = calendarToIcs(monthItems, {
+      calendarName: selectedCompany?.name ? `${selectedCompany.name} calendar` : "Calendar",
+      itemUrl: (item) => `${window.location.origin}/${prefix}${calendarItemHref(item)}`,
+    });
+    downloadTextFile(calendarIcsFileName(prefix, month), ics, "text/calendar;charset=utf-8");
+  }
+
+  const weekCopy = useCopyAction();
+  async function copyWeekAhead() {
+    const weekEnd = addDays(today, 6);
+    // Use the loaded month when it covers the week, so the copy stays inside the click.
+    const items =
+      data && from <= today && weekEnd <= to
+        ? data.items
+        : (
+            await queryClient.fetchQuery({
+              queryKey: queryKeys.calendar(selectedCompanyId!, today, weekEnd),
+              queryFn: () => calendarApi.get(selectedCompanyId!, today, weekEnd),
+            })
+          ).items;
+    await weekCopy.copy(
+      weekAheadText(
+        items.filter((item) => !hiddenKinds.has(item.kind)),
+        { from: today, timeZone: viewerTimeZone() },
+      ),
+    );
+  }
+
   function toggleKind(kind: CalendarItemKind) {
     const next = new Set(hiddenKinds);
     if (next.has(kind)) next.delete(kind);
@@ -202,6 +336,33 @@ export function Calendar() {
           </p>
         </div>
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!data}
+            title="Download this month as a calendar file for Outlook, Google Calendar or Apple Calendar"
+            onClick={addToMyCalendar}
+          >
+            <CalendarPlus className="size-4" />
+            <span className="hidden sm:inline">Add to my calendar</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!selectedCompanyId}
+            title="Copy the next 7 days as text to paste into an email or chat"
+            aria-label={weekCopy.copied ? "Copied" : "Copy the week ahead"}
+            onClick={() =>
+              void copyWeekAhead().catch((err) =>
+                pushToast({ title: "Could not load the week ahead", body: err instanceof Error ? err.message : undefined, tone: "error" }),
+              )
+            }
+          >
+            {weekCopy.copied ? <Check className="size-4" /> : <ClipboardList className="size-4" />}
+            <span className="hidden sm:inline">
+              {weekCopy.copied ? "Copied" : weekCopy.failed ? "Could not copy" : "Copy the week ahead"}
+            </span>
+          </Button>
           <Button size="sm" variant="outline" onClick={() => update({ month: null, day: null })}>
             Today
           </Button>
@@ -281,10 +442,19 @@ export function Calendar() {
                   return (
                     <div
                       key={date}
+                      onDragOver={(event) => {
+                        if (!event.dataTransfer.types.includes(TASK_DRAG_TYPE)) return;
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = "move";
+                        if (dropDate !== date) setDropDate(date);
+                      }}
+                      onDragLeave={() => setDropDate((current) => (current === date ? null : current))}
+                      onDrop={(event) => dropTask(event, date)}
                       className={cn(
                         "min-h-24 min-w-0 border-r border-border p-1 last:border-r-0",
                         !inMonth && "bg-muted/30",
                         selected && "bg-accent",
+                        dropDate === date && "bg-accent ring-2 ring-inset ring-primary",
                       )}
                     >
                       <button
@@ -329,7 +499,7 @@ export function Calendar() {
               </Button>
             ) : null}
             {phoneDays.map(([date, items]) => (
-              <DayList key={date} date={date} items={items} today={today} />
+              <DayList key={date} date={date} items={items} today={today} onMove={moveTask} />
             ))}
             {monthItemCount === 0 ? (
               <EmptyState icon={CalendarDays} message={`Nothing is scheduled for ${monthTitle(month)}.`} />
@@ -337,11 +507,11 @@ export function Calendar() {
           </div>
 
           <div className="hidden md:block">
-            <DayList date={selectedDay} items={byDate.get(selectedDay) ?? []} today={today} />
+            <DayList date={selectedDay} items={byDate.get(selectedDay) ?? []} today={today} onMove={moveTask} />
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Give a task a due date and it appears here. Routines show on the days their schedule runs, and goals on
+            Give a task a due date and it appears here. Drag a task to another day to change its due date. Routines show on the days their schedule runs, and goals on
             their target date.
           </p>
         </>

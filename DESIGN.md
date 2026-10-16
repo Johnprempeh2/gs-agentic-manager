@@ -120,3 +120,27 @@ Light mode is a sage-stone canvas (`--background`) under white surfaces
   in both themes. Lime is never text or a thin line on a light surface (1.15:1).
 - **Destructive.** A deep brick (`--destructive`) in light mode, so a Reject
   button can sit beside Approve without shouting.
+- **Status colour.** Use the status tokens (`bg-status-success-soft
+  text-status-success-foreground`, and the warning, danger and info sets) for
+  chips, eyebrows and notes. Named Tailwind palette classes are capped by
+  `scripts/check-named-colors.baseline.json`; the foreground tokens are tuned
+  to reach WCAG AA (4.5:1) on both the card and the soft fill.
+- **Contrast.** Body text, chips and counts must reach 4.5:1 (3:1 for large
+  text) on the surface they sit on, in both themes. Check new colours before
+  adding them; "close enough" in daylight is often 3:1.
+- **Scrim.** Dialogs dim the page with `--glass-scrim` and a light blur, not a
+  black wash.
+
+## Night (dark mode) surfaces
+
+Dark mode keeps the near-black void (`--background`) with cards one step
+above it (`--card`), and popovers one step above that (`--popover`). The same
+rule as daylight applies: a card must read as raised, so never set `--card`
+equal to `--background`.
+
+- **Hover and focus.** Hover uses `--accent` (a faint lime tint). Focus is the
+  solid lime `--ring`, never removed without a visible replacement.
+- **Text on fills.** Text and fallback initials on a coloured fill inherit the
+  fill's foreground (`text-current`), never `text-muted-foreground`.
+- **Markdown.** Rendered markdown pins headings and table headers to
+  `--foreground`, so prose defaults never leave near-black text on the void.

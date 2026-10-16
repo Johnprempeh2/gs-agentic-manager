@@ -20,6 +20,7 @@ import { AttentionQueueRow } from "../components/AttentionQueueRow";
 import { Curtain } from "../components/DecisionShelf";
 import { DecisionQueueRail } from "../components/DecisionQueueRail";
 import { DecisionResolver } from "../components/DecisionResolver";
+import { HelpTerm } from "../components/HelpTerm";
 import { DecisionsFocusView } from "../components/decisions-focus/DecisionsFocusView";
 import { DecisionFeedCard } from "../components/decisions-feed/DecisionFeedCard";
 import { TabledList, useTabledIssues } from "../components/decisions-feed/TabledList";
@@ -95,7 +96,12 @@ export function WhatNeedsMe() {
 
   // Decision history — decided / expired decisions leave the open feed, so we
   // fetch them directly for the curtains.
-  const { data: decidedDecisions, isLoading: decidedDecisionsLoading } = useQuery({
+  const {
+    data: decidedDecisions,
+    isLoading: decidedDecisionsLoading,
+    error: decidedDecisionsError,
+    refetch: refetchDecidedDecisions,
+  } = useQuery({
     queryKey: queryKeys.decisions.list(selectedCompanyId!, "decided"),
     queryFn: () => decisionsApi.list(selectedCompanyId!, { status: "decided", limit: DECISION_HISTORY_QUERY_LIMIT }),
     enabled: decisionHistoryQueryEnabled(selectedCompanyId, decidedOpen),
@@ -111,7 +117,12 @@ export function WhatNeedsMe() {
     () => (decisionLogEvents ?? []).filter((event) => event.actorType === "user"),
     [decisionLogEvents],
   );
-  const { data: expiredDecisions, isLoading: expiredDecisionsLoading } = useQuery({
+  const {
+    data: expiredDecisions,
+    isLoading: expiredDecisionsLoading,
+    error: expiredDecisionsError,
+    refetch: refetchExpiredDecisions,
+  } = useQuery({
     queryKey: queryKeys.decisions.list(selectedCompanyId!, "expired"),
     queryFn: () => decisionsApi.list(selectedCompanyId!, { status: "expired", limit: DECISION_HISTORY_QUERY_LIMIT }),
     enabled: decisionHistoryQueryEnabled(selectedCompanyId, expiredOpen),
@@ -188,29 +199,34 @@ export function WhatNeedsMe() {
     />
   );
   const header = (
-    <div className="flex flex-wrap items-center justify-between gap-2">
-      <BrandPageTitle
-        trailing={
-          <span className="text-base font-semibold tabular-nums text-muted-foreground" aria-label={`${count} waiting`}>
-            {count}
-          </span>
-        }
-      >
-        Decisions
-      </BrandPageTitle>
-      <div className="flex flex-wrap items-center gap-4">
-        {view === "focus" ? (
-          <label className="flex items-center gap-2 text-sm font-medium">
-            <ToggleSwitch
-              checked={focusPrefs.autoRead}
-              onCheckedChange={(autoRead) => updateFocusPrefs({ ...focusPrefs, autoRead })}
-              aria-label="Read each question aloud"
-            />
-            Read each question aloud
-          </label>
-        ) : null}
-        {viewSwitch}
+    <div className="space-y-1">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <BrandPageTitle
+          trailing={
+            <span className="text-base font-semibold tabular-nums text-muted-foreground" aria-label={`${count} waiting`}>
+              {count}
+            </span>
+          }
+        >
+          Decisions
+        </BrandPageTitle>
+        <div className="flex flex-wrap items-center gap-4">
+          {view === "focus" ? (
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <ToggleSwitch
+                checked={focusPrefs.autoRead}
+                onCheckedChange={(autoRead) => updateFocusPrefs({ ...focusPrefs, autoRead })}
+                aria-label="Read each question aloud"
+              />
+              Read each question aloud
+            </label>
+          ) : null}
+          {viewSwitch}
+        </div>
       </div>
+      <p className="text-sm text-muted-foreground" data-testid="decisions-intro">
+        Each card is a <HelpTerm term="decision" /> an <HelpTerm term="agent" /> cannot make without you. Act on it and the work carries on.
+      </p>
     </div>
   );
 
@@ -282,7 +298,7 @@ export function WhatNeedsMe() {
 
       {isPhone ? deskGroup : null}
 
-      <div className="space-y-4">
+      <div className="space-y-4" data-tour="decisions-history">
         {tabledCount > 0 && (
           <Curtain label="Tabled" count={tabledCount} open={tabledOpen} onToggle={() => setTabledOpen((prev) => !prev)}>
             <p className="text-xs text-muted-foreground">
@@ -329,6 +345,13 @@ export function WhatNeedsMe() {
           <DecisionLog events={boardAnswers} />
           {decidedDecisionsLoading ? (
             <p className="text-xs text-muted-foreground">Loading decided decisions…</p>
+          ) : decidedDecisionsError && !decidedDecisions ? (
+            <ErrorState
+              error={decidedDecisionsError}
+              title="Could not load decided decisions"
+              onRetry={() => void refetchDecidedDecisions()}
+              compact
+            />
           ) : (decidedDecisions?.length ?? 0) > 0 ? (
             decidedDecisions!.slice(0, DECISION_HISTORY_VISIBLE_LIMIT).map((decision) => (
               <DecisionResolver
@@ -352,6 +375,13 @@ export function WhatNeedsMe() {
         >
           {expiredDecisionsLoading ? (
             <p className="text-xs text-muted-foreground">Loading expired decisions…</p>
+          ) : expiredDecisionsError && !expiredDecisions ? (
+            <ErrorState
+              error={expiredDecisionsError}
+              title="Could not load expired decisions"
+              onRetry={() => void refetchExpiredDecisions()}
+              compact
+            />
           ) : (expiredDecisions?.length ?? 0) > 0 ? (
             expiredDecisions!.slice(0, DECISION_HISTORY_VISIBLE_LIMIT).map((decision) => (
               <DecisionResolver
@@ -380,7 +410,7 @@ export function DecisionsViewSwitch({
   onChange: (view: DecisionsView) => void;
 }) {
   return (
-    <div className="inline-flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Decisions view">
+    <div className="inline-flex shrink-0 rounded-md border border-border p-0.5" role="group" aria-label="Decisions view" data-tour="decisions-view">
       {(["list", "focus"] as const).map((option) => (
         <button
           key={option}

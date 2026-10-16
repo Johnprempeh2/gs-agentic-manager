@@ -2,6 +2,7 @@
 
 import { act } from "react";
 import { createRoot } from "react-dom/client";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const push = vi.hoisted(() => ({ state: "denied" as string }));
@@ -17,13 +18,14 @@ vi.mock("../../hooks/usePushNotifications", () => ({
   }),
 }));
 vi.mock("../../hooks/useIsPhone", () => ({ useIsPhone: () => phone.isPhone }));
+vi.mock("../../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompany: null, companies: [] }) }));
 
 import { DecisionNotificationsCard } from "./DecisionNotificationsCard";
 
 function render() {
   const container = document.createElement("div");
   const root = createRoot(container);
-  act(() => root.render(<DecisionNotificationsCard companyId="company-1" />));
+  act(() => root.render(<MemoryRouter><DecisionNotificationsCard companyId="company-1" /></MemoryRouter>));
   return { container, unmount: () => act(() => root.unmount()) };
 }
 

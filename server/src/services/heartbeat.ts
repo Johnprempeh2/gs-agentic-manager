@@ -2,6 +2,7 @@ import { resolveHeartbeatGitHubAccess } from "./heartbeat-github-access.js";
 import { applyWorkspaceRestoreFailure } from "@greatstone/adapter-utils/workspace-restore-result";
 import { hasWorkspaceRestoreFailure } from "@greatstone/shared";
 import { externalConversationStateSql, nonIdleSlackIssueCondition } from "./slack-conversation-state.js";
+import { readTimerWakeNews } from "./timer-wake-news.js";
 import { settleSlackConversation } from "./slack-conversation-lifecycle.js";
 import { publicChatTaskUrl } from "./chat-task-url.js";
 import { bindLegacyBoardUserId } from "./board-identity.js";
@@ -17551,6 +17552,10 @@ export function heartbeatService(
           heartbeat.issueOnlyTimer,
         false,
       ),
+      skipTimerWhenNothingChanged: asBoolean(
+        heartbeat.skipTimerWhenNothingChanged,
+        false,
+      ),
       maxDailyRuns: normalizeOptionalNonNegativeInteger(
         heartbeat.maxDailyRuns ??
           heartbeat.dailyRunLimit ??
@@ -29230,6 +29235,18 @@ export function heartbeatService(
       });
       await markTimerHeartbeatChecked(agentId, source);
       return null;
+    }
+    if (policy.skipTimerWhenNothingChanged && genericTimerWake) {
+      const news = await readTimerWakeNews(db, agent);
+      if (!news.hasNews) {
+        await writeSkippedHeartbeatRequest("heartbeat.timer.nothing_changed", {
+          reason:
+            "Nothing assigned to or made by this agent changed, and nobody commented on its tasks, since its last run.",
+          since: news.since.toISOString(),
+        });
+        await markTimerHeartbeatChecked(agentId, source);
+        return null;
+      }
     }
 
     // "Not now" (GRE-262): a tabled task gets no wakes of any kind. The wake

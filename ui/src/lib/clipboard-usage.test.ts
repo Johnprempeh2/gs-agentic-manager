@@ -20,11 +20,9 @@ describe("clipboard usage", () => {
   it("routes core and first-party plugin copy actions through shared helpers", () => {
     const coreSource = new URL("../", import.meta.url);
     const pluginSource = new URL("../../../packages/plugins/plugin-workspace-diff/src/ui/", import.meta.url);
-    // The two shared helpers are the only places allowed to write directly:
-    // plain text in lib/clipboard.ts, HTML plus text in lib/rich-clipboard.ts.
     const violations = [...sourceFiles(coreSource), ...sourceFiles(pluginSource)]
-      .filter((file) => !file.replaceAll("\\", "/").endsWith("/lib/clipboard.ts"))
-      .filter((file) => !file.replaceAll("\\", "/").endsWith("/lib/rich-clipboard.ts"))
+      // The two shared helpers are the only places allowed to touch the clipboard.
+      .filter((file) => !/\/lib\/(rich-)?clipboard\.ts$/.test(file.replaceAll("\\", "/")))
       .filter((file) => DIRECT_CLIPBOARD_WRITE.test(readFileSync(file, "utf8")));
 
     expect(violations).toEqual([]);
@@ -44,7 +42,8 @@ describe("clipboard usage", () => {
     // success it did not earn; `AdapterLoginChrome.test.tsx` and
     // `use-copy-action.test.ts` hold the behavioral line per site.
     const silent = sourceFiles(new URL("../", import.meta.url))
-      .filter((file) => !file.replaceAll("\\", "/").endsWith("/lib/clipboard.ts"))
+      // The two shared helpers are the only places allowed to touch the clipboard.
+      .filter((file) => !/\/lib\/(rich-)?clipboard\.ts$/.test(file.replaceAll("\\", "/")))
       .flatMap((file) => {
         const lines = readFileSync(file, "utf8").split("\n");
         return lines.flatMap((line, index) => {
@@ -64,7 +63,8 @@ describe("clipboard usage", () => {
     // pattern all eleven silent sites had, and the one
     // `AdapterLoginChrome.test.tsx` refuses for its own button.
     const swallowed = sourceFiles(new URL("../", import.meta.url))
-      .filter((file) => !file.replaceAll("\\", "/").endsWith("/lib/clipboard.ts"))
+      // The two shared helpers are the only places allowed to touch the clipboard.
+      .filter((file) => !/\/lib\/(rich-)?clipboard\.ts$/.test(file.replaceAll("\\", "/")))
       .flatMap((file) => {
         const source = readFileSync(file, "utf8");
         const lines = source.split("\n");

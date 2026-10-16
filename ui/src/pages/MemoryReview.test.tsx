@@ -130,6 +130,41 @@ describe("MemoryReview", () => {
     });
   });
 
+  it("confirms several picked proposals in one go, skipping ones the steward added", async () => {
+    reviewApiMock.act.mockResolvedValue({ record: { ...invoiceProposal.proposal, status: "approved" } });
+    await renderAt("/memory/review");
+    const pickAll = document.body.querySelector('[aria-label="Pick all"]') as HTMLButtonElement;
+    await act(async () => pickAll.click());
+    const confirmable = reviewQueue.items.filter((item) => item.allowed.confirm);
+    expect(body()).toContain(`${reviewQueue.items.length} picked`);
+    expect(body()).toContain("you cannot confirm");
+    await act(async () => button(`Confirm ${confirmable.length}`).click());
+    await flush();
+    expect(reviewApiMock.act).toHaveBeenCalledTimes(confirmable.length);
+    expect(reviewApiMock.act).not.toHaveBeenCalledWith("co-kestrel", ownProposal.proposal.id, expect.anything());
+    expect(reviewApiMock.act).toHaveBeenCalledWith("co-kestrel", invoiceProposal.proposal.id, {
+      action: "confirm",
+      expectedVersion: invoiceProposal.proposal.version,
+      reason: "Confirmed with others in one go from the review queue.",
+    });
+  });
+
+  it("says when a proposal looks like a card already in memory", async () => {
+    reviewApiMock.queue.mockResolvedValue({
+      ...reviewQueue,
+      items: reviewQueue.items.map((item) =>
+        item.proposal.id === invoiceProposal.proposal.id
+          ? { ...item, lookalike: { recordId: "rec-same", title: "Invoice timing", content: "Invoices go out on day one.", status: "approved" } }
+          : item,
+      ),
+    });
+    await renderAt(`/memory/review?card=${invoiceProposal.proposal.id}`);
+    expect(body()).toContain("Looks like one in memory");
+    expect(body()).toContain("1 look like ones already in memory");
+    expect(body()).toContain("This looks like a card already in memory:");
+    expect(body()).toContain("Invoices go out on day one.");
+  });
+
   it("shows a plain message when the card changed since it was opened", async () => {
     reviewApiMock.act.mockRejectedValue(new ApiError("Version mismatch", 409, null));
     await renderAt(`/memory/review?card=${invoiceProposal.proposal.id}`);

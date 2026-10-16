@@ -64,7 +64,7 @@ export function ZeroResultsRecovery({
                   {describeLoosenSuggestion(suggestion.filter, suggestion.values, lookups)}
                 </span>
               </span>
-              <span className="shrink-0 tabular-nums text-emerald-600 dark:text-emerald-400">
+              <span className="shrink-0 tabular-nums text-status-success-foreground">
                 +{suggestion.additionalCount} {suggestion.additionalCount === 1 ? "result" : "results"}
               </span>
             </button>

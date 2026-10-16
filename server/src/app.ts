@@ -100,6 +100,7 @@ import { workflowTemplateRoutes } from "./routes/workflow-templates.js";
 import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
+import { memoryConnectionRoutes } from "./routes/memory-connections.js";
 import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
@@ -118,8 +119,10 @@ import { dashboardRoutes } from "./routes/dashboard.js";
 import { attentionRoutes } from "./routes/attention.js";
 import { decisionsFeedRoutes } from "./routes/decisions-feed.js";
 import { agentWorkDigestRoutes } from "./routes/agent-work-digest.js";
+import { blockedWorkRoutes } from "./routes/blocked-work.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { teamScorecardRoutes } from "./routes/team-scorecard.js";
+import { recoveryHoldRoutes } from "./routes/recovery-holds.js";
 import { supportRoutes } from "./routes/support.js";
 import { clientSupportRoutes } from "./routes/client-support.js";
 import { pushRoutes } from "./routes/push.js";
@@ -826,7 +829,7 @@ export async function createApp(
   api.use(issueTablingRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(fileResourceRoutes(db));
   api.use(routineRoutes(db, { pluginWorkerManager: workerManager }));
-  api.use(pipelineRoutes(db));
+  api.use(pipelineRoutes(db, { storage: opts.storageService }));
   api.use(crmSyncRoutes(db));
   api.use(organisationRoutes(db));
   api.use(
@@ -850,6 +853,7 @@ export async function createApp(
   const memoryEngine = memoryEngineFromGatewayConfig();
   api.use(memoryRoutes(db, { engine: memoryEngine }));
   api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode }));
@@ -875,8 +879,10 @@ export async function createApp(
   api.use(attentionRoutes(db));
   api.use(decisionsFeedRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(agentWorkDigestRoutes(db));
+  api.use(blockedWorkRoutes(db));
   api.use(calendarRoutes(db));
   api.use(teamScorecardRoutes(db));
+  api.use(recoveryHoldRoutes(db));
   api.use(supportRoutes(db, { heartbeat: connectionIntentHeartbeat }));
   api.use(clientSupportRoutes(db, { storage: opts.storageService }));
   api.use(pushRoutes(db));

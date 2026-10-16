@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type { TeamScorecardAgent } from "@greatstone/shared";
-import { AlertTriangle, CircleCheck, Clock, Eye, Loader, Trophy } from "lucide-react";
+import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Eye, Loader, MessageCircleQuestion, Trophy } from "lucide-react";
 import { teamScorecardApi } from "../api/teamScorecard";
 import { costsApi } from "../api/costs";
+import { issuesApi } from "../api/issues";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { EmptyState } from "../components/EmptyState";
@@ -12,7 +13,9 @@ import { deriveInitials } from "../components/Identity";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
-import { scorecardSentence, workValueLabel } from "../lib/team-scorecard";
+import { STUCK_TASK_UPDATE_REQUEST, scorecardSentence, scorecardUpdateText, workValueLabel } from "../lib/team-scorecard";
+import { copyTextToClipboard } from "../lib/clipboard";
+import { Button } from "@/components/ui/button";
 import { Link, useSearchParams } from "@/lib/router";
 import { cn } from "@/lib/utils";
 
@@ -33,18 +36,38 @@ function Stat({ icon: Icon, value, label, tone }: { icon: typeof CircleCheck; va
   );
 }
 
-function TaskLinks({ title, tasks }: { title: string; tasks: TeamScorecardAgent["recentlyFinished"] }) {
+interface AskedTasks {
+  asked: ReadonlySet<string>;
+  markAsked: (taskId: string) => void;
+}
+
+function TaskLinks({
+  title,
+  tasks,
+  askForUpdate,
+}: {
+  title: string;
+  tasks: TeamScorecardAgent["recentlyFinished"];
+  askForUpdate?: AskedTasks;
+}) {
   if (tasks.length === 0) return null;
   return (
     <div className="min-w-0 space-y-1">
       <div className="text-xs font-medium text-muted-foreground">{title}</div>
       <ul className="space-y-0.5">
         {tasks.map((task) => (
-          <li key={task.id} className="truncate text-sm">
-            <Link to={`/issues/${task.identifier ?? task.id}`} className="hover:underline">
+          <li key={task.id} className="flex min-w-0 items-center gap-2 text-sm">
+            <Link to={`/issues/${task.identifier ?? task.id}`} className="min-w-0 truncate hover:underline">
               {task.identifier ? <span className="mr-1.5 text-muted-foreground">{task.identifier}</span> : null}
               {task.title}
             </Link>
+            {askForUpdate ? (
+              <AskForUpdateButton
+                taskId={task.id}
+                asked={askForUpdate.asked.has(task.id)}
+                onAsked={() => askForUpdate.markAsked(task.id)}
+              />
+            ) : null}
           </li>
         ))}
       </ul>
@@ -52,7 +75,50 @@ function TaskLinks({ title, tasks }: { title: string; tasks: TeamScorecardAgent[
   );
 }
 
-function AgentCard({ agent, days, workCents }: { agent: TeamScorecardAgent; days: number; workCents: number | null }) {
+/**
+ * One click to ask the agent on a stuck task what is blocking it. The comment
+ * wakes the agent, and its answer lands on the task.
+ */
+function askForUpdate(taskId: string) {
+  return issuesApi.addComment(taskId, STUCK_TASK_UPDATE_REQUEST, undefined, undefined, undefined, crypto.randomUUID());
+}
+
+function AskForUpdateButton({ taskId, asked, onAsked }: { taskId: string; asked: boolean; onAsked: () => void }) {
+  const ask = useMutation({ mutationFn: () => askForUpdate(taskId), onSuccess: onAsked });
+  if (asked) {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
+        <Check className="size-3" aria-hidden />
+        Asked
+      </span>
+    );
+  }
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-6 shrink-0 px-2 text-xs"
+      disabled={ask.isPending}
+      title="Ask the agent what is blocking this task and what it needs from you"
+      onClick={() => ask.mutate()}
+    >
+      <MessageCircleQuestion className="size-3" aria-hidden />
+      {ask.isError ? "Try again" : "Ask for an update"}
+    </Button>
+  );
+}
+
+function AgentCard({
+  agent,
+  days,
+  workCents,
+  askedTasks,
+}: {
+  agent: TeamScorecardAgent;
+  days: number;
+  workCents: number | null;
+  askedTasks: AskedTasks;
+}) {
   return (
     <li className="space-y-3 rounded-lg border border-border bg-card p-4">
       <div className="flex items-start gap-3">
@@ -77,7 +143,7 @@ function AgentCard({ agent, days, workCents }: { agent: TeamScorecardAgent; days
       {agent.recentlyFinished.length > 0 || agent.stuckTasks.length > 0 ? (
         <div className="grid gap-3 sm:grid-cols-2">
           <TaskLinks title="Recently finished" tasks={agent.recentlyFinished} />
-          <TaskLinks title="Stuck, needs a look" tasks={agent.stuckTasks} />
+          <TaskLinks title="Stuck, needs a look" tasks={agent.stuckTasks} askForUpdate={askedTasks} />
         </div>
       ) : null}
     </li>
@@ -89,8 +155,14 @@ function AgentCard({ agent, days, workCents }: { agent: TeamScorecardAgent; days
  * first, so an owner can see who is delivering and who needs help.
  */
 export function TeamScorecard() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [asked, setAsked] = useState<ReadonlySet<string>>(() => new Set());
+  const askedTasks = useMemo<AskedTasks>(
+    () => ({ asked, markAsked: (taskId) => setAsked((current) => new Set(current).add(taskId)) }),
+    [asked],
+  );
   const [searchParams, setSearchParams] = useSearchParams();
   const days = searchParams.get("days") === "30" ? 30 : 7;
 
@@ -117,6 +189,27 @@ export function TeamScorecard() {
     [value],
   );
 
+  const stuckToAsk = (data?.agents ?? []).flatMap((agent) => agent.stuckTasks).filter((task) => !asked.has(task.id));
+  const askAll = useMutation({
+    mutationFn: async (taskIds: string[]) => {
+      const results = await Promise.allSettled(taskIds.map((taskId) => askForUpdate(taskId)));
+      const done = taskIds.filter((_, index) => results[index]!.status === "fulfilled");
+      setAsked((current) => new Set([...current, ...done]));
+      if (done.length < taskIds.length) throw new Error("Some requests did not send");
+    },
+  });
+
+  async function copyUpdate() {
+    if (!data) return;
+    try {
+      await copyTextToClipboard(scorecardUpdateText(data, selectedCompany?.name));
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    setTimeout(() => setCopyState("idle"), 2500);
+  }
+
   if (!selectedCompanyId) return <EmptyState icon={Trophy} message="Select an organisation to see its scorecard." />;
 
   return (
@@ -128,21 +221,45 @@ export function TeamScorecard() {
             What each agent finished, and what they are working on now. Agents with stuck work come first.
           </p>
         </div>
-        <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period">
-          {PERIODS.map((period) => (
-            <button
-              key={period.days}
-              type="button"
-              aria-pressed={days === period.days}
-              onClick={() => setSearchParams(period.days === 7 ? {} : { days: String(period.days) }, { replace: true })}
-              className={cn(
-                "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
-                days === period.days ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
-              )}
+        <div className="flex flex-wrap items-center gap-2">
+          {stuckToAsk.length > 1 ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={askAll.isPending}
+              title="Ask the agent on each stuck task what is blocking it and what it needs from you"
+              onClick={() => askAll.mutate(stuckToAsk.map((task) => task.id))}
             >
-              {period.label}
-            </button>
-          ))}
+              <MessageCircleQuestion className="size-4" aria-hidden />
+              {askAll.isError ? "Try again" : `Ask about all ${stuckToAsk.length} stuck tasks`}
+            </Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!data || data.agents.length === 0}
+            title="Copy a short written update to paste into an email or chat"
+            onClick={() => void copyUpdate()}
+          >
+            {copyState === "copied" ? <Check className="size-4" /> : <ClipboardCopy className="size-4" />}
+            {copyState === "copied" ? "Copied" : copyState === "failed" ? "Could not copy" : "Copy as an update"}
+          </Button>
+          <div className="inline-flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Period">
+            {PERIODS.map((period) => (
+              <button
+                key={period.days}
+                type="button"
+                aria-pressed={days === period.days}
+                onClick={() => setSearchParams(period.days === 7 ? {} : { days: String(period.days) }, { replace: true })}
+                className={cn(
+                  "rounded-sm px-2.5 py-1 text-xs font-medium transition-colors",
+                  days === period.days ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {period.label}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -164,7 +281,13 @@ export function TeamScorecard() {
           ) : (
             <ul className="space-y-3">
               {data.agents.map((agent) => (
-                <AgentCard key={agent.agentId} agent={agent} days={data.days} workCents={valueByAgent.get(agent.agentId) ?? null} />
+                <AgentCard
+                  key={agent.agentId}
+                  agent={agent}
+                  days={data.days}
+                  workCents={valueByAgent.get(agent.agentId) ?? null}
+                  askedTasks={askedTasks}
+                />
               ))}
             </ul>
           )}

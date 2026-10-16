@@ -18,6 +18,7 @@ import { groupBy } from "../lib/groupBy";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
 import { EmptyState } from "../components/EmptyState";
+import { HelpTerm } from "../components/HelpTerm";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { InlineEntitySelector, type InlineEntityOption } from "../components/InlineEntitySelector";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "../components/MarkdownEditor";
@@ -60,12 +61,13 @@ import {
 } from "../components/folders/FolderControls";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
-const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active"];
+const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"];
 const catchUpPolicies = ["skip_missed", "enqueue_missed_with_cap"];
 const concurrencyPolicyDescriptions: Record<string, string> = {
   coalesce_if_active: "If a run is already active, keep just one follow-up run queued.",
   always_enqueue: "Queue every trigger occurrence, even if the routine is already running.",
   skip_if_active: "Drop new trigger occurrences while a run is still active.",
+  reuse_standing_task: "Open the same task again each time instead of creating a new one.",
 };
 const catchUpPolicyDescriptions: Record<string, string> = {
   skip_missed: "Ignore windows that were missed while the scheduler or routine was paused.",
@@ -751,14 +753,14 @@ export function Routines() {
         <div className="space-y-1">
           <h1 className="text-xl font-bold">Routines</h1>
           <p className="text-sm text-muted-foreground">
-            Recurring work definitions that materialize into auditable execution tasks.
+            Work that repeats on a schedule, such as a weekly report. Each <HelpTerm term="run" /> makes a <HelpTerm term="task" /> you can follow.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
             <Link to={auditSectionHref("runs", {})}>View all runs</Link>
           </Button>
-          <Button onClick={openCreateRoutine}>
+          <Button onClick={openCreateRoutine} data-tour="routines-create">
             <Plus className="mr-2 h-4 w-4" />
             Create routine
           </Button>

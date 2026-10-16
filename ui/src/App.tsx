@@ -60,6 +60,8 @@ import { Intelligence } from "./pages/Intelligence";
 import { Memory } from "./pages/Memory";
 import { MemoryActivity } from "./pages/MemoryActivity";
 import { MemoryReview } from "./pages/MemoryReview";
+import { MemoryApps } from "./pages/MemoryApps";
+import { MemoryClientDetail, MemoryClients } from "./pages/MemoryClients";
 import { GoalDetail } from "./pages/GoalDetail";
 import { StrategyBoard } from "./pages/StrategyBoard";
 import { Tutorials } from "./pages/Tutorials";
@@ -71,9 +73,12 @@ import { CompanyActivity } from "./pages/audit/CompanyActivity";
 import { SinceLastVisit } from "./pages/SinceLastVisit";
 import { Calendar } from "./pages/Calendar";
 import { TeamScorecard } from "./pages/TeamScorecard";
+import { NotificationSettings } from "./pages/NotificationSettings";
+import { MorningSummary } from "./pages/MorningSummary";
 import { AuditHub } from "./pages/audit/AuditHub";
 import { Inbox } from "./pages/Inbox";
 import { WhatNeedsMe } from "./pages/WhatNeedsMe";
+import { NeededFromYou } from "./pages/NeededFromYou";
 import { MyTasks } from "./pages/MyTasks";
 import { DecisionQueuePage } from "./pages/DecisionQueuePage";
 import { BoardChat } from "./pages/BoardChat";
@@ -127,6 +132,7 @@ import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import {
   isOnboardingWizardActive,
   onboardingStepForCompany,
@@ -405,6 +411,9 @@ function boardRoutes() {
       <Route path="memory" element={<Memory />} />
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
+      <Route path="memory/apps" element={<MemoryApps />} />
+      <Route path="memory/clients" element={<MemoryClients />} />
+      <Route path="memory/clients/:scopeId" element={<MemoryClientDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
       <Route path="approvals" element={<Navigate to="/approvals/pending" replace />} />
       <Route path="approvals/pending" element={<Approvals />} />
@@ -413,6 +422,8 @@ function boardRoutes() {
       <Route path="since-last-visit" element={<SinceLastVisit />} />
       <Route path="calendar" element={<Calendar />} />
       <Route path="scorecard" element={<TeamScorecard />} />
+      <Route path="notifications" element={<NotificationSettings />} />
+      <Route path="morning" element={<MorningSummary />} />
       <Route path="activity" element={<CompanyActivity />} />
       <Route path="activity/runs" element={<AuditHub section="runs" />} />
       <Route path="activity/costs" element={<AuditHub section="costs" />} />
@@ -440,6 +451,7 @@ function boardRoutes() {
       {import.meta.env.DEV ? (
         <Route path="dev/task-chat-lab" element={<TaskChatLab />} />
       ) : null}
+      <Route path="needed" element={<NeededFromYou />} />
       <Route path="decisions" element={<WhatNeedsMe />} />
       <Route path="my-tasks" element={<MyTasks />} />
       <Route path="decisions/queues/:key" element={<DecisionQueuePage />} />
@@ -822,6 +834,9 @@ export function App() {
           <Route path="memory" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/apps" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/clients/:scopeId" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
           <Route path="audit/*" element={<UnprefixedBoardRedirect />} />
           <Route path="activity" element={<UnprefixedBoardRedirect />} />
@@ -863,6 +878,9 @@ export function App() {
           <Route path="execution-workspaces/:workspaceId/runtime-logs" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/issues" element={<UnprefixedExecutionWorkspaceRedirect />} />
           <Route path="execution-workspaces/:workspaceId/routines" element={<UnprefixedExecutionWorkspaceRedirect />} />
+          {UNPREFIXED_BOARD_ROOTS.map((root) => (
+            <Route key={`unprefixed-${root}`} path={`${root}/*`} caseSensitive element={<UnprefixedBoardRedirect />} />
+          ))}
           <Route path=":companyPrefix" element={<Layout />}>
             {boardRoutes()}
           </Route>

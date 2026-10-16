@@ -881,7 +881,7 @@ function SuggestTasksCard({
 
       {interaction.status === "accepted" ? (
         <div className="rounded-sm border border-emerald-500/60 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-100">
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-emerald-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-success-foreground">
             Resolution summary
           </div>
           <p className="mt-1 leading-6">
@@ -894,7 +894,7 @@ function SuggestTasksCard({
 
       {interaction.status === "rejected" ? (
         <div className="rounded-sm border border-rose-500/60 bg-rose-500/10 px-4 py-3 text-sm text-rose-900 dark:text-rose-100">
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-rose-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-danger-foreground">
             Rejection reason
           </div>
           <p className={cn(
@@ -1472,8 +1472,8 @@ function AskUserQuestionsCard({
           })}
 
           {interaction.result?.summaryMarkdown ? (
-            <div className="rounded-2xl border border-emerald-300/60 bg-emerald-50/85 p-4">
-              <div className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-emerald-700">
+            <div className="rounded-2xl border border-status-success/40 bg-status-success-soft p-4">
+              <div className="mb-2 text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-success-foreground">
                 Submitted summary
               </div>
               <MarkdownBody externalReferences={externalReferences}>{interaction.result.summaryMarkdown}</MarkdownBody>
@@ -1607,7 +1607,7 @@ function RequestConfirmationResolution({
             <RequestConfirmationTargetChip interaction={interaction} target={target} />
           </div>
           <div className="rounded-sm border border-amber-500/60 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
-            <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-amber-700">
+            <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-warning-foreground">
               Agent resume failed
             </div>
             <p className="mt-1 leading-6">
@@ -1674,7 +1674,7 @@ function RequestConfirmationResolution({
          * generically as "Expired".
          */}
         {expiredByIssueClosed ? null : (
-          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-amber-700">
+          <div className="text-(length:--text-micro) font-semibold uppercase tracking-(--tracking-eyebrow) text-status-warning-foreground">
             {expiredByComment ? "Expired by comment" : "Expired by target change"}
           </div>
         )}
@@ -1698,7 +1698,7 @@ function RequestConfirmationResolution({
               tone="subtle"
             />
             {staleTarget && target ? (
-              <ChevronRight className="h-3.5 w-3.5 text-amber-700" />
+              <ChevronRight className="h-3.5 w-3.5 text-status-warning-foreground" />
             ) : null}
             <RequestConfirmationTargetChip interaction={interaction} target={target} />
           </div>

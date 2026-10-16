@@ -20,12 +20,14 @@ const mockPipelinesApi = vi.hoisted(() => ({
   getCaseFiles: vi.fn(),
   listCaseEvidenceCandidates: vi.fn(),
   addCaseEvidence: vi.fn(),
+  uploadCaseEvidence: vi.fn(),
   removeCaseEvidence: vi.fn(),
   getCaseJourney: vi.fn(),
   getCasePortal: vi.fn(),
   fileCaseJourneyDeliverable: vi.fn(),
   updateCaseJourneyDeliverable: vi.fn(),
   removeCaseJourneyDeliverable: vi.fn(),
+  uploadSignedNda: vi.fn(),
 }));
 const mockPushToast = vi.hoisted(() => vi.fn());
 
@@ -265,7 +267,8 @@ describe("client case page", () => {
     expect(discovery.textContent).toContain("North Star summary");
     const gita = container.querySelector('section[aria-labelledby="journey-stage-stage-4"]')!;
     expect(gita.textContent).toContain("Now");
-    expect(gita.textContent).toContain("No templates or deliverables for this stage yet.");
+    expect(gita.textContent).toContain("Nothing in this stage yet.");
+    expect(gita.querySelector('[data-testid="client-upload-zone"]')?.textContent).toContain("Upload to this stage");
 
     click(container.querySelector('button[aria-label="Client can see North Star summary"]'));
     await flushReact();
@@ -285,6 +288,90 @@ describe("client case page", () => {
     fileSelect.dispatchEvent(new Event("change", { bubbles: true }));
     await flushReact();
     expect(mockPipelinesApi.fileCaseJourneyDeliverable).toHaveBeenCalledWith("case-1", { stageId: "stage-4", deliverableId: "2" });
+  });
+
+  it("shows a stage's uploaded files and uploads straight to the stage", async () => {
+    mockPipelinesApi.getCaseJourney.mockResolvedValue({
+      caseId: "case-1",
+      ndaAcceptedAt: null,
+      stages: [
+        { id: "stage-2", key: "document_request", name: "Document request", kind: "working", position: 2, state: "current", templates: [], deliverables: [], expected: [] },
+        { id: "stage-5", key: "playback", name: "Playback", kind: "working", position: 5, state: "next", templates: [], deliverables: [], expected: [] },
+      ],
+      unfiled: [],
+    });
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({
+      clients: [],
+      deliverables: [],
+      evidence: [
+        {
+          id: "ev-9", caseId: "case-1", kind: "upload", title: "Org chart.pdf", typeLabel: "PDF", note: null,
+          contentType: "application/pdf", byteSize: 51_200, originalFilename: "Org chart.pdf",
+          attachmentId: null, documentId: null, documentKey: null, assetId: "asset-9",
+          stageId: "stage-2", stageName: "Document request", url: null,
+          contentPath: "/api/cases/case-1/evidence/ev-9/content", downloadPath: null,
+          openPath: "/api/cases/case-1/evidence/ev-9/content", sourceIssue: null, addedBy: null,
+          createdAt: "2026-10-15T09:00:00Z",
+        },
+      ],
+    });
+    mockPipelinesApi.uploadCaseEvidence.mockResolvedValue({ id: "ev-10" });
+
+    await render(<ClientJourneyStages caseId="case-1" />);
+    const request = container.querySelector('section[aria-labelledby="journey-stage-stage-2"]')!;
+    expect(request.querySelector('a[href="/api/cases/case-1/evidence/ev-9/content"]')?.textContent).toBe("Org chart.pdf");
+    expect(request.textContent).toContain("50 KB");
+    // A stage not started yet stays quiet: no upload box until it has files.
+    const playback = container.querySelector('section[aria-labelledby="journey-stage-stage-5"]')!;
+    expect(playback.querySelector('[data-testid="client-upload-zone"]')).toBeNull();
+
+    const input = request.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["x"], "Finance pack.xlsx", { type: "application/vnd.ms-excel" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    flushSync(() => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenCalledWith("case-1", file, { stageId: "stage-2" });
+  });
+
+  it("takes the signed NDA as an upload and shows it", async () => {
+    mockPipelinesApi.getCaseJourney.mockResolvedValue({
+      caseId: "case-1",
+      ndaAcceptedAt: "2026-10-15T10:00:00Z",
+      nda: {
+        status: "accepted",
+        acceptedAt: "2026-10-15T10:00:00Z",
+        suspendedReason: null,
+        changedBy: "John",
+        changedAt: "2026-10-15T10:00:00Z",
+        signedDocument: {
+          evidenceId: "ev-nda",
+          title: "Signed NDA (Omni.pdf)",
+          contentPath: "/api/cases/case-1/evidence/ev-nda/content",
+          uploadedAt: "2026-10-15T10:00:00Z",
+        },
+      },
+      stages: [],
+      unfiled: [],
+    });
+    mockPipelinesApi.uploadSignedNda.mockResolvedValue({});
+
+    await render(<ClientJourneyStages caseId="case-1" />);
+    const signed = container.querySelector('[data-testid="journey-nda-signed"]')!;
+    expect(signed.querySelector("a")?.getAttribute("href")).toBe("/api/cases/case-1/evidence/ev-nda/content");
+    expect(container.textContent).toContain("Replace the signed NDA");
+
+    const input = container.querySelector('input[aria-label="Upload the signed NDA"]') as HTMLInputElement;
+    const file = new File(["%PDF"], "Omni v2.pdf", { type: "application/pdf" });
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    flushSync(() => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushReact();
+    expect(mockPipelinesApi.uploadSignedNda.mock.calls[0]?.[0]).toBe("case-1");
+    expect(mockPipelinesApi.uploadSignedNda.mock.calls[0]?.[1]).toBe(file);
   });
 
   it("previews only what the portal returns, and says when the client sees nothing", async () => {
@@ -438,9 +525,9 @@ describe("client case page", () => {
     mockPipelinesApi.addCaseEvidence.mockResolvedValue({});
 
     await render(<PipelineCaseEvidence caseId="case-1" />);
-    expect(container.textContent).toContain("No evidence yet");
+    expect(container.textContent).toContain("No files yet");
 
-    click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Add evidence")) ?? null);
+    click([...container.querySelectorAll("button")].find((button) => button.textContent?.includes("Add from tasks or a link")) ?? null);
     await flushReact();
     click([...container.querySelectorAll("button")].find((button) => button.textContent === "Add") ?? null);
     await flushReact();
@@ -491,5 +578,68 @@ describe("client case page", () => {
     click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === "Remove") ?? null);
     await flushReact();
     expect(mockPipelinesApi.removeCaseEvidence).toHaveBeenCalledWith("case-1", "ev-1");
+  });
+  it("uploads dropped or chosen files straight onto the client", async () => {
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({ evidence: [], deliverables: [] });
+    mockPipelinesApi.uploadCaseEvidence.mockResolvedValue({ id: "ev-up" });
+
+    await render(<PipelineCaseEvidence caseId="case-1" />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const nda = new File(["%PDF"], "Signed NDA.pdf", { type: "application/pdf" });
+    const deck = new File(["deck"], "GITA.pptx", { type: "application/vnd.ms-powerpoint" });
+    Object.defineProperty(input, "files", { value: [nda, deck], configurable: true });
+    flushSync(() => {
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await flushReact();
+    await flushReact();
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenCalledTimes(2);
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenNthCalledWith(1, "case-1", nda, { stageId: undefined });
+    expect(mockPipelinesApi.uploadCaseEvidence).toHaveBeenNthCalledWith(2, "case-1", deck, { stageId: undefined });
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "2 files uploaded" }));
+  });
+
+  it("shows an upload's size and stage, and says it will be deleted", async () => {
+    mockPipelinesApi.getCaseFiles.mockResolvedValue({
+      evidence: [
+        {
+          id: "ev-2",
+          caseId: "case-1",
+          kind: "upload",
+          title: "Executive discovery.pdf",
+          typeLabel: "PDF",
+          note: null,
+          contentType: "application/pdf",
+          byteSize: 2_516_582,
+          originalFilename: "Executive discovery.pdf",
+          attachmentId: null,
+          documentId: null,
+          documentKey: null,
+          assetId: "asset-1",
+          stageId: "stage-1",
+          stageName: "Executive discovery",
+          url: null,
+          contentPath: "/api/cases/case-1/evidence/ev-2/content",
+          downloadPath: "/api/cases/case-1/evidence/ev-2/content?download=1",
+          openPath: "/api/cases/case-1/evidence/ev-2/content",
+          sourceIssue: null,
+          addedBy: null,
+          createdAt: "2026-10-15T10:00:00Z",
+        },
+      ],
+      deliverables: [],
+    });
+    mockPipelinesApi.removeCaseEvidence.mockResolvedValue({});
+
+    await render(<PipelineCaseEvidence caseId="case-1" />);
+    expect(container.textContent).toContain("2.4 MB");
+    expect(container.textContent).toContain("Stage: Executive discovery");
+    expect(container.querySelector('a[href="/api/cases/case-1/evidence/ev-2/content"]')).not.toBeNull();
+    click(document.querySelector('button[aria-label="Remove Executive discovery.pdf from evidence"]'));
+    await flushReact();
+    expect(document.body.textContent).toContain("so it will be deleted");
+    click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === "Delete") ?? null);
+    await flushReact();
+    expect(mockPipelinesApi.removeCaseEvidence).toHaveBeenCalledWith("case-1", "ev-2");
   });
 });

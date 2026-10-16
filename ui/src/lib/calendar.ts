@@ -115,6 +115,36 @@ export function isOverdue(item: CalendarItem, today: string): boolean {
 }
 
 /** Where an item opens. */
+export interface RescheduleOption {
+  label: string;
+  date: string;
+}
+
+/**
+ * Quick new due dates for a task: today, tomorrow and next Monday, without the
+ * day it is already on.
+ */
+export function rescheduleOptions(current: string, today: string): RescheduleOption[] {
+  const weekday = toUtc(today).getUTCDay();
+  const daysToMonday = ((8 - weekday) % 7) || 7;
+  const options: RescheduleOption[] = [
+    { label: "Today", date: today },
+    { label: "Tomorrow", date: addDays(today, 1) },
+    { label: "Next Monday", date: addDays(today, daysToMonday) },
+  ];
+  const seen = new Set<string>();
+  return options.filter((option) => {
+    if (option.date === current || seen.has(option.date)) return false;
+    seen.add(option.date);
+    return true;
+  });
+}
+
+/** Only open tasks can move to another day: routines follow their schedule, and goals change on their own page. */
+export function canReschedule(item: CalendarItem): boolean {
+  return item.kind === "task" && !item.closed;
+}
+
 export function calendarItemHref(item: CalendarItem): string {
   if (item.kind === "task") return `/issues/${item.identifier ?? item.id}`;
   if (item.kind === "routine") return `/routines/${item.id}`;

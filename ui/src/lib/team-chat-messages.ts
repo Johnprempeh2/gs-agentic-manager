@@ -1,4 +1,5 @@
 import type { IssueComment } from "@greatstone/shared";
+import { formatClockTime, formatDate, formatWeekdayShortDate } from "./utils";
 
 /** Consecutive messages from one sender join a group when they are this close together. */
 export const TEAM_CHAT_GROUP_GAP_MS = 5 * 60 * 1000;
@@ -65,11 +66,11 @@ export function formatTeamChatDay(date: Date, now: Date = new Date()): string {
   if (diffDays === 0) return "Today";
   if (diffDays === 1) return "Yesterday";
   if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+    return formatWeekdayShortDate(date);
   }
-  return date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+  return formatDate(date);
 }
 
 export function formatTeamChatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return formatClockTime(date);
 }

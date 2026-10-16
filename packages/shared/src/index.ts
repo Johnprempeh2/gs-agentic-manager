@@ -303,6 +303,16 @@ export type {
 export type { CalendarItem, CalendarItemKind, CompanyCalendar } from "./types/calendar.js";
 export type { TeamScorecard, TeamScorecardAgent, TeamScorecardTask } from "./types/team-scorecard.js";
 export type {
+  BlockedWorkIssueRef,
+  BlockedWorkItem,
+  BlockedWorkOverview,
+  BlockedWorkOwner,
+  BlockedWorkOwnerType,
+  BlockedWorkRootCause,
+  BlockedWorkTidyReason,
+} from "./types/blocked-work.js";
+export type { RecoveryHold, RecoveryHoldList } from "./types/recovery-holds.js";
+export type {
   DecisionQueue,
   DecisionQueueItem,
   DecisionQueueSeedRule,
@@ -2512,6 +2522,7 @@ export {
   pipelineStageVariableSchema,
   pipelineStageTemplateSchema,
   pipelineStageExpectedDeliverableSchema,
+  pipelineStageRequestedDocumentSchema,
   rotateRoutineTriggerSecretSchema,
   routineRevisionSnapshotRoutineV1Schema,
   routineRevisionSnapshotTriggerV1Schema,
@@ -3088,6 +3099,7 @@ export {
   type UpdateAgentTeam,
 } from "./agent-teams.js";
 export * from "./memory.js";
+export * from "./memory-import.js";
 export * from "./crm-sync.js";
 export * from "./types/crm-sync.js";
 export * from "./validators/crm-sync.js";
@@ -3100,3 +3112,9 @@ export * from "./validators/pipeline-fields.js";
 export * from "./entitlement-document.js";
 export * from "./partner-branding.js";
 export { ASK_TYPES, ASK_TYPE_COPY, isAskType, readAskType, type AskType, type AskTypeCopy } from "./ask-types.js";
+export type { MorningSummary, MorningSummaryTask, NotificationPreferences } from "./types/notification-preferences.js";
+export { DEFAULT_NOTIFICATION_PREFERENCES } from "./types/notification-preferences.js";
+export {
+  updateNotificationPreferencesSchema,
+  type UpdateNotificationPreferences,
+} from "./validators/notification-preferences.js";

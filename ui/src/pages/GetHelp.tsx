@@ -433,7 +433,7 @@ function TicketCard({
 
       {ticket.summary ? <p className="text-sm whitespace-pre-wrap break-words">{ticket.summary}</p> : null}
 
-      <dl className="grid grid-cols-[10rem_1fr] gap-x-3 gap-y-1.5 border-t border-border pt-3">
+      <dl className="grid grid-cols-(--gtc-10) gap-x-3 gap-y-1.5 border-t border-border pt-3">
         <Detail label="Greatstone ticket">
           {ticket.hubTicketId ? <span className="font-mono text-xs">{ticket.hubTicketId}</span> : <Muted>Not sent yet</Muted>}
         </Detail>

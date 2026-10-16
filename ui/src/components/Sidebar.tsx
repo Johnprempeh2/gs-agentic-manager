@@ -1,5 +1,6 @@
 import {
   Inbox,
+  HandHelping,
   ListChecks,
   CircleCheck,
   Target,
@@ -379,6 +380,8 @@ export function Sidebar({ children }: { children?: ReactNode }) {
   // Every destination, keyed by its layout id (lib/sidebar-layout.ts holds the default places).
   const items: Record<string, SidebarItemDef> = {
     // Decisions (attention home, PAP-13481) graduated out of Experimental (GRE-66): always shown.
+    // The executive's one page: everything waiting on you, grouped by what to do.
+    needed: link("/needed", "Needed from you", HandHelping),
     decisions: link("/decisions", "Decisions", ListChecks, { badge: attentionCount, badgeLabel: "decisions" }),
     "my-tasks": link("/my-tasks", "My tasks", UserCheck, { badge: myTasksCount, badgeLabel: "open" }),
     inbox: link("/inbox", "Inbox", Inbox, {
@@ -570,6 +573,7 @@ export function Sidebar({ children }: { children?: ReactNode }) {
               <button
                 onClick={() => openNewIssue()}
                 data-slot="icon-button"
+                data-tour="new-task"
                 aria-label={rail ? "New Task" : undefined}
                 className={cn(
                   "flex items-center gap-2.5 mx-2 rounded-lg px-2 py-1.5 pointer-coarse:py-1 text-(length:--text-compact) font-medium text-sidebar-foreground transition-colors outline-none hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-(length:--rad-3) focus-visible:ring-ring",

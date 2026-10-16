@@ -202,6 +202,17 @@ function ContactRow({ contact }: { contact: OrganisationContact }) {
   );
 }
 
+const NDA_LABEL: Record<NonNullable<OrganisationHistoryCase["ndaStatus"]>, string> = {
+  required: "required",
+  accepted: "accepted",
+  suspended: "suspended",
+};
+const ENGAGEMENT_LABEL: Record<NonNullable<OrganisationHistoryCase["engagementStatus"]>, string> = {
+  not_sent: "not sent",
+  sent: "sent",
+  accepted: "accepted",
+};
+
 function HistoryCase({ item }: { item: OrganisationHistoryCase }) {
   const status = item.terminalKind === "done" ? "Done" : item.terminalKind === "cancelled" ? "Cancelled" : "Open";
   return (
@@ -215,6 +226,13 @@ function HistoryCase({ item }: { item: OrganisationHistoryCase }) {
       <p className="mt-0.5 text-xs text-muted-foreground">
         {item.pipelineName} · Stage: {item.stageName} · Added {formatDate(item.createdAt)}
       </p>
+      {item.ndaStatus || item.engagementStatus ? (
+        <p className="mt-0.5 text-xs text-muted-foreground" data-testid="organisation-case-agreements">
+          {item.ndaStatus ? `NDA: ${NDA_LABEL[item.ndaStatus]}` : null}
+          {item.ndaStatus && item.engagementStatus ? " · " : null}
+          {item.engagementStatus ? `Engagement pack: ${ENGAGEMENT_LABEL[item.engagementStatus]}` : null}
+        </p>
+      ) : null}
 
       {item.stageChanges.length > 0 ? (
         <div className="mt-2">

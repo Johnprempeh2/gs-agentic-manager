@@ -56,6 +56,7 @@ import {
   markDeliverableSchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
+  setCaseEngagementSchema,
   deliverablesQuerySchema,
   createDeliverableCommentSchema,
   updateDeliverableCommentSchema,
@@ -107,6 +108,9 @@ import {
   // Organization memory
   confirmMemoryLinkLeadSchema,
   contributeMemorySchema,
+  importMemorySchema,
+  checkMemoryImportSchema,
+  createMemoryConnectionSchema,
   createMemoryRelationshipSchema,
   deleteMemoryRecordSchema,
   dismissMemoryLinkLeadSchema,
@@ -333,6 +337,7 @@ import {
   resolveChatPublicationSchema,
   replaceChatEndpointResourcesSchema,
   updateChatEndpointSchema,
+  updateNotificationPreferencesSchema,
 } from "@greatstone/shared";
 import {
   COMPANY_IMPORT_TRANSFERS_API_PATH,
@@ -349,6 +354,8 @@ import {
   clientFilesQuerySchema,
   clientFilesSearchSchema,
   createClientEvidenceSchema,
+  createClientDocumentRequestsSchema,
+  addStandardClientDocumentRequestsSchema,
   createClientJourneyDeliverableSchema,
   createCrmSyncBindingSchema,
   createCrmSyncSuggestionSchema,
@@ -4570,6 +4577,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "put",
+  path: "/api/cases/{caseId}/engagement",
+  tags: ["issues"],
+  summary: "Set the client's engagement pack status (board only): not_sent, sent or accepted. It cannot go out while the NDA is required (409)",
+  request: {
+    params: z.object({ caseId: z.string() }),
+    body: jsonBody(setCaseEngagementSchema),
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/deliverables/{id}/screenshot",
   tags: ["issues"],
@@ -5492,6 +5511,62 @@ registry.registerPath({
   summary: "Contribute a memory record under the caller's identity; kept as pending when the engine is down",
   request: { params: memoryCompanyParams, body: jsonBody(contributeMemorySchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/import/check",
+  tags: ["memory"],
+  summary: "Before an import, flag entries already in the scope by source id or by much the same words; nothing is written",
+  request: { params: memoryCompanyParams, body: jsonBody(checkMemoryImportSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/import",
+  tags: ["memory"],
+  summary:
+    "Add up to 50 entries brought in from Claude or ChatGPT as unreviewed contributions with app provenance; repeats in the scope are skipped and entries with sensitive content are held back",
+  request: { params: memoryCompanyParams, body: jsonBody(importMemorySchema) },
+  responses: { 200: r.ok(), 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/connections",
+  tags: ["memory"],
+  summary: "Apps linked to organization memory through memory-only keys, with their live keys; owner or admin signed in as a person",
+  request: { params: memoryCompanyParams },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/memory/connections",
+  tags: ["memory"],
+  summary:
+    "Link Claude, Codex or another MCP app to organization memory: a paused link agent with a new memory-only key, shown once, and optionally the memory contribute right",
+  request: { params: memoryCompanyParams, body: jsonBody(createMemoryConnectionSchema) },
+  responses: { 201: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/memory/connections/{agentId}/activity",
+  tags: ["memory"],
+  summary: "A linked app's recent memory calls and the entries it suggested; owner or admin signed in as a person",
+  request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/companies/{companyId}/memory/connections/{agentId}",
+  tags: ["memory"],
+  summary: "Disconnect a linked app by revoking every memory-only key of its link agent",
+  request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
@@ -6966,6 +7041,36 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/morning-summary",
+  tags: ["inbox"],
+  summary: "The caller's morning summary: what needs them, what finished in the last 24 hours, what is stuck",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/notification-preferences",
+  tags: ["inbox"],
+  summary: "The caller's notification choices in this company (defaults when never set)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/notification-preferences",
+  tags: ["inbox"],
+  summary: "Change the caller's notification choices: topics, quiet hours and time zone",
+  request: {
+    params: z.object({ companyId: z.string() }),
+    body: { content: { "application/json": { schema: updateNotificationPreferencesSchema } } },
+  },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/decisions-feed",
   tags: ["inbox"],
   summary: "List the one Decisions feed: one card per task, stale cards cleared, with actions",
@@ -6983,6 +7088,24 @@ registry.registerPath({
     query: z.object({ since: z.string().datetime({ offset: true }).optional() }),
   },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/blocked-work",
+  tags: ["issues"],
+  summary: "Blocked work overview: how long each blocked task has waited, who must act, and the root task holding each chain",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/recovery-holds",
+  tags: ["issues"],
+  summary: "Tasks held until someone records what their last run did",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 
 registry.registerPath({
@@ -13712,6 +13835,82 @@ registerCurrentRoute({
   tags: ["pipelines"],
   summary: "File evidence on a pipeline case (Work cases, and read access to the source task)",
   body: createClientEvidenceSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/evidence/upload",
+  tags: ["pipelines"],
+  summary:
+    "Upload a file straight onto a pipeline case as evidence (Work cases). multipart/form-data: a `file` field, " +
+    "with optional `title`, `note`, `stageId` (a stage on the case's own pipeline) and `requestId` (a document " +
+    "request this file meets)",
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "get",
+  path: "/api/cases/{caseId}/evidence/{evidenceId}/content",
+  tags: ["pipelines"],
+  summary: "Get the file behind an uploaded evidence item; ?download=1 asks for a download",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/document-requests",
+  tags: ["pipelines"],
+  summary:
+    "Ask the client for documents at one stage (Work cases). Titles the stage already asks for are skipped",
+  body: createClientDocumentRequestsSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/document-requests/standard",
+  tags: ["pipelines"],
+  summary: "Add a stage's standard document list (stage config `requestedDocuments`) to the client (Work cases)",
+  body: addStandardClientDocumentRequestsSchema,
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "delete",
+  path: "/api/cases/{caseId}/document-requests/{requestId}",
+  tags: ["pipelines"],
+  summary: "Remove a document request from a client (Work cases)",
+  responses: pipelineReadResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/pack",
+  tags: ["pipelines"],
+  summary:
+    "Upload the engagement pack sent to the client (board only). multipart/form-data: a `file` field. The file is " +
+    "filed in the client's evidence and the pack is marked sent; refused while the NDA is required",
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/engagement/acceptance",
+  tags: ["pipelines"],
+  summary:
+    "Upload the client's signed acceptance of the engagement pack (board only). multipart/form-data: a `file` " +
+    "field. The file is filed in the client's evidence and the pack is marked accepted",
+  responses: pipelineCreateResponses,
+});
+
+registerCurrentRoute({
+  method: "post",
+  path: "/api/cases/{caseId}/nda/signed",
+  tags: ["pipelines"],
+  summary:
+    "Upload a client's signed NDA (board only). multipart/form-data: a `file` field. The file is filed in the " +
+    "client's evidence and the NDA is marked accepted",
   responses: pipelineCreateResponses,
 });
 

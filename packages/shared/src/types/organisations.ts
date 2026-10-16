@@ -93,6 +93,9 @@ export interface OrganisationHistoryCase {
   stageName: string;
   stageKind: string;
   terminalKind: "done" | "cancelled" | null;
+  /** The client's NDA and engagement pack, as on the journey (Ben, 12 Oct). */
+  ndaStatus?: "required" | "accepted" | "suspended";
+  engagementStatus?: "not_sent" | "sent" | "accepted";
   createdAt: string;
   updatedAt: string;
   /** Oldest first. */

@@ -373,7 +373,7 @@ export function Artifacts() {
 
       {isLoading ? (
         <PageSkeleton variant="list" />
-      ) : items.length === 0 ? (
+      ) : error && !data ? null : items.length === 0 ? (
         <EmptyState icon={showGroupCards ? Layers : Package} message={emptyMessage} />
       ) : (
         <>
