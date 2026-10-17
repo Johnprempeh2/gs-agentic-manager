@@ -43,6 +43,7 @@ import { Button } from "@/components/ui/button";
 import { InlineBanner } from "../components/InlineBanner";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { dashboardNumbersText } from "../lib/dashboard-text";
+import { monthPace, monthPaceLine } from "../lib/spend-pace";
 import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
@@ -233,6 +234,8 @@ export function Dashboard() {
     enabled: !!selectedCompanyId,
   });
   usePublishSharedQueryData(sharedDashboard, data, dashboardUpdatedAt);
+  const spendPace = data ? monthPace(data.costs.monthSpendCents, data.costs.monthBudgetCents) : null;
+  const spendPaceLine = monthPaceLine(spendPace);
 
   const activityQueryKey = [...queryKeys.activity(selectedCompanyId!), { owner: true, limit: DASHBOARD_ACTIVITY_LIMIT }] as const;
   const sharedActivity = useSharedPollingQuery({
@@ -572,6 +575,14 @@ export function Dashboard() {
                       {data.costs.monthBudgetCents > 0
                         ? `${data.costs.monthUtilizationPercent}% of ${formatCents(data.costs.monthBudgetCents)} budget`
                         : "Unlimited budget"}
+                      {spendPaceLine ? (
+                        <span
+                          className={cn("block", spendPace?.overBudgetOn ? "text-status-warning-foreground" : undefined)}
+                          data-testid="dashboard-spend-pace"
+                        >
+                          {spendPaceLine}
+                        </span>
+                      ) : null}
                     </span>
                   }
                 />
