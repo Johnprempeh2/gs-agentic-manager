@@ -4,6 +4,7 @@ import { ClipboardCopy } from "lucide-react";
 import { MEMORY_CONNECTION_APP_LABEL } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { useConfirm } from "@/context/ConfirmContext";
 import { ApiError } from "../../api/client";
 import { memoryGraphApi } from "../../api/memoryGraph";
 import { queryKeys } from "../../lib/queryKeys";
@@ -17,6 +18,7 @@ const STATUS_KEY = ["memory-oauth", "status"] as const;
  */
 export function MemoryAppSignInPanel({ companyId, app }: { companyId: string; app: MemorySignInApp }) {
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const [copied, setCopied] = useState(false);
   const status = useQuery({ queryKey: STATUS_KEY, queryFn: () => memoryGraphApi.appSignInStatus(), retry: false });
   const settings = useQuery({
@@ -58,7 +60,16 @@ export function MemoryAppSignInPanel({ companyId, app }: { companyId: string; ap
             What {label} adds waits in Review, and Disconnect below cuts it off at once.
           </p>
           <div className="flex items-center justify-between gap-2">
-            <Button type="button" size="sm" variant="ghost" disabled={toggle.isPending} onClick={() => toggle.mutate(false)}>
+            <Button type="button" size="sm" variant="ghost" disabled={toggle.isPending} onClick={async () => {
+                const ok = await confirm({
+                  title: "Turn off app sign-in?",
+                  description: "ChatGPT and Claude.ai will no longer be able to connect to memory this way. Apps already connected stay connected until you disconnect them below.",
+                  confirmLabel: "Turn off",
+                  tone: "destructive",
+                });
+                if (ok) toggle.mutate(false);
+              }}
+            >
               Turn off app sign-in
             </Button>
             <Button
@@ -83,7 +94,7 @@ export function MemoryAppSignInPanel({ companyId, app }: { companyId: string; ap
             {label} connects by signing in to GSAM. App sign-in is off, so no outside app can connect this way yet.
           </p>
           <p className="text-muted-foreground">
-            Turning it on lets anyone in the company allow ChatGPT or Claude.ai to read and add to memory for themselves.
+            Turning it on lets anyone in the organisation allow ChatGPT or Claude.ai to read and add to memory for themselves.
           </p>
           {refused ? <p className="text-muted-foreground">Only the owner or an admin can turn it on.</p> : null}
           {toggle.error && !refused ? <p className="text-destructive">Could not turn it on. Try again.</p> : null}
