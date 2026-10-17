@@ -45,7 +45,7 @@ describe("AgentMemoryRightsToggles", () => {
     container = document.createElement("div");
     document.body.appendChild(container);
     root = createRoot(container);
-    settingsMock.mockResolvedValue({ companyId, enabled: true, retainMode: "extract", updatedAt: null });
+    settingsMock.mockResolvedValue({ companyId, enabled: true, retainMode: "extract", appSignIn: false, updatedAt: null });
     boardAccessMock.mockResolvedValue({
       source: "session",
       isInstanceAdmin: false,
@@ -130,7 +130,7 @@ describe("AgentMemoryRightsToggles", () => {
   });
 
   it("is not offered while memory is off", async () => {
-    settingsMock.mockResolvedValue({ companyId, enabled: false, retainMode: "extract", updatedAt: null });
+    settingsMock.mockResolvedValue({ companyId, enabled: false, retainMode: "extract", appSignIn: false, updatedAt: null });
     await render();
     expect(toggle("Can contribute to organisation memory")).toBeNull();
     expect(container.textContent).toBe("");

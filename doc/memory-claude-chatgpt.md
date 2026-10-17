@@ -78,5 +78,40 @@ app (`mcp-remote` in `claude_desktop_config.json`), Claude Code
 `bearer_token_env_var`) or any other MCP app. The key always travels in the
 `Authorization` header, never the URL.
 
-ChatGPT cannot connect live yet: its connectors need an OAuth sign-in, which
-GSAM does not offer. The page says so and points to the import instead.
+## Sign-in for ChatGPT and Claude.ai
+
+ChatGPT (chats and voice mode) and Claude.ai (web, phone and projects) only add
+connectors that sign in with OAuth. `server/src/routes/memory-oauth.ts` offers
+that on top of the existing pieces: the person approves while signed in to GSAM
+as usual, the link agent is made by the same `memoryConnectionService.connect`,
+and the access token is an ordinary `memory_only` key from `mintKey`, so the
+Connected apps list and Disconnect work on it unchanged. No user, password or
+token table is added.
+
+- Discovery: `/.well-known/oauth-protected-resource[/api/mcp/memory-tools]` and
+  `/.well-known/oauth-authorization-server`. A call to the MCP endpoint with no
+  key answers 401 with a `WWW-Authenticate` header pointing there.
+- `POST /oauth/memory/register`: dynamic client registration, public clients,
+  https redirects (http only on localhost). Clients are signed, not stored.
+- `GET /oauth/memory/authorize`: checks the client and redirect, then sends the
+  browser to the Allow screen at `/memory/connect-app`.
+- `GET /api/memory-oauth/client`, `POST /api/memory-oauth/approve`: the Allow
+  screen, behind the board session and mutation guard. Approve logs
+  `memory.connection_authorized` and returns a signed code (5 minutes, PKCE S256).
+- `POST /oauth/memory/token`: swaps the code for the key, once, and logs
+  `memory.connection_created` with `via: "oauth"`.
+
+Off by default twice over. The routes exist only in `authenticated` mode with
+`BETTER_AUTH_SECRET` (or `GSAM_AGENT_JWT_SECRET`) set, and each company's
+memory settings carry `appSignIn` (column `memory_settings.app_sign_in`, false
+by default). An owner or admin turns it on under Memory > Claude and ChatGPT;
+while it is off no code is issued or exchanged.
+
+Addresses:
+
+- `GSAM_MEMORY_PUBLIC_URL`: where ChatGPT's and Anthropic's servers reach GSAM
+  (falls back to the auth public URL, then the request host). Only these paths
+  need to be public: `/.well-known/oauth-*`, `/oauth/memory/*` and
+  `/api/mcp/memory-tools`. The host must also be in the allowed hostnames.
+- `GSAM_MEMORY_CONSENT_URL`: optional private address for the Allow screen, for
+  example the Tailscale name, so the board itself never has to be public.

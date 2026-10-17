@@ -105,6 +105,7 @@ import { agentTeamRoutes } from "./routes/agent-teams.js";
 import { memoryRoutes } from "./routes/memory.js";
 import { memoryToolRoutes } from "./routes/memory-tools.js";
 import { memoryConnectionRoutes } from "./routes/memory-connections.js";
+import { memoryMcpAuthChallenge, memoryOAuthConsentRoutes, memoryOAuthRoutes } from "./routes/memory-oauth.js";
 import { memoryStewardRoutes } from "./routes/memory-steward.js";
 import { memoryEngineFromGatewayConfig } from "./services/memory-gateway/hindsight.js";
 import { onboardingSeedRoutes } from "./routes/onboarding-seed.js";
@@ -867,8 +868,24 @@ export async function createApp(
   api.use(workflowTemplateRoutes(db, { pluginWorkerManager: workerManager }));
   api.use(agentTeamRoutes(db));
   api.use(memoryRoutes(db, { engine: memoryEngine }));
-  api.use(memoryToolRoutes(db, { engine: memoryEngine }));
+  // Memory sign-in for ChatGPT and Claude.ai: only with real sign-in, and still
+  // off for each company until an owner turns on app sign-in.
+  const memoryOAuth =
+    opts.deploymentMode === "authenticated"
+      ? {
+          engine: memoryEngine,
+          publicBaseUrl: process.env.GSAM_MEMORY_PUBLIC_URL ?? opts.authPublicBaseUrl ?? null,
+          consentBaseUrl: process.env.GSAM_MEMORY_CONSENT_URL ?? null,
+        }
+      : null;
+  api.use(
+    memoryToolRoutes(db, {
+      engine: memoryEngine,
+      signInChallenge: memoryOAuth ? (req, res) => memoryMcpAuthChallenge(req, res, memoryOAuth.publicBaseUrl) : undefined,
+    }),
+  );
   api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));
+  if (memoryOAuth) api.use(memoryOAuthConsentRoutes(db, memoryOAuth));
   api.use(memoryStewardRoutes(db));
   api.use(onboardingSeedRoutes(db));
   api.use(boardChatRoutes(db, { deploymentMode: opts.deploymentMode, storage: opts.storageService }));
@@ -1066,6 +1083,7 @@ export async function createApp(
   );
   api.use(legacyBoardRoutes(db, { deploymentMode: opts.deploymentMode }));
   api.use(memberHandoverRoutes(db, { deploymentMode: opts.deploymentMode }));
+  if (memoryOAuth) app.use(memoryOAuthRoutes(db, memoryOAuth));
   app.use("/api", api);
   app.use("/api", (_req, res) => {
     res.status(404).json({ error: "API route not found" });

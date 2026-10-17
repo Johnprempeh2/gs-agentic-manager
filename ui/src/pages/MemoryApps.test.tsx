@@ -18,6 +18,9 @@ const graphApiMock = vi.hoisted(() => ({
   createConnection: vi.fn(),
   revokeConnection: vi.fn(),
   connectionActivity: vi.fn(),
+  settings: vi.fn(),
+  updateSettings: vi.fn(),
+  appSignInStatus: vi.fn(),
 }));
 
 const accessApiMock = vi.hoisted(() => ({ listUserDirectory: vi.fn() }));
@@ -212,11 +215,33 @@ describe("MemoryApps", () => {
     expect(accessApiMock.listUserDirectory).toHaveBeenCalledWith("co-kestrel");
   });
 
-  it("tells the person ChatGPT cannot connect yet", async () => {
+  async function pickApp(name: string) {
+    const option = [...document.querySelectorAll('[aria-label="App to connect"] button')].find((el) => el.textContent?.includes(name)) as HTMLButtonElement;
+    await act(async () => option.click());
+    await flush();
+  }
+
+  it("says when this GSAM does not offer sign-in for ChatGPT", async () => {
+    graphApiMock.appSignInStatus.mockRejectedValue(new Error("not found"));
+    graphApiMock.settings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: false, updatedAt: null });
     await render();
-    const chatgpt = [...document.querySelectorAll('[aria-label="App to connect"] button')].find((el) => el.textContent?.includes("ChatGPT")) as HTMLButtonElement;
-    await act(async () => chatgpt.click());
-    expect(body()).toContain("GSAM does not offer one yet");
+    await pickApp("ChatGPT");
+    expect(body()).toContain("this GSAM does not offer that sign-in");
+    expect(button("Connect ChatGPT")).toBeUndefined();
+  });
+
+  it("lets an owner turn on app sign-in, then shows the ChatGPT steps with the address", async () => {
+    graphApiMock.appSignInStatus.mockResolvedValue({ mcpUrl: "https://memory.example.com/api/mcp/memory-tools", publicAddressSet: true });
+    graphApiMock.settings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: false, updatedAt: null });
+    graphApiMock.updateSettings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: true, updatedAt: null });
+    await render();
+    await pickApp("ChatGPT");
+    expect(body()).toContain("App sign-in is off");
+    await act(async () => button("Turn on app sign-in")!.click());
+    await flush();
+    expect(graphApiMock.updateSettings).toHaveBeenCalledWith("co-kestrel", { appSignIn: true });
+    expect(body()).toContain("https://memory.example.com/api/mcp/memory-tools");
+    expect(body()).toContain("voice mode");
     expect(button("Connect ChatGPT")).toBeUndefined();
   });
 });

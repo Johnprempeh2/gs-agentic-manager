@@ -127,6 +127,8 @@ export interface MemorySettings {
   companyId: string;
   enabled: boolean;
   retainMode: MemoryRetainMode;
+  /** ChatGPT and Claude.ai may connect through the memory sign-in page. */
+  appSignIn: boolean;
   updatedAt: Date | string | null;
 }
 
@@ -336,6 +338,7 @@ export const updateMemorySettingsSchema = z
   .object({
     enabled: z.boolean().optional(),
     retainMode: z.enum(MEMORY_RETAIN_MODES).optional(),
+    appSignIn: z.boolean().optional(),
   })
   .strict();
 export type UpdateMemorySettings = z.infer<typeof updateMemorySettingsSchema>;

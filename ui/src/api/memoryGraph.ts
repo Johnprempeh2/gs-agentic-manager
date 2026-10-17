@@ -20,6 +20,10 @@ import type {
   MemoryRecordStatus,
   MemoryRelationshipType,
   MemorySettings,
+  MemoryAppSignInClient,
+  MemoryAppSignInStatus,
+  ApproveMemoryAppSignIn,
+  UpdateMemorySettings,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -64,6 +68,16 @@ function toQuery(params: object) {
 export const memoryGraphApi = {
   /** Whether organisation memory is switched on for the company (the sidebar's Memory link). */
   settings: (companyId: string) => api.get<MemorySettings>(`/companies/${companyId}/memory/settings`),
+  /** Owner or admin only; others get 403. */
+  updateSettings: (companyId: string, body: UpdateMemorySettings) =>
+    api.patch<MemorySettings>(`/companies/${companyId}/memory/settings`, body),
+  /** 404 where this server does not offer app sign-in. */
+  appSignInStatus: () => api.get<MemoryAppSignInStatus>("/memory-oauth/status"),
+  appSignInClient: (clientId: string, redirectUri: string) =>
+    api.get<MemoryAppSignInClient>(
+      `/memory-oauth/client?${new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri }).toString()}`,
+    ),
+  approveAppSignIn: (body: ApproveMemoryAppSignIn) => api.post<{ redirectTo: string }>("/memory-oauth/approve", body),
   /** Turns one memory right of one principal on or off. Owner only (G3); others get 403. */
   changeGrant: (companyId: string, body: ChangeMemoryGrant) =>
     api.patch<{ principalType: string; principalId: string; permissions: string[] }>(

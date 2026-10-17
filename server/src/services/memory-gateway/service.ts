@@ -334,6 +334,7 @@ export function memoryGatewayService(
       companyId,
       enabled: row?.enabled ?? false,
       retainMode: (row?.retainMode as MemoryRetainMode | undefined) ?? "extract",
+      appSignIn: row?.appSignIn ?? false,
       updatedAt: row?.updatedAt ?? null,
     };
   }
