@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
 
 export const authUsers = pgTable("user", {
   id: text("id").primaryKey(),
@@ -7,6 +7,9 @@ export const authUsers = pgTable("user", {
   emailVerified: boolean("email_verified").notNull().default(false),
   image: text("image"),
   keyboardShortcuts: boolean("keyboard_shortcuts").notNull().default(false),
+  // Better Auth's two-factor plugin: true once the person has confirmed an
+  // authenticator app, after which sign-in asks for a code.
+  twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
@@ -67,3 +70,26 @@ export const authVerifications = pgTable("verification", {
   createdAt: timestamp("created_at", { withTimezone: true }),
   updatedAt: timestamp("updated_at", { withTimezone: true }),
 });
+
+/**
+ * Better Auth's `twoFactor` model: one row per person with two-step sign-in.
+ * `secret` and `backupCodes` are encrypted by Better Auth with the auth
+ * secret before they are stored. `failedVerificationCount` and `lockedUntil`
+ * are Better Auth's own lock after repeated wrong codes.
+ */
+export const authTwoFactors = pgTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+    verified: boolean("verified").notNull().default(true),
+    failedVerificationCount: integer("failed_verification_count").notNull().default(0),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  },
+  (table) => ({
+    userIdIdx: index("two_factor_user_id_idx").on(table.userId),
+    secretIdx: index("two_factor_secret_idx").on(table.secret),
+  }),
+);

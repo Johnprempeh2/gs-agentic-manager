@@ -11,12 +11,14 @@ import { AuthPage } from "./Auth";
 const getSessionMock = vi.hoisted(() => vi.fn());
 const signInEmailMock = vi.hoisted(() => vi.fn());
 const signUpEmailMock = vi.hoisted(() => vi.fn());
+const verifyTwoStepCodeMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../api/auth", () => ({
   authApi: {
     getSession: () => getSessionMock(),
     signInEmail: (input: unknown) => signInEmailMock(input),
     signUpEmail: (input: unknown) => signUpEmailMock(input),
+    verifyTwoStepCode: (input: unknown) => verifyTwoStepCodeMock(input),
   },
 }));
 
@@ -141,6 +143,47 @@ describe("AuthPage", () => {
     // Programmatic labels.
     expect(container.querySelector('label[for="email"]')).not.toBeNull();
     expect(container.querySelector('label[for="password"]')).not.toBeNull();
+
+    await act(async () => {
+      root.unmount();
+    });
+  });
+
+  it("asks for the authenticator code when two-step sign-in is on", async () => {
+    signInEmailMock.mockResolvedValueOnce({ twoFactorRequired: true });
+    verifyTwoStepCodeMock.mockResolvedValueOnce(undefined);
+    const { root } = await mount();
+
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+    const emailInput = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const passwordInput = container.querySelector('input[name="password"]') as HTMLInputElement;
+    await act(async () => {
+      setValue!.call(emailInput, "jane@example.com");
+      emailInput.dispatchEvent(new Event("input", { bubbles: true }));
+      setValue!.call(passwordInput, "right-password");
+      passwordInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector("form") as HTMLFormElement).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+    await flushReact();
+
+    const codeInput = container.querySelector('input[name="code"]') as HTMLInputElement;
+    expect(codeInput).not.toBeNull();
+    expect(codeInput.getAttribute("autocomplete")).toBe("one-time-code");
+    expect(container.querySelector('input[name="password"]')).toBeNull();
+
+    await act(async () => {
+      setValue!.call(codeInput, "123 456");
+      codeInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      (container.querySelector("form") as HTMLFormElement).dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await flushReact();
+
+    expect(verifyTwoStepCodeMock).toHaveBeenCalledWith({ code: "123 456", trustDevice: false, backup: false });
 
     await act(async () => {
       root.unmount();

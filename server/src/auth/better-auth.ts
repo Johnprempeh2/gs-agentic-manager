@@ -2,11 +2,13 @@ import type { Request, RequestHandler } from "express";
 import type { IncomingHttpHeaders } from "node:http";
 import { betterAuth, type Auth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { twoFactor } from "better-auth/plugins";
 import { toNodeHandler } from "better-auth/node";
 import type { Db } from "@greatstone/db";
 import {
   authAccounts,
   authSessions,
+  authTwoFactors,
   authUsers,
   authVerifications,
 } from "@greatstone/db";
@@ -67,6 +69,9 @@ export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()
  * rate limit.
  */
 export const AUTH_CLIENT_IP_HEADER = "x-gsam-client-ip";
+
+/** The name an authenticator app shows next to the code. */
+export const TWO_FACTOR_ISSUER = "GSAM";
 
 export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {
   return {
@@ -274,6 +279,13 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     // Wrong-password lockout per account, on top of Better Auth's per-address
     // rate limit. Authenticated mode only: local_trusted has no sign-in.
     ...(config.deploymentMode === "authenticated" ? [signInLockoutPlugin()] : []),
+    // Two-step sign-in with an authenticator app, on top of the password. Off
+    // for each person until they turn it on in Profile; once on, sign-in asks
+    // for a 6-digit code (or a backup code). Better Auth locks the code step
+    // after repeated wrong codes.
+    ...(config.deploymentMode === "authenticated"
+      ? [twoFactor({ issuer: TWO_FACTOR_ISSUER, backupCodeOptions: { amount: 10 } })]
+      : []),
     // Closed sign-up is enforced here rather than by Better Auth's own
     // `disableSignUp`, so a person holding a valid human invite can still
     // create the account the invite landing page then accepts it with. Every
@@ -312,6 +324,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
         session: authSessions,
         account: authAccounts,
         verification: authVerifications,
+        twoFactor: authTwoFactors,
       },
     }),
     emailAndPassword: {

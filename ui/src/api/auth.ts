@@ -177,8 +177,55 @@ export const authApi = {
     return nested;
   },
 
-  signInEmail: async (input: { email: string; password: string }) => {
-    await authPost("/sign-in/email", input);
+  /**
+   * `twoFactorRequired` is true when the password was right and the person has
+   * two-step sign-in on: no session exists yet, and the code step
+   * (`verifyTwoStepCode`) finishes the sign-in.
+   */
+  signInEmail: async (input: { email: string; password: string }): Promise<{ twoFactorRequired: boolean }> => {
+    const payload = await authPost("/sign-in/email", input);
+    const twoFactorRequired = Boolean(
+      payload && typeof payload === "object" && (payload as { twoFactorRedirect?: unknown }).twoFactorRedirect === true,
+    );
+    return { twoFactorRequired };
+  },
+
+  /** The code step of sign-in: a 6-digit app code, or a backup code. */
+  verifyTwoStepCode: async (input: { code: string; trustDevice: boolean; backup: boolean }) => {
+    const code = input.code.replace(/\s+/g, "");
+    await authPost(input.backup ? "/two-factor/verify-backup-code" : "/two-factor/verify-totp", {
+      code,
+      trustDevice: input.trustDevice,
+    });
+  },
+
+  getTwoStepStatus: async (): Promise<{ enabled: boolean; available: boolean }> => {
+    const res = await fetch("/api/auth/two-step-status", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
+    const value = (payload ?? {}) as { enabled?: unknown; available?: unknown };
+    return { enabled: value.enabled === true, available: value.available === true };
+  },
+
+  /** Starts turning two-step sign-in on. It is on only after `confirmTwoStep`. */
+  startTwoStep: async (password: string): Promise<{ totpURI: string; backupCodes: string[] }> => {
+    const payload = (await authPost("/two-factor/enable", { password })) as { totpURI?: unknown; backupCodes?: unknown } | null;
+    if (!payload || typeof payload.totpURI !== "string" || !Array.isArray(payload.backupCodes)) {
+      throw new Error("The server did not return an authenticator key");
+    }
+    return { totpURI: payload.totpURI, backupCodes: payload.backupCodes.filter((c): c is string => typeof c === "string") };
+  },
+
+  /** Proves the authenticator app works, which turns two-step sign-in on. */
+  confirmTwoStep: async (code: string) => {
+    await authPost("/two-factor/verify-totp", { code: code.replace(/\s+/g, "") });
+  },
+
+  turnOffTwoStep: async (password: string) => {
+    await authPost("/two-factor/disable", { password });
   },
 
   /**

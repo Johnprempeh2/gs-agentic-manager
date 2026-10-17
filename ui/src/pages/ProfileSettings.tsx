@@ -8,6 +8,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { InboxAgentPolicyControl } from "@/components/InboxAgentPolicyControl";
+import { TwoStepSignInSection } from "@/components/TwoStepSignInSection";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -304,6 +305,8 @@ export function ProfileSettings() {
             </p>
           ) : null}
         </section>
+
+        <TwoStepSignInSection />
 
         <InboxAgentPolicyControl companyId={selectedCompanyId} />
       </section>
