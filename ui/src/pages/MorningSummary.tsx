@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { MorningSummaryTask } from "@greatstone/shared";
-import { Activity, AlertTriangle, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
+import { Activity, AlertTriangle, Briefcase, CalendarClock, Check, CircleCheck, ClipboardList, Sun, UserCheck, type LucideIcon } from "lucide-react";
 import { morningSummaryApi } from "../api/notificationPreferences";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { useCompany } from "../context/CompanyContext";
@@ -78,7 +78,7 @@ function Section({
         <ul className="divide-y divide-border">
           {items.map((item) => (
             <li key={item.id}>
-              <Link to={`/issues/${item.identifier ?? item.id}`} className="flex min-h-11 items-center gap-2 py-2 text-sm hover:underline">
+              <Link to={item.href ?? `/issues/${item.identifier ?? item.id}`} className="flex min-h-11 items-center gap-2 py-2 text-sm hover:underline">
                 <span className="min-w-0 flex-1 truncate">{item.title}</span>
                 {today && lateLabel(item.dueDate, today) ? (
                   <span className="shrink-0 text-xs font-medium text-status-danger">{lateLabel(item.dueDate, today)}</span>
@@ -170,6 +170,18 @@ export function MorningSummary() {
         tone="danger"
         today={localToday(now)}
       />
+      {data.dealNextSteps && data.dealNextSteps.count > 0 ? (
+        <Section
+          icon={Briefcase}
+          title="Deal next steps due"
+          count={data.dealNextSteps.count}
+          empty="No deal has a next step due."
+          items={data.dealNextSteps.items}
+          more={{ label: "Open pipelines", to: "/pipelines" }}
+          tone="danger"
+          today={localToday(now)}
+        />
+      ) : null}
       {data.workingNow ? (
         <Section
           icon={Activity}
