@@ -413,7 +413,7 @@ export function useIssueMutations({
       // The person closed the blocked-dependents dialog; nothing failed.
       if (isBlockedDependentsHandoffCancelled(err)) return;
       pushToast({
-        title: "Task update failed",
+        title: "Your change was not saved",
         body:
           err instanceof Error ? err.message : "Unable to save task changes",
         tone: "error",
@@ -448,7 +448,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Recovery resolution failed",
+        title: "Could not resolve this",
         body:
           err instanceof Error
             ? err.message
@@ -716,7 +716,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Task update failed",
+        title: "Your change was not saved",
         body:
           err instanceof Error
             ? err.message
@@ -790,7 +790,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Monitor check failed",
+        title: "Could not run the check",
         body:
           err instanceof Error
             ? err.message

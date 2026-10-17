@@ -81,7 +81,7 @@ describe("IssueFiltersPopover", () => {
       element.className.includes("md:grid-cols-3"),
     );
     expect(layoutGrid?.className).toContain("grid-cols-1");
-    expect(popoverContent?.textContent).toContain("Live runs only");
+    expect(popoverContent?.textContent).toContain("Only tasks being worked on now");
   });
 
   it("hides the Priority filter section while priority UI is off (PAP-411)", () => {
