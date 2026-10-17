@@ -1776,6 +1776,33 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.retryOfRunId, runId))).toHaveLength(0);
   });
 
+  it.each(["resolved", "cancelled"] as const)(
+    "does not raise a %s hold again for the same stopped run",
+    async (closedStatus) => {
+      const { agentId, issueId, runId } = await seedStrandedIssueFixture({
+        status: "in_progress", runStatus: "cancelled",
+        resultJson: { executionCancellation: { state: "acknowledged" } },
+      });
+      await db.update(agents).set({ adapterType: "process" }).where(eq(agents.id, agentId));
+      const [run] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+      await terminalizeLegacyExecution({ db, run, status: "cancelled" });
+      const [hold] = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, issueId));
+      expect(hold).toMatchObject({ status: "active", cause: "legacy_execution_requires_reconciliation" });
+      // An operator clears the hold (GRE-1190, 16 Oct 2026).
+      await db.update(issueRecoveryActions)
+        .set({ status: closedStatus, outcome: closedStatus === "resolved" ? "restored" : "cancelled", resolvedAt: new Date() })
+        .where(eq(issueRecoveryActions.id, hold!.id));
+
+      const [again] = await db.select().from(heartbeatRuns).where(eq(heartbeatRuns.id, runId));
+      await terminalizeLegacyExecution({ db, run: again!, status: "cancelled" });
+      await heartbeatService(db).reconcileStrandedAssignedIssues();
+
+      const holds = await db.select().from(issueRecoveryActions).where(eq(issueRecoveryActions.sourceIssueId, issueId));
+      expect(holds).toHaveLength(1);
+      expect(holds[0]).toMatchObject({ id: hold!.id, status: closedStatus });
+    },
+  );
+
   it("leaves hidden issues out of stranded-issue reconciliation", async () => {
     const { issueId } = await seedStrandedIssueFixture({
       status: "in_progress",

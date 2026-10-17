@@ -145,6 +145,24 @@ export async function terminalizeLegacyExecution(input: {
           ),
         )).limit(1);
       if (reconciled) return updated;
+      // A hold for this exact run that was already closed (cleared by an
+      // operator, or cancelled because it no longer applied) settles the run.
+      // The run is terminal and cannot fail again, so a later sweep must not
+      // raise the same hold a second time. On 16 Oct 2026 GRE-1190's hold,
+      // cleared while the task was in review, came back as a new action for
+      // the same run on the next stranded-work check.
+      const [closedForRun] = await tx.select({ id: issueRecoveryActions.id })
+        .from(issueRecoveryActions).where(and(
+          eq(issueRecoveryActions.companyId, run.companyId),
+          eq(issueRecoveryActions.sourceIssueId, task.id),
+          eq(issueRecoveryActions.cause, LEGACY_RECOVERY_CAUSE),
+          inArray(issueRecoveryActions.status, ["resolved", "cancelled"]),
+          or(
+            eq(issueRecoveryActions.fingerprint, `legacy-execution:${run.id}`),
+            sql`${issueRecoveryActions.evidence}->>'runId' = ${run.id}`,
+          ),
+        )).limit(1);
+      if (closedForRun) return updated;
       await issueRecoveryActionService(tx as unknown as Db).upsertSourceScoped({
         companyId: run.companyId,
         sourceIssueId: task.id,
