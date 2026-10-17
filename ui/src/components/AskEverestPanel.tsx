@@ -28,6 +28,7 @@ import {
   answerHistory,
   answerPeople,
   answerQuiet,
+  answerActivity,
   answerSubject,
   answerFollowUp,
   classifyQuestion,
@@ -582,6 +583,12 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     enabled: active && intent.kind === "quiet",
     retry: false,
   });
+  const recentActivity = useQuery({
+    queryKey: ["ask-everest", companyId, "recent-client-activity", intent.kind === "activity" ? intent.days : null],
+    queryFn: () => searchApi.recentClientActivity(companyId, { days: intent.kind === "activity" ? intent.days : 7, limit: 8 }),
+    enabled: active && intent.kind === "activity",
+    retry: false,
+  });
   const setLabel = taskSetLabel(intent);
   const set = useMemo(
     () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
@@ -594,11 +601,13 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
     || (recordQuery !== null && records.isPending && !records.isError)
     || (intent.kind === "quiet" && quiet.isPending)
+    || (intent.kind === "activity" && recentActivity.isPending)
     || (intent.kind === "away" && digest.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
     || (intent.kind === "away" && digest.error)
     || ((intent.kind === "history" || intent.kind === "people") && records.error)
     || (intent.kind === "quiet" && quiet.error)
+    || (intent.kind === "activity" && recentActivity.error)
     || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
@@ -625,6 +634,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
     case "history":
       return { value: answerHistory(intent.subject ?? "", records.data?.results ?? []) };
+    case "activity":
+      return { value: answerActivity(recentActivity.data!) };
     case "quiet":
       return { value: answerQuiet(quiet.data!) };
     case "people":

@@ -416,6 +416,26 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(result.clients[1]).toMatchObject({ lastTouchAt: null, lastTouchLabel: null, quietDays: 47 });
   });
 
+  it("lists recent client notes, calls and meetings with counts by kind", async () => {
+    const companyId = await createCompany();
+    const now = new Date("2026-10-18T09:00:00Z");
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Heron Ltd" });
+    await db.insert(crmTimelineEntries).values([
+      { companyId, source: "pipedrive", externalId: "r1", kind: "activity", activityType: "call", subject: "Pricing call", ownerName: "Ama", occurredAt: new Date("2026-10-17T09:00:00Z"), organisationId: orgId },
+      { companyId, source: "pipedrive", externalId: "r2", kind: "note", body: "<p>Sent the <b>proposal</b></p>", occurredAt: new Date("2026-10-15T09:00:00Z"), organisationId: orgId },
+      { companyId, source: "pipedrive", externalId: "r3", kind: "activity", activityType: "call", subject: "Old call", occurredAt: new Date("2026-09-01T09:00:00Z"), organisationId: orgId },
+      { companyId, source: "pipedrive", externalId: "r4", kind: "stage_change", subject: "Moved", occurredAt: new Date("2026-10-17T10:00:00Z"), organisationId: orgId },
+    ]);
+
+    const result = await quietClientsService(db).recentActivity(companyId, { days: 7, limit: 10, now });
+
+    expect(result).toMatchObject({ days: 7, total: 2, clientCount: 1, byKind: [["Call", 1], ["Note", 1]] });
+    expect(result.activity.map((entry) => entry.title)).toEqual(["Pricing call", "Sent the proposal"]);
+    expect(result.activity[0]).toMatchObject({ kindLabel: "Call", clientName: "Heron Ltd", ownerName: "Ama", href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)) });
+    expect(await quietClientsService(db).recentActivity(companyId, { days: 1, limit: 10, now: new Date("2026-12-01T00:00:00Z") })).toMatchObject({ total: 0, clientCount: 0, byKind: [], activity: [] });
+  });
+
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
     const companyId = await createCompany();
     const agentId = await createAgent(companyId, { name: "Mibile" });

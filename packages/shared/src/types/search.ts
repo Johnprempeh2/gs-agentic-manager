@@ -206,3 +206,26 @@ export interface CompanyQuietClientsResponse {
   /** Open deals and leads that went quiet, beyond the ones listed. */
   total: number;
 }
+
+/** One imported note, call, meeting or email, with the client it belongs to. */
+export interface CompanyClientActivity {
+  id: string;
+  /** "Call", "Meeting", "Note", "Email". */
+  kindLabel: string;
+  title: string;
+  /** The deal or organisation it belongs to. */
+  clientName: string | null;
+  ownerName: string | null;
+  occurredAt: string;
+  href: string;
+}
+
+export interface CompanyRecentClientActivityResponse {
+  days: number;
+  activity: CompanyClientActivity[];
+  total: number;
+  /** How many distinct deals or organisations had contact. */
+  clientCount: number;
+  /** Counts by kind label, largest first: [["Call", 4], ["Note", 2]]. */
+  byKind: Array<[string, number]>;
+}

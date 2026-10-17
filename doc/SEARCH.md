@@ -151,6 +151,13 @@ and how many days ago it was. A deal never contacted counts from when it was
 added. Stage changes do not count. Ask Everest answers "Which clients have gone
 quiet?" and "Who haven't we spoken to in 2 weeks?" from it.
 
+`GET /api/companies/:companyId/search/recent-client-activity?days=7&limit=10`
+lists imported notes, calls, meetings and emails from the last `days` days,
+newest first, with the deal or organisation each belongs to, plus the total,
+how many clients had contact and counts by kind. Ask Everest answers "What calls
+did we have this week?" from it; asked on a client's page, it answers for that
+client instead.
+
 ## Reproduce the evaluation
 
 ```sh

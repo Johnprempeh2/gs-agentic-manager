@@ -1156,6 +1156,8 @@ export type {
   CompanySearchResponse,
   CompanyQuietClient,
   CompanyQuietClientsResponse,
+  CompanyClientActivity,
+  CompanyRecentClientActivityResponse,
   CompanySearchResult,
   CompanySearchResultType,
   CompanySearchScope,
