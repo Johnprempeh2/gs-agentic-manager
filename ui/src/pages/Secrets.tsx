@@ -132,6 +132,7 @@ import {
 import type { MyUserSecretEntry } from "../api/secrets";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useConfirm } from "@/context/ConfirmContext";
 
 type CreateMode = "managed" | "external";
 // "value" writes a new secret value (for external references: through to the
@@ -4388,6 +4389,7 @@ function AgentAccessSection({
   companyId: string;
   reference: AgentAccessReference;
 }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const { pushToast } = useToastActions();
   const [selectedAgentId, setSelectedAgentId] = useState("");
@@ -4556,7 +4558,15 @@ function AgentAccessSection({
                     className="h-6 w-6 shrink-0 p-0 text-muted-foreground"
                     aria-label={`Remove access for ${agent.name}`}
                     disabled={revokeMutation.isPending}
-                    onClick={() => revokeMutation.mutate({ agentId: agent.id })}
+                    onClick={async () => {
+                      const confirmed = await confirm({
+                        title: `Remove ${agent.name}'s access to this secret?`,
+                        description: "Work that needs it will stop until you give access back.",
+                        confirmLabel: "Remove access",
+                        tone: "destructive",
+                      });
+                      if (confirmed) revokeMutation.mutate({ agentId: agent.id });
+                    }}
                   >
                     <X className="h-3 w-3" />
                   </Button>

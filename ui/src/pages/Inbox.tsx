@@ -2857,6 +2857,9 @@ export function Inbox() {
               ? "New activity on tasks you are part of lands here. Anything that needs your answer is in Decisions."
               : undefined
           }
+          action={searchQuery.trim() ? "Clear search" : undefined}
+          onAction={searchQuery.trim() ? () => setSearchQuery("") : undefined}
+          hideActionIcon
         />
       )}
 

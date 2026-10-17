@@ -82,6 +82,7 @@ describe("DeliverableCommentsPanel", () => {
   let root: Root;
 
   beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     store.comments = [];
     store.next = 1;
     vi.clearAllMocks();

@@ -10,6 +10,7 @@ import { Link } from "@/lib/router";
 import { queryKeys } from "@/lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/context/ConfirmContext";
 
 const inviteRoleOptions = [
   {
@@ -47,6 +48,7 @@ function isInviteHistoryRow(value: unknown): value is Awaited<ReturnType<typeof 
 
 /** The Invites tab of the Members page (extracted from the former standalone Invites page). */
 export function InvitesSection() {
+  const confirm = useConfirm();
   const { selectedCompanyId } = useCompany();
   const { pushToast } = useToast();
   const queryClient = useQueryClient();
@@ -339,7 +341,15 @@ export function InvitesSection() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => revokeMutation.mutate(invite.id)}
+                            onClick={async () => {
+                              const confirmed = await confirm({
+                                title: "Revoke this invite?",
+                                description: "The link stops working. You can send a new invite later.",
+                                confirmLabel: "Revoke invite",
+                                tone: "destructive",
+                              });
+                              if (confirmed) revokeMutation.mutate(invite.id);
+                            }}
                             disabled={revokeMutation.isPending}
                           >
                             Revoke

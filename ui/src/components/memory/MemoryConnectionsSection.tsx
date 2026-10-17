@@ -19,6 +19,7 @@ import { queryKeys } from "../../lib/queryKeys";
 import { MemoryConnectionCheck, MemoryConnectionHistory } from "./MemoryConnectionActivity";
 import { MemoryAppSignInPanel } from "./MemoryAppSignInPanel";
 import { isMemorySignInApp, memoryConnectionSetup, memoryMcpUrl } from "./memoryConnectionSetup";
+import { useConfirm } from "@/context/ConfirmContext";
 
 const APP_OPTIONS: Array<{ value: MemoryConnectionApp; description: string }> = [
   { value: "claude", description: "The Claude app on a Mac or PC" },
@@ -55,6 +56,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
  * also see everyone's. The server says who may.
  */
 export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [app, setApp] = useState<MemoryConnectionApp>("claude");
   const [canContribute, setCanContribute] = useState(true);
@@ -214,7 +216,15 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
                           size="sm"
                           variant="outline"
                           disabled={revoke.isPending}
-                          onClick={() => revoke.mutate(connection.agentId)}
+                          onClick={async () => {
+                            const confirmed = await confirm({
+                              title: `Disconnect ${MEMORY_CONNECTION_APP_LABEL[connection.app]} from memory?`,
+                              description: "It can no longer read or add to memory until you connect it again.",
+                              confirmLabel: "Disconnect",
+                              tone: "destructive",
+                            });
+                            if (confirmed) revoke.mutate(connection.agentId);
+                          }}
                         >
                           Disconnect
                         </Button>

@@ -517,13 +517,20 @@ export function AgentActionButtons({
           </button>
           <button
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
-            onClick={() => {
-              resetTaskSession.mutate();
+            onClick={async () => {
               setMoreOpen(false);
+              const confirmed = await confirmAction({
+                title: "Reset this agent's sessions?",
+                description: "It forgets the conversation context for its current tasks and starts fresh next time.",
+                confirmLabel: "Reset sessions",
+                tone: "destructive",
+              });
+              if (!confirmed) return;
+              resetTaskSession.mutate();
             }}
           >
             <RotateCcw className="h-3 w-3" />
-            Reset Sessions
+            Reset sessions
           </button>
           {!hideTerminate && (
             <button
@@ -531,6 +538,13 @@ export function AgentActionButtons({
               onClick={async () => {
                 setMoreOpen(false);
                 if (onTerminateSuccess && !(await confirmNavigationStart(agentActionStartedDirtyRef))) return;
+                const confirmed = await confirmAction({
+                  title: `Terminate ${agent.name}?`,
+                  description: "It stops working straight away and cannot pick up new tasks. Its history is kept.",
+                  confirmLabel: "Terminate agent",
+                  tone: "destructive",
+                });
+                if (!confirmed) return;
                 agentAction.mutate("terminate");
               }}
             >
