@@ -9,7 +9,6 @@ import type {
 import { queryKeys } from "@/lib/queryKeys";
 import { toolsApi, type CreateToolConnectionInput } from "@/api/tools";
 import { secretsApi } from "@/api/secrets";
-import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -228,7 +227,7 @@ export function AddConnectionDialog({
     onError: (err) =>
       pushToast({
         title: "Could not create connection",
-        body: err instanceof ApiError ? err.message : String(err),
+        body: err instanceof Error ? err.message : "Something went wrong. Try again.",
         tone: "error",
       }),
   });
@@ -241,8 +240,8 @@ export function AddConnectionDialog({
     },
     onError: (err) =>
       pushToast({
-        title: "Probe failed",
-        body: err instanceof ApiError ? err.message : String(err),
+        title: "Connection test failed",
+        body: err instanceof Error ? err.message : "Something went wrong. Try again.",
         tone: "error",
       }),
   });
@@ -258,7 +257,7 @@ export function AddConnectionDialog({
     onError: (err) =>
       pushToast({
         title: "Activation failed",
-        body: err instanceof ApiError ? err.message : String(err),
+        body: err instanceof Error ? err.message : "Something went wrong. Try again.",
         tone: "error",
       }),
   });
@@ -464,7 +463,7 @@ export function AddConnectionDialog({
                         className="w-32"
                         aria-label="Header name"
                       />
-                      <Button type="button" size="sm" variant="outline" onClick={addCred} disabled={!pendingSecretId}>
+                      <Button type="button" size="sm" variant="outline" onClick={addCred} disabled={!pendingSecretId || !pendingHeader.trim()}>
                         Add
                       </Button>
                     </div>
@@ -495,7 +494,7 @@ export function AddConnectionDialog({
             ) : probeResult ? (
               <div className="rounded-md border border-border bg-muted/40 p-3">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className="font-medium text-foreground">Probe result</span>
+                  <span className="font-medium text-foreground">Connection test</span>
                   <HealthBadge status={probeResult.connection.healthStatus} />
                 </div>
                 <div className="mt-2 grid grid-cols-3 gap-2">
@@ -547,14 +546,14 @@ export function AddConnectionDialog({
                 Back
               </Button>
               <Button disabled={!canCreate} onClick={() => create.mutate()}>
-                {create.isPending ? "Creating draft…" : "Create & probe"}
+                {create.isPending ? "Creating draft…" : "Create and test connection"}
               </Button>
             </>
           ) : (
             <>
               <Button variant="outline" disabled={probe.isPending} onClick={() => draft && probe.mutate(draft.id)}>
                 <Stethoscope className="mr-1 h-3.5 w-3.5" />
-                {probe.isPending ? "Probing…" : "Re-probe"}
+                {probe.isPending ? "Testing…" : "Test again"}
               </Button>
               <Button disabled={activate.isPending || probe.isPending} onClick={() => draft && activate.mutate(draft.id)}>
                 {activate.isPending ? "Activating…" : "Activate"}
