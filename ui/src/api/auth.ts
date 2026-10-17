@@ -12,6 +12,17 @@ import {
 import { redactUrlSecrets } from "@/lib/redact-url-secrets";
 import { tenantSessionRecovery } from "@/lib/tenant-session-recovery";
 
+export type SignedInDevice = {
+  id: string;
+  createdAt: string;
+  lastActiveAt: string;
+  expiresAt: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  /** The device this request came from. */
+  current: boolean;
+};
+
 type AuthErrorBody =
   | {
     code?: string;
@@ -199,15 +210,16 @@ export const authApi = {
     });
   },
 
-  getTwoStepStatus: async (): Promise<{ enabled: boolean; available: boolean }> => {
+  /** `required`: an admin has made two-step sign-in compulsory on this instance. */
+  getTwoStepStatus: async (): Promise<{ enabled: boolean; available: boolean; required: boolean }> => {
     const res = await fetch("/api/auth/two-step-status", {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
     const payload = await res.json().catch(() => null);
     if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
-    const value = (payload ?? {}) as { enabled?: unknown; available?: unknown };
-    return { enabled: value.enabled === true, available: value.available === true };
+    const value = (payload ?? {}) as { enabled?: unknown; available?: unknown; required?: unknown };
+    return { enabled: value.enabled === true, available: value.available === true, required: value.required === true };
   },
 
   /** Starts turning two-step sign-in on. It is on only after `confirmTwoStep`. */
@@ -261,6 +273,27 @@ export const authApi = {
 
   updatePreferences: (input: UpdateCurrentUserPreferences): Promise<CurrentUserPreferences> =>
     authPatch("/preferences", input, (payload) => currentUserPreferencesSchema.parse(payload)),
+
+  /** Where this person is signed in, newest first. No tokens; rows go by session id. */
+  listSessions: async (): Promise<SignedInDevice[]> => {
+    const res = await fetch("/api/auth/sessions", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
+    const rows = (payload as { sessions?: unknown } | null)?.sessions;
+    return Array.isArray(rows) ? (rows as SignedInDevice[]) : [];
+  },
+
+  signOutDevice: async (sessionId: string) => {
+    await authPost(`/sessions/${encodeURIComponent(sessionId)}/revoke`, {});
+  },
+
+  signOutOtherDevices: async (): Promise<number> => {
+    const payload = (await authPost("/sessions/revoke-others", {})) as { revoked?: unknown } | null;
+    return typeof payload?.revoked === "number" ? payload.revoked : 0;
+  },
 
   getProfile: async (): Promise<CurrentUserProfile> => {
     const res = await fetch("/api/auth/profile", {

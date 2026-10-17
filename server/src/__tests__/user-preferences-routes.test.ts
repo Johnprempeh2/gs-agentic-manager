@@ -5,6 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authRoutes } from "../routes/auth.js";
 import { errorHandler } from "../middleware/index.js";
 
+// A board change from the browser carries its own origin (board mutation guard).
+const SAME_ORIGIN = "http://127.0.0.1:3100";
+
 const { logActivity, publishActivity } = vi.hoisted(() => ({ logActivity: vi.fn(), publishActivity: vi.fn() }));
 vi.mock("../services/activity-log.js", () => ({ logActivity, publishActivity }));
 
@@ -63,7 +66,7 @@ describe("personal keyboard shortcut preferences", () => {
   it("lets a non-admin persist their preference without changing another user", async () => {
     const { app, users } = setup(board);
     expect((await request(app).get("/api/auth/preferences?expectedUserId=user-1")).body).toEqual({ keyboardShortcuts: false });
-    const saved = await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: actorExpectedId, keyboardShortcuts: true });
+    const saved = await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: actorExpectedId, keyboardShortcuts: true });
     expect(saved.status).toBe(200);
     expect(saved.body).toEqual({ keyboardShortcuts: true });
     expect((await request(app).get("/api/auth/preferences?expectedUserId=user-1")).body).toEqual({ keyboardShortcuts: true });
@@ -71,26 +74,26 @@ describe("personal keyboard shortcut preferences", () => {
     expect(logActivity).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       companyId, actorId: "user-1", entityId: "user-1", action: "user.preferences_updated",
     }), expect.any(Array));
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: actorExpectedId, keyboardShortcuts: false })).body)
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: actorExpectedId, keyboardShortcuts: false })).body)
       .toEqual({ keyboardShortcuts: false });
   });
 
   it("allows viewer members to save their own preferences", async () => {
     const { app } = setup({ ...board, memberships: [{ companyId, membershipRole: "viewer", status: "active" }] } as Express.Request["actor"]);
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true })).status).toBe(200);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true })).status).toBe(200);
   });
 
   it("rejects reads and writes after the cookie changes accounts", async () => {
     const { app, update } = setup({ ...board, userId: "user-2" });
     expect((await request(app).get("/api/auth/preferences?expectedUserId=user-1")).status).toBe(401);
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true })).status).toBe(401);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true })).status).toBe(401);
     expect(update).not.toHaveBeenCalled();
   });
 
   it("rolls back the preference when its audit record fails", async () => {
     const { app, users } = setup(board);
     logActivity.mockRejectedValueOnce(new Error("audit unavailable"));
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true })).status).toBe(500);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true })).status).toBe(500);
     expect(users.get("user-1")?.keyboardShortcuts).toBe(false);
   });
 
@@ -100,7 +103,7 @@ describe("personal keyboard shortcut preferences", () => {
       publications.push({ companyId, payload: {} });
     });
     publishActivity.mockImplementationOnce(() => { throw new Error("subscriber unavailable"); });
-    const saved = await request(app).patch("/api/auth/preferences")
+    const saved = await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN)
       .send({ companyId, expectedUserId: "user-1", keyboardShortcuts: true });
     expect(saved.status).toBe(200);
     expect(saved.body).toEqual({ keyboardShortcuts: true });
@@ -110,7 +113,7 @@ describe("personal keyboard shortcut preferences", () => {
 
   it("supports the local trusted board identity", async () => {
     const { app } = setup({ type: "board", userId: "local-board", source: "local_implicit" });
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: "local-board", keyboardShortcuts: true })).status).toBe(200);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: "local-board", keyboardShortcuts: true })).status).toBe(200);
   });
 
   it.each([
@@ -120,13 +123,13 @@ describe("personal keyboard shortcut preferences", () => {
   ] as Express.Request["actor"][])("rejects requests without a board user: %j", async (actor) => {
     const { app, update } = setup(actor);
     expect((await request(app).get("/api/auth/preferences?expectedUserId=user-1")).status).toBe(401);
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId, expectedUserId: actorExpectedId, keyboardShortcuts: true })).status).toBe(401);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId, expectedUserId: actorExpectedId, keyboardShortcuts: true })).status).toBe(401);
     expect(update).not.toHaveBeenCalled();
   });
 
   it("rejects an inaccessible company audit context", async () => {
     const { app, update } = setup(board);
-    expect((await request(app).patch("/api/auth/preferences").send({ companyId: otherCompanyId, expectedUserId: actorExpectedId, keyboardShortcuts: true })).status).toBe(403);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send({ companyId: otherCompanyId, expectedUserId: actorExpectedId, keyboardShortcuts: true })).status).toBe(403);
     expect(update).not.toHaveBeenCalled();
     expect(logActivity).not.toHaveBeenCalled();
   });
@@ -137,7 +140,7 @@ describe("personal keyboard shortcut preferences", () => {
     { companyId, keyboardShortcuts: true, userId: "user-2" },
   ])("rejects invalid or caller-selected identities: %j", async (body) => {
     const { app, update } = setup(board);
-    expect((await request(app).patch("/api/auth/preferences").send(body)).status).toBe(400);
+    expect((await request(app).patch("/api/auth/preferences").set("origin", SAME_ORIGIN).send(body)).status).toBe(400);
     expect(update).not.toHaveBeenCalled();
   });
 });

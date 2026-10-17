@@ -103,6 +103,8 @@ import { humanJoinGrantsFromDefaults } from "../services/invite-grants.js";
 import { LEGACY_BOARD_USER_ID } from "../services/board-identity.js";
 import { describeLegacyBoardControls } from "../services/legacy-board-retirement.js";
 import { describeMemberHandoverControls } from "../services/member-handover.js";
+import { describeMemberTwoStepControls, twoStepResetRefusal } from "../services/two-step-reset.js";
+import { resetTwoStepSignIn } from "../auth/reset-password.js";
 import {
   collapseDuplicatePendingHumanJoinRequests,
   findReusableHumanJoinRequest,
@@ -4536,8 +4538,13 @@ export function accessRoutes(
       members,
     });
     const withRemoval = await addCompanyMemberRemovalAccess(req, db, access, companyId, members);
+    const twoStep = await describeMemberTwoStepControls(db, { actor: req.actor, companyId, members });
     res.json({
-      members: withRemoval.map((member) => ({ ...member, handover: handover.get(member.id) ?? null })),
+      members: withRemoval.map((member) => ({
+        ...member,
+        handover: handover.get(member.id) ?? null,
+        twoStep: twoStep.get(member.id) ?? null,
+      })),
       access: {
         ...currentAccess,
         currentUserId: req.actor.type === "board" ? req.actor.userId ?? null : null,
@@ -4673,6 +4680,33 @@ export function accessRoutes(
       });
     }
   );
+
+  // Lost phone and backup codes: clear the person's two-step sign-in and sign
+  // them out everywhere (see services/two-step-reset.ts for who may).
+  router.post("/companies/:companyId/members/:memberId/two-step/reset", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const memberId = req.params.memberId as string;
+    await assertCompanyPermission(req, companyId, "users:manage_permissions");
+    const member = await access.getMemberById(companyId, memberId);
+    if (!member) throw notFound("Member not found");
+    const reason = await twoStepResetRefusal(db, { actor: req.actor, companyId, member });
+    if (reason) throw forbidden(reason);
+    const result = await resetTwoStepSignIn(db, { userId: member.principalId });
+    await logActivity(db, {
+      companyId,
+      actorType: "user",
+      actorId: req.actor.userId ?? "board",
+      action: "company_member.two_step_reset",
+      entityType: "company_membership",
+      entityId: memberId,
+      details: {
+        principalId: member.principalId,
+        wasEnabled: result.wasEnabled,
+        sessionsRevoked: result.sessionsRevoked,
+      },
+    });
+    res.json({ wasEnabled: result.wasEnabled, sessionsRevoked: result.sessionsRevoked });
+  });
 
   router.patch(
     "/companies/:companyId/members/:memberId/permissions",

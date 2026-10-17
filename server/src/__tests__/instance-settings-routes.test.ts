@@ -302,6 +302,19 @@ describe("instance settings routes", () => {
     }
   });
 
+  it("refuses to require two-step sign-in from an admin who has not turned it on", async () => {
+    const admin = { type: "board", userId: "user-1", source: "session", isInstanceAdmin: true, companyIds: ["company-1"] };
+    const refused = await request(createApp(admin)).patch("/api/instance/settings/general").send({ requireTwoStepSignIn: true });
+    expect(refused.status).toBe(403);
+    expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();
+
+    const allowed = await request(createApp({ ...admin, twoFactorEnabled: true }))
+      .patch("/api/instance/settings/general")
+      .send({ requireTwoStepSignIn: true });
+    expect(allowed.status).toBe(200);
+    expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({ requireTwoStepSignIn: true });
+  });
+
   it("accepts the instance-wide Streamlined UI preference", async () => {
     const app = await createApp({
       type: "board",

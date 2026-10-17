@@ -13,6 +13,8 @@ each new client server, and the record of what the app itself does.
 | Sign-in | The existing email and password sign-in (Better Auth). Sign-up is closed; a person joins only through an invite. |
 | Rate limit | Better Auth limits sign-in per client address (3 tries every 10 seconds). The address comes from Express's `req.ip`, which follows `TRUST_PROXY`, so a client cannot dodge the limit by sending a made-up `X-Forwarded-For`. |
 | Two-step sign-in | Each person can turn it on in Profile: after the password, sign-in asks for a 6-digit code from an authenticator app, or one of ten single-use backup codes. "Do not ask again on this device" lasts 30 days. Wrong codes lock the code step. Turning it off needs the password. |
+| Required two-step | An instance admin can require it for everyone (Settings, Security, "Require two-step sign-in for everyone"). A person without it then reaches only sign-in, their own setup and invite links until they turn it on, and nobody can turn it off. The admin must have it on before they can require it. Emails in `GSAM_TWO_STEP_EXEMPT_EMAILS` are left out; `client-instance.sh` puts only the operator log-in there. |
+| Lost phone | An owner or admin resets it for someone below their role under Members ("Reset two-step"), when that person belongs to no other organisation; an instance admin for anyone but themselves. The person is signed out everywhere. On the host, `gsam auth reset-two-step --email <email>` does the same for anyone. |
 | Lockout | 10 wrong passwords for one account inside 15 minutes lock that account's sign-in for 15 minutes, even with the right password. A good sign-in clears the count. The refusal is the same for real and made-up emails. |
 | Hostnames | In `private` exposure the app answers only its allowed hostnames (403 otherwise). `X-Forwarded-Host` counts only from a trusted proxy, so a direct client cannot claim to be `localhost`. |
 | CSRF | Board changes made with a browser session need a same-origin `Origin` or `Referer`. Sign-in cookies are `SameSite=Lax`, `HttpOnly`, and `Secure` on HTTPS. Better Auth checks the origin of every sign-in call. |
@@ -66,8 +68,9 @@ Run in order. Tick each line on the client's issue.
 
 - [ ] The operator log-in has a long random password kept in Greatstone's password manager, never in an issue, chat or email.
 - [ ] The client's first log-in goes to them through an invite, not a password sent by email.
-- [ ] Two-step sign-in turned on for the operator log-in (Profile, "Two-step sign-in"), backup codes saved in the password manager.
+- [ ] Two-step sign-in stays off for the operator log-in: `client-instance.sh` signs in with it for verify, pause and the fleet check-in, and has no phone. It is the one account left out of "Require two-step sign-in" (`GSAM_TWO_STEP_EXEMPT_EMAILS`, set by `client-instance.sh`), so its password must stay long, random and only in the password manager and the host config.
 - [ ] The client is asked to turn on two-step sign-in for their own log-in at handover.
+- [ ] Once the client's owner has it on, the operator turns on "Require two-step sign-in for everyone" (Settings, Security). The client log-in is not an instance admin, so this is the operator's step.
 - [ ] When someone leaves, follow `doc/WHEN-SOMEONE-LEAVES.md`.
 
 ### Secrets
@@ -90,6 +93,6 @@ Run in order. Tick each line on the client's issue.
 
 ## Known gaps
 
-- Two-step sign-in is each person's choice; an owner cannot yet require it for everyone.
 - Lockout counts are kept in memory, so a restart clears them.
+- Requiring two-step sign-in covers password sign-in. CLI and board keys made earlier keep working; a person without two-step sign-in cannot make or approve new ones while it is required.
 - `GET /api/health` shows the exact commit; fine while only Greatstone runs instances, worth trimming before any self-hosted public release.

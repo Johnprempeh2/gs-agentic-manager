@@ -106,6 +106,8 @@ export function TwoStepSignInSection() {
   if (!status.data.available) return null;
 
   const enabled = status.data.enabled;
+  // While an admin requires it, it cannot be turned off (the server refuses).
+  const locked = enabled && status.data.required;
   const secret = setup ? totpSecretFromUri(setup.totpURI) : null;
   const busy = start.isPending || confirm.isPending || turnOff.isPending;
 
@@ -122,8 +124,14 @@ export function TwoStepSignInSection() {
             example Google Authenticator, Microsoft Authenticator or 1Password). Someone who learns your password still
             cannot get in.
           </p>
+          {locked ? (
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              An admin requires two-step sign-in on this instance, so it stays on. If you lose your phone and your
+              backup codes, ask an admin to reset it.
+            </p>
+          ) : null}
         </div>
-        {mode === "idle" ? (
+        {mode === "idle" && !locked ? (
           <Button
             type="button"
             variant={enabled ? "outline" : "default"}

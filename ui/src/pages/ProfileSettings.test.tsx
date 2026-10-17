@@ -17,6 +17,9 @@ const mockAuthApi = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   signOut: vi.fn(),
   getTwoStepStatus: vi.fn(async () => ({ enabled: false, available: false })),
+  listSessions: vi.fn(async () => []),
+  signOutDevice: vi.fn(),
+  signOutOtherDevices: vi.fn(),
 }));
 
 const mockAssetsApi = vi.hoisted(() => ({

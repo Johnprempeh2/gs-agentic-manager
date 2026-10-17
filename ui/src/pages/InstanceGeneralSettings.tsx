@@ -27,6 +27,7 @@ const FEEDBACK_TERMS_URL = import.meta.env.VITE_FEEDBACK_TERMS_URL?.trim() || nu
 export type InstanceGeneralSection =
   | "deploymentStatus"
   | "censorUsernameInLogs"
+  | "requireTwoStepSignIn"
   | "runAdmission"
   | "backupRetention"
   | "feedbackDataSharingPreference"
@@ -108,6 +109,7 @@ export function InstanceGeneralSettings({
   }
 
   const censorUsernameInLogs = generalQuery.data?.censorUsernameInLogs === true;
+  const requireTwoStepSignIn = generalQuery.data?.requireTwoStepSignIn === true;
   const greatstoneTeamsOnly = generalQuery.data?.teamCatalogFilter === "greatstone";
   const askGreatstoneToAdd = generalQuery.data?.teamCatalogAddMode === "request";
   const feedbackDataSharingPreference = generalQuery.data?.feedbackDataSharingPreference ?? "prompt";
@@ -117,6 +119,8 @@ export function InstanceGeneralSettings({
     !hiddenSettings.has(`instance.general.${section}`) && (!sections || sections.includes(section));
   const showDeploymentStatus = shows("deploymentStatus");
   const showCensorUsernameInLogs = shows("censorUsernameInLogs");
+  // Only meaningful where people sign in with a password.
+  const showRequireTwoStep = shows("requireTwoStepSignIn") && healthQuery.data?.deploymentMode === "authenticated";
   const showBackupRetention = shows("backupRetention");
   const showRunAdmission = shows("runAdmission");
   const showFeedbackDataSharing = shows("feedbackDataSharingPreference");
@@ -193,6 +197,27 @@ export function InstanceGeneralSettings({
               value={healthQuery.data?.bootstrapInviteActive ? "Active" : "None"}
             />
           </div>
+        </div>
+      </section>
+      )}
+
+      {showRequireTwoStep && (
+      <section>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <h2 className="text-sm font-semibold">Require two-step sign-in for everyone</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Everyone who signs in with a password must also use a code from an authenticator app. People without it
+              are asked to set it up before they can do anything else, and nobody can turn it off. Turn it on for
+              yourself in your profile first. If someone loses their phone, reset it for them under Members.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={requireTwoStepSignIn}
+            onCheckedChange={() => updateGeneralMutation.mutate({ requireTwoStepSignIn: !requireTwoStepSignIn })}
+            disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
+            aria-label="Require two-step sign-in for everyone"
+          />
         </div>
       </section>
       )}

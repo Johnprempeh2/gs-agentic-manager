@@ -181,6 +181,7 @@ type BetterAuthSessionUser = {
   id: string;
   email?: string | null;
   name?: string | null;
+  twoFactorEnabled?: boolean;
 };
 
 type BetterAuthSessionResult = {
