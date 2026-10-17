@@ -37,6 +37,7 @@ import { costsByAgentSheet, costsByProjectSheet, costsFileName, costsUpdateText 
 import { useCopyAction } from "../lib/use-copy-action";
 import { downloadBytes, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ErrorState";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -129,9 +130,9 @@ function FinanceSummaryCard({
   return (
     <Card>
       <CardHeader className="px-5 pt-5 pb-2">
-        <CardTitle className="text-base">Finance ledger</CardTitle>
+        <CardTitle className="text-base">Other charges</CardTitle>
         <CardDescription>
-          Account-level charges that do not map to a single inference request.
+          Top-ups, fees and refunds that are not tied to one piece of work.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 px-5 pb-5 pt-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -156,7 +157,7 @@ function FinanceSummaryCard({
         <MetricTile
           label="Estimated"
           value={formatCents(estimatedDebitCents)}
-          subtitle="Estimated debits that are not yet invoice-authoritative"
+          subtitle="Expected charges not yet on an invoice"
           icon={Coins}
         />
       </CardContent>
@@ -662,7 +663,7 @@ export function Costs({
             <MetricTile
               label="Inference spend"
               value={formatCents(spendData?.summary.spendCents ?? 0)}
-              subtitle={`${formatTokens(inferenceTokenTotal)} tokens across request-scoped events`}
+              subtitle={`${formatTokens(inferenceTokenTotal)} units of AI usage`}
               icon={DollarSign}
             />
             <MetricTile
@@ -714,7 +715,7 @@ export function Costs({
           ) : showOverviewLoading ? (
             <PageSkeleton variant="costs" />
           ) : overviewError ? (
-            <p className="text-sm text-destructive">{(overviewError as Error).message}</p>
+            <ErrorState error={overviewError} title="We could not load spending figures" />
           ) : (
             <>
               {activeBudgetIncidents.length > 0 ? (
@@ -744,9 +745,9 @@ export function Costs({
               <div className="grid gap-4 xl:grid-cols-(--gtc-31)">
                 <Card>
                   <CardHeader className="px-5 pt-5 pb-2">
-                    <CardTitle className="text-base">Inference ledger</CardTitle>
+                    <CardTitle className="text-base">AI spending</CardTitle>
                     <CardDescription>
-                      Request-scoped inference spend for the selected period.
+                      What the AI models cost in the period you picked.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4 px-5 pb-5 pt-2">
@@ -808,7 +809,7 @@ export function Costs({
                   </CardHeader>
                   <CardContent className="space-y-2 px-5 pb-5 pt-2">
                     {(spendData?.byAgent.length ?? 0) === 0 ? (
-                      <p className="text-sm text-muted-foreground">No cost events yet.</p>
+                      <p className="text-sm text-muted-foreground">No spending yet. Costs appear here once agents start work.</p>
                     ) : (
                       spendData?.byAgent.map((row) => {
                         const modelRows = agentModelRows.get(row.agentId) ?? [];
@@ -892,11 +893,11 @@ export function Costs({
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">
                       <CardTitle className="text-base">By project</CardTitle>
-                      <CardDescription>Run costs attributed through project-linked tasks.</CardDescription>
+                      <CardDescription>What the tasks in each project cost.</CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-2 px-5 pb-5 pt-2">
                       {(spendData?.byProject.length ?? 0) === 0 ? (
-                        <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
+                        <p className="text-sm text-muted-foreground">No project spending yet. Costs appear once agents work on tasks in a project.</p>
                       ) : (
                         spendData?.byProject.map((row, index) => (
                           <div
@@ -911,7 +912,7 @@ export function Costs({
                     </CardContent>
                   </Card>
 
-                  <FinanceTimelineCard rows={topFinanceEvents.slice(0, 6)} emptyMessage="No finance events yet. Add account-level charges once biller invoices or credits land." />
+                  <FinanceTimelineCard rows={topFinanceEvents.slice(0, 6)} emptyMessage="No other charges yet. Top-ups, fees and refunds appear here." />
                 </div>
               </div>
             </>
@@ -922,39 +923,39 @@ export function Costs({
           {budgetLoading ? (
             <PageSkeleton variant="costs" />
           ) : budgetError ? (
-            <p className="text-sm text-destructive">{(budgetError as Error).message}</p>
+            <ErrorState error={budgetError} title="We could not load spending limits" />
           ) : (
             <>
               <Card className="border-border/70 bg-(image:--gradient-extract-2)">
                 <CardHeader className="px-5 pt-5 pb-3">
-                  <CardTitle className="text-base">Budget control plane</CardTitle>
+                  <CardTitle className="text-base">Spending limits</CardTitle>
                   <CardDescription>
-                    Hard-stop spend limits for agents and projects. Provider subscription quota stays separate and appears under Providers.
+                    Limits that stop agents and projects from overspending. AI subscription limits are under Providers.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 px-5 pb-5 pt-0 md:grid-cols-4">
                   <MetricTile
                     label="Active incidents"
                     value={String(activeBudgetIncidents.length)}
-                    subtitle="Open soft or hard threshold crossings"
+                    subtitle="Limits that are close to or over"
                     icon={ReceiptText}
                   />
                   <MetricTile
                     label="Pending approvals"
                     value={String(budgetData?.pendingApprovalCount ?? 0)}
-                    subtitle="Budget override approvals awaiting board action"
+                    subtitle="Requests to raise a limit, waiting on you"
                     icon={ArrowUpRight}
                   />
                   <MetricTile
                     label="Paused agents"
                     value={String(budgetData?.pausedAgentCount ?? 0)}
-                    subtitle="Agent heartbeats blocked by budget"
+                    subtitle="Agents stopped because they hit their limit"
                     icon={Coins}
                   />
                   <MetricTile
                     label="Paused projects"
                     value={String(budgetData?.pausedProjectCount ?? 0)}
-                    subtitle="Project execution blocked by budget"
+                    subtitle="Projects stopped because they hit their limit"
                     icon={DollarSign}
                   />
                 </CardContent>
@@ -994,13 +995,13 @@ export function Costs({
                   return (
                     <section key={scopeType} className="space-y-3">
                       <div>
-                        <h2 className="text-lg font-semibold capitalize">{scopeType === "company" ? "organization" : scopeType} budgets</h2>
+                        <h2 className="text-lg font-semibold capitalize">{scopeType === "company" ? "organisation" : scopeType} budgets</h2>
                         <p className="text-sm text-muted-foreground">
                           {scopeType === "company"
-                            ? "Organization-wide monthly policy."
+                            ? "One monthly limit for the whole organisation."
                             : scopeType === "agent"
-                              ? "Recurring monthly spend policies for individual agents."
-                              : "Lifetime spend policies for execution-bound projects."}
+                              ? "Monthly limits for individual agents."
+                              : "Total limits for projects."}
                         </p>
                       </div>
                       <div className="grid gap-4 xl:grid-cols-2">
@@ -1026,7 +1027,7 @@ export function Costs({
                 {budgetPolicies.length === 0 ? (
                   <Card>
                     <CardContent className="px-5 py-8 text-sm text-muted-foreground">
-                      No budget policies yet. Set agent and project budgets from their detail pages, or use the existing organization monthly budget control.
+                      No spending limits yet. Open an agent or project and set its budget there.
                     </CardContent>
                   </Card>
                 ) : null}
@@ -1045,7 +1046,7 @@ export function Costs({
 
                 <TabsContent value="all" className="mt-4">
                   {providers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No cost events in this period.</p>
+                    <p className="text-sm text-muted-foreground">No spending in this period. Try a longer date range above.</p>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                       {providers.map((provider) => (
@@ -1100,7 +1101,7 @@ export function Costs({
 
                 <TabsContent value="all" className="mt-4">
                   {billers.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No billable events in this period.</p>
+                    <p className="text-sm text-muted-foreground">No spending in this period. Try a longer date range above.</p>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
                       {billers.map((biller) => {
@@ -1149,7 +1150,7 @@ export function Costs({
           ) : financeLoading ? (
             <PageSkeleton variant="costs" />
           ) : financeError ? (
-            <p className="text-sm text-destructive">{(financeError as Error).message}</p>
+            <ErrorState error={financeError} title="We could not load other charges" />
           ) : (
             <>
               <FinanceSummaryCard
@@ -1169,7 +1170,7 @@ export function Costs({
                     </CardHeader>
                     <CardContent className="grid gap-4 px-5 pb-5 pt-2 md:grid-cols-2">
                       {(financeData?.byBiller.length ?? 0) === 0 ? (
-                        <p className="text-sm text-muted-foreground">No finance events yet.</p>
+                        <p className="text-sm text-muted-foreground">No other charges yet.</p>
                       ) : (
                         financeData?.byBiller.map((row) => <FinanceBillerCard key={row.biller} row={row} />)
                       )}

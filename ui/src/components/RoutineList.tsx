@@ -14,6 +14,7 @@ import {
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { formatDateTime } from "@/lib/utils";
 import { lastRunLabel, nextRunLabel, nextScheduledRun, scheduleSummary, type ScheduleTriggerSummary } from "@/lib/routine-schedule";
+import { useConfirm } from "@/context/ConfirmContext";
 
 export type RoutineListProjectSummary = {
   name: string;
@@ -102,6 +103,7 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
   onToggleEnabled: (routine: TRoutine, enabled: boolean) => void;
   onToggleArchived?: (routine: TRoutine) => void;
 }) {
+  const confirm = useConfirm();
   const enabled = routine.status === "active";
   const isArchived = routine.status === "archived";
   const isStatusPending = statusMutationRoutineId === routine.id;
@@ -235,7 +237,17 @@ export function RoutineListRow<TRoutine extends RoutineListRowItem>({
             </DropdownMenuItem>
             {!hideArchiveAction && onToggleArchived ? (
               <DropdownMenuItem
-                onClick={() => onToggleArchived(routine)}
+                onClick={async () => {
+                  if (routine.status !== "archived") {
+                    const ok = await confirm({
+                      title: "Archive this routine?",
+                      description: "It stops running on its schedule. You can restore it from the archived list.",
+                      confirmLabel: "Archive routine",
+                    });
+                    if (!ok) return;
+                  }
+                  onToggleArchived(routine);
+                }}
                 disabled={isStatusPending}
               >
                 {routine.status === "archived" ? "Restore" : "Archive"}

@@ -4901,7 +4901,7 @@ describe("IssueDetail", () => {
 
     const stopAndDoneButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Stop and done");
+    ).find((button) => button.textContent?.trim() === "Stop work and mark done");
     expect(stopAndDoneButton).toBeTruthy();
 
     await act(async () => {
@@ -4919,8 +4919,9 @@ describe("IssueDetail", () => {
 
     const stopAndCancelButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Stop and cancel");
+    ).find((button) => button.textContent?.trim() === "Stop work and cancel task");
     expect(stopAndCancelButton).toBeTruthy();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
 
     await act(async () => {
       stopAndCancelButton!.click();
@@ -4963,7 +4964,7 @@ describe("IssueDetail", () => {
 
     const stopAndDoneButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Stop and done");
+    ).find((button) => button.textContent?.trim() === "Stop work and mark done");
     expect(stopAndDoneButton).toBeTruthy();
 
     await act(async () => {
@@ -4974,7 +4975,7 @@ describe("IssueDetail", () => {
     expect(mockHeartbeatsApi.cancel).toHaveBeenCalledWith("run-active-1");
     expect(mockPushToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Run stopped; task update failed",
+        title: "The agent stopped, but the task status did not change",
         body: "Run was stopped, but updating the task failed: Status write failed",
         tone: "error",
       }),
@@ -5814,8 +5815,8 @@ describe("IssueDetail", () => {
       };
       expect(props.queuedCommentQueue).toBeNull();
       expect(props.runFinalizationActions).toEqual([
-        expect.objectContaining({ id: "cancel", label: "Stop and cancel" }),
-        expect.objectContaining({ id: "done", label: "Stop and done" }),
+        expect.objectContaining({ id: "cancel", label: "Stop work and cancel task" }),
+        expect.objectContaining({ id: "done", label: "Stop work and mark done" }),
       ]);
     },
   );

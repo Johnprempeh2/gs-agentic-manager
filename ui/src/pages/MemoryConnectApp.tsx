@@ -75,13 +75,13 @@ export function MemoryConnectApp() {
   const known = client.data.app !== "other";
   // An unknown app's name is only its own claim, so it is never shown as the heading.
   const appLabel = known ? MEMORY_CONNECTION_APP_LABEL[client.data.app] : "An app";
-  const companyName = selectedCompany?.name ?? "your company";
+  const companyName = selectedCompany?.name ?? "your organisation";
   const error = approve.error;
   const refusal =
     error instanceof ApiError && error.status === 403
-      ? "An owner has not turned on app sign-in for this company's memory. Ask them to turn it on under Memory, Claude and ChatGPT."
+      ? "An owner has not turned on app sign-in for this organisation's memory. Ask them to turn it on under Memory, Claude and ChatGPT."
       : error instanceof ApiError && error.status === 404
-        ? "Memory is not switched on for this company."
+        ? "Memory is not switched on for this organisation."
         : error
           ? "Could not connect. Try again."
           : null;

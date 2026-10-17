@@ -8,7 +8,8 @@ import { useCompany } from "@/context/CompanyContext";
 import { useAgentChatEnabled } from "@/hooks/useAgentChatEnabled";
 import { recordAgentChatVisit } from "@/lib/recent-agent-chats";
 import { queryKeys } from "@/lib/queryKeys";
-import { useParams } from "@/lib/router";
+import { Link, useParams } from "@/lib/router";
+import { ErrorState } from "@/components/ErrorState";
 import { agentRouteRef } from "@/lib/utils";
 import { TaskDetailSurface } from "./IssueDetail";
 import type { Issue } from "@greatstone/shared";
@@ -86,12 +87,22 @@ export function AgentChat() {
     );
   if (agents.error || chat.error)
     return (
-      <p className="text-sm text-destructive">
-        {(agents.error ?? chat.error)?.message}
-      </p>
+      <ErrorState
+        error={agents.error ?? chat.error}
+        title="We could not open this chat"
+        onRetry={() => {
+          void agents.refetch();
+          void chat.refetch();
+        }}
+      />
     );
   if (!agent)
-    return <p className="text-sm text-destructive">Agent not found.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        We could not find this agent. It may have been removed.{" "}
+        <Link to="/agents" className="underline underline-offset-2">Back to agents</Link>
+      </p>
+    );
   if (chat.isPending)
     return (
       <p className="text-sm text-muted-foreground">Loading conversation…</p>
