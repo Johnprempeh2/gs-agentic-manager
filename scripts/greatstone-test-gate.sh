@@ -3,6 +3,10 @@
 #
 #   scripts/greatstone-test-gate.sh <rc-tag>           run the full test suite on <rc-tag> and, when it
 #                                                     passes, record a pass marker for its commit
+#   scripts/greatstone-test-gate.sh --detach <rc-tag>  start the same run in the background, in its own
+#                                                     session, with output in $GSAM_ROOT/test-gate/<rc-tag>.out,
+#                                                     and return at once. Agents use this: it outlives the
+#                                                     agent run that starts it (GRE-1643).
 #   scripts/greatstone-test-gate.sh --check <rc-tag>   say whether <rc-tag>'s commit has a pass marker
 #                                                     (exit 0 = yes); runs nothing
 #
@@ -17,12 +21,24 @@
 # lane in parallel, GSAM_TEST_GATE_JOBS at a time (default: all of them, sized
 # for the 64 GB PC; on the 16 GB Mac use 3 or 4). Each lane gets a clean
 # environment, so nothing from the caller (GSAM_HOME, DATABASE_URL, agent
-# tokens) reaches the tests.
+# tokens) reaches the tests. Lanes use TMPDIR=$GSAM_TEST_GATE_TMPDIR (default
+# /tmp/gsam-test-gate-tmp), never the caller's: an agent run's TMPDIR is its run
+# scratch folder, deleted when the run ends. The lanes run in their own process
+# group; when the gate stops (a signal or an error), it stops that group, so no
+# lane goes on as an orphan.
 #
 #   $GSAM_ROOT/test-gate/passed/<commit>   the pass marker: commit, tag, time, seconds
 #   $GSAM_ROOT/test-gate/logs/<commit>/    one log per lane, kept for both outcomes
 #   $GSAM_ROOT/test-gate/overrides.log     releases that skipped the gate (greatstone-release.sh --skip-test-gate)
 set -euo pipefail
+# At the end of an agent run the server stops every process whose start
+# environment names that run (GSAM_RUN_ID or its legacy alias; see
+# server/src/services/run-process-cleanup.ts). The gate takes 20 minutes and
+# must outlive the run that starts it, so it starts again without the marker
+# (unset is not enough: /proc/<pid>/environ keeps the start environment).
+if [ -n "${GSAM_RUN_ID:-}${PAPERCLIP_RUN_ID:-}" ]; then
+  exec env -u GSAM_RUN_ID -u PAPERCLIP_RUN_ID bash "${BASH_SOURCE[0]}" "$@"
+fi
 # An agent run puts its managed git and gh launchers
 # (<tmp>/paperclip-github-runtime/<run>) first on PATH. They stay out of the
 # gate's own git calls and of every lane, or each test that runs git gets the
@@ -40,12 +56,13 @@ source "$(dirname "${BASH_SOURCE[0]}")/greatstone-common.sh"
 die() { printf 'test-gate: %s\n' "$*" >&2; exit 1; }
 
 CHECK=0
-if [ "${1:-}" = --check ]; then
-  CHECK=1
-  shift
-fi
+DETACH=0
+case "${1:-}" in
+  --check) CHECK=1; shift ;;
+  --detach) DETACH=1; shift ;;
+esac
 TAG="${1:-}"
-[ -n "$TAG" ] && [ "$#" = 1 ] || die "usage: greatstone-test-gate.sh [--check] <rc-tag>"
+[ -n "$TAG" ] && [ "$#" = 1 ] || die "usage: greatstone-test-gate.sh [--check | --detach] <rc-tag>"
 COMMIT="$(git -C "$RELEASE_REPO" rev-parse --verify --quiet "refs/tags/$TAG^{commit}")" || die "unknown tag $TAG"
 
 if [ "$CHECK" = 1 ]; then
@@ -56,12 +73,67 @@ fi
 CODE_DIR="$TEST_GATE_DIR/code"
 LOG_DIR="$TEST_GATE_DIR/logs/$COMMIT"
 LOCK_DIR="$TEST_GATE_DIR/lock"
+GATE_TMPDIR="${GSAM_TEST_GATE_TMPDIR:-/tmp/gsam-test-gate-tmp}"
 case "$TEST_GATE_DIR/" in "$LIVE_DIR/"* | "$LIVE_DATA_DIR/"*) die "the test gate folder must be outside the live folders." ;; esac
-mkdir -p "$TEST_GATE_DIR"
+for scratch in "${GSAM_RUN_SCRATCH_DIR:-}" "${GSAM_SCRATCH_DIR:-}" "${GSAM_TASK_SCRATCH_DIR:-}"; do
+  [ -n "$scratch" ] || continue
+  case "$GATE_TMPDIR/" in "$scratch/"*) die "GSAM_TEST_GATE_TMPDIR must be outside the run scratch folder $scratch (it is deleted when the run ends)." ;; esac
+done
+mkdir -p "$TEST_GATE_DIR" "$GATE_TMPDIR"
+export TMPDIR="$GATE_TMPDIR"
+lock_owner() { cat "$LOCK_DIR/owner" 2>/dev/null || echo unknown; }
+
+if [ "$DETACH" = 1 ]; then
+  [ ! -d "$LOCK_DIR" ] || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
+  OUT="$TEST_GATE_DIR/$TAG.out"
+  SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+  # A new session: no terminal or agent shell can send it a hangup, and its
+  # output goes to a file, so a closed pipe cannot stop it either.
+  cd "$TEST_GATE_DIR"
+  nohup perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die "exec $ARGV[0]: $!\n"' bash "$SELF" "$TAG" </dev/null >"$OUT" 2>&1 &
+  say "Test gate for $TAG started in the background (pid $!). Output: $OUT"
+  say "Result: scripts/greatstone-test-gate.sh --check $TAG (exit 0 = passed); the last line of $OUT says PASSED or FAILED."
+  exit 0
+fi
+
+# in_group <stdin> <command...>: runs the command from the clone in a new
+# session (its own process group) and waits for it. When it ends, whatever it
+# left in that group is stopped; when the gate stops early, stop_group stops
+# the whole group (GRE-1643: lanes went on as orphans after the gate stopped).
+GROUP=""
+stop_group() {
+  [ -n "$GROUP" ] || return 0
+  kill -TERM -- "-$GROUP" 2>/dev/null || { GROUP=""; return 0; }
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    kill -0 -- "-$GROUP" 2>/dev/null || { GROUP=""; return 0; }
+  done
+  kill -KILL -- "-$GROUP" 2>/dev/null || true
+  GROUP=""
+}
+in_group() {
+  local input="$1" code=0
+  shift
+  (cd "$CODE_DIR" && exec perl -e 'use POSIX (); POSIX::setsid(); exec @ARGV or die "exec $ARGV[0]: $!\n"' "$@") <"$input" &
+  GROUP=$!
+  wait "$GROUP" || code=$?
+  kill -TERM -- "-$GROUP" 2>/dev/null || true
+  GROUP=""
+  return "$code"
+}
+on_signal() {
+  printf 'test-gate: stopped by SIG%s; its lanes were stopped too. No pass marker was written.\n' "$1" >&2 || true
+  exit "$2"
+}
+
 # One gate at a time: they share the clone.
 mkdir "$LOCK_DIR" 2>/dev/null \
-  || die "another test gate runs ($(cat "$LOCK_DIR/owner" 2>/dev/null || echo unknown)); if none does, remove $LOCK_DIR."
-trap 'rm -rf "$LOCK_DIR"' EXIT
+  || die "another test gate runs ($(lock_owner)); if none does, remove $LOCK_DIR."
+trap 'stop_group; rm -rf "$LOCK_DIR"' EXIT
+trap 'on_signal HUP 129' HUP
+trap 'on_signal INT 130' INT
+trap 'on_signal PIPE 141' PIPE
+trap 'on_signal TERM 143' TERM
 printf 'pid %s, %s, started %s\n' "$$" "$TAG" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >"$LOCK_DIR/owner"
 
 # A clean clone of the tag, fetched from the local repository so an unpushed
@@ -82,14 +154,14 @@ say "Test gate for $TAG ($COMMIT): code $CODE_DIR, logs $LOG_DIR"
 # The lane environment: the account home (agent runs set HOME to a temp
 # folder), the PATH that has node and pnpm, plus ~/.cargo/bin (a non-login
 # shell such as ssh or an agent run does not have it, and the native runner
-# suite builds with cargo), and CI=true as on GitHub. PATH has no agent git
-# launcher (see the top).
+# suite builds with cargo), the gate's own TMPDIR, and CI=true as on GitHub.
+# PATH has no agent git launcher (see the top).
 LANE_HOME="${GS_USER_HOME:-$HOME}"
 LANE_PATH="$PATH"
 [ ! -d "$LANE_HOME/.cargo/bin" ] || LANE_PATH="$LANE_HOME/.cargo/bin:$LANE_PATH"
 LANE_ENV=(
   HOME="$LANE_HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" SHELL=/bin/bash LANG="${LANG:-en_US.UTF-8}"
-  PATH="$LANE_PATH" TMPDIR="${TMPDIR:-/tmp}" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true TERM=dumb
+  PATH="$LANE_PATH" TMPDIR="$GATE_TMPDIR" COREPACK_ENABLE_DOWNLOAD_PROMPT=0 CI=true TERM=dumb
 )
 
 LANES=()
@@ -101,7 +173,7 @@ while IFS= read -r line || [ -n "$line" ]; do
   [ "$name" != "$line" ] && [ -n "$cmd" ] || die "bad line in scripts/greatstone-test-gate.lanes: $line"
   if [ "$name" = setup ]; then
     say "setup: $cmd"
-    (cd "$CODE_DIR" && env -i "${LANE_ENV[@]}" bash -c "$cmd" </dev/null) >>"$LOG_DIR/setup.log" 2>&1 \
+    in_group /dev/null env -i "${LANE_ENV[@]}" bash -c "$cmd" >>"$LOG_DIR/setup.log" 2>&1 \
       || die "setup failed on $TAG: $cmd (see $LOG_DIR/setup.log). No pass marker was written."
     continue
   fi
@@ -115,7 +187,8 @@ JOBS="${GSAM_TEST_GATE_JOBS:-${#LANES[@]}}"
 say "Running ${#LANES[@]} lanes, $JOBS at a time..."
 # Each lane writes "<exit code> <seconds>" to <lane>.status. xargs -P runs them
 # in parallel on Linux and macOS alike.
-printf '%s\n' "${LANES[@]}" | xargs -P "$JOBS" -I{} env -i "${LANE_ENV[@]}" CODE_DIR="$CODE_DIR" LOG_DIR="$LOG_DIR" bash -c '
+printf '%s\n' "${LANES[@]}" >"$LOG_DIR/lanes.list"
+in_group "$LOG_DIR/lanes.list" xargs -P "$JOBS" -I{} env -i "${LANE_ENV[@]}" CODE_DIR="$CODE_DIR" LOG_DIR="$LOG_DIR" bash -c '
   name="$1"; start="$(date +%s)"
   (cd "$CODE_DIR" && bash "$LOG_DIR/$name.cmd" </dev/null) >"$LOG_DIR/$name.log" 2>&1
   code=$?
@@ -140,7 +213,7 @@ if [ "${#FAILED[@]}" -gt 0 ] && [ "${GSAM_TEST_GATE_RETRY:-1}" = 1 ]; then
     say "  retrying $name alone..."
     start="$(date +%s)"
     code=0
-    (cd "$CODE_DIR" && env -i "${LANE_ENV[@]}" CODE_DIR="$CODE_DIR" LOG_DIR="$LOG_DIR" bash "$LOG_DIR/$name.cmd" </dev/null) >"$LOG_DIR/$name.log" 2>&1 || code=$?
+    in_group /dev/null env -i "${LANE_ENV[@]}" CODE_DIR="$CODE_DIR" LOG_DIR="$LOG_DIR" bash "$LOG_DIR/$name.cmd" >"$LOG_DIR/$name.log" 2>&1 || code=$?
     printf "%s %s\n" "$code" "$(( $(date +%s) - start ))" >"$LOG_DIR/$name.status"
     if [ "$code" = 0 ]; then say "  $name passed on retry"; RETRIED+=("$name"); else STILL_FAILED+=("$name"); fi
   done
