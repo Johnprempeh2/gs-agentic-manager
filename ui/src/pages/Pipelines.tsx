@@ -90,6 +90,7 @@ import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineExportButton } from "../components/DataExport";
+import { DealForecast } from "../components/DealForecast";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
@@ -98,6 +99,7 @@ import {
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
   dealsClosedThisMonth,
+  forecastByCloseMonth,
   weightedDealValues,
   formatDealTotals,
   isDevtoolsCaseType,
@@ -1740,6 +1742,11 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return formatDealTotals(weightedDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
   }, [visibleCases, orderedStages]);
+  const forecast = useMemo(() => {
+    if (!pipeline || !isDevtoolsCaseType(pipeline.key)) return [];
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return forecastByCloseMonth(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId))));
+  }, [pipeline, visibleCases, orderedStages]);
   const dealsNeedingNextStep = useMemo(() => {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null).length;
@@ -2098,6 +2105,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           </Button>
         </div>
       </div>
+
+      <DealForecast buckets={forecast} />
 
       <PipelineHealthBar
         warnings={healthQuery.data?.warnings ?? []}
