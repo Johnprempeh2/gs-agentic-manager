@@ -8,7 +8,7 @@ import {
 } from "@greatstone/shared";
 
 /** The kinds of notification a person can switch off. */
-export type NotificationTopic = "decisions" | "assignedTasks" | "teamChat" | "finishedWork" | "morningSummary" | "weeklyReport";
+export type NotificationTopic = "decisions" | "assignedTasks" | "teamChat" | "finishedWork" | "dealsClosed" | "morningSummary" | "weeklyReport";
 
 /** Local hour (0 to 23) and date (YYYY-MM-DD) in a time zone. Falls back to London on a bad zone. */
 export function localClock(timeZone: string, now: Date): { hour: number; date: string } {
@@ -61,6 +61,7 @@ function fromRow(row: Row | undefined): NotificationPreferences {
     assignedTasks: row.assignedTasks,
     teamChat: row.teamChat,
     finishedWork: row.finishedWork,
+    dealsClosed: row.dealsClosed,
     morningSummary: row.morningSummary,
     morningSummaryHour: row.morningSummaryHour,
     weeklyReport: row.weeklyReport,

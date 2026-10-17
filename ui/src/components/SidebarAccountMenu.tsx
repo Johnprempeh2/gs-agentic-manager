@@ -135,7 +135,7 @@ export function SidebarAccountMenu({
   const email = session?.user.email?.trim();
   const secondaryLabel =
     (email && email !== LOCAL_BOARD_PLACEHOLDER_EMAIL ? email : null)
-    || (deploymentMode === "authenticated" ? "Signed in" : "Local workspace board");
+    || (deploymentMode === "authenticated" ? "Signed in" : "This computer");
   const initials = deriveInitials(displayName);
   const profileHref = `/u/${deriveUserSlug(session?.user.name, session?.user.email, session?.user.id)}`;
 

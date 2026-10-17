@@ -8,6 +8,7 @@ export interface NotificationPreferences {
   teamChat: boolean;
   /** A task you asked for was finished by an agent or a teammate. */
   finishedWork: boolean;
+  dealsClosed: boolean;
   /** One message each morning: what needs you, what got done, what is stuck. */
   morningSummary: boolean;
   /** Local hour (0 to 23) the morning summary goes out. */
@@ -31,6 +32,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   assignedTasks: true,
   teamChat: true,
   finishedWork: true,
+  dealsClosed: true,
   morningSummary: true,
   morningSummaryHour: 8,
   weeklyReport: false,
@@ -47,6 +49,8 @@ export interface MorningSummaryTask {
   title: string;
   /** Set on "due today" lines: the date it is due (YYYY-MM-DD), earlier than today when late. */
   dueDate?: string | null;
+  /** Where the line opens when it is not a task, such as a pipeline deal. */
+  href?: string | null;
 }
 
 /** What needs you, what the agents finished and what is stuck, for one person in one company. */
@@ -62,4 +66,9 @@ export interface MorningSummary {
   stuck: { count: number; items: MorningSummaryTask[] };
   /** Tasks an agent is working on right now. Optional: older servers do not send it. */
   workingNow?: { count: number; items: MorningSummaryTask[] };
+  /**
+   * Open deals imported from Pipedrive whose next step is due today or late,
+   * by the person's own date. Optional: older servers do not send it.
+   */
+  dealNextSteps?: { count: number; items: MorningSummaryTask[] };
 }

@@ -130,7 +130,7 @@ describe("App unprefixed board links", () => {
   ])("opens %s under the selected company", async (path, sentinel) => {
     const root = await renderAppAt(container, path);
     await waitForRoute(container, sentinel);
-    expect(container.textContent).not.toContain("No organization matches prefix");
+    expect(container.textContent).not.toContain("We could not find an organisation with the short code");
     flushSync(() => root.unmount());
   });
 

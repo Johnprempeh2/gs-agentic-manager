@@ -245,3 +245,69 @@ export function dealsClosedThisMonth(
   });
   return { count: closed.length, totals: sumDealValues(closed) };
 }
+
+/**
+ * Open deal value weighted by each deal's probability, per currency, largest
+ * first: Pipedrive's "weighted value". Deals without a probability are left
+ * out, so the figure never overstates the forecast.
+ */
+export function weightedDealValues(cases: Array<{ fields?: Record<string, unknown> | null }>) {
+  const totals = new Map<string, number>();
+  for (const item of cases) {
+    const deal = readDevtoolsDeal(item.fields);
+    if (deal.value == null || deal.probability == null) continue;
+    const currency = deal.currency ?? "";
+    totals.set(currency, (totals.get(currency) ?? 0) + (deal.value * Math.min(100, Math.max(0, deal.probability))) / 100);
+  }
+  return [...totals.entries()].map(([currency, total]) => ({ currency, total })).sort((a, b) => b.total - a.total);
+}
+
+export type ForecastBucket = {
+  key: string;
+  label: string;
+  count: number;
+  totals: Array<{ currency: string; total: number }>;
+  weighted: Array<{ currency: string; total: number }>;
+};
+
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * Pipedrive's forecast view for open deals: value and weighted value by the
+ * month each deal is expected to close. Deals expected before this month go
+ * under "Overdue", after the last month shown under "Later", and deals with
+ * no close date under "No close date". Won, lost and deleted deals are left out.
+ */
+export function forecastByCloseMonth(
+  cases: Array<{ fields?: Record<string, unknown> | null }>,
+  now: Date = new Date(),
+  months = 3,
+): ForecastBucket[] {
+  const monthKeys: string[] = [];
+  for (let offset = 0; offset < months; offset += 1) {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + offset, 1));
+    monthKeys.push(`${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`);
+  }
+  const groups = new Map<string, Array<{ fields?: Record<string, unknown> | null }>>();
+  for (const item of cases) {
+    const deal = readDevtoolsDeal(item.fields);
+    if (deal.value == null) continue;
+    if (deal.status && deal.status.toLowerCase() !== "open") continue;
+    const month = deal.expectedClose && /^\d{4}-\d{2}/.test(deal.expectedClose) ? deal.expectedClose.slice(0, 7) : null;
+    const key = !month ? "none" : month < monthKeys[0]! ? "overdue" : monthKeys.includes(month) ? month : "later";
+    groups.set(key, [...(groups.get(key) ?? []), item]);
+  }
+  const label = (key: string) => {
+    if (key === "overdue") return "Overdue";
+    if (key === "later") return "Later";
+    if (key === "none") return "No close date";
+    const [year, month] = key.split("-");
+    return `${MONTH_NAMES[Number(month) - 1]} ${year}`;
+  };
+  return ["overdue", ...monthKeys, "later", "none"]
+    .filter((key) => groups.has(key) || monthKeys.includes(key))
+    .map((key) => {
+      const items = groups.get(key) ?? [];
+      return { key, label: label(key), count: items.length, totals: sumDealValues(items), weighted: weightedDealValues(items) };
+    });
+}

@@ -207,10 +207,10 @@ describe("SidebarCompanyMenu", () => {
 
     const { root } = renderMenu();
     await flushReact();
-    await openMenu("Open Acme Labs organization switcher");
+    await openMenu("Open Acme Labs organisation switcher");
 
-    expect(document.body.textContent).toContain("Couldn't load organizations");
-    expect(document.body.textContent).not.toContain("No organizations");
+    expect(document.body.textContent).toContain("Couldn't load organisations");
+    expect(document.body.textContent).not.toContain("No organisations yet");
 
     const retryItem = Array.from(document.body.querySelectorAll('[role="menuitem"]')).find(
       (item) => item.textContent?.includes("Try again"),
@@ -236,10 +236,10 @@ describe("SidebarCompanyMenu", () => {
 
     const { root } = renderMenu();
     await flushReact();
-    await openMenu("Open Acme Labs organization switcher");
+    await openMenu("Open Acme Labs organisation switcher");
 
-    expect(document.body.textContent).toContain("No organizations");
-    expect(document.body.textContent).not.toContain("Couldn't load organizations");
+    expect(document.body.textContent).toContain("No organisations yet");
+    expect(document.body.textContent).not.toContain("Couldn't load organisations");
 
     act(() => {
       root.unmount();
@@ -262,7 +262,7 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    const trigger = container.querySelector('button[aria-label="Open Acme Labs organization switcher"]');
+    const trigger = container.querySelector('button[aria-label="Open Acme Labs organisation switcher"]');
     expect(trigger).not.toBeNull();
     expect(trigger?.classList).toContain("px-4");
     expect(trigger?.classList).toContain("has-[>svg]:px-4");
@@ -279,7 +279,7 @@ describe("SidebarCompanyMenu", () => {
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain("Create organization");
+    expect(document.body.textContent).toContain("Create organisation");
     expect(document.body.textContent).not.toContain("Add company...");
 
     act(() => {
@@ -308,7 +308,7 @@ describe("SidebarCompanyMenu", () => {
 
     expect(container.textContent).toContain("Acme Labs");
 
-    const trigger = container.querySelector('button[aria-label="Open Acme Labs organization switcher"]');
+    const trigger = container.querySelector('button[aria-label="Open Acme Labs organisation switcher"]');
     expect(trigger).not.toBeNull();
 
     act(() => {
@@ -317,11 +317,11 @@ describe("SidebarCompanyMenu", () => {
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain("Organizations");
+    expect(document.body.textContent).toContain("Organisations");
     expect(document.body.textContent).toContain("Edit");
     expect(document.body.textContent).toContain("Strata");
     expect(document.body.textContent).toContain("ANA");
-    expect(document.body.textContent).toContain("Create organization");
+    expect(document.body.textContent).toContain("Create organisation");
     expect(document.body.textContent).toContain("Invite people to Acme Labs");
     expect(document.body.textContent).not.toContain("Company settings");
     expect(document.body.textContent).toContain("Sign out");
@@ -338,7 +338,7 @@ describe("SidebarCompanyMenu", () => {
     expect(mockAuthApi.signOut).toHaveBeenCalledTimes(1);
     expect(mockNavigateTopLevel).not.toHaveBeenCalled();
     expect(queryClient.getQueryState(queryKeys.health)?.isInvalidated).toBe(true);
-    expect(document.body.textContent).not.toContain("Organizations");
+    expect(document.body.textContent).not.toContain("Organisations");
 
     act(() => {
       root.unmount();
@@ -352,9 +352,9 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    await openMenu("Open Acme Labs organization switcher");
+    await openMenu("Open Acme Labs organisation switcher");
 
-    expect(document.body.textContent).toContain("Organizations");
+    expect(document.body.textContent).toContain("Organisations");
     expect(document.body.textContent).not.toContain("Invite people");
 
     act(() => {
@@ -369,9 +369,9 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    await openMenu("Open Acme Labs organization switcher");
+    await openMenu("Open Acme Labs organisation switcher");
 
-    expect(document.body.textContent).toContain("Organizations");
+    expect(document.body.textContent).toContain("Organisations");
     expect(document.body.textContent).not.toContain("Invite people");
 
     act(() => {
@@ -386,9 +386,9 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    await openMenu("Open Acme Labs organization switcher");
+    await openMenu("Open Acme Labs organisation switcher");
 
-    expect(document.body.textContent).toContain("Organizations");
+    expect(document.body.textContent).toContain("Organisations");
     expect(document.body.textContent).not.toContain("Invite people");
 
     act(() => {
@@ -412,7 +412,7 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    const trigger = container.querySelector('button[aria-label="Open Acme Labs organization switcher"]');
+    const trigger = container.querySelector('button[aria-label="Open Acme Labs organisation switcher"]');
     expect(trigger).not.toBeNull();
 
     act(() => {
@@ -473,7 +473,7 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    const trigger = container.querySelector('button[aria-label="Open Acme Labs organization switcher"]');
+    const trigger = container.querySelector('button[aria-label="Open Acme Labs organisation switcher"]');
     expect(trigger).not.toBeNull();
 
     act(() => {
@@ -504,10 +504,10 @@ describe("SidebarCompanyMenu", () => {
     await flushReact();
     await flushReact();
 
-    await openMenu("Open Acme Labs organization switcher");
+    await openMenu("Open Acme Labs organisation switcher");
 
     const createItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
-      .find((element) => element.textContent?.includes("Create organization"));
+      .find((element) => element.textContent?.includes("Create organisation"));
     expect(createItem).toBeTruthy();
 
     act(() => {
@@ -533,7 +533,7 @@ describe("SidebarCompanyMenu", () => {
     const { root } = renderMenu();
     await flushReact();
 
-    const trigger = container.querySelector('button[aria-label="Open Acme Labs organization switcher"]');
+    const trigger = container.querySelector('button[aria-label="Open Acme Labs organisation switcher"]');
     expect(trigger).not.toBeNull();
     expect(trigger?.className).toContain("min-w-0");
 
@@ -557,7 +557,7 @@ describe("SidebarCompanyMenu", () => {
       const { root } = renderMenu({ cloud: true });
       await flushReact();
       await flushReact();
-      await openMenu("Open Acme Labs organization switcher");
+      await openMenu("Open Acme Labs organisation switcher");
 
       const signOutItem = Array.from(document.body.querySelectorAll('[data-slot="dropdown-menu-item"]'))
         .find((element) => element.textContent?.includes("Sign out"));
@@ -571,7 +571,7 @@ describe("SidebarCompanyMenu", () => {
       expect(mockAuthApi.signOut).not.toHaveBeenCalled();
       expect(mockNavigateTopLevel).toHaveBeenCalledOnce();
       expect(mockNavigateTopLevel).toHaveBeenCalledWith("/cloud/logout");
-      expect(document.body.textContent).not.toContain("Organizations");
+      expect(document.body.textContent).not.toContain("Organisations");
 
       act(() => {
         root.unmount();
@@ -582,10 +582,10 @@ describe("SidebarCompanyMenu", () => {
       const { root } = renderMenu({ cloud: true });
       await flushReact();
       await flushReact();
-      await openMenu("Open Acme Labs organization switcher");
+      await openMenu("Open Acme Labs organisation switcher");
       expect(document.body.textContent).toContain("Anachronist Wiki");
       expect(document.body.textContent).toContain("ANA");
-      expect(document.body.textContent).not.toContain("Create organization");
+      expect(document.body.textContent).not.toContain("Create organisation");
       expect(mockOpenOnboarding).not.toHaveBeenCalled();
       const row = [...document.querySelectorAll('[data-slot="dropdown-menu-item"]')]
         .find(element => element.textContent?.includes("Anachronist Wiki"));

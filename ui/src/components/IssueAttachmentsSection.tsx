@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { IssueAttachment } from "@greatstone/shared";
 import { Download, ExternalLink, FileText, Maximize2, PaperclipIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/context/ConfirmContext";
 import { FoldCurtain } from "./FoldCurtain";
 import { MarkdownBody } from "./MarkdownBody";
 import { OutputFileTile } from "./issue-output/OutputFileTile";
@@ -56,6 +57,7 @@ function AttachmentActions({
   deletePending?: boolean;
   onPreview?: (attachment: IssueAttachment) => void;
 }) {
+  const confirm = useConfirm();
   const filename = attachmentFilename(attachment);
   return (
     <div className="flex shrink-0 items-center gap-1">
@@ -86,7 +88,15 @@ function AttachmentActions({
           size="icon-sm"
           title="Delete attachment"
           className="text-muted-foreground hover:text-destructive"
-          onClick={() => onDelete(attachment.id)}
+          onClick={async () => {
+            const ok = await confirm({
+              title: "Delete this attachment?",
+              description: `${filename} will be removed from this task. This cannot be undone.`,
+              confirmLabel: "Delete attachment",
+              tone: "destructive",
+            });
+            if (ok) onDelete(attachment.id);
+          }}
           disabled={deletePending}
         >
           <Trash2 className="h-4 w-4" />

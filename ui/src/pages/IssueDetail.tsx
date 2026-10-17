@@ -769,7 +769,15 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
 
   if (isLoading)
     return <IssueDetailLoadingState headerSeed={issueHeaderSeed} />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/issues" className="underline underline-offset-2">Back to tasks</Link>
+        </p>
+      </div>
+    );
   if (!issue) return null;
   // Do not expose a file chooser on the outgoing UUID/company/interface
   // branch: its input can be detached before the chosen file is returned.

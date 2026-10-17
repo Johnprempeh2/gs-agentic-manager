@@ -82,7 +82,7 @@ describe("Costs embedded Audit surfaces", () => {
     await act(async () => {
       await vi.waitFor(() => {
         expect(budgetOverviewMock).toHaveBeenCalledWith("company-1");
-        expect(container.textContent).toContain("Budget control plane");
+        expect(container.textContent).toContain("Spending limits");
       });
     });
     expect(container.textContent).not.toContain("Inference spend");

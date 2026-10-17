@@ -35,7 +35,7 @@ export const ONBOARDING_WIZARD_STEPS = [1, 3, 4, 5] as const;
 
 /** Destinations for the full walk, in the same order. */
 export const ONBOARDING_STEP_LABELS = [
-  "Name your organization",
+  "Name your organisation",
   "Create your first agent",
   "Connect a model",
   "Review",

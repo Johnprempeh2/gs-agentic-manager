@@ -23,10 +23,13 @@ import {
   downloadBytes,
   exportFileName,
   localToday,
+  pipelineSheet,
   sheetToCsv,
   sheetsToXlsx,
   tasksSheet,
   weeklyNumbersSheet,
+  type PipelineSheetCase,
+  type PipelineSheetLookups,
   type Sheet,
 } from "@/lib/spreadsheet-export";
 
@@ -161,6 +164,43 @@ export function ClientsExportButton({ rows }: { rows: readonly OrganisationListI
       <DropdownMenuContent align="end">
         <DropdownMenuItem onSelect={() => save([clientsSheet(rows)], "csv", prefix, "clients")}>CSV for any spreadsheet</DropdownMenuItem>
         <DropdownMenuItem onSelect={() => save([clientsSheet(rows)], "xlsx", prefix, "clients")}>Excel workbook</DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** "Export" on a pipeline board: the cards the board shows, with their deal fields, as CSV or Excel. */
+export function PipelineExportButton({
+  name,
+  pipelineId,
+  cases,
+  stageName,
+}: {
+  name: string;
+  pipelineId: string;
+  cases: readonly PipelineSheetCase[];
+  stageName: PipelineSheetLookups["stageName"];
+}) {
+  const { selectedCompany } = useCompany();
+  const prefix = selectedCompany?.issuePrefix ?? "";
+  const file = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "pipeline";
+  const build = () => [
+    pipelineSheet(name, cases, {
+      stageName,
+      caseUrl: (item) => `${window.location.origin}/${prefix}/pipelines/${pipelineId}/cases/${item.id}`,
+    }),
+  ];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" disabled={cases.length === 0} title="Download this board to a spreadsheet">
+          <Download />
+          Export
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={() => save(build(), "csv", prefix, file)}>CSV for any spreadsheet</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => save(build(), "xlsx", prefix, file)}>Excel workbook</DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
