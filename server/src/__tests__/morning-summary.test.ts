@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { agents, createDb, companies, heartbeatRuns, issues, notificationPreferences, pushSubscriptions } from "@greatstone/db";
+import { agents, createDb, companies, heartbeatRuns, issues, notificationPreferences, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type MorningSummary, type NeedsMe } from "@greatstone/shared";
 import { morningSummaryDue, morningSummaryMessage, morningSummaryService, needsYouItems } from "../services/morning-summary.js";
@@ -37,6 +37,9 @@ describe("morning summary wording", () => {
     });
     expect(morningSummaryMessage(summary(1, 0, 0, 2), "GRE").body).toBe(
       "2 tasks are due today. No tasks finished since yesterday. Nothing is stuck.",
+    );
+    expect(morningSummaryMessage({ ...summary(0, 0, 0), deals: { won: 2, lost: 1, items: [] } }, "GRE").body).toBe(
+      "No tasks finished since yesterday. Nothing is stuck. 2 deals won.",
     );
   });
 
@@ -112,6 +115,21 @@ describe("morning summary service", () => {
       { companyId, title: "Drafting the deck", status: "in_progress", executionRunId: running!.id },
       { companyId, title: "Run already ended", status: "in_progress", executionRunId: finished!.id },
     ]);
+    // Deals: two closed on a client pipeline since yesterday, one older, one on another pipeline.
+    const [clients, hiring] = await db.insert(pipelines).values([
+      { companyId, key: "clients", name: "Clients", requiresOrganisation: true },
+      { companyId, key: "hiring", name: "Hiring" },
+    ]).returning();
+    const [won, hired] = await db.insert(pipelineStages).values([
+      { companyId, pipelineId: clients!.id, key: "won", name: "Won", kind: "done", position: 0 },
+      { companyId, pipelineId: hiring!.id, key: "hired", name: "Hired", kind: "done", position: 0 },
+    ]).returning();
+    await db.insert(pipelineCases).values([
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "a", title: "Indago rollout", terminalKind: "done", terminalAt: new Date("2026-10-16T06:00:00Z") },
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "b", title: "Acme renewal", terminalKind: "cancelled", terminalAt: new Date("2026-10-15T21:00:00Z") },
+      { companyId, pipelineId: clients!.id, stageId: won!.id, caseKey: "c", title: "Last week's win", terminalKind: "done", terminalAt: new Date("2026-10-10T09:00:00Z") },
+      { companyId, pipelineId: hiring!.id, stageId: hired!.id, caseKey: "d", title: "Candidate hired", terminalKind: "done", terminalAt: new Date("2026-10-16T05:00:00Z") },
+    ]);
   }, 90000);
   afterAll(async () => { await database?.cleanup(); vi.unstubAllEnvs(); if (home) await rm(home, { recursive: true, force: true }); });
   beforeEach(async () => {
@@ -128,6 +146,13 @@ describe("morning summary service", () => {
     expect(built.stuck.count).toBe(1);
     expect(built.stuck.items.map((item) => item.title)).toEqual(["Import contacts"]);
     expect(built.needsYou.count).toBe(2);
+  });
+
+  it("counts client deals won and lost since yesterday, newest first", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.deals?.won).toBe(1);
+    expect(built.deals?.lost).toBe(1);
+    expect(built.deals?.items.map((deal) => [deal.title, deal.outcome])).toEqual([["Indago rollout", "won"], ["Acme renewal", "lost"]]);
   });
 
   it("lists the tasks an agent is working on right now", async () => {

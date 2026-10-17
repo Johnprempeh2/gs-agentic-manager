@@ -1,7 +1,7 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, heartbeatRuns, issues, pushSubscriptions } from "@greatstone/db";
-import type { MorningSummary, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
+import { companies, heartbeatRuns, issues, pipelineCases, pipelines, pushSubscriptions } from "@greatstone/db";
+import type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
 import { executionIssueCondition } from "./issue-visibility.js";
@@ -55,6 +55,7 @@ export function morningSummaryMessage(summary: MorningSummary, prefix: string): 
     ...(summary.dueToday.count > 0 ? [`${plural(summary.dueToday.count, "task is", "tasks are")} due today.`] : []),
     summary.finished.count === 0 ? "No tasks finished since yesterday." : `${plural(summary.finished.count, "task", "tasks")} finished since yesterday.`,
     summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
+    ...(summary.deals && summary.deals.won > 0 ? [`${plural(summary.deals.won, "deal", "deals")} won.`] : []),
   ];
   return { title, body: parts.join(" "), url: `/${prefix}/morning`, tag: "morning-summary", badge: summary.needsYou.count };
 }
@@ -102,7 +103,14 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       inArray(heartbeatRuns.status, ["running", "queued"]),
       userWork(),
     );
-    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount, workingRows, workingCount] = await Promise.all([
+    // Client deals (cases on pipelines that name an organisation) closed since yesterday.
+    const closedDeals = and(
+      eq(pipelineCases.companyId, companyId),
+      eq(pipelines.requiresOrganisation, true),
+      isNotNull(pipelineCases.terminalKind),
+      gte(pipelineCases.terminalAt, since),
+    );
+    const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount, workingRows, workingCount, dealRows, dealCounts] = await Promise.all([
       buildNeedsMe(companyId, userId),
       db
         .select({ id: issues.id, identifier: issues.identifier, title: issues.title })
@@ -143,7 +151,27 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
         .from(issues)
         .innerJoin(heartbeatRuns, eq(heartbeatRuns.id, issues.executionRunId))
         .where(working),
+      db
+        .select({ id: pipelineCases.id, pipelineId: pipelineCases.pipelineId, title: pipelineCases.title, terminalKind: pipelineCases.terminalKind })
+        .from(pipelineCases)
+        .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
+        .where(closedDeals)
+        .orderBy(desc(pipelineCases.terminalAt))
+        .limit(ITEM_LIMIT),
+      db
+        .select({ terminalKind: pipelineCases.terminalKind, count: sql<number>`count(*)::int` })
+        .from(pipelineCases)
+        .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
+        .where(closedDeals)
+        .groupBy(pipelineCases.terminalKind),
     ]);
+    const dealCount = (kind: string) => dealCounts.find((row) => row.terminalKind === kind)?.count ?? 0;
+    const dealItems: MorningSummaryDeal[] = dealRows.map((row) => ({
+      id: row.id,
+      pipelineId: row.pipelineId,
+      title: row.title,
+      outcome: row.terminalKind === "done" ? "won" : "lost",
+    }));
     const needs = needsYouItems(mine);
     return {
       companyId,
@@ -154,6 +182,7 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       finished: { count: finishedCount[0]?.count ?? 0, items: finishedRows },
       stuck: { count: stuckCount[0]?.count ?? 0, items: stuckRows },
       workingNow: { count: workingCount[0]?.count ?? 0, items: workingRows },
+      deals: { won: dealCount("done"), lost: dealCount("cancelled"), items: dealItems },
     };
   }
 

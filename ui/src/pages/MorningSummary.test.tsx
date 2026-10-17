@@ -87,8 +87,12 @@ describe("MorningSummary", () => {
       finished: { count: 1, items: [{ id: "b", identifier: "GRE-5", title: "Write the one-pager" }] },
       stuck: { count: 0, items: [] },
       workingNow: { count: 1, items: [{ id: "w", identifier: "GRE-9", title: "Drafting the deck" }] },
+      deals: { won: 1, lost: 0, items: [{ id: "c1", pipelineId: "p1", title: "Indago rollout", outcome: "won" }] },
     };
     await render();
+    const deals = container.querySelector('[data-testid="morning-deals"]')!;
+    expect(deals.textContent).toContain("1 won");
+    expect(deals.querySelector('a[href="/pipelines/p1/cases/c1"]')?.textContent).toContain("Won");
     expect(container.textContent).toContain("Working now");
     expect(container.querySelector('a[href="/issues/GRE-9"]')?.textContent).toContain("Drafting the deck");
     const text = container.textContent ?? "";

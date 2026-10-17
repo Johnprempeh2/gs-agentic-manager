@@ -51,6 +51,14 @@ export interface MorningSummaryTask {
   dueDate?: string | null;
 }
 
+/** One client deal won or lost, in the morning summary. */
+export interface MorningSummaryDeal {
+  id: string;
+  pipelineId: string;
+  title: string;
+  outcome: "won" | "lost";
+}
+
 /** What needs you, what the agents finished and what is stuck, for one person in one company. */
 export interface MorningSummary {
   companyId: string;
@@ -64,4 +72,6 @@ export interface MorningSummary {
   stuck: { count: number; items: MorningSummaryTask[] };
   /** Tasks an agent is working on right now. Optional: older servers do not send it. */
   workingNow?: { count: number; items: MorningSummaryTask[] };
+  /** Client deals won or lost since `since`, newest first. Optional: older servers do not send it. */
+  deals?: { won: number; lost: number; items: MorningSummaryDeal[] };
 }
