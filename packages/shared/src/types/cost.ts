@@ -141,6 +141,17 @@ export interface CostWindowSpendRow {
 }
 
 /** cost attributed to a project via heartbeat run → activity log → issue → project chain */
+/** Spend per billing code (a cross-team request), for the Costs page "By request" table. */
+export interface CostByBillingCode {
+  billingCode: string;
+  costCents: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  eventCount: number;
+  lastOccurredAt: Date | string | null;
+}
+
 export interface CostByProject {
   projectId: string | null;
   projectName: string | null;

@@ -9706,6 +9706,7 @@ export function issueService(db: Db) {
             ? parent.projectWorkspaceId
             : undefined),
         goalId: issueData.goalId ?? parent.goalId,
+        billingCode: issueData.billingCode ?? parent.billingCode,
         actorResponsibleUserId: issueData.actorResponsibleUserId ?? null,
         trustExplicitResponsibleUserId:
           issueData.trustExplicitResponsibleUserId === true,

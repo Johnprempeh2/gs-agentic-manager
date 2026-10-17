@@ -1474,6 +1474,7 @@ export type {
   CostByAgentModel,
   CostWindowSpendRow,
   CostByProject,
+  CostByBillingCode,
   CompanySubscription,
   DetectedSubscriptionProvider,
   CompanySubscriptionsResult,
