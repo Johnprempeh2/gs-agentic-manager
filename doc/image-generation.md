@@ -59,6 +59,28 @@ cover, so setting a new one clears the last. The board cards read every cover
 in one call, `GET /api/companies/{companyId}/generated-images/covers`. In the
 gallery, open an image and press **Use as cover for ...**.
 
+## Image studio: camera, finishing touches and versions
+
+The Images page works as an image studio, built from the ideas in
+[Open Higgsfield AI](https://github.com/ClabstreamTeam/Open-Higgsfield-AI)
+(MIT; see `packages/shared/src/studio/PROVENANCE.md`).
+
+- **Camera** (optional): pick a camera body, lens, focal length and aperture,
+  or a ready-made look (Film still, Portrait, Product advert, Retro). The
+  request carries `camera: { camera, lens, focalLength, aperture }` with the
+  ids in `packages/shared/src/studio/camera.ts`; the server adds the matching
+  words (for example "shot on a classic 16mm film camera, using a vintage
+  prime lens at 50mm") after the person's words and before any style
+  guidance. The row keeps the picks, and the gallery shows them.
+- **Finishing touches** (optional): one tap adds lighting, mood, look or finish
+  words to the description itself.
+- **Versions**: make 1, 2 or 4 versions at once. Each is its own request and
+  costs the same as a single image, so the six-pending limit still applies.
+
+Agents get the same studio three ways: `gsam image generate` with `--camera`,
+`--lens`, `--focal`, `--aperture` and `--count`; the MCP tools `studio_status`,
+`studio_make_image`, `studio_get_image` and `studio_list_images`; or the API.
+
 At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart
 is marked failed after ten minutes. Requests, completions, failures and

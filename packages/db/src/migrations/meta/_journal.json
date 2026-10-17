@@ -2584,6 +2584,13 @@
       "when": 1792273818079,
       "tag": "0370_deal_alerts_switch",
       "breakpoints": true
+    },
+    {
+      "idx": 371,
+      "version": "7",
+      "when": 1792277850310,
+      "tag": "0371_image_studio_camera",
+      "breakpoints": true
     }
   ]
 }

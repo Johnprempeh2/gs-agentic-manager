@@ -32,6 +32,13 @@ node packages/mcp-server/dist/stdio.js
 
 ## Tool Surface
 
+Image studio tools:
+
+- `studio_status`
+- `studio_make_image` (write)
+- `studio_get_image`
+- `studio_list_images`
+
 Run-scoped connection tools:
 
 - `connections_search`

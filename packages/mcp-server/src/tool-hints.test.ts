@@ -33,6 +33,7 @@ const WRITES = [
   "paperclipLinkIssueApproval",
   "paperclipApprovalDecision",
   "paperclipAddApprovalComment",
+  "studio_make_image",
 ];
 
 async function listTools() {

@@ -32,7 +32,7 @@ export interface ToolDefinition {
   }>;
 }
 
-function makeTool<TSchema extends z.ZodRawShape>(
+export function makeTool<TSchema extends z.ZodRawShape>(
   name: string,
   description: string,
   annotations: McpToolHints,

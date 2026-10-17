@@ -37,6 +37,34 @@ in a document you are building.
 `--issue-id` also links the image to the task, so the board sees it in Images
 next to that task.
 
+### Camera and versions
+
+Shoot it like a film with optional camera flags, and make up to four versions
+to choose from:
+
+```bash
+gsam image generate \
+  --prompt "A barista pouring latte art in a sunlit cafe" \
+  --shape landscape \
+  --camera full-frame-cine --lens swirl-bokeh-portrait --focal 85 --aperture f1.4 \
+  --count 2 \
+  --issue-id "$GSAM_TASK_ID"
+```
+
+Cameras: `modular-8k`, `full-frame-cine`, `70mm-film`, `studio-s35`,
+`16mm-film`, `large-format`. Lenses: `premium-modern-prime`,
+`clinical-sharp-prime`, `warm-cinema-prime`, `vintage-prime`,
+`70s-cinema-prime`, `classic-anamorphic`, `compact-anamorphic`,
+`swirl-bokeh-portrait`, `halation-diffusion`, `creative-tilt`,
+`extreme-macro`. Focal lengths: 8, 14, 24, 35, 50, 85. Apertures: `f1.4`
+(blurred background), `f4`, `f11` (everything sharp). Good pairings: product
+shots `large-format` + `clinical-sharp-prime` + 50 + `f11`; portraits
+`full-frame-cine` + `swirl-bokeh-portrait` + 85 + `f1.4`.
+
+Every version costs money; use `--count` above 1 only when the task wants a
+choice. With MCP, the same settings go to `studio_make_image` (with `count`),
+then poll `studio_get_image`.
+
 ## With curl
 
 1. Ask for the image. The reply is `202` with `status: "pending"`:
@@ -48,7 +76,8 @@ next to that task.
      -d '{"prompt": "Flat illustration of a lighthouse at dawn", "aspectRatio": "16:9", "style": "illustration", "issueId": "'"$GSAM_TASK_ID"'"}'
    ```
 
-   `style`, `issueId` and `organisationId` (the client) are optional.
+   `style`, `camera` (for example `{"lens": "vintage-prime", "focalLength": 35}`),
+   `issueId` and `organisationId` (the client) are optional.
 
 2. Poll `GET /api/generated-images/{id}` every few seconds until `status` is
    `completed` (then `contentPath` is `/api/assets/{assetId}/content`) or

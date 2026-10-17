@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerImageCommands } from "../commands/client/image.js";
+import { cameraFromOptions, numberedPath, registerImageCommands } from "../commands/client/image.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const ISSUE_ID = "55555555-5555-4555-8555-555555555555";
@@ -111,5 +111,44 @@ describe("gsam image", () => {
     ).rejects.toThrow("exit");
     expect(fetchMock).not.toHaveBeenCalled();
     exit.mockRestore();
+  });
+
+  it("makes several versions with camera settings and waits for each one", async () => {
+    const created: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(`/api/companies/${COMPANY_ID}/generated-images`)) {
+        created.push(JSON.parse(String(init?.body)));
+        return json(image("pending", { id: `${IMAGE_ID.slice(0, -1)}${created.length}` }), 202);
+      }
+      const match = url.match(/generated-images\/([^/]+)$/);
+      if (match) return json(image("completed", { id: match[1] }));
+      if (url.endsWith(`/api/assets/${ASSET_ID}/content`)) {
+        return new Response(new Uint8Array([0x89, 0x50, 1]), { headers: { "content-type": "image/png" } });
+      }
+      throw new Error(`unexpected ${url}`);
+    }));
+
+    const run = createProgram().parseAsync(
+      ["image", "generate", "--prompt", "A chef at work", "--camera", "16mm-film", "--lens", "Vintage Prime", "--focal", "50mm",
+        "--aperture", "f/4", "--count", "2", "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+      { from: "user" },
+    );
+    await vi.runAllTimersAsync();
+    await run;
+
+    expect(created).toHaveLength(2);
+    expect(created[0]).toEqual({
+      prompt: "A chef at work",
+      aspectRatio: "1:1",
+      camera: { camera: "16mm-film", lens: "vintage-prime", focalLength: 50, aperture: "f4" },
+    });
+  });
+
+  it("reads camera flags and numbers output files", () => {
+    expect(cameraFromOptions({})).toBeNull();
+    expect(cameraFromOptions({ aperture: "f1.4", focal: "85" })).toEqual({ aperture: "f1.4", focalLength: 85 });
+    expect(() => cameraFromOptions({ lens: "fisheye" })).toThrow(/Unknown lens/);
+    expect(numberedPath("./out/image.png", 2)).toBe("./out/image-2.png");
+    expect(numberedPath("image", 3)).toBe("image-3");
   });
 });
