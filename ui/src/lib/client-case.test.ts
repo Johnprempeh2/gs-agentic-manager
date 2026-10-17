@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, dealsClosedThisMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, dealsClosedThisMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -67,5 +67,22 @@ describe("dealsClosedThisMonth", () => {
     ];
     expect(dealsClosedThisMonth(cases, "won", now)).toEqual({ count: 2, totals: [{ currency: "USD", total: 10000 }] });
     expect(dealsClosedThisMonth(cases, "lost", now)).toEqual({ count: 1, totals: [{ currency: "GBP", total: 2000 }] });
+  });
+});
+
+describe("weightedDealValues", () => {
+  it("weights each deal by its probability and skips deals without one", () => {
+    expect(
+      weightedDealValues([
+        { fields: { dealValue: 10000, dealCurrency: "GBP", probability: 50 } },
+        { fields: { dealValue: 2000, dealCurrency: "GBP", probability: "25" } },
+        { fields: { dealValue: 4000, dealCurrency: "USD", probability: 100 } },
+        { fields: { dealValue: 9000, dealCurrency: "USD" } },
+        { fields: { dealValue: 1000, dealCurrency: "USD", probability: 150 } },
+      ]),
+    ).toEqual([
+      { currency: "GBP", total: 5500 },
+      { currency: "USD", total: 5000 },
+    ]);
   });
 });

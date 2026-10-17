@@ -245,3 +245,19 @@ export function dealsClosedThisMonth(
   });
   return { count: closed.length, totals: sumDealValues(closed) };
 }
+
+/**
+ * Open deal value weighted by each deal's probability, per currency, largest
+ * first: Pipedrive's "weighted value". Deals without a probability are left
+ * out, so the figure never overstates the forecast.
+ */
+export function weightedDealValues(cases: Array<{ fields?: Record<string, unknown> | null }>) {
+  const totals = new Map<string, number>();
+  for (const item of cases) {
+    const deal = readDevtoolsDeal(item.fields);
+    if (deal.value == null || deal.probability == null) continue;
+    const currency = deal.currency ?? "";
+    totals.set(currency, (totals.get(currency) ?? 0) + (deal.value * Math.min(100, Math.max(0, deal.probability))) / 100);
+  }
+  return [...totals.entries()].map(([currency, total]) => ({ currency, total })).sort((a, b) => b.total - a.total);
+}

@@ -97,6 +97,7 @@ import {
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
   dealsClosedThisMonth,
+  weightedDealValues,
   formatDealTotals,
   isDevtoolsCaseType,
   sumDealValues,
@@ -1734,6 +1735,10 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return formatDealTotals(sumDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
   }, [visibleCases, orderedStages]);
+  const weightedOpenValue = useMemo(() => {
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return formatDealTotals(weightedDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
+  }, [visibleCases, orderedStages]);
   const dealsNeedingNextStep = useMemo(() => {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null).length;
@@ -2010,6 +2015,11 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               ? `${cases.length} total item${cases.length === 1 ? "" : "s"}`
               : `${visibleCases.length} of ${cases.length} items, owned by ${selectedOwner}`}
             {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
+            {weightedOpenValue ? (
+              <span data-testid="pipeline-weighted-value" title="Open deal value multiplied by each deal's probability">
+                {" "}· {weightedOpenValue} weighted
+              </span>
+            ) : null}
             {dealsNeedingNextStep > 0 ? (
               <span data-testid="pipeline-deals-needing-next-step">
                 {" "}· {dealsNeedingNextStep} {dealsNeedingNextStep === 1 ? "deal needs" : "deals need"} a next step
