@@ -89,6 +89,7 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
+import { PipelineExportButton } from "../components/DataExport";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
@@ -2078,6 +2079,12 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <SelectItem value="builtFor">Built for</SelectItem>
             </SelectContent>
           </Select>
+          <PipelineExportButton
+            name={pipeline.name}
+            pipelineId={pipelineId}
+            cases={visibleCases}
+            stageName={(stageId) => orderedStages.find((stage) => stage.id === stageId)?.name ?? ""}
+          />
           <Button asChild data-tour="board-add">
             <Link to={`/pipelines/${pipelineId}/add`}>
               <Plus className="mr-2 h-4 w-4" />
