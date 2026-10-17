@@ -102,7 +102,7 @@ chat shortcut above applies:
   - add a markdown comment explaining why it remains open and what happens next.
     Always include links to the approval and issue in that comment.
 
-**Step 3 — Get assignments.** Prefer `GET /api/agents/me/inbox-lite` for the normal heartbeat inbox. It returns the compact assignment list you need for prioritization. Fall back to `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,in_review,blocked` only when you need the full issue objects. When you start work that may repeat something you did before, call `GET /api/agents/me/recent-done?limit=10` to see your last finished tasks (identifier, title, completedAt) and reuse what you already did.
+**Step 3 — Get assignments.** Prefer `GET /api/agents/me/inbox-lite` for the normal heartbeat inbox. It returns the compact assignment list you need for prioritization. Fall back to `GET /api/companies/{companyId}/issues?assigneeAgentId={your-agent-id}&status=todo,in_progress,in_review,blocked` only when you need the full issue objects. When you start work that may repeat something you did before, call `GET /api/agents/me/recent-done?limit=10` to see your last finished tasks (identifier, title, completedAt) and reuse what you already did. Call `GET /api/agents/me/waiting-on-me` to see which of your tasks other open tasks are waiting on (`waitingCount`), and work the biggest first. If your last runs failed, call `GET /api/agents/me/failed-runs?limit=5` and read each `error` before you try the same thing again.
 
 **Step 4 — Pick work.** Priority: `in_progress` → `in_review` (if woken by a comment on it — check `GSAM_WAKE_COMMENT_ID`) → `todo`. Skip `blocked` unless you can unblock.
 

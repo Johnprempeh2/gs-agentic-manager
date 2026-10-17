@@ -22,6 +22,7 @@ import { activityLog, agents as agentsTable, chatConversations, companies, heart
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { sha256Digest } from "../services/feedback-redaction.js";
 import { rankDirectory } from "../services/agent-directory.js";
+import { blockedWorkService } from "../services/blocked-work.js";
 import {
   agentSkillSyncSchema,
   agentMineInboxQuerySchema,
@@ -4336,6 +4337,55 @@ export function agentRoutes(
       .orderBy(desc(issuesTable.completedAt))
       .limit(limit);
     res.json(rows);
+  });
+
+  // An agent's own last failed runs with their errors, so it can read what
+  // went wrong before it tries the same thing again.
+  router.get("/agents/me/failed-runs", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const companyId = req.actor.companyId;
+    const rawLimit = Number(req.query.limit ?? 5);
+    const limit = Number.isFinite(rawLimit) ? Math.min(20, Math.max(1, Math.trunc(rawLimit))) : 5;
+    const runs = await heartbeat.list(companyId, req.actor.agentId, limit, {
+      summary: true,
+      statuses: ["failed", "timed_out"],
+    });
+    const redacted = await runRedactions.redactForRuns(companyId, runs);
+    res.json(redacted.map((run) => ({
+      id: run.id,
+      status: run.status,
+      createdAt: run.createdAt,
+      finishedAt: run.finishedAt,
+      errorCode: run.errorCode ?? null,
+      error: typeof run.error === "string" ? run.error.slice(0, 1000) : null,
+      issueId: typeof run.contextSnapshot?.issueId === "string" ? run.contextSnapshot.issueId : null,
+      wakeReason: typeof run.contextSnapshot?.wakeReason === "string" ? run.contextSnapshot.wakeReason : null,
+    })));
+  });
+
+  // Tasks of this agent that other open tasks are waiting on, biggest chain
+  // first, so it can clear what holds up the most work before anything else.
+  router.get("/agents/me/waiting-on-me", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const agentId = req.actor.agentId;
+    const overview = await blockedWorkService(db).overview(req.actor.companyId);
+    res.json(
+      overview.rootCauses
+        .filter((cause) => cause.owner.type === "agent" && cause.owner.agentId === agentId)
+        .map((cause) => ({
+          issue: cause.issue,
+          action: cause.action,
+          waitingCount: cause.heldIssueIds.length,
+          heldIssueIds: cause.heldIssueIds,
+          oldestWaitingSince: cause.oldestWaitingSince,
+        })),
+    );
   });
 
   router.get("/agents/me/inbox/mine", async (req, res) => {
