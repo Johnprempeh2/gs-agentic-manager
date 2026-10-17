@@ -32,6 +32,7 @@ describe("Better Auth cookie scoping", () => {
 
     expect(advanced).toEqual({
       cookiePrefix: "paperclip-sat-worktree",
+      ipAddress: { ipAddressHeaders: ["x-gsam-client-ip"] },
     });
     expect(getCookies({ advanced } as BetterAuthOptions).sessionToken.name).toMatch(
       /paperclip-sat-worktree\.session_token$/,
@@ -43,6 +44,7 @@ describe("Better Auth cookie scoping", () => {
 
     expect(buildBetterAuthAdvancedOptions({ disableSecureCookies: true })).toEqual({
       cookiePrefix: "paperclip-pap-worktree",
+      ipAddress: { ipAddressHeaders: ["x-gsam-client-ip"] },
       useSecureCookies: false,
     });
     expect(getCookies({

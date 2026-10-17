@@ -9,6 +9,8 @@
 #    cloud and refuses the embedded database this install uses. The server
 #    still listens on loopback only; Caddy is the one way in. 127.0.0.1 stays
 #    allowed, so `verify` and the host watch still work over loopback.
+#    Trusts Caddy (loopback) as the proxy: TRUST_PROXY=loopback in the
+#    instance .env.
 # 2. Writes the Caddy site /etc/caddy/sites/<code>.caddy (HTTPS from Let's
 #    Encrypt, proxy to the instance's loopback port) and reloads Caddy.
 # 3. Restarts the instance under systemd.
@@ -45,6 +47,20 @@ runuser -u gsam -- node -e '
   c.$meta = { ...c.$meta, updatedAt: new Date().toISOString() };
   fs.writeFileSync(file, JSON.stringify(c, null, 2) + "\n", { mode: 0o600 });
 ' "$config" "$host"
+
+# Caddy on loopback is the one way in, so the app trusts it, and only it, for
+# the client address and the original hostname. Without this every visitor
+# shares one sign-in rate-limit bucket (127.0.0.1).
+envfile="$root/instances/default/.env"
+[ -f "$envfile" ] || die "no $envfile"
+# As gsam, so the file keeps its owner and mode 600.
+runuser -u gsam -- node -e '
+  const fs = require("fs");
+  const file = process.argv[1];
+  const lines = fs.readFileSync(file, "utf8").split("\n").filter((l) => l !== "" && !l.startsWith("TRUST_PROXY="));
+  lines.push("TRUST_PROXY=loopback");
+  fs.writeFileSync(file, lines.join("\n") + "\n", { mode: 0o600 });
+' "$envfile"
 
 mkdir -p /etc/caddy/sites
 cat >"/etc/caddy/sites/$code.caddy" <<EOF

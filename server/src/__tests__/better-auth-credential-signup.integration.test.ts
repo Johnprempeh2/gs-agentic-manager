@@ -120,4 +120,22 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
     expect(signIn.body?.user?.email).toBe(EMAIL);
     expect(sessionCookies(signIn).length).toBeGreaterThan(0);
   });
+
+  it("locks an account after ten wrong passwords, even for the right one", async () => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const wrong = await request(app)
+        .post("/api/auth/sign-in/email")
+        .set("origin", ORIGIN)
+        .send({ email: EMAIL, password: `wrong-password-${attempt}` });
+      expect(wrong.status).toBe(401);
+    }
+
+    const locked = await request(app)
+      .post("/api/auth/sign-in/email")
+      .set("origin", ORIGIN)
+      .send({ email: EMAIL.toUpperCase(), password: PASSWORD });
+    expect(locked.status).toBe(429);
+    expect(locked.body?.code).toBe("SIGN_IN_LOCKED");
+    expect(sessionCookies(locked)).toHaveLength(0);
+  });
 });

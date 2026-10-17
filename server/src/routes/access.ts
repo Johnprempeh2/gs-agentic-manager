@@ -2784,8 +2784,21 @@ export function accessRoutes(
     res.json({ claimed: true, userId: claimed.userId });
   });
 
+  // Anyone can open a CLI sign-in challenge, and each one is a database row
+  // plus an approval link that could be sent to an admin. Bound how many one
+  // address can open (same unforgeable `req.ip` key as the invite limiter).
+  const cliAuthChallengeRateLimiter = createInviteRateLimiter({ windowMs: 10 * 60_000, maxRequests: 10 });
   router.post(
     "/cli-auth/challenges",
+    (req, res, next) => {
+      const result = cliAuthChallengeRateLimiter.consume(req.ip || req.socket?.remoteAddress || "unknown");
+      if (!result.allowed) {
+        res.setHeader("Retry-After", String(result.retryAfterSeconds));
+        next(tooManyRequests("Too many sign-in requests", { retryAfterSeconds: result.retryAfterSeconds }));
+        return;
+      }
+      next();
+    },
     validate(createCliAuthChallengeSchema),
     async (req, res) => {
       const created = await boardAuth.createCliAuthChallenge(req.body);

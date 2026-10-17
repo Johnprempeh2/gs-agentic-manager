@@ -5,8 +5,25 @@ function isLoopbackHostname(hostname: string): boolean {
   return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1";
 }
 
+/**
+ * X-Forwarded-Host counts only when the immediate peer is a proxy the
+ * operator trusts (`TRUST_PROXY`, compiled by Express into `trust proxy fn`).
+ * A direct client on a public address could otherwise send
+ * `X-Forwarded-Host: localhost` and walk past the allow-list.
+ */
+function forwardedHostFromTrustedProxy(req: Request): string | undefined {
+  const remoteAddress = req.socket?.remoteAddress;
+  const trustProxy = req.app?.get?.("trust proxy fn") as
+    | ((address: string, hop: number) => boolean)
+    | undefined;
+  if (!remoteAddress || typeof trustProxy !== "function" || !trustProxy(remoteAddress, 0)) {
+    return undefined;
+  }
+  return req.header("x-forwarded-host")?.split(",")[0]?.trim() || undefined;
+}
+
 function extractHostname(req: Request): string | null {
-  const forwardedHost = req.header("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedHost = forwardedHostFromTrustedProxy(req);
   const hostHeader = req.header("host")?.trim();
   const raw = forwardedHost || hostHeader;
   if (!raw) return null;
