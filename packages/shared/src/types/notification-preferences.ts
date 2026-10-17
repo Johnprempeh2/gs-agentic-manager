@@ -49,6 +49,8 @@ export interface MorningSummaryTask {
   title: string;
   /** Set on "due today" lines: the date it is due (YYYY-MM-DD), earlier than today when late. */
   dueDate?: string | null;
+  /** Where the line opens when it is not a task, such as a pipeline deal. */
+  href?: string | null;
 }
 
 /** One client deal won or lost, in the morning summary. */
@@ -74,6 +76,11 @@ export interface MorningSummary {
   workingNow?: { count: number; items: MorningSummaryTask[] };
   /** Client deals won or lost since `since`, newest first. Optional: older servers do not send it. */
   deals?: { won: number; lost: number; items: MorningSummaryDeal[] };
+  /**
+   * Open deals imported from Pipedrive whose next step is due today or late,
+   * by the person's own date. Optional: older servers do not send it.
+   */
+  dealNextSteps?: { count: number; items: MorningSummaryTask[] };
 }
 
 /** One notification that reached the person's phones (the recent notifications list). */

@@ -111,6 +111,25 @@ describe("morning summary service", () => {
         { companyId, agentId: agent!.id, status: "succeeded" },
       ])
       .returning();
+    const [pipeline] = await db.insert(pipelines).values({ companyId, key: "pipedrive-1", name: "DevTools" }).returning();
+    const [pdOpen, pdWon] = await db
+      .insert(pipelineStages)
+      .values([
+        { pipelineId: pipeline!.id, key: "pd_1", name: "Qualified", kind: "working", position: 0 },
+        { pipelineId: pipeline!.id, key: "won", name: "Won", kind: "done", position: 1 },
+      ])
+      .returning();
+    const deal = (title: string, fields: Record<string, unknown>, stageId = pdOpen!.id) => ({
+      companyId, pipelineId: pipeline!.id, stageId, caseKey: title.toLowerCase().replace(/\W+/g, "-"), title, fields,
+    });
+    await db.insert(pipelineCases).values([
+      deal("Acme", { dealStatus: "Open", nextActivityDate: "2026-10-16", nextActivitySubject: "Demo call" }),
+      deal("Globex", { dealStatus: "Open", nextActivityDate: "2026-10-12" }),
+      deal("Initech", { dealStatus: "Open", nextActivityDate: "2026-10-20" }),
+      deal("Umbrella", { dealStatus: "Lost", nextActivityDate: "2026-10-10" }),
+      deal("Hooli", { dealStatus: "Open", nextActivityDate: "2026-10-10" }, pdWon!.id),
+      deal("Client journey card", { nextActivityDate: "2026-10-10" }),
+    ]);
     await db.insert(issues).values([
       { companyId, title: "Drafting the deck", status: "in_progress", executionRunId: running!.id },
       { companyId, title: "Run already ended", status: "in_progress", executionRunId: finished!.id },
@@ -171,6 +190,16 @@ describe("morning summary service", () => {
     await db.insert(notificationPreferences).values({ companyId, userId: "kenji", timeZone: "Asia/Tokyo" });
     const tokyo = await service().build(companyId, "kenji", new Date("2026-10-16T22:30:00Z"));
     expect(tokyo.dueToday.count).toBe(3);
+  });
+
+  it("lists open Pipedrive deals whose next step is due today or late, linking to each deal", async () => {
+    const built = await service().build(companyId, "john", now);
+    expect(built.dealNextSteps?.count).toBe(2);
+    expect(built.dealNextSteps?.items).toEqual([
+      expect.objectContaining({ title: "Globex", dueDate: "2026-10-12", href: expect.stringMatching(/^\/pipelines\/.+\/cases\/.+$/) }),
+      expect.objectContaining({ title: "Acme: Demo call", dueDate: "2026-10-16" }),
+    ]);
+    expect(morningSummaryMessage(built, "MRN").body).toContain("2 deals have their next step due.");
   });
 
   it("sends once a day to people with a phone registered", async () => {

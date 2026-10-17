@@ -7368,6 +7368,15 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/companies/{companyId}/push/recent",
+  tags: ["inbox"],
+  summary: "The caller's notifications that reached a phone in the last two weeks, newest first",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/companies/{companyId}/morning-summary",
   tags: ["inbox"],
   summary: "The caller's morning summary: what needs them, what finished in the last 24 hours, what is stuck",

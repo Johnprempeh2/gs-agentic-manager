@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, heartbeatRuns, issues, pipelineCases, pipelines, pushSubscriptions } from "@greatstone/db";
+import { companies, heartbeatRuns, issues, pipelineCases, pipelineStages, pipelines, pushSubscriptions } from "@greatstone/db";
 import type { MorningSummary, MorningSummaryDeal, MorningSummaryTask, NeedsMe, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { HOUSEKEEPING_ISSUE_ORIGIN_KINDS } from "./agent-work-digest.js";
@@ -53,6 +53,9 @@ export function morningSummaryMessage(summary: MorningSummary, prefix: string): 
   const title = needs === 0 ? "Good morning. Nothing needs you" : `Good morning. ${plural(needs, "thing needs", "things need")} you`;
   const parts = [
     ...(summary.dueToday.count > 0 ? [`${plural(summary.dueToday.count, "task is", "tasks are")} due today.`] : []),
+    ...((summary.dealNextSteps?.count ?? 0) > 0
+      ? [`${plural(summary.dealNextSteps!.count, "deal has its", "deals have their")} next step due.`]
+      : []),
     summary.finished.count === 0 ? "No tasks finished since yesterday." : `${plural(summary.finished.count, "task", "tasks")} finished since yesterday.`,
     summary.stuck.count === 0 ? "Nothing is stuck." : `${plural(summary.stuck.count, "task is", "tasks are")} stuck.`,
     ...(summary.deals && summary.deals.won > 0 ? [`${plural(summary.deals.won, "deal", "deals")} won.`] : []),
@@ -110,6 +113,37 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       isNotNull(pipelineCases.terminalKind),
       gte(pipelineCases.terminalAt, since),
     );
+    // Open Pipedrive deals whose next step is due today or late (overnight
+    // run, 17 Oct). Dates are stored as YYYY-MM-DD, so text order is date order.
+    const nextStepDate = sql<string>`left(${pipelineCases.fields} ->> 'nextActivityDate', 10)`;
+    const dealsDue = and(
+      eq(pipelineCases.companyId, companyId),
+      notInArray(pipelineStages.kind, ["done", "cancelled"]),
+      // Only Pipedrive deals carry dealStatus; a missing key never matches.
+      sql`lower(trim(${pipelineCases.fields} ->> 'dealStatus')) in ('open', '')`,
+      sql`(${pipelineCases.fields} ->> 'nextActivityDate') ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}'`,
+      sql`${nextStepDate} <= ${today}`,
+    );
+    const [nextStepRows, nextStepCount] = await Promise.all([
+      db
+        .select({
+          id: pipelineCases.id,
+          pipelineId: pipelineCases.pipelineId,
+          title: pipelineCases.title,
+          dueDate: nextStepDate,
+          subject: sql<string | null>`${pipelineCases.fields} ->> 'nextActivitySubject'`,
+        })
+        .from(pipelineCases)
+        .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
+        .where(dealsDue)
+        .orderBy(asc(nextStepDate), asc(pipelineCases.title))
+        .limit(ITEM_LIMIT),
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(pipelineCases)
+        .innerJoin(pipelineStages, eq(pipelineStages.id, pipelineCases.stageId))
+        .where(dealsDue),
+    ]);
     const [mine, finishedRows, finishedCount, stuckRows, stuckCount, dueRows, dueCount, workingRows, workingCount, dealRows, dealCounts] = await Promise.all([
       buildNeedsMe(companyId, userId),
       db
@@ -183,6 +217,16 @@ export function morningSummaryService(db: Db, options: { buildNeedsMe?: (company
       stuck: { count: stuckCount[0]?.count ?? 0, items: stuckRows },
       workingNow: { count: workingCount[0]?.count ?? 0, items: workingRows },
       deals: { won: dealCount("done"), lost: dealCount("cancelled"), items: dealItems },
+      dealNextSteps: {
+        count: nextStepCount[0]?.count ?? 0,
+        items: nextStepRows.map((row) => ({
+          id: row.id,
+          identifier: null,
+          title: row.subject?.trim() ? `${row.title}: ${row.subject.trim()}` : row.title,
+          dueDate: row.dueDate,
+          href: `/pipelines/${row.pipelineId}/cases/${row.id}`,
+        })),
+      },
     };
   }
 

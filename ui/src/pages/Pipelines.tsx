@@ -89,6 +89,8 @@ import { issuesApi } from "../api/issues";
 import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
+import { PipelineExportButton } from "../components/DataExport";
+import { DealForecast } from "../components/DealForecast";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
@@ -97,6 +99,8 @@ import {
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
   dealsClosedThisMonth,
+  forecastByCloseMonth,
+  weightedDealValues,
   formatDealTotals,
   isDevtoolsCaseType,
   sumDealValues,
@@ -1662,6 +1666,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
   // Owner filter (Pipedrive's "my deals"), per pipeline; ALL_OWNERS shows everyone's.
   const [ownerFilter, setOwnerFilter] = useState<{ pipelineId: string; owner: string }>({ pipelineId, owner: ALL_OWNERS });
+  // "Deals need a next step" in the header doubles as a filter, like Pipedrive's red deals.
+  const [nextStepFilterPipelineId, setNextStepFilterPipelineId] = useState<string | null>(null);
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -1734,10 +1740,22 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return formatDealTotals(sumDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
   }, [visibleCases, orderedStages]);
-  const dealsNeedingNextStep = useMemo(() => {
+  const weightedOpenValue = useMemo(() => {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
-    return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null).length;
+    return formatDealTotals(weightedDealValues(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)))));
   }, [visibleCases, orderedStages]);
+  const forecast = useMemo(() => {
+    if (!pipeline || !isDevtoolsCaseType(pipeline.key)) return [];
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return forecastByCloseMonth(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId))));
+  }, [pipeline, visibleCases, orderedStages]);
+  const casesNeedingNextStep = useMemo(() => {
+    const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
+    return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null);
+  }, [visibleCases, orderedStages]);
+  const dealsNeedingNextStep = casesNeedingNextStep.length;
+  const nextStepFilterOn = nextStepFilterPipelineId === pipelineId && dealsNeedingNextStep > 0;
+  const boardCases = nextStepFilterOn ? casesNeedingNextStep : visibleCases;
   const closedThisMonth = useMemo(
     () => ({ won: dealsClosedThisMonth(visibleCases, "won"), lost: dealsClosedThisMonth(visibleCases, "lost") }),
     [visibleCases],
@@ -1759,7 +1777,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     const unassigned: BoardCase[] = [];
-    for (const caseItem of visibleCases) {
+    for (const caseItem of boardCases) {
       const stageId = caseItem.stageId && stageIds.has(caseItem.stageId) ? caseItem.stageId : UNASSIGNED_STAGE_ID;
       if (stageId === UNASSIGNED_STAGE_ID) {
         unassigned.push(caseItem);
@@ -1777,7 +1795,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     return { columns, byStage, caseToColumn, caseById };
-  }, [orderedStages, visibleCases, stageIds, pipelineId]);
+  }, [orderedStages, boardCases, stageIds, pipelineId]);
 
   const transitions = useMemo<PipelineTransitionEdge[]>(
     () => pipeline?.transitions ?? [],
@@ -2010,9 +2028,33 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               ? `${cases.length} total item${cases.length === 1 ? "" : "s"}`
               : `${visibleCases.length} of ${cases.length} items, owned by ${selectedOwner}`}
             {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
+            {weightedOpenValue ? (
+              <span data-testid="pipeline-weighted-value" title="Open deal value multiplied by each deal's probability">
+                {" "}· {weightedOpenValue} weighted
+              </span>
+            ) : null}
             {dealsNeedingNextStep > 0 ? (
               <span data-testid="pipeline-deals-needing-next-step">
-                {" "}· {dealsNeedingNextStep} {dealsNeedingNextStep === 1 ? "deal needs" : "deals need"} a next step
+                {" "}·{" "}
+                <button
+                  type="button"
+                  className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  aria-pressed={nextStepFilterOn}
+                  title={nextStepFilterOn ? "Show every card again" : "Show only the deals that need a next step"}
+                  onClick={() => setNextStepFilterPipelineId(nextStepFilterOn ? null : pipelineId)}
+                >
+                  {dealsNeedingNextStep} {dealsNeedingNextStep === 1 ? "deal needs" : "deals need"} a next step
+                </button>
+                {nextStepFilterOn ? (
+                  <button
+                    type="button"
+                    className="ml-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+                    onClick={() => setNextStepFilterPipelineId(null)}
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                    Show all
+                  </button>
+                ) : null}
               </span>
             ) : null}
             {(["won", "lost"] as const).map((outcome) => {
@@ -2068,6 +2110,12 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <SelectItem value="builtFor">Built for</SelectItem>
             </SelectContent>
           </Select>
+          <PipelineExportButton
+            name={pipeline.name}
+            pipelineId={pipelineId}
+            cases={boardCases}
+            stageName={(stageId) => orderedStages.find((stage) => stage.id === stageId)?.name ?? ""}
+          />
           <Button asChild data-tour="board-add">
             <Link to={`/pipelines/${pipelineId}/add`}>
               <Plus className="mr-2 h-4 w-4" />
@@ -2081,6 +2129,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           </Button>
         </div>
       </div>
+
+      <DealForecast buckets={forecast} />
 
       <PipelineHealthBar
         warnings={healthQuery.data?.warnings ?? []}
