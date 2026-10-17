@@ -98,6 +98,8 @@ import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
+  averageDaysInStage,
+  dealWinRate,
   dealsClosedThisMonth,
   forecastByCloseMonth,
   weightedDealValues,
@@ -1553,6 +1555,8 @@ function PipelineBoardColumn({
   const sortableCaseIds = caseGroups.flatMap((group) => group.cases.map((entry) => entry.id));
   // Deal values from a Pipedrive import, summed per stage as Pipedrive shows them.
   const stageValue = formatDealTotals(sumDealValues(cases));
+  // Pipedrive's deal ageing: how long the deals in an open stage have sat there.
+  const averageDays = stageValue && stage.kind !== "done" && stage.kind !== "cancelled" ? averageDaysInStage(cases) : null;
 
   return (
     <div
@@ -1581,6 +1585,11 @@ function PipelineBoardColumn({
         <span className="ml-2 flex shrink-0 items-center gap-2 text-xs">
           <span>{cases.length} item{cases.length === 1 ? "" : "s"}</span>
           {stageValue ? <span className="font-normal text-muted-foreground" data-testid="stage-deal-value">{stageValue}</span> : null}
+          {averageDays != null ? (
+            <span className="font-normal text-muted-foreground" data-testid="stage-average-days" title="Average days the deals here have been in this stage">
+              avg {averageDays}d
+            </span>
+          ) : null}
           {warningCount ? (
             <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -1756,6 +1765,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const dealsNeedingNextStep = casesNeedingNextStep.length;
   const nextStepFilterOn = nextStepFilterPipelineId === pipelineId && dealsNeedingNextStep > 0;
   const boardCases = nextStepFilterOn ? casesNeedingNextStep : visibleCases;
+  const winRate = useMemo(() => dealWinRate(visibleCases), [visibleCases]);
   const closedThisMonth = useMemo(
     () => ({ won: dealsClosedThisMonth(visibleCases, "won"), lost: dealsClosedThisMonth(visibleCases, "lost") }),
     [visibleCases],
@@ -2055,6 +2065,11 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
                     Show all
                   </button>
                 ) : null}
+              </span>
+            ) : null}
+            {winRate ? (
+              <span data-testid="pipeline-win-rate" title={`${winRate.won} won and ${winRate.lost} lost in the last 90 days`}>
+                {" "}· {winRate.percent}% win rate (90 days)
               </span>
             ) : null}
             {(["won", "lost"] as const).map((outcome) => {
