@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, index, boolean, jsonb } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { assets } from "./assets.js";
@@ -17,6 +17,8 @@ export const generatedImages = pgTable(
     aspectRatio: text("aspect_ratio").notNull(),
     /** A style preset id; its guidance was added to the prompt sent to the provider. */
     style: text("style"),
+    /** Cinema camera picks from the image studio; their wording was added to the prompt sent. */
+    camera: jsonb("camera").$type<{ camera?: string; lens?: string; focalLength?: number; aperture?: string }>(),
     provider: text("provider").notNull(),
     model: text("model").notNull(),
     status: text("status").notNull().default("pending"),

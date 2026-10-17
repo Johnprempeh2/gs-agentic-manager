@@ -11,5 +11,6 @@ Where this codebase still says "Paperclip Cloud" or "Paperclip Enterprise", it
 refers to that upstream service, which the fork can still connect to.
 
 Bundled third-party material keeps its own notices, including the ClipLab agent
-characters (`packages/shared/src/cliplab/LICENSE`) and the Inter and Montserrat
-fonts (`ui/public/fonts/NOTICE.md`).
+characters (`packages/shared/src/cliplab/LICENSE`), the image studio camera and
+prompt wording from Open Higgsfield AI (`packages/shared/src/studio/LICENSE`)
+and the Inter and Montserrat fonts (`ui/public/fonts/NOTICE.md`).

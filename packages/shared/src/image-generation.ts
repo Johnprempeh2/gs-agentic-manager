@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from "./studio/camera.js";
 
 // Image generation: agents and board users ask for a picture from a written
 // description and GSAM keeps the result as a company image. The provider is
@@ -122,12 +123,21 @@ export function parseImageStyle(value: string | null | undefined): ImageStylePre
   return IMAGE_STYLE_PRESETS.find((preset) => preset.id === normalised || preset.label.toLowerCase() === normalised)?.id ?? null;
 }
 
-/** The text the image service receives: the person's words, then the style's guidance. */
-export function composeImagePrompt(prompt: string, style: string | null | undefined): string {
+/**
+ * The text the image service receives: the person's words, then the camera
+ * wording (when a camera is picked), then the style's guidance.
+ */
+export function composeImagePrompt(
+  prompt: string,
+  style: string | null | undefined,
+  camera?: StudioCameraSettings | null,
+): string {
   const preset = imageStylePreset(style);
-  const trimmed = prompt.trim();
-  if (!preset) return trimmed;
-  const sentence = /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+  const cameraWords = studioCameraWords(camera);
+  let text = prompt.trim();
+  if (cameraWords) text = `${text.replace(/[.,;\s]+$/, "")}, ${cameraWords}`;
+  if (!preset) return text;
+  const sentence = /[.!?]$/.test(text) ? text : `${text}.`;
   return `${sentence} ${preset.guidance}`;
 }
 
@@ -185,6 +195,8 @@ export const createGeneratedImageSchema = z.object({
     .max(GENERATED_IMAGE_PROMPT_MAX_LENGTH, `Keep the description under ${GENERATED_IMAGE_PROMPT_MAX_LENGTH} characters`),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS).default(DEFAULT_IMAGE_ASPECT_RATIO),
   style: z.enum(IMAGE_STYLE_IDS).nullable().optional(),
+  /** Cinema camera picks (camera, lens, focal length, aperture); their wording is added to the prompt. */
+  camera: studioCameraSchema.nullable().optional(),
   /** The task the image is for, when it is made from a task. */
   issueId: z.string().uuid().nullable().optional(),
   /** The client the image is for. */
@@ -226,6 +238,8 @@ export interface GeneratedImage {
   prompt: string;
   aspectRatio: ImageAspectRatio;
   style: ImageStylePresetId | null;
+  /** Cinema camera picks, or null when none were made. */
+  camera: StudioCameraSettings | null;
   provider: ImageGenerationProviderId;
   model: string;
   status: GeneratedImageStatus;
