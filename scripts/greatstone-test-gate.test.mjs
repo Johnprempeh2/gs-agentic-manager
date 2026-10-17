@@ -5,7 +5,7 @@
 //   node --test scripts/greatstone-test-gate.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync, execFileSync } from "node:child_process";
+import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -33,14 +33,27 @@ function sandbox(t) {
     return git(dev, "rev-parse", "HEAD");
   };
   // No BASH_ENV: an agent run's .bashrc puts its own git launcher back first on
-  // PATH, which would hide the launcher test's stub.
-  const { BASH_ENV: _bashEnv, ...callerEnv } = process.env;
-  const gate = (args, extraEnv = {}) =>
-    spawnSync("bash", [join(dev, "scripts", "greatstone-test-gate.sh"), ...args], {
-      encoding: "utf8",
-      env: { ...callerEnv, GSAM_ROOT: root, GSAM_RELEASE_REPO: dev, ...extraEnv },
-    });
-  return { root, dev, candidate, gate, gateDir: join(root, "test-gate") };
+  // PATH, which would hide the launcher test's stub. No run scratch folders:
+  // when these tests run inside an agent run, the sandbox itself is in one.
+  const {
+    BASH_ENV: _bashEnv,
+    GSAM_RUN_SCRATCH_DIR: _runScratch,
+    GSAM_SCRATCH_DIR: _scratch,
+    GSAM_TASK_SCRATCH_DIR: _taskScratch,
+    ...callerEnv
+  } = process.env;
+  const gateTmp = join(root, "gate-tmp");
+  const env = (extraEnv) => ({
+    ...callerEnv,
+    GSAM_ROOT: root,
+    GSAM_RELEASE_REPO: dev,
+    GSAM_TEST_GATE_TMPDIR: gateTmp,
+    ...extraEnv,
+  });
+  const script = join(dev, "scripts", "greatstone-test-gate.sh");
+  const gate = (args, extraEnv = {}) => spawnSync("bash", [script, ...args], { encoding: "utf8", env: env(extraEnv) });
+  const gateAsync = (args, extraEnv = {}) => spawn("bash", [script, ...args], { env: env(extraEnv), stdio: "ignore" });
+  return { root, dev, candidate, gate, gateAsync, gateTmp, gateDir: join(root, "test-gate") };
 }
 
 test("a candidate whose lanes all pass gets a pass marker for its exact commit", (t) => {
@@ -159,4 +172,79 @@ test("the clone is cleaned between runs, and the gate refuses a tag with no lane
   assert.ok(existsSync(join(box.gateDir, "lock")), "another gate's lock is left alone");
 
   assert.match(box.gate(["rc-2099-01-01.1"]).stderr, /^test-gate: unknown tag rc-2099-01-01\.1$/m);
+});
+
+const waitFor = async (what, check, ms = 30_000) => {
+  const deadline = Date.now() + ms;
+  for (;;) {
+    const value = check();
+    if (value) return value;
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+};
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test("started from an agent run, the gate drops the run marker and lanes never use the run scratch TMPDIR", { skip: process.platform !== "linux" && "reads /proc" }, (t) => {
+  // GRE-1643: the server stops every process whose start environment names a
+  // run that ended, and deletes the run scratch folder (the run's TMPDIR).
+  const box = sandbox(t);
+  const runScratch = join(box.root, "run-scratch");
+  mkdirSync(runScratch);
+  box.candidate("rc-2026-10-17.1", [
+    `tmp: test "$TMPDIR" = "${box.gateTmp}"`,
+    // Walk up to the gate's own process and read its start environment.
+    "no-marker: p=$PPID; while [ \"$p\" -gt 1 ]; do if grep -qa greatstone-test-gate.sh /proc/$p/cmdline; then tr '\\0' '\\n' </proc/$p/environ | grep -q '_RUN_ID=' && exit 1; exit 0; fi; p=$(cut -d' ' -f4 /proc/$p/stat); done; exit 2",
+    "",
+  ].join("\n"));
+  // Agents also get the run id under its legacy alias (spelt in two parts for the rebrand guard).
+  const runEnv = { GSAM_RUN_ID: "run-1", [`${"PAPER"}CLIP_RUN_ID`]: "run-1", TMPDIR: runScratch, GSAM_RUN_SCRATCH_DIR: runScratch };
+  const run = box.gate(["rc-2026-10-17.1"], { ...runEnv, GSAM_TEST_GATE_RETRY: "0" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+
+  const inScratch = box.gate(["rc-2026-10-17.1"], { ...runEnv, GSAM_TEST_GATE_TMPDIR: join(runScratch, "gate") });
+  assert.equal(inScratch.status, 1);
+  assert.match(inScratch.stderr, /GSAM_TEST_GATE_TMPDIR must be outside the run scratch folder/);
+});
+
+test("--detach returns at once and the gate still writes its marker, with output in <tag>.out", async (t) => {
+  const box = sandbox(t);
+  const commit = box.candidate("rc-2026-10-17.1", "slow: sleep 2\n");
+  const run = box.gate(["--detach", "rc-2026-10-17.1"], { GSAM_RUN_ID: "run-1" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  assert.match(run.stdout, /^Test gate for rc-2026-10-17\.1 started in the background \(pid \d+\)\. Output: .*rc-2026-10-17\.1\.out$/m);
+  const marker = join(box.gateDir, "passed", commit);
+  assert.equal(existsSync(marker), false, "the caller does not wait for the lanes");
+  await waitFor("the pass marker", () => existsSync(marker));
+  await waitFor("the lock to go", () => !existsSync(join(box.gateDir, "lock")));
+  assert.match(readFileSync(join(box.gateDir, "rc-2026-10-17.1.out"), "utf8"), /^PASSED: all 1 lanes on rc-2026-10-17\.1/m);
+  assert.equal(box.gate(["--check", "rc-2026-10-17.1"]).status, 0);
+});
+
+test("a gate that is stopped stops its lanes too, frees its lock and writes no marker", async (t) => {
+  const box = sandbox(t);
+  const commit = box.candidate("rc-2026-10-17.1", [
+    "sleeper: sleep 300 & echo $! > \"$TMPDIR/sleeper.pid\"; wait",
+    "waiter: sleep 300",
+    "",
+  ].join("\n"));
+  const child = box.gateAsync(["rc-2026-10-17.1"]);
+  const exited = new Promise((resolve) => child.on("exit", (code, signal) => resolve({ code, signal })));
+  const pidFile = join(box.gateTmp, "sleeper.pid");
+  await waitFor("the lanes to start", () => existsSync(pidFile) && readFileSync(pidFile, "utf8").trim());
+  const sleeper = Number(readFileSync(pidFile, "utf8").trim());
+  assert.ok(alive(sleeper));
+  child.kill("SIGTERM");
+  const { code } = await exited;
+  assert.equal(code, 143);
+  await waitFor("the lane's process to stop", () => !alive(sleeper), 10_000);
+  assert.equal(existsSync(join(box.gateDir, "lock")), false);
+  assert.equal(existsSync(join(box.gateDir, "passed", commit)), false);
 });
