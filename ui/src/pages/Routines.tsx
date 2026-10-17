@@ -331,6 +331,7 @@ export function Routines() {
   const [folderDialogTarget, setFolderDialogTarget] = useState<FolderListItem | null>(null);
   const [deleteFolderTarget, setDeleteFolderTarget] = useState<FolderListItem | null>(null);
   const [mobileFoldersOpen, setMobileFoldersOpen] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedRoutineIds, setSelectedRoutineIds] = useState<string[]>([]);
   const [moveAfterCreateIds, setMoveAfterCreateIds] = useState<string[]>([]);
@@ -625,9 +626,13 @@ export function Routines() {
     () => new Map((routineFolders?.folders ?? []).map((folder) => [folder.id, folder])),
     [routineFolders],
   );
-  const visibleRoutines = useMemo(
-    () => (routines ?? []).filter((routine) => routine.status !== "archived"),
+  const archivedRoutineCount = useMemo(
+    () => (routines ?? []).filter((routine) => routine.status === "archived").length,
     [routines],
+  );
+  const visibleRoutines = useMemo(
+    () => (routines ?? []).filter((routine) => showArchived || routine.status !== "archived"),
+    [routines, showArchived],
   );
   const folderFilteredRoutines = useMemo(() => {
     if (routineViewState.groupBy !== "folder") return visibleRoutines;
@@ -1228,6 +1233,19 @@ export function Routines() {
                 setSelectedRoutineIds([]);
               }}
             />
+          ) : null}
+          {archivedRoutineCount > 0 ? (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                aria-pressed={showArchived}
+                onClick={() => setShowArchived((current) => !current)}
+              >
+                {showArchived ? "Hide archived routines" : `Show archived routines (${archivedRoutineCount})`}
+              </Button>
+            </div>
           ) : null}
           {visibleRoutines.length === 0 ? (
             <div className="py-12">
