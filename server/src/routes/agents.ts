@@ -21,6 +21,7 @@ import type { ChatChannelService } from "../services/chat-channels.js";
 import { activityLog, agents as agentsTable, chatConversations, companies, heartbeatRuns, issues as issuesTable, projects as projectsTable } from "@greatstone/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { sha256Digest } from "../services/feedback-redaction.js";
+import { rankDirectory } from "../services/agent-directory.js";
 import {
   agentSkillSyncSchema,
   agentMineInboxQuerySchema,
@@ -4062,6 +4063,37 @@ export function agentRoutes(
       res.json(annotateConnectorSkills(snapshot, connectorAssignments));
     },
   );
+
+  // "Who can help": agents (and the board) find colleagues by what they do.
+  router.get("/companies/:companyId/agents/directory", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const unsupported = Object.keys(req.query).filter((key) => key !== "q" && key !== "limit").sort();
+    if (unsupported.length > 0) {
+      res.status(400).json({ error: `Unsupported query parameter${unsupported.length === 1 ? "" : "s"}: ${unsupported.join(", ")}` });
+      return;
+    }
+    const q = typeof req.query.q === "string" ? req.query.q.slice(0, 200) : "";
+    const limitRaw = typeof req.query.limit === "string" ? Number(req.query.limit) : 20;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 20;
+    const visible = await filterAgentsForActor(req, await svc.list(companyId));
+    res.json({
+      query: q,
+      agents: rankDirectory(
+        visible.map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          role: agent.role,
+          title: agent.title ?? null,
+          capabilities: agent.capabilities ?? null,
+          status: agent.status,
+          reportsTo: agent.reportsTo ?? null,
+        })),
+        q,
+        limit,
+      ),
+    });
+  });
 
   router.get("/companies/:companyId/agents", async (req, res) => {
     const companyId = req.params.companyId as string;

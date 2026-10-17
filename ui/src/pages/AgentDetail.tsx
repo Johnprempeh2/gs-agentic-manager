@@ -64,6 +64,7 @@ import { buildSameOriginWebSocketUrl } from "../lib/websocket-url";
 import { tryCreateWebSocket } from "../lib/websocket";
 import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
+import { AgentStatusHistory } from "../components/AgentStatusHistory";
 import { budgetUseLabel } from "../lib/agents-export";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
@@ -1891,6 +1892,8 @@ export function AgentOverview({
           </div>
         )}
       </section>
+
+      <AgentStatusHistory companyId={agent.companyId} agentId={agent.id} />
 
       <section className="space-y-3" aria-labelledby="agent-audit-links-heading">
         <h3 id="agent-audit-links-heading" className="text-sm font-medium">Audit</h3>

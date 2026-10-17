@@ -262,13 +262,14 @@ export function Costs({
   const { data: spendData, isLoading: spendLoading, error: spendError } = useQuery({
     queryKey: queryKeys.costs(companyId, from || undefined, to || undefined),
     queryFn: async () => {
-      const [summary, byAgent, byProject, byAgentModel] = await Promise.all([
+      const [summary, byAgent, byProject, byAgentModel, byBillingCode] = await Promise.all([
         costsApi.summary(companyId, from || undefined, to || undefined),
         costsApi.byAgent(companyId, from || undefined, to || undefined),
         costsApi.byProject(companyId, from || undefined, to || undefined),
         costsApi.byAgentModel(companyId, from || undefined, to || undefined),
+        costsApi.byBillingCode(companyId, from || undefined, to || undefined).catch(() => []),
       ]);
-      return { summary, byAgent, byProject, byAgentModel };
+      return { summary, byAgent, byProject, byAgentModel, byBillingCode };
     },
     enabled: !!selectedCompanyId && customReady && showSummaryChrome,
   });
@@ -911,6 +912,26 @@ export function Costs({
                       )}
                     </CardContent>
                   </Card>
+
+                  {(spendData?.byBillingCode.length ?? 0) > 0 ? (
+                    <Card data-testid="costs-by-billing-code">
+                      <CardHeader className="px-5 pt-5 pb-2">
+                        <CardTitle className="text-base">By request</CardTitle>
+                        <CardDescription>Run costs grouped by billing code. Subtasks take their parent's code.</CardDescription>
+                      </CardHeader>
+                      <CardContent className="space-y-2 px-5 pb-5 pt-2">
+                        {spendData?.byBillingCode.map((row) => (
+                          <div
+                            key={row.billingCode}
+                            className="flex items-center justify-between gap-3 border border-border px-3 py-2 text-sm"
+                          >
+                            <span className="truncate">{row.billingCode}</span>
+                            <span className="font-medium tabular-nums">{formatCents(row.costCents)}</span>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  ) : null}
 
                   <FinanceTimelineCard rows={topFinanceEvents.slice(0, 6)} emptyMessage="No other charges yet. Top-ups, fees and refunds appear here." />
                 </div>

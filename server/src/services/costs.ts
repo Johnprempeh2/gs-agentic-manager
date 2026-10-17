@@ -823,6 +823,28 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
       };
     },
 
+    /** Spend per billing code: what each cross-team request cost, newest codes included. */
+    byBillingCode: async (companyId: string, range?: CostDateRange) => {
+      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
+      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
+      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+      const costCentsExpr = sumAsNumber(costEvents.costCents);
+      return db
+        .select({
+          billingCode: sql<string>`${costEvents.billingCode}`,
+          costCents: costCentsExpr,
+          inputTokens: sumAsNumber(costEvents.inputTokens),
+          cachedInputTokens: sumAsNumber(costEvents.cachedInputTokens),
+          outputTokens: sumAsNumber(costEvents.outputTokens),
+          eventCount: sql<number>`count(*)::int`,
+          lastOccurredAt: sql<Date>`max(${costEvents.occurredAt})`,
+        })
+        .from(costEvents)
+        .where(and(...conditions, isNotNull(costEvents.billingCode), sql`${costEvents.billingCode} <> ''`))
+        .groupBy(costEvents.billingCode)
+        .orderBy(desc(costCentsExpr));
+    },
+
     byProject: async (companyId: string, range?: CostDateRange) => {
       const issueIdAsText = sql<string>`${issues.id}::text`;
       const runProjectLinks = db

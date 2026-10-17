@@ -12744,9 +12744,19 @@ export function issueRoutes(
           );
         }
       }
+      // A subtask carries its parent's billing code unless it names its own,
+      // so a cross-team request's costs roll up to the request (SPEC billing codes).
+      let inheritedBillingCode: string | null = null;
+      if (rawCreateBody.billingCode === undefined && typeof effectiveParentId === "string") {
+        const billingParent = createParent ?? (await svc.getById(effectiveParentId));
+        if (billingParent && billingParent.companyId === companyId) {
+          inheritedBillingCode = billingParent.billingCode ?? null;
+        }
+      }
       const createBody = {
         ...rawCreateBody,
         parentId: effectiveParentId,
+        ...(inheritedBillingCode ? { billingCode: inheritedBillingCode } : {}),
         ...(normalizedAssigneeAgentId !== undefined
           ? { assigneeAgentId: normalizedAssigneeAgentId }
           : {}),
