@@ -2083,7 +2083,7 @@ export function ConfigurationTab({
           : err instanceof Error
             ? err.message
             : "Could not save agent";
-      pushToast({ title: "Save failed", body: message, tone: "error" });
+      pushToast({ title: "Your change was not saved", body: message, tone: "error" });
     },
   });
 
@@ -4617,7 +4617,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
         setTimeout(() => setCopied(false), 2000);
       })
       .catch(() => {
-        pushToast({ title: "Copy failed", body: "Clipboard access is unavailable.", tone: "error" });
+        pushToast({ title: "Could not copy", body: "Clipboard access is unavailable.", tone: "error" });
       });
   }
 

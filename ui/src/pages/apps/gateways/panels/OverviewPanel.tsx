@@ -56,7 +56,7 @@ export function OverviewPanel({
       await copyTextToClipboard(value);
       pushToast({ title: "Copied", body: label, tone: "success" });
     } catch {
-      pushToast({ title: "Copy failed", body: "Clipboard access is unavailable.", tone: "error" });
+      pushToast({ title: "Could not copy", body: "Clipboard access is unavailable.", tone: "error" });
     }
   }
 

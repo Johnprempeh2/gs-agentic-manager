@@ -28,7 +28,7 @@ export function CopyableGatewayUrl({
       pushToast({ title: "Gateway URL copied", tone: "success" });
     } catch {
       pushToast({
-        title: "Copy failed",
+        title: "Could not copy",
         body: "Clipboard access is unavailable.",
         tone: "error",
       });

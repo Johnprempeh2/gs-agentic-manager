@@ -1201,7 +1201,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Status update failed",
+        title: "Could not change the status",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1217,7 +1217,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Status update failed",
+        title: "Could not change the status",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1234,7 +1234,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Delete failed",
+        title: "Could not delete it",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1252,7 +1252,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Delete failed",
+        title: "Could not delete it",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1314,7 +1314,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Disable failed",
+        title: "Could not turn it off",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1334,7 +1334,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Remove failed",
+        title: "Could not remove it",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1349,7 +1349,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Default update failed",
+        title: "Could not change the default",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1364,7 +1364,7 @@ export function Secrets() {
     },
     onError: (error) => {
       pushToast({
-        title: "Health check failed",
+        title: "Could not check the connection",
         body: error instanceof Error ? error.message : "Try again",
         tone: "error",
       });
@@ -1498,7 +1498,7 @@ export function Secrets() {
       .then(() => pushToast({ title: "Link copied", body: "Deep link to this secret", tone: "success" }))
       .catch((error) =>
         pushToast({
-          title: "Copy failed",
+          title: "Could not copy",
           body: error instanceof Error ? error.message : "Unable to copy link",
           tone: "error",
         }),
@@ -1510,7 +1510,7 @@ export function Secrets() {
       .then(() => pushToast({ title: "Secret key copied", body: key, tone: "success" }))
       .catch((error) =>
         pushToast({
-          title: "Copy failed",
+          title: "Could not copy",
           body: error instanceof Error ? error.message : "Unable to copy secret key",
           tone: "error",
         }),

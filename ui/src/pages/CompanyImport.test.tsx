@@ -930,7 +930,7 @@ describe("CompanyImport", () => {
       expect(container.textContent).toContain("Imported agents arrived paused");
       const openCompany = container.querySelector('[data-testid="import-expired-open-company"]');
       expect(openCompany).not.toBeNull();
-      expect(container.textContent).not.toContain("Import failed");
+      expect(container.textContent).not.toContain("Could not import");
       expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
       // The company list is refreshed so the new company appears in the switcher.
       expect(invalidateSpy).toHaveBeenCalledWith(expect.objectContaining({ queryKey: ["companies"] }));

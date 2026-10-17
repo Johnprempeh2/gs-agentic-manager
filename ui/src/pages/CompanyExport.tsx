@@ -774,7 +774,7 @@ export function CompanyExport() {
       if (request.requestId !== previewRequestIdRef.current || isAbortError(err)) return;
       pushToast({
         tone: "error",
-        title: "Export failed",
+        title: "Could not export",
         body: previewErrorMessage(err),
       });
     },
@@ -815,7 +815,7 @@ export function CompanyExport() {
     onError: (err) => {
       pushToast({
         tone: "error",
-        title: "Export failed",
+        title: "Could not export",
         body: err instanceof Error ? err.message : "Failed to build export package.",
       });
     },

@@ -137,7 +137,7 @@ export function useThreadHandlers({
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       pushToast({
-        title: "Copy failed",
+        title: "Could not copy",
         body:
           error instanceof Error
             ? error.message

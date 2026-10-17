@@ -460,7 +460,7 @@ export function Routines() {
           ]);
         } catch (moveError) {
           pushToast({
-            title: "Folder created, move failed",
+            title: "Folder made, but the routines did not move",
             body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
             tone: "error",
           });
@@ -473,7 +473,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to save folder",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the folder.",
         tone: "error",
       });
@@ -489,7 +489,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the folder.",
         tone: "error",
       });
@@ -508,7 +508,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder delete failed",
+        title: "Could not delete the folder",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not delete the folder.",
         tone: "error",
       });
@@ -525,7 +525,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Move failed",
+        title: "Could not move it",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not move the routine.",
         tone: "error",
       });
@@ -547,7 +547,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -715,7 +715,7 @@ export function Routines() {
       pushToast({ title: "Routines moved", body: `${ids.length} routine${ids.length === 1 ? "" : "s"} filed.`, tone: "success" });
     } catch (moveError) {
       pushToast({
-        title: "Failed to move routines",
+        title: "Could not move the routines",
         body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
         tone: "error",
       });

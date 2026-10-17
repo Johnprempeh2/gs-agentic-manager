@@ -144,7 +144,7 @@ export function CompanyAccess() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to update member",
+        title: "Your change to this person was not saved",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -162,7 +162,7 @@ export function CompanyAccess() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to approve join request",
+        title: "Could not let them in",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });
@@ -180,7 +180,7 @@ export function CompanyAccess() {
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to reject join request",
+        title: "Could not turn down the request",
         body: error instanceof Error ? error.message : "Unknown error",
         tone: "error",
       });

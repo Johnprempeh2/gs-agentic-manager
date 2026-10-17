@@ -507,7 +507,7 @@ export function AgentActionButtons({
             className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50"
             onClick={() => {
               void copyTextToClipboard(agent.id).catch(() => {
-                pushToast({ title: "Copy failed", body: "Clipboard access is unavailable.", tone: "error" });
+                pushToast({ title: "Could not copy", body: "Clipboard access is unavailable.", tone: "error" });
               });
               setMoreOpen(false);
             }}
