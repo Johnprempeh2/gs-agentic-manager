@@ -1,5 +1,5 @@
 {
-  "id": "b265f5fe-8ccf-4bed-a6f8-8bd28ea4d687",
+  "id": "4dfab058-efc9-45ce-b2a5-764de7aa66db",
   "prevId": "a6a2d855-eadb-446f-826f-66127e91eca9",
   "version": "7",
   "dialect": "postgresql",
@@ -27365,12 +27365,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "camera": {
-          "name": "camera",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
         "provider": {
           "name": "provider",
           "type": "text",
@@ -41711,6 +41705,13 @@
         },
         "finished_work": {
           "name": "finished_work",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "deals_closed": {
+          "name": "deals_closed",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,

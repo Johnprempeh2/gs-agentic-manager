@@ -162,7 +162,7 @@ describe("App Activity routing (PAP-16302)", () => {
   it("serves the merged Activity page at /:company/activity", async () => {
     const root = renderAppAt(container, "/PAP/activity");
     await waitForRoute(container, "ACTIVITY_PAGE@/PAP/activity");
-    expect(container.textContent).not.toContain("No organization matches prefix");
+    expect(container.textContent).not.toContain("We could not find an organisation with the short code");
     flushSync(() => root.unmount());
   });
 
@@ -223,7 +223,7 @@ describe("App Activity routing (PAP-16302)", () => {
   it("redirects the bare /audit deep link through to the prefixed Activity page", async () => {
     const root = renderAppAt(container, "/audit");
     await waitForRoute(container, "ACTIVITY_PAGE@/PAP/activity?mode=agents");
-    expect(container.textContent).not.toContain("No organization matches prefix");
+    expect(container.textContent).not.toContain("We could not find an organisation with the short code");
     flushSync(() => root.unmount());
   });
 

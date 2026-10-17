@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { createDb, companies, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type DecisionCard, type NotificationPreferences } from "@greatstone/shared";
@@ -179,19 +179,19 @@ describe("notification choices", () => {
     expect(await service().notifyNewDecisions()).toBe(0);
   });
 
-  it("stays quiet about closed deals when finished work is switched off", async () => {
+  it("stays quiet about closed deals when deal alerts are switched off", async () => {
     await service().subscribe(companyId, "john", phone(1));
-    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, finishedWork: false };
+    prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, dealsClosed: false };
     closedDeals = [{ id: "c2", pipelineId: "p1", title: "Acme renewal", terminalKind: "cancelled" }];
     expect(await service().notifyNewDecisions()).toBe(0);
     prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
     expect(await service().notifyNewDecisions()).toBe(0);
   });
 
-  it("finds deals closed in the last half hour, except ones the user closed", async () => {
+  it("finds client deals closed in the last half hour, except ones the user closed", async () => {
     const pipelineId = randomUUID();
     const stageId = randomUUID();
-    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "deals", name: "Deals" });
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "deals", name: "Deals", requiresOrganisation: true });
     await db.insert(pipelineStages).values({ id: stageId, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 0 });
     const recent = new Date(clock.getTime() - 5 * 60 * 1000);
     const [theirs, mine, old] = [randomUUID(), randomUUID(), randomUUID()];
@@ -200,6 +200,12 @@ describe("notification choices", () => {
       { id: mine, companyId, pipelineId, stageId, caseKey: "mine", title: "Closed by John", terminalKind: "done", terminalAt: recent },
       { id: old, companyId, pipelineId, stageId, caseKey: "old", title: "Closed yesterday", terminalKind: "cancelled", terminalAt: new Date(clock.getTime() - 86_400_000) },
     ]);
+    // A case closed on a pipeline that is not a client pipeline is not a deal.
+    const otherPipelineId = randomUUID();
+    const otherStageId = randomUUID();
+    await db.insert(pipelines).values({ id: otherPipelineId, companyId, key: "hiring", name: "Hiring" });
+    await db.insert(pipelineStages).values({ id: otherStageId, companyId, pipelineId: otherPipelineId, key: "hired", name: "Hired", kind: "done", position: 0 });
+    await db.insert(pipelineCases).values({ companyId, pipelineId: otherPipelineId, stageId: otherStageId, caseKey: "cand", title: "Candidate hired", terminalKind: "done", terminalAt: recent });
     await db.insert(pipelineCaseEvents).values({ companyId, caseId: mine, type: "transitioned", actorType: "user", actorUserId: "john", toStageId: stageId, createdAt: recent });
     const spy = pushNotificationService(db, {
       keys: () => keys,
@@ -214,7 +220,7 @@ describe("notification choices", () => {
     await spy.notifyNewDecisions();
     const johns = sent.filter((entry) => entry.target.endpoint === phone(8).endpoint).map((entry) => entry.message.body);
     expect(johns).toEqual(["Closed by Ben"]);
-    await db.delete(pipelines).where(eq(pipelines.id, pipelineId));
+    await db.delete(pipelines).where(inArray(pipelines.id, [pipelineId, otherPipelineId]));
   });
 
   it("summarises several closed deals, counting won and lost", () => {

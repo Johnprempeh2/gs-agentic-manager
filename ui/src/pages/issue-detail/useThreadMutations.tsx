@@ -783,7 +783,7 @@ export function useThreadMutations({
       invalidateIssueThreadLazily();
       invalidateIssueCollections();
       pushToast({
-        title: "Queued comment canceled",
+        title: "Queued comment cancelled",
         body: "The queued message was restored to the composer.",
         tone: "success",
       });
@@ -839,7 +839,7 @@ export function useThreadMutations({
         if (cancelledCommentBody) {
           restoreQueuedCommentDraft(cancelledCommentBody);
           pushToast({
-            title: "Queued comment canceled",
+            title: "Queued comment cancelled",
             body: "The queued message was restored to the composer.",
             tone: "success",
           });

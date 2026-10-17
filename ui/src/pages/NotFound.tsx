@@ -20,7 +20,7 @@ export function NotFoundPage({ scope = "global", requestedPrefix }: NotFoundPage
   const { companies, selectedCompany } = useCompany();
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Not Found" }]);
+    setBreadcrumbs([{ label: "Page not found" }]);
   }, [setBreadcrumbs]);
 
   const fallbackCompany = selectedCompany ?? companies[0] ?? null;
@@ -28,11 +28,11 @@ export function NotFoundPage({ scope = "global", requestedPrefix }: NotFoundPage
   const currentPath = `${location.pathname}${location.search}${location.hash}`;
   const normalizedPrefix = requestedPrefix?.toUpperCase();
 
-  const title = scope === "invalid_company_prefix" ? "Organization not found" : "Page not found";
+  const title = scope === "invalid_company_prefix" ? "Organisation not found" : "Page not found";
   const description =
     scope === "invalid_company_prefix"
-      ? `No organization matches prefix "${normalizedPrefix ?? "unknown"}".`
-      : "This route does not exist.";
+      ? `We could not find an organisation with the short code "${normalizedPrefix ?? "unknown"}". The link may be old or mistyped.`
+      : "We could not find that page. The link may be old or mistyped.";
 
   return (
     <div className="mx-auto max-w-4xl py-10">
@@ -49,7 +49,7 @@ export function NotFoundPage({ scope = "global", requestedPrefix }: NotFoundPage
           </div>
 
           <div className="mt-4 rounded-md border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
-            Requested path: <code className="font-mono">{currentPath}</code>
+            Address you tried: <code className="font-mono">{currentPath}</code>
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">

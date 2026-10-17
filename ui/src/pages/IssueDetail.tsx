@@ -47,6 +47,7 @@ import {
 import { TaskActivityLine } from "../components/TaskActivityLine";
 import { TaskStopReasonLine } from "../components/TaskStopReasonLine";
 import { WhyBlockedCallout } from "../components/WhyBlockedCallout";
+import { WaitingDateEditor } from "../components/WaitingDateEditor";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -768,7 +769,15 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
 
   if (isLoading)
     return <IssueDetailLoadingState headerSeed={issueHeaderSeed} />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/issues" className="underline underline-offset-2">Back to tasks</Link>
+        </p>
+      </div>
+    );
   if (!issue) return null;
   // Do not expose a file chooser on the outgoing UUID/company/interface
   // branch: its input can be detached before the chosen file is returned.
@@ -980,23 +989,30 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             userLabels={userLabelMap}
           />
           {issue.status === "blocked" ? (
-            <WhyBlockedCallout
-              className="mt-2"
-              issue={issue}
-              interactions={interactions}
-              pauseHold={
-                activePauseHold
-                  ? {
-                      isRoot: activePauseHold.isRoot,
-                      reason: activePauseHold.reason,
-                      rootIssue: activePauseHoldRoot,
-                    }
-                  : null
-              }
-              currentUserId={currentUserId}
-              agents={agentMap}
-              userLabels={userLabelMap}
-            />
+            <>
+              <WhyBlockedCallout
+                className="mt-2"
+                issue={issue}
+                interactions={interactions}
+                pauseHold={
+                  activePauseHold
+                    ? {
+                        isRoot: activePauseHold.isRoot,
+                        reason: activePauseHold.reason,
+                        rootIssue: activePauseHoldRoot,
+                      }
+                    : null
+                }
+                currentUserId={currentUserId}
+                agents={agentMap}
+                userLabels={userLabelMap}
+              />
+              <WaitingDateEditor
+                issue={issue}
+                pending={updateIssue.isPending}
+                onSave={(unblockDescriptor) => updateIssue.mutate({ unblockDescriptor })}
+              />
+            </>
           ) : (
             <TaskStopReasonLine
               issueId={issue.id}
