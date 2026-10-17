@@ -13,6 +13,7 @@ const costsApiMocks = vi.hoisted(() => ({
   byAgent: vi.fn(),
   byProject: vi.fn(),
   byAgentModel: vi.fn(),
+  byBillingCode: vi.fn(),
   financeSummary: vi.fn(),
   financeByBiller: vi.fn(),
   financeByKind: vi.fn(),
