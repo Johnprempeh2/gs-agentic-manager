@@ -47,6 +47,7 @@ import {
 import { TaskActivityLine } from "../components/TaskActivityLine";
 import { TaskStopReasonLine } from "../components/TaskStopReasonLine";
 import { WhyBlockedCallout } from "../components/WhyBlockedCallout";
+import { WaitingDateEditor } from "../components/WaitingDateEditor";
 import { ExternallyConnectedTaskBanner } from "../components/chat/ExternallyConnectedTaskBanner";
 import { type IssuePropertiesDocumentDeepLink } from "../components/IssueProperties";
 import { type TaskSidePanelProps } from "../components/task-side-panel";
@@ -980,23 +981,30 @@ export function TaskDetailSurface({ conversation, tasksTab }: { tasksTab?: TaskS
             userLabels={userLabelMap}
           />
           {issue.status === "blocked" ? (
-            <WhyBlockedCallout
-              className="mt-2"
-              issue={issue}
-              interactions={interactions}
-              pauseHold={
-                activePauseHold
-                  ? {
-                      isRoot: activePauseHold.isRoot,
-                      reason: activePauseHold.reason,
-                      rootIssue: activePauseHoldRoot,
-                    }
-                  : null
-              }
-              currentUserId={currentUserId}
-              agents={agentMap}
-              userLabels={userLabelMap}
-            />
+            <>
+              <WhyBlockedCallout
+                className="mt-2"
+                issue={issue}
+                interactions={interactions}
+                pauseHold={
+                  activePauseHold
+                    ? {
+                        isRoot: activePauseHold.isRoot,
+                        reason: activePauseHold.reason,
+                        rootIssue: activePauseHoldRoot,
+                      }
+                    : null
+                }
+                currentUserId={currentUserId}
+                agents={agentMap}
+                userLabels={userLabelMap}
+              />
+              <WaitingDateEditor
+                issue={issue}
+                pending={updateIssue.isPending}
+                onSave={(unblockDescriptor) => updateIssue.mutate({ unblockDescriptor })}
+              />
+            </>
           ) : (
             <TaskStopReasonLine
               issueId={issue.id}
