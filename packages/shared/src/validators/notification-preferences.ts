@@ -21,6 +21,7 @@ export const updateNotificationPreferencesSchema = z
     assignedTasks: z.boolean().optional(),
     teamChat: z.boolean().optional(),
     finishedWork: z.boolean().optional(),
+    dealsClosed: z.boolean().optional(),
     morningSummary: z.boolean().optional(),
     morningSummaryHour: hour.optional(),
     weeklyReport: z.boolean().optional(),
