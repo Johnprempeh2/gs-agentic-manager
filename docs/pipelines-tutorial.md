@@ -647,3 +647,18 @@ The smoke asserts:
 - the Assembly child-terminal gate auto-advances the parent into Final Review
 - Final Review approve, request-changes, and drop outcomes all work
 - the release rollup is complete with the expected done/cancelled split
+
+## Pipedrive Deals Due
+
+Deals imported from Pipedrive live in pipelines keyed `pipedrive-<id>`. An
+agent that follows up on deals can list the open ones whose next step is due
+today or late:
+
+```sh
+gsam pipelines deals-due
+gsam pipelines deals-due --days 7 --unscheduled --json
+```
+
+`--days` also includes next steps due in the next N days. `--unscheduled`
+also lists open deals with no next step booked. Won, lost and closed-stage
+deals are left out. The command only reads; it changes nothing.
