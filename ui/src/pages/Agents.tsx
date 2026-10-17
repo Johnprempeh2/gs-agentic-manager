@@ -28,6 +28,7 @@ import { AgentTeamsDialog, TeamColorDot } from "../components/AgentTeamsDialog";
 import { filterAgentsByTeam, NO_TEAM_FILTER, teamsByAgent } from "../lib/agent-teams";
 import { agentsSheet, agentsUpdateText, budgetUseLabel } from "../lib/agents-export";
 import { useCopyAction } from "../lib/use-copy-action";
+import { EmptyTimerRunsBanner } from "../components/EmptyTimerRunsBanner";
 import { downloadBytes, exportFileName, localToday, sheetsToXlsx } from "../lib/spreadsheet-export";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AgentTeam, ApiEquivalentAgentRow } from "@greatstone/shared";
@@ -637,6 +638,8 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
       )}
 
       {error && <ErrorState error={error} onRetry={() => void refetch()} compact />}
+
+      {agents && selectedCompanyId ? <EmptyTimerRunsBanner companyId={selectedCompanyId} agents={agents} /> : null}
 
       {agents && agents.length === 0 && (
         <EmptyState
