@@ -20,7 +20,10 @@ const graphApiMock = vi.hoisted(() => ({
   connectionActivity: vi.fn(),
 }));
 
+const accessApiMock = vi.hoisted(() => ({ listUserDirectory: vi.fn() }));
+
 vi.mock("../api/memoryGraph", () => ({ memoryGraphApi: graphApiMock }));
+vi.mock("../api/access", () => ({ accessApi: accessApiMock }));
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "co-kestrel" }) }));
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBreadcrumbs: vi.fn() }) }));
@@ -82,6 +85,7 @@ beforeEach(() => {
   root = createRoot(container);
   graphApiMock.scopes.mockResolvedValue(scopes);
   graphApiMock.connections.mockResolvedValue([]);
+  accessApiMock.listUserDirectory.mockResolvedValue({ users: [] });
   graphApiMock.connectionActivity.mockResolvedValue({ lastUsedAt: null, operations: [], contributions: [] });
   graphApiMock.checkImport.mockImplementation(async (_companyId: string, body: { entries: Array<{ sourceId: string }> }) => ({
     entries: body.entries.map((entry) => ({ sourceId: entry.sourceId, match: null, existing: null })),
@@ -177,6 +181,35 @@ describe("MemoryApps", () => {
     await flush();
     expect(body()).toContain("It works.");
     expect(body()).toContain("searched memory");
+  });
+
+  it("names the owner of each connected app, with a fallback when the owner is not known", async () => {
+    const connection = (agentId: string, app: string, createdByUserId: string | null) => ({
+      agentId, app, name: `${app} memory link`, createdByUserId, canContribute: true, keys: [],
+    });
+    graphApiMock.connections.mockResolvedValue([
+      connection("a-ada", "claude", "u-ada"),
+      connection("a-ben", "codex", "u-ben"),
+      connection("a-gone", "claude_code", "u-gone"),
+      connection("a-none", "other", null),
+    ]);
+    accessApiMock.listUserDirectory.mockResolvedValue({
+      users: [
+        { principalId: "u-ada", status: "active", user: { id: "u-ada", email: "ada@example.com", name: "Ada Lovelace", image: null } },
+        { principalId: "u-ben", status: "active", user: { id: "u-ben", email: "ben@example.com", name: null, image: null } },
+      ],
+    });
+    await render();
+    for (let i = 0; i < 10 && !body().includes("Connected by"); i += 1) await flush();
+    const rows = [...document.querySelectorAll("li")]
+      .map((row) => row.textContent ?? "")
+      .filter((text) => text.includes("Disconnect"));
+    expect(rows).toHaveLength(4);
+    expect(rows[0]).toContain("Connected by Ada Lovelace");
+    expect(rows[1]).toContain("Connected by ben@example.com");
+    expect(rows[2]).toContain("Owner unknown");
+    expect(rows[3]).toContain("Owner unknown");
+    expect(accessApiMock.listUserDirectory).toHaveBeenCalledWith("co-kestrel");
   });
 
   it("tells the person ChatGPT cannot connect yet", async () => {

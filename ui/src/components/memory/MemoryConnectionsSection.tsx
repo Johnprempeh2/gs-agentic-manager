@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioCardGroup } from "@/components/ui/radio-card";
 import { copyTextToClipboard } from "@/lib/clipboard";
+import { buildCompanyUserLabelMap } from "@/lib/company-members";
 import { formatDate } from "@/lib/utils";
+import { accessApi } from "../../api/access";
 import { ApiError } from "../../api/client";
 import { memoryGraphApi } from "../../api/memoryGraph";
 import { queryKeys } from "../../lib/queryKeys";
@@ -62,6 +64,13 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
     queryFn: () => memoryGraphApi.connections(companyId),
     retry: (count, error) => !(error instanceof ApiError && error.status === 403) && count < 2,
   });
+  // An owner or admin sees everyone's connections, so each row names who made it.
+  const userDirectory = useQuery({
+    queryKey: queryKeys.access.companyUserDirectory(companyId),
+    queryFn: () => accessApi.listUserDirectory(companyId),
+    enabled: (connections.data ?? []).length > 0,
+  });
+  const ownerLabels = buildCompanyUserLabelMap(userDirectory.data?.users);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: queryKeys.memoryGraph.connections(companyId) });
 
   const create = useMutation({
@@ -173,10 +182,12 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
                     .filter((value): value is string => typeof value === "string")
                     .sort()
                     .at(-1);
+                  const owner = connection.createdByUserId ? ownerLabels.get(connection.createdByUserId) : undefined;
                   return (
                     <li key={connection.agentId} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
                       <div className="min-w-0">
                         <p className="font-medium">{MEMORY_CONNECTION_APP_LABEL[connection.app]}</p>
+                        <p className="text-xs text-muted-foreground">{owner ? `Connected by ${owner}` : "Owner unknown"}</p>
                         <p className="text-xs text-muted-foreground">
                           {connection.canContribute ? "Reads and suggests entries" : "Reads only"}
                           {", "}
