@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronRight, KeyRound } from "lucide-react";
 import type { AgentAccessAgentSummary } from "@greatstone/shared";
-import { Link } from "@/lib/router";
+import { Link, useNavigate } from "@/lib/router";
 import { useCompany } from "@/context/CompanyContext";
 import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { EmptyState } from "@/components/EmptyState";
@@ -61,6 +61,7 @@ function AgentAccessCard({ agent }: { agent: AgentAccessAgentSummary }) {
 
 /** Apps > Agent access: what every agent can reach, and what is missing or expiring. */
 export function AgentAccess() {
+  const navigate = useNavigate();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [showWorking, setShowWorking] = useState(false);
@@ -85,6 +86,9 @@ export function AgentAccess() {
       <EmptyState
         icon={KeyRound}
         message="No agent has apps, keys or channels yet. Connect an app to give agents access."
+        action="Browse connectors"
+        onAction={() => navigate("/apps")}
+        hideActionIcon
       />
     );
   }

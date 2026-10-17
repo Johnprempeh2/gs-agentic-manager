@@ -733,7 +733,7 @@ export function Mailboxes() {
             ))}
           </div>
         ) : (
-          <p className="p-4 text-sm text-muted-foreground">No mailboxes yet.</p>
+          <p className="p-4 text-sm text-muted-foreground">No mailboxes yet. Sign in with Microsoft or Google above, or add one by hand, so agents can read and reply to email for you.</p>
         )}
       </section>
 
