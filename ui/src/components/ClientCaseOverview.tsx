@@ -26,7 +26,7 @@ import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages"
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
-import { DevtoolsDealEditor } from "./DevtoolsDealEditor";
+import { DevtoolsDealEditor, DevtoolsNextStepDone } from "./DevtoolsDealEditor";
 import { getDealNextStepFlag, type DealNextStepFlag } from "../lib/client-card-flags";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -129,7 +129,19 @@ function NotSet() {
 }
 
 /** The deal behind a DevTools client, as Pipedrive held it. */
-function DealRecord({ deal, nextStep, subject }: { deal: DevtoolsDeal; nextStep: DealNextStepFlag | null; subject?: string }) {
+function DealRecord({
+  deal,
+  nextStep,
+  subject,
+  lastSubject,
+  lastNote,
+}: {
+  deal: DevtoolsDeal;
+  nextStep: DealNextStepFlag | null;
+  subject?: string;
+  lastSubject?: string;
+  lastNote?: string;
+}) {
   const value = deal.value != null ? `${formatNumber(deal.value, { maximumFractionDigits: 2 })}${deal.currency ? ` ${deal.currency}` : ""}` : null;
   return (
     <dl className="divide-y divide-border" aria-label="Deal">
@@ -154,7 +166,11 @@ function DealRecord({ deal, nextStep, subject }: { deal: DevtoolsDeal; nextStep:
           </span>
         ) : null}
       </RecordRow>
-      <RecordRow label="Last activity">{deal.lastActivity ? formatDay(deal.lastActivity) : <NotSet />}</RecordRow>
+      <RecordRow label="Last activity">
+        {deal.lastActivity ? formatDay(deal.lastActivity) : <NotSet />}
+        {deal.lastActivity && lastSubject ? <span className="block text-xs text-muted-foreground">{lastSubject}</span> : null}
+        {deal.lastActivity && lastNote ? <span className="block text-xs text-muted-foreground">{lastNote}</span> : null}
+      </RecordRow>
       {deal.lostReason ? <RecordRow label="Lost reason">{deal.lostReason}</RecordRow> : null}
     </dl>
   );
@@ -194,7 +210,14 @@ export function ClientCaseOverview({
         terminalKind: stages.find((stage) => stage.id === detail.case.stageId && (stage.kind === "done" || stage.kind === "cancelled"))?.kind ?? null,
       })
     : null;
-  const nextActivitySubject = typeof detail.case.fields?.nextActivitySubject === "string" ? detail.case.fields.nextActivitySubject.trim() : "";
+  const fieldText = (key: string) => {
+    const value = detail.case.fields?.[key];
+    return typeof value === "string" ? value.trim() : "";
+  };
+  const nextActivitySubject = fieldText("nextActivitySubject");
+  const deal = readDevtoolsDeal(detail.case.fields);
+  const dealIsOpen = !stages.some((stage) => stage.id === detail.case.stageId && (stage.kind === "done" || stage.kind === "cancelled"))
+    && (!deal.status || deal.status.toLowerCase() === "open");
   const record = readClientRecord(detail.case.fields);
   const history = buildStageHistory(events, stages);
   const openTasks = issueLinks
@@ -210,8 +233,15 @@ export function ClientCaseOverview({
 
       {devtools ? (
         <OverviewSection title="Deal">
-          <DealRecord deal={readDevtoolsDeal(detail.case.fields)} nextStep={dealNextStep} subject={nextActivitySubject} />
-          <div className="pt-3">
+          <DealRecord
+            deal={deal}
+            nextStep={dealNextStep}
+            subject={nextActivitySubject}
+            lastSubject={fieldText("lastActivitySubject")}
+            lastNote={fieldText("lastActivityNote")}
+          />
+          <div className="flex flex-wrap gap-2 pt-3">
+            {dealIsOpen && deal.nextActivity ? <DevtoolsNextStepDone key={`done-${detail.case.id}`} detail={detail} /> : null}
             <DevtoolsDealEditor detail={detail} label={dealNextStep ? "Schedule next step" : "Edit deal"} />
           </div>
           <DevtoolsDealOutcome detail={detail} stages={stages} />

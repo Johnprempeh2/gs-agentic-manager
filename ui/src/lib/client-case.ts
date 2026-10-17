@@ -154,6 +154,8 @@ export const DEVTOOLS_DEAL_FIELD_KEYS = new Set([
   "nextActivityDate",
   "lastActivityDate",
   "nextActivitySubject",
+  "lastActivitySubject",
+  "lastActivityNote",
   "lostReason",
   "wonOn",
   "lostOn",
