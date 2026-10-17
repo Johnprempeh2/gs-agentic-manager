@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatCents } from "./utils";
-import { monthPace, monthPaceLine } from "./spend-pace";
+import { agentMonthLine, monthPace, monthPaceLine } from "./spend-pace";
 
 describe("monthPace", () => {
   it("projects the month from the days so far", () => {
@@ -24,5 +24,17 @@ describe("monthPace", () => {
     expect(monthPaceLine(monthPace(10_000, 50_000, new Date(2026, 9, 10)))).toBe(
       `On pace for ${formatCents(31_000)} by month end`,
     );
+  });
+});
+
+describe("agentMonthLine", () => {
+  it("says what the agent spent and where it is heading", () => {
+    const now = new Date(2026, 9, 10, 12);
+    expect(agentMonthLine({ spentMonthlyCents: 0, budgetMonthlyCents: 1000 }, now)).toBeNull();
+    expect(agentMonthLine({ spentMonthlyCents: 1000, budgetMonthlyCents: 0 }, now)).toBe("$10.00 spent. On pace for $31.00 by month end");
+    expect(agentMonthLine({ spentMonthlyCents: 1000, budgetMonthlyCents: 2000 }, now)).toBe(
+      "$10.00 spent. On pace to pass the budget around 20 Oct",
+    );
+    expect(agentMonthLine({ spentMonthlyCents: 1000 }, new Date(2026, 9, 2))).toBe("$10.00 spent");
   });
 });

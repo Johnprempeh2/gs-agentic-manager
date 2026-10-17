@@ -67,6 +67,7 @@ import { cn } from "../lib/utils";
 import { AgentStatusHistory } from "../components/AgentStatusHistory";
 import { MoveOpenTasksBanner } from "../components/MoveOpenTasksBanner";
 import { budgetUseLabel } from "../lib/agents-export";
+import { agentMonthLine } from "../lib/spend-pace";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
@@ -1787,6 +1788,7 @@ export function AgentOverview({
     ?? "Default model";
   const lastRun = runs[0] ?? null;
   const budgetUse = budgetUseLabel(agent);
+  const monthLine = agentMonthLine(agent);
 
   return (
     <div className="space-y-6">
@@ -1834,6 +1836,11 @@ export function AgentOverview({
             <SummaryRow label="Last worked">
               <span className="text-sm">{lastRun ? `${sentenceCaseStatus(lastRun.status)} · ${relativeTime(lastRun.createdAt)}` : "Has not worked yet"}</span>
             </SummaryRow>
+            {monthLine ? (
+              <SummaryRow label="This month">
+                <span className="text-sm" data-testid="agent-month-line">{monthLine}</span>
+              </SummaryRow>
+            ) : null}
           </div>
         </section>
 
