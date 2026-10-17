@@ -363,6 +363,16 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(byClient.results.map((row) => row.title).sort()).toEqual(["Falcon budget signed off by the board", "Pricing call"]);
   });
 
+  it("finds the people at an organisation by the organisation's name", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Osprey Holdings" });
+    await db.insert(organisationContacts).values({ companyId, organisationId: orgId, name: "Ada Kestrel", role: "CFO" });
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "osprey", scope: "records", recordKind: "person" }));
+    expect(result.results.map((row) => row.title)).toEqual(["Ada Kestrel"]);
+    expect(result.results[0]?.record).toMatchObject({ kind: "person", subtitle: "CFO at Osprey Holdings" });
+  });
+
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {
     const companyId = await createCompany();
     const agentId = await createAgent(companyId, { name: "Mibile" });

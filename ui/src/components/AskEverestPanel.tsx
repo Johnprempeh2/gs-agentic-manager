@@ -26,6 +26,7 @@ import {
   answerOverview,
   answerStuck,
   answerHistory,
+  answerPeople,
   answerSubject,
   answerFollowUp,
   classifyQuestion,
@@ -565,7 +566,9 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     ? { q: intent.subject, limit: 4 }
     : intent.kind === "history" && intent.subject
       ? { q: intent.subject, limit: 10, recordKind: ["activity" as const] }
-      : null;
+      : intent.kind === "people" && intent.subject
+        ? { q: intent.subject, limit: 6, recordKind: ["person" as const] }
+        : null;
   const records = useQuery({
     queryKey: ["ask-everest", companyId, "records", intent.kind, recordQuery?.q ?? null],
     queryFn: () => searchApi.search(companyId, { ...recordQuery!, scope: "records" }),
@@ -586,7 +589,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (intent.kind === "away" && digest.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
     || (intent.kind === "away" && digest.error)
-    || (intent.kind === "history" && records.error)
+    || ((intent.kind === "history" || intent.kind === "people") && records.error)
     || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
@@ -613,6 +616,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
     case "history":
       return { value: answerHistory(intent.subject ?? "", records.data?.results ?? []) };
+    case "people":
+      return { value: answerPeople(intent.subject ?? "", records.data?.results ?? []) };
     default:
       return { value: answerOverview(scorecard.data ?? null, needsMe.data ?? null) };
   }

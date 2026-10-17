@@ -1264,7 +1264,7 @@ export function companySearchService(db: Db) {
             FROM organisation_contacts c
             LEFT JOIN organisations org ON org.id = c.organisation_id AND org.archived_at IS NULL
             WHERE c.company_id = ${companyId} AND c.archived_at IS NULL
-              AND ${recordMatch("c.name, c.email, c.role, c.phone")}
+              AND ${recordMatch("c.name, c.email, c.role, c.phone, org.name")}
             ORDER BY c.updated_at DESC ${cap})`],
           ["client", sql`(SELECT 'client' AS kind, pc.id, pc.title,
               concat_ws(' in ', st.name, p.name) AS subtitle, pc.summary AS body,

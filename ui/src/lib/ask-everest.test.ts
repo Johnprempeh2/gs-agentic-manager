@@ -5,6 +5,7 @@ import {
   answerAgent,
   answerDecide,
   answerHistory,
+  answerPeople,
   answerStuck,
   answerSubject,
   organisationAskContext,
@@ -69,12 +70,28 @@ describe("classifyQuestion", () => {
     expect(classifyQuestion("What did Mason do today?", agents)).toMatchObject({ kind: "agent" });
   });
 
+  it("spots questions about who we know at a client", () => {
+    expect(classifyQuestion("Who is our contact at Acme?", agents)).toEqual({ kind: "people", subject: "Acme" });
+    expect(classifyQuestion("Who do we know at Indago Mining?", agents)).toEqual({ kind: "people", subject: "Indago Mining" });
+    expect(classifyQuestion("Email address for the Acme decision maker", agents)).toEqual({ kind: "people", subject: "Acme" });
+    expect(classifyQuestion("Who is working on the Indago work?", agents)).toEqual({ kind: "subject", subject: "Indago" });
+  });
+
   it("strips question words from the subject", () => {
     expect(questionSubject("What's the latest on the booking module?")).toBe("booking module");
   });
 });
 
 describe("answers", () => {
+  it("names the one contact for a client, or lists several", () => {
+    const person = (title: string, subtitle: string) => ({ id: title, type: "record", title, href: "/GRE/organisations/o1", record: { kind: "person", subtitle } }) as never;
+    expect(answerPeople("Acme", [person("Ada Kestrel", "CFO at Acme Ltd")]).headline).toBe("Your contact for Acme is Ada Kestrel (CFO at Acme Ltd).");
+    const many = answerPeople("Acme", [person("Ada Kestrel", "CFO at Acme Ltd"), person("Ben Osei", "COO at Acme Ltd")]);
+    expect(many.headline).toBe("2 people for Acme, starting with Ada Kestrel.");
+    expect(many.lines.map((line) => line.text)).toEqual(["Ada Kestrel", "Ben Osei"]);
+    expect(answerPeople("Acme", []).more?.href).toBe("/search?q=Acme&scope=records&kind=person");
+  });
+
   it("says when there is no history and links to all notes and calls", () => {
     const answer = answerHistory("Acme", []);
     expect(answer.headline).toBe("I could not find any notes, calls or meetings about Acme.");

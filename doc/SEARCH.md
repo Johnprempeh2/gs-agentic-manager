@@ -123,7 +123,8 @@ assignee and so on) leave files out.
 ## Clients and records
 
 The `records` scope (also in `all`) finds business records outside tasks:
-organisations, people (organisation contacts, by name, email, role or phone),
+organisations, people (organisation contacts, by name, email, role, phone or
+organisation name),
 clients (pipeline items, which include imported Pipedrive deals and leads), CRM
 products (linked to the latest deal that carries them) and completed generated
 images (by prompt and style), plus imported CRM notes, calls, meetings and
@@ -137,7 +138,8 @@ under "Clients, people and records". Pass `recordKind` (comma separated:
 organisation, person, client, product, image, activity) to keep only some kinds;
 the Search page shows these as chips on the "Clients and records" tab, and
 `gsam search --kind` does the same. Ask Everest answers "When did we last speak
-to Acme?" from the `activity` kind, newest first.
+to Acme?" from the `activity` kind, newest first, and "Who is our contact at
+Acme?" from the `person` kind.
 
 ## Reproduce the evaluation
 

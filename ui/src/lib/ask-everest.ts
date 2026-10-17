@@ -18,6 +18,8 @@ export type AskIntent =
   | { kind: "subject"; subject: string }
   /** "When did we last speak to Acme?": imported notes, calls and meetings. */
   | { kind: "history"; subject: string | null }
+  /** "Who is our contact at Acme?": the people we hold for a client. */
+  | { kind: "people"; subject: string | null }
   | { kind: "overview" };
 
 export interface AskAgentRef {
@@ -71,6 +73,8 @@ const HISTORY_WORDS = [
   "heard", "hear", "conversation", "conversations", "history", "said", "say", "agree", "agreed", "with",
 ];
 const HISTORY_RE = /\b(discuss(ed|ing)?|talk(ed|ing)?|spoke|spoken|speak|call(ed|s)?|meetings?|met|notes?|contacted|emailed|emails?|heard from|hear from|conversations?|history|what did (we|they) (say|agree))\b/i;
+const PEOPLE_WORDS = ["who", "whom", "contact", "contacts", "people", "person", "know", "speak", "talk", "call", "email", "address", "phone", "number", "main", "key", "decision", "maker", "makers", "should", "best"];
+const PEOPLE_RE = /\b(who do we know|who should (i|we) (speak|talk) to|who (do|should) (i|we) (call|email|contact)|contacts? (at|for)|people at|our contact|main contact|decision makers?|email (address )?for|phone (number )?for)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
 
 function words(text: string): string[] {
@@ -109,6 +113,9 @@ function mentionedAgent(question: string, agents: readonly AskAgentRef[]): AskAg
 export function classifyQuestion(question: string, agents: readonly AskAgentRef[]): AskIntent {
   const trimmed = question.trim();
   if (AWAY_RE.test(trimmed)) return { kind: "away" };
+  if (PEOPLE_RE.test(trimmed) && !STUCK_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
+    return { kind: "people", subject: questionSubject(trimmed, PEOPLE_WORDS) };
+  }
   if (DECIDE_RE.test(trimmed)) return { kind: "decide" };
   if (HISTORY_RE.test(trimmed) && !STUCK_RE.test(trimmed)) {
     return { kind: "history", subject: questionSubject(trimmed, HISTORY_WORDS) };
@@ -297,6 +304,24 @@ export function answerHistory(subject: string, records: readonly CompanySearchRe
   return {
     headline: `The latest with ${subject}: ${latest.title}${latest.record!.subtitle ? ` (${latest.record!.subtitle})` : ""}.`,
     lines,
+    more,
+  };
+}
+
+/** The people we hold for a client: name, role and where they work. */
+export function answerPeople(subject: string, records: readonly CompanySearchResult[]): AskAnswer {
+  const people = records.filter((result) => result.type === "record" && result.record?.kind === "person").slice(0, 6);
+  const more = {
+    label: `All people for ${subject}`,
+    href: `/search?q=${encodeURIComponent(subject)}&scope=records&kind=person`,
+  };
+  if (people.length === 0) return { headline: `I could not find anyone for ${subject}.`, lines: [], more };
+  const first = people[0]!;
+  return {
+    headline: people.length === 1
+      ? `Your contact for ${subject} is ${first.title}${first.record!.subtitle ? ` (${first.record!.subtitle})` : ""}.`
+      : `${plural(people.length, "person", "people")} for ${subject}, starting with ${first.title}.`,
+    lines: people.map((result) => ({ text: result.title, detail: result.record!.subtitle ?? undefined, href: result.href })),
     more,
   };
 }
@@ -554,8 +579,10 @@ export interface AskContext {
 /** Point an instant answer at the page's subject when the question does not name one. */
 export function intentWithContext(intent: AskIntent, context: AskContext | null): AskIntent {
   const subject = context?.subject?.trim();
-  if (!subject) return intent.kind === "history" && !intent.subject ? { kind: "overview" } : intent;
-  if (intent.kind === "history" && !intent.subject) return { kind: "history", subject };
+  if ((intent.kind === "history" || intent.kind === "people") && !intent.subject) {
+    return subject ? { kind: intent.kind, subject } : { kind: "overview" };
+  }
+  if (!subject) return intent;
   if (intent.kind === "stuck" && !intent.subject) return { kind: "stuck", subject };
   if (intent.kind === "subject" || intent.kind === "overview") return { kind: "subject", subject };
   return intent;
