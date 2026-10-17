@@ -28,7 +28,7 @@ export function ProfileWizardRoute({ mode }: { mode: "new" | "edit" }) {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Apps", href: "/apps" },
       { label: "Access profiles", href: advancedTabHref("profiles") },
       { label: mode === "edit" ? "Resume draft" : "New profile" },

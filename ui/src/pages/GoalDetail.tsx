@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useParams } from "@/lib/router";
+import { Link, useLocation, useParams } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
@@ -252,7 +252,15 @@ export function GoalDetail() {
   }, [hash, hasBlockers]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/goals" className="underline underline-offset-2">Back to goals</Link>
+        </p>
+      </div>
+    );
   if (!goal) return null;
 
   const health = goalHealth(goal);
