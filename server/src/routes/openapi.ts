@@ -1467,6 +1467,15 @@ const PUBLIC_OPERATIONS = new Set([
   "GET /api/mcp/memory-tools",
   "GET /mcp/gateways/{gatewayPublicId}",
   "POST /mcp/gateways/{gatewayPublicId}",
+  // Memory sign-in for ChatGPT and Claude.ai: the OAuth handshake itself.
+  "GET /.well-known/oauth-protected-resource",
+  "GET /.well-known/oauth-protected-resource/api/mcp/memory-tools",
+  "GET /.well-known/oauth-authorization-server",
+  "GET /.well-known/oauth-authorization-server/api/mcp/memory-tools",
+  "GET /.well-known/openid-configuration",
+  "POST /oauth/memory/register",
+  "GET /oauth/memory/authorize",
+  "POST /oauth/memory/token",
   "GET /api/tool-gateway/gateways/{gatewayId}/mcp",
   "POST /api/tool-gateway/gateways/{gatewayId}/mcp",
 ]);
@@ -5729,6 +5738,63 @@ registry.registerPath({
   summary: "Disconnect a linked app by revoking every memory-only key of its link agent",
   request: { params: z.object({ companyId: z.string(), agentId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+const memoryOAuthMetadata = (path: string, summary: string) =>
+  registry.registerPath({ method: "get", path, tags: ["memory"], summary, responses: { 200: r.ok(), 404: r.notFound } });
+memoryOAuthMetadata("/.well-known/oauth-protected-resource", "OAuth protected resource metadata for the memory MCP endpoint");
+memoryOAuthMetadata("/.well-known/oauth-protected-resource/api/mcp/memory-tools", "OAuth protected resource metadata for the memory MCP endpoint");
+memoryOAuthMetadata("/.well-known/oauth-authorization-server", "OAuth authorization server metadata for the memory sign-in");
+memoryOAuthMetadata("/.well-known/oauth-authorization-server/api/mcp/memory-tools", "OAuth authorization server metadata for the memory sign-in");
+memoryOAuthMetadata("/.well-known/openid-configuration", "OAuth authorization server metadata for the memory sign-in");
+
+registry.registerPath({
+  method: "post",
+  path: "/oauth/memory/register",
+  tags: ["memory"],
+  summary: "Dynamic client registration for ChatGPT, Claude.ai and other MCP apps; public clients with https or localhost redirects",
+  responses: { 201: r.ok(), 400: r.badRequest, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/oauth/memory/authorize",
+  tags: ["memory"],
+  summary: "Check an app's sign-in request and send the browser to the Allow screen",
+  responses: { 302: { description: "Redirect to the Allow screen or back to the app" }, 400: r.badRequest, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/oauth/memory/token",
+  tags: ["memory"],
+  summary: "Swap a single-use code (PKCE S256) for a memory-only key; refused while the company's app sign-in is off",
+  responses: { 200: r.ok(), 400: r.badRequest, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/memory-oauth/status",
+  tags: ["memory"],
+  summary: "The memory address to paste into ChatGPT or Claude.ai; 404 where this server does not offer app sign-in",
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/memory-oauth/client",
+  tags: ["memory"],
+  summary: "The app asking to connect, for the Allow screen",
+  request: { query: z.object({ client_id: z.string(), redirect_uri: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/memory-oauth/approve",
+  tags: ["memory"],
+  summary: "A signed-in person allows an app: makes or reuses their link agent and returns the app's redirect with a short-lived code",
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({

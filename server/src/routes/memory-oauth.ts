@@ -187,14 +187,15 @@ export function memoryOAuthRoutes(db: Db, options: MemoryOAuthOptions = {}) {
     });
   }
 
-  router.get(["/.well-known/oauth-protected-resource", `/.well-known/oauth-protected-resource${MEMORY_MCP_PATH}`], protectedResource);
-  router.get(
-    ["/.well-known/oauth-authorization-server", "/.well-known/openid-configuration", `/.well-known/oauth-authorization-server${MEMORY_MCP_PATH}`],
-    authorizationServer,
-  );
+  // Literal paths, one per call, so the OpenAPI route coverage test sees each one.
+  router.get("/.well-known/oauth-protected-resource", protectedResource);
+  router.get("/.well-known/oauth-protected-resource/api/mcp/memory-tools", protectedResource);
+  router.get("/.well-known/oauth-authorization-server", authorizationServer);
+  router.get("/.well-known/oauth-authorization-server/api/mcp/memory-tools", authorizationServer);
+  router.get("/.well-known/openid-configuration", authorizationServer);
 
   // Dynamic client registration (RFC 7591), public clients only.
-  router.post(REGISTER_PATH, (req, res) => {
+  router.post("/oauth/memory/register", (req, res) => {
     const signing = requireKey(res);
     if (!signing) return;
     const parsed = registerSchema.safeParse(req.body);
@@ -217,7 +218,7 @@ export function memoryOAuthRoutes(db: Db, options: MemoryOAuthOptions = {}) {
 
   // Checks the request, then hands it to the consent screen in the board UI,
   // where a signed-in person picks Allow. A bad client or redirect never redirects.
-  router.get(AUTHORIZE_PATH, (req, res) => {
+  router.get("/oauth/memory/authorize", (req, res) => {
     const signing = requireKey(res);
     if (!signing) return;
     const query = req.query as Record<string, unknown>;
@@ -244,7 +245,7 @@ export function memoryOAuthRoutes(db: Db, options: MemoryOAuthOptions = {}) {
     res.redirect(302, `${consentBase}${CONSENT_UI_PATH}?${params.toString()}`);
   });
 
-  router.post(TOKEN_PATH, express.urlencoded({ extended: false, limit: "16kb" }), async (req, res) => {
+  router.post("/oauth/memory/token", express.urlencoded({ extended: false, limit: "16kb" }), async (req, res) => {
     const signing = requireKey(res);
     if (!signing) return;
     res.set("Cache-Control", "no-store");
