@@ -379,7 +379,7 @@ function Setup({
   }
   function preparedConfig(nextConnection = connection) {
     if (multiProvider && (!model.trim() || !model.includes("/")))
-      throw new Error("Choose or enter a model in provider/model format.");
+      throw new Error("Choose a model from the list, or type one in provider/model format, such as openai/gpt-5.");
     if (
       adapterType === "cursor_cloud" &&
       !/^https:\/\/github\.com\/[^/]+\/[^/]+/.test(repository.trim())
@@ -393,7 +393,7 @@ function Setup({
       throw new Error(
         adapterType === "cursor_cloud"
           ? "Enter a Cursor API key."
-          : `Enter ${envKey} or select an organization secret.`,
+          : `Enter ${envKey} or choose a saved organisation key.`,
       );
     if (adapterType === "hermes_gateway") {
       try {
@@ -637,8 +637,8 @@ function Setup({
                 <span>
                   ·{" "}
                   {runnerProvider === "codex"
-                    ? "Native app server runner"
-                    : "GS Agentic Manager Runner"}
+                    ? "Runs on Codex"
+                    : "Runs on GSAM"}
                 </span>
               )}
             </div>
@@ -768,7 +768,7 @@ function Setup({
                       </dl>
                       <p className="text-sm text-muted-foreground">
                         {created.status === "pending_approval"
-                          ? "An organization administrator must approve this agent before it can work."
+                          ? "An organisation administrator must approve this agent before it can work."
                           : "Assign a task when you’re ready for this agent to work."}
                       </p>
                     </div>
@@ -977,7 +977,7 @@ function Setup({
                                   chooseProvider ? "sm:col-span-2" : undefined
                                 }
                               >
-                                <Field label="Or use an organization secret">
+                                <Field label="Or use a saved organisation key">
                                   <SecretPicker
                                     secretId={
                                       selectedBinding &&
@@ -1002,7 +1002,7 @@ function Setup({
                               </div>
                             )}
                             <p className="text-xs text-muted-foreground sm:col-span-2">
-                              New keys are saved as organization secrets when
+                              New keys are saved as organisation keys when
                               you finish setup.
                               {multiProvider && ` Use a ${provider}/model ID.`}
                             </p>

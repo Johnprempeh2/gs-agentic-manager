@@ -171,7 +171,7 @@ describe("CompanySettings archive departure", () => {
 
   function clickArchive() {
     const button = Array.from(container.querySelectorAll("button")).find(
-      (element) => element.textContent?.trim() === "Archive organization",
+      (element) => element.textContent?.trim() === "Archive organisation",
     );
     expect(button).toBeDefined();
     flushSync(() => {

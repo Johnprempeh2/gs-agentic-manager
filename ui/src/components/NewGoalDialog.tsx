@@ -31,7 +31,7 @@ import { StatusBadge } from "./StatusBadge";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const levelLabels: Record<string, string> = {
-  company: "Organization",
+  company: "Organisation",
   team: "Team",
   agent: "Agent",
   task: "Task",
@@ -78,7 +78,7 @@ export function NewGoalDialog() {
 
   const uploadDescriptionImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!selectedCompanyId) throw new Error("No organization selected");
+      if (!selectedCompanyId) throw new Error("No organisation selected");
       return assetsApi.uploadImage(selectedCompanyId, file, "goals/drafts");
     },
   });

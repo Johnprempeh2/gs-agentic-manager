@@ -169,7 +169,7 @@ export function AgentBasicsDialog({
                 <DialogTitle className="text-3xl font-semibold tracking-tight">
                   {step === "name"
                     ? "Meet your next agent"
-                    : "Choose an adapter"}
+                    : "Choose how they work"}
                 </DialogTitle>
                 <DialogDescription className="text-base">
                   {step === "name"
@@ -205,10 +205,10 @@ export function AgentBasicsDialog({
               </div>
             ) : (
               <fieldset className="space-y-4">
-                <legend className="sr-only">Adapter</legend>
+                <legend className="sr-only">How they work</legend>
                 {isPending && (
                   <p role="status" className="text-sm text-muted-foreground">
-                    Loading adapters…
+                    Loading options…
                   </p>
                 )}
                 {error && (
@@ -254,7 +254,7 @@ export function AgentBasicsDialog({
                 </div>
                 {validAdapter && adapterType === "paperclip_runner" && (
                   <label className="flex flex-col gap-2 text-sm font-medium">
-                    Runner
+                    AI engine
                     <select
                       className="rounded-md border border-border bg-background px-3 py-2"
                       value={runnerProvider}
@@ -262,8 +262,8 @@ export function AgentBasicsDialog({
                         setRunnerProvider(event.target.value)
                       }
                     >
-                      <option value="codex">Codex (app server)</option>
-                      <option value="claude">Claude (ACPX)</option>
+                      <option value="codex">Codex</option>
+                      <option value="claude">Claude</option>
                       <option value="opencode">OpenCode</option>
                     </select>
                   </label>
@@ -290,7 +290,7 @@ export function AgentBasicsDialog({
               type="submit"
               disabled={!name.trim() || (step === "adapter" && !validAdapter)}
             >
-              {step === "name" ? "Choose adapter" : "Configure agent"}
+              {step === "name" ? "Next: how they work" : "Set up agent"}
               <ArrowRight className="size-4" />
             </Button>
           </div>
