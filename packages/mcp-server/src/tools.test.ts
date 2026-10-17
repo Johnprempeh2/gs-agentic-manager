@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PaperclipApiClient } from "./client.js";
+import { studioTools } from "./studio-tools.js";
 import { createToolDefinitions } from "./tools.js";
 
 function makeClient() {
@@ -13,7 +14,8 @@ function makeClient() {
 }
 
 function getTool(name: string) {
-  const tool = createToolDefinitions(makeClient()).find((candidate) => candidate.name === name);
+  const client = makeClient();
+  const tool = [...createToolDefinitions(client), ...studioTools(client)].find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool ${name}`);
   return tool;
 }

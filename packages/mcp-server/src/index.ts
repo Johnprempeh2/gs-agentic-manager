@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { PaperclipApiClient } from "./client.js";
 import { readConfigFromEnv, type PaperclipMcpConfig } from "./config.js";
+import { studioTools } from "./studio-tools.js";
 import { createToolDefinitions } from "./tools.js";
 
 export function createPaperclipMcpServer(config: PaperclipMcpConfig = readConfigFromEnv()) {
@@ -11,7 +12,7 @@ export function createPaperclipMcpServer(config: PaperclipMcpConfig = readConfig
   });
 
   const client = new PaperclipApiClient(config);
-  const tools = createToolDefinitions(client);
+  const tools = [...createToolDefinitions(client), ...studioTools(client)];
   for (const tool of tools) {
     server.registerTool(
       tool.name,
