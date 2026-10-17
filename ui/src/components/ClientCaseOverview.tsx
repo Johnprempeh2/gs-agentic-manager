@@ -26,6 +26,7 @@ import { ClientJourneyStages, ClientPortalPreview } from "./ClientJourneyStages"
 import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
+import { DevtoolsDealEditor } from "./DevtoolsDealEditor";
 import { getDealNextStepFlag, type DealNextStepFlag } from "../lib/client-card-flags";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -128,7 +129,7 @@ function NotSet() {
 }
 
 /** The deal behind a DevTools client, as Pipedrive held it. */
-function DealRecord({ deal, nextStep }: { deal: DevtoolsDeal; nextStep: DealNextStepFlag | null }) {
+function DealRecord({ deal, nextStep, subject }: { deal: DevtoolsDeal; nextStep: DealNextStepFlag | null; subject?: string }) {
   const value = deal.value != null ? `${formatNumber(deal.value, { maximumFractionDigits: 2 })}${deal.currency ? ` ${deal.currency}` : ""}` : null;
   return (
     <dl className="divide-y divide-border" aria-label="Deal">
@@ -144,6 +145,7 @@ function DealRecord({ deal, nextStep }: { deal: DevtoolsDeal; nextStep: DealNext
       </RecordRow>
       <RecordRow label="Next activity">
         {deal.nextActivity ? formatDay(deal.nextActivity) : <NotSet />}
+        {deal.nextActivity && subject ? <span className="block text-xs text-muted-foreground">{subject}</span> : null}
         {nextStep ? (
           <span data-testid="deal-next-step-flag" className="block text-xs text-status-danger-foreground">
             {nextStep.kind === "none"
@@ -186,6 +188,13 @@ export function ClientCaseOverview({
   journey?: "dx" | "devtools";
 }) {
   const devtools = journey === "devtools";
+  const dealNextStep = devtools
+    ? getDealNextStepFlag({
+        fields: detail.case.fields,
+        terminalKind: stages.find((stage) => stage.id === detail.case.stageId && (stage.kind === "done" || stage.kind === "cancelled"))?.kind ?? null,
+      })
+    : null;
+  const nextActivitySubject = typeof detail.case.fields?.nextActivitySubject === "string" ? detail.case.fields.nextActivitySubject.trim() : "";
   const record = readClientRecord(detail.case.fields);
   const history = buildStageHistory(events, stages);
   const openTasks = issueLinks
@@ -201,13 +210,10 @@ export function ClientCaseOverview({
 
       {devtools ? (
         <OverviewSection title="Deal">
-          <DealRecord
-            deal={readDevtoolsDeal(detail.case.fields)}
-            nextStep={getDealNextStepFlag({
-              fields: detail.case.fields,
-              terminalKind: stages.find((stage) => stage.id === detail.case.stageId && (stage.kind === "done" || stage.kind === "cancelled"))?.kind ?? null,
-            })}
-          />
+          <DealRecord deal={readDevtoolsDeal(detail.case.fields)} nextStep={dealNextStep} subject={nextActivitySubject} />
+          <div className="pt-3">
+            <DevtoolsDealEditor detail={detail} label={dealNextStep ? "Schedule next step" : "Edit deal"} />
+          </div>
           <DevtoolsDealOutcome detail={detail} stages={stages} />
         </OverviewSection>
       ) : (

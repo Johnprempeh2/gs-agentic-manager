@@ -292,6 +292,7 @@ describe("client case page", () => {
     await render(<ClientCaseOverview detail={detail} stages={devtoolsStages} events={[]} issueLinks={[]} journey="devtools" />);
 
     expect(container.querySelector('[data-testid="deal-next-step-flag"]')?.textContent).toBe("No next step scheduled for this open deal");
+    expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Schedule next step")).toBe(true);
     const outcome = container.querySelector('[data-testid="deal-outcome"]')!;
     click([...outcome.querySelectorAll("button")].find((button) => button.textContent === "Lost") ?? null);
     const reason = container.querySelector("#deal-lost-reason") as HTMLTextAreaElement;
@@ -826,5 +827,34 @@ describe("client case page", () => {
     click([...document.querySelectorAll('[role="alertdialog"] button')].find((button) => button.textContent === "Delete") ?? null);
     await flushReact();
     expect(mockPipelinesApi.removeCaseEvidence).toHaveBeenCalledWith("case-1", "ev-2");
+  });
+
+  it("schedules the next step on a DevTools deal from the Deal panel", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    mockPipelinesApi.updateCase.mockResolvedValue({});
+    const stages = [
+      { id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "open", position: 0 },
+      { id: "pd-won", pipelineId: "pipe-pd", key: "won", name: "Won", kind: "done", position: 1 },
+    ] as PipelineStage[];
+    await render(
+      <ClientCaseOverview detail={caseDetail({ dealStatus: "Open", dealValue: 900 }, "pd-1")} stages={stages} events={[]} issueLinks={[]} journey="devtools" />,
+    );
+
+    click([...container.querySelectorAll("button")].find((button) => button.textContent === "Schedule next step") ?? null);
+    await flushReact();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    for (const [id, value] of [["deal-edit-nextActivityDate", "2026-10-21"], ["deal-edit-nextActivitySubject", "Send proposal"]] as const) {
+      const input = container.querySelector(`#${id}`) as HTMLInputElement;
+      flushSync(() => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    click([...container.querySelectorAll("button")].find((button) => button.textContent === "Save deal") ?? null);
+    await flushReact();
+
+    expect(mockPipelinesApi.updateCase).toHaveBeenCalledWith("case-1", {
+      fields: { dealStatus: "Open", dealValue: 900, nextActivityDate: "2026-10-21", nextActivitySubject: "Send proposal" },
+    });
   });
 });
