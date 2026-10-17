@@ -65,6 +65,18 @@ export function authRoutes(db: Db) {
     }));
   });
 
+  // Whether this person has two-step sign-in on, for Profile. Only a person
+  // signed in with a password session can turn it on or off.
+  router.get("/two-step-status", async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      throw unauthorized("Board authentication required");
+    }
+    const [user] = await db.select({ enabled: authUsers.twoFactorEnabled })
+      .from(authUsers).where(eq(authUsers.id, req.actor.userId));
+    if (!user) throw unauthorized("Signed-in user not found");
+    res.json({ enabled: user.enabled, available: req.actor.source === "session" });
+  });
+
   router.get("/profile", async (req, res) => {
     if (req.actor.type !== "board" || !req.actor.userId) {
       throw unauthorized("Board authentication required");

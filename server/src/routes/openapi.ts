@@ -8956,6 +8956,14 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "get",
+  path: "/api/auth/two-step-status",
+  tags: ["auth"],
+  summary: "Whether two-step sign-in is on for the current user",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
   method: "patch",
   path: "/api/auth/profile",
   tags: ["auth"],

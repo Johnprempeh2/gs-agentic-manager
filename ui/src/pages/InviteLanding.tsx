@@ -375,8 +375,7 @@ export function InviteLandingPage() {
   const authMutation = useMutation({
     mutationFn: async () => {
       if (authMode === "sign_in") {
-        await authApi.signInEmail({ email: email.trim(), password });
-        return;
+        return authApi.signInEmail({ email: email.trim(), password });
       }
       // The invite token lets the server create this account even while public
       // sign-up is closed. Creating the account does not accept the invite; the
@@ -389,10 +388,17 @@ export function InviteLandingPage() {
         },
         { inviteToken: token },
       );
+      return { twoFactorRequired: false };
     },
-    onSuccess: async () => {
+    onSuccess: async (result) => {
       setAuthFeedback(null);
       rememberPendingInviteToken(token);
+      // Two-step sign-in is on for this person: the sign-in page asks for the
+      // code, then comes back here to accept the invite.
+      if (result?.twoFactorRequired) {
+        navigate(`/auth?step=code&next=${encodeURIComponent(`${window.location.pathname}${window.location.search}`)}`, { replace: true });
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: queryKeys.auth.session });
       await queryClient.invalidateQueries({ queryKey: queryKeys.health });
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.currentBoardAccess });
