@@ -4,7 +4,7 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { eq, inArray } from "drizzle-orm";
-import { clientAcceptanceLinks, createDb, companies, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import { clientAcceptanceLinks, createDb, companies, issues, pipelineCaseEvents, pipelineCases, pipelineStages, pipelines, pushNotificationLog, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import { startEmbeddedPostgresTestDatabase } from "@greatstone/db/test-embedded-postgres";
 import { DEFAULT_NOTIFICATION_PREFERENCES, type DecisionCard, type NotificationPreferences } from "@greatstone/shared";
 import { acceptancePushMessage, assignedTaskPushMessage, closedDealPushMessage, type ClientAcceptance, decisionPushMessage, finishedTaskPushMessage, type ClosedDeal, pushNotificationService, type DecisionPushMessage, type FinishedTask } from "../services/push-notifications.js";
@@ -58,6 +58,7 @@ afterAll(async () => { await database?.cleanup(); vi.unstubAllEnvs(); if (home) 
 
 beforeEach(async () => {
   await db.delete(pushNotifiedDecisions);
+  await db.delete(pushNotificationLog);
   await db.delete(pushSubscriptions);
   feedCards = [];
   assignedTasks = [];
@@ -369,6 +370,36 @@ describe("notification choices", () => {
       tag: "assigned-tasks",
       badge: 3,
     });
+  });
+});
+
+describe("recent notifications", () => {
+  it("keeps what reached a phone, newest first, and only for that user", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    await service().deliver(companyId, "john", { title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
+    clock = new Date(clock.getTime() + 60_000);
+    await service().deliver(companyId, "john", { title: "A decision needs you", body: "Approve the brief", url: "/PSH/decisions", tag: "task:a" });
+    await service().sendTest(companyId, "john", "PSH");
+    await service().deliver(companyId, "ben", { title: "Not John's", body: "x", url: "/PSH/today", tag: "t" });
+    const recent = await service().recent(companyId, "john");
+    expect(recent.map((item) => item.title)).toEqual(["A decision needs you", "Deal won"]);
+    expect(recent[0]!.url).toBe("/PSH/decisions");
+    expect(await service().recent(companyId, "ben")).toEqual([]);
+  });
+
+  it("records nothing when no phone took the message", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    sendResult = { ok: false, status: 500 };
+    await service().deliver(companyId, "john", { title: "Lost", body: "x", url: "/PSH/today", tag: "t" });
+    expect(await service().recent(companyId, "john")).toEqual([]);
+  });
+
+  it("forgets what is older than two weeks", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    await service().deliver(companyId, "john", { title: "Old", body: "x", url: "/PSH/today", tag: "t" });
+    clock = new Date(clock.getTime() + 15 * 86_400_000);
+    await service().deliver(companyId, "john", { title: "New", body: "x", url: "/PSH/today", tag: "t" });
+    expect((await service().recent(companyId, "john")).map((item) => item.title)).toEqual(["New"]);
   });
 });
 

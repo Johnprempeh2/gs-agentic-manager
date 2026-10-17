@@ -10,6 +10,7 @@ import { NotificationSettings, hourLabel } from "./NotificationSettings";
 const server = vi.hoisted(() => ({
   prefs: null as NotificationPreferences | null,
   patches: [] as Array<Record<string, unknown>>,
+  recent: [] as Array<{ id: string; title: string; body: string; url: string; sentAt: string }>,
 }));
 
 vi.mock("../api/notificationPreferences", () => ({
@@ -22,6 +23,7 @@ vi.mock("../api/notificationPreferences", () => ({
     },
   },
 }));
+vi.mock("../api/push", () => ({ pushApi: { recent: async () => server.recent } }));
 vi.mock("../hooks/usePushNotifications", () => ({
   usePushNotifications: () => ({ state: "off", error: null, enable: vi.fn(), disable: vi.fn(), sendTest: vi.fn() }),
 }));
@@ -35,6 +37,7 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   server.prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
   server.patches = [];
+  server.recent = [];
   container = document.createElement("div");
   document.body.appendChild(container);
 });
@@ -69,6 +72,22 @@ describe("NotificationSettings", () => {
       expect(toggle(label).getAttribute("aria-checked")).toBe("true");
     }
     expect(toggle("Use quiet hours").getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("lists what reached the phone lately, each opening what it opened", async () => {
+    server.recent = [{ id: "n1", title: "Deal won", body: "Indago rollout", url: "/GRE/pipelines/p1/cases/c1", sentAt: new Date(Date.now() - 5 * 60_000).toISOString() }];
+    await render();
+    await flush();
+    const list = container.querySelector('[data-testid="recent-notifications"]')!;
+    expect(list.textContent).toContain("Deal won");
+    expect(list.textContent).toContain("Indago rollout");
+    expect(list.querySelector("a")!.getAttribute("href")).toBe("/GRE/pipelines/p1/cases/c1");
+  });
+
+  it("says so when nothing has reached the phone yet", async () => {
+    await render();
+    await flush();
+    expect(container.querySelector('[data-testid="recent-notifications"]')!.textContent).toContain("Nothing yet.");
   });
 
   it("pauses notifications for an hour and resumes them", async () => {

@@ -9,6 +9,7 @@ import { usePushNotifications } from "../hooks/usePushNotifications";
 import { useIsPhone } from "../hooks/useIsPhone";
 import { EmptyState } from "../components/EmptyState";
 import { PauseNotifications } from "../components/PauseNotifications";
+import { RecentNotifications } from "../components/RecentNotifications";
 import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { queryKeys } from "../lib/queryKeys";
@@ -287,6 +288,8 @@ export function NotificationSettings() {
           </div>
         ) : null}
       </Section>
+
+      <RecentNotifications companyId={selectedCompanyId} />
 
       {save.error ? <p className="text-sm text-destructive" role="alert">Could not save that change. Please try again.</p> : null}
       <p className="text-xs text-muted-foreground">Times are in your time zone ({prefs.timeZone}).</p>

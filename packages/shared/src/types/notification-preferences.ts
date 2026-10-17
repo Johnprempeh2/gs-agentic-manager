@@ -75,3 +75,13 @@ export interface MorningSummary {
   /** Client deals won or lost since `since`, newest first. Optional: older servers do not send it. */
   deals?: { won: number; lost: number; items: MorningSummaryDeal[] };
 }
+
+/** One notification that reached the person's phones (the recent notifications list). */
+export interface RecentNotification {
+  id: string;
+  title: string;
+  body: string;
+  /** Where tapping it went. */
+  url: string;
+  sentAt: string;
+}

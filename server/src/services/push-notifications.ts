@@ -1,7 +1,7 @@
-import { and, eq, gte, inArray, isNotNull, ne, or, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lt, ne, or, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { clientAcceptanceLinks, companies, issues, pipelineCaseEvents, pipelineCases, pipelines, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
-import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences } from "@greatstone/shared";
+import { clientAcceptanceLinks, companies, issues, pipelineCaseEvents, pipelineCases, pipelines, pushNotificationLog, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences, RecentNotification } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { needsMeService } from "./needs-me.js";
 import { isHeld, mayNotify, notificationPreferencesService } from "./notification-preferences.js";
@@ -62,6 +62,11 @@ export interface ClientAcceptance {
 type AcceptanceReader = (companyId: string, since: Date) => Promise<ClientAcceptance[]>;
 type PreferencesReader = (companyId: string, userId: string) => Promise<NotificationPreferences>;
 type Sender = (target: PushTarget, message: DecisionPushMessage) => Promise<PushSendResult>;
+
+/** How long the recent notifications list keeps what was sent. */
+export const NOTIFICATION_LOG_DAYS = 14;
+/** The most the recent notifications list shows. */
+export const NOTIFICATION_LOG_LIMIT = 30;
 
 /** Remembered-card id for a task given to the user, kept apart from decision card ids (`task:...`). */
 export const assignedTaskCardId = (issueId: string) => `assigned:${issueId}`;
@@ -290,6 +295,20 @@ export function pushNotificationService(
           .where(eq(pushSubscriptions.id, target.id));
       }
     }
+    // Keep what actually reached a phone (not the test message) for the
+    // recent notifications list, and drop what is older than two weeks.
+    if (delivered > 0 && message.tag !== "push-test") {
+      try {
+        await db.insert(pushNotificationLog).values({ companyId, userId, title: message.title, body: message.body, url: message.url, tag: message.tag, sentAt: now() });
+        await db.delete(pushNotificationLog).where(and(
+          eq(pushNotificationLog.companyId, companyId),
+          eq(pushNotificationLog.userId, userId),
+          lt(pushNotificationLog.sentAt, new Date(now().getTime() - NOTIFICATION_LOG_DAYS * 86_400_000)),
+        ));
+      } catch (error) {
+        logger.warn({ err: error, companyId }, "could not record a sent notification");
+      }
+    }
     return { targets: targets.length, delivered };
   }
 
@@ -324,6 +343,21 @@ export function pushNotificationService(
         ...accepted.map((item) => acceptanceCardId(item.id)),
       ]);
       return row!;
+    },
+
+    /** What reached this user's phones lately, newest first. */
+    async recent(companyId: string, userId: string): Promise<RecentNotification[]> {
+      const rows = await db
+        .select({ id: pushNotificationLog.id, title: pushNotificationLog.title, body: pushNotificationLog.body, url: pushNotificationLog.url, sentAt: pushNotificationLog.sentAt })
+        .from(pushNotificationLog)
+        .where(and(
+          eq(pushNotificationLog.companyId, companyId),
+          eq(pushNotificationLog.userId, userId),
+          gte(pushNotificationLog.sentAt, new Date(now().getTime() - NOTIFICATION_LOG_DAYS * 86_400_000)),
+        ))
+        .orderBy(desc(pushNotificationLog.sentAt))
+        .limit(NOTIFICATION_LOG_LIMIT);
+      return rows.map((row) => ({ ...row, sentAt: row.sentAt.toISOString() }));
     },
 
     async unsubscribe(companyId: string, userId: string, endpoint: string) {
