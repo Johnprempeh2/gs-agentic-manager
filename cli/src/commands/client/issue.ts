@@ -11,6 +11,7 @@ import {
   createIssueThreadInteractionSchema,
   createIssueTreeHoldSchema,
   createIssueWorkProductSchema,
+  type BlockedWorkOverview,
   type FeedbackTrace,
   type HeartbeatRun,
   linkIssueApprovalSchema,
@@ -213,6 +214,55 @@ export function registerIssueCommands(program: Command): void {
                 assigneeAgentId: item.assigneeAgentId,
                 title: item.title,
                 projectId: item.projectId,
+              }),
+            );
+          }
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("blocked")
+      .description("List blocked tasks, how long each has waited and who must act, oldest first")
+      .option("-C, --company-id <id>", "Company ID")
+      .action(async (opts: BaseClientOptions & { companyId?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const overview = await ctx.api.get<BlockedWorkOverview>(
+            apiPath`/api/companies/${ctx.companyId}/blocked-work`,
+          );
+          if (ctx.json) {
+            printOutput(overview, { json: true });
+            return;
+          }
+          const items = overview?.items ?? [];
+          if (items.length === 0) {
+            printOutput([], { json: false });
+            return;
+          }
+          for (const item of items) {
+            const owner = item.owner.agentId ?? item.owner.userId ?? item.owner.type;
+            console.log(
+              formatInlineRecord({
+                identifier: item.issue.identifier,
+                id: item.issue.id,
+                waitingSince: item.waitingSince,
+                mustAct: owner,
+                title: item.issue.title,
+              }),
+            );
+          }
+          for (const cause of overview?.rootCauses ?? []) {
+            console.log(
+              formatInlineRecord({
+                holdsUp: cause.heldIssueIds.length,
+                identifier: cause.issue.identifier,
+                id: cause.issue.id,
+                title: cause.issue.title,
               }),
             );
           }

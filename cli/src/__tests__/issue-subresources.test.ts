@@ -47,6 +47,27 @@ describe("issue subresource commands", () => {
     vi.restoreAllMocks();
   });
 
+  it("lists blocked tasks and what holds them up", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({
+      generatedAt: "2026-10-18T00:00:00Z",
+      totalBlocked: 1,
+      oldestWaitingSince: "2026-10-17T00:00:00Z",
+      rootCauses: [{ issue: { id: "r1", identifier: "GRE-2", title: "Brief", status: "todo" }, owner: { type: "agent", agentId: "a1", userId: null }, action: null, heldIssueIds: ["b1"], oldestWaitingSince: null }],
+      items: [{ issue: { id: "b1", identifier: "GRE-1", title: "Design", status: "blocked" }, waitingSince: "2026-10-17T00:00:00Z", owner: { type: "board", agentId: null, userId: null }, rootIssueIds: ["r1"], tidyReason: null }],
+      truncated: false,
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "blocked", "--company-id", COMPANY_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      `http://localhost:3100/api/companies/${COMPANY_ID}/blocked-work`,
+    ]);
+    const lines = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(lines.some((line) => line.includes("GRE-1") && line.includes("board"))).toBe(true);
+    expect(lines.some((line) => line.includes("GRE-2") && line.includes("holdsUp"))).toBe(true);
+  });
+
   it("wraps core issue get, update, and delete endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
