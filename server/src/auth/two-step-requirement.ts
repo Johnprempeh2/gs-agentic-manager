@@ -10,7 +10,10 @@
  * again at their next sign-in.
  *
  * Agent keys, board API keys and the local trusted mode are not password
- * sessions, so they are not affected.
+ * sessions, so they are not affected. Nor are the emails listed in
+ * GSAM_TWO_STEP_EXEMPT_EMAILS: on a client instance that is the operator
+ * log-in its host scripts sign in with (client-instance.sh sets it), which has
+ * no phone to scan a code with.
  */
 
 import type { Request, RequestHandler } from "express";
@@ -54,8 +57,24 @@ export function isTwoStepSetupPath(path: string) {
   return ALLOWED_PATHS.some((pattern) => pattern.test(path));
 }
 
+export const TWO_STEP_EXEMPT_EMAILS_ENV = "GSAM_TWO_STEP_EXEMPT_EMAILS";
+
+export function isTwoStepExemptEmail(email: string | null | undefined, env: NodeJS.ProcessEnv = process.env) {
+  if (!email) return false;
+  const exempt = (env[TWO_STEP_EXEMPT_EMAILS_ENV] ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+  return exempt.includes(email.trim().toLowerCase());
+}
+
 export function needsTwoStepSetup(actor: Request["actor"]) {
-  return actor.type === "board" && actor.source === "session" && actor.twoFactorEnabled !== true;
+  return (
+    actor.type === "board" &&
+    actor.source === "session" &&
+    actor.twoFactorEnabled !== true &&
+    !isTwoStepExemptEmail(actor.userEmail)
+  );
 }
 
 export function twoStepRequiredGuard(db: Db): RequestHandler {

@@ -15,7 +15,7 @@ import { forbidden, unauthorized } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import { resolveSentryDsns } from "../sentry-dsn.js";
-import { isTwoStepSignInRequired } from "../auth/two-step-requirement.js";
+import { isTwoStepExemptEmail, isTwoStepSignInRequired } from "../auth/two-step-requirement.js";
 
 async function loadCurrentUserProfile(db: Db, userId: string) {
   const user = await db
@@ -78,7 +78,7 @@ export function authRoutes(db: Db) {
     res.json({
       enabled: user.enabled,
       available: req.actor.source === "session",
-      required: await isTwoStepSignInRequired(db),
+      required: !isTwoStepExemptEmail(req.actor.userEmail) && (await isTwoStepSignInRequired(db)),
     });
   });
 

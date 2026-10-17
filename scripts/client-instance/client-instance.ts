@@ -515,6 +515,9 @@ async function startServer(root: string, state: InstanceState, mode: "normal" | 
     mode === "normal" && values ? { GSAM_HIDDEN_SETTINGS: values.hiddenSettings, GSAM_MANAGED_CONFIG: values.managedConfig } : {},
   );
   if (state.limits) env.GSAM_INSTALL_LIMITS = installLimitsEnv(state.limits);
+  // The operator log-in is the account these scripts sign in with: it has no
+  // phone, so compulsory two-step sign-in leaves it out.
+  env.GSAM_TWO_STEP_EXEMPT_EMAILS = OPERATOR_EMAIL;
   env.GSAM_MIGRATION_AUTO_APPLY = "true";
   env.GSAM_MIGRATION_PROMPT = "never";
   // Serve the built UI when this checkout has one, else the UI dev middleware.

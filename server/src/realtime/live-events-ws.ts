@@ -9,7 +9,7 @@ import type { DeploymentMode } from "@greatstone/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "../middleware/logger.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
-import { isTwoStepSignInRequired } from "../auth/two-step-requirement.js";
+import { isTwoStepExemptEmail, isTwoStepSignInRequired } from "../auth/two-step-requirement.js";
 
 interface WsSocket {
   readyState: number;
@@ -175,7 +175,13 @@ async function authorizeUpgrade(
     if (!userId) return null;
     // Same hold as the API: a password-only session sees nothing while an
     // admin requires two-step sign-in.
-    if (session?.user?.twoFactorEnabled !== true && (await isTwoStepSignInRequired(db))) return null;
+    if (
+      session?.user?.twoFactorEnabled !== true &&
+      !isTwoStepExemptEmail(session?.user?.email) &&
+      (await isTwoStepSignInRequired(db))
+    ) {
+      return null;
+    }
 
     const [roleRow, memberships] = await Promise.all([
       db
