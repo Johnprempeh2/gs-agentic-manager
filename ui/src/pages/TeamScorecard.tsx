@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type { TeamScorecardAgent } from "@greatstone/shared";
+import { shortDuration } from "../lib/time-to-done";
 import { AlertTriangle, Check, CircleCheck, Clock, ClipboardCopy, Download, Eye, Loader, MessageCircleQuestion, Trophy } from "lucide-react";
 import { teamScorecardApi } from "../api/teamScorecard";
 import { costsApi } from "../api/costs";
@@ -164,6 +165,11 @@ function AgentCard({
           </div>
           {agent.title ? <div className="text-xs text-muted-foreground">{agent.title}</div> : null}
           <p className="mt-1 text-sm">{scorecardSentence(agent, days)}</p>
+          {agent.medianFinishMs != null ? (
+            <p className="text-xs text-muted-foreground" data-testid="scorecard-median-finish" title="Half the tasks it finished in this period took less than this, half took more.">
+              Typical time to finish a task: {shortDuration(agent.medianFinishMs)}
+            </p>
+          ) : null}
           {trend ? (
             <p className="text-xs text-muted-foreground">{`Finished tasks: ${trend.charAt(0).toLowerCase()}${trend.slice(1)}.`}</p>
           ) : null}

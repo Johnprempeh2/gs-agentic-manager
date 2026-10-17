@@ -17,6 +17,14 @@ function userWork() {
   );
 }
 
+/** Middle value of a list of durations, or null for an empty list. */
+export function medianMs(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[mid]! : Math.round((sorted[mid - 1]! + sorted[mid]!) / 2);
+}
+
 function task(row: { id: string; identifier: string | null; title: string }): TeamScorecardTask {
   return { id: row.id, identifier: row.identifier, title: row.title };
 }
@@ -40,6 +48,8 @@ export function teamScorecardService(db: Db) {
             title: issues.title,
             agentId: issues.assigneeAgentId,
             completedAt: issues.completedAt,
+            startedAt: issues.startedAt,
+            createdAt: issues.createdAt,
           })
           .from(issues)
           .where(
@@ -90,11 +100,24 @@ export function teamScorecardService(db: Db) {
         });
       }
 
+      const finishDurations = new Map<string, number[]>();
       for (const row of finishedRows) {
         const entry = byAgent.get(row.agentId!);
         if (!entry) continue;
         entry.finished += 1;
+        const start = row.startedAt ?? row.createdAt;
+        if (row.completedAt && start) {
+          const duration = new Date(row.completedAt).getTime() - new Date(start).getTime();
+          if (duration >= 0) {
+            const list = finishDurations.get(entry.agentId) ?? [];
+            list.push(duration);
+            finishDurations.set(entry.agentId, list);
+          }
+        }
         if (entry.recentlyFinished.length < RECENT_LIMIT) entry.recentlyFinished.push(task(row));
+      }
+      for (const entry of byAgent.values()) {
+        entry.medianFinishMs = medianMs(finishDurations.get(entry.agentId) ?? []);
       }
       for (const row of openRows) {
         const entry = byAgent.get(row.agentId!);
