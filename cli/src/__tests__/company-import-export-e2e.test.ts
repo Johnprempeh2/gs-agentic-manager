@@ -1,4 +1,4 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import os from "node:os";
@@ -10,10 +10,10 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { spawnInProcessGroup, stopProcessGroup, type GuardedProcess } from "./helpers/process-group.js";
 import { createStoredZipArchive } from "./helpers/zip.js";
 
 const execFileAsync = promisify(execFile);
-type ServerProcess = ReturnType<typeof spawn>;
 
 async function getAvailablePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -187,19 +187,6 @@ function collectTextFiles(root: string, current: string, files: Record<string, s
   }
 }
 
-async function stopServerProcess(child: ServerProcess | null) {
-  if (!child || child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await new Promise<void>((resolve) => {
-    child.once("exit", () => resolve());
-    setTimeout(() => {
-      if (child.exitCode === null) {
-        child.kill("SIGKILL");
-      }
-    }, 5_000);
-  });
-}
-
 async function api<T>(baseUrl: string, pathname: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${baseUrl}${pathname}`, init);
   const text = await res.text();
@@ -246,12 +233,12 @@ async function runCliJson<T>(
 
 async function waitForServer(
   apiBase: string,
-  child: ServerProcess,
+  child: GuardedProcess,
   output: { stdout: string[]; stderr: string[] },
 ) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 30_000) {
-    if (child.exitCode !== null) {
+    if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(
         `gsam run exited before healthcheck succeeded.\nstdout:\n${output.stdout.join("")}\nstderr:\n${output.stderr.join("")}`,
       );
@@ -280,7 +267,7 @@ describeEmbeddedPostgres("gsam company import/export e2e", () => {
   let paperclipHome = "";
   let cliShellHome = "";
   let paperclipInstanceId = "";
-  let serverProcess: ServerProcess | null = null;
+  let serverProcess: GuardedProcess | null = null;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
@@ -301,9 +288,13 @@ describeEmbeddedPostgres("gsam company import/export e2e", () => {
 
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
     const output = { stdout: [] as string[], stderr: [] as string[] };
-    const child = spawn(
-      "pnpm",
-      ["gsam", "run", "--config", configPath],
+    // Run the CLI with tsx directly, not through `pnpm gsam`: pnpm does not pass
+    // SIGTERM on, so killing it left the server running (GRE-1642). The guard
+    // puts the server tree in its own process group and stops that group when
+    // teardown runs or this worker dies.
+    const child = spawnInProcessGroup(
+      process.execPath,
+      [path.join(repoRoot, "cli/node_modules/tsx/dist/cli.mjs"), path.join(repoRoot, "cli/src/index.ts"), "run", "--config", configPath],
       {
         cwd: repoRoot,
         env: createServerEnv(configPath, port, tempDb.connectionString, {
@@ -311,7 +302,6 @@ describeEmbeddedPostgres("gsam company import/export e2e", () => {
           instanceId: paperclipInstanceId,
           shellHome: cliShellHome,
         }),
-        stdio: ["ignore", "pipe", "pipe"],
       },
     );
     serverProcess = child;
@@ -326,7 +316,7 @@ describeEmbeddedPostgres("gsam company import/export e2e", () => {
   }, 60_000);
 
   afterAll(async () => {
-    await stopServerProcess(serverProcess);
+    await stopProcessGroup(serverProcess);
     await tempDb?.cleanup();
     if (tempRoot) {
       rmSync(tempRoot, { recursive: true, force: true });
