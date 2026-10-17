@@ -65,6 +65,7 @@ import { tryCreateWebSocket } from "../lib/websocket";
 import { formatDate, formatNumber, formatTime, relativeTime, formatTokens, visibleRunCostUsd } from "../lib/utils";
 import { cn } from "../lib/utils";
 import { AgentStatusHistory } from "../components/AgentStatusHistory";
+import { MoveOpenTasksBanner } from "../components/MoveOpenTasksBanner";
 import { budgetUseLabel } from "../lib/agents-export";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
@@ -1892,6 +1893,8 @@ export function AgentOverview({
           </div>
         )}
       </section>
+
+      <MoveOpenTasksBanner companyId={agent.companyId} agent={agent} />
 
       <AgentStatusHistory companyId={agent.companyId} agentId={agent.id} />
 
