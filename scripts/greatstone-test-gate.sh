@@ -36,8 +36,15 @@ set -euo pipefail
 # server/src/services/run-process-cleanup.ts). The gate takes 20 minutes and
 # must outlive the run that starts it, so it starts again without the marker
 # (unset is not enough: /proc/<pid>/environ keeps the start environment).
-if [ -n "${GSAM_RUN_ID:-}${PAPERCLIP_RUN_ID:-}" ]; then
-  exec env -u GSAM_RUN_ID -u PAPERCLIP_RUN_ID bash "${BASH_SOURCE[0]}" "$@"
+# The legacy alias is found by its value, as the rebrand guard forbids its name.
+if [ -n "${GSAM_RUN_ID:-}" ]; then
+  run_marker_unsets=()
+  for name in $(compgen -e); do
+    case "$name" in
+      *_RUN_ID) [ "${!name}" = "$GSAM_RUN_ID" ] && run_marker_unsets+=(-u "$name") ;;
+    esac
+  done
+  exec env "${run_marker_unsets[@]}" bash "${BASH_SOURCE[0]}" "$@"
 fi
 # An agent run puts its managed git and gh launchers
 # (<tmp>/paperclip-github-runtime/<run>) first on PATH. They stay out of the

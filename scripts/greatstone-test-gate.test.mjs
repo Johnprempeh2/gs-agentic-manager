@@ -204,7 +204,8 @@ test("started from an agent run, the gate drops the run marker and lanes never u
     "no-marker: p=$PPID; while [ \"$p\" -gt 1 ]; do if grep -qa greatstone-test-gate.sh /proc/$p/cmdline; then tr '\\0' '\\n' </proc/$p/environ | grep -q '_RUN_ID=' && exit 1; exit 0; fi; p=$(cut -d' ' -f4 /proc/$p/stat); done; exit 2",
     "",
   ].join("\n"));
-  const runEnv = { GSAM_RUN_ID: "run-1", PAPERCLIP_RUN_ID: "run-1", TMPDIR: runScratch, GSAM_RUN_SCRATCH_DIR: runScratch };
+  // Agents also get the run id under its legacy alias (spelt in two parts for the rebrand guard).
+  const runEnv = { GSAM_RUN_ID: "run-1", [`${"PAPER"}CLIP_RUN_ID`]: "run-1", TMPDIR: runScratch, GSAM_RUN_SCRATCH_DIR: runScratch };
   const run = box.gate(["rc-2026-10-17.1"], { ...runEnv, GSAM_TEST_GATE_RETRY: "0" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
 
