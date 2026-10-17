@@ -130,6 +130,22 @@ describe("AskEverestPanel", () => {
     expect(mocks.needsMe).toHaveBeenCalledWith("company-1");
   });
 
+  it("answers when we last spoke to a client from imported notes and calls", async () => {
+    mocks.search.mockResolvedValueOnce({
+      results: [
+        { id: "activity:a1", type: "record", title: "Kick-off meeting", href: "/GRE/organisations/o1", updatedAt: "2026-09-01T10:00:00.000Z", record: { kind: "activity", subtitle: "Meeting, Acme Ltd, 1 Sep 2026" } },
+        { id: "activity:a2", type: "record", title: "Pricing call", href: "/GRE/organisations/o1", updatedAt: "2026-10-12T10:00:00.000Z", record: { kind: "activity", subtitle: "Call, Acme Ltd, 12 Oct 2026" } },
+      ],
+    } as never);
+    act(() => openAskEverest("When did we last speak to Acme?"));
+    await waitFor(() => {
+      expect(container.textContent).toContain("The latest with Acme: Pricing call (Call, Acme Ltd, 12 Oct 2026).");
+      expect(container.textContent).toContain("Kick-off meeting");
+    });
+    expect(mocks.search).toHaveBeenCalledWith("company-1", { q: "Acme", limit: 10, recordKind: ["activity"], scope: "records" });
+    expect(mocks.issuesList).not.toHaveBeenCalled();
+  });
+
   it("shows suggestions before a question is asked", async () => {
     act(() => {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "j", metaKey: true, bubbles: true }));

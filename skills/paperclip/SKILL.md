@@ -715,7 +715,8 @@ See [the API reference](references/api-reference.md#questions-and-waiting-for-hu
 **Search.** Before asking someone for context, look it up: `gsam search <words>` finds tasks,
 comments, docs, words inside uploaded files, clients, organisations, people, deals, imported
 Pipedrive notes and calls, and images (`--scope records` for clients and people only,
-`--scope files` for file contents, `--json` for the full result).
+`--kind person,activity` for only people and Pipedrive notes, `--scope files` for file
+contents, `--json` for the full result).
 
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your

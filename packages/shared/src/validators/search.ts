@@ -4,6 +4,7 @@ import { isUuidLike } from "../agent-url-key.js";
 import {
   COMPANY_SEARCH_EXTRACT_KINDS,
   COMPANY_SEARCH_EXTRACT_SCOPES,
+  COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SCOPES,
   COMPANY_SEARCH_SORTS,
 } from "../types/search.js";
@@ -159,6 +160,10 @@ export const companySearchQuerySchema = z.object({
   priority: z.unknown()
     .optional()
     .transform((value, ctx) => parseEnumList(value, ctx, "priority", ISSUE_PRIORITIES)),
+  /** Narrow business records to these kinds (organisation, person, client, product, image, activity). */
+  recordKind: z.unknown()
+    .optional()
+    .transform((value, ctx) => parseEnumList(value, ctx, "recordKind", COMPANY_SEARCH_RECORD_KINDS)),
   assigneeAgentId: z.unknown()
     .optional()
     .transform((value, ctx) => parseAssigneeAgentId(value, ctx)),
