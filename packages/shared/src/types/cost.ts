@@ -77,6 +77,8 @@ export interface CostByAgent {
   subscriptionCachedInputTokens: number;
   subscriptionInputTokens: number;
   subscriptionOutputTokens: number;
+  /** Tasks assigned to this agent that were finished in the same period. */
+  tasksDone?: number;
 }
 
 export interface CostByProviderModel {
