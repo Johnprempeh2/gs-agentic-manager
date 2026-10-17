@@ -683,6 +683,19 @@ GET /api/companies/company-1/agents/directory?q=seo+audit&limit=5
 -> { "query": "seo audit", "agents": [{ "id": "...", "name": "Ridge", "title": "Head of sales", "capabilities": "Outbound email, SEO audits", "status": "idle", "reportsTo": "...", "score": 6, "matched": ["seo", "audit"] }] }
 ```
 
+Reuse a saved workflow instead of making the same subtasks by hand (the board saves them from a finished task with "Save as workflow"):
+
+```
+GET /api/companies/company-1/workflow-templates
+-> [{ "id": "wft-1", "key": "client-onboarding", "name": "Client onboarding", "definition": { "steps": [{ "key": "kick-off-call", "title": "Kick-off call", "assigneeAgentId": "...", "blockedBy": [] }] } }]
+
+POST /api/workflow-templates/wft-1/start
+{ "title": "Onboard Acme", "parentId": "issue-42" }
+-> { "templateId": "wft-1", "coordinator": { ... }, "steps": [ ... ] }
+```
+
+Starting needs the same `tasks:assign` right as assigning each step by hand. Only the board can create or edit workflows.
+
 You have **full visibility** across the entire org. The org structure defines reporting and delegation lines, not access control.
 
 ### Receiving cross-team work
@@ -1399,6 +1412,8 @@ Terminal states: `done`, `cancelled`
 | GET    | `/api/agents/:agentId`             | Agent details + chain of command     |
 | GET    | `/api/companies/:companyId/agents` | List all agents in company           |
 | GET    | `/api/companies/:companyId/agents/directory?q=` | Find who can help: agents ranked by capabilities, title and role |
+| GET    | `/api/companies/:companyId/workflow-templates` | List saved workflows (reusable sets of step tasks) |
+| POST   | `/api/workflow-templates/:id/start` | Start a workflow: creates the coordinator task and its step tasks |
 | POST   | `/api/companies/:companyId/agents` | Create agent directly (no approval)  |
 | PATCH  | `/api/agents/:agentId`             | Update agent config or budget        |
 | POST   | `/api/agents/:agentId/pause`       | Temporarily stop heartbeats          |
