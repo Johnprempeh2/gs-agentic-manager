@@ -327,6 +327,10 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(byTitle.get("Kestrel licence")).toMatchObject({ href: expect.stringContaining(`/items/${caseId}`), record: { kind: "product", subtitle: "KL-1, on Kestrel renewal" } });
     expect(byTitle.get("A kestrel over hills")).toMatchObject({ previewImageUrl: `/api/assets/${assetId}/content`, record: { kind: "image" } });
 
+    const onlyPeopleAndProducts = await svc.search(companyId, companySearchQuerySchema.parse({ q: "kestrel", scope: "records", recordKind: "person,product" }));
+    expect(onlyPeopleAndProducts.results.map((row) => row.title).sort()).toEqual(["Ada Kestrel", "Kestrel licence"]);
+    expect(onlyPeopleAndProducts.countsByType.record).toBe(2);
+
     const people = await svc.search(companyId, companySearchQuerySchema.parse({ q: "ada@example.com" }));
     expect(people.results.filter((row) => row.type === "record").map((row) => row.title)).toEqual(["Ada Kestrel"]);
   });
@@ -353,6 +357,20 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect([...byTitle.keys()].sort()).toEqual(["Falcon budget signed off by the board", "Pricing call"]);
     expect(byTitle.get("Pricing call")).toMatchObject({ href: expect.stringContaining(`/pipelines/${pipelineId}/items/${caseId}`), record: { kind: "activity", subtitle: "Call, Merlin rollout, 12 Oct 2026" } });
     expect(byTitle.get("Falcon budget signed off by the board")).toMatchObject({ href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)), record: { kind: "activity", subtitle: "Note, Merlin Ltd" } });
+
+    // Asking about the client by name finds its history even when the note never says the name.
+    const byClient = await svc.search(companyId, companySearchQuerySchema.parse({ q: "merlin", scope: "records", recordKind: "activity" }));
+    expect(byClient.results.map((row) => row.title).sort()).toEqual(["Falcon budget signed off by the board", "Pricing call"]);
+  });
+
+  it("finds the people at an organisation by the organisation's name", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Osprey Holdings" });
+    await db.insert(organisationContacts).values({ companyId, organisationId: orgId, name: "Ada Kestrel", role: "CFO" });
+    const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "osprey", scope: "records", recordKind: "person" }));
+    expect(result.results.map((row) => row.title)).toEqual(["Ada Kestrel"]);
+    expect(result.results[0]?.record).toMatchObject({ kind: "person", subtitle: "CFO at Osprey Holdings" });
   });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {

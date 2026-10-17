@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { COMPANY_SEARCH_SCOPES, type CompanySearchResponse, type CompanySearchResult } from "@greatstone/shared";
+import { COMPANY_SEARCH_RECORD_KINDS, COMPANY_SEARCH_SCOPES, type CompanySearchResponse, type CompanySearchResult } from "@greatstone/shared";
 import {
   addCommonClientOptions,
   handleCommandError,
@@ -12,6 +12,7 @@ interface SearchOptions extends BaseClientOptions {
   companyId?: string;
   scope?: string;
   limit?: string;
+  kind?: string;
 }
 
 /** What kind of thing a result is, in plain words: "Task", "Organisation", "In file". */
@@ -45,15 +46,22 @@ export function registerSearchCommands(program: Command): void {
       .option("-C, --company-id <id>", "Company ID")
       .option("--scope <scope>", `Where to look: ${COMPANY_SEARCH_SCOPES.join(", ")}`, "all")
       .option("--limit <n>", "Most results to return (1 to 50)", "10")
+      .option("--kind <kinds>", `Only these records, comma separated: ${COMPANY_SEARCH_RECORD_KINDS.join(", ")} (implies --scope records)`)
       .action(async (words: string[], opts: SearchOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
-          const scope = opts.scope ?? "all";
+          const kinds = (opts.kind ?? "").split(",").map((kind) => kind.trim()).filter(Boolean);
+          const unknownKind = kinds.find((kind) => !(COMPANY_SEARCH_RECORD_KINDS as readonly string[]).includes(kind));
+          if (unknownKind) {
+            throw new Error(`--kind must be one or more of: ${COMPANY_SEARCH_RECORD_KINDS.join(", ")}`);
+          }
+          const scope = kinds.length > 0 && (opts.scope ?? "all") === "all" ? "records" : opts.scope ?? "all";
           if (!(COMPANY_SEARCH_SCOPES as readonly string[]).includes(scope)) {
             throw new Error(`--scope must be one of: ${COMPANY_SEARCH_SCOPES.join(", ")}`);
           }
           const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "10", 10) || 10, 1), 50);
           const params = new URLSearchParams({ q: words.join(" "), scope, limit: String(limit) });
+          if (kinds.length > 0) params.set("recordKind", kinds.join(","));
           const response = await ctx.api.get<CompanySearchResponse>(
             `/api/companies/${encodeURIComponent(ctx.companyId!)}/search?${params.toString()}`,
           );
