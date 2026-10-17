@@ -231,7 +231,7 @@ describe("MemoryApps", () => {
   });
 
   it("lets an owner turn on app sign-in, then shows the ChatGPT steps with the address", async () => {
-    graphApiMock.appSignInStatus.mockResolvedValue({ mcpUrl: "https://memory.example.com/api/mcp/memory-tools", publicAddressSet: true });
+    graphApiMock.appSignInStatus.mockResolvedValue({ mcpUrl: "https://memory.example.com/api/mcp/memory-tools" });
     graphApiMock.settings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: false, updatedAt: null });
     graphApiMock.updateSettings.mockResolvedValue({ companyId: "co-kestrel", enabled: true, retainMode: "extract", appSignIn: true, updatedAt: null });
     await render();

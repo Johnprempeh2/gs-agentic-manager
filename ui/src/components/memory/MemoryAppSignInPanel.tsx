@@ -36,7 +36,7 @@ export function MemoryAppSignInPanel({ companyId, app }: { companyId: string; ap
     return (
       <div className="space-y-1 rounded-md border border-border bg-muted/40 p-3 text-sm" data-testid="memory-app-sign-in">
         <p>{label} connects by signing in to GSAM, and this GSAM does not offer that sign-in.</p>
-        <p className="text-muted-foreground">It needs GSAM's own sign-in turned on and an address the app can reach. Until then, use the import above.</p>
+        <p className="text-muted-foreground">It needs GSAM's own sign-in and a public address for memory that the app can reach. Until then, use the import above.</p>
       </div>
     );
   }
@@ -54,11 +54,6 @@ export function MemoryAppSignInPanel({ companyId, app }: { companyId: string; ap
               <li key={step}>{step}</li>
             ))}
           </ol>
-          {status.data.publicAddressSet ? null : (
-            <p className="text-muted-foreground">
-              {label} reaches GSAM from the internet. This address only works once GSAM has a public address for memory.
-            </p>
-          )}
           <p className="text-muted-foreground">
             What {label} adds waits in Review, and Disconnect below cuts it off at once.
           </p>

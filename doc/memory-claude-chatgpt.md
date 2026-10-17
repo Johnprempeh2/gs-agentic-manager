@@ -96,7 +96,11 @@ token table is added.
 - `GET /oauth/memory/authorize`: checks the client and redirect, then sends the
   browser to the Allow screen at `/memory/connect-app`.
 - `GET /api/memory-oauth/client`, `POST /api/memory-oauth/approve`: the Allow
-  screen, behind the board session and mutation guard. Approve logs
+  screen, behind the board session and mutation guard. The app is named from
+  its redirect host, never its own name: ChatGPT only for chatgpt.com or
+  chat.openai.com, Claude.ai only for claude.ai or claude.com. Anything else is
+  "An app", with a warning naming the host. The screen allows search only
+  unless the person also ticks "suggest new entries". Approve logs
   `memory.connection_authorized` and returns a signed code (5 minutes, PKCE S256).
 - `POST /oauth/memory/token`: swaps the code for the key, once, and logs
   `memory.connection_created` with `via: "oauth"`.
@@ -110,8 +114,12 @@ while it is off no code is issued or exchanged.
 Addresses:
 
 - `GSAM_MEMORY_PUBLIC_URL`: where ChatGPT's and Anthropic's servers reach GSAM
-  (falls back to the auth public URL, then the request host). Only these paths
-  need to be public: `/.well-known/oauth-*`, `/oauth/memory/*` and
-  `/api/mcp/memory-tools`. The host must also be in the allowed hostnames.
+  (falls back to the explicit auth public URL). Without either there is no
+  sign-in at all: GSAM never builds these addresses from the request's Host
+  header. Only these paths need to be public: `/.well-known/oauth-*`,
+  `/oauth/memory/*` and `/api/mcp/memory-tools`. In private exposure the
+  Funnel or Tunnel host must be in the allowed hostnames or the hostname guard
+  answers 403, and a tunnel that rewrites Host needs `TRUST_PROXY` set so
+  `X-Forwarded-Host` counts.
 - `GSAM_MEMORY_CONSENT_URL`: optional private address for the Allow screen, for
   example the Tailscale name, so the board itself never has to be public.

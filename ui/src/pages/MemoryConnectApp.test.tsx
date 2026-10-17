@@ -92,9 +92,17 @@ describe("MemoryConnectApp", () => {
       codeChallenge: challenge,
       codeChallengeMethod: "S256",
       state: "s1",
-      canContribute: true,
+      canContribute: false,
     });
     expect(go).toHaveBeenCalledWith(`${REDIRECT}?code=abc&state=s1`);
+  });
+
+  it("warns plainly when the app is not ChatGPT or Claude.ai, whatever it calls itself", async () => {
+    graphApiMock.appSignInClient.mockResolvedValue({ name: "ChatGPT", app: "other", redirectHost: "evil.example" });
+    await render();
+    expect(body()).toContain("Let An app use Kestrel memory?");
+    expect(body()).toContain("This is not ChatGPT or Claude.ai. It sends you back to evil.example.");
+    expect(body()).not.toContain("Let ChatGPT use");
   });
 
   it("says when an owner has not turned on app sign-in", async () => {

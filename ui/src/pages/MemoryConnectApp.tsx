@@ -22,7 +22,7 @@ export function MemoryConnectApp() {
   const { selectedCompanyId, selectedCompany } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [params] = useSearchParams();
-  const [canContribute, setCanContribute] = useState(true);
+  const [canContribute, setCanContribute] = useState(false);
   const clientId = params.get("client_id") ?? "";
   const redirectUri = params.get("redirect_uri") ?? "";
   const state = params.get("state") ?? undefined;
@@ -72,7 +72,9 @@ export function MemoryConnectApp() {
     return <p className="py-10 text-center text-sm text-muted-foreground">Loading...</p>;
   }
 
-  const appLabel = client.data.app === "other" ? client.data.name : MEMORY_CONNECTION_APP_LABEL[client.data.app];
+  const known = client.data.app !== "other";
+  // An unknown app's name is only its own claim, so it is never shown as the heading.
+  const appLabel = known ? MEMORY_CONNECTION_APP_LABEL[client.data.app] : "An app";
   const companyName = selectedCompany?.name ?? "your company";
   const error = approve.error;
   const refusal =
@@ -95,13 +97,21 @@ export function MemoryConnectApp() {
           {appLabel} will be able to search what {companyName} remembers while you chat with it, as you. It cannot see tasks,
           clients or anything else in GSAM.
         </p>
-        <p className="text-sm text-muted-foreground">It will send you back to {client.data.redirectHost}.</p>
+        {known ? <p className="text-sm text-muted-foreground">It will send you back to {client.data.redirectHost}.</p> : null}
       </div>
+      {known ? null : (
+        <div className="space-y-1 rounded-md border border-destructive p-3 text-sm" role="alert">
+          <p className="font-medium text-destructive">This is not ChatGPT or Claude.ai. It sends you back to {client.data.redirectHost}.</p>
+          <p className="text-muted-foreground">
+            It calls itself "{client.data.name}". Only allow it if you started this from that app yourself and recognise {client.data.redirectHost}.
+          </p>
+        </div>
+      )}
       <label className="flex items-start gap-2 text-sm">
         <Checkbox checked={canContribute} onCheckedChange={(value) => setCanContribute(value === true)} className="mt-0.5" />
         <span>
-          Let it suggest new entries.
-          <span className="block text-xs text-muted-foreground">They wait in Review before anyone relies on them.</span>
+          Also let it suggest new entries.
+          <span className="block text-xs text-muted-foreground">Left off, it can only search. Suggestions wait in Review before anyone relies on them.</span>
         </span>
       </label>
       <p className="text-xs text-muted-foreground">You can cut it off at any time with Disconnect under Memory, Claude and ChatGPT.</p>

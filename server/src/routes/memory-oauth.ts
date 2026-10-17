@@ -86,10 +86,27 @@ export function isAllowedRedirectUri(value: string): boolean {
   return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
 }
 
-/** Which app a registered client is, from the name it gave itself. */
-export function memoryOAuthApp(clientName: string): MemoryConnectionApp {
-  if (/chatgpt|openai/i.test(clientName)) return "chatgpt";
-  if (/claude|anthropic/i.test(clientName)) return "claude_ai";
+const APP_REDIRECT_HOSTS: Array<[MemoryConnectionApp, string[]]> = [
+  ["chatgpt", ["chatgpt.com", "chat.openai.com"]],
+  ["claude_ai", ["claude.ai", "claude.com"]],
+];
+
+/**
+ * Which app a registered client is, from where it sends the browser back.
+ * Never from the name: anyone can register as "ChatGPT", but only ChatGPT
+ * receives codes at chatgpt.com.
+ */
+export function memoryOAuthApp(redirectUris: string[]): MemoryConnectionApp {
+  const hosts = redirectUris.map((uri) => {
+    try {
+      return new URL(uri).hostname.toLowerCase();
+    } catch {
+      return "";
+    }
+  });
+  for (const [app, allowed] of APP_REDIRECT_HOSTS) {
+    if (hosts.length > 0 && hosts.every((host) => allowed.includes(host))) return app;
+  }
   return "other";
 }
 
@@ -111,7 +128,7 @@ const approveSchema = z
     codeChallenge: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
     codeChallengeMethod: z.literal("S256"),
     state: z.string().max(1_000).optional(),
-    canContribute: z.boolean().default(true),
+    canContribute: z.boolean().default(false),
   })
   .strict();
 
@@ -121,7 +138,7 @@ function clientIdHash(clientId: string) {
 
 export interface MemoryOAuthOptions {
   engine?: MemoryEngine;
-  /** Where ChatGPT and Claude.ai reach GSAM. Defaults to the request's own host. */
+  /** Where ChatGPT and Claude.ai reach GSAM. Without it there is no sign-in at all. */
   publicBaseUrl?: string | null;
   /** Where the person approving opens the consent screen. Defaults to the public address. */
   consentBaseUrl?: string | null;
@@ -136,7 +153,12 @@ function readClient(signing: Buffer, clientId: string): ClientPayload | null {
 
 function sharedSetup(db: Db, options: MemoryOAuthOptions) {
   const gateway = memoryGatewayService(db, options);
-  const key = options.signingKey === undefined ? memoryOAuthSigningKey() : options.signingKey;
+  // No public address, no sign-in: never trust the request's own Host header for it.
+  const key = !trimBase(options.publicBaseUrl)
+    ? null
+    : options.signingKey === undefined
+      ? memoryOAuthSigningKey()
+      : options.signingKey;
   return { gateway, links: memoryConnectionService(db, gateway), key, now: options.now ?? Date.now };
 }
 
@@ -149,9 +171,8 @@ export function memoryOAuthRoutes(db: Db, options: MemoryOAuthOptions = {}) {
   const { gateway, links, key, now } = sharedSetup(db, options);
   const usedCodes = new Map<string, number>();
 
-  function baseUrl(req: Request) {
-    return trimBase(options.publicBaseUrl) ?? `${req.protocol}://${req.get("host")}`;
-  }
+  // Only reached with a public address set (see sharedSetup).
+  const baseUrl = (_req: Request) => trimBase(options.publicBaseUrl)!;
 
   function requireKey(res: Response): Buffer | null {
     if (key) return key;
@@ -302,10 +323,9 @@ export function memoryOAuthConsentRoutes(db: Db, options: MemoryOAuthOptions = {
   }
 
   // The address to paste into ChatGPT or Claude.ai. Answers 404 where sign-in is not offered.
-  router.get("/memory-oauth/status", (req, res) => {
+  router.get("/memory-oauth/status", (_req, res) => {
     requireKey();
-    const base = trimBase(options.publicBaseUrl) ?? `${req.protocol}://${req.get("host")}`;
-    res.json({ mcpUrl: `${base}${MEMORY_MCP_PATH}`, publicAddressSet: !!trimBase(options.publicBaseUrl) });
+    res.json({ mcpUrl: `${trimBase(options.publicBaseUrl)}${MEMORY_MCP_PATH}` });
   });
 
   // What the consent screen shows. The name is the app's own claim.
@@ -315,7 +335,7 @@ export function memoryOAuthConsentRoutes(db: Db, options: MemoryOAuthOptions = {
     const redirectUri = typeof req.query.redirect_uri === "string" ? req.query.redirect_uri : "";
     const client = readClient(signing, clientId);
     if (!client || !client.r.includes(redirectUri)) throw notFound("This sign-in link is not valid");
-    res.json({ name: client.n, app: memoryOAuthApp(client.n), redirectHost: new URL(redirectUri).host });
+    res.json({ name: client.n, app: memoryOAuthApp(client.r), redirectHost: new URL(redirectUri).host });
   });
 
   // The person pressed Allow: make or reuse their link agent for this app and
@@ -332,7 +352,7 @@ export function memoryOAuthConsentRoutes(db: Db, options: MemoryOAuthOptions = {
     const client = readClient(signing, input.clientId);
     if (!client || !client.r.includes(input.redirectUri)) throw notFound("This sign-in link is not valid");
 
-    const app = memoryOAuthApp(client.n);
+    const app = memoryOAuthApp(client.r);
     // The token exchange mints the key the app uses.
     const link = await links.connect(caller, app, input.canContribute);
 
@@ -368,8 +388,8 @@ export function memoryOAuthConsentRoutes(db: Db, options: MemoryOAuthOptions = {
 }
 
 /** Tells an MCP client where to sign in when it calls the memory endpoint without a key. */
-export function memoryMcpAuthChallenge(req: Request, res: Response, publicBaseUrl?: string | null) {
-  const base = trimBase(publicBaseUrl) ?? `${req.protocol}://${req.get("host")}`;
+export function memoryMcpAuthChallenge(_req: Request, res: Response, publicBaseUrl: string) {
+  const base = trimBase(publicBaseUrl);
   res.set("WWW-Authenticate", `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource${MEMORY_MCP_PATH}"`);
   res.status(401).json({ error: "Sign in to use organisation memory" });
 }

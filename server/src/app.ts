@@ -881,7 +881,9 @@ export async function createApp(
   api.use(
     memoryToolRoutes(db, {
       engine: memoryEngine,
-      signInChallenge: memoryOAuth ? (req, res) => memoryMcpAuthChallenge(req, res, memoryOAuth.publicBaseUrl) : undefined,
+      signInChallenge: memoryOAuth?.publicBaseUrl
+        ? (req, res) => memoryMcpAuthChallenge(req, res, memoryOAuth.publicBaseUrl!)
+        : undefined,
     }),
   );
   api.use(memoryConnectionRoutes(db, { engine: memoryEngine }));

@@ -408,11 +408,12 @@ export interface CreatedMemoryConnection {
 export interface MemoryAppSignInStatus {
   /** The address to paste into the app. */
   mcpUrl: string;
-  /** False when the server falls back to its own address, which outside apps may not reach. */
-  publicAddressSet: boolean;
 }
 
-/** The app asking to connect, as the consent screen shows it. The name is the app's own claim. */
+/**
+ * The app asking to connect, as the consent screen shows it. `app` comes from
+ * where it sends the browser back; `name` is only the app's own claim.
+ */
 export interface MemoryAppSignInClient {
   name: string;
   app: MemoryConnectionApp;

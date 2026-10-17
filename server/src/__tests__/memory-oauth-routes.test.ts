@@ -56,10 +56,12 @@ it("allows https redirects and http only on this machine", () => {
   expect(isAllowedRedirectUri("javascript:alert(1)")).toBe(false);
 });
 
-it("names the app from the name it registers with", () => {
-  expect(memoryOAuthApp("ChatGPT")).toBe("chatgpt");
-  expect(memoryOAuthApp("claudeai")).toBe("claude_ai");
-  expect(memoryOAuthApp("Inspector")).toBe("other");
+it("names the app from where it sends the browser back, never from its name", () => {
+  expect(memoryOAuthApp([REDIRECT])).toBe("chatgpt");
+  expect(memoryOAuthApp(["https://claude.ai/api/mcp/auth_callback"])).toBe("claude_ai");
+  expect(memoryOAuthApp(["https://evil.example/cb"])).toBe("other");
+  expect(memoryOAuthApp([REDIRECT, "https://evil.example/cb"])).toBe("other");
+  expect(memoryOAuthApp(["https://chatgpt.com.evil.example/cb"])).toBe("other");
 });
 
 it("points a call without a key at the sign-in", async () => {
@@ -106,8 +108,8 @@ describeEmbeddedPostgres("memory sign-in for ChatGPT and Claude.ai", () => {
     return res.body.client_id as string;
   }
 
-  function approveBody(companyId: string, clientId: string) {
-    return { companyId, clientId, redirectUri: REDIRECT, codeChallenge: challenge, codeChallengeMethod: "S256", state: "s1" };
+  function approveBody(companyId: string, clientId: string, redirectUri = REDIRECT) {
+    return { companyId, clientId, redirectUri, codeChallenge: challenge, codeChallengeMethod: "S256", state: "s1" };
   }
 
   function exchange(publicApp: express.Express, clientId: string, code: string) {
@@ -130,7 +132,7 @@ describeEmbeddedPostgres("memory sign-in for ChatGPT and Claude.ai", () => {
     });
 
     const status = await request(board).get("/api/memory-oauth/status");
-    expect(status.body).toEqual({ mcpUrl: `${PUBLIC}/api/mcp/memory-tools`, publicAddressSet: true });
+    expect(status.body).toEqual({ mcpUrl: `${PUBLIC}/api/mcp/memory-tools` });
 
     const clientId = await register(publicApp);
     const authorize = await request(publicApp).get("/oauth/memory/authorize").query({
@@ -172,6 +174,30 @@ describeEmbeddedPostgres("memory sign-in for ChatGPT and Claude.ai", () => {
     expect(listed.body).toEqual([expect.objectContaining({ app: "chatgpt", agentId: agent.id })]);
     const actions = (await ctx.db.select().from(activityLog)).map((row) => row.action);
     expect(actions).toEqual(expect.arrayContaining(["memory.connection_authorized", "memory.connection_created"]));
+  });
+
+  it("treats an app that only calls itself ChatGPT as an unknown app, read only unless allowed more", async () => {
+    const { publicApp, board, companyId } = await setup("Impostor", { enabled: true, appSignIn: true });
+    const res = await request(publicApp)
+      .post("/oauth/memory/register")
+      .send({ client_name: "ChatGPT", redirect_uris: ["https://evil.example/cb"] });
+    const clientId = res.body.client_id as string;
+    const shown = await request(board).get("/api/memory-oauth/client").query({ client_id: clientId, redirect_uri: "https://evil.example/cb" });
+    expect(shown.body).toEqual({ name: "ChatGPT", app: "other", redirectHost: "evil.example" });
+    const approved = await request(board).post("/api/memory-oauth/approve").send(approveBody(companyId, clientId, "https://evil.example/cb"));
+    expect(approved.status).toBe(200);
+    const [agent] = await ctx.db.select().from(agents);
+    expect((agent.metadata as { memoryConnection: { app: string } }).memoryConnection.app).toBe("other");
+    expect(await ctx.db.select().from(principalPermissionGrants).where(eq(principalPermissionGrants.principalId, agent.id))).toEqual([]);
+  });
+
+  it("offers no sign-in at all without a public address", async () => {
+    const seeded = await seedCompanyWithBoardAccess(ctx.db, "No address");
+    const app = express();
+    app.use(memoryOAuthRoutes(ctx.db, { engine, signingKey }));
+    expect((await request(app).get("/.well-known/oauth-authorization-server")).status).toBe(404);
+    const board = routeApp(ctx.db, seeded.actor, (db) => memoryOAuthConsentRoutes(db, { engine, signingKey }));
+    expect((await request(board).get("/api/memory-oauth/status")).status).toBe(404);
   });
 
   it("issues nothing while an owner has not turned on app sign-in", async () => {
