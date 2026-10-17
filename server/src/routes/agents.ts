@@ -4303,6 +4303,41 @@ export function agentRoutes(
     );
   });
 
+  // An agent's own recently finished tasks, newest first, so it can pick up
+  // where it left off and avoid redoing work it already finished.
+  router.get("/agents/me/recent-done", async (req, res) => {
+    if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
+      res.status(401).json({ error: "Agent authentication required" });
+      return;
+    }
+    const rawLimit = Number(req.query.limit ?? 10);
+    const limit = Number.isFinite(rawLimit) ? Math.min(50, Math.max(1, Math.trunc(rawLimit))) : 10;
+    const rows = await db
+      .select({
+        id: issuesTable.id,
+        identifier: issuesTable.identifier,
+        title: issuesTable.title,
+        projectId: issuesTable.projectId,
+        goalId: issuesTable.goalId,
+        parentId: issuesTable.parentId,
+        billingCode: issuesTable.billingCode,
+        completedAt: issuesTable.completedAt,
+      })
+      .from(issuesTable)
+      .where(
+        and(
+          eq(issuesTable.companyId, req.actor.companyId),
+          eq(issuesTable.assigneeAgentId, req.actor.agentId),
+          eq(issuesTable.status, "done"),
+          sql`${issuesTable.hiddenAt} is null`,
+          sql`${issuesTable.completedAt} is not null`,
+        ),
+      )
+      .orderBy(desc(issuesTable.completedAt))
+      .limit(limit);
+    res.json(rows);
+  });
+
   router.get("/agents/me/inbox/mine", async (req, res) => {
     if (req.actor.type !== "agent" || !req.actor.agentId || !req.actor.companyId) {
       res.status(401).json({ error: "Agent authentication required" });

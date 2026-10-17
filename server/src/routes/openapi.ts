@@ -3752,6 +3752,15 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/recent-done",
+  tags: ["agents"],
+  summary: "List the current agent's recently finished tasks, newest first",
+  request: { query: z.object({ limit: z.coerce.number().int().min(1).max(50).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
 const AgentSecretListResponseSchema = z.object({
   secrets: z.array(
     z.object({
