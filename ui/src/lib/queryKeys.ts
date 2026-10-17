@@ -651,6 +651,13 @@ export const queryKeys = {
     detail: (imageId: string) => ["images", "detail", imageId] as const,
     covers: (companyId: string) => ["images", companyId, "covers"] as const,
   },
+  videos: {
+    status: (companyId: string) => ["videos", companyId, "status"] as const,
+    list: (companyId: string) => ["videos", companyId, "list"] as const,
+  },
+  studioLooks: {
+    list: (companyId: string) => ["studio-looks", companyId] as const,
+  },
   deliverables: {
     all: (companyId: string) => ["deliverables", companyId] as const,
     list: (companyId: string, params: Record<string, string | undefined>) =>

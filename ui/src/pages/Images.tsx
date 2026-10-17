@@ -17,6 +17,7 @@ import {
 } from "@greatstone/shared";
 import {
   AlertCircle,
+  Clapperboard,
   Download,
   ExternalLink,
   ImageIcon,
@@ -53,6 +54,8 @@ import {
 import { relativeTime } from "@/lib/utils";
 import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImagePromptFields } from "../components/ImagePromptFields";
 import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCameraFields";
+import { StudioLookPicker } from "../components/StudioLookPicker";
+import { VideoStudio } from "../components/VideoStudio";
 
 export { IMAGE_IDEA_STARTERS };
 
@@ -194,6 +197,7 @@ export function Images() {
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("1:1");
   const [style, setStyle] = useState<ImageStylePresetId | null>(null);
   const [camera, setCamera] = useState<StudioCameraSettings>({});
+  const [lookId, setLookId] = useState<string | null>(null);
   const [variations, setVariations] = useState<number>(1);
   const [organisationId, setOrganisationId] = useState("");
   const [search, setSearch] = useState("");
@@ -201,6 +205,8 @@ export function Images() {
   const [clientFilter, setClientFilter] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tab, setTab] = useState<"images" | "videos">("images");
+  const [animateImage, setAnimateImage] = useState<GeneratedImage | null>(null);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Images" }]);
@@ -260,6 +266,7 @@ export function Images() {
       aspectRatio: ImageAspectRatio;
       style?: ImageStylePresetId | null;
       camera?: StudioCameraSettings | null;
+      lookId?: string | null;
       organisationId?: string | null;
       issueId?: string | null;
       count?: number;
@@ -307,6 +314,7 @@ export function Images() {
         aspectRatio,
         style,
         ...(hasStudioCamera(camera) ? { camera } : {}),
+        ...(lookId ? { lookId } : {}),
         organisationId: organisationId || null,
         count: variations,
       },
@@ -319,6 +327,8 @@ export function Images() {
     setAspectRatio(image.aspectRatio);
     setStyle(image.style);
     setCamera(image.camera ?? {});
+    // The description already carries the look's words, so do not add them twice.
+    setLookId(null);
     setOrganisationId(image.organisation?.id ?? "");
     setOpenId(null);
     promptRef.current?.focus();
@@ -340,11 +350,42 @@ export function Images() {
   return (
     <div className="w-full max-w-7xl space-y-6">
       <header className="space-y-1">
-        <h1 className="text-xl font-bold">Images</h1>
+        <h1 className="text-xl font-bold">Image studio</h1>
         <p className="text-sm text-muted-foreground">
-          Describe a picture and GSAM makes it for you. Your agents can make them for their tasks too.
+          Describe a picture or a short video and GSAM makes it for you. Your agents can make them for their tasks too.
         </p>
       </header>
+
+      <div className="inline-flex rounded-lg bg-muted p-1" role="tablist" aria-label="Studio">
+        {(["images", "videos"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={tab === value}
+            onClick={() => setTab(value)}
+            className={
+              tab === value
+                ? "rounded-md bg-background px-4 py-1.5 text-sm font-medium text-foreground shadow-sm"
+                : "rounded-md px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground"
+            }
+            data-testid={`studio-tab-${value}`}
+          >
+            {value === "images" ? "Images" : "Videos"}
+          </button>
+        ))}
+      </div>
+
+      {tab === "videos" ? (
+        <VideoStudio
+          companyId={companyId}
+          sourceImage={animateImage}
+          onClearSourceImage={() => setAnimateImage(null)}
+          onError={(message) => pushToast({ title: message, tone: "error" })}
+          onDeleted={() => pushToast({ title: "Video deleted", tone: "success", ttlMs: 2500 })}
+        />
+      ) : (
+      <>
 
       <section
         className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5"
@@ -375,6 +416,20 @@ export function Images() {
         />
 
         <StudioPromptBoosters prompt={prompt} onPromptChange={setPrompt} disabled={!configured} />
+        <StudioLookPicker
+          companyId={companyId}
+          idPrefix="image"
+          lookId={lookId}
+          onPick={(look) => {
+            setLookId(look?.id ?? null);
+            if (look) {
+              setStyle(look.style);
+              setCamera(look.camera ?? {});
+            }
+          }}
+          current={{ style, camera }}
+          disabled={!configured}
+        />
         <StudioCameraFields idPrefix="image" camera={camera} onCameraChange={setCamera} disabled={!configured} />
 
         <fieldset className="space-y-2" disabled={!configured}>
@@ -512,6 +567,9 @@ export function Images() {
         )}
       </div>
 
+      </>
+      )}
+
       <Dialog open={!!opened} onOpenChange={(open) => (!open ? setOpenId(null) : undefined)}>
         <DialogContent className="max-w-4xl">
           {opened ? (
@@ -536,6 +594,20 @@ export function Images() {
                   Delete
                 </Button>
                 <div className="flex flex-wrap gap-2">
+                  {opened.contentPath ? (
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setAnimateImage(opened);
+                        setOpenId(null);
+                        setTab("videos");
+                      }}
+                      data-testid="animate-image"
+                    >
+                      <Clapperboard className="h-4 w-4" aria-hidden="true" />
+                      Animate
+                    </Button>
+                  ) : null}
                   <Button variant="outline" onClick={() => reuse(opened)}>
                     <RotateCcw className="h-4 w-4" aria-hidden="true" />
                     Make another like this

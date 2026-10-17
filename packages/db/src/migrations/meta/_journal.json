@@ -2591,6 +2591,13 @@
       "when": 1792277850310,
       "tag": "0371_image_studio_camera",
       "breakpoints": true
+    },
+    {
+      "idx": 372,
+      "version": "7",
+      "when": 1792277995928,
+      "tag": "0372_studio_videos_and_looks",
+      "breakpoints": true
     }
   ]
 }

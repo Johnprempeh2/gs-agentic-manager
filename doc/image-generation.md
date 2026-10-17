@@ -85,3 +85,55 @@ At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart
 is marked failed after ten minutes. Requests, completions, failures and
 deletions are written to the activity log.
+
+## Video studio
+
+The **Videos** tab on the Images page makes short clips through Higgsfield,
+from words alone or by animating a finished studio image (open an image and
+press **Animate**). It uses the same Higgsfield key as images
+(`HIGGSFIELD_API_KEY_ID` and `HIGGSFIELD_API_KEY_SECRET`). Set
+`GSAM_VIDEO_PROVIDER=mock`, or `GSAM_IMAGE_PROVIDER=mock` without a video
+setting, for practice mode: every request returns a short labelled clip with
+no service and no cost. With no key and no practice mode the tab says what to
+add and makes nothing.
+
+- **Models**: `kling-2.5-turbo-pro` (5 or 10 s, default), `kling-2.5-turbo-standard`
+  (5 or 10 s, animates an image only) and `hailuo-2.3` (6 or 10 s). The server
+  refuses a length the model does not offer.
+- **Motion** (optional): slow push in, orbit, pan across, drone rise, handheld
+  or locked off. The words are added after the description, then any camera
+  words, which take the same picks as images.
+- **API**: `POST /api/companies/{companyId}/generated-videos` answers `202`
+  with a pending clip; poll `GET /api/generated-videos/{id}` until `completed`
+  (`contentPath` plays or downloads it) or `failed` (`error` says why). List
+  with `GET /api/companies/{companyId}/generated-videos`; only the board can
+  `DELETE /api/generated-videos/{id}`. `GET /api/companies/{companyId}/video-generation`
+  says whether video is switched on.
+- **Agents**: `gsam video generate` (with `--image`, `--motion`, `--model`,
+  `--duration` and the camera flags), or the MCP tools `studio_video_status`,
+  `studio_make_video`, `studio_get_video` and `studio_list_videos`.
+
+At most two clips are made at once per server, and a company can have three
+pending; a fourth request gets `429`. A pending clip left behind by a restart
+is marked failed after thirty minutes. Clip files are served with byte ranges,
+so they play and seek in every browser.
+
+## House looks
+
+A house look is a company's saved studio settings under one name, such as
+"Acme product shots": a style, camera picks and words to add every time (for
+example brand colours or lighting). Pick one under **House look** on the
+Images or Videos tab, or press **Save as a house look** to keep the current
+style and camera. A request carries `lookId`; the server fills in the style
+and camera the request leaves out and adds the look's words to the
+description, which is stored with them. A company keeps up to 50 looks, and
+names are unique regardless of case.
+
+- **API**: `GET` and `POST /api/companies/{companyId}/studio-looks`, then
+  `GET`, `PATCH` and `DELETE /api/studio-looks/{id}`. Board users and agents in
+  the company can use them; every change is in the activity log.
+- **Agents**: `gsam look list`, `gsam look save --name ...`, `gsam look delete`,
+  and `--look <name>` on `gsam image generate` and `gsam video generate`; or
+  the MCP tools `studio_list_looks`, `studio_save_look`, and `lookId` on
+  `studio_make_image` and `studio_make_video`.
+

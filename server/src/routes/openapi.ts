@@ -57,6 +57,10 @@ import {
   createGeneratedImageSchema,
   updateGeneratedImageCoverSchema,
   generatedImagesQuerySchema,
+  generatedVideosQuerySchema,
+  createGeneratedVideoSchema,
+  createStudioLookSchema,
+  updateStudioLookSchema,
   updateDeliverableSchema,
   setCaseNdaSchema,
   setCaseEngagementSchema,
@@ -1491,6 +1495,7 @@ const BOARD_ONLY_PREFIXES = [
 
 const BOARD_ONLY_OPERATIONS = new Set([
   "DELETE /api/generated-images/{id}",
+  "DELETE /api/generated-videos/{id}",
   "POST /api/companies/{companyId}/pause",
   "POST /api/companies/{companyId}/resume",
   "PUT /api/companies/{companyId}/memory/stewards/{scopeId}",
@@ -1806,6 +1811,7 @@ const INSTANCE_ADMIN_OPERATIONS = new Set([
 ]);
 
 const CREATED_OPERATIONS = new Set([
+  "POST /api/companies/{companyId}/studio-looks",
   "POST /api/fleet/instances",
   "POST /api/fleet/instances/{id}/registration-code",
   "POST /api/fleet/spoke/register",
@@ -1878,6 +1884,7 @@ const CREATED_OPERATIONS = new Set([
 
 const ACCEPTED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/generated-images",
+  "POST /api/companies/{companyId}/generated-videos",
   "POST /api/companies/{companyId}/releases/release",
   "POST /api/companies/{companyId}/releases/rollback",
   "POST /api/companies/{companyId}/email/send",
@@ -4626,6 +4633,96 @@ registry.registerPath({
   path: "/api/generated-images/{id}",
   tags: ["assets"],
   summary: "Delete a generated image and its stored file (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/video-generation",
+  tags: ["assets"],
+  summary: "Say whether studio clips are switched on (configured) and which service makes them (Higgsfield or practice mode)",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/generated-videos",
+  tags: ["assets"],
+  summary: "List studio clips, newest first, with prompt, model, source image, status and contentPath once ready",
+  request: { params: z.object({ companyId: z.string() }), query: generatedVideosQuerySchema },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/generated-videos",
+  tags: ["assets"],
+  summary: "Make a short clip from a description, or animate a finished studio image (sourceImageId). Answers 202 with a pending clip; poll GET /api/generated-videos/{id}. 422 code video_generation_not_configured when no service is set; 429 when 3 clips are already being made",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedVideoSchema) },
+  responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/generated-videos/{id}",
+  tags: ["assets"],
+  summary: "Get one studio clip and its status",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/generated-videos/{id}",
+  tags: ["assets"],
+  summary: "Delete a studio clip and its stored file (board only)",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/companies/{companyId}/studio-looks",
+  tags: ["assets"],
+  summary: "List the company's house looks: saved studio style, camera picks and words, by name",
+  request: { params: z.object({ companyId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/studio-looks",
+  tags: ["assets"],
+  summary: "Save a house look. Pass its id as lookId when making an image or clip; the request's own picks win and the look's words are added. 409 code studio_look_name_taken when the name is in use",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createStudioLookSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 409: r.conflict, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/studio-looks/{id}",
+  tags: ["assets"],
+  summary: "Get one house look",
+  request: { params: z.object({ id: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/studio-looks/{id}",
+  tags: ["assets"],
+  summary: "Change a house look's name, description, style, camera or words",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateStudioLookSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "delete",
+  path: "/api/studio-looks/{id}",
+  tags: ["assets"],
+  summary: "Delete a house look. Images and clips already made with it keep their settings",
   request: { params: z.object({ id: z.string() }) },
   responses: { 204: r.noContent, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
