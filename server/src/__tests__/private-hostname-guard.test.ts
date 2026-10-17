@@ -97,3 +97,33 @@ describe("privateHostnameGuard", () => {
     expect(res.body?.error).not.toContain("marker");
   });
 });
+
+describe("privateHostnameGuard and X-Forwarded-Host", () => {
+  it("ignores X-Forwarded-Host from a direct client", async () => {
+    const app = createApp({ enabled: true, allowedHostnames: ["gsam.example.com"] });
+    const res = await request(app)
+      .get("/api/health")
+      .set("Host", `${unknownHostname}:3100`)
+      .set("X-Forwarded-Host", "localhost");
+    expect(res.status).toBe(403);
+  });
+
+  it("uses X-Forwarded-Host from a trusted proxy", async () => {
+    const app = express();
+    app.set("trust proxy", "loopback");
+    app.use(privateHostnameGuard({ enabled: true, allowedHostnames: ["gsam.example.com"], bindHost: "127.0.0.1" }));
+    app.get("/api/health", (_req, res) => {
+      res.status(200).json({ status: "ok" });
+    });
+    const allowed = await request(app)
+      .get("/api/health")
+      .set("Host", "127.0.0.1:3100")
+      .set("X-Forwarded-Host", "gsam.example.com");
+    expect(allowed.status).toBe(200);
+    const blocked = await request(app)
+      .get("/api/health")
+      .set("Host", "127.0.0.1:3100")
+      .set("X-Forwarded-Host", unknownHostname);
+    expect(blocked.status).toBe(403);
+  });
+});

@@ -35,6 +35,7 @@ import {
   resolvePrivateHostnameAllowSet,
 } from "./middleware/private-hostname-guard.js";
 import { precompressedAssets } from "./middleware/precompressed-assets.js";
+import { securityHeaders } from "./middleware/security-headers.js";
 import {
   applyTrustProxy,
   parseTrustProxyEnv,
@@ -558,6 +559,7 @@ export async function createApp(
   },
 ) {
   const app = express();
+  app.disable("x-powered-by");
   app.locals.paperclipDb = db;
   const captureRawBody = (
     req: express.Request,
@@ -571,6 +573,7 @@ export async function createApp(
   // Default is unset → Express trusts nothing, which is the only safe choice
   // when the server may be reachable without a known reverse proxy in front.
   applyTrustProxy(app, parseTrustProxyEnv(process.env.TRUST_PROXY));
+  app.use(securityHeaders({ publicBaseUrl: opts.authPublicBaseUrl }));
 
   app.use(
     COMPANY_IMPORT_API_PATH,

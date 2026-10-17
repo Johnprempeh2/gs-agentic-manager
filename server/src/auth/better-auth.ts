@@ -13,6 +13,7 @@ import {
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { inviteSignUpGatePlugin } from "./invite-sign-up-gate.js";
+import { signInLockoutPlugin } from "./sign-in-lockout.js";
 import {
   workspaceLoginHandoffPlugin,
   type WorkspaceHandoffExpectedIdentity,
@@ -58,9 +59,19 @@ export function deriveAuthCookiePrefix(instanceId = resolvePaperclipInstanceId()
   return `paperclip-${scopedInstanceId}`;
 }
 
+/**
+ * Header Better Auth reads the client address from. `createBetterAuthHandler`
+ * overwrites it on every request with Express's `req.ip`, which follows the
+ * operator's `TRUST_PROXY` setting, so a client cannot pick a fresh address
+ * per attempt (as it could with a raw `X-Forwarded-For`) to dodge the sign-in
+ * rate limit.
+ */
+export const AUTH_CLIENT_IP_HEADER = "x-gsam-client-ip";
+
 export function buildBetterAuthAdvancedOptions(input: { disableSecureCookies: boolean }) {
   return {
     cookiePrefix: deriveAuthCookiePrefix(),
+    ipAddress: { ipAddressHeaders: [AUTH_CLIENT_IP_HEADER] },
     ...(input.disableSecureCookies ? { useSecureCookies: false } : {}),
   };
 }
@@ -260,6 +271,9 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
 
   const workspaceHandoffEnabled = Boolean(resolveWorkspaceHandoffIdentity(config));
   const plugins = [
+    // Wrong-password lockout per account, on top of Better Auth's per-address
+    // rate limit. Authenticated mode only: local_trusted has no sign-in.
+    ...(config.deploymentMode === "authenticated" ? [signInLockoutPlugin()] : []),
     // Closed sign-up is enforced here rather than by Better Auth's own
     // `disableSignUp`, so a person holding a valid human invite can still
     // create the account the invite landing page then accepts it with. Every
@@ -368,6 +382,10 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
 export function createBetterAuthHandler(auth: BetterAuthHandlerTarget): RequestHandler {
   const handler = toNodeHandler(auth);
   return (req, res, next) => {
+    // Never trust a client-sent value; see AUTH_CLIENT_IP_HEADER.
+    delete req.headers[AUTH_CLIENT_IP_HEADER];
+    const clientIp = req.ip ?? req.socket?.remoteAddress;
+    if (clientIp) req.headers[AUTH_CLIENT_IP_HEADER] = clientIp.replace(/^::ffff:/, "");
     void Promise.resolve(handler(req, res)).catch(next);
   };
 }

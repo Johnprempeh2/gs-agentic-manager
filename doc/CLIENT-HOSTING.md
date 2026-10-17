@@ -15,6 +15,9 @@ Files: `scripts/client-instance/host/`.
 | `instance-ctl.sh` | What the unit runs: `start`, `stop`, `status`, `verify` from the release folder the instance last started from. |
 | `public-url.sh` | Puts an instance on `https://<hostname>`: app config, Caddy site, restart under systemd. |
 
+Before handing a server to a client, run the security checklist in
+`doc/CLIENT-PUBLIC-SECURITY.md`.
+
 ## Rules
 
 - All rules of `doc/CLIENT-INSTANCES.md` apply. Sandbox data only until John
@@ -87,7 +90,8 @@ Give the two log-ins it prints to John (run-book, "Start a new instance").
 ```
 
 It sets the app's base URL to `https://<hostname>` and allows that hostname
-(plus 127.0.0.1, so `verify` still works), writes the Caddy site, enables the
+(plus 127.0.0.1, so `verify` still works), sets `TRUST_PROXY=loopback` so the
+app sees each visitor's own address behind Caddy, writes the Caddy site, enables the
 unit and restarts the instance under it. Caddy gets the certificate on the
 first request. Check:
 
