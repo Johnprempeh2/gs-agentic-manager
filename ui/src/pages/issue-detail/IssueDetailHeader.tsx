@@ -13,6 +13,7 @@ import {
   EyeOff,
   CopyPlus,
   MessageSquareText,
+  Workflow,
 } from "lucide-react";
 import { useDialogActions } from "../../context/DialogContext";
 import { repeatTaskDefaults } from "../../lib/repeat-task";
@@ -66,6 +67,8 @@ export type IssueDetailHeaderProps = {
   isMobile: boolean;
   isFromInbox: boolean;
   copyIssueToClipboard: () => Promise<void>;
+  /** Shown in the more menu when the task has subtasks worth reusing. */
+  onSaveAsWorkflow?: (() => void) | null;
   copied: boolean;
   setMobilePropsOpen: Dispatch<SetStateAction<boolean>>;
   canArchiveFromInbox: boolean;
@@ -117,6 +120,7 @@ export function IssueDetailHeader({
   isMobile,
   isFromInbox,
   copyIssueToClipboard,
+  onSaveAsWorkflow,
   copied,
   setMobilePropsOpen,
   canArchiveFromInbox,
@@ -508,6 +512,18 @@ export function IssueDetailHeader({
                       </button>
                     ) : null}
                   </>
+                ) : null}
+                {onSaveAsWorkflow ? (
+                  <button
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent/50"
+                    onClick={() => {
+                      onSaveAsWorkflow();
+                      setMoreOpen(false);
+                    }}
+                  >
+                    <Workflow className="h-3 w-3" />
+                    Save as workflow
+                  </button>
                 ) : null}
                 <TaskTreeControlMenuItems
                   scope={treeControlScope}
