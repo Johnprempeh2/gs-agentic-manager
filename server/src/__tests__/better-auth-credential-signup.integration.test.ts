@@ -33,6 +33,7 @@ import { clearTwoStepRequirementCache, twoStepRequiredGuard } from "../auth/two-
 import { actorMiddleware } from "../middleware/auth.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
+import { authRoutes } from "../routes/auth.js";
 import type { Config } from "../config.js";
 
 const ORIGIN = "http://127.0.0.1:41999";
@@ -121,6 +122,7 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
     // it reads the raw request body itself.
     app.use(actorMiddleware(db, { deploymentMode: "authenticated", resolveSession: (req) => resolveBetterAuthSession(auth, req) }));
     app.use(twoStepRequiredGuard(db));
+    app.use("/api/auth", authRoutes(db));
     app.all("/api/auth/{*authPath}", createBetterAuthHandler(auth));
     // Stands in for every other board route.
     app.get("/api/companies", (req, res) => {
@@ -314,6 +316,45 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
       await instanceSettingsService(db).updateGeneral({ requireTwoStepSignIn: false });
       clearTwoStepRequirementCache();
     }
+  });
+
+  it("lists where a person is signed in and signs other devices out", async () => {
+    const email = "devices@example.com";
+    const signUp = await request(app)
+      .post("/api/auth/sign-up/email")
+      .set("origin", ORIGIN)
+      .set("user-agent", "Mozilla/5.0 (Macintosh) Safari/605.1.15")
+      .send({ email, password: PASSWORD, name: "Devices" });
+    const laptop = cookieHeader(signUp);
+    const phone = cookieHeader(await request(app).post("/api/auth/sign-in/email").set("origin", ORIGIN).send({ email, password: PASSWORD }));
+    const tablet = cookieHeader(await request(app).post("/api/auth/sign-in/email").set("origin", ORIGIN).send({ email, password: PASSWORD }));
+    const sameOrigin = (req: request.Test, cookie: string) => req.set("cookie", cookie).set("host", "127.0.0.1:41999").set("origin", ORIGIN);
+
+    const listed = await request(app).get("/api/auth/sessions").set("cookie", laptop);
+    expect(listed.status).toBe(200);
+    expect(listed.body.sessions).toHaveLength(3);
+    expect(listed.body.sessions.filter((row: { current: boolean }) => row.current)).toHaveLength(1);
+    expect(JSON.stringify(listed.body)).not.toMatch(/token/i);
+    const current = listed.body.sessions.find((row: { current: boolean }) => row.current);
+    const other = listed.body.sessions.find((row: { current: boolean }) => !row.current);
+
+    // A cross-site page cannot sign the person out.
+    const crossSite = await request(app)
+      .post(`/api/auth/sessions/${other.id}/revoke`)
+      .set("cookie", laptop)
+      .set("host", "127.0.0.1:41999")
+      .set("origin", "https://evil.example");
+    expect(crossSite.status).toBe(403);
+
+    expect((await sameOrigin(request(app).post(`/api/auth/sessions/${current.id}/revoke`), laptop)).status).toBe(409);
+    expect((await sameOrigin(request(app).post(`/api/auth/sessions/${other.id}/revoke`), laptop)).status).toBe(200);
+    expect((await sameOrigin(request(app).post(`/api/auth/sessions/${other.id}/revoke`), laptop)).status).toBe(404);
+
+    const others = await sameOrigin(request(app).post("/api/auth/sessions/revoke-others"), laptop);
+    expect(others.body).toEqual({ revoked: 1 });
+    expect((await request(app).get("/api/companies").set("cookie", phone)).status).toBe(401);
+    expect((await request(app).get("/api/companies").set("cookie", tablet)).status).toBe(401);
+    expect((await request(app).get("/api/companies").set("cookie", laptop)).status).toBe(200);
   });
 
   it("locks an account after ten wrong passwords, even for the right one", async () => {

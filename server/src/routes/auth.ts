@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gt, ne } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { authUsers } from "@greatstone/db";
+import { authSessions, authUsers } from "@greatstone/db";
 import {
   authSessionSchema,
   currentUserPreferencesSchema,
@@ -11,7 +11,8 @@ import {
 } from "@greatstone/shared";
 import { hasCompanyAccess } from "./authz.js";
 import { logActivity, publishActivity, type ActivityPublication } from "../services/activity-log.js";
-import { forbidden, unauthorized } from "../errors.js";
+import { conflict, forbidden, notFound, unauthorized } from "../errors.js";
+import { boardMutationGuard } from "../middleware/board-mutation-guard.js";
 import { logger } from "../middleware/logger.js";
 import { validate } from "../middleware/validate.js";
 import { resolveSentryDsns } from "../sentry-dsn.js";
@@ -43,6 +44,9 @@ async function loadCurrentUserProfile(db: Db, userId: string) {
 
 export function authRoutes(db: Db) {
   const router = Router();
+  // These routes sit in front of the API router, so they take the same
+  // same-origin check board changes get there.
+  const mutationGuard = boardMutationGuard();
 
   router.get("/get-session", async (req, res) => {
     if (req.actor.type !== "board" || !req.actor.userId) {
@@ -82,6 +86,67 @@ export function authRoutes(db: Db) {
     });
   });
 
+  // Where this person is signed in: one row per live session, newest first.
+  // Tokens never leave the server; rows are addressed by session id.
+  router.get("/sessions", async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      throw unauthorized("Board authentication required");
+    }
+    const rows = await db
+      .select({
+        id: authSessions.id,
+        createdAt: authSessions.createdAt,
+        updatedAt: authSessions.updatedAt,
+        expiresAt: authSessions.expiresAt,
+        ipAddress: authSessions.ipAddress,
+        userAgent: authSessions.userAgent,
+      })
+      .from(authSessions)
+      .where(and(eq(authSessions.userId, req.actor.userId), gt(authSessions.expiresAt, new Date())))
+      .orderBy(desc(authSessions.updatedAt));
+    res.json({
+      sessions: rows.map((row) => ({
+        id: row.id,
+        createdAt: row.createdAt.toISOString(),
+        lastActiveAt: row.updatedAt.toISOString(),
+        expiresAt: row.expiresAt.toISOString(),
+        ipAddress: row.ipAddress ?? null,
+        userAgent: row.userAgent ?? null,
+        current: row.id === req.actor.sessionId,
+      })),
+    });
+  });
+
+  router.post("/sessions/revoke-others", mutationGuard, async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      throw unauthorized("Board authentication required");
+    }
+    const current = req.actor.sessionId ?? null;
+    const removed = await db
+      .delete(authSessions)
+      .where(current
+        ? and(eq(authSessions.userId, req.actor.userId), ne(authSessions.id, current))
+        : eq(authSessions.userId, req.actor.userId))
+      .returning({ id: authSessions.id });
+    res.json({ revoked: removed.length });
+  });
+
+  router.post("/sessions/:sessionId/revoke", mutationGuard, async (req, res) => {
+    if (req.actor.type !== "board" || !req.actor.userId) {
+      throw unauthorized("Board authentication required");
+    }
+    const sessionId = req.params.sessionId as string;
+    if (sessionId === req.actor.sessionId) {
+      throw conflict("This is the device you are using. Use Sign out instead.");
+    }
+    const removed = await db
+      .delete(authSessions)
+      .where(and(eq(authSessions.id, sessionId), eq(authSessions.userId, req.actor.userId)))
+      .returning({ id: authSessions.id });
+    if (removed.length === 0) throw notFound("Session not found");
+    res.json({ revoked: 1 });
+  });
+
   router.get("/profile", async (req, res) => {
     if (req.actor.type !== "board" || !req.actor.userId) {
       throw unauthorized("Board authentication required");
@@ -90,7 +155,7 @@ export function authRoutes(db: Db) {
     res.json(await loadCurrentUserProfile(db, req.actor.userId));
   });
 
-  router.patch("/profile", validate(updateCurrentUserProfileSchema), async (req, res) => {
+  router.patch("/profile", mutationGuard, validate(updateCurrentUserProfileSchema), async (req, res) => {
     if (req.actor.type !== "board" || !req.actor.userId) {
       throw unauthorized("Board authentication required");
     }
@@ -137,7 +202,7 @@ export function authRoutes(db: Db) {
     res.json(currentUserPreferencesSchema.parse(user));
   });
 
-  router.patch("/preferences", validate(updateCurrentUserPreferencesSchema), async (req, res) => {
+  router.patch("/preferences", mutationGuard, validate(updateCurrentUserPreferencesSchema), async (req, res) => {
     if (req.actor.type !== "board" || !req.actor.userId) {
       throw unauthorized("Board authentication required");
     }

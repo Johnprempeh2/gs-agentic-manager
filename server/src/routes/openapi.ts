@@ -8969,6 +8969,31 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/auth/sessions",
+  tags: ["auth"],
+  summary: "Where the current user is signed in (live sessions, no tokens)",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/sessions/revoke-others",
+  tags: ["auth"],
+  summary: "Sign the current user out everywhere except this device",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/auth/sessions/{sessionId}/revoke",
+  tags: ["auth"],
+  summary: "Sign the current user out on one other device",
+  request: { params: z.object({ sessionId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 409: r.conflict },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/auth/two-step-status",
   tags: ["auth"],
   summary: "Whether two-step sign-in is on for the current user",
