@@ -1,0 +1,1 @@
+ALTER TABLE "notification_preferences" ADD COLUMN "deals_closed" boolean DEFAULT true NOT NULL;
