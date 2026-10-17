@@ -289,7 +289,7 @@ describe("New agent setup", () => {
     secrets.list.mockResolvedValue([{ id: "existing", key: "CURSOR_API_KEY", name: "Cursor", status: "active" }]);
     secrets.listMyUserSecrets.mockResolvedValue([{ definition: { key: "CURSOR_API_KEY" }, secret: { id: "personal-key" } }]);
     await render("cursor_cloud");
-    expect(container.textContent).not.toContain("Or use an organization secret");
+    expect(container.textContent).not.toContain("Or use a saved organisation key");
     await fill("GitHub repository", "https://github.com/example/repo");
     await click("Finish setup");
     expect(api.hire).not.toHaveBeenCalled();

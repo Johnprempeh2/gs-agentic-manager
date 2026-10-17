@@ -1,6 +1,6 @@
 import { and, eq, gte, inArray, isNotNull, ne, or, isNull, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
-import { companies, issues, pipelineCaseEvents, pipelineCases, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
+import { companies, issues, pipelineCaseEvents, pipelineCases, pipelines, pushNotifiedDecisions, pushSubscriptions } from "@greatstone/db";
 import type { DecisionCard, DecisionsFeed, NeedsMeTask, NotificationPreferences } from "@greatstone/shared";
 import { logger } from "../middleware/logger.js";
 import { needsMeService } from "./needs-me.js";
@@ -181,13 +181,16 @@ export function pushNotificationService(
         or(isNull(issues.assigneeUserId), ne(issues.assigneeUserId, userId)),
       ))
       .limit(50));
-  // Deals closed as won or lost, except ones this person closed themselves.
+  // Deals (cases on client pipelines, which name an organisation) closed as
+  // won or lost, except ones this person closed themselves.
   const readClosedDeals: ClosedDealReader = options.closedDeals ?? ((companyId, userId, since) =>
     db
       .select({ id: pipelineCases.id, pipelineId: pipelineCases.pipelineId, title: pipelineCases.title, terminalKind: pipelineCases.terminalKind })
       .from(pipelineCases)
+      .innerJoin(pipelines, eq(pipelines.id, pipelineCases.pipelineId))
       .where(and(
         eq(pipelineCases.companyId, companyId),
+        eq(pipelines.requiresOrganisation, true),
         isNotNull(pipelineCases.terminalKind),
         isNotNull(pipelineCases.terminalAt),
         gte(pipelineCases.terminalAt, since),
@@ -396,7 +399,7 @@ export function pushNotificationService(
             const { delivered } = await deliver(companyId, userId, finishedTaskPushMessage(freshFinished, feed.count, prefix));
             sent += delivered;
           }
-          if (prefs.finishedWork && freshClosed.length > 0) {
+          if (prefs.dealsClosed && freshClosed.length > 0) {
             const { delivered } = await deliver(companyId, userId, closedDealPushMessage(freshClosed, feed.count, prefix));
             sent += delivered;
           }

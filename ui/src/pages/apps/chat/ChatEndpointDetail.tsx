@@ -52,6 +52,7 @@ import { formatDateTime } from "@/lib/utils";
 import { queryKeys } from "@/lib/queryKeys";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { Link, Navigate, useNavigate, useParams } from "@/lib/router";
+import { useConfirm } from "@/context/ConfirmContext";
 import { CLIENT_BRAND_NAME } from "@/lib/client-brand";
 
 const tabs = ["settings", "access", "reviews", "conversations", "activity"] as const;
@@ -606,6 +607,7 @@ function Access({
         tone: "error",
       }),
   });
+  const confirm = useConfirm();
   const revoke = useMutation({
     mutationFn: (principalId: string) =>
       chatEndpointsApi.revokeLink(endpointId, principalId),
@@ -703,10 +705,18 @@ function Access({
                     size="sm"
                     variant="ghost"
                     disabled={revoke.isPending}
-                    onClick={() => revoke.mutate(link.principalId)}
+                    onClick={async () => {
+                      const ok = await confirm({
+                        title: `Unlink ${link.externalLabel}?`,
+                        description: "They will need to link their account again before they can message agents.",
+                        confirmLabel: "Unlink",
+                        tone: "destructive",
+                      });
+                      if (ok) revoke.mutate(link.principalId);
+                    }}
                   >
                     <Unlink />
-                    Revoke
+                    Unlink
                   </Button>
                 ) : (
                   <Button

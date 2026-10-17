@@ -122,7 +122,7 @@ export function PluginSettings() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Organization", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings", href: "/company/settings" },
       { label: "Plugins", href: "/company/settings/instance/plugins" },
       { label: plugin?.manifestJson?.displayName ?? plugin?.packageName ?? "Plugin Details" },
@@ -268,7 +268,7 @@ export function PluginSettings() {
                   <p className="font-medium text-foreground">Configure this plugin from Settings → Environments.</p>
                   <p className="mt-1 text-muted-foreground">
                     {driverLabel || "This plugin"} registers environment runtime settings there so the execution target
-                    stays instance-scoped while secret bindings still resolve through the selected organization context.
+                    stays instance-scoped while secret bindings still resolve through the selected organisation.
                   </p>
                   <div className="mt-3">
                     <Link to="/company/settings/instance/environments">

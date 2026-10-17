@@ -47,7 +47,7 @@ const SETTINGS_TABS: ReadonlyArray<{
   sections?: readonly InstanceGeneralSection[];
 }> = [
   { value: "general", label: "General" },
-  { value: "agents", label: "Agents and runs" },
+  { value: "agents", label: "Agents and work" },
   { value: "security", label: "Security", sections: SECURITY_SECTIONS },
   { value: "backups", label: "Backups and data", sections: BACKUP_SECTIONS },
 ];
@@ -206,7 +206,7 @@ export function CompanySettings() {
       // still makes sense (another active company, the Cloud portfolio, or
       // the companies list), with a toast naming what happened.
       const archived = companies.find((company) => company.id === companyId);
-      const archivedName = archived?.name ?? "Organization";
+      const archivedName = archived?.name ?? "Organisation";
       const departure = resolveCompanyArchiveDeparture({
         archivedCompanyId: companyId,
         companies,
@@ -256,7 +256,7 @@ export function CompanySettings() {
   if (!selectedCompany) {
     return (
       <div className="text-sm text-muted-foreground">
-        No organization selected. Choose an organisation from the switcher above.
+        No organisation selected. Choose an organisation from the switcher above.
       </div>
     );
   }
@@ -292,7 +292,7 @@ export function CompanySettings() {
               General
             </div>
             <div className="space-y-3">
-              <Field label="Organization name" hint="The display name for your organization.">
+              <Field label="Organisation name" hint="The name people see for your organisation.">
                 <Input
                   className="h-auto px-2.5 py-1.5 text-sm"
                   type="text"
@@ -308,13 +308,13 @@ export function CompanySettings() {
               </Field>
               <Field
                 label="Description"
-                hint="Optional description shown in the organization profile."
+                hint="Optional description shown in the organisation profile."
               >
                 <Input
                   className="h-auto px-2.5 py-1.5 text-sm"
                   type="text"
                   value={description}
-                  placeholder="Optional organization description"
+                  placeholder="Optional organisation description"
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </Field>
@@ -500,13 +500,13 @@ export function CompanySettings() {
                     ? "Archiving..."
                     : selectedCompany.status === "archived"
                     ? "Already archived"
-                    : "Archive organization"}
+                    : "Archive organisation"}
                 </Button>
                 {archiveMutation.isError && (
                   <span className="text-xs text-destructive">
                     {archiveMutation.error instanceof Error
                       ? archiveMutation.error.message
-                      : "Failed to archive organization"}
+                      : "Could not archive this organisation. Please try again."}
                   </span>
                 )}
               </div>

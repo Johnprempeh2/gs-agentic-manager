@@ -598,7 +598,7 @@ describe("InviteLandingPage", () => {
 
     expect(acceptInviteMock).toHaveBeenCalledWith("pcp_invite_test", { requestType: "human" });
     expect(container.textContent).toContain("Request to join Acme Robotics");
-    expect(container.textContent).toContain("An organization admin must approve your request to join.");
+    expect(container.textContent).toContain("An organisation admin must approve your request to join.");
     expect(container.textContent).toContain(
       "Ask them to visit Settings → Members to approve your request.",
     );
@@ -1078,7 +1078,7 @@ describe("InviteLandingPage", () => {
     expect(acceptInviteMock).not.toHaveBeenCalled();
 
     const openButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Open organization",
+      (button) => button.textContent === "Open organisation",
     );
     expect(openButton).not.toBeNull();
 
@@ -1222,7 +1222,7 @@ describe("InviteLandingPage", () => {
     await flushReact();
 
     expect(container.textContent).toContain("Checking your access...");
-    expect(container.textContent).not.toContain("Accept organization invite");
+    expect(container.textContent).not.toContain("Accept organisation invite");
     expect(acceptInviteMock).not.toHaveBeenCalled();
 
     await act(async () => {

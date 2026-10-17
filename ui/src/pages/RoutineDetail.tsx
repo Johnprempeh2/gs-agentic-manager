@@ -379,7 +379,7 @@ export function RoutineDetail() {
         return;
       }
       pushToast({
-        title: "Failed to save routine",
+        title: "Your routine was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the routine.",
         tone: "error",
       });
@@ -414,7 +414,7 @@ export function RoutineDetail() {
     },
     onError: (runError) => {
       pushToast({
-        title: "Routine run failed",
+        title: "Could not start the routine",
         body: runError instanceof Error ? runError.message : "GS Agentic Manager could not start the routine run.",
         tone: "error",
       });
@@ -436,7 +436,7 @@ export function RoutineDetail() {
     },
     onError: (statusError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: statusError instanceof Error ? statusError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -475,7 +475,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to add trigger",
+        title: "Could not add the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not create the trigger.",
         tone: "error",
       });
@@ -494,7 +494,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to update trigger",
+        title: "Could not change the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not update the trigger.",
         tone: "error",
       });
@@ -513,7 +513,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to delete trigger",
+        title: "Could not delete the trigger",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not delete the trigger.",
         tone: "error",
       });
@@ -534,7 +534,7 @@ export function RoutineDetail() {
     },
     onError: (triggerError) => {
       pushToast({
-        title: "Failed to rotate webhook secret",
+        title: "Could not make a new webhook secret",
         body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not rotate the webhook secret.",
         tone: "error",
       });

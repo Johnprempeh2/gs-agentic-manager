@@ -77,21 +77,21 @@ async function name() {
     )!.set!.call(input, "Ada & Co");
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await click("Choose adapter");
+  await click("Next: how they work");
 }
 it("requires a name and an enabled adapter before navigating", async () => {
-  await click("Choose adapter");
+  await click("Next: how they work");
   expect(document.body.textContent).toContain("Agent name");
   await name();
   expect(document.querySelector('input[value="claude_local"]')).toBeNull();
-  await click("Configure agent");
+  await click("Set up agent");
   expect(state.navigate).not.toHaveBeenCalled();
   await act(async () =>
     (
       document.querySelector('input[value="codex_local"]') as HTMLInputElement
     ).click(),
   );
-  await click("Configure agent");
+  await click("Set up agent");
   expect(state.close).toHaveBeenCalledTimes(1);
   const query = new URL(state.navigate.mock.calls[0][0], "http://local")
     .searchParams;
@@ -110,8 +110,8 @@ it("offers native Codex, Claude ACPX, and OpenCode runners", async () => {
   const options = [...document.querySelectorAll("option")].map(
     (option) => option.textContent,
   );
-  expect(options).toContain("Codex (app server)");
-  expect(options).toContain("Claude (ACPX)");
+  expect(options).toContain("Codex");
+  expect(options).toContain("Claude");
   expect(options).toContain("OpenCode");
   expect(options.join(" ")).not.toContain("ACPX Codex");
 });
@@ -165,7 +165,7 @@ it("offers Claude, Codex, OpenCode, and Grok on Cloud, even with the runner enab
   await act(async () =>
     document.querySelector<HTMLInputElement>('input[value="grok_local"]')!.click(),
   );
-  await click("Configure agent");
+  await click("Set up agent");
   const query = new URL(state.navigate.mock.calls[0][0], "http://local").searchParams;
   expect(query.get("adapterType")).toBe("grok_local");
   expect(query.get("name")).toBe("Ada & Co");

@@ -65,15 +65,25 @@ import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 const concurrencyPolicies = ["coalesce_if_active", "always_enqueue", "skip_if_active", "reuse_standing_task"];
 const catchUpPolicies = ["skip_missed", "enqueue_missed_with_cap"];
+const concurrencyPolicyLabels: Record<string, string> = {
+  coalesce_if_active: "Keep one follow-up",
+  always_enqueue: "Queue every one",
+  skip_if_active: "Skip while busy",
+  reuse_standing_task: "Reuse the same task",
+};
+const catchUpPolicyLabels: Record<string, string> = {
+  skip_missed: "Skip missed times",
+  enqueue_missed_with_cap: "Catch up missed times",
+};
 const concurrencyPolicyDescriptions: Record<string, string> = {
-  coalesce_if_active: "If a run is already active, keep just one follow-up run queued.",
-  always_enqueue: "Queue every trigger occurrence, even if the routine is already running.",
-  skip_if_active: "Drop new trigger occurrences while a run is still active.",
+  coalesce_if_active: "If the last one is still going, line up just one more to follow it.",
+  always_enqueue: "Start every scheduled time, even if the last one is still going.",
+  skip_if_active: "Skip a scheduled time if the last one is still going.",
   reuse_standing_task: "Open the same task again each time instead of creating a new one.",
 };
 const catchUpPolicyDescriptions: Record<string, string> = {
-  skip_missed: "Ignore windows that were missed while the scheduler or routine was paused.",
-  enqueue_missed_with_cap: "Catch up missed schedule windows after recovery; sub-hourly schedules are combined into one catch-up run, slower schedules replay each missed window up to a cap.",
+  skip_missed: "Ignore times that were missed while GSAM or the routine was paused.",
+  enqueue_missed_with_cap: "Make up for missed times once things are running again. Frequent schedules catch up once; slower ones make up each missed time, up to a limit.",
 };
 
 function autoResizeTextarea(element: HTMLTextAreaElement | null) {
@@ -450,7 +460,7 @@ export function Routines() {
           ]);
         } catch (moveError) {
           pushToast({
-            title: "Folder created, move failed",
+            title: "Folder made, but the routines did not move",
             body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
             tone: "error",
           });
@@ -463,7 +473,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to save folder",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not save the folder.",
         tone: "error",
       });
@@ -479,7 +489,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the folder.",
         tone: "error",
       });
@@ -498,7 +508,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Folder delete failed",
+        title: "Could not delete the folder",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not delete the folder.",
         tone: "error",
       });
@@ -515,7 +525,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Move failed",
+        title: "Could not move it",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not move the routine.",
         tone: "error",
       });
@@ -537,7 +547,7 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Failed to update routine",
+        title: "Your change was not saved",
         body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not update the routine.",
         tone: "error",
       });
@@ -572,8 +582,8 @@ export function Routines() {
     },
     onError: (mutationError) => {
       pushToast({
-        title: "Routine run failed",
-        body: mutationError instanceof Error ? mutationError.message : "GS Agentic Manager could not start the routine run.",
+        title: "The routine did not start",
+        body: `Please try again. If it keeps failing, check the routine has an agent assigned.${mutationError instanceof Error ? ` (${mutationError.message})` : ""}`,
         tone: "error",
       });
     },
@@ -705,7 +715,7 @@ export function Routines() {
       pushToast({ title: "Routines moved", body: `${ids.length} routine${ids.length === 1 ? "" : "s"} filed.`, tone: "success" });
     } catch (moveError) {
       pushToast({
-        title: "Failed to move routines",
+        title: "Could not move the routines",
         body: moveError instanceof Error ? moveError.message : "GS Agentic Manager could not move the selected routines.",
         tone: "error",
       });
@@ -1090,14 +1100,14 @@ export function Routines() {
                 <CollapsibleTrigger className="flex w-full items-center justify-between text-left">
                   <div>
                     <p className="text-sm font-medium">Advanced delivery settings</p>
-                    <p className="text-sm text-muted-foreground">Keep policy controls secondary to the work definition.</p>
+                    <p className="text-sm text-muted-foreground">What happens when a routine is still running or a time is missed.</p>
                   </div>
                   {advancedOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                 </CollapsibleTrigger>
                 <CollapsibleContent className="pt-3">
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">Concurrency</p>
+                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">If it is still running</p>
                       <Select
                         value={draft.concurrencyPolicy}
                         onValueChange={(concurrencyPolicy) => setDraft((current) => ({ ...current, concurrencyPolicy }))}
@@ -1107,14 +1117,14 @@ export function Routines() {
                         </SelectTrigger>
                         <SelectContent>
                           {concurrencyPolicies.map((value) => (
-                            <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>
+                            <SelectItem key={value} value={value}>{concurrencyPolicyLabels[value] ?? value.replaceAll("_", " ")}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground">{concurrencyPolicyDescriptions[draft.concurrencyPolicy]}</p>
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">Catch-up</p>
+                      <p className="text-xs font-medium uppercase tracking-(--tracking-caps) text-muted-foreground">If a time was missed</p>
                       <Select
                         value={draft.catchUpPolicy}
                         onValueChange={(catchUpPolicy) => setDraft((current) => ({ ...current, catchUpPolicy }))}
@@ -1124,7 +1134,7 @@ export function Routines() {
                         </SelectTrigger>
                         <SelectContent>
                           {catchUpPolicies.map((value) => (
-                            <SelectItem key={value} value={value}>{value.replaceAll("_", " ")}</SelectItem>
+                            <SelectItem key={value} value={value}>{catchUpPolicyLabels[value] ?? value.replaceAll("_", " ")}</SelectItem>
                           ))}
                         </SelectContent>
                       </Select>

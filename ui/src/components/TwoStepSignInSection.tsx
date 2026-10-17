@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, ShieldCheck } from "lucide-react";
+import { ClipboardCopy, Download, LoaderCircle, ShieldCheck } from "lucide-react";
 import QRCode from "qrcode";
 import { authApi } from "@/api/auth";
 import { queryKeys } from "@/lib/queryKeys";
+import { copyTextToClipboard } from "@/lib/clipboard";
+import { downloadTextFile } from "@/lib/issues-csv";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -253,11 +255,40 @@ export function TwoStepSignInSection() {
 }
 
 function BackupCodes({ codes }: { codes: string[] }) {
+  const [copied, setCopied] = useState(false);
+  const text = `GSAM backup codes\nEach code signs you in once if you cannot use your authenticator app.\n\n${codes.join("\n")}\n`;
   return (
-    <ul className="mt-2 grid max-w-md grid-cols-2 gap-1 font-mono text-sm" aria-label="Backup codes">
-      {codes.map((backupCode) => (
-        <li key={backupCode}>{backupCode}</li>
-      ))}
-    </ul>
+    <div className="mt-2 space-y-2">
+      <ul className="grid max-w-md grid-cols-2 gap-1 font-mono text-sm" aria-label="Backup codes">
+        {codes.map((backupCode) => (
+          <li key={backupCode}>{backupCode}</li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            void copyTextToClipboard(codes.join("\n")).then(() => {
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 2_000);
+            });
+          }}
+        >
+          <ClipboardCopy className="size-4" />
+          {copied ? "Copied" : "Copy codes"}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => downloadTextFile("gsam-backup-codes.txt", text, "text/plain;charset=utf-8")}
+        >
+          <Download className="size-4" />
+          Download as a file
+        </Button>
+      </div>
+    </div>
   );
 }

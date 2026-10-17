@@ -16,6 +16,8 @@ export const notificationPreferences = pgTable(
     teamChat: boolean("team_chat").notNull().default(true),
     /** A task this person asked for was finished by an agent or a teammate. */
     finishedWork: boolean("finished_work").notNull().default(true),
+    /** A deal (a case on a pipeline that names a client) was won or lost by someone else. */
+    dealsClosed: boolean("deals_closed").notNull().default(true),
     morningSummary: boolean("morning_summary").notNull().default(true),
     /** Local hour (0 to 23) the morning summary goes out. */
     morningSummaryHour: integer("morning_summary_hour").notNull().default(8),

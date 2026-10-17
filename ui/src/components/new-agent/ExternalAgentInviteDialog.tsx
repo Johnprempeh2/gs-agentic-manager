@@ -59,8 +59,8 @@ export function ExternalAgentInviteDialog({ companyId, onClose, onBack }: {
     <DialogContent scrollBody className="max-h-(--sz-calc-16) sm:max-w-2xl">
       <DialogTitle>{prompt ? "Agent onboarding prompt" : "Invite an external agent"}</DialogTitle>
       <DialogDescription>
-        {prompt ? "Send this one-time prompt to the agent that should join your organization."
-          : "Generate a one-time onboarding prompt for an external agent. An organization admin must approve its join request before it can claim an API key."}
+        {prompt ? "Send this one-time prompt to the agent that should join your organisation."
+          : "Create a one-time setup message for an agent that runs outside GSAM. An organisation admin must approve it before it can start."}
       </DialogDescription>
       {prompt ? <>
         <Textarea aria-label="Agent onboarding prompt" readOnly value={prompt} className="min-h-64 font-mono text-xs" />

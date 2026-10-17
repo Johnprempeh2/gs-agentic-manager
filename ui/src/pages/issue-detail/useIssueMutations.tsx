@@ -413,7 +413,7 @@ export function useIssueMutations({
       // The person closed the blocked-dependents dialog; nothing failed.
       if (isBlockedDependentsHandoffCancelled(err)) return;
       pushToast({
-        title: "Task update failed",
+        title: "Your change was not saved",
         body:
           err instanceof Error ? err.message : "Unable to save task changes",
         tone: "error",
@@ -448,7 +448,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Recovery resolution failed",
+        title: "Could not resolve this",
         body:
           err instanceof Error
             ? err.message
@@ -671,14 +671,14 @@ export function useIssueMutations({
       const runWasStopped = didRunCancelBeforeStatusUpdateFail(err);
       pushToast({
         title: runWasStopped
-          ? "Run stopped; task update failed"
+          ? "The agent stopped, but the task status did not change"
           : status === "done"
-            ? "Stop and done failed"
-            : "Stop and cancel failed",
+            ? "Could not stop work and mark this done"
+            : "Could not stop work and cancel this task",
         body:
-          err instanceof Error
+          runWasStopped && err instanceof Error
             ? err.message
-            : "Unable to stop the run and update the task",
+            : `Please try again.${err instanceof Error ? ` (${err.message})` : ""}`,
         tone: "error",
       });
     },
@@ -716,7 +716,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Task update failed",
+        title: "Your change was not saved",
         body:
           err instanceof Error
             ? err.message
@@ -790,7 +790,7 @@ export function useIssueMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Monitor check failed",
+        title: "Could not run the check",
         body:
           err instanceof Error
             ? err.message

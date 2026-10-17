@@ -10,6 +10,8 @@ import { queryKeys } from "../lib/queryKeys";
 import { InboxAgentPolicyControl } from "@/components/InboxAgentPolicyControl";
 import { TwoStepSignInSection } from "@/components/TwoStepSignInSection";
 import { SignedInDevicesSection } from "@/components/SignedInDevicesSection";
+import { ErrorState } from "@/components/ErrorState";
+import { useConfirm } from "@/context/ConfirmContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ export function ProfileSettings() {
   const { setBreadcrumbs } = useBreadcrumbs();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
+  const confirm = useConfirm();
   const preferencesQuery = useUserPreferences();
   const avatarInputId = useId();
   const avatarInputRef = useRef<HTMLInputElement | null>(null);
@@ -92,7 +95,7 @@ export function ProfileSettings() {
       setImage(profile.image ?? "");
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to update profile.");
+      setActionError(`We could not save your profile. Please try again.${error instanceof Error ? ` (${error.message})` : ""}`);
     },
   });
 
@@ -115,7 +118,7 @@ export function ProfileSettings() {
       setImage(profile.image ?? "");
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to upload avatar.");
+      setActionError(`We could not upload that photo. Please try again with a JPG or PNG.${error instanceof Error ? ` (${error.message})` : ""}`);
     },
   });
 
@@ -127,7 +130,7 @@ export function ProfileSettings() {
       setImage(profile.image ?? "");
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to remove avatar.");
+      setActionError(`We could not remove your photo. Please try again.${error instanceof Error ? ` (${error.message})` : ""}`);
     },
   });
 
@@ -137,9 +140,11 @@ export function ProfileSettings() {
 
   if (sessionQuery.error || !sessionQuery.data) {
     return (
-      <div className="text-sm text-destructive">
-        {sessionQuery.error instanceof Error ? sessionQuery.error.message : "Failed to load profile."}
-      </div>
+      <ErrorState
+        error={sessionQuery.error ?? new Error("Your profile did not load.")}
+        title="We could not load your profile"
+        onRetry={() => void sessionQuery.refetch()}
+      />
     );
   }
 
@@ -217,11 +222,18 @@ export function ProfileSettings() {
                     <Button
                       type="button"
                       variant="outline"
-                      onClick={() => removeAvatarMutation.mutate()}
+                      onClick={async () => {
+                        const ok = await confirm({
+                          title: "Remove your photo?",
+                          description: "Your initials will show instead.",
+                          confirmLabel: "Remove photo",
+                        });
+                        if (ok) removeAvatarMutation.mutate();
+                      }}
                       disabled={isSavingProfile}
                     >
                       {removeAvatarMutation.isPending ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-                      Remove
+                      Remove photo
                     </Button>
                   ) : null}
                 </div>

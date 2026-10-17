@@ -330,7 +330,7 @@ type SourceFilter = "all" | "company" | "bundled" | "optional" | "external";
 
 const SOURCE_FILTER_LABELS: Record<SourceFilter, string> = {
   all: "All",
-  company: "Organization",
+  company: "Organisation",
   bundled: "Bundled",
   optional: "Optional",
   external: "External",
@@ -662,7 +662,7 @@ function categorySetKey(categories: string[]) {
 }
 
 function skillSettingsToastBody(skill: Pick<CompanySkillDetail, "categories" | "sharingScope">) {
-  const sharing = skill.sharingScope === "private" ? "Sharing: private" : "Sharing: organization";
+  const sharing = skill.sharingScope === "private" ? "Sharing: private" : "Sharing: organisation";
   const categories = skill.categories.length ? `Categories: ${skill.categories.join(", ")}` : "Categories: none";
   return `${sharing} | ${categories}`;
 }
@@ -1671,7 +1671,7 @@ function NewSkillWizard({
             <span className="text-muted-foreground">Slug</span>
             <span className="font-mono">{effectiveSlug || "skill"}</span>
             <span className="text-muted-foreground">Scope</span>
-            <span>{draft.sharingScope === "private" ? "Private" : "Organization"}</span>
+            <span>{draft.sharingScope === "private" ? "Private" : "Organisation"}</span>
             <span className="text-muted-foreground">Categories</span>
             <span>{draft.categories.length ? draft.categories.join(", ") : "none"}</span>
           </div>
@@ -1688,7 +1688,7 @@ function NewSkillWizard({
                     draft.sharingScope === scope ? "border-foreground bg-accent/50" : "border-border",
                   )}
                 >
-                  <span className="block font-medium">{scope === "company" ? "Organization" : "Private"}</span>
+                  <span className="block font-medium">{scope === "company" ? "Organisation" : "Private"}</span>
                   <span className="mt-1 block text-xs text-muted-foreground">
                     {scope === "company" ? "Visible inside this organisation." : "Only visible in your library."}
                   </span>
@@ -2202,7 +2202,7 @@ export function InstallPreviewDialog({
             <div className="rounded-md border border-border p-3">
               <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">Enable for agents</div>
               <p className="mb-2 text-xs text-muted-foreground">
-                Installing adds the skill to the organization library. Agents can only use it once it is enabled for them.
+                Installing adds the skill to the organisation library. Agents can only use it once it is enabled for them.
               </p>
               <AgentMultiSelect
                 agents={agents}
@@ -3678,7 +3678,7 @@ export function SkillDetailPage({
               <div className="rounded-md border border-destructive/40 p-3">
                 <div className="text-xs font-semibold uppercase tracking-wide text-destructive">Danger zone</div>
                 <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="min-w-0 text-xs text-muted-foreground">Remove this skill from the organization library.</p>
+                  <p className="min-w-0 text-xs text-muted-foreground">Remove this skill from the organisation library.</p>
                   <Button
                     variant="destructive"
                     size="sm"
@@ -4466,7 +4466,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Save failed",
+        title: "Your change was not saved",
         body: error instanceof Error ? error.message : "Failed to save skill file.",
       });
     },
@@ -4489,7 +4489,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Star failed",
+        title: "Could not star it",
         body: error instanceof Error ? error.message : "Failed to update star.",
       });
     },
@@ -4516,7 +4516,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Skill settings update failed",
+        title: "Your skill settings were not saved",
         body: error instanceof Error ? error.message : "Failed to update skill settings.",
       });
     },
@@ -4679,7 +4679,7 @@ export function CompanySkills() {
       if (enableFailures > 0) {
         pushToast({
           tone: "warn",
-          title: "Skill installed, but enabling failed",
+          title: "Skill added, but not switched on",
           body: `Could not enable ${result.skill.name} for ${enableFailures} agent${enableFailures === 1 ? "" : "s"}. Use "Add to agent" on the skill page.`,
         });
       }
@@ -4720,7 +4720,7 @@ export function CompanySkills() {
         } catch (moveError) {
           pushToast({
             tone: "error",
-            title: "Folder created, move failed",
+            title: "Folder made, but nothing moved into it",
             body: moveError instanceof Error ? moveError.message : "Failed to move the selected skills.",
           });
           return;
@@ -4733,7 +4733,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: error instanceof Error ? error.message : "Failed to save folder.",
       });
     },
@@ -4749,7 +4749,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: error instanceof Error ? error.message : "Failed to update folder.",
       });
     },
@@ -4769,7 +4769,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder move failed",
+        title: "Could not move the folder",
         body: error instanceof Error ? error.message : "Failed to move folder.",
       });
     },
@@ -4788,7 +4788,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder delete failed",
+        title: "Could not delete the folder",
         body: error instanceof Error ? error.message : "Failed to delete folder.",
       });
     },
@@ -4805,7 +4805,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Move failed",
+        title: "Could not move it",
         body: error instanceof Error ? error.message : "Failed to move skill.",
       });
     },
@@ -4867,7 +4867,7 @@ export function CompanySkills() {
     } catch (error) {
       pushToast({
         tone: "error",
-        title: "Folder create failed",
+        title: "Could not make the folder",
         body: error instanceof Error ? error.message : "Failed to create folder.",
       });
       return null;
@@ -4898,7 +4898,7 @@ export function CompanySkills() {
     } catch (moveError) {
       pushToast({
         tone: "error",
-        title: "Move failed",
+        title: "Could not move it",
         body: moveError instanceof Error ? moveError.message : "Failed to move.",
       });
     }
@@ -4968,7 +4968,7 @@ export function CompanySkills() {
       }
       pushToast({ tone: "success", title: "Agents updated", body: `${nextAgentIds.length} agent(s) attached.` });
     } catch (error) {
-      pushToast({ tone: "error", title: "Update failed", body: error instanceof Error ? error.message : "Failed to update agent skills." });
+      pushToast({ tone: "error", title: "Your change was not saved", body: error instanceof Error ? error.message : "Failed to update agent skills." });
     }
   }
 
@@ -5019,7 +5019,7 @@ export function CompanySkills() {
       pushToast({
         tone: "success",
         title: "Skill removed",
-        body: `${skill.name} was removed from the organization skill library.`,
+        body: `${skill.name} was removed from the organisation skill library.`,
       });
     },
     onError: (error) => {
@@ -5100,8 +5100,8 @@ export function CompanySkills() {
   const studioBackHref = studioForkDetailQuery.data ? routeForSkill(studioForkDetailQuery.data) : "/skills";
   const studioTitle = studioForkFromId ? "Fork skill" : "Create a new skill";
   const studioDescription = studioForkFromId
-    ? "Review the fork metadata and create an editable organization copy."
-    : "Create an editable organization skill in the GS Agentic Manager workspace.";
+    ? "Review the fork metadata and create an editable organisation copy."
+    : "Create a skill your organisation can edit and share.";
   return (
     <>
       {policyDenial.denial ? (
@@ -5114,7 +5114,7 @@ export function CompanySkills() {
           <DialogHeader>
             <DialogTitle>Remove skill</DialogTitle>
             <DialogDescription>
-              Remove this skill from the organization library. If any agents still use it, removal will be blocked until it is detached.
+              Remove this skill from the organisation library. If any agents still use it, removal will be blocked until it is detached.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 text-sm">

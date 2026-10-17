@@ -734,7 +734,7 @@ function WorkspaceOperationsSection({
               )}
               {typeof metadata?.created === "boolean" && (
                 <div className="text-xs text-muted-foreground">
-                  {metadata.created ? "Created by this run" : "Reused existing workspace"}
+                  {metadata.created ? "Set up new working files" : "Used existing working files"}
                 </div>
               )}
               {operation.stderrExcerpt && operation.stderrExcerpt.trim() && (
@@ -1194,7 +1194,15 @@ export function AgentDetail() {
   }, [configDirty, prepareAgentNavigation]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/agents" className="underline underline-offset-2">Back to agents</Link>
+        </p>
+      </div>
+    );
   if (!agent) return null;
   if (!urlRunId && legacyAuditSection) {
     return <Navigate to={agentScopedAuditHref(agent.id, legacyAuditSection)} replace />;
@@ -1695,7 +1703,7 @@ function LatestRunCard({
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
               </span>
             )}
-            <span title={`Run ${run.id.slice(0, 8)}`}>{isLive ? "Working now" : "Latest run"}</span>
+            <span title={`Run ${run.id.slice(0, 8)}`}>{isLive ? "Working now" : "Latest work"}</span>
           </h3>
         </Link>
       </div>
@@ -1818,11 +1826,11 @@ export function AgentOverview({
             <Link className="text-xs text-muted-foreground hover:text-foreground" to={agentDetailHref(agentRouteId, "runtime")}>Configure</Link>
           </div>
           <div className="space-y-3">
-            <SummaryRow label="Runs on"><span className="text-sm">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span></SummaryRow>
+            <SummaryRow label="Powered by"><span className="text-sm">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span></SummaryRow>
             <SummaryRow label="Model"><span className="max-w-64 truncate text-sm font-mono">{configuredModel}</span></SummaryRow>
-            <SummaryRow label="Session"><span className="max-w-64 truncate text-sm font-mono">{runtimeState?.sessionDisplayId ?? runtimeState?.sessionId ?? "Starts fresh next run"}</span></SummaryRow>
-            <SummaryRow label="Last run">
-              <span className="text-sm">{lastRun ? `${sentenceCaseStatus(lastRun.status)} · ${relativeTime(lastRun.createdAt)}` : "Not run yet"}</span>
+            <SummaryRow label="Session"><span className="max-w-64 truncate text-sm font-mono">{runtimeState?.sessionDisplayId ?? runtimeState?.sessionId ?? "Starts fresh next time"}</span></SummaryRow>
+            <SummaryRow label="Last worked">
+              <span className="text-sm">{lastRun ? `${sentenceCaseStatus(lastRun.status)} · ${relativeTime(lastRun.createdAt)}` : "Has not worked yet"}</span>
             </SummaryRow>
           </div>
         </section>
@@ -2075,7 +2083,7 @@ export function ConfigurationTab({
           : err instanceof Error
             ? err.message
             : "Could not save agent";
-      pushToast({ title: "Save failed", body: message, tone: "error" });
+      pushToast({ title: "Your change was not saved", body: message, tone: "error" });
     },
   });
 
@@ -4609,7 +4617,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
         setTimeout(() => setCopied(false), 2000);
       })
       .catch(() => {
-        pushToast({ title: "Copy failed", body: "Clipboard access is unavailable.", tone: "error" });
+        pushToast({ title: "Could not copy", body: "Clipboard access is unavailable.", tone: "error" });
       });
   }
 

@@ -112,10 +112,10 @@ describe("CompanySettings tabs", () => {
   it("opens on General with the organisation, hiring, sign-out and archive controls only", () => {
     render();
 
-    expect(tabNames()).toEqual(["General", "Agents and runs", "Security", "Backups and data"]);
-    expect(container.textContent).toContain("Organization name");
+    expect(tabNames()).toEqual(["General", "Agents and work", "Security", "Backups and data"]);
+    expect(container.textContent).toContain("Organisation name");
     expect(container.textContent).toContain("Require board approval for new hires");
-    expect(container.textContent).toContain("Archive organization");
+    expect(container.textContent).toContain("Archive organisation");
     expect(sections()).toEqual(["aiAccessRoute,signOut"]);
     expect(container.querySelector('[data-testid="governance"]')).toBeNull();
   });
@@ -125,7 +125,7 @@ describe("CompanySettings tabs", () => {
 
     expect(sections()).toEqual(["runAdmission,teamCatalogFilter,teamCatalogAddMode"]);
     expect(container.querySelector('[data-testid="governance"]')).not.toBeNull();
-    expect(container.textContent).not.toContain("Organization name");
+    expect(container.textContent).not.toContain("Organisation name");
   });
 
   it("remembers the chosen tab in the URL, and General clears it", async () => {
@@ -142,7 +142,7 @@ describe("CompanySettings tabs", () => {
 
     chooseTab("General");
     await vi.waitFor(() => expect(observedSearch).toBe(""));
-    expect(container.textContent).toContain("Organization name");
+    expect(container.textContent).toContain("Organisation name");
   });
 
   it("drops a tab the operator has emptied and falls back to General", () => {
@@ -152,13 +152,13 @@ describe("CompanySettings tabs", () => {
       "instance.general.censorUsernameInLogs",
     ]);
 
-    expect(tabNames()).toEqual(["General", "Agents and runs", "Backups and data"]);
-    expect(container.textContent).toContain("Organization name");
+    expect(tabNames()).toEqual(["General", "Agents and work", "Backups and data"]);
+    expect(container.textContent).toContain("Organisation name");
   });
 
   it("falls back to General for an unknown tab", () => {
     render("/ACM/company/settings?tab=nonsense");
-    expect(container.textContent).toContain("Organization name");
+    expect(container.textContent).toContain("Organisation name");
   });
 
   it("shows a named select on a phone", () => {
@@ -170,7 +170,7 @@ describe("CompanySettings tabs", () => {
     expect(select!.value).toBe("backups");
     expect(Array.from(select!.options).map((option) => option.textContent)).toEqual([
       "General",
-      "Agents and runs",
+      "Agents and work",
       "Security",
       "Backups and data",
     ]);

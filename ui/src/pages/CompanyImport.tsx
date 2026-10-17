@@ -1168,7 +1168,7 @@ export function CompanyImport() {
       if (generation !== previewGenerationRef.current) return;
       pushToast({
         tone: "error",
-        title: "Preview failed",
+        title: "Could not preview the import",
         body: err instanceof Error ? err.message : "Failed to preview import.",
       });
     },
@@ -1322,7 +1322,7 @@ export function CompanyImport() {
       setResumedWatchJobId(null);
       pushToast({
         tone: "error",
-        title: "Import failed",
+        title: "Could not import",
         body: err instanceof Error ? err.message : "Failed to apply import.",
       });
     },
@@ -1376,7 +1376,7 @@ export function CompanyImport() {
     } catch (err) {
       pushToast({
         tone: "error",
-        title: "Package read failed",
+        title: "Could not read that file",
         body: err instanceof Error ? err.message : "Failed to read folder.",
       });
     }

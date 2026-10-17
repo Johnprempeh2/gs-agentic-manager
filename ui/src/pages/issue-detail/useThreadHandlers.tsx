@@ -6,6 +6,7 @@ import { loadRemainingIssueCommentPages, ISSUE_COMMENT_PAGE_SIZE } from "../../l
 import type { IssueChatRunFinalizationAction } from "../../components/IssueChatThread";
 import { getPromotedOutputAttachmentIds } from "../../lib/issue-output";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { useConfirm } from "@/context/ConfirmContext";
 import type {
   IssueComment,
   IssueThreadInteraction,
@@ -136,7 +137,7 @@ export function useThreadHandlers({
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
       pushToast({
-        title: "Copy failed",
+        title: "Could not copy",
         body:
           error instanceof Error
             ? error.message
@@ -324,27 +325,37 @@ export function useThreadHandlers({
     },
     [interruptQueuedComment],
   );
+  const confirm = useConfirm();
   const runFinalizationActions = useMemo<
     readonly IssueChatRunFinalizationAction[]
   >(
     () => [
       {
         id: "cancel",
-        label: "Stop and cancel",
+        label: "Stop work and cancel task",
         pendingLabel: "Stopping and cancelling...",
         isPending:
           stopAndFinalizeRun.isPending &&
           stopAndFinalizeRun.variables?.status === "cancelled",
         disabled: stopAndFinalizeRun.isPending,
-        onSelect: (runId) =>
-          stopAndFinalizeRun.mutateAsync({ runId, status: "cancelled" }).then(
+        onSelect: async (runId) => {
+          const ok = await confirm({
+            title: "Stop work and cancel this task?",
+            description: "The agent stops now and the task is marked cancelled. You can reopen it later.",
+            confirmLabel: "Stop and cancel",
+            cancelLabel: "Keep working",
+            tone: "destructive",
+          });
+          if (!ok) return;
+          await stopAndFinalizeRun.mutateAsync({ runId, status: "cancelled" }).then(
             () => undefined,
             () => undefined,
-          ),
+          );
+        },
       },
       {
         id: "done",
-        label: "Stop and done",
+        label: "Stop work and mark done",
         pendingLabel: "Stopping and marking done...",
         isPending:
           stopAndFinalizeRun.isPending &&
@@ -358,6 +369,7 @@ export function useThreadHandlers({
       },
     ],
     [
+      confirm,
       stopAndFinalizeRun.isPending,
       stopAndFinalizeRun.mutateAsync,
       stopAndFinalizeRun.variables?.status,

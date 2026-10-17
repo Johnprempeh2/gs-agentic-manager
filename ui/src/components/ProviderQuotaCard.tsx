@@ -144,10 +144,10 @@ export function ProviderQuotaCard({
               {(totalApiRuns > 0 || totalSubRuns > 0) && (
                 <span className="ml-1.5">
                   ·{" "}
-                  {totalApiRuns > 0 && `~${totalApiRuns} api`}
+                  {totalApiRuns > 0 && `~${totalApiRuns} pay-as-you-go`}
                   {totalApiRuns > 0 && totalSubRuns > 0 && " / "}
-                  {totalSubRuns > 0 && `~${totalSubRuns} sub`}
-                  {" runs"}
+                  {totalSubRuns > 0 && `~${totalSubRuns} subscription`}
+                  {" jobs"}
                 </span>
               )}
             </CardDescription>
@@ -226,7 +226,7 @@ export function ProviderQuotaCard({
                 Subscription
               </p>
               <p className="text-xs text-muted-foreground">
-                <span className="font-mono text-foreground">{totalSubRuns}</span> runs
+                <span className="font-mono text-foreground">{totalSubRuns}</span> jobs
                 {" · "}
                 {totalSubTokens > 0 && (
                   <>
@@ -288,7 +288,7 @@ export function ProviderQuotaCard({
                       <div
                         className="absolute inset-y-0 left-0 bg-primary/60 transition-(--tp-width) duration-150"
                         style={{ width: `${tokenPct}%` }}
-                        title={`${Math.round(tokenPct)}% of provider tokens`}
+                        title={`${Math.round(tokenPct)}% of usage`}
                       />
                       {/* cost share overlay — narrower, opaque, shows relative cost weight */}
                       <div

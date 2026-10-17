@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, dealsClosedThisMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -67,5 +67,51 @@ describe("dealsClosedThisMonth", () => {
     ];
     expect(dealsClosedThisMonth(cases, "won", now)).toEqual({ count: 2, totals: [{ currency: "USD", total: 10000 }] });
     expect(dealsClosedThisMonth(cases, "lost", now)).toEqual({ count: 1, totals: [{ currency: "GBP", total: 2000 }] });
+  });
+});
+
+describe("weightedDealValues", () => {
+  it("weights each deal by its probability and skips deals without one", () => {
+    expect(
+      weightedDealValues([
+        { fields: { dealValue: 10000, dealCurrency: "GBP", probability: 50 } },
+        { fields: { dealValue: 2000, dealCurrency: "GBP", probability: "25" } },
+        { fields: { dealValue: 4000, dealCurrency: "USD", probability: 100 } },
+        { fields: { dealValue: 9000, dealCurrency: "USD" } },
+        { fields: { dealValue: 1000, dealCurrency: "USD", probability: 150 } },
+      ]),
+    ).toEqual([
+      { currency: "GBP", total: 5500 },
+      { currency: "USD", total: 5000 },
+    ]);
+  });
+});
+
+describe("forecastByCloseMonth", () => {
+  it("groups open deals by expected close month, with overdue, later and no date", () => {
+    const deal = (value: number, expectedCloseDate?: string, extra: Record<string, unknown> = {}) => ({
+      fields: { dealStatus: "Open", dealValue: value, dealCurrency: "GBP", probability: 50, ...(expectedCloseDate ? { expectedCloseDate } : {}), ...extra },
+    });
+    const buckets = forecastByCloseMonth(
+      [
+        deal(1000, "2026-09-30"),
+        deal(2000, "2026-10-20"),
+        deal(3000, "2026-10-28"),
+        deal(4000, "2026-12-01"),
+        deal(5000, "2027-03-01"),
+        deal(6000),
+        deal(7000, "2026-10-01", { dealStatus: "Won" }),
+        { fields: { dealStatus: "Open", expectedCloseDate: "2026-10-05" } },
+      ],
+      new Date("2026-10-17T12:00:00Z"),
+    );
+    expect(buckets.map((bucket) => [bucket.label, bucket.count, bucket.totals[0]?.total ?? 0, bucket.weighted[0]?.total ?? 0])).toEqual([
+      ["Overdue", 1, 1000, 500],
+      ["Oct 2026", 2, 5000, 2500],
+      ["Nov 2026", 0, 0, 0],
+      ["Dec 2026", 1, 4000, 2000],
+      ["Later", 1, 5000, 2500],
+      ["No close date", 1, 6000, 3000],
+    ]);
   });
 });

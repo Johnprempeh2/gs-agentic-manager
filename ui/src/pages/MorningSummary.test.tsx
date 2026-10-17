@@ -87,8 +87,14 @@ describe("MorningSummary", () => {
       finished: { count: 1, items: [{ id: "b", identifier: "GRE-5", title: "Write the one-pager" }] },
       stuck: { count: 0, items: [] },
       workingNow: { count: 1, items: [{ id: "w", identifier: "GRE-9", title: "Drafting the deck" }] },
+      dealNextSteps: {
+        count: 1,
+        items: [{ id: "case-1", identifier: null, title: "Acme: Demo call", dueDate: "2020-01-03", href: "/pipelines/pipe-1/cases/case-1" }],
+      },
     };
     await render();
+    expect(container.textContent).toContain("Deal next steps due");
+    expect(container.querySelector('a[href="/pipelines/pipe-1/cases/case-1"]')?.textContent).toContain("Acme: Demo call");
     expect(container.textContent).toContain("Working now");
     expect(container.querySelector('a[href="/issues/GRE-9"]')?.textContent).toContain("Drafting the deck");
     const text = container.textContent ?? "";
@@ -113,6 +119,7 @@ describe("MorningSummary", () => {
     } as unknown as Summary;
     await render();
     expect(container.textContent).toContain("Nothing is due today.");
+    expect(container.textContent).not.toContain("Deal next steps due");
   });
 
   it("marks lines due before today as late", () => {

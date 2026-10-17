@@ -165,8 +165,8 @@ export function useThreadMutations({
       pushToast({
         title:
           variables.action === "approve"
-            ? "Approval failed"
-            : "Rejection failed",
+            ? "Could not approve"
+            : "Could not reject",
         body: err instanceof Error ? err.message : "Unable to update approval",
         tone: "error",
       });
@@ -254,7 +254,7 @@ export function useThreadMutations({
           return;
         } catch (err) {
           pushToast({
-            title: "Cancel failed",
+            title: "Could not cancel",
             body:
               err instanceof Error
                 ? err.message
@@ -321,8 +321,8 @@ export function useThreadMutations({
       pushToast({
         title:
           err instanceof CommentSubmissionUnknownError
-            ? "Comment save unconfirmed"
-            : "Comment failed",
+            ? "We are not sure your comment was saved"
+            : "Your comment was not posted",
         body: err instanceof Error ? err.message : "Unable to post comment",
         tone: "error",
       });
@@ -406,7 +406,7 @@ export function useThreadMutations({
     onError: (err) => {
       if (err instanceof ReauthCancelledError) return;
       pushToast({
-        title: "Accept failed",
+        title: "Could not accept",
         body:
           err instanceof Error
             ? err.message
@@ -437,7 +437,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Reject failed",
+        title: "Could not reject",
         body:
           err instanceof Error
             ? err.message
@@ -465,7 +465,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Submit failed",
+        title: "Your answers were not sent",
         body: err instanceof Error ? err.message : "Unable to submit answers",
         tone: "error",
       });
@@ -503,7 +503,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Apply failed",
+        title: "Could not apply your choices",
         body:
           err instanceof Error ? err.message : "Unable to apply the verdicts",
         tone: "error",
@@ -528,7 +528,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Cancel failed",
+        title: "Could not cancel",
         body:
           err instanceof Error ? err.message : "Unable to cancel the question",
         tone: "error",
@@ -546,7 +546,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Skip failed",
+        title: "Could not skip",
         body:
           err instanceof Error ? err.message : "Unable to skip this request",
         tone: "error",
@@ -655,7 +655,7 @@ export function useThreadMutations({
           return;
         } catch (err) {
           pushToast({
-            title: "Cancel failed",
+            title: "Could not cancel",
             body:
               err instanceof Error
                 ? err.message
@@ -719,8 +719,8 @@ export function useThreadMutations({
       pushToast({
         title:
           err instanceof CommentSubmissionUnknownError
-            ? "Comment save unconfirmed"
-            : "Comment failed",
+            ? "We are not sure your comment was saved"
+            : "Your comment was not posted",
         body: err instanceof Error ? err.message : "Unable to post comment",
         tone: "error",
       });
@@ -757,7 +757,7 @@ export function useThreadMutations({
       invalidateIssueDetail();
       invalidateIssueRunState();
       pushToast({
-        title: "Interrupt failed",
+        title: "Could not interrupt the agent",
         body:
           err instanceof Error
             ? err.message
@@ -783,14 +783,14 @@ export function useThreadMutations({
       invalidateIssueThreadLazily();
       invalidateIssueCollections();
       pushToast({
-        title: "Queued comment canceled",
+        title: "Queued comment cancelled",
         body: "The queued message was restored to the composer.",
         tone: "success",
       });
     },
     onError: (err) => {
       pushToast({
-        title: "Cancel failed",
+        title: "Could not cancel",
         body:
           err instanceof Error
             ? err.message
@@ -818,7 +818,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       pushToast({
-        title: "Delete failed",
+        title: "Could not delete",
         body:
           err instanceof Error ? err.message : "Unable to delete the comment",
         tone: "error",
@@ -839,7 +839,7 @@ export function useThreadMutations({
         if (cancelledCommentBody) {
           restoreQueuedCommentDraft(cancelledCommentBody);
           pushToast({
-            title: "Queued comment canceled",
+            title: "Queued comment cancelled",
             body: "The queued message was restored to the composer.",
             tone: "success",
           });
@@ -919,8 +919,8 @@ export function useThreadMutations({
         );
       }
       pushToast({
-        title: "Failed to save feedback",
-        body: err instanceof Error ? err.message : "Unknown error",
+        title: "Your feedback was not saved",
+        body: err instanceof Error ? err.message : "Please try again.",
         tone: "error",
       });
     },
@@ -948,7 +948,7 @@ export function useThreadMutations({
       if (!issueId) void queryClient.invalidateQueries({ queryKey: queryKeys.issues.detail(result.issueId) });
     },
     onError: (err) => {
-      setAttachmentError(err instanceof Error ? err.message : "Upload failed");
+      setAttachmentError(err instanceof Error ? err.message : "The file did not upload. Please try again.");
     },
   });
 
@@ -978,7 +978,7 @@ export function useThreadMutations({
     },
     onError: (err) => {
       setAttachmentError(
-        err instanceof Error ? err.message : "Document import failed",
+        err instanceof Error ? err.message : "The document did not import. Please try again.",
       );
     },
   });
@@ -994,7 +994,7 @@ export function useThreadMutations({
       invalidateIssueDetail();
     },
     onError: (err) => {
-      setAttachmentError(err instanceof Error ? err.message : "Delete failed");
+      setAttachmentError(err instanceof Error ? err.message : "The file was not deleted. Please try again.");
     },
   });
 
@@ -1044,7 +1044,7 @@ export function useThreadMutations({
         restoreIssueToInboxCaches(queryClient, context.previousData, id);
       }
       pushToast({
-        title: "Archive failed",
+        title: "Could not archive",
         body:
           err instanceof Error
             ? err.message

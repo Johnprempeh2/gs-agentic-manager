@@ -19,7 +19,7 @@ function parseDollarInput(value: string) {
 }
 
 function windowLabel(windowKind: BudgetPolicySummary["windowKind"]) {
-  return windowKind === "lifetime" ? "Lifetime budget" : "Monthly UTC budget";
+  return windowKind === "lifetime" ? "Lifetime budget" : "Monthly budget";
 }
 
 function statusTone(status: BudgetPolicySummary["status"]) {
@@ -125,8 +125,8 @@ export function BudgetPolicyCard({
       <PauseCircle className="mt-0.5 h-4 w-4 shrink-0" />
       <div>
         {summary.scopeType === "project"
-          ? "Execution is paused for this project until the budget is raised or the incident is dismissed."
-          : "Heartbeats are paused for this scope until the budget is raised or the incident is dismissed."}
+          ? "This project is paused until its limit is raised or the alert is closed."
+          : "Work is paused here until the limit is raised or the alert is closed."}
       </div>
     </div>
   ) : null;

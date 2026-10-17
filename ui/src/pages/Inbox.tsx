@@ -1852,8 +1852,8 @@ export function Inbox() {
     },
     onError: (error) => {
       pushToast({
-        title: "Run retry failed",
-        body: error instanceof Error ? error.message : "Unable to retry run",
+        title: "Could not try that again",
+        body: `The agent could not restart this work. Try again in a minute, or open the task for details.${error instanceof Error ? ` (${error.message})` : ""}`,
         tone: "error",
       });
     },
@@ -2491,7 +2491,7 @@ export function Inbox() {
       issueFilters.statuses.includes(status as IssueFilterState["statuses"][number]),
     );
   const issueFilterFeedback = issueFilters.liveOnly
-    ? "Live runs only: tasks currently connected to an agent run."
+    ? "Only tasks an agent is working on right now."
     : activeStatusFilterApplied
       ? "Active statuses: open tasks, whether or not an agent is running."
       : null;
@@ -3361,9 +3361,8 @@ export function Inbox() {
                   >
                     <AlertTriangle className="h-4 w-4 shrink-0 text-yellow-400" />
                     <span className="text-sm">
-                      Budget at{" "}
                       <span className="font-medium">{dashboard!.costs.monthUtilizationPercent}%</span>{" "}
-                      utilization this month
+                      of this month's budget used
                     </span>
                   </Link>
                   <button

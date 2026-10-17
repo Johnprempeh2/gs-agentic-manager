@@ -480,7 +480,7 @@ export function ImportFromVaultDialog({
         awsVaults.find((vault) => vault.id === vaultId)?.displayName ?? "AWS";
       if (result.errorCount === draftList.length && result.errorCount > 0) {
         toast.pushToast({
-          title: "Import failed",
+          title: "Could not import",
           body: `No secrets were imported from ${vaultName}.`,
           tone: "error",
         });
@@ -494,7 +494,7 @@ export function ImportFromVaultDialog({
     },
     onError: (error) => {
       toast.pushToast({
-        title: "Import failed",
+        title: "Could not import",
         body: readableErrorMessage(error),
         tone: "error",
       });
