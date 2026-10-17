@@ -8,6 +8,7 @@ export interface NotificationPreferences {
   teamChat: boolean;
   /** A task you asked for was finished by an agent or a teammate. */
   finishedWork: boolean;
+  dealsClosed: boolean;
   /** One message each morning: what needs you, what got done, what is stuck. */
   morningSummary: boolean;
   /** Local hour (0 to 23) the morning summary goes out. */
@@ -31,6 +32,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   assignedTasks: true,
   teamChat: true,
   finishedWork: true,
+  dealsClosed: true,
   morningSummary: true,
   morningSummaryHour: 8,
   weeklyReport: false,
