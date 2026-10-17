@@ -2491,7 +2491,7 @@ export function Inbox() {
       issueFilters.statuses.includes(status as IssueFilterState["statuses"][number]),
     );
   const issueFilterFeedback = issueFilters.liveOnly
-    ? "Live runs only: tasks currently connected to an agent run."
+    ? "Only tasks an agent is working on right now."
     : activeStatusFilterApplied
       ? "Active statuses: open tasks, whether or not an agent is running."
       : null;
