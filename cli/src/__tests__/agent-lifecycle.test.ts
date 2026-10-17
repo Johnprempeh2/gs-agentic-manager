@@ -134,6 +134,22 @@ describe("agent lifecycle commands", () => {
       `http://localhost:3100/api/companies/${COMPANY_ID}/agents/directory?q=seo+audit&limit=10`,
     ]);
   });
+
+  it("lists what waits on the agent and its last failures", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse([{ issue: { id: "i1", identifier: "GRE-1", title: "Brief", status: "todo" }, action: null, waitingCount: 2 }])))
+      .mockImplementationOnce(() => Promise.resolve(jsonResponse([{ id: "r1", status: "failed", createdAt: "2026-10-01", errorCode: null, error: "Boom" }])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["agent", "waiting"]);
+    await run(["agent", "failures", "--limit", "3"]);
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      "http://localhost:3100/api/agents/me/waiting-on-me",
+      "http://localhost:3100/api/agents/me/failed-runs?limit=3",
+    ]);
+  });
 });
 
 function jsonResponse(body: unknown = { ok: true }, init: ResponseInit = { status: 200 }): Response {

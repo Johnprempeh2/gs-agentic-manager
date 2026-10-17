@@ -315,6 +315,70 @@ export function registerAgentCommands(program: Command): void {
 
   addCommonClientOptions(
     agent
+      .command("waiting")
+      .description("List the current agent's tasks that other open tasks are waiting on, biggest chain first")
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const rows =
+            (await ctx.api.get<Array<{
+              issue: { id: string; identifier: string | null; title: string; status: string };
+              action: string | null;
+              waitingCount: number;
+            }>>("/api/agents/me/waiting-on-me")) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(
+              formatInlineRecord({
+                identifier: row.issue.identifier,
+                id: row.issue.id,
+                status: row.issue.status,
+                waiting: row.waitingCount,
+                title: row.issue.title,
+              }),
+            );
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
+      .command("failures")
+      .description("Show the current agent's last failed runs and their errors")
+      .option("--limit <n>", "How many to show (1 to 20)", "5")
+      .action(async (opts: AgentDoneOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const params = new URLSearchParams({ limit: opts.limit ?? "5" });
+          const rows =
+            (await ctx.api.get<Array<{ id: string; status: string; createdAt: string; errorCode: string | null; error: string | null }>>(
+              `/api/agents/me/failed-runs?${params.toString()}`,
+            )) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(
+              formatInlineRecord({ id: row.id, status: row.status, createdAt: row.createdAt, errorCode: row.errorCode, error: row.error }),
+            );
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
       .command("find")
       .description("Find colleagues who can help, ranked by their capabilities, title and role")
       .argument("<query>", "What you need help with, such as \"seo audit\"")
