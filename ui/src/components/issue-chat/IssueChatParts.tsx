@@ -532,7 +532,7 @@ function CopyablePreBlock({
             })
             .catch((error) => {
               toastActions?.pushToast({
-                title: "Copy failed",
+                title: "Could not copy",
                 body:
                   error instanceof Error
                     ? error.message

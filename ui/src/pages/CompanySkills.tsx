@@ -4466,7 +4466,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Save failed",
+        title: "Your change was not saved",
         body: error instanceof Error ? error.message : "Failed to save skill file.",
       });
     },
@@ -4489,7 +4489,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Star failed",
+        title: "Could not star it",
         body: error instanceof Error ? error.message : "Failed to update star.",
       });
     },
@@ -4516,7 +4516,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Skill settings update failed",
+        title: "Your skill settings were not saved",
         body: error instanceof Error ? error.message : "Failed to update skill settings.",
       });
     },
@@ -4679,7 +4679,7 @@ export function CompanySkills() {
       if (enableFailures > 0) {
         pushToast({
           tone: "warn",
-          title: "Skill installed, but enabling failed",
+          title: "Skill added, but not switched on",
           body: `Could not enable ${result.skill.name} for ${enableFailures} agent${enableFailures === 1 ? "" : "s"}. Use "Add to agent" on the skill page.`,
         });
       }
@@ -4720,7 +4720,7 @@ export function CompanySkills() {
         } catch (moveError) {
           pushToast({
             tone: "error",
-            title: "Folder created, move failed",
+            title: "Folder made, but nothing moved into it",
             body: moveError instanceof Error ? moveError.message : "Failed to move the selected skills.",
           });
           return;
@@ -4733,7 +4733,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: error instanceof Error ? error.message : "Failed to save folder.",
       });
     },
@@ -4749,7 +4749,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder save failed",
+        title: "Your folder was not saved",
         body: error instanceof Error ? error.message : "Failed to update folder.",
       });
     },
@@ -4769,7 +4769,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder move failed",
+        title: "Could not move the folder",
         body: error instanceof Error ? error.message : "Failed to move folder.",
       });
     },
@@ -4788,7 +4788,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Folder delete failed",
+        title: "Could not delete the folder",
         body: error instanceof Error ? error.message : "Failed to delete folder.",
       });
     },
@@ -4805,7 +4805,7 @@ export function CompanySkills() {
     onError: (error) => {
       pushToast({
         tone: "error",
-        title: "Move failed",
+        title: "Could not move it",
         body: error instanceof Error ? error.message : "Failed to move skill.",
       });
     },
@@ -4867,7 +4867,7 @@ export function CompanySkills() {
     } catch (error) {
       pushToast({
         tone: "error",
-        title: "Folder create failed",
+        title: "Could not make the folder",
         body: error instanceof Error ? error.message : "Failed to create folder.",
       });
       return null;
@@ -4898,7 +4898,7 @@ export function CompanySkills() {
     } catch (moveError) {
       pushToast({
         tone: "error",
-        title: "Move failed",
+        title: "Could not move it",
         body: moveError instanceof Error ? moveError.message : "Failed to move.",
       });
     }
@@ -4968,7 +4968,7 @@ export function CompanySkills() {
       }
       pushToast({ tone: "success", title: "Agents updated", body: `${nextAgentIds.length} agent(s) attached.` });
     } catch (error) {
-      pushToast({ tone: "error", title: "Update failed", body: error instanceof Error ? error.message : "Failed to update agent skills." });
+      pushToast({ tone: "error", title: "Your change was not saved", body: error instanceof Error ? error.message : "Failed to update agent skills." });
     }
   }
 

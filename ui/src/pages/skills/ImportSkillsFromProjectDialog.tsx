@@ -377,7 +377,7 @@ export function ImportSkillsFromProjectDialog({
     onError: (error) => {
       toast.pushToast({
         tone: "error",
-        title: "Import failed",
+        title: "Could not import",
         body: readableErrorMessage(error),
       });
     },
