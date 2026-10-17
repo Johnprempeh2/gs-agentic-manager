@@ -41,7 +41,7 @@ const ACTION_DOMAINS: { value: string; label: string }[] = [
   { value: "goal.", label: "Goals" },
   { value: "tool_", label: "Apps & tools" },
   { value: "cost.", label: "Costs" },
-  { value: "company.", label: "Organization" },
+  { value: "company.", label: "Organisation" },
 ];
 
 /** Entity types offered in the filter (server does an exact match). */
@@ -53,7 +53,7 @@ const ENTITY_TYPES: { value: string; label: string }[] = [
   { value: "routine", label: "Routine" },
   { value: "project", label: "Project" },
   { value: "goal", label: "Goal" },
-  { value: "company", label: "Organization" },
+  { value: "company", label: "Organisation" },
   { value: "tool_connection", label: "Connection" },
 ];
 
@@ -680,7 +680,7 @@ export function AuditFeed({
                   ? "Try a wider date range or different filters."
                   : resolvedMode === "agents"
                     ? "As soon as your agents start doing things, their actions show up here."
-                    : "As soon as anyone in your organization does something, it shows up here."}
+                    : "As soon as anyone in your organisation does something, it shows up here."}
               </p>
             </div>
             {hasActiveFilters ? (
