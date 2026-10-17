@@ -1666,6 +1666,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
   // Owner filter (Pipedrive's "my deals"), per pipeline; ALL_OWNERS shows everyone's.
   const [ownerFilter, setOwnerFilter] = useState<{ pipelineId: string; owner: string }>({ pipelineId, owner: ALL_OWNERS });
+  // "Deals need a next step" in the header doubles as a filter, like Pipedrive's red deals.
+  const [nextStepFilterPipelineId, setNextStepFilterPipelineId] = useState<string | null>(null);
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -1747,10 +1749,13 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
     return forecastByCloseMonth(visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId))));
   }, [pipeline, visibleCases, orderedStages]);
-  const dealsNeedingNextStep = useMemo(() => {
+  const casesNeedingNextStep = useMemo(() => {
     const closedStageIds = new Set(orderedStages.filter((stage) => stage.kind === "done" || stage.kind === "cancelled").map((stage) => stage.id));
-    return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null).length;
+    return visibleCases.filter((item) => !(item.stageId && closedStageIds.has(item.stageId)) && getDealNextStepFlag(item) !== null);
   }, [visibleCases, orderedStages]);
+  const dealsNeedingNextStep = casesNeedingNextStep.length;
+  const nextStepFilterOn = nextStepFilterPipelineId === pipelineId && dealsNeedingNextStep > 0;
+  const boardCases = nextStepFilterOn ? casesNeedingNextStep : visibleCases;
   const closedThisMonth = useMemo(
     () => ({ won: dealsClosedThisMonth(visibleCases, "won"), lost: dealsClosedThisMonth(visibleCases, "lost") }),
     [visibleCases],
@@ -1772,7 +1777,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     const unassigned: BoardCase[] = [];
-    for (const caseItem of visibleCases) {
+    for (const caseItem of boardCases) {
       const stageId = caseItem.stageId && stageIds.has(caseItem.stageId) ? caseItem.stageId : UNASSIGNED_STAGE_ID;
       if (stageId === UNASSIGNED_STAGE_ID) {
         unassigned.push(caseItem);
@@ -1790,7 +1795,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
     }
 
     return { columns, byStage, caseToColumn, caseById };
-  }, [orderedStages, visibleCases, stageIds, pipelineId]);
+  }, [orderedStages, boardCases, stageIds, pipelineId]);
 
   const transitions = useMemo<PipelineTransitionEdge[]>(
     () => pipeline?.transitions ?? [],
@@ -2030,7 +2035,26 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
             ) : null}
             {dealsNeedingNextStep > 0 ? (
               <span data-testid="pipeline-deals-needing-next-step">
-                {" "}· {dealsNeedingNextStep} {dealsNeedingNextStep === 1 ? "deal needs" : "deals need"} a next step
+                {" "}·{" "}
+                <button
+                  type="button"
+                  className="underline decoration-dotted underline-offset-2 hover:text-foreground"
+                  aria-pressed={nextStepFilterOn}
+                  title={nextStepFilterOn ? "Show every card again" : "Show only the deals that need a next step"}
+                  onClick={() => setNextStepFilterPipelineId(nextStepFilterOn ? null : pipelineId)}
+                >
+                  {dealsNeedingNextStep} {dealsNeedingNextStep === 1 ? "deal needs" : "deals need"} a next step
+                </button>
+                {nextStepFilterOn ? (
+                  <button
+                    type="button"
+                    className="ml-1 inline-flex items-center gap-0.5 font-medium text-primary hover:underline"
+                    onClick={() => setNextStepFilterPipelineId(null)}
+                  >
+                    <X className="h-3 w-3" aria-hidden />
+                    Show all
+                  </button>
+                ) : null}
               </span>
             ) : null}
             {(["won", "lost"] as const).map((outcome) => {
@@ -2089,7 +2113,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           <PipelineExportButton
             name={pipeline.name}
             pipelineId={pipelineId}
-            cases={visibleCases}
+            cases={boardCases}
             stageName={(stageId) => orderedStages.find((stage) => stage.id === stageId)?.name ?? ""}
           />
           <Button asChild data-tour="board-add">
