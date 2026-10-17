@@ -474,6 +474,19 @@ describe("Search page", () => {
     });
     expect(container.textContent).toContain("Clients and records");
 
+    const chips = container.querySelector('[data-testid="search-record-kinds"]');
+    expect(chips?.textContent).toContain("Notes and calls");
+    const people = chips?.querySelector('[data-record-kind="person"]') as HTMLButtonElement;
+    searchApiMock.search.mockClear();
+    flushSync(() => {
+      people.click();
+    });
+    await waitForAssertion(() => {
+      expect(searchApiMock.search).toHaveBeenCalledWith("company-1", expect.objectContaining({ scope: "records", recordKind: ["person"] }));
+    });
+    expect(window.location.search).toContain("kind=person");
+    expect(people.getAttribute("aria-pressed")).toBe("true");
+
     flushSync(() => {
       root.unmount();
     });

@@ -71,4 +71,13 @@ describe("gsam search", () => {
     await run(["search", "zebra", "--scope", "records"]);
     expect(lines).toEqual(['Nothing found for "zebra".']);
   });
+
+  it("narrows to record kinds and switches to records", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => { urls.push(url); return json({ results: [], hasMore: false }); }));
+    await run(["search", "acme", "--kind", "person, activity"]);
+    const url = new URL(urls[0]!);
+    expect(url.searchParams.get("scope")).toBe("records");
+    expect(url.searchParams.get("recordKind")).toBe("person,activity");
+  });
 });

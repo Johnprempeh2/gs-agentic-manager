@@ -1245,18 +1245,18 @@ export function companySearchService(db: Db) {
       function recordMatch(fields: string) {
         return sql`concat_ws(' ', ${sql.raw(fields)}) ILIKE ALL(${tokenPatternArray})`;
       }
-      function recordBranches(perBranchLimit: number | null) {
+      function recordBranches(perBranchLimit: number | null, kinds: readonly CompanySearchRecordKind[] = query.recordKind) {
         const cap = perBranchLimit === null ? sql`` : sql`LIMIT ${perBranchLimit}`;
-        return [
-          sql`(SELECT 'organisation' AS kind, o.id, o.name AS title,
+        const branches: Array<[CompanySearchRecordKind, ReturnType<typeof sql>]> = [
+          ["organisation", sql`(SELECT 'organisation' AS kind, o.id, o.name AS title,
               nullif(concat_ws(', ', o.industry, o.country), '') AS subtitle, o.notes AS body,
               'organisations/' || o.id AS path, NULL::text AS "previewImageUrl",
               o.created_at AS "createdAt", o.updated_at AS "updatedAt"
             FROM organisations o
             WHERE o.company_id = ${companyId} AND o.archived_at IS NULL
               AND ${recordMatch("o.name, o.industry, o.country, o.website, o.notes")}
-            ORDER BY o.updated_at DESC ${cap})`,
-          sql`(SELECT 'person' AS kind, c.id, c.name AS title,
+            ORDER BY o.updated_at DESC ${cap})`],
+          ["person", sql`(SELECT 'person' AS kind, c.id, c.name AS title,
               nullif(concat_ws(' at ', c.role, org.name), '') AS subtitle,
               nullif(concat_ws(', ', c.email, c.phone), '') AS body,
               CASE WHEN org.id IS NULL THEN 'organisations' ELSE 'organisations/' || org.id END AS path,
@@ -1265,8 +1265,8 @@ export function companySearchService(db: Db) {
             LEFT JOIN organisations org ON org.id = c.organisation_id AND org.archived_at IS NULL
             WHERE c.company_id = ${companyId} AND c.archived_at IS NULL
               AND ${recordMatch("c.name, c.email, c.role, c.phone")}
-            ORDER BY c.updated_at DESC ${cap})`,
-          sql`(SELECT 'client' AS kind, pc.id, pc.title,
+            ORDER BY c.updated_at DESC ${cap})`],
+          ["client", sql`(SELECT 'client' AS kind, pc.id, pc.title,
               concat_ws(' in ', st.name, p.name) AS subtitle, pc.summary AS body,
               'pipelines/' || pc.pipeline_id || '/items/' || pc.id AS path,
               NULL::text AS "previewImageUrl", pc.created_at AS "createdAt", pc.updated_at AS "updatedAt"
@@ -1275,8 +1275,8 @@ export function companySearchService(db: Db) {
             LEFT JOIN pipeline_stages st ON st.id = pc.stage_id
             WHERE pc.company_id = ${companyId} AND pc.retired_at IS NULL AND pc.hidden_from_board_at IS NULL
               AND ${recordMatch("pc.title, pc.summary, pc.case_key")}
-            ORDER BY pc.updated_at DESC ${cap})`,
-          sql`(SELECT 'product' AS kind, pr.id, pr.name AS title,
+            ORDER BY pc.updated_at DESC ${cap})`],
+          ["product", sql`(SELECT 'product' AS kind, pr.id, pr.name AS title,
               nullif(concat_ws(', ', pr.code, CASE WHEN deal.case_id IS NULL THEN NULL ELSE 'on ' || deal.title END), '') AS subtitle,
               pr.description AS body,
               CASE WHEN deal.case_id IS NULL THEN 'pipelines' ELSE 'pipelines/' || deal.pipeline_id || '/items/' || deal.case_id END AS path,
@@ -1292,8 +1292,8 @@ export function companySearchService(db: Db) {
             ) deal ON true
             WHERE pr.company_id = ${companyId} AND pr.active
               AND ${recordMatch("pr.name, pr.code, pr.description")}
-            ORDER BY pr.updated_at DESC ${cap})`,
-          sql`(SELECT 'image' AS kind, gi.id,
+            ORDER BY pr.updated_at DESC ${cap})`],
+          ["image", sql`(SELECT 'image' AS kind, gi.id,
               CASE WHEN length(gi.prompt) > 80 THEN left(gi.prompt, 79) || '…' ELSE gi.prompt END AS title,
               gi.style AS subtitle, gi.prompt AS body, 'images' AS path,
               '/api/assets/' || gi.asset_id || '/content' AS "previewImageUrl",
@@ -1301,8 +1301,8 @@ export function companySearchService(db: Db) {
             FROM generated_images gi
             WHERE gi.company_id = ${companyId} AND gi.status = 'completed' AND gi.asset_id IS NOT NULL
               AND ${recordMatch("gi.prompt, gi.style")}
-            ORDER BY gi.created_at DESC ${cap})`,
-          sql`(SELECT 'activity' AS kind, te.id,
+            ORDER BY gi.created_at DESC ${cap})`],
+          ["activity", sql`(SELECT 'activity' AS kind, te.id,
               coalesce(nullif(te.subject, ''), CASE WHEN length(te.body) > 80 THEN left(te.body, 79) || '…' ELSE te.body END, initcap(te.kind)) AS title,
               nullif(concat_ws(', ', initcap(replace(coalesce(te.activity_type, te.kind), '_', ' ')), coalesce(tc.title, torg.name), to_char(te.occurred_at, 'FMDD Mon YYYY')), '') AS subtitle,
               te.body AS body,
@@ -1314,9 +1314,10 @@ export function companySearchService(db: Db) {
             LEFT JOIN pipeline_cases tc ON tc.id = te.case_id AND tc.retired_at IS NULL
             LEFT JOIN organisations torg ON torg.id = te.organisation_id AND torg.archived_at IS NULL
             WHERE te.company_id = ${companyId} AND te.kind <> 'stage_change'
-              AND ${recordMatch("te.subject, te.body, te.activity_type, te.owner_name")}
-            ORDER BY coalesce(te.occurred_at, te.updated_at) DESC ${cap})`,
+              AND ${recordMatch("te.subject, te.body, te.activity_type, te.owner_name, tc.title, torg.name")}
+            ORDER BY coalesce(te.occurred_at, te.updated_at) DESC ${cap})`],
         ];
+        return branches.filter(([kind]) => kinds.length === 0 || kinds.includes(kind)).map(([, branch]) => branch);
       }
 
       async function fetchRecordRows(): Promise<RecordSearchRow[]> {

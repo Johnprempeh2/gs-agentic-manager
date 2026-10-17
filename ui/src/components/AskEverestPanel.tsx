@@ -25,6 +25,7 @@ import {
   answerDecide,
   answerOverview,
   answerStuck,
+  answerHistory,
   answerSubject,
   answerFollowUp,
   classifyQuestion,
@@ -559,10 +560,16 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     enabled: active && (intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away"),
   });
   // Clients, organisations, people and products named in the question.
+  // Or, for "when did we last speak to them?", the imported notes, calls and meetings.
+  const recordQuery = intent.kind === "subject"
+    ? { q: intent.subject, limit: 4 }
+    : intent.kind === "history" && intent.subject
+      ? { q: intent.subject, limit: 10, recordKind: ["activity" as const] }
+      : null;
   const records = useQuery({
-    queryKey: ["ask-everest", companyId, "records", intent.kind === "subject" ? intent.subject : null],
-    queryFn: () => searchApi.search(companyId, { q: intent.kind === "subject" ? intent.subject : "", scope: "records", limit: 4 }),
-    enabled: active && intent.kind === "subject",
+    queryKey: ["ask-everest", companyId, "records", intent.kind, recordQuery?.q ?? null],
+    queryFn: () => searchApi.search(companyId, { ...recordQuery!, scope: "records" }),
+    enabled: active && recordQuery !== null,
     retry: false,
   });
   const setLabel = taskSetLabel(intent);
@@ -575,9 +582,12 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
   const pending = (needsNeedsMe && needsMe.isPending)
     || (intent.kind === "agent" && scorecard.isPending && !scorecard.isError)
     || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
-    || (intent.kind === "subject" && records.isPending && !records.isError)
+    || (recordQuery !== null && records.isPending && !records.isError)
     || (intent.kind === "away" && digest.isPending);
-  const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error) || (intent.kind === "away" && digest.error) || issues.error;
+  const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
+    || (intent.kind === "away" && digest.error)
+    || (intent.kind === "history" && records.error)
+    || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
   if (error) return { error: error instanceof Error ? error.message : "Unknown error" };
@@ -601,6 +611,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       };
     case "subject":
       return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
+    case "history":
+      return { value: answerHistory(intent.subject ?? "", records.data?.results ?? []) };
     default:
       return { value: answerOverview(scorecard.data ?? null, needsMe.data ?? null) };
   }

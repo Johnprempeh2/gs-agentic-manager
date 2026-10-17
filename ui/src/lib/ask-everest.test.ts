@@ -4,6 +4,7 @@ import {
   answerAway,
   answerAgent,
   answerDecide,
+  answerHistory,
   answerStuck,
   answerSubject,
   organisationAskContext,
@@ -60,12 +61,26 @@ describe("classifyQuestion", () => {
     expect(classifyQuestion("How are we doing?", agents)).toEqual({ kind: "overview" });
   });
 
+  it("spots questions about past conversations with a client", () => {
+    expect(classifyQuestion("When did we last speak to Acme?", agents)).toEqual({ kind: "history", subject: "Acme" });
+    expect(classifyQuestion("What did we last discuss with Acme Ltd?", agents)).toEqual({ kind: "history", subject: "Acme Ltd" });
+    expect(classifyQuestion("Any notes from the Indago call?", agents)).toEqual({ kind: "history", subject: "Indago" });
+    expect(classifyQuestion("What did we discuss?", agents)).toEqual({ kind: "history", subject: null });
+    expect(classifyQuestion("What did Mason do today?", agents)).toMatchObject({ kind: "agent" });
+  });
+
   it("strips question words from the subject", () => {
     expect(questionSubject("What's the latest on the booking module?")).toBe("booking module");
   });
 });
 
 describe("answers", () => {
+  it("says when there is no history and links to all notes and calls", () => {
+    const answer = answerHistory("Acme", []);
+    expect(answer.headline).toBe("I could not find any notes, calls or meetings about Acme.");
+    expect(answer.more?.href).toBe("/search?q=Acme&scope=records&kind=activity");
+  });
+
   it("says nothing needs you when Needs you is empty", () => {
     const empty = { count: 0, decisionCount: 0, assignedTaskCount: 0, decisions: [], assignedTasks: [], overdueWaits: [] } as unknown as NeedsMe;
     expect(answerDecide(empty).headline).toMatch(/Nothing needs you/);
@@ -243,6 +258,9 @@ describe("asking about a page", () => {
     expect(intentWithContext({ kind: "stuck", subject: null }, context)).toEqual({ kind: "stuck", subject: "Acme Ltd" });
     expect(intentWithContext({ kind: "decide" }, context)).toEqual({ kind: "decide" });
     expect(intentWithContext({ kind: "overview" }, null)).toEqual({ kind: "overview" });
+    expect(intentWithContext({ kind: "history", subject: null }, context)).toEqual({ kind: "history", subject: "Acme Ltd" });
+    expect(intentWithContext({ kind: "history", subject: null }, null)).toEqual({ kind: "overview" });
+    expect(intentWithContext({ kind: "history", subject: "Indago" }, context)).toEqual({ kind: "history", subject: "Indago" });
   });
 
   it("sends Everest the page and the question it follows", () => {
