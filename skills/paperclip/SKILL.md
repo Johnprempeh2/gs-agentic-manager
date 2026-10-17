@@ -712,6 +712,11 @@ For an open answer, use a text field, not invented choices. POST `/api/issues/{i
 
 See [the API reference](references/api-reference.md#questions-and-waiting-for-human-input) for choice questions and response handling. Include the normal Authorization and X-Paperclip-Run-Id headers.
 
+**Search.** Before asking someone for context, look it up: `gsam search <words>` finds tasks,
+comments, docs, words inside uploaded files, clients, organisations, people, deals, imported
+Pipedrive notes and calls, and images (`--scope records` for clients and people only,
+`--scope files` for file contents, `--json` for the full result).
+
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your
 description and can attach it to your task with `gsam image generate`.

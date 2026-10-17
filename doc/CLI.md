@@ -1009,6 +1009,13 @@ npx gsam image list --company-id <company-id> [--limit 20]
 ```
 
 ```sh
+# Search everything the company holds: tasks, comments, docs, words inside uploaded
+# files, organisations, people, deals and leads, products, imported Pipedrive notes
+# and calls, and generated images. Each result prints what it is, its link and the matching text.
+npx gsam search <words...> --company-id <company-id> [--scope all|issues|comments|documents|artifacts|files|records|agents|projects] [--limit 10] [--json]
+```
+
+```sh
 npx gsam skill list --company-id <company-id>
 npx gsam skill get <skill-id> --company-id <company-id>
 npx gsam skill file <skill-id> --company-id <company-id> [--path SKILL.md]
