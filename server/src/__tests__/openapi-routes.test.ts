@@ -44,6 +44,7 @@ const apiPrefixes: Record<string, string> = {
   "memory-steward.ts": "/api",
   "memory-tools.ts": "/api",
   "memory-connections.ts": "/api",
+  "memory-oauth.ts": "/api",
   "agent-avatars.ts": "/api",
   "announcements.ts": "/api",
   "ai-connections.ts": "/api",
@@ -210,6 +211,10 @@ function resolveMountedPath(file: string, prefix: string, routePath: string) {
     file === "connection-intents.ts" &&
     (routePath.startsWith("/mcp/") || routePath.startsWith("/runtime-tools/"))
   ) {
+    return routePath;
+  }
+  // The memory sign-in handshake is mounted on the app, outside /api.
+  if (file === "memory-oauth.ts" && (routePath.startsWith("/.well-known/") || routePath.startsWith("/oauth/"))) {
     return routePath;
   }
   // Fleet spoke routes are mounted on the app with their full path.

@@ -17,13 +17,15 @@ import { ApiError } from "../../api/client";
 import { memoryGraphApi } from "../../api/memoryGraph";
 import { queryKeys } from "../../lib/queryKeys";
 import { MemoryConnectionCheck, MemoryConnectionHistory } from "./MemoryConnectionActivity";
-import { memoryConnectionSetup, memoryMcpUrl } from "./memoryConnectionSetup";
+import { MemoryAppSignInPanel } from "./MemoryAppSignInPanel";
+import { isMemorySignInApp, memoryConnectionSetup, memoryMcpUrl } from "./memoryConnectionSetup";
 
 const APP_OPTIONS: Array<{ value: MemoryConnectionApp; description: string }> = [
   { value: "claude", description: "The Claude app on a Mac or PC" },
+  { value: "claude_ai", description: "Claude on the web and phone, by signing in" },
   { value: "claude_code", description: "Claude in a terminal" },
   { value: "codex", description: "OpenAI's coding agent" },
-  { value: "chatgpt", description: "Not possible yet, see below" },
+  { value: "chatgpt", description: "Chats and voice mode, by signing in" },
   { value: "other", description: "Any app that speaks MCP" },
 ];
 
@@ -94,11 +96,11 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
   const chosenSetup = memoryConnectionSetup(app, url, "YOUR-KEY");
 
   return (
-    <section className="space-y-4 rounded-lg border border-border bg-card p-4" aria-label="Use memory from inside Claude">
+    <section className="space-y-4 rounded-lg border border-border bg-card p-4" aria-label="Use memory from inside Claude and ChatGPT">
       <div className="space-y-1">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Link2 className="size-4" />
-          Use memory from inside Claude
+          Use memory from inside Claude and ChatGPT
         </h2>
         <p className="text-sm text-muted-foreground">
           Connect an app once and it can look things up in shared memory while you chat, and suggest new entries. What it adds
@@ -125,7 +127,9 @@ export function MemoryConnectionsSection({ companyId }: { companyId: string }) {
             className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3"
           />
 
-          {chosenSetup.snippet === null ? (
+          {isMemorySignInApp(app) ? (
+            <MemoryAppSignInPanel companyId={companyId} app={app} />
+          ) : chosenSetup.snippet === null ? (
             <div className="space-y-1 rounded-md border border-border bg-muted/40 p-3 text-sm">
               {chosenSetup.steps.map((step) => (
                 <p key={step}>{step}</p>

@@ -368,11 +368,12 @@ export interface MemoryImportResult {
  * memory. Each one is a paused agent that holds `memory_only` keys, so the app
  * is recorded as its own contributor and can reach memory and nothing else.
  */
-export const MEMORY_CONNECTION_APPS = ["claude", "claude_code", "codex", "chatgpt", "other"] as const;
+export const MEMORY_CONNECTION_APPS = ["claude", "claude_ai", "claude_code", "codex", "chatgpt", "other"] as const;
 export type MemoryConnectionApp = (typeof MEMORY_CONNECTION_APPS)[number];
 
 export const MEMORY_CONNECTION_APP_LABEL: Record<MemoryConnectionApp, string> = {
   claude: "Claude desktop app",
+  claude_ai: "Claude.ai",
   claude_code: "Claude Code",
   codex: "Codex",
   chatgpt: "ChatGPT",
@@ -401,6 +402,32 @@ export interface CreatedMemoryConnection {
   connection: MemoryConnection;
   /** Shown once. GSAM keeps only its hash. */
   token: string;
+}
+
+/** Where ChatGPT and Claude.ai sign in to memory, when this server offers it. */
+export interface MemoryAppSignInStatus {
+  /** The address to paste into the app. */
+  mcpUrl: string;
+}
+
+/**
+ * The app asking to connect, as the consent screen shows it. `app` comes from
+ * where it sends the browser back; `name` is only the app's own claim.
+ */
+export interface MemoryAppSignInClient {
+  name: string;
+  app: MemoryConnectionApp;
+  redirectHost: string;
+}
+
+export interface ApproveMemoryAppSignIn {
+  companyId: string;
+  clientId: string;
+  redirectUri: string;
+  codeChallenge: string;
+  codeChallengeMethod: "S256";
+  state?: string;
+  canContribute: boolean;
 }
 
 /** What a linked app has done, newest first, for the owner's "check it works" view. */

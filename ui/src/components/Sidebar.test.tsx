@@ -224,7 +224,7 @@ describe("Sidebar", () => {
   }
 
   function memorySettings(enabled: boolean) {
-    return { companyId: "company-1", enabled, retainMode: "extract", updatedAt: null };
+    return { companyId: "company-1", enabled, retainMode: "extract", appSignIn: false, updatedAt: null };
   }
 
   function memoryLinks() {

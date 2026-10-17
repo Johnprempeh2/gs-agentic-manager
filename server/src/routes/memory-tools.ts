@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Router, type Request, type Response } from "express";
 import type { Db } from "@greatstone/db";
 import { forbidden, HttpError, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
@@ -31,7 +31,15 @@ import {
  * (GRE-958) may call them, and that identity is the caller. While the company
  * setting is off the endpoint answers 404 to everything.
  */
-export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engineTimeoutMs?: number } = {}) {
+export function memoryToolRoutes(
+  db: Db,
+  options: {
+    engine?: MemoryEngine;
+    engineTimeoutMs?: number;
+    /** Answers a call with no key at all, pointing the app at the memory sign-in. */
+    signInChallenge?: (req: Request, res: Response) => void;
+  } = {},
+) {
   const router = Router();
   const gateway = memoryGatewayService(db, options);
   const reviews = memoryReviewService(db, gateway);
@@ -64,6 +72,7 @@ export function memoryToolRoutes(db: Db, options: { engine?: MemoryEngine; engin
   });
 
   router.post("/mcp/memory-tools", async (req, res) => {
+    if (req.actor.type === "none" && options.signInChallenge) return options.signInChallenge(req, res);
     const { companyId, agentId, runId, app, sessionId } = await memoryToolIdentity(req);
     assertCompanyAccess(req, companyId);
     if (!(await gateway.getSettings(companyId)).enabled) throw notFound(MEMORY_DISABLED_MESSAGE);

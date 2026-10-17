@@ -88,6 +88,7 @@ const Memory = lazyPage(() => import("./pages/Memory"), "Memory");
 const MemoryActivity = lazyPage(() => import("./pages/MemoryActivity"), "MemoryActivity");
 const MemoryReview = lazyPage(() => import("./pages/MemoryReview"), "MemoryReview");
 const MemoryApps = lazyPage(() => import("./pages/MemoryApps"), "MemoryApps");
+const MemoryConnectApp = lazyPage(() => import("./pages/MemoryConnectApp"), "MemoryConnectApp");
 const MemoryClientDetail = lazyPage(() => import("./pages/MemoryClients"), "MemoryClientDetail");
 const MemoryClients = lazyPage(() => import("./pages/MemoryClients"), "MemoryClients");
 const GoalDetail = lazyPage(() => import("./pages/GoalDetail"), "GoalDetail");
@@ -430,6 +431,7 @@ function boardRoutes() {
       <Route path="memory/activity" element={<MemoryActivity />} />
       <Route path="memory/review" element={<MemoryReview />} />
       <Route path="memory/apps" element={<MemoryApps />} />
+      <Route path="memory/connect-app" element={<MemoryConnectApp />} />
       <Route path="memory/clients" element={<MemoryClients />} />
       <Route path="memory/clients/:scopeId" element={<MemoryClientDetail />} />
       <Route path="artifacts" element={<Artifacts />} />
@@ -857,6 +859,7 @@ export function App() {
           <Route path="memory/activity" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/review" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/apps" element={<UnprefixedBoardRedirect />} />
+          <Route path="memory/connect-app" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/clients" element={<UnprefixedBoardRedirect />} />
           <Route path="memory/clients/:scopeId" element={<UnprefixedBoardRedirect />} />
           <Route path="audit" element={<UnprefixedBoardRedirect />} />
