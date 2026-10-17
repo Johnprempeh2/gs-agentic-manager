@@ -68,6 +68,8 @@ const ACTIVITY_ROW_VERBS: Record<string, string> = {
   "agent.key_created": "created API key for",
   "agent.budget_updated": "updated budget for",
   "agent.runtime_session_reset": "reset session for",
+  "agent.hire_created": "asked to hire",
+  "instance.live_released": "released a new version",
   "heartbeat.invoked": "invoked heartbeat for",
   "heartbeat.cancelled": "cancelled heartbeat for",
   "heartbeat.output_stale_source_resolved": "system-folded stale run on",

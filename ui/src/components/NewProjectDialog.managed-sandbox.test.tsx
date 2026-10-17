@@ -4,7 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { NewProjectDialog } from "./NewProjectDialog";
+import { NewProjectDialog, NewProjectForm } from "./NewProjectDialog";
+import { projectsApi } from "../api/projects";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { queryKeys } from "../lib/queryKeys";
 
@@ -101,5 +102,32 @@ describe("NewProjectDialog — source repositories across host policies", () => 
       (button) => button.textContent?.trim() === "Choose",
     );
     expect(chooseButtons).toHaveLength(0);
+  });
+});
+
+describe("NewProjectForm — linking to a goal", () => {
+  it("links the new project to the goal it was opened from", async () => {
+    vi.mocked(projectsApi.create).mockResolvedValue({ id: "project-1" } as never);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    act(() => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <TooltipProvider>
+            <NewProjectForm companyId="company-1" goalId="goal-1" onClose={vi.fn()} />
+          </TooltipProvider>
+        </QueryClientProvider>,
+      );
+    });
+    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Project name"]')!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    act(() => {
+      setValue.call(input, "Launch site");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    act(() => {
+      input.form!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    });
+    await vi.waitFor(() => expect(projectsApi.create).toHaveBeenCalled());
+    expect(vi.mocked(projectsApi.create).mock.calls[0]![1]).toMatchObject({ name: "Launch site", goalIds: ["goal-1"] });
   });
 });

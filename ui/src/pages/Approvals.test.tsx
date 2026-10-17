@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Approvals } from "./Approvals";
+import { approvalsApi } from "../api/approvals";
 
 vi.mock("@/lib/router", () => ({
   useNavigate: () => vi.fn(),
@@ -16,6 +17,8 @@ vi.mock("../context/BreadcrumbContext", () => ({ useBreadcrumbs: () => ({ setBre
 vi.mock("../api/approvals", () => ({ approvalsApi: { list: vi.fn(async () => []), approve: vi.fn(), reject: vi.fn() } }));
 vi.mock("../context/SidebarContext", () => ({ useSidebar: () => ({ isMobile: false }) }));
 vi.mock("../api/agents", () => ({ agentsApi: { list: vi.fn(async () => []) } }));
+const pushToast = vi.hoisted(() => vi.fn());
+vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast }) }));
 
 let root: Root | null = null;
 let container: HTMLDivElement | null = null;
@@ -46,5 +49,49 @@ describe("Approvals", () => {
     const intro = container.querySelector('[data-testid="approvals-intro"]')!;
     expect(intro.textContent).toContain("needs before it can go ahead");
     expect(intro.querySelector('[data-testid="help-term-approval"]')?.textContent).toBe("sign-off");
+  });
+
+  it("lets you tell the agent why when you reject, and confirms it", async () => {
+    const now = new Date().toISOString();
+    vi.mocked(approvalsApi.list).mockResolvedValue([
+      { id: "approval-1", companyId: "company-1", type: "hire_agent", status: "pending", payload: { name: "Ada" }, requestedByAgentId: null, requestedByUserId: null, decisionNote: null, decidedByUserId: null, decidedAt: null, createdAt: now, updatedAt: now },
+    ] as never);
+    vi.mocked(approvalsApi.reject).mockResolvedValue({} as never);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <Approvals />
+        </QueryClientProvider>,
+      );
+    });
+    const findButton = (text: string) =>
+      [...document.body.querySelectorAll("button")].find((button) => button.textContent?.trim() === text);
+    await act(async () => {
+      await vi.waitFor(() => expect(findButton("Reject")).toBeTruthy());
+    });
+    await act(async () => {
+      findButton("Reject")!.click();
+    });
+    const textarea = document.body.querySelector("textarea")!;
+    expect(document.body.textContent).toContain("Tell the agent why (optional)");
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!;
+    await act(async () => {
+      setValue.call(textarea, "Not this month");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const dialogReject = [...document.body.querySelectorAll('[role="dialog"] button')].find((button) => button.textContent?.trim() === "Reject") as HTMLButtonElement;
+    await act(async () => {
+      dialogReject.click();
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(approvalsApi.reject).toHaveBeenCalledWith("approval-1", "Not this month"));
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Rejected" })));
+    });
   });
 });

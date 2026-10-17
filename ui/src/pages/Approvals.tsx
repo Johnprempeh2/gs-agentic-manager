@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { approvalsApi } from "../api/approvals";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
-import { useConfirm } from "@/context/ConfirmContext";
+import { useToastActions } from "../context/ToastContext";
+import { ApprovalNoteDialog } from "../components/ApprovalNoteDialog";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
@@ -51,13 +52,23 @@ export function Approvals() {
     enabled: !!selectedCompanyId,
   });
 
-  const confirm = useConfirm();
+  const { pushToast } = useToastActions();
+  const [rejecting, setRejecting] = useState<{ id: string; subject: string } | null>(null);
+  const subjectFor = (id: string) => {
+    const approval = (data ?? []).find((item) => item.id === id);
+    return approval ? approvalLabel(approval.type, approval.payload as Record<string, unknown> | null) : undefined;
+  };
   const approveMutation = useMutation({
     mutationFn: (id: string) => approvalsApi.approve(id),
     onSuccess: (_approval, id) => {
       setActionError(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
-      navigate(`/approvals/${id}?resolved=approved`);
+      pushToast({
+        title: "Approved",
+        body: subjectFor(id) ? `${subjectFor(id)}. The agent has been told and can go ahead.` : "The agent has been told and can go ahead.",
+        tone: "success",
+        action: { label: "View", href: `/approvals/${id}` },
+      });
     },
     onError: (err) => {
       setActionError(`We could not approve this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
@@ -65,12 +76,19 @@ export function Approvals() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => approvalsApi.reject(id),
-    onSuccess: () => {
+    mutationFn: ({ id, note }: { id: string; note?: string }) => approvalsApi.reject(id, note),
+    onSuccess: (_approval, { id }) => {
       setActionError(null);
+      setRejecting(null);
       queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+      pushToast({
+        title: "Rejected",
+        body: subjectFor(id) ? `${subjectFor(id)}. The agent has been told no.` : "The agent has been told no.",
+        tone: "info",
+      });
     },
     onError: (err) => {
+      setRejecting(null);
       setActionError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
     },
   });
@@ -179,15 +197,7 @@ export function Approvals() {
               approval={approval}
               requesterAgent={approval.requestedByAgentId ? (agents ?? []).find((a) => a.id === approval.requestedByAgentId) ?? null : null}
               onApprove={() => approveMutation.mutate(approval.id)}
-              onReject={async () => {
-                const confirmed = await confirm({
-                  title: "Reject this request?",
-                  description: "The agent is told no and will not go ahead.",
-                  confirmLabel: "Reject",
-                  tone: "destructive",
-                });
-                if (confirmed) rejectMutation.mutate(approval.id);
-              }}
+              onReject={() => setRejecting({ id: approval.id, subject: approvalLabel(approval.type, approval.payload as Record<string, unknown> | null) })}
               detailLink={`/approvals/${approval.id}`}
               isPending={approveMutation.isPending || rejectMutation.isPending}
               pendingAction={
@@ -197,6 +207,20 @@ export function Approvals() {
           ))}
         </div>
       )}
+
+      <ApprovalNoteDialog
+        request={rejecting ? {
+          title: "Reject this request?",
+          description: `${rejecting.subject}. The agent is told no and will not go ahead.`,
+          label: "Tell the agent why (optional)",
+          placeholder: "For example: not this month, or try a cheaper option",
+          confirmLabel: "Reject",
+          destructive: true,
+        } : null}
+        pending={rejectMutation.isPending}
+        onCancel={() => setRejecting(null)}
+        onSubmit={(note) => { if (rejecting) rejectMutation.mutate({ id: rejecting.id, note }); }}
+      />
     </div>
   );
 }

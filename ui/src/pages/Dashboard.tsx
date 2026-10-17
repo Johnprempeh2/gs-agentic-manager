@@ -367,7 +367,7 @@ export function Dashboard() {
 
   const entityNameMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.id.slice(0, 8));
+    for (const i of issues ?? []) map.set(`issue:${i.id}`, i.identifier ?? i.title);
     for (const a of agents ?? []) map.set(`agent:${a.id}`, a.name);
     for (const p of projects ?? []) map.set(`project:${p.id}`, p.name);
     return map;
@@ -496,15 +496,15 @@ export function Dashboard() {
             <PauseCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-700 dark:text-red-300" />
             <div>
               <p className="text-sm font-medium text-red-950 dark:text-red-50">
-                {data.budgets.activeIncidents} active budget incident{data.budgets.activeIncidents === 1 ? "" : "s"}
+                {data.budgets.activeIncidents === 1 ? "A spending limit has been reached" : `${data.budgets.activeIncidents} spending limits have been reached`}
               </p>
-              <p className="text-xs text-red-900/85 dark:text-red-100/70">
-                {data.budgets.pausedAgents} agents paused · {data.budgets.pausedProjects} projects paused · {data.budgets.pendingApprovals} pending budget approvals
-              </p>
+              {budgetBannerDetail(data.budgets) ? (
+                <p className="text-xs text-red-900/85 dark:text-red-100/70">{budgetBannerDetail(data.budgets)}</p>
+              ) : null}
             </div>
           </div>
           <Link to="/costs" className="text-sm underline underline-offset-2 text-red-900 dark:text-red-100">
-            Open budgets
+            Review spending
           </Link>
         </div>
       ) : null}
@@ -667,4 +667,17 @@ export function Dashboard() {
       ) : null}
     </div>
   );
+}
+
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+/** Plain summary of what a spending limit stopped, leaving out the parts that are zero. */
+function budgetBannerDetail(budgets: { pausedAgents: number; pausedProjects: number; pendingApprovals: number }) {
+  const parts: string[] = [];
+  if (budgets.pausedAgents > 0) parts.push(`${plural(budgets.pausedAgents, "agent", "agents")} paused`);
+  if (budgets.pausedProjects > 0) parts.push(`${plural(budgets.pausedProjects, "project", "projects")} paused`);
+  if (budgets.pendingApprovals > 0) parts.push(`${plural(budgets.pendingApprovals, "request", "requests")} to raise a limit`);
+  return parts.join(" · ");
 }
