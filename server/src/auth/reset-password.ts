@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import { hashPassword } from "better-auth/crypto";
-import { authAccounts, authSessions, authUsers, type Db } from "@greatstone/db";
+import { authAccounts, authSessions, authTwoFactors, authUsers, type Db } from "@greatstone/db";
 
 /** Better Auth's default `minPasswordLength`; sign-up refuses anything shorter. */
 export const MIN_RESET_PASSWORD_LENGTH = 8;
@@ -73,5 +73,62 @@ export async function resetCredentialPassword(
       .where(eq(authSessions.userId, user.id))
       .returning({ id: authSessions.id });
     return { userId: user.id, email: user.email, sessionsRevoked: revoked.length };
+  });
+}
+
+export type ResetTwoStepSignInResult = {
+  userId: string;
+  email: string;
+  /** False when the person did not have two-step sign-in on. */
+  wasEnabled: boolean;
+  sessionsRevoked: number;
+};
+
+/**
+ * Clears a person's two-step sign-in when they have lost their phone and
+ * their backup codes. Removes the authenticator key and backup codes, turns
+ * the flag off and signs them out everywhere, so their next sign-in is with
+ * the password only (and, when the instance requires it, goes straight to
+ * setting two-step sign-in up again). Used by the member reset route and by
+ * `gsam auth reset-two-step` on the host.
+ */
+export async function resetTwoStepSignIn(
+  db: Db,
+  input: { userId: string } | { email: string },
+): Promise<ResetTwoStepSignInResult> {
+  const user = await db
+    .select({ id: authUsers.id, email: authUsers.email, enabled: authUsers.twoFactorEnabled })
+    .from(authUsers)
+    .where(
+      "userId" in input
+        ? eq(authUsers.id, input.userId)
+        : sql`lower(${authUsers.email}) = ${input.email.trim().toLowerCase()}`,
+    )
+    .then((rows) => rows[0] ?? null);
+  if (!user) {
+    throw new ResetCredentialPasswordError(
+      "userId" in input ? "User not found." : `No user with email ${input.email.trim().toLowerCase()}.`,
+      "user_not_found",
+    );
+  }
+  return db.transaction(async (tx) => {
+    const removed = await tx
+      .delete(authTwoFactors)
+      .where(eq(authTwoFactors.userId, user.id))
+      .returning({ id: authTwoFactors.id });
+    await tx
+      .update(authUsers)
+      .set({ twoFactorEnabled: false, updatedAt: new Date() })
+      .where(eq(authUsers.id, user.id));
+    const revoked = await tx
+      .delete(authSessions)
+      .where(eq(authSessions.userId, user.id))
+      .returning({ id: authSessions.id });
+    return {
+      userId: user.id,
+      email: user.email,
+      wasEnabled: user.enabled || removed.length > 0,
+      sessionsRevoked: revoked.length,
+    };
   });
 }

@@ -74,6 +74,11 @@ export interface InstanceGeneralSettings {
   strategyBoardEmail: StrategyBoardEmailSettings;
   /** Budget hard stop: cancel or hold queued task work (GRE-1365). Absent = `"stop"`. */
   budgetHardStopMode?: BudgetHardStopMode;
+  /**
+   * Everyone who signs in with a password must use two-step sign-in. Absent =
+   * off. While on, a session without two-step reaches only sign-in and setup.
+   */
+  requireTwoStepSignIn?: boolean;
 }
 
 /** Board emails by kind (GRE-1187). Off = that kind stays in-app only. */

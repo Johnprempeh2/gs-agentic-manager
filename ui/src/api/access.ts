@@ -139,6 +139,8 @@ export type CompanyMember = {
   };
   /** Hand over and remove, and restore: what this viewer may do for this row. */
   handover?: MemberHandoverControls | null;
+  /** Whether two-step sign-in is on, and whether this viewer may reset it (lost phone). */
+  twoStep?: { enabled: boolean; canReset: boolean; resetReason: string | null } | null;
 };
 
 export type ArchiveCompanyMemberResponse = {
@@ -441,6 +443,12 @@ export const accessApi = {
       } | null;
     } = {},
   ) => api.post<ArchiveCompanyMemberResponse>(`/companies/${companyId}/members/${memberId}/archive`, input),
+
+  resetMemberTwoStep: (companyId: string, memberId: string) =>
+    api.post<{ wasEnabled: boolean; sessionsRevoked: number }>(
+      `/companies/${companyId}/members/${memberId}/two-step/reset`,
+      {},
+    ),
 
   approveJoinRequest: (companyId: string, requestId: string) =>
     api.post<JoinRequest>(`/companies/${companyId}/join-requests/${requestId}/approve`, {}),

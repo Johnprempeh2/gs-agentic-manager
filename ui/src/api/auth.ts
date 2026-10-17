@@ -199,15 +199,16 @@ export const authApi = {
     });
   },
 
-  getTwoStepStatus: async (): Promise<{ enabled: boolean; available: boolean }> => {
+  /** `required`: an admin has made two-step sign-in compulsory on this instance. */
+  getTwoStepStatus: async (): Promise<{ enabled: boolean; available: boolean; required: boolean }> => {
     const res = await fetch("/api/auth/two-step-status", {
       credentials: "include",
       headers: { Accept: "application/json" },
     });
     const payload = await res.json().catch(() => null);
     if (!res.ok) throw extractAuthError(payload as AuthErrorBody, res.status);
-    const value = (payload ?? {}) as { enabled?: unknown; available?: unknown };
-    return { enabled: value.enabled === true, available: value.available === true };
+    const value = (payload ?? {}) as { enabled?: unknown; available?: unknown; required?: unknown };
+    return { enabled: value.enabled === true, available: value.available === true, required: value.required === true };
   },
 
   /** Starts turning two-step sign-in on. It is on only after `confirmTwoStep`. */

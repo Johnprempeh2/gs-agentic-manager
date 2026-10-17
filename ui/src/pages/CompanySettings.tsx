@@ -37,7 +37,7 @@ import {
 import { InstanceGeneralSettings, type InstanceGeneralSection } from "./InstanceGeneralSettings";
 import { hourlyRateInputValue, parseHourlyRateInput } from "../lib/minimum-wage";
 
-const SECURITY_SECTIONS: readonly InstanceGeneralSection[] = ["deploymentStatus", "censorUsernameInLogs"];
+const SECURITY_SECTIONS: readonly InstanceGeneralSection[] = ["deploymentStatus", "requireTwoStepSignIn", "censorUsernameInLogs"];
 const BACKUP_SECTIONS: readonly InstanceGeneralSection[] = ["backupRetention", "feedbackDataSharingPreference"];
 
 const SETTINGS_TABS: ReadonlyArray<{

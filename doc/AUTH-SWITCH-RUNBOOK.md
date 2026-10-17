@@ -190,6 +190,17 @@ node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth reset-password --da
 `--generate` makes and prints a password instead. `--password-stdin` reads it
 from a pipe.
 
+**Lost the phone for two-step sign-in, and the backup codes.** An owner or
+admin can reset it for someone below them under Members ("Reset two-step"),
+and an instance admin for anyone but themselves. When nobody can, run this on
+the host. The person is signed out everywhere and signs in with their password
+alone; if two-step sign-in is required, they set it up again straight away.
+
+```sh
+cd ~/GSAM/live
+node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts auth reset-two-step --data-dir ~/GSAM/data --email you@example.com
+```
+
 **Password re-check locked or in the way.** Wait 15 minutes after 5 wrong
 tries, or reset the password above. If the re-check itself is broken, switch
 back to `local_trusted` (next): there the release actions stay board-only with

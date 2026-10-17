@@ -71,6 +71,9 @@ export const instanceGeneralSettingsSchema = z.object({
   // "stop" (cancel it); "hold" keeps it and wakes each held task once after
   // an approved raise. John decides the default (decision pack D-stop/queue).
   budgetHardStopMode: z.enum(BUDGET_HARD_STOP_MODES).optional(),
+  // Everyone who signs in with a password must turn on two-step sign-in.
+  // Absent => off. Enforced by the two-step guard in front of the API.
+  requireTwoStepSignIn: z.boolean().optional(),
 }).strict();
 
 export const patchInstanceGeneralSettingsSchema = z

@@ -46,6 +46,7 @@ import {
 } from "./authz.js";
 import { readAiAccessRoute } from "../services/ai-access-route.js";
 import { applyAiRouteChange, logAiRouteChanged } from "../services/ai-route-change.js";
+import { clearTwoStepRequirementCache } from "../auth/two-step-requirement.js";
 
 function sameJsonValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -258,9 +259,17 @@ export function instanceSettingsRoutes(db: Db) {
         () => svc.getGeneral(),
         (field) => hidden.has(`instance.general.${field}`),
       );
+      // Turning on compulsory two-step sign-in from a password session that
+      // has none would lock the admin out of the page they are on.
+      if (req.body.requireTwoStepSignIn === true && req.actor.source === "session" && req.actor.twoFactorEnabled !== true) {
+        throw forbidden("Turn on two-step sign-in for yourself in your profile first.", {
+          code: "TWO_STEP_SELF_REQUIRED",
+        });
+      }
       const changesAiRoute = Object.prototype.hasOwnProperty.call(req.body, "aiAccessRoute");
       const previousAiRoute = changesAiRoute ? readAiAccessRoute(await svc.getGeneral()) : null;
       const updated = await svc.updateGeneral(req.body);
+      if (Object.prototype.hasOwnProperty.call(req.body, "requireTwoStepSignIn")) clearTwoStepRequirementCache();
       const actor = getActorInfo(req);
       const nextAiRoute = readAiAccessRoute(updated.general);
       if (changesAiRoute && nextAiRoute !== previousAiRoute) {

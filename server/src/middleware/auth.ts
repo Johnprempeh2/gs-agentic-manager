@@ -360,6 +360,7 @@ export function actorMiddleware(db: Db, opts: ActorMiddlewareOptions): RequestHa
             companyIds: memberships.map((row) => row.companyId),
             memberships,
             isInstanceAdmin: Boolean(roleRow),
+            twoFactorEnabled: session.user.twoFactorEnabled === true,
             runId: runIdHeader ?? undefined,
             source: "session",
           };

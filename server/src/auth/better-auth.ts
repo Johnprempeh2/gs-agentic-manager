@@ -16,6 +16,7 @@ import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { inviteSignUpGatePlugin } from "./invite-sign-up-gate.js";
 import { signInLockoutPlugin } from "./sign-in-lockout.js";
+import { twoStepRequiredPlugin } from "./two-step-requirement.js";
 import {
   workspaceLoginHandoffPlugin,
   type WorkspaceHandoffExpectedIdentity,
@@ -31,6 +32,7 @@ export type BetterAuthSessionUser = {
   id: string;
   email?: string | null;
   name?: string | null;
+  twoFactorEnabled?: boolean;
 };
 
 export type BetterAuthSessionResult = {
@@ -284,7 +286,11 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     // for a 6-digit code (or a backup code). Better Auth locks the code step
     // after repeated wrong codes.
     ...(config.deploymentMode === "authenticated"
-      ? [twoFactor({ issuer: TWO_FACTOR_ISSUER, backupCodeOptions: { amount: 10 } })]
+      ? [
+          twoFactor({ issuer: TWO_FACTOR_ISSUER, backupCodeOptions: { amount: 10 } }),
+          // While an admin requires two-step sign-in, nobody can turn it off.
+          twoStepRequiredPlugin(db),
+        ]
       : []),
     // Closed sign-up is enforced here rather than by Better Auth's own
     // `disableSignUp`, so a person holding a valid human invite can still
@@ -417,7 +423,7 @@ export async function resolveBetterAuthSessionFromHeaders(
 
   const value = sessionValue as {
     session?: { id?: string; userId?: string } | null;
-    user?: { id?: string; email?: string | null; name?: string | null } | null;
+    user?: { id?: string; email?: string | null; name?: string | null; twoFactorEnabled?: boolean | null } | null;
   };
   const session = value.session?.id && value.session.userId
     ? { id: value.session.id, userId: value.session.userId }
@@ -427,6 +433,7 @@ export async function resolveBetterAuthSessionFromHeaders(
         id: value.user.id,
         email: value.user.email ?? null,
         name: value.user.name ?? null,
+        twoFactorEnabled: value.user.twoFactorEnabled === true,
       }
     : null;
 

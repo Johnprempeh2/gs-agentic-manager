@@ -8,8 +8,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const health = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/api/health", () => ({ healthApi: health }));
-vi.mock("@/api/auth", () => ({ authApi: { getSession: vi.fn() } }));
-vi.mock("@/api/access", () => ({ accessApi: { getCurrentBoardAccess: vi.fn(), claimBootstrapAdmin: vi.fn() } }));
+const auth = vi.hoisted(() => ({ getSession: vi.fn(), getTwoStepStatus: vi.fn() }));
+const access = vi.hoisted(() => ({ getCurrentBoardAccess: vi.fn(), claimBootstrapAdmin: vi.fn() }));
+vi.mock("@/api/auth", () => ({ authApi: auth }));
+vi.mock("@/api/access", () => ({ accessApi: access }));
+vi.mock("@/components/TwoStepSignInSection", () => ({ TwoStepSignInSection: () => <p>SETUP</p> }));
+vi.mock("@/hooks/useSignOut", () => ({ useSignOut: () => ({ mutate: vi.fn(), isPending: false }) }));
 vi.mock("@/lib/router", () => ({
   Outlet: () => <p>APP</p>,
   Navigate: () => null,
@@ -85,5 +89,50 @@ describe("CloudAccessGate when the server stops answering", () => {
     health.get.mockRejectedValueOnce(new Error("Failed to load health (500)"));
     await refetchHealth();
     expect(container.textContent).toContain("Failed to load health (500)");
+  });
+});
+
+describe("CloudAccessGate when two-step sign-in is required", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    health.get.mockReset().mockResolvedValue({ status: "ok", deploymentMode: "authenticated", bootstrapStatus: "ready" });
+    auth.getSession.mockReset().mockResolvedValue({ session: { id: "s1", userId: "u1" }, user: { id: "u1" } });
+    access.getCurrentBoardAccess.mockReset().mockResolvedValue({ isInstanceAdmin: false, companyIds: ["c1"] });
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+  });
+
+  async function render() {
+    await act(async () => root.render(
+      <QueryClientProvider client={new QueryClient()}><CloudAccessGate /></QueryClientProvider>,
+    ));
+  }
+
+  it("holds a person without it at setup, and asks the server for nothing else", async () => {
+    auth.getTwoStepStatus.mockResolvedValue({ enabled: false, available: true, required: true });
+    await render();
+    await vi.waitFor(() => expect(container.textContent).toContain("Turn on two-step sign-in to continue"));
+    expect(container.textContent).toContain("SETUP");
+    expect(access.getCurrentBoardAccess).not.toHaveBeenCalled();
+  });
+
+  it("lets a person with it on through", async () => {
+    auth.getTwoStepStatus.mockResolvedValue({ enabled: true, available: true, required: true });
+    await render();
+    await vi.waitFor(() => expect(container.textContent).toBe("APP"));
+  });
+
+  it("does not block when the status cannot be read", async () => {
+    auth.getTwoStepStatus.mockRejectedValue(new Error("Not found"));
+    await render();
+    await vi.waitFor(() => expect(container.textContent).toBe("APP"));
   });
 });

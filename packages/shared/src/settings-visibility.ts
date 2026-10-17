@@ -83,6 +83,7 @@ export type HideableCompanySection = (typeof HIDEABLE_COMPANY_SECTIONS)[number];
 export const HIDEABLE_GENERAL_SECTIONS = [
   "instance.general.deploymentStatus",
   "instance.general.censorUsernameInLogs",
+  "instance.general.requireTwoStepSignIn",
   "instance.general.keyboardShortcuts",
   "instance.general.backupRetention",
   "instance.general.feedbackDataSharingPreference",

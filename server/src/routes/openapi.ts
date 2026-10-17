@@ -1589,6 +1589,7 @@ const BOARD_ONLY_OPERATIONS = new Set([
   "PATCH /api/companies/{companyId}/members/{memberId}",
   "PATCH /api/companies/{companyId}/members/{memberId}/role-and-grants",
   "POST /api/companies/{companyId}/members/{memberId}/archive",
+  "POST /api/companies/{companyId}/members/{memberId}/two-step/reset",
   "POST /api/companies/{companyId}/legacy-board/retire",
   "POST /api/companies/{companyId}/legacy-board/restore",
   "POST /api/companies/{companyId}/members/{memberId}/handover",
@@ -8680,6 +8681,17 @@ registry.registerPath({
     401: r.unauthorized,
     404: r.notFound,
   },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/members/{memberId}/two-step/reset",
+  tags: ["access"],
+  summary: "Reset a member's two-step sign-in after a lost phone",
+  description:
+    "Removes the person's authenticator key and backup codes and signs them out everywhere. An instance admin may reset anyone but themselves; a company owner or admin may reset someone below their role who belongs to no other organisation.",
+  request: { params: z.object({ companyId: z.string(), memberId: z.string() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden, 404: r.notFound },
 });
 
 registry.registerPath({
