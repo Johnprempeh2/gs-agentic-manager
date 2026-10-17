@@ -59,7 +59,7 @@ function ClientVersionFooter({ companyId }: { companyId: string | null }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>What's new in {title}</DialogTitle>
-            <DialogDescription>The version this workspace runs.</DialogDescription>
+            <DialogDescription>The version of GSAM you are using.</DialogDescription>
           </DialogHeader>
           {data.notes ? (
             <p className="whitespace-pre-line break-words text-sm" data-slot="client-notes">

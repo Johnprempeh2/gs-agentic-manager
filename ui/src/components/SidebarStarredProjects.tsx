@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { Project } from "@greatstone/shared";
+import { useConfirm } from "@/context/ConfirmContext";
 
 // Sidebar star reveals with the row's own group, not the shared unnamed group.
 const STAR_ROW_REVEAL =
@@ -78,14 +79,23 @@ export function SidebarStarredProjects() {
     }),
     [membershipMutation],
   );
+  const confirm = useConfirm();
   const leave = useCallback(
-    (project: Project) => membershipMutation.mutate({
-      resourceType: "project",
-      resourceId: project.id,
-      resourceName: project.name,
-      state: "left",
-    }),
-    [membershipMutation],
+    async (project: Project) => {
+      const ok = await confirm({
+        title: `Leave ${project.name}?`,
+        description: "It will disappear from your sidebar. You can join again from Projects.",
+        confirmLabel: "Leave project",
+      });
+      if (!ok) return;
+      membershipMutation.mutate({
+        resourceType: "project",
+        resourceId: project.id,
+        resourceName: project.name,
+        state: "left",
+      });
+    },
+    [confirm, membershipMutation],
   );
   const pendingFor = useCallback(
     (project: Project) =>

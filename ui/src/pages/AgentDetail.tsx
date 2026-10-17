@@ -1194,7 +1194,15 @@ export function AgentDetail() {
   }, [configDirty, prepareAgentNavigation]);
 
   if (isLoading) return <PageSkeleton variant="detail" />;
-  if (error) return <ErrorState error={error} onRetry={() => void refetch()} />;
+  if (error)
+    return (
+      <div className="space-y-3">
+        <ErrorState error={error} onRetry={() => void refetch()} />
+        <p className="text-center text-sm">
+          <Link to="/agents" className="underline underline-offset-2">Back to agents</Link>
+        </p>
+      </div>
+    );
   if (!agent) return null;
   if (!urlRunId && legacyAuditSection) {
     return <Navigate to={agentScopedAuditHref(agent.id, legacyAuditSection)} replace />;

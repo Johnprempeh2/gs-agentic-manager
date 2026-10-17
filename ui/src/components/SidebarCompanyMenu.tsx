@@ -193,7 +193,7 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
     hiddenSettingsLoaded &&
     !hidesCompanyPage(hiddenSettings, "company.members") &&
     !hidesCompanyPage(hiddenSettings, "company.invites");
-  const switcherNoun = "organization";
+  const switcherNoun = "organisation";
   const currentName = selectedCompany?.name ?? null;
   // Managed hosts forbid local company creation. Their extension owns that action.
   const companyCreationManaged = Boolean(useCloudInstance());
@@ -298,7 +298,7 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
       >
         <div className="flex h-(--organization-popover-header-height) items-center justify-between gap-2 px-3.5">
           <DropdownMenuLabel className="p-0 text-(length:--text-compact) font-semibold text-foreground">
-            Organizations
+            Organisations
           </DropdownMenuLabel>
           <button
             type="button"
@@ -340,7 +340,7 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
             // offer the way back.
             companyListUnavailable ? (
               <>
-                <DropdownMenuItem disabled>Couldn&apos;t load organizations</DropdownMenuItem>
+                <DropdownMenuItem disabled>Couldn&apos;t load organisations</DropdownMenuItem>
                 <DropdownMenuItem
                   onSelect={(event) => {
                     // Keep the menu open so the result of the retry is visible.
@@ -353,7 +353,7 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
                 </DropdownMenuItem>
               </>
             ) : (
-              <DropdownMenuItem disabled>No organizations</DropdownMenuItem>
+              <DropdownMenuItem disabled>No organisations yet</DropdownMenuItem>
             )
           ) : null}
         </div>
@@ -367,7 +367,7 @@ function BuiltinCompanyMenu({ open: controlledOpen, onOpenChange }: SidebarCompa
               <span className="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
                 <Plus className="size-4" />
               </span>
-              <span className="min-w-0 flex-1 truncate">Create organization</span>
+              <span className="min-w-0 flex-1 truncate">Create organisation</span>
             </DropdownMenuItem>
           )}
           {showInvitePeople ? (

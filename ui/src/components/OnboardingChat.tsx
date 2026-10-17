@@ -34,8 +34,8 @@ function detectHiringPlan(body: string): boolean {
 }
 
 const QUEUED_MESSAGES = [
-  "Heartbeat triggered, waking up...",
-  "Initializing...",
+  "Starting up...",
+  "Getting set up...",
   "Getting ready...",
 ];
 
@@ -50,7 +50,7 @@ const RUNNING_MESSAGES = [
 
 const WAITING_MESSAGES = [
   "Waiting to wake up...",
-  "Heartbeat pending...",
+  "Getting ready to start...",
   "Should wake up soon...",
 ];
 
