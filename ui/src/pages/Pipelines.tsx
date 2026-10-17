@@ -99,6 +99,7 @@ import {
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
   averageDaysInStage,
+  dealNextStepLabel,
   dealWinRate,
   dealsClosedThisMonth,
   forecastByCloseMonth,
@@ -154,7 +155,7 @@ import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data"
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
-import { cn, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
+import { cn, formatCalendarDay, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
 import { formatBytes } from "../lib/issue-output";
 import { createIssueDetailPath, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
@@ -1418,7 +1419,9 @@ function PipelineCaseCard({
   const hasChangedNotice = hasThisChanged(caseItem);
   const childrenSummary = getChildrenSummaryCount(caseItem);
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
-  const { owner, nextAction } = readCardSummary(caseItem.fields);
+  const { owner, nextAction: clientNextAction } = readCardSummary(caseItem.fields);
+  // A Pipedrive deal's next step stands in for the client journey's next action.
+  const nextAction = clientNextAction ?? (caseItem.terminalKind ? null : dealNextStepLabel(caseItem.fields, formatCalendarDay));
   const dealValue = formatDealTotals(sumDealValues([caseItem]));
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
   const covers = useImageCovers(caseItem.companyId);

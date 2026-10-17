@@ -339,3 +339,11 @@ export function averageDaysInStage(cases: Array<{ stageEnteredAt?: Date | string
   const days = cases.map((item) => daysInStage(item.stageEnteredAt, now)).filter((value): value is number => value != null);
   return days.length === 0 ? null : Math.round(days.reduce((sum, value) => sum + value, 0) / days.length);
 }
+
+/** "20 Oct · Demo call" for a deal's next step on a board card; null when none is booked. */
+export function dealNextStepLabel(fields: Record<string, unknown> | null | undefined, formatDay: (day: string) => string) {
+  const date = readText(fields?.nextActivityDate);
+  if (!date || !/^\d{4}-\d{2}-\d{2}/.test(date)) return null;
+  const subject = readText(fields?.nextActivitySubject);
+  return `${formatDay(date.slice(0, 10))}${subject ? ` · ${subject}` : ""}`;
+}
