@@ -224,8 +224,8 @@ export function NotificationSettings() {
             onChange={(finishedWork) => change({ finishedWork })}
           />
           <ChoiceRow
-            label="A deal is won or lost"
-            description="Someone else moves a client deal to won or lost. It opens that deal."
+            label="A deal is won or lost, or a client accepts"
+            description="Someone else moves a client deal to won or lost, or a client accepts the engagement on their acceptance page. It opens that deal."
             checked={prefs.dealsClosed}
             onChange={(dealsClosed) => change({ dealsClosed })}
           />

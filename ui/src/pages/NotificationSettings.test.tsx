@@ -65,7 +65,7 @@ describe("NotificationSettings", () => {
   it("shows each choice in plain words, all on by default", async () => {
     await render();
     expect(container.textContent).toContain("Notifications are off for this computer.");
-    for (const label of ["A decision needs me", "A task is given to me", "A task I asked for is done", "A deal is won or lost", "Someone messages a team chat I am in"]) {
+    for (const label of ["A decision needs me", "A task is given to me", "A task I asked for is done", "A deal is won or lost, or a client accepts", "Someone messages a team chat I am in"]) {
       expect(toggle(label).getAttribute("aria-checked")).toBe("true");
     }
     expect(toggle("Use quiet hours").getAttribute("aria-checked")).toBe("false");
