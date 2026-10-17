@@ -1,4 +1,5 @@
 import { buildDraftReviewAgentMessage } from "../services/draft-review-wake.js";
+import { quietClientsService } from "../services/quiet-clients.js";
 import { queuedInteractionId, readQueuedInteractionResponse, hasQueuedInteractionResponse } from "../services/queued-interaction-response.js";
 import { deliverConversationComments, isConversation } from "../services/agent-conversations.js";
 import { isBoardQuestionChat, strategyBoardChatService } from "../services/strategy-board-chat.js";
@@ -8365,6 +8366,32 @@ export function issueRoutes(
       parsedQuery.data,
     );
     res.json(result);
+  });
+
+  // Open deals and leads with no note, call, meeting or email for a while (Ask Everest: "Which clients have gone quiet?").
+  router.get("/companies/:companyId/search/quiet-clients", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const days = req.query.days === undefined ? 30 : Number(req.query.days);
+    const limit = req.query.limit === undefined ? 10 : Number(req.query.limit);
+    if (!Number.isInteger(days) || days < 1 || days > 365) {
+      res.status(400).json({ error: "days must be a whole number from 1 to 365" });
+      return;
+    }
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+      res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
+      return;
+    }
+    res.json(await quietClientsService(db).list(companyId, { days, limit }));
   });
 
   router.get("/companies/:companyId/search", async (req, res) => {

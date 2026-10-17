@@ -1172,6 +1172,9 @@ The current app also exposes V1-supporting surfaces for:
   `GET /companies/:companyId/search/extract`; extraction accepts a server-escaped literal `contains`, optional
   server-owned URL expansion, issue/comment/document scopes, status/date filters, issue-level pagination, a
   bounded `matchesPerIssue` override for machine consumers, and explicit issue/match truncation flags
+- `GET /companies/:companyId/search/quiet-clients?days=30&limit=10` lists open deals and leads (working or
+  review stages) with no imported note, call, meeting or email on the deal or its organisation for `days` days,
+  quietest first; stage changes do not count as contact. Ask Everest uses it for "Which clients have gone quiet?"
 - execution workspaces, project workspaces, workspace runtime services, and workspace operations. Workspace reads
   derive `deliveryState` as `merged_via_pr | merged_by_ancestry | unmerged | unknown`; terminal issue trees with a
   merged delivery and no active checkout run become cleanup-eligible with reason `issue_terminal` and are archived

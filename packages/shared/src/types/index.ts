@@ -424,6 +424,8 @@ export type {
   CompanySearchIssueFilterKey,
   CompanySearchIssueSummary,
   CompanySearchResponse,
+  CompanyQuietClient,
+  CompanyQuietClientsResponse,
   CompanySearchResult,
   CompanySearchResultType,
   CompanySearchScope,

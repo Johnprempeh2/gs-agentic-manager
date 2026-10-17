@@ -37,6 +37,7 @@ import {
   companySearchBranchFetchLimit,
   companySearchService,
 } from "../services/company-search.js";
+import { quietClientsService } from "../services/quiet-clients.js";
 
 const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
 const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
@@ -371,6 +372,48 @@ describeEmbeddedPostgres("companySearchService", () => {
     const result = await svc.search(companyId, companySearchQuerySchema.parse({ q: "osprey", scope: "records", recordKind: "person" }));
     expect(result.results.map((row) => row.title)).toEqual(["Ada Kestrel"]);
     expect(result.results[0]?.record).toMatchObject({ kind: "person", subtitle: "CFO at Osprey Holdings" });
+  });
+
+  it("lists open deals with no note, call or meeting for a while, quietest first", async () => {
+    const companyId = await createCompany();
+    const now = new Date("2026-10-18T09:00:00Z");
+    const orgId = randomUUID();
+    await db.insert(organisations).values({ id: orgId, companyId, name: "Heron Ltd" });
+    const pipelineId = randomUUID();
+    const working = randomUUID();
+    const done = randomUUID();
+    await db.insert(pipelines).values({ id: pipelineId, companyId, key: "sales", name: "Sales" });
+    await db.insert(pipelineStages).values([
+      { id: working, companyId, pipelineId, key: "proposal", name: "Proposal", kind: "working", position: 0 },
+      { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 1 },
+    ]);
+    const [quiet, recent, never, won] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const old = new Date("2026-08-01T09:00:00Z");
+    await db.insert(pipelineCases).values([
+      { id: quiet, companyId, pipelineId, stageId: working, caseKey: "q", title: "Heron rollout", organisationId: orgId, createdAt: old },
+      { id: recent, companyId, pipelineId, stageId: working, caseKey: "r", title: "Kite pilot", createdAt: old },
+      { id: never, companyId, pipelineId, stageId: working, caseKey: "n", title: "Wren lead", createdAt: new Date("2026-09-01T09:00:00Z") },
+      { id: won, companyId, pipelineId, stageId: done, caseKey: "w", title: "Owl deal", createdAt: old },
+    ]);
+    await db.insert(crmTimelineEntries).values([
+      // Heron: last call on the organisation 50 days ago; a later stage change does not count.
+      { companyId, source: "pipedrive", externalId: "h1", kind: "activity", activityType: "call", subject: "Pricing call", occurredAt: new Date("2026-08-29T09:00:00Z"), organisationId: orgId },
+      { companyId, source: "pipedrive", externalId: "h2", kind: "stage_change", subject: "Moved", occurredAt: new Date("2026-10-17T09:00:00Z"), caseId: quiet },
+      { companyId, source: "pipedrive", externalId: "k1", kind: "note", body: "Agreed next steps", occurredAt: new Date("2026-10-10T09:00:00Z"), caseId: recent },
+    ]);
+
+    const result = await quietClientsService(db).list(companyId, { days: 30, limit: 10, now });
+
+    expect(result.total).toBe(2);
+    expect(result.clients.map((client) => client.title)).toEqual(["Heron rollout", "Wren lead"]);
+    expect(result.clients[0]).toMatchObject({
+      organisationName: "Heron Ltd",
+      stageName: "Proposal",
+      lastTouchLabel: "Call: Pricing call",
+      quietDays: 50,
+      href: expect.stringContaining(`/pipelines/${pipelineId}/items/${quiet}`),
+    });
+    expect(result.clients[1]).toMatchObject({ lastTouchAt: null, lastTouchLabel: null, quietDays: 47 });
   });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {

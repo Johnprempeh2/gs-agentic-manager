@@ -182,3 +182,27 @@ export interface CompanySearchExtractResponse {
   hasMore: boolean;
   truncated: boolean;
 }
+
+/** An open deal or lead with no note, call, meeting or email for a while. */
+export interface CompanyQuietClient {
+  caseId: string;
+  title: string;
+  pipelineId: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  /** When we last had a note, call, meeting or email; null when never. */
+  lastTouchAt: string | null;
+  /** What that last touch was: "Call: Pricing call". */
+  lastTouchLabel: string | null;
+  /** Whole days since the last touch, or since the deal was added when never. */
+  quietDays: number;
+  href: string;
+}
+
+export interface CompanyQuietClientsResponse {
+  days: number;
+  clients: CompanyQuietClient[];
+  /** Open deals and leads that went quiet, beyond the ones listed. */
+  total: number;
+}

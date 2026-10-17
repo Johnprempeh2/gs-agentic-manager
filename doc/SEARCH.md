@@ -141,6 +141,16 @@ the Search page shows these as chips on the "Clients and records" tab, and
 to Acme?" from the `activity` kind, newest first, and "Who is our contact at
 Acme?" from the `person` kind.
 
+## Clients that have gone quiet
+
+`GET /api/companies/:companyId/search/quiet-clients?days=30&limit=10` lists
+open deals and leads (in a working or review stage, not retired, hidden or
+archived) with no imported note, call, meeting or email on the deal or its
+organisation for `days` days (1 to 365), quietest first, with the last contact
+and how many days ago it was. A deal never contacted counts from when it was
+added. Stage changes do not count. Ask Everest answers "Which clients have gone
+quiet?" and "Who haven't we spoken to in 2 weeks?" from it.
+
 ## Reproduce the evaluation
 
 ```sh

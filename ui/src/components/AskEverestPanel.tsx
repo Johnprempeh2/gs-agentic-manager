@@ -27,6 +27,7 @@ import {
   answerStuck,
   answerHistory,
   answerPeople,
+  answerQuiet,
   answerSubject,
   answerFollowUp,
   classifyQuestion,
@@ -575,6 +576,12 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     enabled: active && recordQuery !== null,
     retry: false,
   });
+  const quiet = useQuery({
+    queryKey: ["ask-everest", companyId, "quiet-clients", intent.kind === "quiet" ? intent.days : null],
+    queryFn: () => searchApi.quietClients(companyId, { days: intent.kind === "quiet" ? intent.days : 30, limit: 8 }),
+    enabled: active && intent.kind === "quiet",
+    retry: false,
+  });
   const setLabel = taskSetLabel(intent);
   const set = useMemo(
     () => (setLabel && issues.data ? { about: setLabel, issues: issues.data } : undefined),
@@ -586,10 +593,12 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (intent.kind === "agent" && scorecard.isPending && !scorecard.isError)
     || ((intent.kind === "stuck" || intent.kind === "agent" || intent.kind === "subject" || intent.kind === "away") && issues.isPending)
     || (recordQuery !== null && records.isPending && !records.isError)
+    || (intent.kind === "quiet" && quiet.isPending)
     || (intent.kind === "away" && digest.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
     || (intent.kind === "away" && digest.error)
     || ((intent.kind === "history" || intent.kind === "people") && records.error)
+    || (intent.kind === "quiet" && quiet.error)
     || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
@@ -616,6 +625,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
     case "history":
       return { value: answerHistory(intent.subject ?? "", records.data?.results ?? []) };
+    case "quiet":
+      return { value: answerQuiet(quiet.data!) };
     case "people":
       return { value: answerPeople(intent.subject ?? "", records.data?.results ?? []) };
     default:
