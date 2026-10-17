@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PaperclipApiClient } from "./client.js";
+import { studioTools } from "./studio-tools.js";
 import { createToolDefinitions } from "./tools.js";
 
 function makeClient() {
@@ -13,7 +14,8 @@ function makeClient() {
 }
 
 function getTool(name: string) {
-  const tool = createToolDefinitions(makeClient()).find((candidate) => candidate.name === name);
+  const client = makeClient();
+  const tool = [...createToolDefinitions(client), ...studioTools(client)].find((candidate) => candidate.name === name);
   if (!tool) throw new Error(`Missing tool ${name}`);
   return tool;
 }
@@ -450,5 +452,36 @@ describe("paperclip MCP tools", () => {
     });
 
     expect(response.content[0]?.text).toContain("must not contain '..'");
+  });
+
+  it("makes several studio images with camera picks for the default company", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "img", status: "pending" }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getTool("studio_make_image").execute({
+      prompt: "A rooftop garden at dusk",
+      aspectRatio: "16:9",
+      camera: { lens: "classic-anamorphic", focalLength: 35 },
+      count: 2,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/generated-images");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual({
+      prompt: "A rooftop garden at dusk",
+      aspectRatio: "16:9",
+      camera: { lens: "classic-anamorphic", focalLength: 35 },
+    });
+    expect(JSON.parse(response.content[0]!.text).images).toHaveLength(2);
+  });
+
+  it("refuses an unknown studio lens before calling the server", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await getTool("studio_make_image").execute({ prompt: "A cat", camera: { lens: "fisheye" } });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.content[0]?.text).toMatch(/lens/i);
   });
 });

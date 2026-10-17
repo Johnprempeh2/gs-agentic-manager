@@ -6,10 +6,14 @@ import {
   HIGGSFIELD_API_KEYS_URL,
   imageShapeLabel,
   imageStyleLabel,
+  hasStudioCamera,
+  studioCameraLabel,
+  STUDIO_VARIATION_COUNTS,
   type GeneratedImage,
   type GeneratedImagesResponse,
   type ImageAspectRatio,
   type ImageStylePresetId,
+  type StudioCameraSettings,
 } from "@greatstone/shared";
 import {
   AlertCircle,
@@ -48,6 +52,7 @@ import {
 } from "@/components/ui/dialog";
 import { relativeTime } from "@/lib/utils";
 import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImagePromptFields } from "../components/ImagePromptFields";
+import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCameraFields";
 
 export { IMAGE_IDEA_STARTERS };
 
@@ -142,7 +147,7 @@ function ImageCard({
           {image.prompt}
         </p>
         <p className="text-xs text-muted-foreground">
-          {[imageStyleLabel(image.style), imageShapeLabel(image.aspectRatio), makerName, relativeTime(image.createdAt)]
+          {[imageStyleLabel(image.style), imageShapeLabel(image.aspectRatio), studioCameraLabel(image.camera), makerName, relativeTime(image.createdAt)]
             .filter(Boolean)
             .join(" · ")}
         </p>
@@ -188,6 +193,8 @@ export function Images() {
   const [prompt, setPrompt] = useState("");
   const [aspectRatio, setAspectRatio] = useState<ImageAspectRatio>("1:1");
   const [style, setStyle] = useState<ImageStylePresetId | null>(null);
+  const [camera, setCamera] = useState<StudioCameraSettings>({});
+  const [variations, setVariations] = useState<number>(1);
   const [organisationId, setOrganisationId] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -248,21 +255,33 @@ export function Images() {
   );
 
   const create = useMutation({
-    mutationFn: (input: {
+    mutationFn: async (input: {
       prompt: string;
       aspectRatio: ImageAspectRatio;
       style?: ImageStylePresetId | null;
+      camera?: StudioCameraSettings | null;
       organisationId?: string | null;
       issueId?: string | null;
-    }) => imagesApi.create(companyId, input),
-    onSuccess: (image) => {
-      // Show the new image straight away in every gallery view; the refetch settles filters.
+      count?: number;
+    }) => {
+      const { count = 1, ...body } = input;
+      // Each version is its own request, so one failure does not lose the rest.
+      const made: GeneratedImage[] = [];
+      for (let index = 0; index < count; index += 1) made.push(await imagesApi.create(companyId, body));
+      return made;
+    },
+    onSuccess: (made) => {
+      // Show the new images straight away in every gallery view; the refetch settles filters.
       queryClient.setQueriesData<GeneratedImagesResponse>({ queryKey: queryKeys.images.list(companyId) }, (current) =>
-        current ? { ...current, images: [image, ...current.images], total: current.total + 1 } : current,
+        current ? { ...current, images: [...[...made].reverse(), ...current.images], total: current.total + made.length } : current,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
     },
-    onError: (error) => pushToast({ title: errorMessage(error), tone: "error" }),
+    onError: (error) => {
+      // Versions asked for before the failure are still being made; show them.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
+      pushToast({ title: errorMessage(error), tone: "error" });
+    },
   });
 
   const remove = useMutation({
@@ -283,7 +302,14 @@ export function Images() {
   const submit = () => {
     if (!canSubmit) return;
     create.mutate(
-      { prompt: trimmed, aspectRatio, style, organisationId: organisationId || null },
+      {
+        prompt: trimmed,
+        aspectRatio,
+        style,
+        ...(hasStudioCamera(camera) ? { camera } : {}),
+        organisationId: organisationId || null,
+        count: variations,
+      },
       { onSuccess: () => setPrompt("") },
     );
   };
@@ -292,6 +318,7 @@ export function Images() {
     setPrompt(image.prompt);
     setAspectRatio(image.aspectRatio);
     setStyle(image.style);
+    setCamera(image.camera ?? {});
     setOrganisationId(image.organisation?.id ?? "");
     setOpenId(null);
     promptRef.current?.focus();
@@ -347,6 +374,34 @@ export function Images() {
           disabled={!configured}
         />
 
+        <StudioPromptBoosters prompt={prompt} onPromptChange={setPrompt} disabled={!configured} />
+        <StudioCameraFields idPrefix="image" camera={camera} onCameraChange={setCamera} disabled={!configured} />
+
+        <fieldset className="space-y-2" disabled={!configured}>
+          <legend className="text-sm font-medium">How many versions?</legend>
+          <div className="flex gap-2" role="radiogroup" aria-label="How many versions" data-testid="image-variations">
+            {STUDIO_VARIATION_COUNTS.map((count) => (
+              <button
+                key={count}
+                type="button"
+                role="radio"
+                aria-checked={variations === count}
+                onClick={() => setVariations(count)}
+                className={
+                  variations === count
+                    ? "min-w-10 rounded-md border border-primary bg-primary/10 px-3 py-1.5 text-sm ring-1 ring-primary"
+                    : "min-w-10 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-60"
+                }
+              >
+                {count}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            More versions give you more to choose from. Each one costs the same as a single image.
+          </p>
+        </fieldset>
+
         {organisations && organisations.length > 0 ? (
           <div className="space-y-2">
             <label htmlFor="image-client" className="text-sm font-medium">
@@ -380,7 +435,7 @@ export function Images() {
             ) : (
               <Wand2 className="h-4 w-4" aria-hidden="true" />
             )}
-            Make image
+            {variations > 1 ? `Make ${variations} images` : "Make image"}
           </Button>
         </div>
       </section>
@@ -445,6 +500,7 @@ export function Images() {
                     prompt: image.prompt,
                     aspectRatio: image.aspectRatio,
                     style: image.style,
+                    ...(image.camera ? { camera: image.camera } : {}),
                     organisationId: image.organisation?.id ?? null,
                     issueId: image.issue?.id ?? null,
                   })
@@ -468,7 +524,7 @@ export function Images() {
                 <img src={opened.contentPath} alt={opened.altText} className="max-h-(--sz-70vh) w-full rounded-md object-contain" />
               ) : null}
               <p className="text-xs text-muted-foreground">
-                {[imageStyleLabel(opened.style), imageShapeLabel(opened.aspectRatio), `Made by ${makerName(opened)}`, relativeTime(opened.createdAt)]
+                {[imageStyleLabel(opened.style), imageShapeLabel(opened.aspectRatio), studioCameraLabel(opened.camera), `Made by ${makerName(opened)}`, relativeTime(opened.createdAt)]
                   .filter(Boolean)
                   .join(" · ")}
               </p>

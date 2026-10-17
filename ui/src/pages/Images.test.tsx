@@ -37,6 +37,7 @@ function image(overrides: Partial<GeneratedImage>): GeneratedImage {
     prompt: "A lighthouse at dawn",
     aspectRatio: "16:9",
     style: null,
+    camera: null,
     provider: "higgsfield",
     model: "higgsfield-ai/soul/standard",
     status: "completed",
@@ -160,6 +161,50 @@ describe("Images page", () => {
       aspectRatio: "16:9",
       style: "greatstone-brand",
       organisationId: "org-1",
+    });
+  });
+
+  it("adds finishing touches and a camera look, and makes several versions", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.create.mockResolvedValue(image({ id: "image-4", status: "pending", contentPath: null, assetId: null }));
+    await render();
+
+    const textarea = container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement;
+    await act(async () => setTextarea(textarea, "A chef plating dessert"));
+    const golden = container.querySelector('[aria-label="Add golden hour"]') as HTMLButtonElement;
+    await act(async () => golden.click());
+    expect((container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement).value).toBe(
+      "A chef plating dessert, golden hour",
+    );
+    expect((container.querySelector('[aria-label="golden hour (added)"]') as HTMLButtonElement).disabled).toBe(true);
+
+    const filmStill = [...container.querySelectorAll('[aria-label="Camera looks"] button')].find(
+      (button) => button.textContent === "Film still",
+    ) as HTMLButtonElement;
+    await act(async () => filmStill.click());
+    expect(filmStill.getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector('[data-testid="studio-camera"] summary')?.textContent).toContain("Grand Format 70mm Film");
+
+    const four = [...container.querySelectorAll('[data-testid="image-variations"] [role="radio"]')].find(
+      (button) => button.textContent === "4",
+    ) as HTMLButtonElement;
+    await act(async () => four.click());
+    expect(container.querySelector('[data-testid="make-image"]')?.textContent).toContain("Make 4 images");
+    await act(async () => (container.querySelector('[data-testid="make-image"]') as HTMLButtonElement).click());
+    for (let index = 0; index < 5; index += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+    }
+
+    expect(imagesApiMock.create).toHaveBeenCalledTimes(4);
+    expect(imagesApiMock.create).toHaveBeenCalledWith("company-1", {
+      prompt: "A chef plating dessert, golden hour",
+      aspectRatio: "1:1",
+      style: null,
+      camera: { camera: "70mm-film", lens: "classic-anamorphic", focalLength: 35, aperture: "f1.4" },
+      organisationId: null,
     });
   });
 

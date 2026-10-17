@@ -2577,6 +2577,13 @@
       "when": 1792245197695,
       "tag": "0369_two_step_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 370,
+      "version": "7",
+      "when": 1792273979700,
+      "tag": "0370_image_studio_camera",
+      "breakpoints": true
     }
   ]
 }

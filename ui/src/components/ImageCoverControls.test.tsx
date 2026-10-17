@@ -19,6 +19,7 @@ function image(overrides: Partial<GeneratedImage> = {}): GeneratedImage {
     prompt: "Rocket on a launch pad",
     aspectRatio: "16:9",
     style: null,
+    camera: null,
     provider: "mock",
     model: "practice",
     status: "completed",

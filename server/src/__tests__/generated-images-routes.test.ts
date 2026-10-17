@@ -2,7 +2,13 @@ import request from "supertest";
 import { eq } from "drizzle-orm";
 import { activityLog, assets, generatedImages, issues, organisations } from "@greatstone/db";
 import { expect, it } from "vitest";
-import { IMAGE_STYLE_PRESETS, type GeneratedImage, type GeneratedImagesResponse } from "@greatstone/shared";
+import {
+  IMAGE_STYLE_PRESETS,
+  studioCameraWords,
+  type GeneratedImage,
+  type GeneratedImagesResponse,
+  type StudioCameraSettings,
+} from "@greatstone/shared";
 import { generatedImageRoutes } from "../routes/generated-images.js";
 import { waitForGeneratedImageJobs } from "../services/generated-images.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "../services/image-generation/types.js";
@@ -169,6 +175,42 @@ describeEmbeddedPostgres("generated images routes", () => {
       .post(`/api/companies/${companyId}/generated-images`)
       .send({ prompt: "Anything", style: "neon-cyberpunk" });
     expect(badStyle.status).toBe(400);
+  });
+
+  it("keeps the camera picks and sends their wording to the provider", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Images camera");
+    const { storage } = memoryStorage();
+    const seen: string[] = [];
+    const server = app(actor, storage, () =>
+      provider(async (input) => {
+        seen.push(input.prompt);
+        return { image: { bytes: PNG, contentType: "image/png" }, providerRequestId: null };
+      }),
+    );
+
+    const camera = { camera: "16mm-film", lens: "vintage-prime", focalLength: 50, aperture: "f4" };
+    const created = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A jazz trio in a smoky bar", camera });
+    expect(created.status).toBe(202);
+    expect(created.body).toMatchObject({ prompt: "A jazz trio in a smoky bar", camera });
+    const plain = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "A quiet library", camera: {} });
+    expect(plain.body.camera).toBeNull();
+    await waitForGeneratedImageJobs();
+
+    expect(seen).toContain(`A jazz trio in a smoky bar, ${studioCameraWords(camera as StudioCameraSettings)}`);
+    expect(seen).toContain("A quiet library");
+    const fetched = await request(server).get(`/api/generated-images/${created.body.id}`);
+    expect(fetched.body.camera).toEqual(camera);
+    const [requested] = await ctx.db.select().from(activityLog).where(eq(activityLog.entityId, created.body.id));
+    expect(requested?.details).toMatchObject({ camera });
+
+    const bad = await request(server)
+      .post(`/api/companies/${companyId}/generated-images`)
+      .send({ prompt: "Anything", camera: { focalLength: 40 } });
+    expect(bad.status).toBe(400);
   });
 
   it("uses an image as the cover of its task or client, one cover each", async () => {
