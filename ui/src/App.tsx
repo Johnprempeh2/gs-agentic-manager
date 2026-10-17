@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import type { ToolConnectionCredentialSource } from "@greatstone/shared";
 import { Navigate, Outlet, Route, Routes, useActiveCompanyPrefix, useLocation, useParams } from "@/lib/router";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ import { NotFoundPage } from "./pages/NotFound";
 import { useCompany } from "./context/CompanyContext";
 import { useDialogActions, useDialogState } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
+import { sharedTaskDefaults } from "./lib/share-target";
 import { UNPREFIXED_BOARD_ROOTS } from "./lib/company-routes";
 import { lazyPage } from "./lib/lazy-page";
 import {
@@ -325,6 +326,7 @@ function boardRoutes() {
       <Route path="issues/recent" element={<Navigate to="/issues" replace />} />
       <Route path="chats/:agentRef" element={<AgentChat />} />
       <Route path="messages/:chatId" element={<TeamChat />} />
+      <Route path="issues/new" element={<NewTaskRoute />} />
       <Route path="issues/:issueId" element={<IssueDetail />} />
       {import.meta.env.DEV ? (
         <Route path="tests/perf/long-thread" element={<IssueChatLongThreadPerf />} />
@@ -500,6 +502,23 @@ function AppsConnectEntryRoute({
   return canEnterAppsConnect(searchParams, { chatConnectorsEnabled })
     ? <AppsConnect credentialSource={credentialSource} />
     : <Navigate to="/apps" replace />;
+}
+
+/**
+ * `/issues/new`: the home screen New task shortcut, and where Android sends
+ * a page or text shared to GSAM. Opens the new task form, filled from what
+ * was shared, over the task list.
+ */
+function NewTaskRoute() {
+  const location = useLocation();
+  const { openNewIssue } = useDialogActions();
+  const opened = useRef(false);
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+    openNewIssue(sharedTaskDefaults(location.search));
+  }, [location.search, openNewIssue]);
+  return <Navigate to="/issues" replace />;
 }
 
 function InboxRootRedirect() {
