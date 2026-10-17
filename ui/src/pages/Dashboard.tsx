@@ -47,6 +47,7 @@ import type { Agent } from "@greatstone/shared";
 import { PluginSlotOutlet } from "@/plugins/slots";
 import { SmokeLabDashboardCard } from "../components/SmokeLabDashboardCard";
 import { DashboardCostCard } from "../components/DashboardCostCard";
+import { DashboardDealsCards } from "../components/DashboardDealsCards";
 import { ErrorState } from "../components/ErrorState";
 
 const DASHBOARD_ACTIVITY_LIMIT = 10;
@@ -593,6 +594,8 @@ export function Dashboard() {
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-4">
                 <DashboardCostCard companyId={selectedCompanyId!} />
               </div>
+
+              <DashboardDealsCards companyId={selectedCompanyId!} />
 
               <SmokeLabDashboardCard companyId={selectedCompanyId!} />
 
