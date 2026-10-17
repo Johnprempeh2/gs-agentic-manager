@@ -91,6 +91,7 @@ import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineExportButton } from "../components/DataExport";
 import { DealForecast } from "../components/DealForecast";
+import { DealsList } from "../components/DealsList";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
@@ -1680,6 +1681,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const [ownerFilter, setOwnerFilter] = useState<{ pipelineId: string; owner: string }>({ pipelineId, owner: ALL_OWNERS });
   // "Deals need a next step" in the header doubles as a filter, like Pipedrive's red deals.
   const [nextStepFilterPipelineId, setNextStepFilterPipelineId] = useState<string | null>(null);
+  // Pipedrive's list view for DevTools deals, per pipeline.
+  const [listViewPipelineId, setListViewPipelineId] = useState<string | null>(null);
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -2128,6 +2131,30 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <SelectItem value="builtFor">Built for</SelectItem>
             </SelectContent>
           </Select>
+          {isDevtoolsCaseType(pipeline.key) ? (
+            <div className="inline-flex rounded-md border border-border" role="group" aria-label="View">
+              <Button
+                type="button"
+                variant={listViewPipelineId === pipelineId ? "ghost" : "secondary"}
+                size="sm"
+                aria-pressed={listViewPipelineId !== pipelineId}
+                onClick={() => setListViewPipelineId(null)}
+              >
+                <Layers className="h-4 w-4" />
+                Board
+              </Button>
+              <Button
+                type="button"
+                variant={listViewPipelineId === pipelineId ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={listViewPipelineId === pipelineId}
+                onClick={() => setListViewPipelineId(pipelineId)}
+              >
+                <List className="h-4 w-4" />
+                List
+              </Button>
+            </div>
+          ) : null}
           <PipelineExportButton
             name={pipeline.name}
             pipelineId={pipelineId}
@@ -2155,6 +2182,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onSelectStage={(stageId) => navigate(`/pipelines/${pipelineId}/settings?stage=${stageId}`)}
       />
 
+      {listViewPipelineId === pipelineId && isDevtoolsCaseType(pipeline.key) ? (
+        <DealsList cases={boardCases} stages={orderedStages} />
+      ) : (
       <DndContext
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -2212,6 +2242,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           {activeCase ? <PipelineCaseCard caseItem={activeCase} isOverlay /> : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       <Dialog
         open={Boolean(pendingMove)}
