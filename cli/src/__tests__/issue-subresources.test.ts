@@ -139,6 +139,19 @@ describe("issue subresource commands", () => {
     ]);
   });
 
+  it("sets and clears a due date on create and update", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "create", "-C", COMPANY_ID, "--title", "Send proposal", "--due-date", "2026-10-24"]);
+    await run(["issue", "update", ISSUE_ID, "--due-date", "null"]);
+
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    expect(bodies[0]).toMatchObject({ title: "Send proposal", dueDate: "2026-10-24" });
+    expect(bodies[1]).toMatchObject({ dueDate: null });
+    await expect(run(["issue", "update", ISSUE_ID, "--due-date", "next week"])).rejects.toThrow();
+  });
+
   it("binds explicit uploaded attachments when adding a comment", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);

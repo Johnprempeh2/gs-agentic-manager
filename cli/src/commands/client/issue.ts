@@ -71,6 +71,7 @@ interface IssueCreateOptions extends BaseClientOptions {
   parentId?: string;
   requestDepth?: string;
   billingCode?: string;
+  dueDate?: string;
 }
 
 interface IssueUpdateOptions extends BaseClientOptions {
@@ -86,6 +87,7 @@ interface IssueUpdateOptions extends BaseClientOptions {
   billingCode?: string;
   comment?: string;
   hiddenAt?: string;
+  dueDate?: string;
 }
 
 interface IssueCommentOptions extends BaseClientOptions {
@@ -388,6 +390,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--parent-id <id>", "Parent issue ID")
       .option("--request-depth <n>", "Request depth integer")
       .option("--billing-code <code>", "Billing code")
+      .option("--due-date <date>", "Due date (YYYY-MM-DD)")
       .action(async (opts: IssueCreateOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
@@ -402,6 +405,7 @@ export function registerIssueCommands(program: Command): void {
             parentId: opts.parentId,
             requestDepth: parseOptionalInt(opts.requestDepth),
             billingCode: opts.billingCode,
+            dueDate: parseDueDate(opts.dueDate),
           });
 
           const created = await ctx.api.post<Issue>(apiPath`/api/companies/${ctx.companyId}/issues`, payload);
@@ -430,6 +434,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--billing-code <code>", "Billing code")
       .option("--comment <text>", "Optional comment to add with update")
       .option("--hidden-at <iso8601|null>", "Set hiddenAt timestamp or literal 'null'")
+      .option("--due-date <date|null>", "Due date (YYYY-MM-DD), or literal 'null' to clear it")
       .action(async (issueId: string, opts: IssueUpdateOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -446,6 +451,7 @@ export function registerIssueCommands(program: Command): void {
             billingCode: opts.billingCode,
             comment: opts.comment,
             hiddenAt: parseHiddenAt(opts.hiddenAt),
+            dueDate: parseDueDate(opts.dueDate),
           });
 
           const updated = await ctx.api.patch<Issue & { comment?: IssueComment | null }>(apiPath`/api/issues/${issueId}`, payload);
@@ -1680,6 +1686,12 @@ function parseOptionalInt(value: string | undefined): number | undefined {
     throw new Error(`Invalid integer value: ${value}`);
   }
   return parsed;
+}
+
+function parseDueDate(value: string | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim().toLowerCase() === "null") return null;
+  return value.trim();
 }
 
 function parseHiddenAt(value: string | undefined): string | null | undefined {

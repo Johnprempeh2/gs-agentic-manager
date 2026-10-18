@@ -398,6 +398,40 @@ export function registerAgentCommands(program: Command): void {
 
   addCommonClientOptions(
     agent
+      .command("today")
+      .description("One summary of what needs the current agent now: overdue and due tasks, blocked work, what others wait on, open approvals, failed runs and budget")
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const [me, inbox, waiting, approvals, failures] = await Promise.all([
+            ctx.api.get<Agent>("/api/agents/me"),
+            ctx.api.get<AgentTodayInboxRow[]>("/api/agents/me/inbox-lite"),
+            ctx.api.get<AgentTodayWaitingRow[]>("/api/agents/me/waiting-on-me"),
+            ctx.api.get<Array<{ id: string }>>("/api/agents/me/approvals"),
+            ctx.api.get<Array<{ id: string }>>("/api/agents/me/failed-runs?limit=5"),
+          ]);
+          const digest = agentTodayDigest({
+            inbox: inbox ?? [],
+            waiting: waiting ?? [],
+            openApprovals: approvals?.length ?? 0,
+            recentFailures: failures?.length ?? 0,
+            budgetMonthlyCents: me?.budgetMonthlyCents ?? 0,
+            spentMonthlyCents: me?.spentMonthlyCents ?? 0,
+            today: new Date().toISOString().slice(0, 10),
+          });
+          if (ctx.json) {
+            printOutput(digest, { json: true });
+            return;
+          }
+          for (const line of digest.lines) console.log(line);
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
       .command("failures")
       .description("Show the current agent's last failed runs and their errors")
       .option("--limit <n>", "How many to show (1 to 20)", "5")
@@ -1077,6 +1111,81 @@ function formatDollars(cents: number): string {
 }
 
 /** "Spent $12.40 of $50.00 this month (25%)"; a budget of 0 means no cap is set. */
+export interface AgentTodayInboxRow {
+  id: string;
+  identifier: string | null;
+  title: string;
+  status: string;
+  priority: string;
+  dueDate?: string | null;
+}
+
+export interface AgentTodayWaitingRow {
+  issue: { id: string; identifier: string | null; title: string };
+  waitingCount: number;
+}
+
+function taskLabel(row: { identifier: string | null; title: string }) {
+  return row.identifier ? `${row.identifier} ${row.title}` : row.title;
+}
+
+// Builds the "what needs me now" summary from the agent's own endpoints, most
+// pressing first, so an agent can plan a heartbeat from one call.
+export function agentTodayDigest(input: {
+  inbox: AgentTodayInboxRow[];
+  waiting: AgentTodayWaitingRow[];
+  openApprovals: number;
+  recentFailures: number;
+  budgetMonthlyCents: number;
+  spentMonthlyCents: number;
+  today: string;
+}) {
+  const open = input.inbox.filter((row) => row.status !== "done" && row.status !== "cancelled");
+  const overdue = open
+    .filter((row) => row.dueDate && row.dueDate < input.today)
+    .sort((a, b) => (a.dueDate ?? "").localeCompare(b.dueDate ?? ""));
+  const dueToday = open.filter((row) => row.dueDate === input.today);
+  const blocked = open.filter((row) => row.status === "blocked");
+  const inProgress = open.filter((row) => row.status === "in_progress");
+  const todo = open.filter((row) => row.status === "todo");
+  const waiting = [...input.waiting].sort((a, b) => b.waitingCount - a.waitingCount);
+  const budget = agentBudgetSummary(input.budgetMonthlyCents, input.spentMonthlyCents);
+
+  const lines: string[] = [];
+  lines.push(`Open tasks: ${inProgress.length} in progress, ${todo.length} to do, ${blocked.length} blocked.`);
+  for (const row of overdue) lines.push(`Overdue since ${row.dueDate}: ${taskLabel(row)}`);
+  for (const row of dueToday) lines.push(`Due today: ${taskLabel(row)}`);
+  for (const row of waiting.slice(0, 5)) {
+    lines.push(`${row.waitingCount} ${row.waitingCount === 1 ? "task waits" : "tasks wait"} on: ${taskLabel(row.issue)}`);
+  }
+  for (const row of blocked) lines.push(`Blocked: ${taskLabel(row)}`);
+  if (input.openApprovals > 0) {
+    lines.push(`${input.openApprovals} approval ${input.openApprovals === 1 ? "request is" : "requests are"} still open (gsam agent approvals).`);
+  }
+  if (input.recentFailures > 0) {
+    lines.push(`${input.recentFailures} recent failed ${input.recentFailures === 1 ? "run" : "runs"}; read them before retrying (gsam agent failures).`);
+  }
+  lines.push(budget.text);
+  if (open.length === 0) lines.push("Nothing is assigned to you right now.");
+
+  return {
+    counts: {
+      inProgress: inProgress.length,
+      todo: todo.length,
+      blocked: blocked.length,
+      overdue: overdue.length,
+      dueToday: dueToday.length,
+      waitedOn: waiting.length,
+      openApprovals: input.openApprovals,
+      recentFailures: input.recentFailures,
+    },
+    overdue: overdue.map((row) => ({ id: row.id, identifier: row.identifier, title: row.title, dueDate: row.dueDate })),
+    dueToday: dueToday.map((row) => ({ id: row.id, identifier: row.identifier, title: row.title })),
+    budget,
+    lines,
+  };
+}
+
 export function agentBudgetSummary(budgetMonthlyCents: number, spentMonthlyCents: number) {
   const budget = Math.max(0, budgetMonthlyCents);
   const spent = Math.max(0, spentMonthlyCents);
