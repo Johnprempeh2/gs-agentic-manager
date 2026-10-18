@@ -197,6 +197,8 @@ export const createGeneratedImageSchema = z.object({
   style: z.enum(IMAGE_STYLE_IDS).nullable().optional(),
   /** Cinema camera picks (camera, lens, focal length, aperture); their wording is added to the prompt. */
   camera: studioCameraSchema.nullable().optional(),
+  /** A saved house look; its style, camera and words fill in what the request leaves out. */
+  lookId: z.string().uuid().nullable().optional(),
   /** The task the image is for, when it is made from a task. */
   issueId: z.string().uuid().nullable().optional(),
   /** The client the image is for. */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CLIENT_RECORD_FIELD_KEYS, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
+import { CLIENT_RECORD_FIELD_KEYS, averageDaysInStage, dealNextStepLabel, dealWinRate, dealsClosedThisMonth, forecastByCloseMonth, formatDealTotals, isDevtoolsCaseType, readCardSummary, readClientRecord, readDevtoolsDeal, sumDealValues, weightedDealValues } from "./client-case";
 
 describe("readClientRecord", () => {
   it("shows the deal owner from a Pipedrive or HubSpot import as the owner", () => {
@@ -113,5 +113,38 @@ describe("forecastByCloseMonth", () => {
       ["Later", 1, 5000, 2500],
       ["No close date", 1, 6000, 3000],
     ]);
+  });
+});
+
+describe("dealWinRate and averageDaysInStage", () => {
+  const now = new Date("2026-10-17T12:00:00Z");
+  it("counts deals won and lost in the last 90 days", () => {
+    expect(
+      dealWinRate(
+        [
+          { fields: { dealStatus: "Won", wonOn: "2026-10-01" } },
+          { fields: { dealStatus: "Won", wonOn: "2026-05-01" } },
+          { fields: { dealStatus: "Lost", lostOn: "2026-09-20" } },
+          { fields: { dealStatus: "Lost", lostOn: "2026-08-20" } },
+          { fields: { dealStatus: "Open" } },
+        ],
+        now,
+      ),
+    ).toEqual({ won: 1, lost: 2, percent: 33 });
+    expect(dealWinRate([{ fields: { dealStatus: "Open" } }], now)).toBeNull();
+  });
+
+  it("averages the days in stage", () => {
+    expect(averageDaysInStage([{ stageEnteredAt: "2026-10-07T12:00:00Z" }, { stageEnteredAt: "2026-10-14T12:00:00Z" }, {}], now)).toBe(7);
+    expect(averageDaysInStage([{}], now)).toBeNull();
+  });
+});
+
+describe("dealNextStepLabel", () => {
+  it("shows the next step date and subject for a card", () => {
+    const day = (value: string) => `day ${value}`;
+    expect(dealNextStepLabel({ nextActivityDate: "2026-10-20", nextActivitySubject: "Demo call" }, day)).toBe("day 2026-10-20 · Demo call");
+    expect(dealNextStepLabel({ nextActivityDate: "2026-10-20T09:00:00Z" }, day)).toBe("day 2026-10-20");
+    expect(dealNextStepLabel({ nextActivitySubject: "Demo" }, day)).toBeNull();
   });
 });

@@ -236,7 +236,7 @@ export function Projects() {
               <span className="sr-only sm:hidden">Download as spreadsheet</span>
             </Button>
           ) : null}
-          <Button size="sm" variant="outline" onClick={openNewProject}>
+          <Button size="sm" variant="outline" onClick={() => openNewProject()}>
             <Plus className="h-4 w-4 mr-1" />
             Add project
           </Button>
@@ -251,7 +251,7 @@ export function Projects() {
           message="No projects yet."
           description="A project groups related tasks, like a client engagement or a launch, so you can see progress in one place."
           action="Add project"
-          onAction={openNewProject}
+          onAction={() => openNewProject()}
         />
       )}
 

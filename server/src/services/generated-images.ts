@@ -24,6 +24,7 @@ import { notFound, tooManyRequests, unprocessable } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 import { logActivity } from "./activity-log.js";
+import { applyStudioLook } from "./studio-looks.js";
 import { resolveImageGenerationProvider } from "./image-generation/registry.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "./image-generation/types.js";
 
@@ -292,6 +293,8 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
 
     create: async (companyId: string, input: CreateGeneratedImage, actor: GeneratedImageActor) => {
       const parsed = createGeneratedImageSchema.parse(input);
+      const look = parsed.lookId ? await applyStudioLook(db, companyId, parsed.lookId, parsed) : null;
+      if (look) Object.assign(parsed, { prompt: look.prompt, style: look.style, camera: look.camera });
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
       const provider = resolveProvider();
@@ -347,6 +350,7 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
           aspectRatio: parsed.aspectRatio,
           style: parsed.style ?? null,
           camera: hasStudioCamera(parsed.camera) ? parsed.camera : null,
+          lookId: look?.lookId ?? null,
           issueId,
           organisationId,
         },

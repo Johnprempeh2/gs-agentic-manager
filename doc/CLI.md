@@ -1013,6 +1013,9 @@ npx gsam image list --company-id <company-id> [--limit 20]
 # files, organisations, people, deals and leads, products, imported Pipedrive notes
 # and calls, and generated images. Each result prints what it is, its link and the matching text.
 npx gsam search <words...> --company-id <company-id> [--scope all|issues|comments|documents|artifacts|files|records|agents|projects] [--kind organisation,person,client,product,image,activity] [--limit 10] [--json]
+
+# Open deals and leads with no note, call, meeting or email for a while, quietest first.
+npx gsam quiet-clients --company-id <company-id> [--days 30] [--limit 10] [--json]
 ```
 
 ```sh

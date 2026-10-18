@@ -26,8 +26,10 @@ import {
   type BaseClientOptions,
   type ResolvedClientContext,
 } from "./common.js";
+import { resolveLookId } from "./look.js";
 
 interface ImageGenerateOptions extends BaseClientOptions {
+  look?: string;
   prompt?: string;
   shape?: string;
   style?: string;
@@ -95,6 +97,7 @@ export function registerImageCommands(program: Command): void {
       .option("--lens <lens>", `Optional lens: ${LENS_HELP}`)
       .option("--focal <mm>", `Optional focal length in mm: ${FOCAL_HELP}`)
       .option("--aperture <f>", `Optional aperture: ${APERTURE_HELP}`)
+      .option("--look <name>", "Use a saved house look (see gsam look list); your own flags win")
       .option("--count <n>", `How many versions to make, 1 to ${STUDIO_MAX_VARIATIONS}`, "1")
       .option("--out <path>", "Also save the finished image to this file (with --count, a number is added)")
       .option("--no-wait", "Return as soon as the request is accepted")
@@ -107,6 +110,7 @@ export function registerImageCommands(program: Command): void {
           const style = opts.style?.trim() ? parseImageStyle(opts.style) : null;
           if (opts.style?.trim() && !style) throw new Error(`Unknown style "${opts.style}". Use one of: ${STYLE_HELP}`);
           const camera = cameraFromOptions(opts);
+          const lookId = await resolveLookId(ctx, opts.look);
           const count = Number(opts.count ?? "1");
           if (!Number.isInteger(count) || count < 1 || count > STUDIO_MAX_VARIATIONS) {
             throw new Error(`--count must be a whole number from 1 to ${STUDIO_MAX_VARIATIONS}`);
@@ -121,6 +125,7 @@ export function registerImageCommands(program: Command): void {
                 aspectRatio,
                 ...(style ? { style } : {}),
                 ...(camera ? { camera } : {}),
+                ...(lookId ? { lookId } : {}),
                 ...(issueId ? { issueId } : {}),
               },
             );
@@ -250,7 +255,7 @@ export async function waitForImage(
   }
 }
 
-function authHeaders(ctx: ResolvedClientContext): Record<string, string> {
+export function authHeaders(ctx: ResolvedClientContext): Record<string, string> {
   const headers: Record<string, string> = {};
   if (ctx.api.apiKey) headers.authorization = `Bearer ${ctx.api.apiKey}`;
   if (ctx.api.runId) headers["x-paperclip-run-id"] = ctx.api.runId;
@@ -302,7 +307,7 @@ export function numberedPath(path: string, number: number): string {
   return `${path.slice(0, dot)}-${number}${path.slice(dot)}`;
 }
 
-function buildApiUrl(apiBase: string, path: string): string {
+export function buildApiUrl(apiBase: string, path: string): string {
   const url = new URL(apiBase);
   url.pathname = `${url.pathname.replace(/\/+$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
   return url.toString();

@@ -145,7 +145,7 @@ export function CompanyAccess() {
     onError: (error) => {
       pushToast({
         title: "Your change to this person was not saved",
-        body: error instanceof Error ? error.message : "Unknown error",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },
@@ -163,7 +163,7 @@ export function CompanyAccess() {
     onError: (error) => {
       pushToast({
         title: "Could not let them in",
-        body: error instanceof Error ? error.message : "Unknown error",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },
@@ -181,7 +181,7 @@ export function CompanyAccess() {
     onError: (error) => {
       pushToast({
         title: "Could not turn down the request",
-        body: error instanceof Error ? error.message : "Unknown error",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },
@@ -201,7 +201,7 @@ export function CompanyAccess() {
     onError: (error) => {
       pushToast({
         title: "Could not restore access",
-        body: error instanceof Error ? error.message : "Unknown error",
+        body: error instanceof Error ? error.message : "Something went wrong. Try again.",
         tone: "error",
       });
     },

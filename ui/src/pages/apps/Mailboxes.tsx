@@ -542,6 +542,12 @@ export function Mailboxes() {
     Number(draft.port) > 0 &&
     draft.password &&
     !connect.isPending;
+  const missingForConnect = [
+    draft.address.includes("@") ? null : "email address",
+    draft.host.trim() ? null : "server",
+    Number(draft.port) > 0 ? null : "port",
+    draft.password ? null : "password",
+  ].filter((item): item is string => item !== null);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 p-6">
@@ -693,6 +699,9 @@ export function Mailboxes() {
               {connect.error.message}
             </p>
           )}
+          {missingForConnect.length > 0 ? (
+            <p className="text-xs text-muted-foreground">Still needed: {missingForConnect.join(", ")}.</p>
+          ) : null}
           <div className="flex gap-2">
             <Button type="submit" disabled={!canSubmit}>
               {connect.isPending && <Loader2 className="size-4 animate-spin" aria-hidden="true" />}

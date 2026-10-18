@@ -716,7 +716,8 @@ See [the API reference](references/api-reference.md#questions-and-waiting-for-hu
 comments, docs, words inside uploaded files, clients, organisations, people, deals, imported
 Pipedrive notes and calls, and images (`--scope records` for clients and people only,
 `--kind person,activity` for only people and Pipedrive notes, `--scope files` for file
-contents, `--json` for the full result).
+contents, `--json` for the full result). `gsam quiet-clients` lists open deals nobody has
+contacted for 30 days (`--days 14` to change it), so you know who to follow up.
 
 **Images.** Load `references/images.md` when a task asks you to make a picture (a social
 post, a slide or banner visual, an illustration). GSAM makes it from your

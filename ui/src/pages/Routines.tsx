@@ -938,6 +938,7 @@ export function Routines() {
                 ref={titleInputRef}
                 className="w-full resize-none overflow-hidden bg-transparent text-xl font-semibold outline-none placeholder:text-subtle-foreground"
                 placeholder="Routine title"
+                aria-label="Routine title"
                 {...noContactAutofill("routine")}
                 rows={1}
                 value={draft.title}
@@ -1093,7 +1094,7 @@ export function Routines() {
                 contentClassName="min-h-(--sz-160px) text-sm text-muted-foreground"
                 mentions={mentionOptions}
                 onSubmit={() => {
-                  if (!createRoutine.isPending && draft.title.trim() && draft.projectId && draft.assigneeAgentId) {
+                  if (!createRoutine.isPending && draft.title.trim()) {
                     createRoutine.mutate();
                   }
                 }}
@@ -1166,9 +1167,12 @@ export function Routines() {
                 <Plus className="mr-2 h-4 w-4" />
                 {createRoutine.isPending ? "Creating..." : "Create routine"}
               </Button>
+              {!draft.title.trim() ? (
+                <p className="text-xs text-muted-foreground">Give the routine a title to create it.</p>
+              ) : null}
               {createRoutine.isError ? (
-                <p className="text-sm text-destructive">
-                  {createRoutine.error instanceof Error ? createRoutine.error.message : "Failed to create routine"}
+                <p role="alert" className="text-sm text-destructive">
+                  {createRoutine.error instanceof Error ? createRoutine.error.message : "We couldn't create this routine. Try again."}
                 </p>
               ) : null}
             </div>

@@ -51,6 +51,7 @@ type PipelineCase = {
   childCount?: number;
   terminalChildCount?: number;
   pendingSuggestion?: JsonObject | null;
+  fields?: JsonObject | null;
 };
 
 type CaseListRow = {
@@ -123,6 +124,11 @@ interface CasesOptions extends PipelineOptions {
   q?: string;
 }
 
+interface DealsDueOptions extends PipelineOptions {
+  days?: string;
+  unscheduled?: boolean;
+}
+
 interface EditOptions extends PipelineOptions {
   expectedVersion?: string;
   title?: string;
@@ -192,6 +198,56 @@ interface ReviewInboxOptions extends PipelineOptions {
 
 interface ReviewBulkOptions extends PipelineOptions {
   file: string;
+}
+
+export type DealDue = {
+  caseId: string;
+  pipelineId: string;
+  pipelineName: string;
+  title: string;
+  stage: string;
+  nextActivityDate: string | null;
+  nextActivitySubject: string | null;
+};
+
+function fieldString(fields: JsonObject | null | undefined, key: string): string | null {
+  const value = fields?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/**
+ * Open Pipedrive deals whose next step is due on or before `until`
+ * (YYYY-MM-DD), oldest first; with `unscheduled`, also open deals with no
+ * next step at all. Won, lost and closed-stage deals are left out.
+ */
+export function selectDealsDue(
+  pipelines: Array<{ id: string; name: string; rows: CaseListRow[] }>,
+  until: string,
+  unscheduled = false,
+): DealDue[] {
+  const due: DealDue[] = [];
+  for (const pipeline of pipelines) {
+    for (const row of pipeline.rows) {
+      const fields = row.case.fields ?? null;
+      if (!fields || !("dealStatus" in fields)) continue;
+      if (row.stage.kind === "done" || row.stage.kind === "cancelled") continue;
+      const status = fieldString(fields, "dealStatus")?.toLowerCase();
+      if (status && status !== "open") continue;
+      const date = fieldString(fields, "nextActivityDate")?.slice(0, 10) ?? null;
+      if (date ? date > until : !unscheduled) continue;
+      due.push({
+        caseId: row.case.id,
+        pipelineId: pipeline.id,
+        pipelineName: pipeline.name,
+        title: row.case.title,
+        stage: row.stage.name,
+        nextActivityDate: date,
+        nextActivitySubject: date ? fieldString(fields, "nextActivitySubject") : null,
+      });
+    }
+  }
+  return due.sort((left, right) =>
+    (left.nextActivityDate ?? "9999").localeCompare(right.nextActivityDate ?? "9999") || left.title.localeCompare(right.title));
 }
 
 export function registerPipelineCommands(program: Command): void {
@@ -381,6 +437,33 @@ export function registerPipelineCommands(program: Command): void {
         const query = params.toString();
         const rows = await ctx.api.get<CaseListRow[]>(`${apiPath`/api/pipelines/${pipelineId}/cases`}${query ? `?${query}` : ""}`) ?? [];
         printCases(rows, ctx);
+      })),
+  );
+
+  addPipelineOptions(
+    pipelines
+      .command("deals-due")
+      .description("List open Pipedrive deals whose next step is due today or late, across the DevTools pipelines")
+      .option("--days <n>", "Also include next steps due in the next N days", "0")
+      .option("--unscheduled", "Also include open deals with no next step booked")
+      .action((opts: DealsDueOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        const days = Number(opts.days ?? "0");
+        if (!Number.isInteger(days) || days < 0) throw new Error("--days must be a whole number of 0 or more");
+        const until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const all = await ctx.api.get<PipelineSummary[]>(apiPath`/api/companies/${ctx.companyId}/pipelines`) ?? [];
+        const dealPipelines = all.filter((pipeline) => pipeline.key.startsWith("pipedrive-") && pipeline.key !== "pipedrive-leads");
+        const loaded = await Promise.all(dealPipelines.map(async (pipeline) => ({
+          id: pipeline.id,
+          name: pipeline.name,
+          rows: await ctx.api.get<CaseListRow[]>(apiPath`/api/pipelines/${pipeline.id}/cases`) ?? [],
+        })));
+        const due = selectDealsDue(loaded, until, Boolean(opts.unscheduled));
+        if (ctx.json) return printOutput(due, { json: true });
+        if (due.length === 0) return console.log("No open deal has a next step due.");
+        due.forEach((deal) => console.log(
+          `${deal.nextActivityDate ?? "no next step"}  ${deal.title}${deal.nextActivitySubject ? `: ${deal.nextActivitySubject}` : ""}  ${pc.dim(`${deal.pipelineName} / ${deal.stage} / ${deal.caseId}`)}`,
+        ));
       })),
   );
 

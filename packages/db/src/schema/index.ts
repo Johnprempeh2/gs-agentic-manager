@@ -150,6 +150,8 @@ export { issueReadStates } from "./issue_read_states.js";
 export { assets } from "./assets.js";
 export { assetTexts } from "./asset_texts.js";
 export { generatedImages } from "./generated_images.js";
+export { generatedVideos } from "./generated_videos.js";
+export { studioLooks } from "./studio_looks.js";
 export { issueAttachments } from "./issue_attachments.js";
 export { documents } from "./documents.js";
 export { documentRevisions } from "./document_revisions.js";

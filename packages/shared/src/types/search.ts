@@ -182,3 +182,50 @@ export interface CompanySearchExtractResponse {
   hasMore: boolean;
   truncated: boolean;
 }
+
+/** An open deal or lead with no note, call, meeting or email for a while. */
+export interface CompanyQuietClient {
+  caseId: string;
+  title: string;
+  pipelineId: string;
+  pipelineName: string;
+  stageName: string;
+  organisationName: string | null;
+  /** When we last had a note, call, meeting or email; null when never. */
+  lastTouchAt: string | null;
+  /** What that last touch was: "Call: Pricing call". */
+  lastTouchLabel: string | null;
+  /** Whole days since the last touch, or since the deal was added when never. */
+  quietDays: number;
+  href: string;
+}
+
+export interface CompanyQuietClientsResponse {
+  days: number;
+  clients: CompanyQuietClient[];
+  /** Open deals and leads that went quiet, beyond the ones listed. */
+  total: number;
+}
+
+/** One imported note, call, meeting or email, with the client it belongs to. */
+export interface CompanyClientActivity {
+  id: string;
+  /** "Call", "Meeting", "Note", "Email". */
+  kindLabel: string;
+  title: string;
+  /** The deal or organisation it belongs to. */
+  clientName: string | null;
+  ownerName: string | null;
+  occurredAt: string;
+  href: string;
+}
+
+export interface CompanyRecentClientActivityResponse {
+  days: number;
+  activity: CompanyClientActivity[];
+  total: number;
+  /** How many distinct deals or organisations had contact. */
+  clientCount: number;
+  /** Counts by kind label, largest first: [["Call", 4], ["Note", 2]]. */
+  byKind: Array<[string, number]>;
+}

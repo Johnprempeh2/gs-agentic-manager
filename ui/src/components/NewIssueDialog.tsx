@@ -202,6 +202,7 @@ import {
   type IssueModelLane,
 } from "../lib/issue-assignee-overrides";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { useConfirm } from "@/context/ConfirmContext";
 
 const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
 
@@ -409,6 +410,7 @@ const IssueTitleTextarea = memo(function IssueTitleTextarea({
     <textarea
       className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-subtle-foreground"
       placeholder="Task title"
+      aria-label="Task title"
       {...noContactAutofill("task")}
       rows={1}
       value={draftValue}
@@ -487,6 +489,7 @@ const IssueDescriptionEditor = memo(function IssueDescriptionEditor({
 });
 
 export function NewIssueDialog() {
+  const confirm = useConfirm();
   const { visible: workspaceIsolationControlsVisible } = useWorkspaceIsolationControls();
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
   const visualViewportLayout = useVisualViewportLayout(newIssueOpen);
@@ -1081,7 +1084,14 @@ export function NewIssueDialog() {
     setWorkMode("standard");
   }
 
-  function discardDraft() {
+  async function discardDraft() {
+    const confirmed = await confirm({
+      title: "Discard this task draft?",
+      description: "What you have typed will be deleted. This cannot be undone.",
+      confirmLabel: "Discard draft",
+      tone: "destructive",
+    });
+    if (!confirmed) return;
     clearDraft();
     reset();
     closeNewIssue();
@@ -1339,7 +1349,7 @@ export function NewIssueDialog() {
   const canDiscardDraft = hasDraft || hasSavedDraft;
   const createIssueErrorMessage =
     createIssue.error instanceof Error
-      ? `We could not create this task. Your draft is kept, so please try again. (${createIssue.error.message})`
+      ? `We could not create this task. Your draft is kept, so please try again. ${createIssue.error.message}`
       : "We could not create this task. Your draft is kept, so please try again.";
   const stagedDocuments = stagedFiles.filter((file) => file.kind === "document");
   const stagedAttachments = stagedFiles.filter((file) => file.kind === "attachment");
@@ -2484,14 +2494,14 @@ export function NewIssueDialog() {
             variant="ghost"
             size="sm"
             className="text-muted-foreground"
-            onClick={discardDraft}
+            onClick={() => void discardDraft()}
             disabled={createIssue.isPending || !canDiscardDraft}
           >
-            Discard Draft
+            Discard draft
           </Button>
           <div className="flex items-center gap-3">
             {createIssue.isError ? (
-              <div className="min-h-5 text-right">
+              <div role="alert" className="min-h-5 text-right">
                 <span className="text-xs text-destructive">{createIssueErrorMessage}</span>
               </div>
             ) : null}

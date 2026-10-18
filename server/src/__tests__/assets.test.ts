@@ -446,6 +446,32 @@ describe("GET /api/assets/:assetId/content", () => {
     expect(res.headers["content-security-policy"]).toBe("sandbox; default-src 'none'");
   });
 
+  it("serves a byte range so video players can seek", async () => {
+    const clip = Buffer.from("0123456789");
+    const storage = createStorageService("video/mp4");
+    getAssetByIdMock.mockResolvedValue({ ...createAsset(), contentType: "video/mp4", byteSize: clip.byteLength, originalFilename: "clip.mp4" });
+    vi.mocked(storage.getObject).mockImplementation(async (_companyId, _key, options) => ({
+      stream: Readable.from(options?.range ? clip.subarray(options.range.start, options.range.end + 1) : clip),
+      contentType: "video/mp4",
+    }));
+    const app = await createApp(storage);
+
+    const partial = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/assets/asset-1/content").set("Range", "bytes=2-5"));
+    expect(partial.status).toBe(206);
+    expect(partial.headers["content-range"]).toBe("bytes 2-5/10");
+    expect(partial.headers["content-length"]).toBe("4");
+    expect(partial.headers["accept-ranges"]).toBe("bytes");
+    expect(vi.mocked(storage.getObject)).toHaveBeenLastCalledWith(expect.any(String), expect.any(String), { range: { start: 2, end: 5 } });
+
+    const bad = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/assets/asset-1/content").set("Range", "bytes=20-30"));
+    expect(bad.status).toBe(416);
+    expect(bad.headers["content-range"]).toBe("bytes */10");
+
+    const full = await requestApp(app, (baseUrl) => request(baseUrl).get("/api/assets/asset-1/content"));
+    expect(full.status).toBe(200);
+    expect(full.headers["content-length"]).toBe("10");
+  });
+
   it("downloads SVG instead of rendering it on the application origin", async () => {
     const svg = Buffer.from("<svg xmlns='http://www.w3.org/2000/svg'><circle r='4'/></svg>");
     const storage = createStorageService("image/svg+xml; charset=utf-8");

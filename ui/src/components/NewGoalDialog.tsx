@@ -29,6 +29,7 @@ import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
+import { useConfirm } from "@/context/ConfirmContext";
 
 const levelLabels: Record<string, string> = {
   company: "Organisation",
@@ -38,6 +39,7 @@ const levelLabels: Record<string, string> = {
 };
 
 export function NewGoalDialog() {
+  const confirm = useConfirm();
   const { newGoalOpen, newGoalDefaults, closeNewGoal } = useDialog();
   const { selectedCompanyId, selectedCompany } = useCompany();
   const queryClient = useQueryClient();
@@ -115,14 +117,26 @@ export function NewGoalDialog() {
 
   const currentParent = (goals ?? []).find((g) => g.id === appliedParentId);
 
+  async function requestClose() {
+    if (title.trim() || description.trim()) {
+      const confirmed = await confirm({
+        title: "Discard this goal?",
+        description: "What you have typed will be lost.",
+        confirmLabel: "Discard goal",
+        cancelLabel: "Keep editing",
+        tone: "destructive",
+      });
+      if (!confirmed) return;
+    }
+    reset();
+    closeNewGoal();
+  }
+
   return (
     <Dialog
       open={newGoalOpen}
       onOpenChange={(open) => {
-        if (!open) {
-          reset();
-          closeNewGoal();
-        }
+        if (!open) void requestClose();
       }}
     >
       <DialogContent
@@ -161,7 +175,7 @@ export function NewGoalDialog() {
               variant="ghost"
               size="icon-xs"
               className="text-muted-foreground"
-              onClick={() => { reset(); closeNewGoal(); }}
+              onClick={() => void requestClose()}
             >
               <span className="text-lg leading-none">&times;</span>
             </Button>
@@ -173,6 +187,7 @@ export function NewGoalDialog() {
           <input
             className="w-full text-lg font-semibold bg-transparent outline-none placeholder:text-subtle-foreground"
             placeholder="Goal title"
+            aria-label="Goal title"
             {...noContactAutofill("goal")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}

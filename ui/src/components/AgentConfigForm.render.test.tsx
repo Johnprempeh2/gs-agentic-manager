@@ -2473,7 +2473,7 @@ describe("AgentConfigForm environment selector", () => {
     );
     setInputValue(input!, "BROWSERCODE-9");
     await flushReact();
-    await clickByText(result.container, "Submit");
+    await clickByText(result.container, "Send code");
     await flushReact();
 
     expect(mockAgentsApi.submitClaudeSetupTokenBrowserCode).toHaveBeenCalledWith(

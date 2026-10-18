@@ -42,6 +42,14 @@ function applyObservabilityHeaders(headers: Headers) {
   }
 }
 
+/** A request that never reached the server. */
+export class NetworkError extends TypeError {
+  constructor() {
+    super("We couldn't reach the server. Check your connection and try again.");
+    this.name = "NetworkError";
+  }
+}
+
 /**
  * What to tell a person when the server failed without saying why. Kept in
  * plain words because these reach error banners and toasts as they are.
@@ -65,11 +73,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   applyObservabilityHeaders(headers);
 
-  const res = await fetch(`${BASE}${path}`, {
-    headers,
-    credentials: "include",
-    ...init,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      headers,
+      credentials: "include",
+      ...init,
+    });
+  } catch (error) {
+    // The browser's own wording ("Failed to fetch", "Load failed") reaches
+    // dialogs as it is, so say what happened instead. Still a TypeError, so
+    // connection-lost detection keeps working.
+    if (error instanceof TypeError) throw new NetworkError();
+    throw error;
+  }
   if (!res.ok) {
     const errorBody = await res.json().catch(() => null);
     const recovery = tenantSessionRecovery.recoverIfNeeded(res.status, errorBody);

@@ -14,6 +14,7 @@ import {
   MAX_ATTACHMENT_BYTES,
 } from "../attachment-types.js";
 import { assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { parseByteRangeHeader } from "./byte-range.js";
 const SVG_CONTENT_TYPE = "image/svg+xml";
 const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
   "image/png",
@@ -329,13 +330,33 @@ export function assetRoutes(db: Db, storage: StorageService) {
     const asset = await getAccessibleResource(req, res, svc.getById(assetId), "Asset not found");
     if (!asset) return;
 
-    const object = await storage.getObject(asset.companyId, asset.objectKey);
+    // Video players (Safari above all) ask for byte ranges; a full read stays the default.
+    const range = asset.byteSize > 0
+      ? parseByteRangeHeader(typeof req.headers.range === "string" ? req.headers.range : undefined, asset.byteSize)
+      : ({ kind: "none" } as const);
+    res.setHeader("Accept-Ranges", "bytes");
+    if (range.kind === "invalid") {
+      res.setHeader("Content-Range", `bytes */${asset.byteSize}`);
+      res.status(416).end();
+      return;
+    }
+    const object = await storage.getObject(
+      asset.companyId,
+      asset.objectKey,
+      range.kind === "range" ? { range: { start: range.start, end: range.end } } : undefined,
+    );
     const responseContentType = asset.contentType || object.contentType || "application/octet-stream";
     const mediaType = responseContentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
     const inlineSafe = mediaType !== SVG_CONTENT_TYPE
       && isInlineAttachmentContentType(mediaType);
     res.setHeader("Content-Type", responseContentType);
-    res.setHeader("Content-Length", String(asset.byteSize || object.contentLength || 0));
+    if (range.kind === "range") {
+      res.status(206);
+      res.setHeader("Content-Length", String(range.end - range.start + 1));
+      res.setHeader("Content-Range", `bytes ${range.start}-${range.end}/${asset.byteSize}`);
+    } else {
+      res.setHeader("Content-Length", String(asset.byteSize || object.contentLength || 0));
+    }
     res.setHeader("Cache-Control", "private, max-age=60");
     res.setHeader("X-Content-Type-Options", "nosniff");
     if (!inlineSafe) {

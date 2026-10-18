@@ -152,7 +152,11 @@ function NewTeamChatForm({
       {multi && (
         <DialogFooter className="border-t border-border px-4 py-3">
           <span className="mr-auto self-center text-xs text-muted-foreground">
-            {picked.size === 0 ? "Pick at least one member" : `${picked.size} selected`}
+            {picked.size === 0
+              ? "Pick at least one member"
+              : mode === "group" && !title.trim()
+                ? `${picked.size} selected. Give the group a name`
+                : `${picked.size} selected`}
           </span>
           <Button
             type="button"

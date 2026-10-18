@@ -4,7 +4,7 @@
  * history). This is the instant answer; the panel can also pass the
  * question to Everest itself, whose reply arrives in its chat.
  */
-import type { AgentWorkDigest, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
 import { timeAgo } from "./timeAgo";
 import { plainTaskStatus } from "./global-search";
 
@@ -20,6 +20,10 @@ export type AskIntent =
   | { kind: "history"; subject: string | null }
   /** "Who is our contact at Acme?": the people we hold for a client. */
   | { kind: "people"; subject: string | null }
+  /** "Which clients have gone quiet?": open deals with no contact for `days` days. */
+  | { kind: "quiet"; days: number }
+  /** "What calls did we have this week?": recent notes, calls and meetings across clients. */
+  | { kind: "activity"; days: number }
   | { kind: "overview" };
 
 export interface AskAgentRef {
@@ -48,6 +52,7 @@ export const SUGGESTED_QUESTIONS = [
   AWAY_QUESTION,
   "What do I need to decide?",
   "What is stuck?",
+  "Which clients have gone quiet?",
   "How is the team doing this week?",
 ] as const;
 
@@ -75,6 +80,7 @@ const HISTORY_WORDS = [
 const HISTORY_RE = /\b(discuss(ed|ing)?|talk(ed|ing)?|spoke|spoken|speak|call(ed|s)?|meetings?|met|notes?|contacted|emailed|emails?|heard from|hear from|conversations?|history|what did (we|they) (say|agree))\b/i;
 const PEOPLE_WORDS = ["who", "whom", "contact", "contacts", "people", "person", "know", "speak", "talk", "call", "email", "address", "phone", "number", "main", "key", "decision", "maker", "makers", "should", "best"];
 const PEOPLE_RE = /\b(who do we know|who should (i|we) (speak|talk) to|who (do|should) (i|we) (call|email|contact)|contacts? (at|for)|people at|our contact|main contact|decision makers?|email (address )?for|phone (number )?for)\b/i;
+const QUIET_RE = /\b(gone (quiet|cold|silent)|went (quiet|cold)|going (quiet|cold)|(have not|haven't|not) (we |i )?(heard from|spoken to|spoken with|talked to|contacted)|no contact|neglected|cold (clients|deals|leads)|(who|which (clients|deals|leads)) (should|do|must) (i|we) (chase|follow up)|need(s)? chasing|chase up|to chase|follow[- ]ups? due)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
 
 function words(text: string): string[] {
@@ -110,15 +116,40 @@ function mentionedAgent(question: string, agents: readonly AskAgentRef[]): AskAg
   return null;
 }
 
+/** "for 2 weeks", "in 60 days", "this month": how long counts as quiet. Defaults to 30 days. */
+export function quietDays(question: string): number {
+  return windowDays(question, 30);
+}
+
+/** How far back a question looks: "today" 1, "this week" 7, "3 months" 90, otherwise `fallback`. */
+export function windowDays(question: string, fallback: number): number {
+  const match = /\b(\d{1,3})\s*(day|days|week|weeks|month|months)\b/i.exec(question);
+  if (match) {
+    const count = Number(match[1]);
+    const unit = match[2]!.toLowerCase();
+    const days = unit.startsWith("week") ? count * 7 : unit.startsWith("month") ? count * 30 : count;
+    return Math.min(Math.max(days, 1), 365);
+  }
+  if (/\bfortnight\b/i.test(question)) return 14;
+  if (/\b(a|one|last|this|the) week\b/i.test(question)) return 7;
+  if (/\b(a|one|last|this|the) month\b/i.test(question)) return 30;
+  if (/\byesterday\b/i.test(question)) return 2;
+  if (/\btoday\b/i.test(question)) return 1;
+  return fallback;
+}
+
 export function classifyQuestion(question: string, agents: readonly AskAgentRef[]): AskIntent {
   const trimmed = question.trim();
   if (AWAY_RE.test(trimmed)) return { kind: "away" };
+  if (QUIET_RE.test(trimmed)) return { kind: "quiet", days: quietDays(trimmed) };
   if (PEOPLE_RE.test(trimmed) && !STUCK_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
     return { kind: "people", subject: questionSubject(trimmed, PEOPLE_WORDS) };
   }
   if (DECIDE_RE.test(trimmed)) return { kind: "decide" };
   if (HISTORY_RE.test(trimmed) && !STUCK_RE.test(trimmed)) {
-    return { kind: "history", subject: questionSubject(trimmed, HISTORY_WORDS) };
+    const subject = questionSubject(trimmed, HISTORY_WORDS);
+    if (!subject && windowDays(trimmed, 0) > 0) return { kind: "activity", days: windowDays(trimmed, 7) };
+    return { kind: "history", subject };
   }
   const agent = mentionedAgent(trimmed, agents.filter((candidate) => candidate.status !== "terminated"));
   if (agent && !STUCK_RE.test(trimmed)) {
@@ -323,6 +354,49 @@ export function answerPeople(subject: string, records: readonly CompanySearchRes
       : `${plural(people.length, "person", "people")} for ${subject}, starting with ${first.title}.`,
     lines: people.map((result) => ({ text: result.title, detail: result.record!.subtitle ?? undefined, href: result.href })),
     more,
+  };
+}
+
+/** Open deals and leads with no note, call or meeting for a while, quietest first. */
+export function answerQuiet(result: CompanyQuietClientsResponse): AskAnswer {
+  const { clients, total, days } = result;
+  if (clients.length === 0) {
+    return { headline: `Every open deal and lead has had a note, call or meeting in the last ${plural(days, "day")}.`, lines: [] };
+  }
+  const first = clients[0]!;
+  const lines = clients.map((client) => ({
+    text: client.title,
+    detail: [
+      `${client.stageName} in ${client.pipelineName}`,
+      client.lastTouchAt
+        ? `last ${client.lastTouchLabel ?? "contact"}, ${plural(client.quietDays, "day")} ago`
+        : `no notes or calls yet, added ${plural(client.quietDays, "day")} ago`,
+    ].join(", "),
+    href: client.href,
+  }));
+  return {
+    headline: `${plural(total, "open deal or lead", "open deals and leads")} had no note, call or meeting in ${plural(days, "day")}. The quietest is ${first.title} (${plural(first.quietDays, "day")}).`,
+    lines,
+    more: { label: "Open the pipelines", href: "/pipelines" },
+  };
+}
+
+/** Recent notes, calls and meetings across clients, newest first. */
+export function answerActivity(result: CompanyRecentClientActivityResponse): AskAnswer {
+  const { activity, total, clientCount, byKind, days } = result;
+  const period = days === 1 ? "today" : days === 2 ? "since yesterday" : days === 7 ? "this week" : `in the last ${plural(days, "day")}`;
+  if (total === 0) {
+    return { headline: `No notes, calls or meetings with clients ${period}.`, lines: [] };
+  }
+  const kinds = byKind.slice(0, 3).map(([kind, count]) => `${count} ${kind.toLowerCase()}${count === 1 ? "" : "s"}`).join(", ");
+  return {
+    headline: `${plural(total, "note, call or meeting", "notes, calls and meetings")} with ${plural(clientCount, "client")} ${period}: ${kinds}.`,
+    lines: activity.map((entry) => ({
+      text: entry.title,
+      detail: [entry.kindLabel, entry.clientName, entry.ownerName, timeAgo(entry.occurredAt)].filter(Boolean).join(", "),
+      href: entry.href,
+    })),
+    more: { label: "Open the pipelines", href: "/pipelines" },
   };
 }
 
@@ -580,8 +654,10 @@ export interface AskContext {
 export function intentWithContext(intent: AskIntent, context: AskContext | null): AskIntent {
   const subject = context?.subject?.trim();
   if ((intent.kind === "history" || intent.kind === "people") && !intent.subject) {
-    return subject ? { kind: intent.kind, subject } : { kind: "overview" };
+    if (subject) return { kind: intent.kind, subject };
+    return intent.kind === "history" ? { kind: "activity", days: 7 } : { kind: "overview" };
   }
+  if (intent.kind === "activity" && subject) return { kind: "history", subject };
   if (!subject) return intent;
   if (intent.kind === "stuck" && !intent.subject) return { kind: "stuck", subject };
   if (intent.kind === "subject" || intent.kind === "overview") return { kind: "subject", subject };

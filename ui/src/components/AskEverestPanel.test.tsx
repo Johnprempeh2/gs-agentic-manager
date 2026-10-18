@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   experimental: vi.fn(),
   uploadAttachment: vi.fn(),
   search: vi.fn(async () => ({ results: [] })),
+  quietClients: vi.fn(),
 }));
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
@@ -30,7 +31,7 @@ vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecar
 vi.mock("../api/issues", () => ({
   issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
-vi.mock("../api/search", () => ({ searchApi: { search: mocks.search } }));
+vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients } }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
 vi.mock("@/lib/router", () => ({
@@ -144,6 +145,17 @@ describe("AskEverestPanel", () => {
     });
     expect(mocks.search).toHaveBeenCalledWith("company-1", { q: "Acme", limit: 10, recordKind: ["activity"], scope: "records" });
     expect(mocks.issuesList).not.toHaveBeenCalled();
+  });
+
+  it("lists clients that have gone quiet", async () => {
+    mocks.quietClients.mockResolvedValueOnce({
+      days: 14,
+      total: 1,
+      clients: [{ caseId: "c1", title: "Heron rollout", pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", organisationName: "Heron Ltd", lastTouchAt: "2026-08-29T09:00:00.000Z", lastTouchLabel: "Call: Pricing call", quietDays: 50, href: "/GRE/pipelines/p/items/c1" }],
+    });
+    act(() => openAskEverest("Which clients have gone quiet for 2 weeks?"));
+    await waitFor(() => expect(container.textContent).toContain("1 open deal or lead had no note, call or meeting in 14 days."));
+    expect(mocks.quietClients).toHaveBeenCalledWith("company-1", { days: 14, limit: 8 });
   });
 
   it("shows suggestions before a question is asked", async () => {

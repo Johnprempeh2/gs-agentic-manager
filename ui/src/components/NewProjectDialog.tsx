@@ -13,20 +13,20 @@ import { ConnectionSetupFlow } from "@/features/connections/ConnectionSetupFlow"
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
 export function NewProjectDialog() {
-  const { newProjectOpen, closeNewProject } = useDialog();
+  const { newProjectOpen, newProjectDefaults, closeNewProject } = useDialog();
   const { selectedCompanyId } = useCompany();
   return selectedCompanyId && newProjectOpen
-    ? <NewProjectForm key={selectedCompanyId} companyId={selectedCompanyId} onClose={closeNewProject} /> : null;
+    ? <NewProjectForm key={selectedCompanyId} companyId={selectedCompanyId} goalId={newProjectDefaults?.goalId} onClose={closeNewProject} /> : null;
 }
 
-export function NewProjectForm({ companyId, onClose }: { companyId: string; onClose: () => void }) {
+export function NewProjectForm({ companyId, goalId, onClose }: { companyId: string; goalId?: string; onClose: () => void }) {
   const client = useQueryClient();
   const [name, setName] = useState("");
   const [repos, setRepos] = useState<ProjectRepository[]>([]);
   const [connecting, setConnecting] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const create = useMutation({
-    mutationFn: () => projectsApi.create(companyId, { name: name.trim(), status: "planned", repositoryIds: repos.map((repo) => repo.id) }),
+    mutationFn: () => projectsApi.create(companyId, { name: name.trim(), status: "planned", repositoryIds: repos.map((repo) => repo.id), ...(goalId ? { goalIds: [goalId] } : {}) }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: queryKeys.projects.all(companyId) });
       onClose();

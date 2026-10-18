@@ -857,4 +857,43 @@ describe("client case page", () => {
       fields: { dealStatus: "Open", dealValue: 900, nextActivityDate: "2026-10-21", nextActivitySubject: "Send proposal" },
     });
   });
+
+  it("marks a DevTools deal's next step done and books the follow-up", async () => {
+    mockPipelinesApi.listCaseContacts.mockResolvedValue([]);
+    mockPipelinesApi.updateCase.mockResolvedValue({});
+    const stages = [{ id: "pd-1", pipelineId: "pipe-pd", key: "pd_1", name: "Qualified", kind: "working", position: 0 }] as PipelineStage[];
+    await render(
+      <ClientCaseOverview
+        detail={caseDetail({ dealStatus: "Open", nextActivityDate: "2099-01-01", nextActivitySubject: "Demo", lastActivityDate: "2026-10-01", lastActivitySubject: "Intro call" }, "pd-1")}
+        stages={stages}
+        events={[]}
+        issueLinks={[]}
+        journey="devtools"
+      />,
+    );
+    expect(container.textContent).toContain("Intro call");
+
+    click([...container.querySelectorAll("button")].find((button) => button.textContent === "Mark next step done") ?? null);
+    await flushReact();
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    for (const [id, value] of [["deal-done-note", "Went well"], ["deal-done-next-date", "2099-01-08"]] as const) {
+      const input = container.querySelector(`#${id}`) as HTMLInputElement;
+      flushSync(() => {
+        setter.call(input, value);
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    }
+    click([...container.querySelectorAll("button")].find((button) => button.textContent === "Save") ?? null);
+    await flushReact();
+
+    expect(mockPipelinesApi.updateCase).toHaveBeenCalledWith("case-1", {
+      fields: expect.objectContaining({
+        lastActivitySubject: "Demo",
+        lastActivityNote: "Went well",
+        nextActivityDate: "2099-01-08",
+        lastActivityDate: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    });
+    expect(mockPipelinesApi.updateCase.mock.calls.at(-1)![1].fields).not.toHaveProperty("nextActivitySubject");
+  });
 });
