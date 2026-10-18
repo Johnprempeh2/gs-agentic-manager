@@ -349,7 +349,12 @@ export function Costs({
     return map;
   }, [spendData?.byAgentModel]);
 
-  const { data: providerData } = useQuery({
+  const {
+    data: providerData,
+    error: providerError,
+    refetch: refetchProviders,
+    isFetching: providersFetching,
+  } = useQuery({
     queryKey: queryKeys.usageByProvider(companyId, from || undefined, to || undefined),
     queryFn: () => costsApi.byProvider(companyId, from || undefined, to || undefined),
     enabled: !!selectedCompanyId && customReady && (mainTab === "providers" || mainTab === "billers"),
@@ -357,7 +362,12 @@ export function Costs({
     staleTime: 10_000,
   });
 
-  const { data: billerData } = useQuery({
+  const {
+    data: billerData,
+    error: billerError,
+    refetch: refetchBillers,
+    isFetching: billersFetching,
+  } = useQuery({
     queryKey: queryKeys.usageByBiller(companyId, from || undefined, to || undefined),
     queryFn: () => costsApi.byBiller(companyId, from || undefined, to || undefined),
     enabled: !!selectedCompanyId && customReady && mainTab === "billers",
@@ -556,7 +566,7 @@ export function Costs({
         value: "all",
         label: (
           <span className="flex items-center gap-1.5">
-            <span>All billers</span>
+            <span>Everyone who bills you</span>
             {billerKeys.length > 0 ? (
               <>
                 <span className="font-mono text-xs text-muted-foreground">{formatTokens(allTokens)}</span>
@@ -721,8 +731,8 @@ export function Costs({
           <TabsList variant="line" className="justify-start">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             {!hideBudgetsTab ? <TabsTrigger value="budgets">Budgets</TabsTrigger> : null}
-            <TabsTrigger value="providers">Providers</TabsTrigger>
-            <TabsTrigger value="billers">Billers</TabsTrigger>
+            <TabsTrigger value="providers">AI providers</TabsTrigger>
+            <TabsTrigger value="billers">Who bills you</TabsTrigger>
             <TabsTrigger value="finance">Finance</TabsTrigger>
           </TabsList>
         ) : null}
@@ -982,7 +992,7 @@ export function Costs({
                 <CardHeader className="px-5 pt-5 pb-3">
                   <CardTitle className="text-base">Spending limits</CardTitle>
                   <CardDescription>
-                    Limits that stop agents and projects from overspending. AI subscription limits are under Providers.
+                    Limits that stop agents and projects from overspending. AI subscription limits are under AI providers.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="grid gap-3 px-5 pb-5 pt-0 md:grid-cols-4">
@@ -1097,7 +1107,15 @@ export function Costs({
                 <PageTabBar items={providerTabItems} value={effectiveProvider} />
 
                 <TabsContent value="all" className="mt-4">
-                  {providers.length === 0 ? (
+                  {providerError && !providerData ? (
+                    <ErrorState
+                      compact
+                      error={providerError}
+                      title="Spending figures did not load"
+                      onRetry={() => void refetchProviders()}
+                      retrying={providersFetching}
+                    />
+                  ) : providers.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No spending in this period. Try a longer date range above.</p>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1152,7 +1170,15 @@ export function Costs({
                 <PageTabBar items={billerTabItems} value={effectiveBiller} />
 
                 <TabsContent value="all" className="mt-4">
-                  {billers.length === 0 ? (
+                  {billerError && !billerData ? (
+                    <ErrorState
+                      compact
+                      error={billerError}
+                      title="Spending figures did not load"
+                      onRetry={() => void refetchBillers()}
+                      retrying={billersFetching}
+                    />
+                  ) : billers.length === 0 ? (
                     <p className="text-sm text-muted-foreground">No spending in this period. Try a longer date range above.</p>
                   ) : (
                     <div className="grid gap-4 md:grid-cols-2">
@@ -1217,7 +1243,7 @@ export function Costs({
                 <div className="space-y-4">
                   <Card>
                     <CardHeader className="px-5 pt-5 pb-2">
-                      <CardTitle className="text-base">By biller</CardTitle>
+                      <CardTitle className="text-base">By who bills you</CardTitle>
                       <CardDescription>Other charges, grouped by who charged or refunded them.</CardDescription>
                     </CardHeader>
                     <CardContent className="grid gap-4 px-5 pb-5 pt-2 md:grid-cols-2">

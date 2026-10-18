@@ -19,6 +19,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ErrorState } from "@/components/ErrorState";
 import { BoardSecretarySetting } from "@/components/strategy-board/BoardSecretarySetting";
 
 type WorktreeRunExecutionDisplayState =
@@ -224,7 +225,7 @@ export function InstanceExperimentalSettings() {
       if (context?.previousSettings) {
         queryClient.setQueryData(queryKeys.instance.experimentalSettings, context.previousSettings);
       }
-      setActionError(error instanceof Error ? error.message : "Failed to update experimental settings.");
+      setActionError(error instanceof Error ? error.message : "Could not save experimental settings.");
     },
   });
 
@@ -234,11 +235,12 @@ export function InstanceExperimentalSettings() {
 
   if (experimentalQuery.error) {
     return (
-      <div className="text-sm text-destructive">
-        {experimentalQuery.error instanceof Error
-          ? experimentalQuery.error.message
-          : "Failed to load experimental settings."}
-      </div>
+      <ErrorState
+        error={experimentalQuery.error}
+        title="Experimental settings did not load"
+        onRetry={() => void experimentalQuery.refetch()}
+        retrying={experimentalQuery.isFetching}
+      />
     );
   }
 

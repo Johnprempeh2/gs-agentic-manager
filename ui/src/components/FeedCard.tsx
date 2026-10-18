@@ -99,9 +99,9 @@ function formatVerb(
       return "terminated";
 
     case "heartbeat.invoked":
-      return "started a run on";
+      return "started work on";
     case "heartbeat.cancelled":
-      return "cancelled a run on";
+      return "stopped work on";
 
     case "project.created":
       return "created project";
@@ -116,13 +116,13 @@ function formatVerb(
     case "goal.deleted":
       return "deleted goal";
     case "company.created":
-      return "created organization";
+      return "created organisation";
     case "company.updated":
-      return "updated organization";
+      return "updated organisation";
     case "company.archived":
-      return "archived organization";
+      return "archived organisation";
     case "company.budget_updated":
-      return "updated organization budget";
+      return "updated the organisation budget";
 
     default:
       return action.replace(/[._]/g, " ");

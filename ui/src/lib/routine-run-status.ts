@@ -1,11 +1,11 @@
 const ROUTINE_RUN_STATUS_LABELS: Record<string, string> = {
-  received: "Starting",
+  received: "Received",
   issue_created: "Task created",
   issue_reopened: "Task reopened",
-  coalesced: "Joined the queued one",
+  coalesced: "Merged with an earlier start",
   skipped: "Skipped",
   completed: "Done",
-  failed: "Failed",
+  failed: "Stopped with an error",
 };
 
 /** Plain-words label for a routine run status such as `issue_created`. */

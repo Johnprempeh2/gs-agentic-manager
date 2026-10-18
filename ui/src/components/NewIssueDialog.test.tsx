@@ -800,7 +800,7 @@ describe("NewIssueDialog", () => {
     );
     expect(toastState.pushToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Created PAP-2 with upload warnings",
+        title: "Task PAP-2 created, but some files did not attach",
         body: "Could not add screenshot.png (Attachment is larger than the 10 MB limit).",
         tone: "warn",
       }),
