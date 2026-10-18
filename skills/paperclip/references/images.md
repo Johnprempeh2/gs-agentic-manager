@@ -99,6 +99,10 @@ To let the board choose between looks, make the same picture in each:
 names), or `lookIds` on `studio_make_image`. Link the results to the task so
 the board can pick one.
 
+For a campaign or a sequence, make a storyboard: put what every picture
+shares in `--prompt` (subject, place, brand) and each moment in its own
+`--shot` (2 to 4), with `--look` so they match. With MCP, pass `shots`.
+
 ## With curl
 
 1. Ask for the image. The reply is `202` with `status: "pending"`:

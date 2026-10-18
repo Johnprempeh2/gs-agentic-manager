@@ -152,11 +152,20 @@ describeEmbeddedPostgres("studio looks routes", () => {
     expect(copies.status).toBe(202);
     expect(copies.body.images).toHaveLength(3);
     await waitForGeneratedImageJobs();
-    expect(seen).toHaveLength(5);
+
+    const storyboard = await request(server)
+      .post(`/api/companies/${companyId}/generated-images/variations`)
+      .send({ prompt: "Acme coffee on a rainy London morning", lookId: warm.id, shots: ["A barista pours.", "A commuter sips at the window"] });
+    expect(storyboard.status).toBe(202);
+    expect(storyboard.body.images.map((image: { prompt: string }) => image.prompt)).toEqual([
+      "A barista pours. Acme coffee on a rainy London morning, golden hour",
+      "A commuter sips at the window. Acme coffee on a rainy London morning, golden hour",
+    ]);
+    await waitForGeneratedImageJobs();
 
     const both = await request(server)
       .post(`/api/companies/${companyId}/generated-images/variations`)
-      .send({ prompt: "A fox", count: 2, lookIds: [warm.id, cool.id] });
+      .send({ prompt: "A fox", count: 2, shots: ["One shot", "Two shot"] });
     expect(both.status).toBe(400);
 
     const borrowed = await request(server)

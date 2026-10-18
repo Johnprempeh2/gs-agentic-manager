@@ -3,6 +3,7 @@ import type { Db } from "@greatstone/db";
 import { assets, generatedImages, issues, organisations, studioLooks } from "@greatstone/db";
 import {
   composeImagePrompt,
+  composeStoryboardPrompt,
   hasStudioCamera,
   imageAltText,
   createGeneratedImageSchema,
@@ -499,13 +500,14 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
     },
 
     /**
-     * Several takes on one brief at once: `count` copies, or one per house
-     * look. Every look and the pending cap are checked before any is made, so
+     * Several takes on one brief at once: `count` copies, one per house look,
+     * or one per storyboard shot. Every look and the pending cap are checked before any is made, so
      * a request either starts all of its pictures or none.
      */
     createVariations: async (companyId: string, input: CreateGeneratedImageVariations, actor: GeneratedImageActor) => {
-      const { count: takes, lookIds, ...request } = createGeneratedImageVariationsSchema.parse(input);
-      const looks: Array<string | null> = lookIds ?? Array.from({ length: takes ?? 0 }, () => request.lookId ?? null);
+      const { count: takes, lookIds, shots, ...request } = createGeneratedImageVariationsSchema.parse(input);
+      const takesWanted = takes ?? shots?.length ?? 0;
+      const looks: Array<string | null> = lookIds ?? Array.from({ length: takesWanted }, () => request.lookId ?? null);
       if (lookIds) {
         const found = await db
           .select({ id: studioLooks.id })
@@ -530,8 +532,9 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
         );
       }
       const images = [];
-      for (const lookId of looks) {
-        images.push(await service.create(companyId, { ...request, lookId }, actor));
+      for (const [index, lookId] of looks.entries()) {
+        const prompt = shots ? composeStoryboardPrompt(shots[index]!, request.prompt) : request.prompt;
+        images.push(await service.create(companyId, { ...request, prompt, lookId }, actor));
       }
       return { images };
     },

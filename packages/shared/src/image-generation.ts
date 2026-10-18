@@ -209,18 +209,36 @@ export type CreateGeneratedImage = z.input<typeof createGeneratedImageSchema>;
 /** Most pictures one variations request may make; it must also fit under the pending cap. */
 export const GENERATED_IMAGE_VARIATIONS_MAX = 4;
 
+/** Longest single shot line in a storyboard. */
+export const GENERATED_IMAGE_SHOT_MAX_LENGTH = 300;
+
 /**
- * Several takes on one brief, side by side: either `count` copies of the same
- * request (with its `lookId`, if any), or one picture per house look in
- * `lookIds` to compare looks.
+ * Joins a storyboard shot to the description every shot shares, so each
+ * picture shows its own moment in the same setting and look.
+ */
+export function composeStoryboardPrompt(shot: string, shared: string): string {
+  const moment = shot.trim().replace(/[.\s]+$/, "");
+  return `${moment}. ${shared.trim()}`.slice(0, GENERATED_IMAGE_PROMPT_MAX_LENGTH);
+}
+
+/**
+ * Several takes on one brief, side by side: `count` copies of the same
+ * request (with its `lookId`, if any), one picture per house look in
+ * `lookIds` to compare looks, or one picture per line in `shots` for a
+ * storyboard that shares the description and look.
  */
 export const createGeneratedImageVariationsSchema = createGeneratedImageSchema
   .extend({
     count: z.coerce.number().int().min(2).max(GENERATED_IMAGE_VARIATIONS_MAX).optional(),
     lookIds: z.array(z.string().uuid()).min(2).max(GENERATED_IMAGE_VARIATIONS_MAX).optional(),
+    shots: z
+      .array(z.string().trim().min(GENERATED_IMAGE_PROMPT_MIN_LENGTH, "Describe each shot in a few words").max(GENERATED_IMAGE_SHOT_MAX_LENGTH))
+      .min(2)
+      .max(GENERATED_IMAGE_VARIATIONS_MAX)
+      .optional(),
   })
-  .refine((value) => (value.count === undefined) !== (value.lookIds === undefined), {
-    message: "Say how many takes (count) or which looks to compare (lookIds), not both",
+  .refine((value) => [value.count, value.lookIds, value.shots].filter((item) => item !== undefined).length === 1, {
+    message: "Say how many takes (count), which looks to compare (lookIds) or which shots to make (shots): one of them",
   })
   .refine((value) => !(value.lookIds && value.lookId), {
     message: "Use lookIds to compare looks, or lookId with count, not both",

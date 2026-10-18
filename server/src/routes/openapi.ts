@@ -4629,7 +4629,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/generated-images/variations",
   tags: ["assets"],
-  summary: "Make 2 to 4 takes on one description at once: count for copies of the same request, or lookIds to make one per house look and compare them. Answers 202 with { images } (all pending); poll each like a single image. 422 code studio_look_not_found when a look is not in this company; 429 when they would not all fit under the limit of 6 images being made",
+  summary: "Make 2 to 4 takes on one description at once: count for copies of the same request, lookIds to make one per house look and compare them, or shots for a storyboard (each shot line is joined to the shared description, with the same look). Answers 202 with { images } (all pending); poll each like a single image. 422 code studio_look_not_found when a look is not in this company; 429 when they would not all fit under the limit of 6 images being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageVariationsSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
 });

@@ -152,3 +152,13 @@ in place of `count`; every look must belong to the company (`422`
 Agents use `gsam image generate --compare "Warm, Cool"` or `lookIds` on the
 MCP tool `studio_make_image`.
 
+### Storyboards
+
+**Storyboard** on the Images tab takes two to four short shot lines, such as
+"a barista pours the first cup". Each becomes its own picture: the shot comes
+first, then the main description they all share, then the house look's words,
+so a campaign's pictures belong together. The request is the variations
+endpoint with `shots` (up to 300 characters each) and an optional `lookId`.
+Agents use `--shot` once per shot on `gsam image generate`, or `shots` on
+`studio_make_image`.
+

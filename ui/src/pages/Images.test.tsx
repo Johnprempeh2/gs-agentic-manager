@@ -215,6 +215,30 @@ describe("Images page", () => {
     });
   });
 
+  it("makes a storyboard from shot lines that share the description", async () => {
+    imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
+    imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });
+    imagesApiMock.createVariations.mockResolvedValue({ images: [] });
+    await render();
+
+    await act(async () => setTextarea(container.querySelector('[data-testid="image-prompt"]') as HTMLTextAreaElement, "Acme coffee, rainy London"));
+    const shot = (n: number) => container.querySelector(`[aria-label="Shot ${n}"]`) as HTMLInputElement;
+    const type = (input: HTMLInputElement, value: string) => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    await act(async () => type(shot(1), "A barista pours"));
+    await act(async () => type(shot(2), "A commuter sips"));
+    const make = container.querySelector('[data-testid="make-image"]') as HTMLButtonElement;
+    expect(make.textContent).toContain("Make storyboard (2 shots)");
+    await act(async () => make.click());
+
+    expect(imagesApiMock.createVariations).toHaveBeenCalledWith(
+      "company-1",
+      expect.objectContaining({ prompt: "Acme coffee, rainy London", shots: ["A barista pours", "A commuter sips"] }),
+    );
+  });
+
   it("makes the same image in two house looks to compare them", async () => {
     imagesApiMock.status.mockResolvedValue({ configured: true, provider: "higgsfield", providerLabel: "Higgsfield", model: "m" });
     imagesApiMock.list.mockResolvedValue({ images: [], total: 0, nextOffset: null });

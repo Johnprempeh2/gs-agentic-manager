@@ -26,6 +26,7 @@ const studioMakeImageSchema = createGeneratedImageSchema.extend({
   companyId: companyIdOptional,
   count: z.number().int().min(1).max(STUDIO_MAX_VARIATIONS).optional().default(1),
   lookIds: z.array(z.string().guid()).min(2).max(STUDIO_MAX_VARIATIONS).optional(),
+  shots: z.array(z.string().trim().min(3).max(300)).min(2).max(STUDIO_MAX_VARIATIONS).optional(),
 });
 
 const STUDIO_MAKE_IMAGE_DESCRIPTION = [
@@ -36,6 +37,7 @@ const STUDIO_MAKE_IMAGE_DESCRIPTION = [
   `focalLength ${STUDIO_FOCAL_LENGTHS.map((item) => item.value).join(", ")}; aperture ${STUDIO_APERTURES.map((item) => item.id).join(", ")}.`,
   `count: 1 to ${STUDIO_MAX_VARIATIONS} versions. lookId applies a saved house look (studio_list_looks); your own picks win.`,
   `lookIds: 2 to ${STUDIO_MAX_VARIATIONS} house looks to compare; makes one image in each (leave out count and lookId).`,
+  `shots: 2 to ${STUDIO_MAX_VARIATIONS} storyboard moments; each is joined to prompt, which they share, with the same lookId (leave out count).`,
   "Several versions start together or not at all.",
   "issueId links the image to a task; organisationId to a client.",
 ].join(" ");
@@ -87,9 +89,10 @@ export function studioTools(client: PaperclipApiClient): ToolDefinition[] {
       STUDIO_MAKE_IMAGE_DESCRIPTION,
       mcpToolHints("write"),
       studioMakeImageSchema,
-      async ({ companyId, count, lookIds, ...body }) => {
+      async ({ companyId, count, lookIds, shots, ...body }) => {
         const path = `/companies/${client.resolveCompanyId(companyId)}/generated-images`;
         if (lookIds) return client.requestJson("POST", `${path}/variations`, { body: { ...body, lookIds } });
+        if (shots) return client.requestJson("POST", `${path}/variations`, { body: { ...body, shots } });
         if (count > 1) return client.requestJson("POST", `${path}/variations`, { body: { ...body, count } });
         return { images: [await client.requestJson("POST", path, { body })] };
       },

@@ -486,6 +486,10 @@ describe("paperclip MCP tools", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(String(url)).toMatch(/\/generated-images\/variations$/);
     expect(JSON.parse(String(init.body))).toEqual({ prompt: "A lighthouse", aspectRatio: "1:1", lookIds });
+
+    await getTool("studio_make_image").execute({ prompt: "Acme coffee", shots: ["A barista pours", "A commuter sips"] });
+    const [, shotsInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(shotsInit.body))).toEqual({ prompt: "Acme coffee", aspectRatio: "1:1", shots: ["A barista pours", "A commuter sips"] });
   });
 
   it("refuses an unknown studio lens before calling the server", async () => {
