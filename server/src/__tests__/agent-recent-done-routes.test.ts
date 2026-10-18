@@ -79,6 +79,17 @@ describeEmbeddedPostgres("GET /agents/me/recent-done", () => {
     expect(limited.body.map((row: { title: string }) => row.title)).toEqual(["Newer"]);
   });
 
+  it("inbox-lite carries each open task's due date", async () => {
+    const { companyId, agentId } = await seed();
+    await db.insert(issues).values({ companyId, title: "Due soon", status: "todo", assigneeAgentId: agentId, dueDate: "2026-10-20" });
+    const app = createApp(db, { type: "agent", agentId, companyId, source: "agent_jwt" });
+    const res = await request(app).get("/api/agents/me/inbox-lite");
+    expect(res.status).toBe(200);
+    const byTitle = new Map(res.body.map((row: { title: string; dueDate: string | null }) => [row.title, row.dueDate]));
+    expect(byTitle.get("Due soon")).toBe("2026-10-20");
+    expect(byTitle.get("Open")).toBeNull();
+  });
+
   it("refuses a board user", async () => {
     const res = await request(createApp(db, { type: "board", userId: "local-board", source: "local_implicit" })).get(
       "/api/agents/me/recent-done",

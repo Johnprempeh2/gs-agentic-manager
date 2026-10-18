@@ -23,7 +23,13 @@ export function StudioLookCompare({
     enabled: Boolean(companyId),
   });
   const looks = looksQuery.data?.looks ?? [];
-  if (looks.length < 2) return null;
+  if (looks.length < 2) {
+    return (
+      <p className="text-sm text-muted-foreground" data-testid="image-compare-looks-empty">
+        Save two or more house looks, then pick them here to make the same image in each, side by side.
+      </p>
+    );
+  }
   const full = selected.length >= GENERATED_IMAGE_VARIATIONS_MAX;
 
   const toggle = (id: string) =>
@@ -47,7 +53,7 @@ export function StudioLookCompare({
               className={
                 on
                   ? "rounded-md border border-primary bg-primary/10 px-3 py-1.5 text-sm ring-1 ring-primary"
-                  : "rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-60"
+                  : "rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent/40 disabled:cursor-not-allowed disabled:text-subtle-foreground"
               }
             >
               {look.name}

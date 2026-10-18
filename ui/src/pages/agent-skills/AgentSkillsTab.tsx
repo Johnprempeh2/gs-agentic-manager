@@ -324,7 +324,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
     if (agent.adapterType === "openclaw_gateway") {
       return "GS Agentic Manager cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills.";
     }
-    return "GS Agentic Manager cannot manage skills for this adapter yet. Manage them in the adapter directly.";
+    return "GS Agentic Manager cannot manage skills for agents that run on this service yet. Manage them in that service directly.";
   }, [agent.adapterConfig.agent, agent.adapterType, unsupported]);
 
   const hasUnsavedChanges = !sameSkillSelection(skillDraft, lastSavedSkills);

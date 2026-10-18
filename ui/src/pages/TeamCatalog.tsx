@@ -2537,14 +2537,14 @@ export function TeamCatalog() {
           ) : catalogQuery.isError ? (
             <div className="p-4">
               <div role="alert" className="rounded-md border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-sm text-rose-700 dark:text-rose-300">
-                Failed to load team catalog.
+                Could not load the team catalog.
               </div>
               <Button variant="outline" size="sm" className="mt-3" onClick={() => catalogQuery.refetch()}>
                 <RotateCcw className="h-3.5 w-3.5" /> Retry
               </Button>
             </div>
           ) : teams.length === 0 ? (
-            <EmptyState icon={Users2} message="No team catalog configured." />
+            <EmptyState icon={Users2} message="No teams to browse yet." description="Ready-made teams show here once the team catalog is set up for this instance." />
           ) : filtered.length === 0 ? (
             <EmptyState
               icon={Search}

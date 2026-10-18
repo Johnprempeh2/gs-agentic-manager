@@ -65,6 +65,7 @@ interface QuietClientsOptions extends BaseClientOptions {
   companyId?: string;
   days?: string;
   limit?: string;
+  owner?: string;
 }
 
 /** A client brief as a few short lines for an agent to read. */
@@ -118,7 +119,8 @@ function amount(value: number, currency: string | null): string {
 export function formatPipelineSummary(summary: CompanyPipelineSummaryResponse): string[] {
   if (summary.total === 0) return ["No open deals or leads in any pipeline."];
   const worth = summary.valueByCurrency.filter((entry) => entry.value > 0).map((entry) => amount(entry.value, entry.currency)).join(", ");
-  const lines = [`${summary.total} open ${summary.total === 1 ? "deal or lead" : "deals and leads"}${worth ? ` (worth ${worth})` : ""}:`];
+  const owned = summary.ownerFilter ? ` owned by ${summary.ownerFilter}` : "";
+  const lines = [`${summary.total} open ${summary.total === 1 ? "deal or lead" : "deals and leads"}${owned}${worth ? ` (worth ${worth})` : ""}:`];
   for (const stage of summary.stages) {
     lines.push(`${stage.pipelineName} / ${stage.stageName}: ${[`${stage.count}`, ...stage.valueByCurrency.map((entry) => amount(entry.value, entry.currency))].join(", ")}`);
   }
@@ -131,9 +133,9 @@ export function formatPipelineSummary(summary: CompanyPipelineSummaryResponse): 
     lines.push(`Missing: ${missing.closeDate} no close date, ${missing.value} no value, ${missing.owner} no owner, ${missing.organisation} no organisation`);
   }
   if (summary.topDeals.length > 0) {
-    lines.push("Largest:");
+    lines.push(summary.ownerFilter ? "Deals:" : "Largest:");
     for (const deal of summary.topDeals) {
-      lines.push(`${[amount(deal.value, deal.currency), deal.title, `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${deal.expectedCloseDate}` : null].filter(Boolean).join(" | ")}  ${deal.href}`);
+      lines.push(`${[deal.value === null ? "no value" : amount(deal.value, deal.currency), deal.title, `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${deal.expectedCloseDate}` : null].filter(Boolean).join(" | ")}  ${deal.href}`);
     }
   }
   return lines;
@@ -259,12 +261,14 @@ export function registerSearchCommands(program: Command): void {
       .description("Open deals and leads per stage with their value, and the largest deals")
       .option("-C, --company-id <id>", "Company ID")
       .option("--limit <n>", "Largest deals to list (1 to 50)", "5")
+      .option("--owner <name>", "Only deals owned by this person (full or first name)")
       .action(async (opts: QuietClientsOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "5", 10) || 5, 1), 50);
+          const owner = opts.owner?.trim() ? `&owner=${encodeURIComponent(opts.owner.trim())}` : "";
           const response = await ctx.api.get<CompanyPipelineSummaryResponse>(
-            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/pipeline-summary?limit=${limit}`,
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/pipeline-summary?limit=${limit}${owner}`,
           );
           if (ctx.json) {
             printOutput(response, { json: true });

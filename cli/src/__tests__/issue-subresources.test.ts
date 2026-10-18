@@ -47,6 +47,22 @@ describe("issue subresource commands", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes the priority, creator and due date filters to the issue list", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse([])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "list", "-C", COMPANY_ID, "--priority", "critical,high", "--created-by", "me", "--due-before", "2026-10-31", "--overdue"]);
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe(`/api/companies/${COMPANY_ID}/issues`);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      priority: "critical,high",
+      createdByAgentId: "me",
+      dueBefore: "2026-10-31",
+      overdue: "true",
+    });
+  });
+
   it("wraps diagnostics, execution, digests, agent questions and document links", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({})));
     vi.stubGlobal("fetch", fetchMock);
@@ -121,6 +137,76 @@ describe("issue subresource commands", () => {
       ["PATCH", `http://localhost:3100/api/issues/${ISSUE_ID}`],
       ["DELETE", `http://localhost:3100/api/issues/${ISSUE_ID}`],
     ]);
+  });
+
+  it("blocks an issue with the calling agent as owner, and unblocks it", async () => {
+    const AGENT_ID = "33333333-3333-4333-8333-333333333333";
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => Promise.resolve(jsonResponse(url.endsWith("/api/agents/me") ? { id: AGENT_ID } : { ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "block", ISSUE_ID, "--action", "Client sends the signed NDA", "--waiting-on", "client", "--expected-by", "2026-10-24"]);
+    await run(["issue", "block", ISSUE_ID, "--action", "Approve the budget", "--owner", "board"]);
+    await run(["issue", "unblock", ISSUE_ID]);
+
+    const patches = fetchMock.mock.calls.filter((call) => call[1]?.method === "PATCH").map((call) => JSON.parse(String(call[1]?.body)));
+    expect(patches[0]).toEqual({
+      status: "blocked",
+      unblockDescriptor: { owner: { agentId: AGENT_ID }, action: "Client sends the signed NDA", waitingOn: "client", expectedBy: "2026-10-24" },
+    });
+    expect(patches[1].unblockDescriptor.owner).toBe("board");
+    expect(patches[2]).toEqual({ status: "todo", unblockDescriptor: null });
+    await expect(run(["issue", "block", ISSUE_ID, "--action", "x", "--waiting-on", "friend"])).rejects.toThrow();
+  });
+
+  it("registers deliverables, names a document maker, marks an approved revision and runs a monitor check", async () => {
+    const REVISION_ID = "44444444-4444-4444-8444-444444444444";
+    const AGENT_ID = "55555555-5555-4555-8555-555555555555";
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "deliverable:create", ISSUE_ID, "--title", "Q3 pack", "--url", "https://example.com/pack", "--kind", "deck"]);
+    await run(["issue", "document:maker", ISSUE_ID, "plan", "--agent", AGENT_ID]);
+    await run(["issue", "document:approve", ISSUE_ID, "plan", "--revision", REVISION_ID]);
+    await run(["issue", "document:approve", ISSUE_ID, "plan", "--revision", "null"]);
+    await run(["issue", "monitor:check-now", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0], call[1]?.body ? JSON.parse(String(call[1].body)) : null])).toEqual([
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/deliverables`, { title: "Q3 pack", url: "https://example.com/pack", kind: "deck" }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/maker`, { makerAgentId: AGENT_ID }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/approved-revision`, { revisionId: REVISION_ID }],
+      ["PUT", `http://localhost:3100/api/issues/${ISSUE_ID}/documents/plan/approved-revision`, { revisionId: null }],
+      ["POST", `http://localhost:3100/api/issues/${ISSUE_ID}/monitor/check-now`, {}],
+    ]);
+    await expect(run(["issue", "deliverable:create", ISSUE_ID, "--title", "No file"])).rejects.toThrow();
+  });
+
+  it("decomposes an accepted plan into child issues", async () => {
+    const REVISION_ID = "66666666-6666-4666-8666-666666666666";
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "plan:decompose", ISSUE_ID, "--revision", REVISION_ID, "--children-json", JSON.stringify([{ title: "Draft brief" }, { title: "Book interviews" }])]);
+    await run(["issue", "plan:decompositions", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/issues/${ISSUE_ID}/accepted-plan-decompositions`);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.acceptedPlanRevisionId).toBe(REVISION_ID);
+    expect(body.children.map((child: { title: string }) => child.title)).toEqual(["Draft brief", "Book interviews"]);
+    expect(fetchMock.mock.calls[1]?.[1]?.method ?? "GET").toBe("GET");
+    await expect(run(["issue", "plan:decompose", ISSUE_ID, "--revision", REVISION_ID])).rejects.toThrow();
+  });
+
+  it("sets and clears a due date on create and update", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "create", "-C", COMPANY_ID, "--title", "Send proposal", "--due-date", "2026-10-24"]);
+    await run(["issue", "update", ISSUE_ID, "--due-date", "null"]);
+
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    expect(bodies[0]).toMatchObject({ title: "Send proposal", dueDate: "2026-10-24" });
+    expect(bodies[1]).toMatchObject({ dueDate: null });
+    await expect(run(["issue", "update", ISSUE_ID, "--due-date", "next week"])).rejects.toThrow();
   });
 
   it("binds explicit uploaded attachments when adding a comment", async () => {

@@ -129,75 +129,115 @@ export const ImagePromptFields = forwardRef<HTMLTextAreaElement, ImagePromptFiel
       </div>
 
       {onStyleChange ? (
-        <fieldset className="space-y-2" disabled={disabled}>
-          <legend className="text-sm font-medium">Style</legend>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Style" data-testid="image-style-picker">
-            {[{ id: null, label: "Just my words", hint: "No extra styling" }, ...IMAGE_STYLE_PRESETS].map((preset) => {
-              const selected = (style ?? null) === preset.id;
-              return (
-                <button
-                  key={preset.id ?? "none"}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  title={preset.hint}
-                  onClick={() => {
-                    onStyleChange(preset.id);
-                    if ("aspectRatio" in preset) onAspectRatioChange(preset.aspectRatio);
-                  }}
-                  className={cn(
-                    "rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                    selected
-                      ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
-                      : "border-border text-foreground hover:bg-accent/40",
-                  )}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            {(IMAGE_STYLE_PRESETS.find((preset) => preset.id === style)?.hint ?? "Describe it your way; nothing is added.")}
-          </p>
-        </fieldset>
+        <ImageStylePicker
+          style={style ?? null}
+          onStyleChange={onStyleChange}
+          onAspectRatioChange={onAspectRatioChange}
+          disabled={disabled}
+        />
       ) : null}
 
-      <fieldset className="space-y-2" disabled={disabled}>
-        <legend className="text-sm font-medium">Shape</legend>
-        <div
-          className={cn("grid grid-cols-2 gap-2", compact ? "sm:grid-cols-3" : "sm:grid-cols-3 lg:grid-cols-5")}
-          role="radiogroup"
-          aria-label="Shape"
-        >
-          {IMAGE_SHAPE_OPTIONS.map((option) => {
-            const selected = option.value === aspectRatio;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onAspectRatioChange(option.value)}
-                className={cn(
-                  "flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-                  selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-accent/40",
-                )}
-              >
-                <span
-                  aria-hidden="true"
-                  className={cn("block w-6 shrink-0 rounded-sm border-2", selected ? "border-primary" : "border-muted-foreground/50")}
-                  style={{ aspectRatio: IMAGE_ASPECT_STYLE[option.value] }}
-                />
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">{option.label}</span>
-                  <span className="block truncate text-xs text-muted-foreground">{option.hint}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
+      <ImageShapePicker aspectRatio={aspectRatio} onAspectRatioChange={onAspectRatioChange} disabled={disabled} compact={compact} />
     </>
   );
 });
+
+/** Style presets. Picking a style also picks its usual shape. */
+export function ImageStylePicker({
+  style,
+  onStyleChange,
+  onAspectRatioChange,
+  disabled,
+}: {
+  style: ImageStylePresetId | null;
+  onStyleChange: (style: ImageStylePresetId | null) => void;
+  onAspectRatioChange: (aspectRatio: ImageAspectRatio) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <fieldset className="space-y-2" disabled={disabled}>
+      <legend className="text-sm font-medium">Style</legend>
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Style" data-testid="image-style-picker">
+        {[{ id: null, label: "Just my words", hint: "No extra styling" }, ...IMAGE_STYLE_PRESETS].map((preset) => {
+          const selected = style === preset.id;
+          return (
+            <button
+              key={preset.id ?? "none"}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              title={preset.hint}
+              onClick={() => {
+                onStyleChange(preset.id);
+                if ("aspectRatio" in preset) onAspectRatioChange(preset.aspectRatio);
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:text-subtle-foreground",
+                selected
+                  ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
+                  : "border-border text-foreground hover:bg-accent/40",
+              )}
+            >
+              {preset.label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {IMAGE_STYLE_PRESETS.find((preset) => preset.id === style)?.hint ?? "Describe it your way; nothing is added."}
+      </p>
+    </fieldset>
+  );
+}
+
+/** The five picture shapes, each drawn to scale. */
+export function ImageShapePicker({
+  aspectRatio,
+  onAspectRatioChange,
+  disabled,
+  compact,
+}: {
+  aspectRatio: ImageAspectRatio;
+  onAspectRatioChange: (aspectRatio: ImageAspectRatio) => void;
+  disabled?: boolean;
+  /** Fewer columns, for a dialog. */
+  compact?: boolean;
+}) {
+  return (
+    <fieldset className="space-y-2" disabled={disabled}>
+      <legend className="text-sm font-medium">Shape</legend>
+      <div
+        className={cn("grid grid-cols-2 gap-2", compact ? "sm:grid-cols-3" : "sm:grid-cols-3 lg:grid-cols-5")}
+        role="radiogroup"
+        aria-label="Shape"
+      >
+        {IMAGE_SHAPE_OPTIONS.map((option) => {
+          const selected = option.value === aspectRatio;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onAspectRatioChange(option.value)}
+              className={cn(
+                "flex items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:text-subtle-foreground",
+                selected ? "border-primary bg-primary/5 ring-1 ring-primary" : "border-border hover:bg-accent/40",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                className={cn("block w-6 shrink-0 rounded-sm border-2", selected ? "border-primary" : "border-muted-foreground/50")}
+                style={{ aspectRatio: IMAGE_ASPECT_STYLE[option.value] }}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium">{option.label}</span>
+                <span className="block truncate text-xs text-muted-foreground">{option.hint}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </fieldset>
+  );
+}

@@ -303,7 +303,8 @@ export interface CompanyPipelineDeal {
   pipelineName: string;
   stageName: string;
   organisationName: string | null;
-  value: number;
+  /** Null only for an owner's deals that have no value recorded. */
+  value: number | null;
   currency: string | null;
   /** Expected close date, YYYY-MM-DD, when one was imported. */
   expectedCloseDate: string | null;
@@ -311,12 +312,14 @@ export interface CompanyPipelineDeal {
 }
 
 export interface CompanyPipelineSummaryResponse {
+  /** The owner name the summary was narrowed to (full or first name), or null for every owner. */
+  ownerFilter?: string | null;
   /** Open deals and leads across all pipelines. */
   total: number;
   valueByCurrency: Array<{ currency: string | null; value: number; count: number }>;
   /** Open deals per stage, in pipeline and stage order; empty stages left out. */
   stages: CompanyPipelineStageSummary[];
-  /** The largest open deals by value (values are not converted between currencies). */
+  /** The largest open deals by value (values are not converted between currencies). With an owner filter, that owner's deals, valued ones first. */
   topDeals: CompanyPipelineDeal[];
   /** Open deals per imported owner, most deals first; null owner when none was set. */
   owners: Array<{ owner: string | null; count: number; valueByCurrency: Array<{ currency: string | null; value: number }> }>;

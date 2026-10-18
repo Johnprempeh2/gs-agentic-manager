@@ -27,6 +27,8 @@ import {
   type PipedriveStage,
   type PipedriveUser,
 } from "./crm-sync-pipedrive.js";
+import { dealOrganisationRef } from "./crm-sync-runner.js";
+import { findOrCreateOrganisation, loadOrganisationNameIndex } from "./organisation-match.js";
 import type { OrganisationActor } from "./organisations.js";
 import {
   readPipedriveDealFollowers,
@@ -409,6 +411,16 @@ export function pipedriveDealImportService(db: Db) {
         for (const row of rows) stageKeyById.set(row.id, row.key);
       }
 
+      // GRE-1538: every card names an organisation. A deal whose organisation
+      // was not imported (or that has none) is filed under the record found or
+      // made from its organisation name, else its title.
+      let nameIndex: Map<string, string> | null = null;
+      const organisationFor = async (deal: PipedriveDeal, title: string) => {
+        nameIndex ??= await loadOrganisationNameIndex(db, companyId);
+        const found = await findOrCreateOrganisation(db, { companyId, ...dealOrganisationRef(deal, title), status: "prospect" }, nameIndex);
+        return found?.id ?? null;
+      };
+
       let start: number | null = 0;
       while (start !== null) {
         const page: Awaited<ReturnType<PipedriveClient["listAllDealsPage"]>> = await client.listAllDealsPage({ start });
@@ -481,9 +493,11 @@ export function pipedriveDealImportService(db: Db) {
             if (!productsKnown) delete fields[PRODUCTS_FIELD_KEY];
             if (!followersKnown) delete fields[FOLLOWERS_FIELD_KEY];
             const orgExternalId = linkedId(deal.org_id);
-            const organisationId = orgExternalId ? input.organisationIdByExternalId.get(orgExternalId) ?? null : null;
             const caseKey = caseKeyForPipedriveDealId(externalId);
             const current = caseByKey.get(caseKey);
+            const linkedOrganisationId = orgExternalId ? input.organisationIdByExternalId.get(orgExternalId) : undefined;
+            const organisationId = linkedOrganisationId
+              ?? (current?.organisationId ? null : await organisationFor(deal, title));
 
             if (!current) {
               const ingested = await pipelines.ingestCase({

@@ -59,7 +59,9 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Link, useLocation, useNavigate, useParams } from "@/lib/router";
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from "@/lib/router";
+import { PipelineOrganisationsView } from "@/components/PipelineOrganisationsView";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "../api/client";
 import { activityApi, type RunForIssue } from "../api/activity";
 import { heartbeatsApi, type ActiveRunForIssue, type LiveRunForIssue } from "../api/heartbeats";
@@ -172,7 +174,7 @@ import { Badge } from "@/components/ui/badge";
 import { ClientCardFlags } from "@/components/ClientCardFlags";
 import { getDealNextStepFlag } from "@/lib/client-card-flags";
 import { CardCover, useImageCovers } from "@/components/ImageCoverControls";
-import { CaseOrganisationLink } from "@/components/CaseOrganisationLink";
+import { CaseOrganisationLink, CaseOrganisationMissing } from "@/components/CaseOrganisationLink";
 import { OrganisationPicker } from "@/components/OrganisationPicker";
 
 type PipelineConversationActionableInteraction =
@@ -224,11 +226,8 @@ function isBlank(value: string | undefined) {
 /** Error key for the organisation picker; never a field key. */
 export const ORGANISATION_ERROR_KEY = "__organisation";
 
-export function validateDraftRows(
-  rows: DraftRow[],
-  fields: PipelineIntakeField[],
-  options: { requiresOrganisation?: boolean } = {},
-): RowErrors {
+/** Every item needs an organisation, in every pipeline (GRE-1538). */
+export function validateDraftRows(rows: DraftRow[], fields: PipelineIntakeField[]): RowErrors {
   const errors: RowErrors = {};
   for (const row of rows) {
     const rowErrors: FieldErrors = {};
@@ -237,7 +236,7 @@ export function validateDraftRows(
         rowErrors[field.key] = `${field.label} is required.`;
       }
     }
-    if (options.requiresOrganisation && !row.organisationId) {
+    if (!row.organisationId) {
       rowErrors[ORGANISATION_ERROR_KEY] = "Pick or create an organisation.";
     }
     if (Object.keys(rowErrors).length > 0) {
@@ -1699,6 +1698,19 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const pipelineStars = usePipelineStars(selectedCompanyId);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  // Board or "By organisation" (GRE-1540); kept in the URL so the view survives a reload.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const boardView = searchParams.get("view") === "organisations" ? "organisations" : "board";
+  const setBoardView = (value: string) =>
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (value === "organisations") next.set("view", "organisations");
+        else next.delete("view");
+        return next;
+      },
+      { replace: true },
+    );
   const [activeCaseId, setActiveCaseId] = useState<string | null>(null);
   const [activeOverId, setActiveOverId] = useState<string | null>(null);
   // Owner filter (Pipedrive's "my deals"), per pipeline; ALL_OWNERS shows everyone's.
@@ -2149,64 +2161,74 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <FeatureTour tour={PIPELINE_BOARD_TOUR} />
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input
-              type="search"
-              value={searchQuery}
-              onChange={(event) => setBoardSearch({ pipelineId, query: event.target.value })}
-              placeholder="Search this board"
-              aria-label="Search this board"
-              className="h-9 w-(--sz-180px) pl-8"
-            />
-          </div>
-          {boardOwners.length > 1 ? (
-            <Select value={selectedOwner} onValueChange={(owner) => setOwnerFilter({ pipelineId, owner })}>
-              <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Owner" title="Owner">
-                <UserRound className="h-4 w-4 text-muted-foreground" />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value={ALL_OWNERS}>All owners</SelectItem>
-                {boardOwners.map((owner) => (
-                  <SelectItem key={owner} value={owner}>{owner}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : null}
-          <Select value={groupBy} onValueChange={handleGroupByChange}>
-            <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
-              <Layers className="h-4 w-4 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">None</SelectItem>
-              <SelectItem value="builtFor">Built for</SelectItem>
-            </SelectContent>
-          </Select>
-          {isDevtoolsCaseType(pipeline.key) ? (
-            <div className="inline-flex rounded-md border border-border" role="group" aria-label="View">
-              <Button
-                type="button"
-                variant={listViewPipelineId === pipelineId ? "ghost" : "secondary"}
-                size="sm"
-                aria-pressed={listViewPipelineId !== pipelineId}
-                onClick={() => setListViewPipelineId(null)}
-              >
-                <Layers className="h-4 w-4" />
-                Board
-              </Button>
-              <Button
-                type="button"
-                variant={listViewPipelineId === pipelineId ? "secondary" : "ghost"}
-                size="sm"
-                aria-pressed={listViewPipelineId === pipelineId}
-                onClick={() => setListViewPipelineId(pipelineId)}
-              >
-                <List className="h-4 w-4" />
-                List
-              </Button>
-            </div>
+          <Tabs value={boardView} onValueChange={setBoardView}>
+            <TabsList aria-label="Pipeline view">
+              <TabsTrigger value="board">Board</TabsTrigger>
+              <TabsTrigger value="organisations">By organisation</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {boardView === "board" ? (
+            <>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+                <Input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => setBoardSearch({ pipelineId, query: event.target.value })}
+                  placeholder="Search this board"
+                  aria-label="Search this board"
+                  className="h-9 w-(--sz-180px) pl-8"
+                />
+              </div>
+              {boardOwners.length > 1 ? (
+                <Select value={selectedOwner} onValueChange={(owner) => setOwnerFilter({ pipelineId, owner })}>
+                  <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Owner" title="Owner">
+                    <UserRound className="h-4 w-4 text-muted-foreground" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_OWNERS}>All owners</SelectItem>
+                    {boardOwners.map((owner) => (
+                      <SelectItem key={owner} value={owner}>{owner}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
+              <Select value={groupBy} onValueChange={handleGroupByChange}>
+                <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Group by" title="Group by">
+                  <Layers className="h-4 w-4 text-muted-foreground" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="builtFor">Built for</SelectItem>
+                </SelectContent>
+              </Select>
+              {isDevtoolsCaseType(pipeline.key) ? (
+                <div className="inline-flex rounded-md border border-border" role="group" aria-label="View">
+                  <Button
+                    type="button"
+                    variant={listViewPipelineId === pipelineId ? "ghost" : "secondary"}
+                    size="sm"
+                    aria-pressed={listViewPipelineId !== pipelineId}
+                    onClick={() => setListViewPipelineId(null)}
+                  >
+                    <Layers className="h-4 w-4" />
+                    Board
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={listViewPipelineId === pipelineId ? "secondary" : "ghost"}
+                    size="sm"
+                    aria-pressed={listViewPipelineId === pipelineId}
+                    onClick={() => setListViewPipelineId(pipelineId)}
+                  >
+                    <List className="h-4 w-4" />
+                    List
+                  </Button>
+                </div>
+              ) : null}
+            </>
           ) : null}
           <PipelineExportButton
             name={pipeline.name}
@@ -2237,7 +2259,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onSelectStage={(stageId) => navigate(`/pipelines/${pipelineId}/settings?stage=${stageId}`)}
       />
 
-      {listViewPipelineId === pipelineId && isDevtoolsCaseType(pipeline.key) ? (
+      {boardView === "organisations" ? (
+        <PipelineOrganisationsView companyId={pipeline.companyId} pipelineId={pipelineId} />
+      ) : listViewPipelineId === pipelineId && isDevtoolsCaseType(pipeline.key) ? (
         <DealsList cases={boardCases} stages={orderedStages} />
       ) : (
       <DndContext
@@ -3290,6 +3314,8 @@ export function PipelineItemDetailView({ pipelineId, caseId }: { pipelineId: str
               companyId={(detail.case.companyId ?? selectedCompanyId)!}
               organisationId={detail.case.organisationId}
             />
+          ) : (detail.case.companyId ?? selectedCompanyId) ? (
+            <CaseOrganisationMissing companyId={(detail.case.companyId ?? selectedCompanyId)!} caseId={detail.case.id} />
           ) : null}
           {detail.parentCase ? (
             <p className="mt-2 text-sm text-muted-foreground">
@@ -4740,11 +4766,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
   }, [pipeline.data?.name, pipelineId, setBreadcrumbs]);
 
   const fields = intake.data?.fields ?? [];
-  const requiresOrganisation = Boolean(pipeline.data?.requiresOrganisation);
-  const errors = useMemo(
-    () => validateDraftRows(rows, fields, { requiresOrganisation }),
-    [fields, requiresOrganisation, rows],
-  );
+  const errors = useMemo(() => validateDraftRows(rows, fields), [fields, rows]);
   const invalid = rows.length === 0 || Object.keys(errors).length > 0;
 
   const submit = useMutation({
@@ -4813,7 +4835,7 @@ function PipelineAddItems({ pipelineId }: { pipelineId: string }) {
             index={index}
             fields={fields}
             intake={intake.data}
-            organisationCompanyId={requiresOrganisation ? pipeline.data.companyId : null}
+            organisationCompanyId={pipeline.data.companyId}
             errors={errors[row.id] ?? {}}
             onToggle={() =>
               setRows((current) => current.map((candidate) => candidate.id === row.id ? { ...candidate, expanded: !candidate.expanded } : candidate))
@@ -4881,8 +4903,8 @@ function DraftItemRow({
   index: number;
   fields: PipelineIntakeField[];
   intake: PipelineIntakeForm;
-  /** Set when the pipeline requires an organisation on every case. */
-  organisationCompanyId: string | null;
+  /** Company whose organisation records the picker offers; every item needs one. */
+  organisationCompanyId: string;
   errors: FieldErrors;
   onToggle: () => void;
   onRemove: () => void;
@@ -4919,16 +4941,14 @@ function DraftItemRow({
       {row.expanded ? (
         <div className="grid gap-5 border-t border-border px-4 py-4 lg:grid-cols-(--gtc-50)">
           <div className="grid gap-4 md:grid-cols-2">
-            {organisationCompanyId ? (
-              <div className="md:col-span-2">
-                <OrganisationPicker
-                  companyId={organisationCompanyId}
-                  value={row.organisationId ?? null}
-                  onChange={onOrganisationChange}
-                  error={errors[ORGANISATION_ERROR_KEY]}
-                />
-              </div>
-            ) : null}
+            <div className="md:col-span-2">
+              <OrganisationPicker
+                companyId={organisationCompanyId}
+                value={row.organisationId ?? null}
+                onChange={onOrganisationChange}
+                error={errors[ORGANISATION_ERROR_KEY]}
+              />
+            </div>
             {fields.map((field) => (
               <GeneratedField
                 key={field.key}

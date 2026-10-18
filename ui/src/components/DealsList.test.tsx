@@ -5,9 +5,13 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 import type { PipelineStage } from "../api/pipelines";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { DealsList, buildDealRows, bulkMoveStages, sortDealRows, withDealForecast, withDealNextStep, withDealOwner } from "./DealsList";
+import { DealsList, buildDealRows, bulkMoveStages, dealRowsToCsv, sortDealRows, withDealForecast, withDealNextStep, withDealOwner } from "./DealsList";
 
-const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), transitionCase: vi.fn(), pushToast: vi.fn() }));
+const mocks = vi.hoisted(() => ({ updateCase: vi.fn(), transitionCase: vi.fn(), pushToast: vi.fn(), downloadTextFile: vi.fn() }));
+vi.mock("../lib/issues-csv", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/issues-csv")>()),
+  downloadTextFile: mocks.downloadTextFile,
+}));
 vi.mock("../api/pipelines", () => ({ pipelinesApi: { updateCase: mocks.updateCase, transitionCase: mocks.transitionCase } }));
 vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast: mocks.pushToast }) }));
 
@@ -178,6 +182,31 @@ describe("DealsList", () => {
       tone: "warn",
       body: expect.stringContaining("1 won or lost deal was left as it was."),
     }));
+    root.unmount();
+  });
+
+  it("writes the deals as a spreadsheet in the order shown", () => {
+    const rows = buildDealRows(cases, stages, new Date("2026-10-17T12:00:00Z"));
+    const csv = dealRowsToCsv(rows, "https://gsam.example");
+    const lines = csv.replace(/^\uFEFF/, "").trim().split("\r\n");
+    expect(lines[0]).toBe("Deal,Stage,Value,Currency,Weighted value,Owner,Expected close,Next step on,Next step,Days in stage,Link");
+    expect(lines[1]).toBe("Acme,Proposal,5000,GBP,2000,,,2026-10-20,Demo,7,https://gsam.example/pipelines/p/items/a");
+    expect(lines[3]).toBe("Corp,Won,,,,,,,,,https://gsam.example/pipelines/p/items/c");
+  });
+
+  it("downloads only the selected deals when some are selected", async () => {
+    mocks.downloadTextFile.mockClear();
+    const container = document.createElement("div");
+    const root = createRoot(container);
+    await act(async () => root.render(<QueryClientProvider client={new QueryClient()}><DealsList cases={cases} stages={stages} /></QueryClientProvider>));
+    const button = (text: string) => [...container.querySelectorAll("button")].find((item) => item.textContent === text) as HTMLButtonElement;
+    await act(async () => button("Download as spreadsheet").click());
+    expect(mocks.downloadTextFile.mock.calls[0]![1].trim().split("\r\n")).toHaveLength(4);
+    await act(async () => (container.querySelector('[aria-label="Select Acme"]') as HTMLButtonElement).click());
+    await act(async () => button("Download 1 selected").click());
+    const [name, text] = mocks.downloadTextFile.mock.calls[1]!;
+    expect(name).toMatch(/^deals-\d{4}-\d{2}-\d{2}\.csv$/);
+    expect(text.trim().split("\r\n").slice(1).map((line: string) => line.split(",")[0])).toEqual(["Acme"]);
     root.unmount();
   });
 });

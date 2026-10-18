@@ -25,6 +25,7 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
+import { fillTestCaseOrganisation } from "./helpers/case-organisation.js";
 import { errorHandler } from "../middleware/error-handler.js";
 import { pipelineRoutes } from "../routes/pipelines.js";
 import { clientAcceptancePublicRoutes } from "../routes/client-acceptance-public.js";
@@ -105,6 +106,7 @@ describeEmbeddedPostgres("client acceptance link", () => {
       req.actor = actor;
       next();
     });
+    instance.use("/api", fillTestCaseOrganisation(db));
     instance.use("/api", pipelineRoutes(db, { heartbeat: { wakeup: async () => null }, storage: memoryStorage, publicBaseUrl: "https://gsam.example.com/" }));
     instance.use("/api", clientAcceptancePublicRoutes(db, memoryStorage));
     instance.use(errorHandler);

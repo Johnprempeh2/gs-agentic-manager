@@ -85,7 +85,7 @@ export function ActivitySection({
   if (error) return <ErrorState error={error} title="Activity did not load" onRetry={onRetry} compact />;
 
   if (events.length === 0) {
-    return <EmptyState icon={ActivityIcon} message="No activity yet." />;
+    return <EmptyState icon={ActivityIcon} message="No activity yet." description="Each time this routine runs or someone changes it, it shows here." />;
   }
 
   return (

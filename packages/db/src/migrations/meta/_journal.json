@@ -2633,6 +2633,13 @@
       "when": 1792299459953,
       "tag": "0377_studio_video_favourites",
       "breakpoints": true
+    },
+    {
+      "idx": 378,
+      "version": "7",
+      "when": 1792343194908,
+      "tag": "0378_organisation_crm_fields",
+      "breakpoints": true
     }
   ]
 }

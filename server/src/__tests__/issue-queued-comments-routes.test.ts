@@ -1663,11 +1663,16 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
     expect(rejected?.status).toBe("rejected");
   });
 
-  /** True while another transaction holds the issue row lock. */
+  /**
+   * True while another transaction holds the issue row lock (`for update`).
+   * The probe takes only `for key share`, which conflicts with `for update`
+   * and nothing weaker, so two probes running at once cannot see each other
+   * as the lock holder (GRE-1661).
+   */
   async function issueRowLockHeld(issueId: string) {
     try {
       await db.transaction(async (tx) => {
-        await tx.execute(sql`select id from issues where id = ${issueId} for update nowait`);
+        await tx.execute(sql`select id from issues where id = ${issueId} for key share nowait`);
       });
       return false;
     } catch (error) {
@@ -1676,6 +1681,40 @@ describeEmbeddedPostgres("issue queued-comment routes", () => {
       throw error;
     }
   }
+
+  /** Runs `check` while another transaction holds `lockClause` on the issue row. */
+  async function whileIssueRowLocked<T>(issueId: string, lockClause: "for update" | "for key share", check: () => Promise<T>) {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked!: () => void;
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const holder = db.transaction(async (tx) => {
+      await tx.execute(sql`select id from issues where id = ${issueId} ${sql.raw(lockClause)}`);
+      locked();
+      await released;
+    });
+    await Promise.race([lockTaken, holder]);
+    try {
+      return await check();
+    } finally {
+      release();
+      await holder;
+    }
+  }
+
+  it("the issue row lock probe sees the steering lock and not a second probe running at the same time", async () => {
+    const seeded = await seedQueue();
+    expect(await issueRowLockHeld(seeded.issueId)).toBe(false);
+    expect(await whileIssueRowLocked(seeded.issueId, "for update", () => issueRowLockHeld(seeded.issueId))).toBe(true);
+    // A second probe holds the lock a probe takes. It must not read as the
+    // steering transaction's lock, or the overlapping probe and reconcile
+    // observations below flake under load.
+    expect(await whileIssueRowLocked(seeded.issueId, "for key share", () => issueRowLockHeld(seeded.issueId))).toBe(false);
+  });
 
   it("keeps runtime probes and late identity reconciliation out of the steering transaction on one pooled connection", async () => {
     const seeded = await seedQueue();

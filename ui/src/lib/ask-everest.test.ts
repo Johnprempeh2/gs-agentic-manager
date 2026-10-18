@@ -9,6 +9,7 @@ import {
   answerQuiet,
   answerClosing,
   answerPipeline,
+  ownerInQuestion,
   answerResults,
   SALES_QUESTIONS,
   closingDays,
@@ -204,6 +205,36 @@ describe("answers", () => {
     expect(classifyQuestion("Show me deals by owner", agents)).toEqual({ kind: "pipeline", view: "owners" });
     expect(classifyQuestion("Which deals have no close date?", agents)).toEqual({ kind: "pipeline", view: "missing" });
     expect(classifyQuestion("What's missing from the pipeline?", agents)).toEqual({ kind: "pipeline", view: "missing" });
+  });
+
+  it("spots questions about one person's deals and pulls out the name", () => {
+    expect(classifyQuestion("Show me Sarah's deals", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Sarah" });
+    expect(classifyQuestion("List sarah's deals", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Sarah" });
+    expect(classifyQuestion("What are Sarah Jones's deals?", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Sarah Jones" });
+    expect(classifyQuestion("Which deals are owned by kofi mensah?", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Kofi Mensah" });
+    expect(classifyQuestion("deals assigned to Ama now", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Ama" });
+    expect(classifyQuestion("What does Kofi own?", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Kofi" });
+    expect(classifyQuestion("How is Charles' pipeline?", agents)).toEqual({ kind: "pipeline", view: "owner", owner: "Charles" });
+    expect(ownerInQuestion("What are our deals?")).toBeNull();
+    expect(ownerInQuestion("Show me the team's deals")).toBeNull();
+    expect(classifyQuestion("How is our pipeline looking?", agents)).toEqual({ kind: "pipeline", view: "stages" });
+  });
+
+  it("answers for one owner with value, the next close and each deal", () => {
+    const answer = answerPipeline({
+      ownerFilter: "Sarah",
+      total: 2,
+      valueByCurrency: [{ currency: "GBP", value: 8000, count: 1 }, { currency: null, value: 0, count: 1 }],
+      stages: [],
+      topDeals: [
+        { caseId: "c1", title: "Sarah big", pipelineName: "Sales", stageName: "Proposal", organisationName: null, value: 8000, currency: "GBP", expectedCloseDate: "2026-12-01", href: "/GRE/pipelines/p/items/c1" },
+        { caseId: "c2", title: "Sarah unpriced", pipelineName: "Sales", stageName: "Lead", organisationName: null, value: null, currency: null, expectedCloseDate: "2026-11-02", href: "/GRE/pipelines/p/items/c2" },
+      ],
+      owners: [{ owner: "Sarah Jones", count: 2, valueByCurrency: [{ currency: "GBP", value: 8000 }] }],
+    } as never, "owner");
+    expect(answer.headline).toBe("Sarah Jones owns 2 open deals and leads worth GBP 8,000. Next due to close: Sarah unpriced on 2 Nov.");
+    expect(answer.lines.map((line) => line.detail)).toEqual(["GBP 8,000, Proposal in Sales, due 1 Dec", "No value, Lead in Sales, due 2 Nov"]);
+    expect(answerPipeline({ ownerFilter: "Nobody", total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] } as never, "owner").headline).toBe("No open deals or leads are owned by Nobody.");
   });
 
   it("sums up the pipeline by stage and names the largest deal", () => {

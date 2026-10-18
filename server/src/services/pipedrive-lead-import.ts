@@ -10,6 +10,7 @@ import type { Db } from "@greatstone/db";
 import { pipelineCases, pipelines as pipelinesTable } from "@greatstone/db";
 import type { OrganisationImportCounts, OrganisationImportResult } from "@greatstone/shared";
 import { PipedriveApiError, PipedriveAuthError, type PipedriveClient, type PipedriveDeal, type PipedriveDealField } from "./crm-sync-pipedrive.js";
+import { findOrCreateOrganisation, loadOrganisationNameIndex } from "./organisation-match.js";
 import type { OrganisationActor } from "./organisations.js";
 import { pipedriveDealFieldSpecs, pipedriveDealImportService, type PipedriveFieldSpec } from "./pipedrive-deal-import.js";
 import { pipelineService, type PipelineActor } from "./pipelines.js";
@@ -211,6 +212,14 @@ export function pipedriveLeadImportService(db: Db) {
       ));
       const caseByKey = new Map(existing.filter((row) => !row.retiredAt).map((row) => [row.caseKey, row]));
       const seen = new Set<string>();
+      // GRE-1538: every card names an organisation. A lead whose organisation
+      // was not imported (or that has none) is filed under its title.
+      let nameIndex: Map<string, string> | null = null;
+      const organisationFor = async (title: string, pipedriveId: string | null) => {
+        nameIndex ??= await loadOrganisationNameIndex(db, companyId);
+        const found = await findOrCreateOrganisation(db, { companyId, name: title, pipedriveId, status: "prospect" }, nameIndex);
+        return found?.id ?? null;
+      };
 
       const moveTo = async (row: typeof pipelineCases.$inferSelect, stageKey: string, reason: string) => {
         if (stageKeyById.get(row.stageId) === stageKey) return { row, moved: false };
@@ -243,8 +252,10 @@ export function pipedriveLeadImportService(db: Db) {
             const stageKey = lead.is_archived === true ? LEAD_ARCHIVED_STAGE_KEY : LEAD_OPEN_STAGE_KEY;
             const fields = await deals.dealFields(companyId, lead as PipedriveDeal, specs, defs);
             const orgExternalId = idOf(lead.organization_id);
-            const organisationId = orgExternalId ? input.organisationIdByExternalId.get(orgExternalId) ?? null : null;
             const current = caseByKey.get(caseKey);
+            const linkedOrganisationId = orgExternalId ? input.organisationIdByExternalId.get(orgExternalId) : undefined;
+            const organisationId = linkedOrganisationId
+              ?? (current?.organisationId ? null : await organisationFor(title, orgExternalId));
             if (!current) {
               const ingested = await pipelines.ingestCase({
                 companyId,

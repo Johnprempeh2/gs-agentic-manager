@@ -7,17 +7,14 @@ vi.mock("../context/CompanyContext", () => ({
 
 const titleField = { key: "title", label: "Title", type: "text", required: true } as never;
 
-describe("add items: organisation rule (GRE-1478)", () => {
-  it("asks for an organisation only on pipelines that require one", () => {
+describe("add items: organisation rule (GRE-1478, every pipeline since GRE-1538)", () => {
+  it("asks for an organisation on every item", () => {
     const rows = [{ id: "r1", expanded: true, values: { title: "Acme" } }];
 
-    expect(validateDraftRows(rows, [titleField])).toEqual({});
-    expect(validateDraftRows(rows, [titleField], { requiresOrganisation: true })).toEqual({
+    expect(validateDraftRows(rows, [titleField])).toEqual({
       r1: { [ORGANISATION_ERROR_KEY]: "Pick or create an organisation." },
     });
-    expect(
-      validateDraftRows([{ ...rows[0]!, organisationId: "org-1" }], [titleField], { requiresOrganisation: true }),
-    ).toEqual({});
+    expect(validateDraftRows([{ ...rows[0]!, organisationId: "org-1" }], [titleField])).toEqual({});
   });
 
   it("sends the organisation with the item", () => {

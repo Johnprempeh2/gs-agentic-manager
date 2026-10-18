@@ -3247,11 +3247,14 @@ describe("IssueProperties", () => {
     const removeButton = Array.from(container.querySelectorAll("button"))
       .find((button) => button.textContent?.includes("Remove"));
     expect(removeButton).toBeTruthy();
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => {
       removeButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
     await flush();
 
+    expect(confirmSpy).toHaveBeenCalled();
+    confirmSpy.mockRestore();
     expect(mockIssuesApi.deleteWatchdog).toHaveBeenCalledWith("issue-1");
     expect(queryClient.getQueryData<Issue>(queryKeys.issues.detail(issue.id))?.watchdog)
       .toBeNull();

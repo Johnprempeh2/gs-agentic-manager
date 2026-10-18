@@ -418,6 +418,10 @@ describeEmbeddedPostgres("Pipedrive deal import through the connection", () => {
     expect(cases.get("pipedrive-702")!.fields).toMatchObject({ dealOwner: "Kofi Mensah", wonOn: "2026-08-30", [PLAN]: "99" });
     expect(cases.get("pipedrive-703")).toMatchObject({ stageKey: "lost", pipelineKey: "pipedrive-2" });
     expect(cases.get("pipedrive-703")!.fields).toMatchObject({ lostReason: "Chose an in-house build", lostOn: "2026-07-04" });
+    // Every card names an organisation (GRE-1538): a deal with none in Pipedrive is filed under its title.
+    const cedar = await db.select().from(organisations).where(eq(organisations.id, cases.get("pipedrive-703")!.organisationId!)).then((rows) => rows[0]!);
+    expect(cedar).toMatchObject({ companyId, name: "Cedar Lane discovery" });
+    expect([...cases.values()].every((row) => row.organisationId)).toBe(true);
     // An option Pipedrive no longer lists is added to the field, not dropped.
     const plan = fieldLabels.find((field) => field.key === PLAN)!;
     const planNow = await db.select().from(pipelineFieldDefinitions).where(eq(pipelineFieldDefinitions.id, plan.id)).then((rows) => rows[0]!);

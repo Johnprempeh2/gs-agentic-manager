@@ -236,6 +236,11 @@ For a goal's status use `KpiStatusPill` on a KPI and on a goal with KPIs under i
 **Files:** `ui/src/components/deliverables/DeliverableBadges.tsx`, `ExpectedList` in `ui/src/components/ClientJourneyStages.tsx`
 **Usage:** `ConfidentialityBadge` shows internal, client or public on a deliverable. `LinkStatusBadges` marks a link deliverable whose daily check failed ("Link broken") or that is password protected or unlisted. `SiteThumbnail` shows a live site's stored screenshot, or a placeholder with its initials and domain; it never frames the live site (GRE-405). `ExpectedList` shows what a stage expects against what is filed, with "Missing" in muted text rather than red.
 
+### Studio (StudioComposer, StudioModeTile, StudioMediaCard, StudioMediaAction, StudioEmptyGallery)
+
+**Files:** `ui/src/components/StudioComposer.tsx`, `StudioModeTile.tsx`, `StudioMediaCard.tsx`
+**Usage:** The image and video studio's language (`/images`, `VideoStudio`). `StudioComposer` (`title`, `chips`, `openChip`, `onOpenChipChange`, `action`, `notice?`, `footnote?`, prompt as children) is the floating prompt bar: compact setting chips (`aria-expanded`, `aria-controls`) open one settings panel at a time above the prompt, and the action slot holds the one lime button (`STUDIO_GENERATE_CLASS`; borderless prompt via `STUDIO_PROMPT_CLASS`). Below `md` it docks sticky at the bottom (parent must be a flex column) and the chips scroll sideways. `StudioModeTile` (`icon`, `title`, `description`, `badge?` "New"/"Top", `selected?`) is a compact tool tile. `StudioMediaCard` (`aspectRatio`, `status` pending/completed/failed, `media`, `actions`, `badges`, `caption`, `failure`) is a media-first gallery card: shimmer and status while making, the error and Try again inline when failed, `StudioMediaAction` round buttons or links over the media on hover or keyboard focus (always shown on touch screens). Lay cards out with `STUDIO_GALLERY_CLASS` (masonry columns) and fill them with `STUDIO_MEDIA_CLASS`. `StudioEmptyGallery` replaces blank space with quiet frames and prompt suggestion chips.
+
 ### CompanySwitcher
 
 **File:** `CompanySwitcher.tsx`

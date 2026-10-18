@@ -44,8 +44,10 @@ import {
   type PipedriveDeal,
   type PipedriveDealField,
   type PipedriveFetch,
+  type PipedriveLink,
 } from "./crm-sync-pipedrive.js";
 import { isEntitled } from "./entitlements.js";
+import { findOrCreateOrganisation } from "./organisation-match.js";
 import { pipelineService } from "./pipelines.js";
 import { secretService } from "./secrets.js";
 
@@ -150,10 +152,36 @@ function caseKeyForDeal(externalId: string) {
   return `pipedrive-${externalId}`;
 }
 
+/**
+ * The organisation a deal is about (GRE-1538): its Pipedrive organisation
+ * (v1 sends an object with a name, v2 a bare id), else the deal title.
+ */
+export function dealOrganisationRef(deal: PipedriveDeal, title: string) {
+  const link = deal.org_id as PipedriveLink | undefined;
+  const id = typeof link === "number" ? link : link && typeof link === "object" ? (link.value ?? link.id) : null;
+  const linkName = link && typeof link === "object" && typeof link.name === "string" ? link.name : null;
+  const orgName = typeof deal.org_name === "string" ? deal.org_name : null;
+  return {
+    pipedriveId: typeof id === "number" ? String(id) : null,
+    name: (linkName ?? orgName ?? "").trim() || title,
+  };
+}
+
 export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
   const now = deps.now ?? (() => new Date());
   const resolveCredential = deps.resolveCredential ?? ((connection: ConnectionRow) => resolveCrmConnectionCredential(db, connection));
   const pipelines = pipelineService(db);
+
+  async function organisationForDeal(binding: BindingRow, deal: PipedriveDeal, title: string) {
+    const ref = dealOrganisationRef(deal, title);
+    const organisation = await findOrCreateOrganisation(db, {
+      companyId: binding.companyId,
+      name: ref.name,
+      pipedriveId: ref.pipedriveId,
+      status: "prospect",
+    });
+    return organisation?.id ?? null;
+  }
 
   async function writeEvent(binding: BindingRow, input: {
     direction?: "inbound" | "outbound";
@@ -249,6 +277,7 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
         summary: content.summary,
         fields: content.fields,
         stageKey: stageKey ?? null,
+        organisationId: await organisationForDeal(binding, deal, title),
         actor: SYNC_ACTOR,
       });
       caseRow = result.case;
@@ -491,6 +520,10 @@ export function crmSyncRunner(db: Db, deps: CrmSyncRunnerDeps = {}) {
           ...(content.title !== undefined ? { title: content.title } : {}),
           ...(content.summary !== undefined ? { summary: content.summary } : {}),
           ...(Object.keys(content.fields).length > 0 ? { fields: { ...caseRow.fields, ...content.fields } } : {}),
+          // A card linked before the rule gains the deal's organisation with this save.
+          ...(caseRow.organisationId
+            ? {}
+            : { organisationId: await organisationForDeal(binding, deal, content.title ?? caseRow.title) }),
           actor: SYNC_ACTOR,
         });
       } catch (error) {

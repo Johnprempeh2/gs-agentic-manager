@@ -20,6 +20,16 @@ export const ORGANISATION_COLUMN_KEYS = new Set([
   "company_id",
   "active_flag",
   "first_char",
+  // Held in the organisation's CRM columns (GRE-1538), so not repeated as named fields.
+  "linkedin",
+  "address_street_number",
+  "address_route",
+  "address_locality",
+  "address_admin_area_level_1",
+  "address_postal_code",
+  "employee_count",
+  "annual_revenue",
+  "annual_revenue_currency",
 ]);
 
 export const PERSON_COLUMN_KEYS = new Set([
