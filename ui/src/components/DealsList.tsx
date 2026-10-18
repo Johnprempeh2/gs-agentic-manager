@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Download } from "lucide-react";
 import { pipelinesApi, type PipelineStage } from "../api/pipelines";
 import { useToastActions } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { daysInStage, readDevtoolsDeal } from "../lib/client-case";
+import { csvCell, downloadTextFile } from "../lib/issues-csv";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay, formatNumber } from "@/lib/utils";
 
@@ -87,6 +88,40 @@ export function sortDealRows(rows: readonly DealsListRow[], key: DealsSortKey, d
     const order = a < b ? -1 : a > b ? 1 : 0;
     return direction === "asc" ? order : -order;
   });
+}
+
+export const DEALS_CSV_HEADERS = [
+  "Deal",
+  "Stage",
+  "Value",
+  "Currency",
+  "Weighted value",
+  "Owner",
+  "Expected close",
+  "Next step on",
+  "Next step",
+  "Days in stage",
+  "Link",
+] as const;
+
+/** The rows as a CSV that opens cleanly in Excel, Numbers and Google Sheets, in the order shown. */
+export function dealRowsToCsv(rows: readonly DealsListRow[], origin: string): string {
+  const number = (value: number | null) => (value == null ? "" : String(Math.round(value * 100) / 100));
+  const lines = rows.map((row) => [
+    row.item.title,
+    row.stageName,
+    number(row.value),
+    row.currency,
+    number(row.weighted),
+    row.owner,
+    row.expectedClose,
+    row.nextStep,
+    row.nextStep ? row.nextStepSubject : "",
+    row.days == null ? "" : String(row.days),
+    `${origin}/pipelines/${row.item.pipelineId}/items/${row.item.id}`,
+  ]);
+  // The byte order mark makes Excel read the file as UTF-8, so names keep their accents.
+  return `\uFEFF${[DEALS_CSV_HEADERS as readonly string[], ...lines].map((line) => line.map(csvCell).join(",")).join("\r\n")}\r\n`;
 }
 
 /** A deal's fields with a new owner; a Pipedrive lead keeps its lead key. Blank removes the owner. */
@@ -302,8 +337,24 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
       return next;
     });
 
+  const downloadRows = selectedRows.length > 0 ? selectedRows : rows;
+  const downloadSpreadsheet = () =>
+    downloadTextFile(`deals-${today}.csv`, dealRowsToCsv(downloadRows, window.location.origin));
+
   return (
     <div className="space-y-2">
+    <div className="flex justify-end">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        title={`Download ${downloadRows.length === 1 ? "this deal" : `these ${downloadRows.length} deals`} as a spreadsheet`}
+        onClick={downloadSpreadsheet}
+      >
+        <Download className="h-3.5 w-3.5" />
+        {selectedRows.length > 0 ? `Download ${selectedRows.length} selected` : "Download as spreadsheet"}
+      </Button>
+    </div>
     {selectedRows.length > 0 ? (
       <form
         className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 text-sm"
