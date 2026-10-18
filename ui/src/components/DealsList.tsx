@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp } from "lucide-react";
-import type { PipelineStage } from "../api/pipelines";
+import { pipelinesApi, type PipelineStage } from "../api/pipelines";
+import { useToastActions } from "../context/ToastContext";
+import { queryKeys } from "../lib/queryKeys";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { daysInStage, readDevtoolsDeal } from "../lib/client-case";
 import { Link } from "@/lib/router";
 import { cn, formatCalendarDay, formatNumber } from "@/lib/utils";
@@ -15,6 +22,7 @@ export interface DealsListCase {
   stageId?: string | null;
   fields?: Record<string, unknown> | null;
   stageEnteredAt?: Date | string | null;
+  version?: number;
 }
 
 export type DealsSortKey = "title" | "stage" | "value" | "weighted" | "owner" | "expectedClose" | "nextStep" | "days";
@@ -81,6 +89,22 @@ export function sortDealRows(rows: readonly DealsListRow[], key: DealsSortKey, d
   });
 }
 
+/** A deal's fields with a new owner; a Pipedrive lead keeps its lead key. Blank removes the owner. */
+export function withDealOwner(fields: Record<string, unknown> | null | undefined, owner: string) {
+  const next: Record<string, unknown> = { ...(fields ?? {}) };
+  const key = "leadOwner" in next && !("dealOwner" in next) ? "leadOwner" : "dealOwner";
+  if (owner.trim()) next[key] = owner.trim();
+  else delete next[key];
+  return next;
+}
+
+/** Stages several deals can be moved to at once: open stages only, because won and lost need an outcome each. */
+export function bulkMoveStages(stages: readonly PipelineStage[]) {
+  return [...stages]
+    .filter((stage) => stage.kind !== "done" && stage.kind !== "cancelled")
+    .sort((left, right) => left.position - right.position);
+}
+
 const COLUMNS: Array<{ key: DealsSortKey; label: string; numeric?: boolean }> = [
   { key: "title", label: "Deal" },
   { key: "stage", label: "Stage" },
@@ -100,14 +124,149 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
   const [sort, setSort] = useState<{ key: DealsSortKey; direction: "asc" | "desc" }>({ key: "nextStep", direction: "asc" });
   const rows = useMemo(() => sortDealRows(buildDealRows(cases, stages), sort.key, sort.direction), [cases, stages, sort]);
   const today = new Date().toISOString().slice(0, 10);
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [owner, setOwner] = useState("");
+  const selectedRows = rows.filter((row) => selected.has(row.item.id));
+  const moveTargets = useMemo(() => bulkMoveStages(stages), [stages]);
+  const [targetStageId, setTargetStageId] = useState("");
+  const refreshBoards = (pipelineIds: string[]) =>
+    Promise.all([...new Set(pipelineIds)].map((pipelineId) =>
+      queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.cases(pipelineId) })));
+
+  const moveDeals = useMutation({
+    mutationFn: async () => {
+      const target = moveTargets.find((stage) => stage.id === targetStageId);
+      if (!target) throw new Error("Choose a stage");
+      let moved = 0;
+      let blocked = 0;
+      let closed = 0;
+      for (const row of selectedRows) {
+        if (row.item.stageId === target.id) continue;
+        // Reopening a won or lost deal should be a deliberate step on that deal.
+        if (row.days == null && !moveTargets.some((stage) => stage.id === row.item.stageId)) {
+          closed += 1;
+          continue;
+        }
+        try {
+          await pipelinesApi.transitionCase(row.item.id, { toStageKey: target.key, expectedVersion: row.item.version ?? 0 });
+          moved += 1;
+        } catch {
+          blocked += 1;
+        }
+      }
+      return { moved, blocked, closed, stageName: target.name, pipelineIds: selectedRows.map((row) => row.item.pipelineId) };
+    },
+    onSuccess: async ({ moved, blocked, closed, stageName, pipelineIds }) => {
+      setSelected(new Set());
+      setTargetStageId("");
+      await refreshBoards(pipelineIds);
+      const movedText = `Moved ${moved} ${moved === 1 ? "deal" : "deals"} to ${stageName}`;
+      const notes = [
+        blocked > 0 ? `${blocked} could not move: a stage rule stopped it or it changed meanwhile. Open it to move it by hand.` : "",
+        closed > 0 ? `${closed} won or lost ${closed === 1 ? "deal was" : "deals were"} left as ${closed === 1 ? "it was" : "they were"}.` : "",
+      ].filter(Boolean);
+      pushToast(notes.length > 0
+        ? { title: movedText, body: notes.join(" "), tone: blocked > 0 ? "warn" : "info" }
+        : { title: movedText, tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({ title: error instanceof Error ? error.message : "Could not move the deals", tone: "error" });
+    },
+  });
+
+  const changeOwner = useMutation({
+    mutationFn: async () => {
+      for (const row of selectedRows) {
+        await pipelinesApi.updateCase(row.item.id, { fields: withDealOwner(row.item.fields, owner) });
+      }
+    },
+    onSuccess: async () => {
+      const count = selectedRows.length;
+      setSelected(new Set());
+      setOwner("");
+      await refreshBoards(selectedRows.map((row) => row.item.pipelineId));
+      pushToast({ title: `Owner changed on ${count} ${count === 1 ? "deal" : "deals"}`, tone: "success" });
+    },
+    onError: async (error) => {
+      await refreshBoards(selectedRows.map((row) => row.item.pipelineId));
+      pushToast({ title: error instanceof Error ? `Could not change every owner: ${error.message}` : "Could not change every owner", tone: "error" });
+    },
+  });
 
   if (rows.length === 0) return <p className="text-sm text-muted-foreground">No deals to show.</p>;
 
+  const allSelected = rows.every((row) => selected.has(row.item.id));
+  const toggle = (id: string, on: boolean) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
   return (
+    <div className="space-y-2">
+    {selectedRows.length > 0 ? (
+      <form
+        className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 text-sm"
+        aria-label="Change owner"
+        onSubmit={(event) => {
+          event.preventDefault();
+          changeOwner.mutate();
+        }}
+      >
+        <span className="font-medium">{selectedRows.length} selected</span>
+        <Input
+          value={owner}
+          onChange={(event) => setOwner(event.target.value)}
+          placeholder="New owner"
+          aria-label="New owner"
+          className="h-9 w-(--sz-180px)"
+        />
+        <Button type="submit" size="sm" disabled={changeOwner.isPending || !owner.trim()}>
+          {changeOwner.isPending ? "Changing…" : "Change owner"}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+      </form>
+    ) : null}
+    {selectedRows.length > 0 && moveTargets.length > 0 ? (
+      <form
+        className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-2 text-sm"
+        aria-label="Move to stage"
+        onSubmit={(event) => {
+          event.preventDefault();
+          moveDeals.mutate();
+        }}
+      >
+        <span className="font-medium">Move {selectedRows.length} to</span>
+        <NativeSelect
+          value={targetStageId}
+          onChange={(event) => setTargetStageId(event.target.value)}
+          aria-label="Stage to move to"
+          className="w-(--sz-180px)"
+        >
+          <option value="">Choose a stage</option>
+          {moveTargets.map((stage) => <option key={stage.id} value={stage.id}>{stage.name}</option>)}
+        </NativeSelect>
+        <Button type="submit" size="sm" disabled={moveDeals.isPending || !targetStageId}>
+          {moveDeals.isPending ? "Moving…" : "Move"}
+        </Button>
+        <span className="text-xs text-muted-foreground">Mark won or lost on each deal.</span>
+      </form>
+    ) : null}
     <div className="overflow-x-auto rounded-md border border-border">
       <table className="w-full text-sm" aria-label="Deals">
         <thead>
           <tr className="bg-muted/30 text-xs text-muted-foreground">
+            <th className="w-10 px-3 py-2">
+              <Checkbox
+                aria-label="Select every deal"
+                checked={allSelected}
+                onCheckedChange={(value) => setSelected(value === true ? new Set(rows.map((row) => row.item.id)) : new Set())}
+              />
+            </th>
             {COLUMNS.map((column) => {
               const active = sort.key === column.key;
               return (
@@ -138,6 +297,13 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
           {rows.map((row) => (
             <tr key={row.item.id} className="border-t border-border/60" data-testid="deal-row">
               <td className="px-3 py-2">
+                <Checkbox
+                  aria-label={`Select ${row.item.title}`}
+                  checked={selected.has(row.item.id)}
+                  onCheckedChange={(value) => toggle(row.item.id, value === true)}
+                />
+              </td>
+              <td className="px-3 py-2">
                 <Link to={`/pipelines/${row.item.pipelineId}/items/${row.item.id}`} className="font-medium text-foreground hover:underline">
                   {row.item.title}
                 </Link>
@@ -156,6 +322,7 @@ export function DealsList({ cases, stages }: { cases: readonly DealsListCase[]; 
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }

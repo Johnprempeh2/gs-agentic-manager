@@ -129,6 +129,12 @@ interface DealsDueOptions extends PipelineOptions {
   unscheduled?: boolean;
 }
 
+interface NextStepDoneOptions extends PipelineOptions {
+  note?: string;
+  nextDate?: string;
+  nextSubject?: string;
+}
+
 interface EditOptions extends PipelineOptions {
   expectedVersion?: string;
   title?: string;
@@ -248,6 +254,36 @@ export function selectDealsDue(
   }
   return due.sort((left, right) =>
     (left.nextActivityDate ?? "9999").localeCompare(right.nextActivityDate ?? "9999") || left.title.localeCompare(right.title));
+}
+
+/**
+ * A deal's fields once its next step is done: the step becomes the last
+ * activity (dated `today`, with the note), and the follow-up, if given,
+ * becomes the next step. Matches "Mark next step done" on the deal page.
+ */
+export function completeDealNextStep(
+  fields: JsonObject | null | undefined,
+  input: { note?: string; nextDate?: string; nextSubject?: string },
+  today: string,
+): JsonObject {
+  const next: JsonObject = { ...(fields ?? {}) };
+  const done = fieldString(next, "nextActivitySubject");
+  next.lastActivityDate = today;
+  if (done) next.lastActivitySubject = done;
+  else delete next.lastActivitySubject;
+  const note = input.note?.trim();
+  if (note) next.lastActivityNote = note;
+  else delete next.lastActivityNote;
+  if (input.nextDate) {
+    next.nextActivityDate = input.nextDate;
+    const subject = input.nextSubject?.trim();
+    if (subject) next.nextActivitySubject = subject;
+    else delete next.nextActivitySubject;
+  } else {
+    delete next.nextActivityDate;
+    delete next.nextActivitySubject;
+  }
+  return next;
 }
 
 export function registerPipelineCommands(program: Command): void {
@@ -560,6 +596,37 @@ function registerCaseCommands(caseCommand: Command): void {
         if (fields !== undefined) body.fields = fields;
         if (opts.workspaceRefJson) body.workspaceRef = parseJson(opts.workspaceRefJson);
         printOutput(await ctx.api.patch(apiPath`/api/cases/${caseId}`, body), { json: ctx.json });
+      })),
+  );
+
+  addPipelineOptions(
+    caseCommand
+      .command("next-step-done")
+      .description("Mark a Pipedrive deal's next step done, with a note and an optional follow-up")
+      .argument("<caseId>", "Case ID")
+      .option("--note <text>", "What happened")
+      .option("--next-date <yyyy-mm-dd>", "Date of the follow-up next step")
+      .option("--next-subject <text>", "Subject of the follow-up next step")
+      .action((caseId: string, opts: NextStepDoneOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        if (opts.nextDate && !/^\d{4}-\d{2}-\d{2}$/.test(opts.nextDate)) throw new Error("--next-date must be YYYY-MM-DD");
+        if (opts.nextSubject && !opts.nextDate) throw new Error("--next-subject needs --next-date");
+        const detail = await ctx.api.get<CaseDetail>(apiPath`/api/cases/${caseId}`);
+        if (!detail) throw new Error(`Case ${caseId} not found`);
+        const fields = detail.case.fields ?? null;
+        if (!fields || !("dealStatus" in fields)) throw new Error("This case is not a Pipedrive deal");
+        const status = fieldString(fields, "dealStatus")?.toLowerCase();
+        if (status && status !== "open") throw new Error(`This deal is ${status}; only an open deal has a next step to mark done`);
+        if (!fieldString(fields, "nextActivityDate")) throw new Error("This deal has no next step to mark done");
+        const today = new Date().toISOString().slice(0, 10);
+        const result = await ctx.api.patch(apiPath`/api/cases/${caseId}`, {
+          fields: completeDealNextStep(fields, opts, today),
+          expectedVersion: detail.case.version,
+        });
+        if (ctx.json) return printOutput(result, { json: true });
+        console.log(opts.nextDate
+          ? `Next step done on ${detail.case.title}. Follow-up booked for ${opts.nextDate}.`
+          : `Next step done on ${detail.case.title}. No follow-up booked.`);
       })),
   );
 

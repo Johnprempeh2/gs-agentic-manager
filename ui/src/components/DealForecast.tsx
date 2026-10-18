@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { formatDealTotals, type ForecastBucket } from "@/lib/client-case";
+import { formatDealTotals, type ForecastBucket, type OwnerScorecardRow } from "@/lib/client-case";
 import { cn } from "@/lib/utils";
 
 /**
@@ -45,5 +45,71 @@ export function DealForecast({ buckets }: { buckets: ForecastBucket[] }) {
         </ul>
       ) : null}
     </section>
+  );
+}
+
+/** Why DevTools deals were lost in the last 90 days, most common reason first. */
+export function LostReasons({ rows }: { rows: Array<{ reason: string; count: number; totals: Array<{ currency: string; total: number }> }> }) {
+  if (rows.length === 0) return null;
+  const lost = rows.reduce((sum, row) => sum + row.count, 0);
+  return (
+    <details className="rounded-lg border border-border bg-card p-3 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
+        Why we lost {lost} {lost === 1 ? "deal" : "deals"} in the last 90 days
+      </summary>
+      <ul className="mt-2 divide-y divide-border" aria-label="Lost reasons">
+        {rows.map((row) => (
+          <li key={row.reason} className="flex items-center justify-between gap-3 py-1.5" data-testid="lost-reason">
+            <span className="min-w-0 flex-1 truncate">{row.reason}</span>
+            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+              {row.count} {row.count === 1 ? "deal" : "deals"}
+              {row.totals.length > 0 ? ` · ${formatDealTotals(row.totals)}` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** Deals by owner on a DevTools board; shown only when more than one owner has deals. */
+export function OwnerScorecard({ rows }: { rows: OwnerScorecardRow[] }) {
+  if (rows.length < 2) return null;
+  return (
+    <details className="rounded-lg border border-border bg-card p-3 text-sm">
+      <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
+        Deals by owner ({rows.length} owners)
+      </summary>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-sm" aria-label="Deals by owner">
+          <thead>
+            <tr className="text-xs text-muted-foreground">
+              <th className="py-1.5 pr-3 text-left font-medium">Owner</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Open</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Value</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Weighted</th>
+              <th className="py-1.5 pr-3 text-right font-medium">Next step late</th>
+              <th className="py-1.5 text-right font-medium">Win rate (90 days)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.owner} className="border-t border-border/60" data-testid="owner-scorecard-row">
+                <td className="py-1.5 pr-3">{row.owner}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">{row.open}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">{formatDealTotals(row.openTotals)}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">{formatDealTotals(row.weighted)}</td>
+                <td className={cn("py-1.5 pr-3 text-right tabular-nums", row.overdueNextSteps > 0 && "text-status-danger-foreground")}>
+                  {row.overdueNextSteps}
+                </td>
+                <td className="py-1.5 text-right tabular-nums">
+                  {row.winRate == null ? "" : `${row.winRate}% (${row.won} of ${row.won + row.lost})`}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
   );
 }

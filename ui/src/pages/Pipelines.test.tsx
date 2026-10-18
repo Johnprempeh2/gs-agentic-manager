@@ -7,6 +7,7 @@ import {
 import {
   groupCasesByBuiltFor,
   listCardOwners,
+  matchesBoardSearch,
   normalizePipelineConversationComments,
   pipelineBoardGroupByStorageKey,
   readStoredPipelineBoardGroupBy,
@@ -165,5 +166,15 @@ describe("pipeline conversation comments", () => {
         pageParams: [null],
       }),
     ).toEqual([]);
+  });
+});
+
+describe("matchesBoardSearch", () => {
+  it("matches every word against the title, summary and text fields", () => {
+    const item = { title: "Acme rollout", summary: null, fields: { dealOwner: "Ben Asante", organisation: "Acme Ltd", dealValue: 12000 } };
+    expect(matchesBoardSearch(item, "")).toBe(true);
+    expect(matchesBoardSearch(item, "acme ben")).toBe(true);
+    expect(matchesBoardSearch(item, "12000")).toBe(true);
+    expect(matchesBoardSearch(item, "acme john")).toBe(false);
   });
 });

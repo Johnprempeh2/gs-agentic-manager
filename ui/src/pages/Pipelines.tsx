@@ -90,7 +90,7 @@ import { projectsApi } from "../api/projects";
 import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineExportButton } from "../components/DataExport";
-import { DealForecast } from "../components/DealForecast";
+import { DealForecast, LostReasons, OwnerScorecard } from "../components/DealForecast";
 import { DealsList } from "../components/DealsList";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
@@ -104,6 +104,8 @@ import {
   dealWinRate,
   dealsClosedThisMonth,
   forecastByCloseMonth,
+  lostReasonBreakdown,
+  ownerScorecard,
   weightedDealValues,
   formatDealTotals,
   isDevtoolsCaseType,
@@ -1207,6 +1209,24 @@ type PipelineBoardGroupBy = "none" | "builtFor";
 const PIPELINE_BOARD_UNGROUPED_KEY = "__ungrouped";
 const ALL_OWNERS = "__all_owners";
 
+/**
+ * Board search: every word must appear in the card's title, summary or one of
+ * its text or number fields (organisation, owner, contact, next step).
+ */
+export function matchesBoardSearch(
+  item: { title?: string | null; summary?: string | null; fields?: Record<string, unknown> | null },
+  query: string,
+) {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const haystack = [
+    item.title ?? "",
+    item.summary ?? "",
+    ...Object.values(item.fields ?? {}).filter((value) => typeof value === "string" || typeof value === "number").map(String),
+  ].join(" ").toLowerCase();
+  return words.every((word) => haystack.includes(word));
+}
+
 /** Distinct card owners on a board, sorted by name. */
 export function listCardOwners(cases: Array<{ fields?: Record<string, unknown> | null }>) {
   const owners = new Set<string>();
@@ -1683,6 +1703,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const [nextStepFilterPipelineId, setNextStepFilterPipelineId] = useState<string | null>(null);
   // Pipedrive's list view for DevTools deals, per pipeline.
   const [listViewPipelineId, setListViewPipelineId] = useState<string | null>(null);
+  const [boardSearch, setBoardSearch] = useState<{ pipelineId: string; query: string }>({ pipelineId, query: "" });
+  const searchQuery = boardSearch.pipelineId === pipelineId ? boardSearch.query : "";
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -1743,8 +1765,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const boardOwners = useMemo(() => listCardOwners(cases), [cases]);
   const selectedOwner = ownerFilter.pipelineId === pipelineId && boardOwners.includes(ownerFilter.owner) ? ownerFilter.owner : ALL_OWNERS;
   const visibleCases = useMemo(
-    () => (selectedOwner === ALL_OWNERS ? cases : cases.filter((item) => readCardSummary(item.fields).owner === selectedOwner)),
-    [cases, selectedOwner],
+    () => cases.filter((item) =>
+      (selectedOwner === ALL_OWNERS || readCardSummary(item.fields).owner === selectedOwner) && matchesBoardSearch(item, searchQuery)),
+    [cases, selectedOwner, searchQuery],
   );
 
   const orderedStages = useMemo(() => {
@@ -1772,6 +1795,14 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const nextStepFilterOn = nextStepFilterPipelineId === pipelineId && dealsNeedingNextStep > 0;
   const boardCases = nextStepFilterOn ? casesNeedingNextStep : visibleCases;
   const winRate = useMemo(() => dealWinRate(visibleCases), [visibleCases]);
+  const lostReasons = useMemo(
+    () => (pipeline && isDevtoolsCaseType(pipeline.key) ? lostReasonBreakdown(visibleCases) : []),
+    [pipeline, visibleCases],
+  );
+  const ownerRows = useMemo(
+    () => (pipeline && isDevtoolsCaseType(pipeline.key) ? ownerScorecard(visibleCases) : []),
+    [pipeline, visibleCases],
+  );
   const closedThisMonth = useMemo(
     () => ({ won: dealsClosedThisMonth(visibleCases, "won"), lost: dealsClosedThisMonth(visibleCases, "lost") }),
     [visibleCases],
@@ -2043,6 +2074,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
             {selectedOwner === ALL_OWNERS
               ? `${cases.length} total item${cases.length === 1 ? "" : "s"}`
               : `${visibleCases.length} of ${cases.length} items, owned by ${selectedOwner}`}
+            {selectedOwner === ALL_OWNERS && searchQuery.trim() ? <span data-testid="pipeline-search-count"> · {visibleCases.length} match</span> : null}
             {openDealValue ? <span data-testid="pipeline-open-deal-value"> · {openDealValue} in open deals</span> : null}
             {weightedOpenValue ? (
               <span data-testid="pipeline-weighted-value" title="Open deal value multiplied by each deal's probability">
@@ -2107,6 +2139,17 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
           <FeatureTour tour={PIPELINE_BOARD_TOUR} />
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setBoardSearch({ pipelineId, query: event.target.value })}
+              placeholder="Search this board"
+              aria-label="Search this board"
+              className="h-9 w-(--sz-180px) pl-8"
+            />
+          </div>
           {boardOwners.length > 1 ? (
             <Select value={selectedOwner} onValueChange={(owner) => setOwnerFilter({ pipelineId, owner })}>
               <SelectTrigger className="h-9 w-(--sz-148px)" aria-label="Owner" title="Owner">
@@ -2176,6 +2219,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
       </div>
 
       <DealForecast buckets={forecast} />
+      <LostReasons rows={lostReasons} />
+      <OwnerScorecard rows={ownerRows} />
 
       <PipelineHealthBar
         warnings={healthQuery.data?.warnings ?? []}

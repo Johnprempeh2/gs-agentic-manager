@@ -662,3 +662,15 @@ gsam pipelines deals-due --days 7 --unscheduled --json
 `--days` also includes next steps due in the next N days. `--unscheduled`
 also lists open deals with no next step booked. Won, lost and closed-stage
 deals are left out. The command only reads; it changes nothing.
+
+Once the agent has done a deal's next step, it records it the same way
+"Mark next step done" does on the deal page:
+
+```sh
+gsam pipelines case next-step-done <caseId> --note "Spoke to Sam, wants a proposal" \
+  --next-date 2026-10-25 --next-subject "Send proposal"
+```
+
+The step becomes the deal's last activity, dated today with the note, and the
+follow-up becomes its next step. Leave out `--next-date` to close the step with
+no follow-up. The change is saved in GSAM only; nothing is written to Pipedrive.
