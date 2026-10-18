@@ -6,14 +6,12 @@ import {
   STUDIO_FOCAL_LENGTHS,
   STUDIO_LENSES,
   STUDIO_PROMPT_BOOSTERS,
-  studioCameraLabel,
   type StudioApertureId,
   type StudioCameraId,
   type StudioCameraSettings,
   type StudioFocalLength,
   type StudioLensId,
 } from "@greatstone/shared";
-import { Camera, Plus } from "lucide-react";
 import { NativeSelect } from "@/components/ui/native-select";
 
 interface StudioCameraFieldsProps {
@@ -40,15 +38,9 @@ function sameCamera(a: StudioCameraSettings, b: StudioCameraSettings) {
  * and aperture. Each is optional; the server turns them into prompt words.
  */
 export function StudioCameraFields({ idPrefix, camera, onCameraChange, disabled }: StudioCameraFieldsProps) {
-  const summary = studioCameraLabel(camera);
   return (
-    <details className="rounded-md border border-border p-3" data-testid="studio-camera" open={hasStudioCamera(camera) || undefined}>
-      <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-        <Camera className="h-4 w-4 text-primary" aria-hidden="true" />
-        Camera <span className="font-normal text-muted-foreground">(optional)</span>
-        {summary ? <span className="ml-auto truncate text-xs font-normal text-muted-foreground">{summary}</span> : null}
-      </summary>
-      <div className="mt-3 space-y-3">
+    <div className="space-y-3" data-testid="studio-camera">
+      <div className="space-y-3">
         <p className="text-xs text-muted-foreground">
           Shoot it like a film. Pick a look, or choose each part yourself.
         </p>
@@ -65,7 +57,7 @@ export function StudioCameraFields({ idPrefix, camera, onCameraChange, disabled 
                 className={
                   selected
                     ? "rounded-full border border-primary bg-primary/10 px-3 py-1 text-xs text-foreground ring-1 ring-primary"
-                    : "rounded-full border border-border px-3 py-1 text-xs text-foreground hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-50"
+                    : "rounded-full border border-border px-3 py-1 text-xs text-foreground hover:bg-accent/40 disabled:cursor-not-allowed disabled:text-subtle-foreground"
                 }
               >
                 {look.label}
@@ -161,7 +153,7 @@ export function StudioCameraFields({ idPrefix, camera, onCameraChange, disabled 
           </label>
         </div>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -177,12 +169,8 @@ export function StudioPromptBoosters({
 }) {
   const lower = prompt.toLowerCase();
   return (
-    <details className="rounded-md border border-border p-3" data-testid="studio-boosters">
-      <summary className="flex cursor-pointer items-center gap-2 text-sm font-medium">
-        <Plus className="h-4 w-4 text-primary" aria-hidden="true" />
-        Add finishing touches <span className="font-normal text-muted-foreground">(optional)</span>
-      </summary>
-      <div className="mt-3 space-y-2">
+    <div className="space-y-2" data-testid="studio-boosters">
+      <div className="space-y-2">
         {STUDIO_PROMPT_BOOSTERS.map((group) => (
           <div key={group.id} className="flex flex-wrap items-center gap-2" role="group" aria-label={group.label}>
             <span className="w-16 shrink-0 text-xs text-muted-foreground">{group.label}</span>
@@ -194,7 +182,7 @@ export function StudioPromptBoosters({
                   type="button"
                   disabled={disabled || added}
                   onClick={() => onPromptChange(addPromptBooster(prompt, option))}
-                  className="rounded-full border border-border px-2.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-full border border-border px-2.5 py-0.5 text-xs text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:text-subtle-foreground"
                   aria-label={added ? `${option} (added)` : `Add ${option}`}
                 >
                   {option}
@@ -204,6 +192,6 @@ export function StudioPromptBoosters({
           </div>
         ))}
       </div>
-    </details>
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GENERATED_VIDEO_PROMPT_MAX_LENGTH,
@@ -17,13 +17,14 @@ import {
   type VideoModelId,
   type VideoMotionPresetId,
 } from "@greatstone/shared";
-import { AlertCircle, Clapperboard, Download, Film, Loader2, RotateCcw, Star, Trash2, X } from "lucide-react";
+import { Bookmark, Camera, Cpu, Download, Film, Loader2, Move3d, Star, Timer, Trash2, X } from "lucide-react";
 import { videosApi } from "../api/videos";
 import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
-import { EmptyState } from "./EmptyState";
 import { StudioCameraFields } from "./StudioCameraFields";
 import { StudioLookPicker } from "./StudioLookPicker";
+import { STUDIO_GENERATE_CLASS, STUDIO_PROMPT_CLASS, StudioComposer, type StudioComposerChip } from "./StudioComposer";
+import { STUDIO_GALLERY_CLASS, StudioEmptyGallery, StudioMediaAction, StudioMediaCard } from "./StudioMediaCard";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,6 +42,14 @@ function downloadName(video: GeneratedVideo) {
   const slug = video.prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
   return `${slug || "clip"}.mp4`;
 }
+
+/** Ready-made clip ideas for the empty gallery. */
+const VIDEO_IDEA_STARTERS: ReadonlyArray<{ label: string; prompt: string }> = [
+  { label: "City at dusk", prompt: "A red double-decker bus crossing Westminster Bridge at dusk, light rain, reflections on the road" },
+  { label: "Product turn", prompt: "A sleek water bottle turning slowly on a white surface, soft studio light, clean background" },
+  { label: "Nature", prompt: "Waves rolling onto dark rocks at sunrise, mist over the sea, calm and slow" },
+  { label: "Team moment", prompt: "A small team laughing around a table in a bright modern office, natural light, gentle movement" },
+];
 
 interface VideoStudioProps {
   companyId: string;
@@ -64,6 +73,9 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   const [motion, setMotion] = useState<VideoMotionPresetId | null>(null);
   const [camera, setCamera] = useState<StudioCameraSettings>({});
   const [lookId, setLookId] = useState<string | null>(null);
+  const [lookName, setLookName] = useState<string | null>(null);
+  const [openChip, setOpenChip] = useState<string | null>(null);
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [favouritesOnly, setFavouritesOnly] = useState(false);
   const filters = favouritesOnly ? { favourite: true } : {};
@@ -147,66 +159,14 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   const canSubmit = configured && prompt.trim().length >= GENERATED_VIDEO_PROMPT_MIN_LENGTH && !create.isPending;
   const videos = listQuery.data?.videos ?? [];
 
-  return (
-    <div className="space-y-6">
-      <section className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5" aria-labelledby="video-composer-title">
-        <div className="flex items-center gap-2">
-          <Clapperboard className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h2 id="video-composer-title" className="text-sm font-semibold">
-            {sourceImage ? "Bring an image to life" : "Make a video"}
-          </h2>
-          {statusQuery.data?.providerLabel ? (
-            <span className="ml-auto text-xs text-muted-foreground">Using {statusQuery.data.providerLabel}</span>
-          ) : null}
-        </div>
-
-        {!configured && statusQuery.isSuccess ? (
-          <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm" data-testid="videos-not-set-up">
-            <p className="font-medium text-foreground">Video making is not switched on yet</p>
-            <p className="mt-1 text-muted-foreground">
-              It uses the same Higgsfield key as images. Once whoever runs GSAM adds it, you and your agents can make clips here.
-            </p>
-          </div>
-        ) : null}
-
-        {sourceImage ? (
-          <div className="flex items-center gap-3 rounded-md border border-border p-2" data-testid="video-source-image">
-            {sourceImage.contentPath ? (
-              <img src={sourceImage.contentPath} alt={sourceImage.altText} className="h-16 w-24 shrink-0 rounded object-cover" />
-            ) : null}
-            <p className="min-w-0 flex-1 truncate text-sm">{sourceImage.prompt}</p>
-            <Button variant="ghost" size="sm" onClick={onClearSourceImage} aria-label="Stop using this image">
-              <X className="h-4 w-4" aria-hidden="true" />
-            </Button>
-          </div>
-        ) : null}
-
-        <div className="space-y-2">
-          <label htmlFor="video-prompt" className="text-sm font-medium">
-            {sourceImage ? "What should happen in the picture?" : "What should the clip show?"}
-          </label>
-          <Textarea
-            id="video-prompt"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSubmit) {
-                event.preventDefault();
-                create.mutate();
-              }
-            }}
-            placeholder={
-              sourceImage
-                ? "For example: the steam rises from the coffee and the light shifts gently"
-                : "For example: a red double-decker bus crossing Westminster Bridge at dusk, light rain"
-            }
-            maxLength={GENERATED_VIDEO_PROMPT_MAX_LENGTH}
-            rows={3}
-            disabled={!configured}
-            data-testid="video-prompt"
-          />
-        </div>
-
+  const pickedModelLabel = videoModelLabel(effectiveModel.id);
+  const chips: StudioComposerChip[] = [
+    {
+      id: "motion",
+      icon: Move3d,
+      label: "Camera movement",
+      value: videoMotionLabel(motion),
+      panel: (
         <fieldset className="space-y-2" disabled={!configured}>
           <legend className="text-sm font-medium">Camera movement</legend>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Camera movement" data-testid="video-motion">
@@ -220,7 +180,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
                   aria-checked={selected}
                   onClick={() => setMotion(preset.id)}
                   className={cn(
-                    "rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+                    "rounded-full border px-3 py-1 text-xs transition-colors disabled:cursor-not-allowed disabled:text-subtle-foreground",
                     selected ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border hover:bg-accent/40",
                   )}
                 >
@@ -230,185 +190,296 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
             })}
           </div>
         </fieldset>
-
+      ),
+    },
+    {
+      id: "model",
+      icon: Cpu,
+      label: "Model",
+      value: pickedModelLabel,
+      panel: (
+        <label className="block space-y-1 text-sm font-medium" htmlFor="video-model">
+          <span className="block">Model</span>
+          <NativeSelect
+            id="video-model"
+            value={effectiveModel.id}
+            disabled={!configured}
+            onChange={(event) => setModelId(event.target.value as VideoModelId)}
+            data-testid="video-model"
+          >
+            {usableModels.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}: {item.hint}
+              </option>
+            ))}
+          </NativeSelect>
+        </label>
+      ),
+    },
+    {
+      id: "length",
+      icon: Timer,
+      label: "Length",
+      value: `${effectiveDuration} seconds`,
+      panel: (
+        <fieldset className="space-y-2" disabled={!configured}>
+          <legend className="text-sm font-medium">Length</legend>
+          <div className="flex gap-2" role="radiogroup" aria-label="Length" data-testid="video-duration">
+            {effectiveModel.durations.map((seconds) => (
+              <button
+                key={seconds}
+                type="button"
+                role="radio"
+                aria-checked={effectiveDuration === seconds}
+                onClick={() => setDuration(seconds)}
+                className={cn(
+                  "rounded-md border px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:text-subtle-foreground",
+                  effectiveDuration === seconds ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border hover:bg-accent/40",
+                )}
+              >
+                {seconds} seconds
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      ),
+    },
+    {
+      id: "look",
+      icon: Bookmark,
+      label: "House look",
+      value: lookId ? lookName : null,
+      panel: (
         <StudioLookPicker
           companyId={companyId}
           idPrefix="video"
           lookId={lookId}
           onPick={(look) => {
             setLookId(look?.id ?? null);
+            setLookName(look?.name ?? null);
             setCamera(look?.camera ?? {});
           }}
           current={{ camera }}
           disabled={!configured}
         />
-        <StudioCameraFields idPrefix="video" camera={camera} onCameraChange={setCamera} disabled={!configured} />
+      ),
+    },
+    {
+      id: "camera",
+      icon: Camera,
+      label: "Camera",
+      value: studioCameraLabel(camera),
+      panel: <StudioCameraFields idPrefix="video" camera={camera} onCameraChange={setCamera} disabled={!configured} />,
+    },
+  ];
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="space-y-1 text-sm font-medium" htmlFor="video-model">
-            <span className="block">Model</span>
-            <NativeSelect
-              id="video-model"
-              value={effectiveModel.id}
-              disabled={!configured}
-              onChange={(event) => setModelId(event.target.value as VideoModelId)}
-              data-testid="video-model"
-            >
-              {usableModels.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}: {item.hint}
-                </option>
-              ))}
-            </NativeSelect>
-          </label>
-          <fieldset className="space-y-1" disabled={!configured}>
-            <legend className="text-sm font-medium">Length</legend>
-            <div className="flex gap-2" role="radiogroup" aria-label="Length" data-testid="video-duration">
-              {effectiveModel.durations.map((seconds) => (
-                <button
-                  key={seconds}
-                  type="button"
-                  role="radio"
-                  aria-checked={effectiveDuration === seconds}
-                  onClick={() => setDuration(seconds)}
-                  className={cn(
-                    "rounded-md border px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-60",
-                    effectiveDuration === seconds ? "border-primary bg-primary/10 ring-1 ring-primary" : "border-border hover:bg-accent/40",
-                  )}
-                >
-                  {seconds} seconds
-                </button>
-              ))}
-            </div>
-          </fieldset>
+  return (
+    <div className="space-y-6">
+      {!configured && statusQuery.isSuccess ? (
+        <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 text-sm" data-testid="videos-not-set-up">
+          <p className="font-medium text-foreground">Video making is not switched on yet</p>
+          <p className="mt-1 text-muted-foreground">
+            It uses the same Higgsfield key as images. Once whoever runs GSAM adds it, you and your agents can make clips here.
+          </p>
         </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">Clips usually take a few minutes. You can leave this page; it keeps going.</p>
-          <Button onClick={() => create.mutate()} disabled={!canSubmit} data-testid="make-video">
-            {create.isPending ? (
-              <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-            ) : (
-              <Film className="h-4 w-4" aria-hidden="true" />
-            )}
-            {sourceImage ? "Animate image" : "Make video"}
-          </Button>
-        </div>
-      </section>
-
-      {videos.length > 0 || favouritesOnly ? (
-        <Button
-          variant={favouritesOnly ? "default" : "outline"}
-          aria-pressed={favouritesOnly}
-          onClick={() => setFavouritesOnly((value) => !value)}
-          data-testid="video-favourites-filter"
-        >
-          <Star className={favouritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} aria-hidden="true" />
-          Favourites
-        </Button>
       ) : null}
 
-      {videos.length === 0 ? (
-        favouritesOnly ? (
-          <EmptyState icon={Star} title="No favourite clips yet" message="Tap the star on a clip to keep it here." />
-        ) : (
-          <EmptyState icon={Film} title="No videos yet" message="Clips you and your agents make will appear here, ready to play or download." />
-        )
-      ) : (
-        <section aria-label="Your videos" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {videos.map((video) => (
-            <figure key={video.id} className="gs-glass-card flex flex-col overflow-hidden rounded-lg border bg-card" data-testid="generated-video-card">
-              <div className="relative aspect-video w-full overflow-hidden bg-muted">
-                {video.status === "completed" && video.contentPath ? (
-                  <video
-                    src={video.contentPath}
-                    poster={video.sourceImage?.contentPath ?? undefined}
-                    controls
-                    playsInline
-                    preload="metadata"
-                    className="h-full w-full object-cover"
-                    aria-label={`Video: ${video.prompt}`}
-                  />
-                ) : video.status === "pending" ? (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground motion-safe:animate-pulse" role="status">
-                    <Loader2 className="h-6 w-6 motion-safe:animate-spin" aria-hidden="true" />
-                    <span className="text-xs">Making your video...</span>
-                  </div>
-                ) : (
-                  <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
-                    <AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
-                    {video.error ? <p className="line-clamp-2 text-xs text-muted-foreground" title={video.error}>{video.error}</p> : null}
-                    <Button size="sm" variant="outline" onClick={() => retry.mutate(video)} disabled={retry.isPending || !configured}>
-                      <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                      Try again
-                    </Button>
-                  </div>
-                )}
+      <div className="flex flex-col gap-6">
+        <StudioComposer
+          title={sourceImage ? "Bring an image to life" : "Make a video"}
+          aside={statusQuery.data?.providerLabel ? `Using ${statusQuery.data.providerLabel}` : null}
+          chips={chips}
+          openChip={openChip}
+          onOpenChipChange={setOpenChip}
+          footnote="Clips usually take a few minutes. You can leave this page; it keeps going."
+          notice={
+            sourceImage ? (
+              <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-2" data-testid="video-source-image">
+                {sourceImage.contentPath ? (
+                  <img src={sourceImage.contentPath} alt={sourceImage.altText} className="h-12 w-16 shrink-0 rounded-md object-cover" />
+                ) : null}
+                <p className="min-w-0 flex-1 truncate text-sm">{sourceImage.prompt}</p>
+                <Button variant="ghost" size="sm" onClick={onClearSourceImage} aria-label="Stop using this image">
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </Button>
               </div>
-              <figcaption className="space-y-1 p-3">
-                <p className="line-clamp-2 text-sm text-foreground" title={video.prompt}>
-                  {video.prompt}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {[
-                    video.sourceImage ? "From an image" : null,
-                    videoModelLabel(video.model),
-                    `${video.durationSeconds} seconds`,
-                    videoMotionLabel(video.motion),
-                    studioCameraLabel(video.camera),
-                    relativeTime(video.createdAt),
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-                <div className="flex gap-2 pt-1">
-                  {video.status === "completed" && video.contentPath ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      aria-pressed={video.favourite}
-                      aria-label={video.favourite ? "Remove from favourites" : "Add to favourites"}
-                      title={video.favourite ? "Remove from favourites" : "Add to favourites"}
-                      onClick={() => favourite.mutate({ id: video.id, favourite: !video.favourite })}
-                      data-testid="video-favourite"
-                    >
-                      <Star className={video.favourite ? "h-3.5 w-3.5 fill-current text-primary" : "h-3.5 w-3.5"} aria-hidden="true" />
-                    </Button>
-                  ) : null}
-                  {video.contentPath ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a href={video.contentPath} download={downloadName(video)}>
-                        <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                        Download
-                      </a>
-                    </Button>
-                  ) : null}
-                  {confirmDeleteId === video.id ? (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => remove.mutate(video.id)}
-                      disabled={remove.isPending}
-                      onBlur={() => setConfirmDeleteId(null)}
-                    >
-                      Delete for everyone
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setConfirmDeleteId(video.id)}
-                      aria-label={`Delete video: ${video.prompt}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                    </Button>
-                  )}
-                </div>
-              </figcaption>
-            </figure>
-          ))}
-        </section>
-      )}
+            ) : null
+          }
+          action={
+            <Button onClick={() => create.mutate()} disabled={!canSubmit} className={STUDIO_GENERATE_CLASS} data-testid="make-video">
+              {create.isPending ? (
+                <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+              ) : (
+                <Film className="h-4 w-4" aria-hidden="true" />
+              )}
+              {sourceImage ? "Animate image" : "Make video"}
+            </Button>
+          }
+        >
+          <label htmlFor="video-prompt" className="sr-only">
+            {sourceImage ? "What should happen in the picture?" : "What should the clip show?"}
+          </label>
+          <Textarea
+            id="video-prompt"
+            ref={promptRef}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey) && canSubmit) {
+                event.preventDefault();
+                create.mutate();
+              }
+            }}
+            placeholder={
+              sourceImage
+                ? "What should happen? For example: the steam rises from the coffee and the light shifts gently"
+                : "Describe the clip. For example: a red double-decker bus crossing Westminster Bridge at dusk, light rain"
+            }
+            maxLength={GENERATED_VIDEO_PROMPT_MAX_LENGTH}
+            rows={2}
+            disabled={!configured}
+            className={STUDIO_PROMPT_CLASS}
+            data-testid="video-prompt"
+          />
+        </StudioComposer>
+
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className="text-lg font-bold uppercase tracking-tight">
+              {favouritesOnly ? "Favourite clips" : "Your videos"}
+              {videos.length > 0 ? <span className="ml-2 text-sm font-medium text-muted-foreground">{videos.length}</span> : null}
+            </h2>
+            {videos.length > 0 || favouritesOnly ? (
+              <Button
+                variant={favouritesOnly ? "default" : "outline"}
+                aria-pressed={favouritesOnly}
+                onClick={() => setFavouritesOnly((value) => !value)}
+                className="rounded-full"
+                data-testid="video-favourites-filter"
+              >
+                <Star className={favouritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} aria-hidden="true" />
+                Favourites
+              </Button>
+            ) : null}
+          </div>
+
+          {videos.length === 0 ? (
+            favouritesOnly ? (
+              <StudioEmptyGallery icon={Star} title="No favourite clips yet" message="Tap the star on a clip to keep it here." />
+            ) : (
+              <StudioEmptyGallery
+                icon={Film}
+                title="No videos yet"
+                message="Clips you and your agents make will appear here, ready to play or download. Start with an idea:"
+                suggestions={VIDEO_IDEA_STARTERS.map((idea) => ({
+                  label: idea.label,
+                  onPick: () => {
+                    setPrompt(idea.prompt);
+                    promptRef.current?.focus();
+                  },
+                }))}
+                disabled={!configured}
+              />
+            )
+          ) : (
+            <section aria-label="Your videos" className={STUDIO_GALLERY_CLASS}>
+              {videos.map((video) => (
+                <StudioMediaCard
+                  key={video.id}
+                  data-testid="generated-video-card"
+                  aspectRatio="16 / 9"
+                  status={video.status === "completed" && video.contentPath ? "completed" : video.status === "pending" ? "pending" : "failed"}
+                  pendingLabel="Making your video..."
+                  media={
+                    <video
+                      src={video.contentPath ?? undefined}
+                      poster={video.sourceImage?.contentPath ?? undefined}
+                      controls
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                      aria-label={`Video: ${video.prompt}`}
+                    />
+                  }
+                  failure={{
+                    message: "This clip could not be made. Try different words, or try again in a few minutes.",
+                    detail: video.error,
+                    onRetry: () => retry.mutate(video),
+                    retrying: retry.isPending || !configured,
+                  }}
+                  badges={
+                    video.favourite ? (
+                      <span className="grid size-8 place-items-center rounded-full bg-background/80 text-primary shadow-sm" aria-hidden="true">
+                        <Star className="h-4 w-4 fill-current" />
+                      </span>
+                    ) : null
+                  }
+                  actions={
+                    <>
+                      <StudioMediaAction
+                        icon={Star}
+                        label={video.favourite ? "Remove from favourites" : "Add to favourites"}
+                        pressed={video.favourite}
+                        onClick={() => favourite.mutate({ id: video.id, favourite: !video.favourite })}
+                        iconClassName={video.favourite ? "fill-current text-primary" : undefined}
+                        data-testid="video-favourite"
+                      />
+                      <StudioMediaAction
+                        icon={Download}
+                        label="Download"
+                        href={video.contentPath ?? undefined}
+                        download={downloadName(video)}
+                        data-testid="video-card-download"
+                      />
+                    </>
+                  }
+                  caption={
+                    <>
+                      <p className="line-clamp-2 text-sm text-foreground" title={video.prompt}>
+                        {video.prompt}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {[
+                          video.sourceImage ? "From an image" : null,
+                          videoModelLabel(video.model),
+                          `${video.durationSeconds} seconds`,
+                          videoMotionLabel(video.motion),
+                          studioCameraLabel(video.camera),
+                          relativeTime(video.createdAt),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      <div className="flex gap-2 pt-1">
+                        {confirmDeleteId === video.id ? (
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => remove.mutate(video.id)}
+                            disabled={remove.isPending}
+                            onBlur={() => setConfirmDeleteId(null)}
+                          >
+                            Delete for everyone
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setConfirmDeleteId(video.id)}
+                            aria-label={`Delete video: ${video.prompt}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          </Button>
+                        )}
+                      </div>
+                    </>
+                  }
+                />
+              ))}
+            </section>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
