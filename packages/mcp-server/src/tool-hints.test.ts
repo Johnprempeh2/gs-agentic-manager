@@ -34,6 +34,8 @@ const WRITES = [
   "paperclipApprovalDecision",
   "paperclipAddApprovalComment",
   "studio_make_image",
+  "studio_make_video",
+  "studio_save_look",
 ];
 
 async function listTools() {

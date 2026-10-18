@@ -38,6 +38,12 @@ Image studio tools:
 - `studio_make_image` (write)
 - `studio_get_image`
 - `studio_list_images`
+- `studio_video_status`
+- `studio_make_video` (write)
+- `studio_get_video`
+- `studio_list_videos`
+- `studio_list_looks`
+- `studio_save_look` (write)
 
 Run-scoped connection tools:
 

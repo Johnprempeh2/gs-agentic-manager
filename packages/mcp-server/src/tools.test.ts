@@ -484,4 +484,48 @@ describe("paperclip MCP tools", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(response.content[0]?.text).toMatch(/lens/i);
   });
+
+  it("animates a studio image as a video clip", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "vid", status: "pending" }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getTool("studio_make_video").execute({
+      prompt: "The boat drifts across the harbour",
+      model: "kling-2.5-turbo-standard",
+      duration: 10,
+      motion: "orbit",
+      sourceImageId: "33333333-3333-4333-8333-333333333333",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/generated-videos");
+    expect(JSON.parse(String(init.body))).toEqual({
+      prompt: "The boat drifts across the harbour",
+      model: "kling-2.5-turbo-standard",
+      duration: 10,
+      motion: "orbit",
+      sourceImageId: "33333333-3333-4333-8333-333333333333",
+    });
+  });
+
+  it("refuses a video length the model does not offer before calling the server", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await getTool("studio_make_video").execute({ prompt: "A city at night", model: "hailuo-2.3", duration: 5 });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.content[0]?.text).toMatch(/6 or 10 second/);
+  });
+
+  it("saves a house look and passes its id when making an image", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "look-1" }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    await getTool("studio_save_look").execute({ name: "Acme", style: "photo", words: "navy and gold" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/studio-looks");
+    expect(JSON.parse(String(init.body))).toEqual({ name: "Acme", style: "photo", words: "navy and gold" });
+
+    await getTool("studio_make_image").execute({ prompt: "A bottle of oil", lookId: "77777777-7777-4777-8777-777777777777" });
+    const [, imageInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(imageInit.body))).toMatchObject({ lookId: "77777777-7777-4777-8777-777777777777" });
+  });
 });

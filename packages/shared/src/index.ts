@@ -3147,6 +3147,8 @@ export { WORKSPACE_RESTORE_FAILURE_CODES, hasWorkspaceRestoreFailure, safeWorksp
 export * from "./deep-dive.js";
 export * from "./image-generation.js";
 export * from "./studio/camera.js";
+export * from "./studio/looks.js";
+export * from "./video-generation.js";
 export {
   AGENT_TEAM_COLORS,
   addAgentTeamMemberSchema,
