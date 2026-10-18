@@ -9,8 +9,10 @@
  * (lost phone) is the only way to clear it, and the person must set it up
  * again at their next sign-in.
  *
- * Agent keys, board API keys and the local trusted mode are not password
- * sessions, so they are not affected. Nor are the emails listed in
+ * Board API keys (CLI sign-in) count as the person who made them, so a key
+ * made before the setting was turned on stops working until its owner turns
+ * two-step sign-in on. Agent keys and the local trusted mode are not a
+ * person, so they are not affected. Nor are the emails listed in
  * GSAM_TWO_STEP_EXEMPT_EMAILS: on a client instance that is the operator
  * log-in its host scripts sign in with (client-instance.sh sets it), which has
  * no phone to scan a code with.
@@ -71,7 +73,7 @@ export function isTwoStepExemptEmail(email: string | null | undefined, env: Node
 export function needsTwoStepSetup(actor: Request["actor"]) {
   return (
     actor.type === "board" &&
-    actor.source === "session" &&
+    (actor.source === "session" || actor.source === "board_key") &&
     actor.twoFactorEnabled !== true &&
     !isTwoStepExemptEmail(actor.userEmail)
   );

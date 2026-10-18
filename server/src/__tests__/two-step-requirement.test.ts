@@ -11,11 +11,13 @@ describe("compulsory two-step sign-in", () => {
     }
   });
 
-  it("holds only password sessions without it, and not the exempt operator log-in", () => {
+  it("holds password sessions and CLI keys of people without it, and not the exempt operator log-in", () => {
     const session = { type: "board", source: "session", userId: "u1", userEmail: "Person@Example.com" } as const;
     expect(needsTwoStepSetup(session as never)).toBe(true);
     expect(needsTwoStepSetup({ ...session, twoFactorEnabled: true } as never)).toBe(false);
-    expect(needsTwoStepSetup({ ...session, source: "board_key" } as never)).toBe(false);
+    expect(needsTwoStepSetup({ ...session, source: "board_key" } as never)).toBe(true);
+    expect(needsTwoStepSetup({ ...session, source: "board_key", twoFactorEnabled: true } as never)).toBe(false);
+    expect(needsTwoStepSetup({ ...session, source: "local_implicit" } as never)).toBe(false);
     expect(needsTwoStepSetup({ type: "agent", agentId: "a1" } as never)).toBe(false);
     const env = { GSAM_TWO_STEP_EXEMPT_EMAILS: " operator@instance.invalid , other@example.com" };
     expect(isTwoStepExemptEmail("OPERATOR@instance.invalid", env)).toBe(true);

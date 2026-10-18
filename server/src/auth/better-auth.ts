@@ -15,7 +15,12 @@ import {
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { inviteSignUpGatePlugin } from "./invite-sign-up-gate.js";
-import { signInLockoutPlugin } from "./sign-in-lockout.js";
+import {
+  DEFAULT_SIGN_IN_LOCKOUT,
+  createSignInLockout,
+  databaseSignInLockoutStore,
+  signInLockoutPlugin,
+} from "./sign-in-lockout.js";
 import { twoStepRequiredPlugin } from "./two-step-requirement.js";
 import {
   workspaceLoginHandoffPlugin,
@@ -280,7 +285,9 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
   const plugins = [
     // Wrong-password lockout per account, on top of Better Auth's per-address
     // rate limit. Authenticated mode only: local_trusted has no sign-in.
-    ...(config.deploymentMode === "authenticated" ? [signInLockoutPlugin()] : []),
+    ...(config.deploymentMode === "authenticated"
+      ? [signInLockoutPlugin(createSignInLockout(DEFAULT_SIGN_IN_LOCKOUT, databaseSignInLockoutStore(db)))]
+      : []),
     // Two-step sign-in with an authenticator app, on top of the password. Off
     // for each person until they turn it on in Profile; once on, sign-in asks
     // for a 6-digit code (or a backup code). Better Auth locks the code step
