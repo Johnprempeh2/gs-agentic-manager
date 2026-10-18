@@ -109,6 +109,20 @@ describe("WeeklyReport", () => {
     expect(opened[0]!.context?.suggestions).toContain("What should I focus on this week?");
   });
 
+  it("shares the report from the phone's share sheet", async () => {
+    const nav = navigator as unknown as { share?: (data: ShareData) => Promise<void> };
+    const share = vi.fn(async () => {});
+    nav.share = share;
+    try {
+      await render();
+      const button = [...container.querySelectorAll("button")].find((b) => b.textContent === "Share");
+      await act(async () => button!.click());
+      expect(share).toHaveBeenCalledWith(expect.objectContaining({ title: "This week at Greatstone", text: expect.stringContaining("Pipedrive import") }));
+    } finally {
+      delete nav.share;
+    }
+  });
+
   it("says the day by day view starts after the first night", async () => {
     await render();
     expect(container.querySelector("[data-testid='weekly-report-daily']")?.textContent).toContain(
