@@ -60,9 +60,9 @@ const sections: ShortcutSection[] = [
   {
     title: "Task detail",
     shortcuts: [
-      { keys: ["y"], label: "Quick-archive back to inbox" },
+      { keys: ["y"], label: "Archive and go back to the inbox" },
       { keys: ["g", "i"], label: "Go to inbox" },
-      { keys: ["g", "c"], label: "Focus comment composer" },
+      { keys: ["g", "c"], label: "Jump to the comment box" },
     ],
   },
   {
@@ -82,7 +82,7 @@ const sections: ShortcutSection[] = [
       { keys: ["/"], label: "Search current page or quick search" },
       { keys: ["c"], label: "New task" },
       { keys: ["["], label: "Toggle sidebar" },
-      { keys: ["]"], label: "Toggle panel" },
+      { keys: ["]"], label: "Show or hide the side panel" },
     ],
   },
 ];

@@ -229,6 +229,13 @@ export function RoutineDetail() {
       if (!selectedCompanyId) return;
       queryClient.invalidateQueries({ queryKey: queryKeys.secrets.list(selectedCompanyId) });
     },
+    onError: (error) => {
+      pushToast({
+        title: "Secret not saved",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
 
   const routineDefaults = useMemo<RoutineEditDraft | null>(
@@ -267,16 +274,16 @@ export function RoutineDetail() {
       result.push({ key: "priority", label: "the priority" });
     }
     if (editDraft.concurrencyPolicy !== routineDefaults.concurrencyPolicy) {
-      result.push({ key: "concurrencyPolicy", label: "the concurrency policy" });
+      result.push({ key: "concurrencyPolicy", label: "what happens if it is still running" });
     }
     if (editDraft.catchUpPolicy !== routineDefaults.catchUpPolicy) {
-      result.push({ key: "catchUpPolicy", label: "the catch-up policy" });
+      result.push({ key: "catchUpPolicy", label: "what happens if a time was missed" });
     }
     if (editDraft.activityGatePolicy !== routineDefaults.activityGatePolicy) {
       result.push({ key: "activityGatePolicy", label: "the advanced run policy" });
     }
     if (editDraft.activityGateScope !== routineDefaults.activityGateScope) {
-      result.push({ key: "activityGateScope", label: "the activity gate scope" });
+      result.push({ key: "activityGateScope", label: "when it skips quiet periods" });
     }
     if (JSON.stringify(editDraft.variables) !== JSON.stringify(routineDefaults.variables)) {
       result.push({ key: "variables", label: "the variables" });
@@ -402,7 +409,7 @@ export function RoutineDetail() {
           : {}),
       }),
     onSuccess: async () => {
-      pushToast({ title: "Routine run started", tone: "success" });
+      pushToast({ title: "Routine started", tone: "success" });
       setRunVariablesOpen(false);
       navigateToSection("runs");
       await Promise.all([
@@ -486,7 +493,7 @@ export function RoutineDetail() {
   const updateTrigger = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Record<string, unknown> }) => routinesApi.updateTrigger(id, patch),
     onSuccess: async () => {
-      pushToast({ title: "Trigger saved", body: "The routine cadence update was saved.", tone: "success" });
+      pushToast({ title: "Trigger saved", body: "Your schedule change was saved.", tone: "success" });
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.routines.detail(routineId!) }),
         queryClient.invalidateQueries({ queryKey: queryKeys.routines.list(selectedCompanyId!) }),
@@ -525,7 +532,7 @@ export function RoutineDetail() {
     mutationFn: (id: string): Promise<RotateRoutineTriggerResponse> => routinesApi.rotateTriggerSecret(id),
     onSuccess: async (result) => {
       setSecretMessage({
-        title: "Webhook secret rotated",
+        title: "New secret key made",
         entries: [{ webhookUrl: result.secretMaterial.webhookUrl, webhookSecret: result.secretMaterial.webhookSecret }],
       });
       await Promise.all([
@@ -536,7 +543,7 @@ export function RoutineDetail() {
     onError: (triggerError) => {
       pushToast({
         title: "Could not make a new webhook secret",
-        body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not rotate the webhook secret.",
+        body: triggerError instanceof Error ? triggerError.message : "GS Agentic Manager could not make a new secret key.",
         tone: "error",
       });
     },

@@ -138,7 +138,7 @@ describe("InstanceGeneralSettings sign-out", () => {
     await renderPage(SELF_HOSTED_HEALTH);
 
     const censorToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Toggle username log censoring"]',
+      '[aria-label="Hide your computer username in logs"]',
     );
     flushSync(() => censorToggle?.click());
     await vi.waitFor(() => expect(container.textContent).toContain("Settings update failed"));
@@ -157,7 +157,7 @@ describe("InstanceGeneralSettings sign-out", () => {
     await vi.waitFor(() => expect(container.textContent).toContain("Sign-out request failed"));
 
     const censorToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Toggle username log censoring"]',
+      '[aria-label="Hide your computer username in logs"]',
     );
     flushSync(() => censorToggle?.click());
 
@@ -175,7 +175,7 @@ describe("InstanceGeneralSettings sign-out", () => {
     await renderPage(SELF_HOSTED_HEALTH);
 
     const censorToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Toggle username log censoring"]',
+      '[aria-label="Hide your computer username in logs"]',
     );
     flushSync(() => signOutButton()?.click());
     await vi.waitFor(() => expect(mockAuthApi.signOut).toHaveBeenCalledOnce());
@@ -198,7 +198,7 @@ describe("InstanceGeneralSettings sign-out", () => {
     await renderPage(SELF_HOSTED_HEALTH);
 
     const censorToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Toggle username log censoring"]',
+      '[aria-label="Hide your computer username in logs"]',
     );
     flushSync(() => censorToggle?.click());
     await vi.waitFor(() => expect(mockInstanceSettingsApi.updateGeneral).toHaveBeenCalledOnce());

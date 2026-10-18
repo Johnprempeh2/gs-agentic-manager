@@ -90,7 +90,7 @@ export function InstanceGeneralSettings({
       ]);
     },
     onError: (error) => {
-      setActionError(error instanceof Error ? error.message : "Failed to update general settings.");
+      setActionError(error instanceof Error ? error.message : "Your settings were not saved. Try again.");
     },
   });
 
@@ -103,7 +103,7 @@ export function InstanceGeneralSettings({
       <div className="text-sm text-destructive">
         {generalQuery.error instanceof Error
           ? generalQuery.error.message
-          : "Failed to load general settings."}
+          : "Settings did not load. Refresh the page."}
       </div>
     );
   }
@@ -142,7 +142,7 @@ export function InstanceGeneralSettings({
   const visibleActionError = signOutMutation.error instanceof Error
     ? signOutMutation.error.message
     : signOutMutation.error
-      ? "Failed to sign out."
+      ? "We could not sign you out. Try again."
       : actionError;
 
   return (
@@ -236,7 +236,7 @@ export function InstanceGeneralSettings({
             checked={censorUsernameInLogs}
             onCheckedChange={() => updateGeneralMutation.mutate({ censorUsernameInLogs: !censorUsernameInLogs })}
             disabled={updateGeneralMutation.isPending || signOutMutation.isPending}
-            aria-label="Toggle username log censoring"
+            aria-label="Hide your computer username in logs"
           />
         </div>
       </section>

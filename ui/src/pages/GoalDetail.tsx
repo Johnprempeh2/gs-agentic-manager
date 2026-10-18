@@ -206,13 +206,16 @@ export function GoalDetail() {
 
   const uploadImage = useMutation({
     mutationFn: async (file: File) => {
-      if (!resolvedCompanyId) throw new Error("No organization selected");
+      if (!resolvedCompanyId) throw new Error("Choose an organisation first");
       return assetsApi.uploadImage(
         resolvedCompanyId,
         file,
         `goals/${goalId ?? "draft"}`
       );
-    }
+    },
+    onError: (err) => {
+      pushToast({ title: "Image not uploaded", body: err instanceof Error ? err.message : "Try again in a moment.", tone: "error" });
+    },
   });
 
   const childGoals = (allGoals ?? []).filter((g) => g.parentId === goalId);
