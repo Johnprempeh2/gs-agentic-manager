@@ -23,7 +23,7 @@ import { projectsApi } from "../api/projects";
 import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
-import { useToastActions } from "../context/ToastContext";
+import { useOptionalToastActions, useToastActions } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { copyTextToClipboard } from "../lib/clipboard";
@@ -31,7 +31,7 @@ import { AgentSkillsTab } from "./agent-skills/AgentSkillsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { AgentPermissionGrantsList } from "../components/AgentPermissionGrantsList";
 import { AgentPipelinesAccessSection } from "../components/AgentPipelinesAccessSection";
-import { getAdapterDisplay } from "../adapters/adapter-display-registry";
+import { getAdapterDisplay, getAdapterLabel } from "../adapters/adapter-display-registry";
 import { adapterLabels, roleLabels, help } from "../components/agent-config-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { AgentMemoryRightsToggles } from "@/components/AgentMemoryRightsToggles";
@@ -473,7 +473,7 @@ export function RunInvocationCard({
     <div className="rounded-lg border border-border bg-background/60 p-3 space-y-2">
       <div className="text-xs font-medium text-muted-foreground">Invocation</div>
       {typeof payload.adapterType === "string" && (
-        <div className="text-xs"><span className="text-muted-foreground">Adapter: </span>{payload.adapterType}</div>
+        <div className="text-xs"><span className="text-muted-foreground">Runs on: </span>{getAdapterLabel(payload.adapterType)}</div>
       )}
       {typeof payload.cwd === "string" && (
         <div className="text-xs break-all"><span className="text-muted-foreground">Working dir: </span><span className="font-mono">{payload.cwd}</span></div>
@@ -884,6 +884,9 @@ export function AgentDetail() {
   const resetBuiltIn = useMutation({
     mutationFn: () => builtInAgentsApi.reset(resolvedCompanyId!, builtInState!.definition.key),
     onSuccess: invalidateBuiltIn,
+    onError: (error) => {
+      setActionError(error instanceof Error ? error.message : "Could not reset this agent to its defaults");
+    },
   });
 
   const [showBuiltInConfigure, setShowBuiltInConfigure] = useState(false);
@@ -2249,9 +2252,9 @@ export function ConfigurationTab({
           </div>
           <div className="flex items-center justify-between gap-4 text-sm">
             <div className="space-y-1">
-              <div>Can change organization skills</div>
+              <div>Can change organisation skills</div>
               <p className="text-xs text-muted-foreground">
-                Lets this agent create, import, and edit organization skills directly instead of suggesting changes.
+                Lets this agent create, import, and edit organisation skills directly instead of suggesting changes.
               </p>
             </div>
             <ToggleSwitch
@@ -2385,7 +2388,13 @@ export function PromptsTab({
   const getCapabilities = useAdapterCapabilities();
   const isLocal = getCapabilities(agent.adapterType).supportsInstructionsBundle;
 
-  const { data: bundle, isLoading: bundleLoading } = useQuery({
+  const {
+    data: bundle,
+    isLoading: bundleLoading,
+    error: bundleError,
+    refetch: refetchBundle,
+    isFetching: bundleFetching,
+  } = useQuery({
     queryKey: queryKeys.agents.instructionsBundle(agent.id),
     queryFn: () => agentsApi.instructionsBundle(agent.id, companyId),
     enabled: Boolean(companyId && isLocal),
@@ -2422,7 +2431,13 @@ export function PromptsTab({
   const selectedFileExists = bundleMatchesDraft && fileOptions.includes(selectedOrEntryFile);
   const selectedFileSummary = bundle?.files.find((file) => file.path === selectedOrEntryFile) ?? null;
 
-  const { data: selectedFileDetail, isLoading: fileLoading } = useQuery({
+  const {
+    data: selectedFileDetail,
+    isLoading: fileLoading,
+    error: selectedFileError,
+    refetch: refetchSelectedFile,
+    isFetching: selectedFileFetching,
+  } = useQuery({
     queryKey: queryKeys.agents.instructionsFile(agent.id, selectedOrEntryFile),
     queryFn: () => agentsApi.instructionsFile(agent.id, selectedOrEntryFile, companyId),
     enabled: Boolean(companyId && isLocal && selectedFileExists),
@@ -2687,6 +2702,17 @@ export function PromptsTab({
 
   if (bundleLoading && !bundle) {
     return <PromptsTabSkeleton />;
+  }
+
+  if (bundleError && !bundle) {
+    return (
+      <ErrorState
+        error={bundleError}
+        title="Instructions did not load"
+        onRetry={() => void refetchBundle()}
+        retrying={bundleFetching}
+      />
+    );
   }
 
   return (
@@ -3084,6 +3110,14 @@ export function PromptsTab({
 
           {selectedFileExists && fileLoading && !selectedFileDetail ? (
             <PromptEditorSkeleton />
+          ) : selectedFileExists && selectedFileError && !selectedFileDetail ? (
+            <ErrorState
+              error={selectedFileError}
+              title="This file did not load"
+              onRetry={() => void refetchSelectedFile()}
+              retrying={selectedFileFetching}
+              compact
+            />
           ) : instructionMode === "read" ? (
             <div className="min-h-(--sz-420px) rounded-md border border-border bg-background p-4">
               {displayValue.trim() ? (
@@ -3277,7 +3311,7 @@ function RunsTab({
   const { isMobile } = useSidebar();
 
   if (error) {
-    return <ErrorState error={error} title="Runs did not load" onRetry={onRetry} compact />;
+    return <ErrorState error={error} title="Work history did not load" onRetry={onRetry} compact />;
   }
 
   if (runs.length === 0) {
@@ -3347,6 +3381,7 @@ function RunsTab({
 
 function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }: { run: HeartbeatRun; agentRouteId: string; adapterType: string; adapterConfig: Record<string, unknown> }) {
   const confirmAction = useConfirm();
+  const toastActions = useOptionalToastActions();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: hydratedRun } = useQuery({
@@ -3408,6 +3443,13 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
     mutationFn: () => heartbeatsApi.cancel(run.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.heartbeats(run.companyId, run.agentId) });
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Could not stop the work",
+        body: error instanceof Error ? error.message : undefined,
+        tone: "error",
+      });
     },
   });
   const canResumeLostRun = run.errorCode === "process_lost" && run.status === "failed";
@@ -3620,7 +3662,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                 onClick={() => setInspectorOpen(true)}
               >
                 <Eye className="h-3.5 w-3.5 mr-1" />
-                Inspect run
+                See details
               </Button>
               <HoneycombRunLink
                 runId={run.id}
@@ -3649,7 +3691,7 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
               return (
                 <div className="text-(length:--text-micro) text-muted-foreground font-mono flex items-center gap-1.5 flex-wrap">
                   {adapterType && (
-                    <span className="bg-muted rounded px-1.5 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-wide">{adapterType.replace(/_/g, " ")}</span>
+                    <span className="bg-muted rounded px-1.5 py-0.5 text-(length:--text-nano) font-medium uppercase tracking-wide">{getAdapterLabel(adapterType)}</span>
                   )}
                   {displayProvider && displayModel && (
                     <span>{displayProvider}/{displayModel}</span>
@@ -3696,12 +3738,17 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
             )}
             {resumeRun.isError && (
               <div className="text-xs text-destructive">
-                {resumeRun.error instanceof Error ? resumeRun.error.message : "Failed to resume run"}
+                {resumeRun.error instanceof Error ? resumeRun.error.message : "Could not resume this work"}
               </div>
             )}
             {retryRun.isError && (
               <div className="text-xs text-destructive">
-                {retryRun.error instanceof Error ? retryRun.error.message : "Failed to retry run"}
+                {retryRun.error instanceof Error ? retryRun.error.message : "Could not try this work again"}
+              </div>
+            )}
+            {rerunWithTrace.isError && (
+              <div className="text-xs text-destructive">
+                {rerunWithTrace.error instanceof Error ? rerunWithTrace.error.message : "Could not start it again"}
               </div>
             )}
             {startTime && (
@@ -4430,7 +4477,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
   }, [run.id]);
 
   if (loading && logLoading) {
-    return <p className="text-xs text-muted-foreground">Loading run logs...</p>;
+    return <p className="text-xs text-muted-foreground">Loading the work log…</p>;
   }
 
   if (events.length === 0 && logLines.length === 0 && !logError) {
@@ -4562,7 +4609,7 @@ export function LogViewer({ run, adapterType }: { run: HeartbeatRun; adapterType
           )}
           {run.resultJson && (
             <div>
-              <div className="text-xs text-red-700 dark:text-red-300 mb-1">adapter result JSON</div>
+              <div className="text-xs text-red-700 dark:text-red-300 mb-1">Technical details</div>
               <pre className="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">
                 {JSON.stringify(redactPathValue(run.resultJson, censorUsernameInLogs), null, 2)}
               </pre>
@@ -4625,7 +4672,7 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
   const [tokenVisible, setTokenVisible] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const { data: keys, isLoading } = useQuery({
+  const { data: keys, isLoading, error: keysError, refetch: refetchKeys, isFetching: keysFetching } = useQuery({
     queryKey: queryKeys.agents.keys(agentId),
     queryFn: () => agentsApi.listKeys(agentId, companyId),
   });
@@ -4638,12 +4685,26 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
       setNewKeyName("");
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.keys(agentId) });
     },
+    onError: (error) => {
+      pushToast({
+        title: "Could not make the access key",
+        body: error instanceof Error ? error.message : undefined,
+        tone: "error",
+      });
+    },
   });
 
   const revokeKey = useMutation({
     mutationFn: (keyId: string) => agentsApi.revokeKey(agentId, keyId, companyId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.keys(agentId) });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Could not revoke the key",
+        body: error instanceof Error ? error.message : undefined,
+        tone: "error",
+      });
     },
   });
 
@@ -4736,7 +4797,17 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
       {/* Active keys */}
       {isLoading && <p className="text-sm text-muted-foreground">Loading keys...</p>}
 
-      {!isLoading && activeKeys.length === 0 && !newToken && (
+      {!isLoading && keysError && !keys && (
+        <ErrorState
+          error={keysError}
+          title="Access keys did not load"
+          onRetry={() => void refetchKeys()}
+          retrying={keysFetching}
+          compact
+        />
+      )}
+
+      {!isLoading && !(keysError && !keys) && activeKeys.length === 0 && !newToken && (
         <p className="text-sm text-muted-foreground">No access keys yet. Make one above if another tool needs to connect to this agent.</p>
       )}
 

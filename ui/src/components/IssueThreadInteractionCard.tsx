@@ -153,7 +153,7 @@ function resolveActorLabel(args: {
 }) {
   const { agentId, userId, agentMap, currentUserId, userLabelMap } = args;
   if (agentId) {
-    return agentMap?.get(agentId)?.name ?? agentId.slice(0, 8);
+    return agentMap?.get(agentId)?.name ?? "An agent";
   }
   if (userId) {
     return formatAssigneeUserLabel(userId, currentUserId, userLabelMap) ?? "Board";

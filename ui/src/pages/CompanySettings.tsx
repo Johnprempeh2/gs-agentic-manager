@@ -206,8 +206,13 @@ export function CompanySettings() {
     logoUploadMutation.mutate(file);
   }
 
-  function handleClearLogo() {
-    clearLogoMutation.mutate();
+  async function handleClearLogo() {
+    const confirmed = await confirmAction({
+      title: "Remove the logo?",
+      confirmLabel: "Remove logo",
+      tone: "destructive",
+    });
+    if (confirmed) clearLogoMutation.mutate();
   }
 
   const archiveMutation = useMutation({
@@ -261,7 +266,7 @@ export function CompanySettings() {
 
   useEffect(() => {
     setBreadcrumbs([
-      { label: selectedCompany?.name ?? "Company", href: "/dashboard" },
+      { label: selectedCompany?.name ?? "Organisation", href: "/dashboard" },
       { label: "Settings" }
     ]);
   }, [setBreadcrumbs, selectedCompany?.name]);

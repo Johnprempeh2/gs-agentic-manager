@@ -2,6 +2,7 @@ import { UserPlus, Lightbulb, ShieldAlert, ShieldCheck, KeyRound } from "lucide-
 import { MarkdownBody } from "./MarkdownBody";
 import { formatCents } from "../lib/utils";
 import { getAdapterDisplay } from "../adapters/adapter-display-registry";
+import type { PermissionKey } from "@greatstone/shared";
 
 export const typeLabel: Record<string, string> = {
   hire_agent: "Hire an agent",
@@ -124,12 +125,74 @@ export function CeoStrategyPayload({ payload }: { payload: Record<string, unknow
         </div>
       )}
       {!plan && (
-        <pre className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground overflow-x-auto max-h-48">
-          {JSON.stringify(payload, null, 2)}
-        </pre>
+        <details className="mt-2 text-xs text-muted-foreground">
+          <summary className="cursor-pointer">Technical details</summary>
+          <pre className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground overflow-x-auto max-h-48">
+            {JSON.stringify(payload, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );
+}
+
+const SCOPE_TYPE_LABELS: Record<string, string> = {
+  company: "The whole organisation",
+  agent: "An agent",
+  project: "A project",
+};
+
+/** Plain words for a budget scope type, used when the payload has no scope name. */
+export function scopeTypeLabel(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  return SCOPE_TYPE_LABELS[value] ?? value;
+}
+
+const PERMISSION_KEY_LABELS: Record<PermissionKey, string> = {
+  "agents:create": "Add new agents",
+  "agents:configure": "Change agent settings",
+  "agents:suggest-changes": "Suggest changes to agents",
+  "skills:create": "Create and edit skills",
+  "skills:suggest-changes": "Suggest changes to skills",
+  "environments:manage": "Manage environments",
+  "tools:admin": "Administer tools",
+  "tools:manage_connections": "Manage tool connections",
+  "tools:manage_profiles": "Manage tool profiles",
+  "tools:view_audit": "See the tool usage log",
+  "audit:view_agent_actions": "See what agents have done",
+  "tools:use": "Use tools",
+  "tools:manage_runtime": "Manage how tools run",
+  "inbox:manage": "Manage the inbox",
+  "users:invite": "Invite people",
+  "users:manage_permissions": "Change what people can do",
+  "tasks:assign": "Assign tasks",
+  "tasks:assign_scope": "Assign tasks within a set area",
+  "tasks:manage_active_checkouts": "Take over tasks that are in progress",
+  "pipelines:cases": "Work cases in pipelines",
+  "pipelines:write": "Administer pipelines",
+  "joins:approve": "Approve requests to join",
+  "memory:read": "Read organisation memory",
+  "memory:contribute": "Add to organisation memory",
+  "memory:approve": "Approve memory changes",
+  "memory:correct": "Correct organisation memory",
+  "memory:delete": "Delete from organisation memory",
+  "memory:admin": "Manage organisation memory",
+  "strategy:board_member": "See the strategy as a board member",
+  "strategy:board_chair": "Chair the board",
+  "intelligence:write": "Write intelligence reports",
+};
+
+/** Plain words for a permission key, e.g. "tasks:assign" becomes "Assign tasks". */
+export function permissionKeyLabel(value: unknown): unknown {
+  if (typeof value !== "string" || !value.trim()) return value;
+  const known = (PERMISSION_KEY_LABELS as Record<string, string>)[value];
+  if (known) return known;
+  const [area, ...rest] = value.split(":");
+  const humanise = (part: string) => part.replace(/[_-]+/g, " ").trim();
+  const head = humanise(area);
+  const label = head.charAt(0).toUpperCase() + head.slice(1);
+  const tail = humanise(rest.join(":"));
+  return tail ? `${label}: ${tail}` : label;
 }
 
 function budgetWindowLabel(value: unknown): unknown {
@@ -143,7 +206,7 @@ export function BudgetOverridePayload({ payload }: { payload: Record<string, unk
   const observedAmount = typeof payload.observedAmount === "number" ? payload.observedAmount : null;
   return (
     <div className="mt-3 space-y-1.5 text-sm">
-      <PayloadField label="Applies to" value={payload.scopeName ?? payload.scopeType} />
+      <PayloadField label="Applies to" value={payload.scopeName ?? scopeTypeLabel(payload.scopeType)} />
       <PayloadField label="Period" value={budgetWindowLabel(payload.windowKind)} />
       {(budgetAmount !== null || observedAmount !== null) ? (
         <div className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
@@ -251,7 +314,7 @@ function PermissionGrantPayload({ payload }: { payload: Record<string, unknown> 
   return (
     <div className="mt-3 space-y-1.5 text-sm">
       <PayloadField label="Agent" value={payload.agentName} />
-      <PayloadField label="Permission" value={payload.permissionKey} />
+      <PayloadField label="Permission" value={permissionKeyLabel(payload.permissionKey)} />
       <PayloadField label="Task" value={payload.issueIdentifier} />
     </div>
   );

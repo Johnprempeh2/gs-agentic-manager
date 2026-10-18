@@ -32,7 +32,7 @@ import type { EnvironmentVariableDirtyFields } from "./Row";
 const DEFAULT_RESERVED_PREFIXES = ["GSAM_"];
 
 const DEFAULT_HINT =
-  "Set the KEY to the env var name the process expects, for example GH_TOKEN. Choose a secret to resolve a stored value at run start. GSAM_* variables are injected automatically.";
+  "Name each setting the way the tool expects (for example GH_TOKEN), then type a value or choose a saved secret.";
 
 // Canonical entries for dirty comparison. Must mirror the emit semantics of
 // valueFromRows (trimmed names, incomplete refs dropped, last-writer-wins on

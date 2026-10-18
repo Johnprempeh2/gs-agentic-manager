@@ -761,7 +761,7 @@ export function useThreadMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to interrupt the active run",
+            : "Could not stop the agent. Try again in a moment.",
         tone: "error",
       });
     },
