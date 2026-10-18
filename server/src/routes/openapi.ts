@@ -58,6 +58,7 @@ import {
   createGeneratedImageVariationsSchema,
   updateGeneratedImageCoverSchema,
   updateGeneratedImageFavouriteSchema,
+  updateGeneratedVideoFavouriteSchema,
   generatedImagesQuerySchema,
   generatedVideosQuerySchema,
   createGeneratedVideoSchema,
@@ -4731,6 +4732,15 @@ registry.registerPath({
   summary: "Make a short clip from a description, or animate a finished studio image (sourceImageId). Answers 202 with a pending clip; poll GET /api/generated-videos/{id}. 422 code video_generation_not_configured when no service is set; 429 when 3 clips are already being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedVideoSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/generated-videos/{id}/favourite",
+  tags: ["assets"],
+  summary: "Star (favourite true) or unstar a studio clip as a keeper. List starred ones with ?favourite=true. 422 when starring a clip that is not finished",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedVideoFavouriteSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 
 registry.registerPath({

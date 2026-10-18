@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, index, integer, jsonb } from "drizzle-orm/pg-core";
+import { boolean, pgTable, uuid, text, timestamp, index, integer, jsonb } from "drizzle-orm/pg-core";
 import { companies } from "./companies.js";
 import { agents } from "./agents.js";
 import { assets } from "./assets.js";
@@ -31,6 +31,8 @@ export const generatedVideos = pgTable(
     createdByUserId: text("created_by_user_id"),
     issueId: uuid("issue_id").references(() => issues.id, { onDelete: "set null" }),
     organisationId: uuid("organisation_id").references(() => organisations.id, { onDelete: "set null" }),
+    /** Starred by the board or an agent as a keeper, like image favourites. */
+    favourite: boolean("favourite").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -39,5 +41,6 @@ export const generatedVideos = pgTable(
     companyCreatedIdx: index("generated_videos_company_created_idx").on(table.companyId, table.createdAt),
     companyStatusIdx: index("generated_videos_company_status_idx").on(table.companyId, table.status),
     companyIssueIdx: index("generated_videos_company_issue_idx").on(table.companyId, table.issueId),
+    companyFavouriteIdx: index("generated_videos_company_favourite_idx").on(table.companyId, table.favourite),
   }),
 );

@@ -599,5 +599,12 @@ describe("paperclip MCP tools", () => {
 
     await getTool("studio_list_images").execute({ favourite: true });
     expect(String(fetchMock.mock.calls[1]![0])).toContain("favourite=true");
+
+    await getTool("studio_favourite_video").execute({ videoId: "66666666-6666-4666-8666-666666666666", favourite: false });
+    const [videoUrl, videoInit] = fetchMock.mock.calls[2] as [URL, RequestInit];
+    expect(String(videoUrl)).toBe("http://localhost:3100/api/generated-videos/66666666-6666-4666-8666-666666666666/favourite");
+    expect(JSON.parse(String(videoInit.body))).toEqual({ favourite: false });
+    await getTool("studio_list_videos").execute({ favourite: true });
+    expect(String(fetchMock.mock.calls[3]![0])).toContain("favourite=true");
   });
 });

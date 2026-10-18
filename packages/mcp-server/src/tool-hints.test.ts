@@ -35,6 +35,7 @@ const WRITES = [
   "paperclipAddApprovalComment",
   "studio_attach_to_task",
   "studio_favourite_image",
+  "studio_favourite_video",
   "studio_make_image",
   "studio_make_video",
   "studio_save_look",

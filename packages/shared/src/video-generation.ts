@@ -152,6 +152,8 @@ export const generatedVideosQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   issueId: z.string().uuid().optional(),
   organisationId: z.string().uuid().optional(),
+  /** "true" shows only starred favourites. */
+  favourite: z.union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")]).optional(),
 });
 export type GeneratedVideosQuery = z.infer<typeof generatedVideosQuerySchema>;
 
@@ -175,9 +177,15 @@ export interface GeneratedVideo {
   createdByUserId: string | null;
   issue: { id: string; identifier: string | null; title: string } | null;
   organisation: { id: string; name: string } | null;
+  /** Starred as a keeper by the board or an agent. */
+  favourite: boolean;
   createdAt: string;
   completedAt: string | null;
 }
+
+/** Star (or unstar) a clip as a favourite. */
+export const updateGeneratedVideoFavouriteSchema = z.object({ favourite: z.boolean() }).strict();
+export type UpdateGeneratedVideoFavourite = z.infer<typeof updateGeneratedVideoFavouriteSchema>;
 
 export interface GeneratedVideosResponse {
   videos: GeneratedVideo[];

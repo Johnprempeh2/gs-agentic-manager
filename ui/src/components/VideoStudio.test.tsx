@@ -9,7 +9,14 @@ import { VideoStudio } from "./VideoStudio";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const videosApiMock = vi.hoisted(() => ({ status: vi.fn(), list: vi.fn(), create: vi.fn(), get: vi.fn(), remove: vi.fn() }));
+const videosApiMock = vi.hoisted(() => ({
+  status: vi.fn(),
+  list: vi.fn(),
+  create: vi.fn(),
+  get: vi.fn(),
+  remove: vi.fn(),
+  setFavourite: vi.fn(),
+}));
 vi.mock("../api/videos", () => ({ videosApi: videosApiMock }));
 
 function video(overrides: Partial<GeneratedVideo>): GeneratedVideo {
@@ -31,6 +38,7 @@ function video(overrides: Partial<GeneratedVideo>): GeneratedVideo {
     createdByUserId: "user-1",
     issue: null,
     organisation: null,
+    favourite: false,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,
@@ -58,6 +66,11 @@ async function render(props: { sourceImage?: GeneratedImage | null } = {}) {
       </QueryClientProvider>,
     );
   });
+  await settle();
+}
+
+/** Let queries and mutations settle. */
+async function settle() {
   for (let index = 0; index < 5; index += 1) {
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0));
@@ -140,5 +153,32 @@ describe("VideoStudio", () => {
       sourceImageId: IMAGE.id,
       issueId: IMAGE.issue!.id,
     });
+  });
+
+  it("stars a clip and shows only favourite clips when asked", async () => {
+    videosApiMock.status.mockResolvedValue({ configured: true, provider: "mock", providerLabel: "Practice mode" });
+    let starred = false;
+    videosApiMock.list.mockImplementation(async (_companyId: string, params: { favourite?: boolean }) => {
+      const all = [video({ id: "video-1", favourite: starred }), video({ id: "video-2", prompt: "Gulls over a harbour" })];
+      const videos = params.favourite ? all.filter((item) => item.favourite) : all;
+      return { videos, total: videos.length, nextOffset: null };
+    });
+    videosApiMock.setFavourite.mockImplementation(async (_id: string, body: { favourite: boolean }) => {
+      starred = body.favourite;
+      return video({ id: "video-1", favourite: starred });
+    });
+    await render();
+
+    const star = container.querySelector('[data-testid="video-favourite"]') as HTMLButtonElement;
+    expect(star.getAttribute("aria-label")).toBe("Add to favourites");
+    await act(async () => star.click());
+    await settle();
+    expect(videosApiMock.setFavourite).toHaveBeenCalledWith("video-1", { favourite: true });
+    expect(container.querySelector('[data-testid="video-favourite"]')?.getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => (container.querySelector('[data-testid="video-favourites-filter"]') as HTMLButtonElement).click());
+    await settle();
+    expect(videosApiMock.list).toHaveBeenLastCalledWith("company-1", expect.objectContaining({ favourite: true }));
+    expect(container.querySelectorAll('[data-testid="generated-video-card"]')).toHaveLength(1);
   });
 });

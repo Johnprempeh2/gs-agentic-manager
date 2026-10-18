@@ -1,12 +1,13 @@
 import { Router } from "express";
 import type { Db } from "@greatstone/db";
-import { createGeneratedVideoSchema, generatedVideosQuerySchema } from "@greatstone/shared";
+import { createGeneratedVideoSchema, generatedVideosQuerySchema, updateGeneratedVideoFavouriteSchema } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
 import { generatedVideoService, type GeneratedVideoServiceOptions } from "../services/generated-videos.js";
 import { describeVideoGeneration } from "../services/video-generation/registry.js";
 import type { StorageService } from "../storage/types.js";
-import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo } from "./authz.js";
+import { notFound } from "../errors.js";
+import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
 
 // Studio clips: board users and agents ask for a short video from a
 // description, or ask for a finished studio image to be animated. POST
@@ -38,6 +39,28 @@ export function generatedVideoRoutes(db: Db, storage: StorageService, options: G
     const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Clip not found");
     if (!row) return;
     res.json(await svc.toResponse(row));
+  });
+
+  router.patch("/generated-videos/:id/favourite", validate(updateGeneratedVideoFavouriteSchema), async (req, res) => {
+    const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Clip not found");
+    if (!row) return;
+    // Write path: the oracle guard wants the read gate named before the write check.
+    if (!hasCompanyAccess(req, row.companyId)) throw notFound("Clip not found");
+    assertCompanyAccess(req, row.companyId);
+    const updated = await svc.setFavourite(row, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: row.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "generated_video.favourite_changed",
+      entityType: "generated_video",
+      entityId: row.id,
+      details: { favourite: updated.favourite },
+    });
+    res.json(await svc.toResponse(updated));
   });
 
   router.delete("/generated-videos/:id", async (req, res) => {

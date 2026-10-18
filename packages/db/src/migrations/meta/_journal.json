@@ -2626,6 +2626,13 @@
       "when": 1792297503147,
       "tag": "0376_studio_image_favourites",
       "breakpoints": true
+    },
+    {
+      "idx": 377,
+      "version": "7",
+      "when": 1792299459953,
+      "tag": "0377_studio_video_favourites",
+      "breakpoints": true
     }
   ]
 }

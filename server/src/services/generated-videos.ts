@@ -15,6 +15,7 @@ import {
   type GeneratedVideosResponse,
   type GeneratedVideoStatus,
   type StudioCameraSettings,
+  type UpdateGeneratedVideoFavourite,
   type VideoGenerationProviderId,
   type VideoModelId,
   type VideoMotionPresetId,
@@ -69,6 +70,7 @@ export function toGeneratedVideo(row: GeneratedVideoRow, links?: VideoLinks): Ge
     createdByUserId: row.createdByUserId,
     issue: links?.issue ?? null,
     organisation: links?.organisation ?? null,
+    favourite: row.favourite,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt?.toISOString() ?? null,
   };
@@ -385,12 +387,13 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
     },
 
     list: async (companyId: string, query: Partial<GeneratedVideosQuery> = {}): Promise<GeneratedVideosResponse> => {
-      const { limit, offset, q, issueId, organisationId } = generatedVideosQuerySchema.parse(query);
+      const { limit, offset, q, issueId, organisationId, favourite } = generatedVideosQuerySchema.parse(query);
       await failLostJobs(companyId);
       const filters: SQL[] = [eq(generatedVideos.companyId, companyId)];
       if (q) filters.push(ilike(generatedVideos.prompt, `%${q.replace(/[\\%_]/g, (match) => `\\${match}`)}%`));
       if (issueId) filters.push(eq(generatedVideos.issueId, issueId));
       if (organisationId) filters.push(eq(generatedVideos.organisationId, organisationId));
+      if (favourite !== undefined) filters.push(eq(generatedVideos.favourite, favourite));
       const where = and(...filters);
       const [rows, [{ total }]] = await Promise.all([
         db.select().from(generatedVideos).where(where).orderBy(desc(generatedVideos.createdAt), desc(generatedVideos.id)).limit(limit).offset(offset),
@@ -413,6 +416,19 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
         .then((rows) => rows[0] ?? null),
 
     toResponse: withLinks,
+
+    /** Star or unstar a clip as a favourite. Only a finished clip can be starred. */
+    setFavourite: async (row: typeof generatedVideos.$inferSelect, patch: UpdateGeneratedVideoFavourite) => {
+      if (patch.favourite && (row.status !== "completed" || !row.assetId)) {
+        throw unprocessable("Only a finished clip can be a favourite", { code: "generated_video_not_ready" });
+      }
+      return db
+        .update(generatedVideos)
+        .set({ favourite: patch.favourite, updatedAt: new Date() })
+        .where(eq(generatedVideos.id, row.id))
+        .returning()
+        .then((rows) => rows[0] ?? row);
+    },
 
     remove: async (id: string) => {
       const row = await db
