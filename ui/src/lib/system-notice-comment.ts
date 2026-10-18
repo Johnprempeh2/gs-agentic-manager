@@ -61,7 +61,7 @@ function mapMetadataRow(
       const href = runAgentId ? `/agents/${runAgentId}/runs/${row.runId}` : undefined;
       return {
         kind: "run",
-        label: metadataRowText(row, "Run"),
+        label: metadataRowText(row, "Agent work"),
         runId: row.runId,
         href,
         status: row.title ?? undefined,

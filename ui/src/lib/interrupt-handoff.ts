@@ -225,7 +225,7 @@ export function computeComposerHandoffPreview(
         ? {
             kind: "interrupt_handoff_agent",
             tone: "neutral",
-            text: "Interrupt current run, hand off to",
+            text: "Stop the current work, hand off to",
             chip: { kind: "agent", id: target.id },
           }
         : {
@@ -299,7 +299,7 @@ export function classifyAssigneeHandoff(
 ): AssigneeHandoffInfo {
   if (to.agentId) {
     const who = opts.agentName ?? "the responsible agent";
-    const suffix = opts.interruptedRunAttached ? " (interrupted run attached)" : "";
+    const suffix = opts.interruptedRunAttached ? " (stopped work attached)" : "";
     return { kind: "agent_wake", wakeText: `queued for ${who}${suffix}` };
   }
   if (to.userId) {
@@ -336,8 +336,8 @@ export interface ReassignInterruptCopy {
 export function describeReassignInterrupt(opts: { runningAgentName?: string | null } = {}): ReassignInterruptCopy {
   const who = opts.runningAgentName?.trim() || "An agent";
   return {
-    banner: `${who} is running. Changing the responsible will interrupt this run.`,
-    confirmTitle: "Interrupt the current run?",
+    banner: `${who} is working on this. Changing who is responsible will stop that work.`,
+    confirmTitle: "Stop the current work?",
     confirmAction: "Interrupt & assign",
     cancelAction: "Cancel",
   };
@@ -376,7 +376,7 @@ export interface PauseAffectsSummary {
 }
 
 const PAUSE_BUCKET_LABEL: Record<PauseAffectsBucketKey, string> = {
-  live_runs: "Live agent runs",
+  live_runs: "Agents working now",
   queued_wakes: "Queued wakes",
   agent_owned: "Agent-owned",
   human_owned: "Human-owned",
@@ -386,7 +386,7 @@ const PAUSE_BUCKET_LABEL: Record<PauseAffectsBucketKey, string> = {
 const PAUSE_BUCKET_DETAIL: Record<PauseAffectsBucketKey, string> = {
   live_runs: "interrupted now, re-queued when you resume",
   queued_wakes: "held: they won't start until you resume",
-  agent_owned: "responsible agent; no run is live",
+  agent_owned: "responsible agent; not working right now",
   human_owned: "owned by a board user; pausing won't notify them",
   static: "no responsible; nothing was going to run",
 };

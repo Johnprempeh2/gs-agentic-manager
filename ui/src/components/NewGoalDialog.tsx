@@ -31,13 +31,7 @@ import { MarkdownEditor, type MarkdownEditorRef } from "./MarkdownEditor";
 import { StatusBadge } from "./StatusBadge";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 import { useConfirm } from "@/context/ConfirmContext";
-
-const levelLabels: Record<string, string> = {
-  company: "Organisation",
-  team: "Team",
-  agent: "Agent",
-  task: "Task",
-};
+import { goalLevelLabel } from "@/lib/goal-level-labels";
 
 export function NewGoalDialog() {
   const confirm = useConfirm();
@@ -255,7 +249,7 @@ export function NewGoalDialog() {
             <PopoverTrigger asChild>
               <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
                 <Layers className="h-3 w-3 text-muted-foreground" />
-                {levelLabels[level] ?? level}
+                {goalLevelLabel(level)}
               </button>
             </PopoverTrigger>
             <PopoverContent className="w-40 p-1" align="start">
@@ -268,7 +262,7 @@ export function NewGoalDialog() {
                   )}
                   onClick={() => { setLevel(l); setLevelOpen(false); }}
                 >
-                  {levelLabels[l] ?? l}
+                  {goalLevelLabel(l)}
                 </button>
               ))}
             </PopoverContent>

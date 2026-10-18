@@ -135,11 +135,10 @@ function IssueChatFallbackThread({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div className="space-y-1">
             <p className="font-medium">
-              Chat renderer hit an internal state error.
+              Part of this conversation could not be shown.
             </p>
             <p className="text-xs">
-              Showing a safe fallback transcript instead of crashing the tasks
-              page.
+              We are showing a simpler version so you can keep working.
             </p>
           </div>
         </div>

@@ -4279,7 +4279,7 @@ describe("IssueDetail", () => {
     await flushReact();
 
     expect(
-      container.querySelector('[aria-label="Open file in this issue"]'),
+      container.querySelector('[aria-label="Open file in this task"]'),
     ).not.toBeNull();
   });
 
@@ -4976,7 +4976,7 @@ describe("IssueDetail", () => {
     expect(mockPushToast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "The agent stopped, but the task status did not change",
-        body: "Run was stopped, but updating the task failed: Status write failed",
+        body: "The agent was stopped, but the task status could not be updated: Status write failed",
         tone: "error",
       }),
     );

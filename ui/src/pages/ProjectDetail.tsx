@@ -112,7 +112,7 @@ function ProjectTilePicker({
         <button
           type="button"
           className="shrink-0 rounded-lg cursor-pointer hover:ring-2 hover:ring-foreground/20 transition-(--tp-box-shadow)"
-          aria-label="Change project icon and color"
+          aria-label="Change project icon and colour"
         >
           <ProjectTile color={color} icon={icon} size="md" />
         </button>
@@ -160,7 +160,7 @@ function ProjectTilePicker({
                   ? "ring-2 ring-foreground ring-offset-1 ring-offset-background rounded-md"
                   : ""
               }`}
-              aria-label="Reset to neutral gray"
+              aria-label="Reset to neutral grey"
               title="Neutral (default)"
             >
               <ProjectTile color={null} size="sm" />
@@ -176,7 +176,7 @@ function ProjectTilePicker({
                     : "hover:ring-2 hover:ring-foreground/30"
                 }`}
                 style={{ backgroundColor: swatch }}
-                aria-label={`Select color ${swatch}`}
+                aria-label={`Select colour ${swatch}`}
               />
             ))}
           </div>
@@ -508,7 +508,12 @@ export function ProjectDetail() {
     },
   });
 
-  const { data: budgetOverview } = useQuery({
+  const {
+    data: budgetOverview,
+    error: budgetOverviewError,
+    refetch: refetchBudgetOverview,
+    isFetching: budgetOverviewFetching,
+  } = useQuery({
     queryKey: queryKeys.budgets.overview(resolvedCompanyId ?? "__none__"),
     queryFn: () => budgetsApi.overview(resolvedCompanyId!),
     enabled: !!resolvedCompanyId,
@@ -947,12 +952,22 @@ export function ProjectDetail() {
 
       {activeTab === "budget" && resolvedCompanyId ? (
         <div className="max-w-3xl">
-          <BudgetPolicyCard
-            summary={projectBudgetSummary}
-            variant="plain"
-            isSaving={budgetMutation.isPending}
-            onSave={(amount) => budgetMutation.mutate(amount)}
-          />
+          {budgetOverviewError && !budgetOverview ? (
+            <ErrorState
+              compact
+              error={budgetOverviewError}
+              title="The budget did not load"
+              onRetry={() => void refetchBudgetOverview()}
+              retrying={budgetOverviewFetching}
+            />
+          ) : (
+            <BudgetPolicyCard
+              summary={projectBudgetSummary}
+              variant="plain"
+              isSaving={budgetMutation.isPending}
+              onSave={(amount) => budgetMutation.mutate(amount)}
+            />
+          )}
         </div>
       ) : null}
 

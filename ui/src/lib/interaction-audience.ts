@@ -52,7 +52,7 @@ const RESOLVER_POLICY_EFFECTS: Record<IssueThreadInteractionCanonicalResolverPol
   anyone:
     "Anyone in the organisation can respond: the board or any agent, including the one that asked.",
   not_creator:
-    "Anyone in the organization except the agent that created the card, and its run. Use this when the answer has to come from someone else.",
+    "Anyone in the organisation except the agent that created the card, and its run. Use this when the answer has to come from someone else.",
   human_only: "Only a person on the board can respond. Agents are turned away.",
 };
 
@@ -195,7 +195,7 @@ export function describeResolverAudience({
     : hasAddressee
       ? `Only ${addressee} or a person on the board can respond.`
       : policy === "not_creator"
-        ? `Anyone in the organization except ${creator} can respond.`
+        ? `Anyone in the organisation except ${creator} can respond.`
         : "Anyone in the organisation can respond: the board or any agent, including the one that asked.";
 
   // Same fact, fewer words: a collapsed row has to answer "is this mine to

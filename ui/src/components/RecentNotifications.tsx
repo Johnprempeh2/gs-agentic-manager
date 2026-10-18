@@ -3,6 +3,7 @@ import { pushApi } from "../api/push";
 import { queryKeys } from "../lib/queryKeys";
 import { relativeTime } from "../lib/utils";
 import { Link } from "@/lib/router";
+import { ErrorState } from "@/components/ErrorState";
 
 /**
  * What reached this person's phones in the last two weeks, newest first, so a
@@ -10,7 +11,7 @@ import { Link } from "@/lib/router";
  * notification opened.
  */
 export function RecentNotifications({ companyId }: { companyId: string }) {
-  const { data, error } = useQuery({
+  const { data, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.recentNotifications(companyId),
     queryFn: () => pushApi.recent(companyId),
   });
@@ -22,7 +23,13 @@ export function RecentNotifications({ companyId }: { companyId: string }) {
         <p className="text-sm text-muted-foreground">What reached your phone in the last two weeks. Tap one to open it again.</p>
       </div>
       {error ? (
-        <p className="text-sm text-destructive" role="alert">Could not load your recent notifications.</p>
+        <ErrorState
+          compact
+          error={error}
+          title="Could not load your recent notifications"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+        />
       ) : !data ? null : data.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing yet. Notifications show here once they reach your phone.</p>
       ) : (

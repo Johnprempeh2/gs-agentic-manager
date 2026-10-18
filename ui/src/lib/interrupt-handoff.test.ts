@@ -169,7 +169,7 @@ describe("classifyAssigneeHandoff", () => {
       { agentId: QA_ID, userId: null },
       { agentName: "QA", interruptedRunAttached: true },
     );
-    expect(info.wakeText).toMatch(/interrupted run attached/);
+    expect(info.wakeText).toMatch(/stopped work attached/);
   });
 
   it("B. to user = no wake, board handoff", () => {
@@ -188,14 +188,14 @@ describe("classifyAssigneeHandoff", () => {
 describe("describeReassignInterrupt", () => {
   it("names the running agent in the banner and confirm", () => {
     const copy = describeReassignInterrupt({ runningAgentName: "ClaudeCoder" });
-    expect(copy.banner).toBe("ClaudeCoder is running. Changing the responsible will interrupt this run.");
+    expect(copy.banner).toBe("ClaudeCoder is working on this. Changing who is responsible will stop that work.");
     expect(copy.confirmAction).toBe("Interrupt & assign");
     expect(copy.cancelAction).toBe("Cancel");
   });
 
   it("falls back to a generic subject when no name is known", () => {
-    expect(describeReassignInterrupt().banner).toMatch(/^An agent is running/);
-    expect(describeReassignInterrupt({ runningAgentName: "  " }).banner).toMatch(/^An agent is running/);
+    expect(describeReassignInterrupt().banner).toMatch(/^An agent is working on this/);
+    expect(describeReassignInterrupt({ runningAgentName: "  " }).banner).toMatch(/^An agent is working on this/);
   });
 });
 
