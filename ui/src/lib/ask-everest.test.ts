@@ -121,13 +121,13 @@ describe("answers", () => {
       organisation: { id: "o1", name: "Grebe", status: "client", industry: "Mining", country: "Ghana", href: "/GRE/organisations/o1" },
       people: [{ name: "Yaw Darko", role: "CFO", email: "yaw@example.com" }],
       peopleCount: 2,
-      openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", href: "/GRE/pipelines/p/items/c1" }],
+      openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", value: 12000, currency: "GBP", expectedCloseDate: "2026-11-30", href: "/GRE/pipelines/p/items/c1" }],
       lastTouch: { at: "2026-10-08T09:00:00.000Z", label: "Meeting: Quarterly review" },
       quietDays: 10,
     });
     expect(answer.headline).toBe("Grebe: client, Mining, Ghana. 1 open deal, 2 people, last contact 10 days ago (Meeting: Quarterly review).");
     expect(answer.lines).toEqual([
-      { text: "Grebe expansion", detail: "Open deal: Proposal in Sales", href: "/GRE/pipelines/p/items/c1" },
+      { text: "Grebe expansion", detail: "Open deal: Proposal in Sales, GBP 12,000, due 30 Nov", href: "/GRE/pipelines/p/items/c1" },
       { text: "Yaw Darko", detail: "CFO, yaw@example.com", href: "/GRE/organisations/o1" },
     ]);
     expect(answer.more).toEqual({ label: "Open Grebe", href: "/GRE/organisations/o1" });

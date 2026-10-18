@@ -244,7 +244,17 @@ export interface CompanyClientBrief {
   people: Array<{ name: string; role: string | null; email: string | null }>;
   peopleCount: number;
   /** Open deals and leads, newest first. */
-  openDeals: Array<{ title: string; stageName: string; pipelineName: string; href: string }>;
+  openDeals: Array<{
+    title: string;
+    stageName: string;
+    pipelineName: string;
+    /** Imported value and currency, when set. */
+    value: number | null;
+    currency: string | null;
+    /** Imported expected close date, YYYY-MM-DD, when set. */
+    expectedCloseDate: string | null;
+    href: string;
+  }>;
   lastTouch: { at: string; label: string } | null;
   /** Days since the last note, call or meeting; null when never. */
   quietDays: number | null;

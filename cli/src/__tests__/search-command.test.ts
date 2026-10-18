@@ -189,7 +189,7 @@ describe("gsam search", () => {
           organisation: { id: "o1", name: "Grebe", status: "client", industry: "Mining", country: "Ghana", href: "/GRE/organisations/o1" },
           people: [{ name: "Yaw Darko", role: "CFO", email: null }],
           peopleCount: 1,
-          openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", href: "/GRE/pipelines/p/items/c1" }],
+          openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", value: 12000, currency: "GBP", expectedCloseDate: "2026-11-30", href: "/GRE/pipelines/p/items/c1" }],
           lastTouch: { at: "2026-10-08T09:00:00.000Z", label: "Meeting: Quarterly review" },
           quietDays: 10,
         },
@@ -200,7 +200,7 @@ describe("gsam search", () => {
     expect(lines).toEqual([
       "Grebe (client, Mining, Ghana)  /GRE/organisations/o1",
       "Last contact: Meeting: Quarterly review, 10 days ago",
-      "Open deals: Grebe expansion (Proposal in Sales)",
+      "Open deals: Grebe expansion (Proposal in Sales, GBP 12000, due 2026-11-30)",
       "People (1): Yaw Darko, CFO",
     ]);
   });
