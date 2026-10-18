@@ -486,6 +486,10 @@ describe("paperclip MCP tools", () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(String(url)).toMatch(/\/generated-images\/variations$/);
     expect(JSON.parse(String(init.body))).toEqual({ prompt: "A lighthouse", aspectRatio: "1:1", lookIds });
+
+    await getTool("studio_make_image").execute({ prompt: "Acme coffee", shots: ["A barista pours", "A commuter sips"] });
+    const [, shotsInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(shotsInit.body))).toEqual({ prompt: "Acme coffee", aspectRatio: "1:1", shots: ["A barista pours", "A commuter sips"] });
   });
 
   it("refuses an unknown studio lens before calling the server", async () => {
@@ -538,5 +542,48 @@ describe("paperclip MCP tools", () => {
     await getTool("studio_make_image").execute({ prompt: "A bottle of oil", lookId: "77777777-7777-4777-8777-777777777777" });
     const [, imageInit] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(JSON.parse(String(imageInit.body))).toMatchObject({ lookId: "77777777-7777-4777-8777-777777777777" });
+  });
+
+  it("attaches a finished studio image to the task it was made for", async () => {
+    const issueId = "44444444-4444-4444-8444-444444444444";
+    const fetchMock = vi.fn().mockImplementation(async (url: URL) => {
+      const path = String(url);
+      if (path.endsWith("/generated-images/55555555-5555-4555-8555-555555555555")) {
+        return mockJsonResponse({
+          companyId: "11111111-1111-1111-1111-111111111111",
+          prompt: "A lighthouse at dawn!",
+          status: "completed",
+          assetId: "asset-1",
+          issue: { id: issueId },
+        });
+      }
+      if (path.endsWith("/assets/asset-1/content")) {
+        return new Response(new Uint8Array([0x89, 0x50, 0x4e, 0x47]), { headers: { "content-type": "image/png" } });
+      }
+      return mockJsonResponse({ id: "attachment-1" }, 201);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await getTool("studio_attach_to_task").execute({ imageId: "55555555-5555-4555-8555-555555555555" });
+
+    const [url, init] = fetchMock.mock.calls[2] as [URL, RequestInit];
+    expect(String(url)).toBe(`http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/issues/${issueId}/attachments`);
+    expect(init.method).toBe("POST");
+    const file = (init.body as FormData).get("file") as File;
+    expect(file.name).toBe("a-lighthouse-at-dawn.png");
+    expect(file.type).toBe("image/png");
+    expect(JSON.parse(response.content[0]!.text)).toMatchObject({ issueId, attachment: { id: "attachment-1" } });
+  });
+
+  it("will not attach a studio image that is still being made", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () =>
+      mockJsonResponse({ companyId: "c", prompt: "x", status: "pending", assetId: null, issue: null }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await getTool("studio_attach_to_task").execute({ imageId: "55555555-5555-4555-8555-555555555555" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.content[0]?.text).toContain("not finished yet");
+    const both = await getTool("studio_attach_to_task").execute({});
+    expect(both.content[0]?.text).toContain("Give imageId or videoId");
   });
 });

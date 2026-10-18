@@ -76,6 +76,36 @@ export class PaperclipApiClient {
   }
 
   async requestJson<T>(method: string, path: string, options: JsonRequestOptions = {}): Promise<T> {
+    const response = await this.send(method, path, {
+      accept: "application/json",
+      includeRunId: options.includeRunId,
+      ...(options.body === undefined
+        ? {}
+        : { contentType: "application/json", body: JSON.stringify(options.body) }),
+    });
+    return (await parseResponseBody(response)) as T;
+  }
+
+  /** Download a file, such as an asset's content, as bytes. */
+  async requestBytes(path: string): Promise<{ body: Uint8Array<ArrayBuffer>; contentType: string }> {
+    const response = await this.send("GET", path, { accept: "*/*" });
+    return {
+      body: new Uint8Array(await response.arrayBuffer()),
+      contentType: response.headers.get("content-type") ?? "application/octet-stream",
+    };
+  }
+
+  /** Upload a file as multipart form data, the way the board's file pickers do. */
+  async requestForm<T>(path: string, form: FormData): Promise<T> {
+    const response = await this.send("POST", path, { accept: "application/json", body: form });
+    return (await parseResponseBody(response)) as T;
+  }
+
+  private async send(
+    method: string,
+    path: string,
+    options: { accept: string; contentType?: string; body?: BodyInit; includeRunId?: boolean },
+  ): Promise<Response> {
     if (!path.startsWith("/")) {
       throw new Error(`API path must start with "/": ${path}`);
     }
@@ -83,23 +113,18 @@ export class PaperclipApiClient {
     const url = new URL(path.slice(1), `${this.config.apiUrl}/`);
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.config.apiKey}`,
-      Accept: "application/json",
+      Accept: options.accept,
     };
-    if (options.body !== undefined) {
-      headers["Content-Type"] = "application/json";
+    if (options.contentType) {
+      headers["Content-Type"] = options.contentType;
     }
     if ((options.includeRunId ?? isWriteMethod(method)) && this.config.runId) {
       headers["X-Paperclip-Run-Id"] = this.config.runId;
     }
 
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-    });
-    const parsedBody = await parseResponseBody(response);
-
+    const response = await fetch(url, { method, headers, body: options.body });
     if (!response.ok) {
+      const parsedBody = await parseResponseBody(response);
       throw new PaperclipApiError({
         status: response.status,
         method: method.toUpperCase(),
@@ -108,7 +133,6 @@ export class PaperclipApiClient {
         message: buildErrorMessage(method.toUpperCase(), path, response.status, parsedBody),
       });
     }
-
-    return parsedBody as T;
+    return response;
   }
 }

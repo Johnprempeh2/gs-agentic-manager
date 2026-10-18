@@ -83,6 +83,8 @@ The Images page works as an image studio, built from the ideas in
 Agents get the same studio three ways: `gsam image generate` with `--camera`,
 `--lens`, `--focal`, `--aperture` and `--count`; the MCP tools `studio_status`,
 `studio_make_image`, `studio_get_image` and `studio_list_images`; or the API.
+`studio_attach_to_task` attaches a finished image or clip to a task as a file,
+through the same upload route and checks as the board.
 
 At most three images are made at once per server, and a company can have six
 pending; a seventh request gets `429`. A pending row left behind by a restart
@@ -149,4 +151,14 @@ in place of `count`; every look must belong to the company (`422`
 `studio_look_not_found` otherwise) and nothing starts unless all of them fit.
 Agents use `gsam image generate --compare "Warm, Cool"` or `lookIds` on the
 MCP tool `studio_make_image`.
+
+### Storyboards
+
+**Storyboard** on the Images tab takes two to four short shot lines, such as
+"a barista pours the first cup". Each becomes its own picture: the shot comes
+first, then the main description they all share, then the house look's words,
+so a campaign's pictures belong together. The request is the variations
+endpoint with `shots` (up to 300 characters each) and an optional `lookId`.
+Agents use `--shot` once per shot on `gsam image generate`, or `shots` on
+`studio_make_image`.
 

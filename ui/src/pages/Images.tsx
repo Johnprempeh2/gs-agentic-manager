@@ -56,6 +56,7 @@ import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImagePromptFields } from "../c
 import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCameraFields";
 import { StudioLookCompare } from "../components/StudioLookCompare";
 import { StudioLookPicker } from "../components/StudioLookPicker";
+import { StudioShotList } from "../components/StudioShotList";
 import { VideoStudio } from "../components/VideoStudio";
 
 export { IMAGE_IDEA_STARTERS };
@@ -201,6 +202,7 @@ export function Images() {
   const [lookId, setLookId] = useState<string | null>(null);
   const [variations, setVariations] = useState<number>(1);
   const [compareLookIds, setCompareLookIds] = useState<string[]>([]);
+  const [shots, setShots] = useState<string[]>([]);
   const [organisationId, setOrganisationId] = useState("");
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -273,8 +275,12 @@ export function Images() {
       issueId?: string | null;
       count?: number;
       lookIds?: string[];
+      shots?: string[];
     }) => {
-      const { count = 1, lookIds, ...body } = input;
+      const { count = 1, lookIds, shots: storyboard, ...body } = input;
+      if (storyboard && storyboard.length >= 2) {
+        return (await imagesApi.createVariations(companyId, { ...body, shots: storyboard })).images;
+      }
       // Several versions go in one request, so they all start or none do.
       if (lookIds && lookIds.length >= 2) {
         return (await imagesApi.createVariations(companyId, { ...body, lookId: null, lookIds })).images;
@@ -310,7 +316,9 @@ export function Images() {
   const trimmed = prompt.trim();
   const canSubmit = configured && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
 
-  const comparing = compareLookIds.length >= 2;
+  const shotLines = shots.map((shot) => shot.trim()).filter(Boolean);
+  const storyboarding = shotLines.length >= 2;
+  const comparing = !storyboarding && compareLookIds.length >= 2;
   const submit = () => {
     if (!canSubmit) return;
     create.mutate(
@@ -323,8 +331,14 @@ export function Images() {
         organisationId: organisationId || null,
         count: variations,
         ...(comparing ? { lookIds: compareLookIds } : {}),
+        ...(storyboarding ? { shots: shotLines } : {}),
       },
-      { onSuccess: () => setPrompt("") },
+      {
+        onSuccess: () => {
+          setPrompt("");
+          setShots([]);
+        },
+      },
     );
   };
 
@@ -436,10 +450,16 @@ export function Images() {
           current={{ style, camera }}
           disabled={!configured}
         />
-        <StudioLookCompare companyId={companyId} selected={compareLookIds} onChange={setCompareLookIds} disabled={!configured} />
+        <StudioLookCompare
+          companyId={companyId}
+          selected={compareLookIds}
+          onChange={setCompareLookIds}
+          disabled={!configured || storyboarding}
+        />
+        <StudioShotList shots={shots} onChange={setShots} disabled={!configured} />
         <StudioCameraFields idPrefix="image" camera={camera} onCameraChange={setCamera} disabled={!configured} />
 
-        <fieldset className="space-y-2" disabled={!configured || comparing}>
+        <fieldset className="space-y-2" disabled={!configured || comparing || storyboarding}>
           <legend className="text-sm font-medium">How many versions?</legend>
           <div className="flex gap-2" role="radiogroup" aria-label="How many versions" data-testid="image-variations">
             {STUDIO_VARIATION_COUNTS.map((count) => (
@@ -497,7 +517,9 @@ export function Images() {
             ) : (
               <Wand2 className="h-4 w-4" aria-hidden="true" />
             )}
-            {comparing
+            {storyboarding
+              ? `Make storyboard (${shotLines.length} shots)`
+              : comparing
               ? `Compare ${compareLookIds.length} looks`
               : variations > 1
                 ? `Make ${variations} images`

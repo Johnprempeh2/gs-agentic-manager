@@ -99,6 +99,10 @@ To let the board choose between looks, make the same picture in each:
 names), or `lookIds` on `studio_make_image`. Link the results to the task so
 the board can pick one.
 
+For a campaign or a sequence, make a storyboard: put what every picture
+shares in `--prompt` (subject, place, brand) and each moment in its own
+`--shot` (2 to 4), with `--look` so they match. With MCP, pass `shots`.
+
 ## With curl
 
 1. Ask for the image. The reply is `202` with `status: "pending"`:
@@ -118,7 +122,8 @@ the board can pick one.
    `failed` (then `error` says why in plain words).
 3. To attach it to your task, download `contentPath` and upload the file to
    `POST /api/companies/{companyId}/issues/{issueId}/attachments` as described
-   in `references/artifacts.md`. When you put the image in a document or
+   in `references/artifacts.md` (with MCP, `studio_attach_to_task` does both
+   steps for an image or clip). When you put the image in a document or
    comment, use its `altText` as the alt text: `![<altText>](<url>)`.
 4. To show it on the task's or client's card, `PATCH /api/generated-images/{id}/cover`
    with `{"issueCover": true}` or `{"organisationCover": true}`. The image must

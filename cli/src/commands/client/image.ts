@@ -43,6 +43,7 @@ interface ImageGenerateOptions extends BaseClientOptions {
   aperture?: string;
   count?: string;
   compare?: string;
+  shot?: string[];
 }
 
 interface ImageListOptions extends BaseClientOptions {
@@ -101,6 +102,11 @@ export function registerImageCommands(program: Command): void {
       .option("--look <name>", "Use a saved house look (see gsam look list); your own flags win")
       .option("--count <n>", `How many versions to make, 1 to ${STUDIO_MAX_VARIATIONS}`, "1")
       .option("--compare <looks>", "Make one version in each of these house looks, comma separated (2 to 4 names)")
+      .option(
+        "--shot <text>",
+        "A storyboard shot; repeat for 2 to 4 shots. Each is joined to --prompt, which they all share",
+        (value: string, previous: string[] = []) => [...previous, value],
+      )
       .option("--out <path>", "Also save the finished image to this file (with --count, a number is added)")
       .option("--no-wait", "Return as soon as the request is accepted")
       .option("--timeout <seconds>", "How long to wait for the image", "300")
@@ -122,6 +128,11 @@ export function registerImageCommands(program: Command): void {
             throw new Error(`--compare needs 2 to ${STUDIO_MAX_VARIATIONS} look names`);
           }
           if (compare.length > 0 && (lookId || count > 1)) throw new Error("Use --compare on its own, without --look or --count");
+          const shots = (opts.shot ?? []).map((shot) => shot.trim()).filter(Boolean);
+          if (shots.length === 1 || shots.length > STUDIO_MAX_VARIATIONS) {
+            throw new Error(`--shot needs 2 to ${STUDIO_MAX_VARIATIONS} shots`);
+          }
+          if (shots.length > 0 && (compare.length > 0 || count > 1)) throw new Error("Use --shot without --compare or --count");
           const lookIds = await Promise.all(compare.map((name) => resolveLookId(ctx, name)));
           const issueId = opts.issueId?.trim() || null;
           const body = {
@@ -133,11 +144,11 @@ export function registerImageCommands(program: Command): void {
             ...(issueId ? { issueId } : {}),
           };
           let requests: GeneratedImage[];
-          if (compare.length > 0 || count > 1) {
+          if (compare.length > 0 || count > 1 || shots.length > 0) {
             // One request for every version, so they all start or none do.
             const made = await ctx.api.post<{ images: GeneratedImage[] }>(
               apiPath`/api/companies/${ctx.companyId}/generated-images/variations`,
-              compare.length > 0 ? { ...body, lookIds } : { ...body, count },
+              compare.length > 0 ? { ...body, lookIds } : shots.length > 0 ? { ...body, shots } : { ...body, count },
             );
             if (!made) throw new Error("The server did not return the image requests");
             requests = made.images;

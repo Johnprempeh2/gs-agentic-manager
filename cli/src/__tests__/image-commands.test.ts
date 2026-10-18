@@ -170,6 +170,13 @@ describe("gsam image", () => {
     );
     expect(created).toEqual([{ prompt: "A lighthouse", aspectRatio: "1:1", lookIds: looks.map((look) => look.id) }]);
 
+    await createProgram().parseAsync(
+      ["image", "generate", "--prompt", "Acme coffee", "--shot", "A barista pours", "--shot", "A commuter sips", "--no-wait",
+        "--company-id", COMPANY_ID, "--api-base", "http://localhost:3100", "--api-key", "t"],
+      { from: "user" },
+    );
+    expect(created[1]).toEqual({ prompt: "Acme coffee", aspectRatio: "1:1", shots: ["A barista pours", "A commuter sips"] });
+
     vi.spyOn(process, "exit").mockImplementation((() => {
       throw new Error("exit");
     }) as never);
