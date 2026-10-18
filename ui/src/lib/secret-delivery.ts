@@ -48,7 +48,7 @@ export function deliveryModeDescription(mode: SecretDeliveryMode): string {
     case "api":
       return "Fetched on demand via the run-bound agent API. Never written to the environment.";
     default:
-      return "Provided through adapter configuration.";
+      return "Provided through the agent's run settings.";
   }
 }
 

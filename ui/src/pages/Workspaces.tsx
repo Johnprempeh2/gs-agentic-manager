@@ -130,7 +130,7 @@ export function Workspaces() {
       />
 
       {groups.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No workspace activity yet.</p>
+        <p className="text-sm text-muted-foreground">No workspace activity yet. When an agent works on a project task, its work in progress shows here.</p>
       ) : (
         <div className="space-y-8">
           {groups.map((group) => (

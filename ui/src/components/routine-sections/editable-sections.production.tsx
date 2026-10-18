@@ -579,15 +579,15 @@ export function TriggersSection() {
             {secretMessage.entries.map((entry, index) => (
               <div key={`${entry.webhookUrl}-${index}`} className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <Input aria-label="New webhook URL" value={entry.webhookUrl} readOnly className="flex-1" />
-                  <Button variant="outline" size="sm" onClick={() => copySecretValue("Webhook URL", entry.webhookUrl)}>
-                    URL
+                  <Input aria-label="New trigger link" value={entry.webhookUrl} readOnly className="flex-1" />
+                  <Button variant="outline" size="sm" onClick={() => copySecretValue("Trigger link", entry.webhookUrl)}>
+                    Copy link
                   </Button>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Input aria-label="New webhook secret" value={entry.webhookSecret} readOnly className="flex-1" />
-                  <Button variant="outline" size="sm" onClick={() => copySecretValue("Webhook secret", entry.webhookSecret)}>
-                    Secret
+                  <Input aria-label="New trigger secret" value={entry.webhookSecret} readOnly className="flex-1" />
+                  <Button variant="outline" size="sm" onClick={() => copySecretValue("Trigger secret", entry.webhookSecret)}>
+                    Copy secret
                   </Button>
                 </div>
               </div>
@@ -602,6 +602,7 @@ export function TriggersSection() {
         <EmptyState
           icon={Clock3}
           message="No triggers yet."
+          description="A trigger starts this routine for you, on a schedule or when another app sends it a message."
           action="Add a trigger"
           onAction={() => setAddOpen(true)}
         />

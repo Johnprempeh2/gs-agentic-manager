@@ -308,7 +308,7 @@ export function IssueAttachmentsSection({
                   className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/60"
                   onClick={(event) => event.stopPropagation()}
                 >
-                  <p className="text-xs font-medium text-white">Delete?</p>
+                  <p className="text-xs font-medium text-white">Delete this file?</p>
                   <div className="flex gap-1.5">
                     <button
                       type="button"
@@ -319,7 +319,7 @@ export function IssueAttachmentsSection({
                       }}
                       disabled={deletePending}
                     >
-                      Yes
+                      Delete
                     </button>
                     <button
                       type="button"
@@ -329,7 +329,7 @@ export function IssueAttachmentsSection({
                         setConfirmDeleteId(null);
                       }}
                     >
-                      No
+                      Keep
                     </button>
                   </div>
                 </div>
