@@ -93,11 +93,11 @@ export function signInHistoryPlugin(db: Db, clientIpHeader: string) {
     hooks: {
       after: [
         {
-          matcher: (context) => context.path === SIGN_IN_EMAIL_PATH || TWO_STEP_VERIFY_PATHS.has(context.path),
+          matcher: (context) => context.path === SIGN_IN_EMAIL_PATH || TWO_STEP_VERIFY_PATHS.has(context.path ?? ""),
           handler: createAuthMiddleware(async (ctx) => {
             const newSession = ctx.context.newSession as { user?: { id?: string } } | null | undefined;
             const fromSignIn = /(?:^|[;\s])[^=;\s]*two_factor=/.test(ctx.headers?.get("cookie") ?? "");
-            const outcome = signInOutcome(ctx.path, ctx.context.returned, Boolean(newSession?.user?.id), fromSignIn);
+            const outcome = signInOutcome(ctx.path ?? "", ctx.context.returned, Boolean(newSession?.user?.id), fromSignIn);
             if (!outcome) return;
             try {
               let userId = newSession?.user?.id ?? null;
