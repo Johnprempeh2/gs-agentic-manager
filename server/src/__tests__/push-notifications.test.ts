@@ -28,6 +28,7 @@ let acceptances: ClientAcceptance[] = [];
 let prefs: NotificationPreferences = { ...DEFAULT_NOTIFICATION_PREFERENCES };
 let clock = new Date("2026-10-16T12:00:00Z");
 let sent: Array<{ target: PushTarget; message: DecisionPushMessage }> = [];
+let sentCompanyIds: Array<string | undefined> = [];
 let sendResult: PushSendResult = { ok: true, status: 201 };
 
 function service() {
@@ -39,7 +40,8 @@ function service() {
     acceptances: async () => acceptances,
     preferences: async () => prefs,
     now: () => clock,
-    send: async (target, message) => {
+    send: async (target, { companyId: sentCompanyId, ...message }) => {
+      sentCompanyIds.push(sentCompanyId);
       sent.push({ target, message });
       return sendResult;
     },
@@ -68,6 +70,7 @@ beforeEach(async () => {
   prefs = { ...DEFAULT_NOTIFICATION_PREFERENCES };
   clock = new Date("2026-10-16T12:00:00Z");
   sent = [];
+  sentCompanyIds = [];
   sendResult = { ok: true, status: 201 };
 });
 
@@ -217,7 +220,7 @@ describe("notification choices", () => {
       finished: async () => [],
       preferences: async () => prefs,
       now: () => clock,
-      send: async (target, message) => { sent.push({ target, message }); return sendResult; },
+      send: async (target, { companyId: _companyId, ...message }) => { sent.push({ target, message }); return sendResult; },
     });
     await spy.subscribe(companyId, "john", phone(8));
     await db.delete(pushNotifiedDecisions);
@@ -262,7 +265,7 @@ describe("notification choices", () => {
       closedDeals: async () => [],
       preferences: async () => prefs,
       now: () => clock,
-      send: async (target, message) => { sent.push({ target, message }); return sendResult; },
+      send: async (target, { companyId: _companyId, ...message }) => { sent.push({ target, message }); return sendResult; },
     });
     await spy.subscribe(companyId, "john", phone(9));
     await db.delete(pushNotifiedDecisions);
@@ -385,6 +388,13 @@ describe("recent notifications", () => {
     expect(recent.map((item) => item.title)).toEqual(["A decision needs you", "Deal won"]);
     expect(recent[0]!.url).toBe("/PSH/decisions");
     expect(await service().recent(companyId, "ben")).toEqual([]);
+  });
+
+  it("tells the phone which company sent it, so it can offer a pause, except on the test message", async () => {
+    await service().subscribe(companyId, "john", phone(1));
+    await service().deliver(companyId, "john", { title: "Deal won", body: "Indago rollout", url: "/PSH/pipelines/p/cases/c", tag: "deal:c" });
+    await service().sendTest(companyId, "john", "PSH");
+    expect(sentCompanyIds).toEqual([companyId, undefined]);
   });
 
   it("records nothing when no phone took the message", async () => {
