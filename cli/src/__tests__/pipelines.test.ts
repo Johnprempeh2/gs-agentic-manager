@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyDealSettings, completeDealNextStep, registerPipelineCommands, selectDealsDue, summariseDeals } from "../commands/pipelines.js";
+import { applyDealSettings, closeDealFields, completeDealNextStep, dealOutcomeStage, registerPipelineCommands, selectDealsDue, summariseDeals } from "../commands/pipelines.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
@@ -305,5 +305,54 @@ describe("summariseDeals", () => {
       lost90d: 1,
       winRate90d: 50,
     }]);
+  });
+});
+
+describe("pipelines case close-deal", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.GSAM_API_KEY;
+    delete process.env.GSAM_API_URL;
+    vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  it("picks the Won or Lost stage and records the outcome fields", () => {
+    const stages = [
+      { id: "a", key: "qualified", name: "Qualified", kind: "working", position: 0 },
+      { id: "b", key: "closed", name: "Closed", kind: "done", position: 1 },
+      { id: "c", key: "lost", name: "Lost", kind: "cancelled", position: 2 },
+    ];
+    expect(dealOutcomeStage(stages, "won")?.key).toBe("closed");
+    expect(dealOutcomeStage(stages, "lost")?.key).toBe("lost");
+    expect(dealOutcomeStage(stages.slice(0, 1), "won")).toBeNull();
+    expect(closeDealFields({ dealStatus: "open", dealValue: 5 }, "won", "2026-10-18")).toEqual({ dealStatus: "Won", dealValue: 5, wonOn: "2026-10-18" });
+    expect(closeDealFields({ dealStatus: "open" }, "lost", "2026-10-18", " Price ")).toEqual({ dealStatus: "Lost", lostOn: "2026-10-18", lostReason: "Price" });
+  });
+
+  it("moves the deal to the Lost stage, then saves the reason with the new version", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ case: { id: CASE_ID, pipelineId: "p1", title: "Acme", version: 4, fields: { dealStatus: "open" } } }))
+      .mockResolvedValueOnce(jsonResponse({ id: "p1", stages: [{ id: "s", key: "lost", name: "Lost", kind: "cancelled", position: 3 }] }))
+      .mockResolvedValueOnce(jsonResponse({ case: { id: CASE_ID, version: 5 } }))
+      .mockResolvedValueOnce(jsonResponse({ case: { id: CASE_ID } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await run(["pipelines", "case", "close-deal", CASE_ID, "--lost", "--reason", "Went with a rival"]);
+    const transition = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(`http://localhost:3100/api/cases/${CASE_ID}/transition`);
+    expect(transition).toEqual({ toStageKey: "lost", expectedVersion: 4, reason: "Marked lost from the CLI: Went with a rival", force: true });
+    const patch = JSON.parse(String(fetchMock.mock.calls[3]?.[1]?.body));
+    expect(patch.expectedVersion).toBe(5);
+    expect(patch.fields).toMatchObject({ dealStatus: "Lost", lostReason: "Went with a rival" });
+  });
+
+  it("refuses a deal that is already closed", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ case: { id: CASE_ID, pipelineId: "p1", title: "Acme", version: 4, fields: { dealStatus: "Won" } } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    await run(["pipelines", "case", "close-deal", CASE_ID, "--won"]).catch(() => {});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls.flat().join(" "))).toContain("already won");
+    exit.mockRestore();
   });
 });

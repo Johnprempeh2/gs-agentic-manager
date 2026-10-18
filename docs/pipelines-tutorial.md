@@ -698,3 +698,14 @@ gsam pipelines case set-deal <caseId> --owner "Ben" --value 5000 --currency GBP 
 An empty string removes a field, for example `--probability ""`, and
 `--next-date ""` removes the next step. A Pipedrive lead keeps its lead fields.
 Like "Edit deal" on the deal page, this saves in GSAM only.
+
+To record the outcome of a deal, use `case close-deal`:
+
+```sh
+gsam pipelines case close-deal <caseId> --won
+gsam pipelines case close-deal <caseId> --lost --reason "Went with a rival"
+```
+
+Like "Mark won" and "Mark lost" on the deal page, it moves the deal to the
+pipeline's Won or Lost stage and records the date and, for a loss, the reason.
+It refuses a deal that is already won or lost, and saves in GSAM only.
