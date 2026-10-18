@@ -90,6 +90,15 @@ interface IssueUpdateOptions extends BaseClientOptions {
   dueDate?: string;
 }
 
+interface IssueBlockOptions extends BaseClientOptions {
+  action: string;
+  owner?: string;
+  waitingOn?: string;
+  expectedBy?: string;
+  blockedBy?: string[];
+  comment?: string;
+}
+
 interface IssueCommentOptions extends BaseClientOptions {
   body: string;
   attachmentId?: string[];
@@ -278,6 +287,75 @@ export function registerIssueCommands(program: Command): void {
 
   addCommonClientOptions(
     issue
+      .command("block")
+      .description("Mark an issue blocked with who must act and what they must do, so the right person is woken when it clears")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--action <text>", "Exactly what must happen to unblock it")
+      .option("--owner <me|board|agentId>", "Who must act: me (the calling agent), board, or an agent ID", "me")
+      .option("--waiting-on <who>", "Waiting on someone outside: client, board or outside")
+      .option("--expected-by <date>", "Day you expect to hear back (YYYY-MM-DD); you are woken once when it passes")
+      .option("--blocked-by <issueIds...>", "Issues that must finish first")
+      .option("--comment <text>", "Optional comment to add")
+      .action(async (issueId: string, opts: IssueBlockOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const ownerInput = (opts.owner ?? "me").trim();
+          let owner: { agentId: string } | "board";
+          if (ownerInput === "board") {
+            owner = "board";
+          } else if (ownerInput === "me") {
+            const me = await ctx.api.get<{ id: string }>("/api/agents/me");
+            if (!me?.id) throw new Error("--owner me needs an agent key; pass --owner board or an agent ID");
+            owner = { agentId: me.id };
+          } else {
+            owner = { agentId: ownerInput };
+          }
+          const payload = updateIssueSchema.parse({
+            status: "blocked",
+            unblockDescriptor: {
+              owner,
+              action: opts.action,
+              ...(opts.waitingOn ? { waitingOn: opts.waitingOn } : {}),
+              ...(opts.expectedBy ? { expectedBy: opts.expectedBy } : {}),
+            },
+            ...(opts.blockedBy?.length ? { blockedByIssueIds: opts.blockedBy } : {}),
+            comment: opts.comment,
+          });
+          const updated = await ctx.api.patch<Issue>(apiPath`/api/issues/${issueId}`, payload);
+          printOutput(updated, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("unblock")
+      .description("Clear a blocked issue's blocker and move it back to work")
+      .argument("<issueId>", "Issue ID")
+      .option("--status <status>", "Status to move to", "todo")
+      .option("--clear-blockers", "Also remove the issues it was waiting on")
+      .option("--comment <text>", "Optional comment to add")
+      .action(async (issueId: string, opts: BaseClientOptions & { status?: string; clearBlockers?: boolean; comment?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = updateIssueSchema.parse({
+            status: opts.status ?? "todo",
+            unblockDescriptor: null,
+            ...(opts.clearBlockers ? { blockedByIssueIds: [] } : {}),
+            comment: opts.comment,
+          });
+          const updated = await ctx.api.patch<Issue>(apiPath`/api/issues/${issueId}`, payload);
+          printOutput(updated, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
       .command("blocked")
       .description("List blocked tasks, how long each has waited and who must act, oldest first")
       .option("-C, --company-id <id>", "Company ID")
@@ -390,7 +468,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--parent-id <id>", "Parent issue ID")
       .option("--request-depth <n>", "Request depth integer")
       .option("--billing-code <code>", "Billing code")
-      .option("--due-date <date>", "Due date (YYYY-MM-DD)")
+      .option("--due-date <date>", "Due date (YYYY-MM-DD); only for tasks under a plan objective")
       .action(async (opts: IssueCreateOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
@@ -434,7 +512,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--billing-code <code>", "Billing code")
       .option("--comment <text>", "Optional comment to add with update")
       .option("--hidden-at <iso8601|null>", "Set hiddenAt timestamp or literal 'null'")
-      .option("--due-date <date|null>", "Due date (YYYY-MM-DD), or literal 'null' to clear it")
+      .option("--due-date <date|null>", "Due date (YYYY-MM-DD), or literal 'null' to clear it; only for tasks under a plan objective")
       .action(async (issueId: string, opts: IssueUpdateOptions) => {
         try {
           const ctx = resolveCommandContext(opts);

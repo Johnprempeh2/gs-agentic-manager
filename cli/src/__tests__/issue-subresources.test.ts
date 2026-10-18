@@ -139,6 +139,25 @@ describe("issue subresource commands", () => {
     ]);
   });
 
+  it("blocks an issue with the calling agent as owner, and unblocks it", async () => {
+    const AGENT_ID = "33333333-3333-4333-8333-333333333333";
+    const fetchMock = vi.fn((url: string, _init?: RequestInit) => Promise.resolve(jsonResponse(url.endsWith("/api/agents/me") ? { id: AGENT_ID } : { ok: true })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "block", ISSUE_ID, "--action", "Client sends the signed NDA", "--waiting-on", "client", "--expected-by", "2026-10-24"]);
+    await run(["issue", "block", ISSUE_ID, "--action", "Approve the budget", "--owner", "board"]);
+    await run(["issue", "unblock", ISSUE_ID]);
+
+    const patches = fetchMock.mock.calls.filter((call) => call[1]?.method === "PATCH").map((call) => JSON.parse(String(call[1]?.body)));
+    expect(patches[0]).toEqual({
+      status: "blocked",
+      unblockDescriptor: { owner: { agentId: AGENT_ID }, action: "Client sends the signed NDA", waitingOn: "client", expectedBy: "2026-10-24" },
+    });
+    expect(patches[1].unblockDescriptor.owner).toBe("board");
+    expect(patches[2]).toEqual({ status: "todo", unblockDescriptor: null });
+    await expect(run(["issue", "block", ISSUE_ID, "--action", "x", "--waiting-on", "friend"])).rejects.toThrow();
+  });
+
   it("sets and clears a due date on create and update", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
