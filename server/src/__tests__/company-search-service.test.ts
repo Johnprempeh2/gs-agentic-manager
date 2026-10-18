@@ -434,6 +434,32 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(result.activity.map((entry) => entry.title)).toEqual(["Pricing call", "Sent the proposal"]);
     expect(result.activity[0]).toMatchObject({ kindLabel: "Call", clientName: "Heron Ltd", ownerName: "Ama", href: expect.stringMatching(new RegExp(`/organisations/${orgId}$`)) });
     expect(await quietClientsService(db).recentActivity(companyId, { days: 1, limit: 10, now: new Date("2026-12-01T00:00:00Z") })).toMatchObject({ total: 0, clientCount: 0, byKind: [], activity: [] });
+    const sinceVisit = await quietClientsService(db).recentActivity(companyId, { days: 7, limit: 10, now, since: new Date("2026-10-16T00:00:00Z") });
+    expect(sinceVisit.activity.map((entry) => entry.title)).toEqual(["Pricing call"]);
+  });
+
+  it("finds organisations and people by their imported CRM fields", async () => {
+    const companyId = await createCompany();
+    const orgId = randomUUID();
+    await db.insert(organisations).values({
+      id: orgId,
+      companyId,
+      name: "Plover Ltd",
+      crmFields: [
+        { key: "sector", label: "Sector", value: "Aquaculture" },
+        { key: "tags", label: "Tags", value: ["shortlist", "west"] },
+        { key: "headcount", label: "Headcount", value: 42 },
+      ],
+    });
+    await db.insert(organisationContacts).values({ companyId, organisationId: orgId, name: "Kofi Mensah", crmFields: [{ key: "source", label: "Lead source", value: "Trade fair" }] });
+
+    const bySector = await svc.search(companyId, companySearchQuerySchema.parse({ q: "aquaculture", scope: "records" }));
+    expect(bySector.results.map((row) => row.title)).toEqual(["Plover Ltd"]);
+    const byTag = await svc.search(companyId, companySearchQuerySchema.parse({ q: "shortlist", scope: "records" }));
+    expect(byTag.results.map((row) => row.title)).toEqual(["Plover Ltd"]);
+    const bySource = await svc.search(companyId, companySearchQuerySchema.parse({ q: "trade fair", scope: "records", recordKind: "person" }));
+    expect(bySource.results.map((row) => row.title)).toEqual(["Kofi Mensah"]);
+    expect((await svc.search(companyId, companySearchQuerySchema.parse({ q: "42", scope: "records" }))).results).toEqual([]);
   });
 
   it("keeps exact entity names ahead of speculative task typos and rejects empty quotes", async () => {

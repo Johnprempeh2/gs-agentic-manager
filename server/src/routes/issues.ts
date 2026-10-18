@@ -8417,7 +8417,13 @@ export function issueRoutes(
       res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
       return;
     }
-    res.json(await quietClientsService(db).recentActivity(companyId, { days, limit }));
+    // "since" (an ISO time, such as the last visit) overrides days.
+    const since = typeof req.query.since === "string" ? new Date(req.query.since) : undefined;
+    if (since && Number.isNaN(since.getTime())) {
+      res.status(400).json({ error: "since must be a date and time" });
+      return;
+    }
+    res.json(await quietClientsService(db).recentActivity(companyId, { days, limit, since }));
   });
 
   router.get("/companies/:companyId/search", async (req, res) => {

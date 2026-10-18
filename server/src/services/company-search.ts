@@ -1242,6 +1242,10 @@ export function companySearchService(db: Db) {
 
       // --- records: organisations, people, clients (deals and leads), products, images,
       // and imported CRM notes, calls, meetings and emails ---
+      // Imported CRM fields (Pipedrive custom fields such as sector or source) as plain text; numbers and yes/no values are left out.
+      function crmFieldText(column: string) {
+        return `(SELECT string_agg(f->>'value', ' ') FROM jsonb_array_elements(coalesce(${column}, '[]'::jsonb)) f WHERE jsonb_typeof(f->'value') IN ('string', 'array'))`;
+      }
       function recordMatch(fields: string) {
         return sql`concat_ws(' ', ${sql.raw(fields)}) ILIKE ALL(${tokenPatternArray})`;
       }
@@ -1254,7 +1258,7 @@ export function companySearchService(db: Db) {
               o.created_at AS "createdAt", o.updated_at AS "updatedAt"
             FROM organisations o
             WHERE o.company_id = ${companyId} AND o.archived_at IS NULL
-              AND ${recordMatch("o.name, o.industry, o.country, o.website, o.notes")}
+              AND ${recordMatch(`o.name, o.industry, o.country, o.website, o.notes, ${crmFieldText("o.crm_fields")}`)}
             ORDER BY o.updated_at DESC ${cap})`],
           ["person", sql`(SELECT 'person' AS kind, c.id, c.name AS title,
               nullif(concat_ws(' at ', c.role, org.name), '') AS subtitle,
@@ -1264,7 +1268,7 @@ export function companySearchService(db: Db) {
             FROM organisation_contacts c
             LEFT JOIN organisations org ON org.id = c.organisation_id AND org.archived_at IS NULL
             WHERE c.company_id = ${companyId} AND c.archived_at IS NULL
-              AND ${recordMatch("c.name, c.email, c.role, c.phone, org.name")}
+              AND ${recordMatch(`c.name, c.email, c.role, c.phone, org.name, ${crmFieldText("c.crm_fields")}`)}
             ORDER BY c.updated_at DESC ${cap})`],
           ["client", sql`(SELECT 'client' AS kind, pc.id, pc.title,
               concat_ws(' in ', st.name, p.name) AS subtitle, pc.summary AS body,

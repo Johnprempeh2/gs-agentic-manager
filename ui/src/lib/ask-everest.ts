@@ -438,7 +438,12 @@ export function newlyStuck(blocked: readonly Issue[], since: string): Issue[] {
  * "Since you were away": what finished, what got stuck and what now needs
  * you, from the agent work digest, stuck tasks and Needs you.
  */
-export function answerAway(digest: AgentWorkDigest, blocked: readonly Issue[], needsMe: NeedsMe | null): AskAnswer {
+export function answerAway(
+  digest: AgentWorkDigest,
+  blocked: readonly Issue[],
+  needsMe: NeedsMe | null,
+  clientActivity: CompanyRecentClientActivityResponse | null = null,
+): AskAnswer {
   const stuck = newlyStuck(blocked, digest.since);
   const finished = digest.agents
     .flatMap((agent) => agent.items.filter((item) => item.kind === "task_finished").map((item) => ({ item, agent: agent.agentName })))
@@ -450,6 +455,8 @@ export function answerAway(digest: AgentWorkDigest, blocked: readonly Issue[], n
     `${plural(needs, "thing")} need${needs === 1 ? "s" : ""} you`,
   ];
   if (digest.counts.failures > 0) parts.push(`${plural(digest.counts.failures, "run")} failed`);
+  const contact = clientActivity?.total ?? 0;
+  if (contact > 0) parts.push(`${plural(contact, "client note or call", "client notes and calls")}`);
   const lines: AnswerLine[] = [];
   for (const decision of needsMe?.decisions.slice(0, 3) ?? []) {
     lines.push({
@@ -468,7 +475,10 @@ export function answerAway(digest: AgentWorkDigest, blocked: readonly Issue[], n
       href: item.issueId ? taskHref({ id: item.issueId, identifier: item.issueIdentifier }) : undefined,
     });
   }
-  const quiet = digest.counts.tasksFinished === 0 && stuck.length === 0 && needs === 0 && digest.counts.failures === 0;
+  for (const entry of clientActivity?.activity.slice(0, 2) ?? []) {
+    lines.push({ text: entry.title, detail: [entry.kindLabel, entry.clientName].filter(Boolean).join(", "), href: entry.href });
+  }
+  const quiet = digest.counts.tasksFinished === 0 && stuck.length === 0 && needs === 0 && digest.counts.failures === 0 && contact === 0;
   return {
     headline: quiet
       ? `${awaySinceLabel(digest)}: nothing new. Nothing finished, nothing got stuck and nothing needs you.`

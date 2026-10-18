@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   uploadAttachment: vi.fn(),
   search: vi.fn(async () => ({ results: [] })),
   quietClients: vi.fn(),
+  recentClientActivity: vi.fn(async () => ({ days: 1, total: 0, clientCount: 0, byKind: [], activity: [] })),
 }));
 
 vi.mock("../context/CompanyContext", () => ({ useCompany: () => ({ selectedCompanyId: "company-1" }) }));
@@ -31,7 +32,7 @@ vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecar
 vi.mock("../api/issues", () => ({
   issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
-vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients } }));
+vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients, recentClientActivity: mocks.recentClientActivity } }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
 vi.mock("@/lib/router", () => ({

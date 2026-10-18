@@ -142,10 +142,13 @@ export function quietClientsService(db: Db) {
      */
     recentActivity: async (
       companyId: string,
-      options: { days: number; limit: number; now?: Date },
+      options: { days: number; limit: number; now?: Date; since?: Date },
     ): Promise<CompanyRecentClientActivityResponse> => {
       const now = options.now ?? new Date();
-      const since = new Date(now.getTime() - options.days * DAY_MS);
+      const earliest = new Date(now.getTime() - 365 * DAY_MS);
+      const since = options.since
+        ? new Date(Math.max(options.since.getTime(), earliest.getTime()))
+        : new Date(now.getTime() - options.days * DAY_MS);
       const inWindow = sql`
         FROM crm_timeline_entries te
         LEFT JOIN pipeline_cases tc ON tc.id = te.case_id AND tc.retired_at IS NULL

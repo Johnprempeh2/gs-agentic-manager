@@ -123,8 +123,9 @@ assignee and so on) leave files out.
 ## Clients and records
 
 The `records` scope (also in `all`) finds business records outside tasks:
-organisations, people (organisation contacts, by name, email, role, phone or
-organisation name),
+organisations (also by their imported CRM fields, such as a Pipedrive sector or
+tag), people (organisation contacts, by name, email, role, phone, organisation
+name or imported CRM fields),
 clients (pipeline items, which include imported Pipedrive deals and leads), CRM
 products (linked to the latest deal that carries them) and completed generated
 images (by prompt and style), plus imported CRM notes, calls, meetings and
@@ -156,7 +157,9 @@ lists imported notes, calls, meetings and emails from the last `days` days,
 newest first, with the deal or organisation each belongs to, plus the total,
 how many clients had contact and counts by kind. Ask Everest answers "What calls
 did we have this week?" from it; asked on a client's page, it answers for that
-client instead.
+client instead. Pass `since` (an ISO time) instead of `days` to count from a moment,
+such as the last visit: "What happened since I was last here?" adds the client
+notes and calls since then.
 
 ## Reproduce the evaluation
 

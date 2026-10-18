@@ -264,6 +264,19 @@ describe("since you were away", () => {
     expect(answer.more?.href).toBe("/since-last-visit");
   });
 
+  it("adds client notes and calls since the last visit", () => {
+    const quiet = { ...digest, counts: { tasksFinished: 0, tasksStarted: 0, decisionsRaised: 0, failures: 0 }, agents: [] };
+    const answer = answerAway(quiet, [], null, {
+      days: 1,
+      total: 3,
+      clientCount: 2,
+      byKind: [["Call", 3]],
+      activity: [{ id: "a1", kindLabel: "Call", title: "Pricing call", clientName: "Heron Ltd", ownerName: null, occurredAt: "2026-10-17T09:00:00.000Z", href: "/GRE/organisations/o1" }],
+    });
+    expect(answer.headline).toBe("In the last 24 hours: 0 tasks finished, 0 got stuck, 0 things need you, 3 client notes and calls.");
+    expect(answer.lines).toEqual([{ text: "Pricing call", detail: "Call, Heron Ltd", href: "/GRE/organisations/o1" }]);
+  });
+
   it("says plainly when nothing happened", () => {
     const quiet = { ...digest, counts: { tasksFinished: 0, tasksStarted: 0, decisionsRaised: 0, failures: 0 }, agents: [] };
     expect(answerAway(quiet, [], null).headline).toBe(
