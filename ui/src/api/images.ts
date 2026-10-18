@@ -8,6 +8,7 @@ import type {
   ImageGenerationStatus,
   UpdateGeneratedImageCover,
   UpdateGeneratedImageFavourite,
+  UpdateHiggsfieldPlanSettings,
 } from "@greatstone/shared";
 import { api } from "./client";
 
@@ -38,4 +39,7 @@ export const imagesApi = {
     api.patch<GeneratedImage>(`/generated-images/${id}/cover`, body),
   setFavourite: (id: string, body: UpdateGeneratedImageFavourite) =>
     api.patch<GeneratedImage>(`/generated-images/${id}/favourite`, body),
+  /** Board only: may agents spend the Higgsfield plan? Covers images and clips. */
+  setPlanSettings: (companyId: string, body: UpdateHiggsfieldPlanSettings) =>
+    api.patch<UpdateHiggsfieldPlanSettings>(`/companies/${companyId}/higgsfield-plan`, body),
 };

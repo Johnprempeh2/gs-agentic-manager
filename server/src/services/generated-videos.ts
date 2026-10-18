@@ -26,7 +26,16 @@ import type { StorageService } from "../storage/types.js";
 import { logActivity } from "./activity-log.js";
 import { applyStudioLook } from "./studio-looks.js";
 import type { GeneratedImageActor } from "./generated-images.js";
-import { resolveVideoGenerationProvider } from "./video-generation/registry.js";
+import { describeVideoGeneration, resolveVideoGenerationProvider } from "./video-generation/registry.js";
+import {
+  assertPlanCanSpend,
+  describeHiggsfieldPlan,
+  higgsfieldPlanResolver,
+  pickStudioProvider,
+  type HiggsfieldPlan,
+  type ResolveHiggsfieldPlan,
+} from "./image-generation/higgsfield-plan.js";
+import { createHiggsfieldPlanVideoProvider, planClipCosts, planVideoParams } from "./video-generation/higgsfield-plan.js";
 import { VideoGenerationError, type VideoGenerationProvider } from "./video-generation/types.js";
 import { localGpuFromEnv, localGpuProgress, type LocalGpu } from "./local-gpu.js";
 
@@ -45,6 +54,8 @@ export interface GeneratedVideoServiceOptions {
   resolveProvider?: () => VideoGenerationProvider | null;
   /** This PC's graphics card through ComfyUI; defaults to GSAM_COMFYUI_URL. Null switches it off. */
   localGpu?: LocalGpu | null;
+  /** The company's connected Higgsfield plan; defaults to looking up its app connection. */
+  resolvePlan?: ResolveHiggsfieldPlan;
   now?: () => Date;
 }
 
@@ -128,6 +139,7 @@ function drain() {
 export function generatedVideoService(db: Db, storage: StorageService, options: GeneratedVideoServiceOptions = {}) {
   const resolveProvider = options.resolveProvider ?? (() => resolveVideoGenerationProvider());
   const localGpu = options.localGpu === undefined ? localGpuFromEnv() : options.localGpu;
+  const resolvePlan = options.resolvePlan ?? higgsfieldPlanResolver(db);
   const now = options.now ?? (() => new Date());
 
   async function finish(id: string, patch: Partial<typeof generatedVideos.$inferInsert>) {
@@ -322,7 +334,17 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
   }
 
   return {
-    status: async () => ({ provider: resolveProvider(), local: localGpu ? await localGpu.status() : null }),
+    status: async (companyId: string) => {
+      const envProvider = resolveProvider();
+      const plan = await resolvePlan(companyId).catch((error) => {
+        logger.warn({ err: error, companyId }, "could not read the Higgsfield plan connection");
+        return null;
+      });
+      const local = localGpu ? await localGpu.status() : null;
+      if (!plan) return describeVideoGeneration(envProvider, local);
+      const [described, creditsPerClip] = await Promise.all([describeHiggsfieldPlan(plan), planClipCosts(plan.client)]);
+      return describeVideoGeneration(envProvider, local, { ...described, creditsPerClip });
+    },
 
     create: async (companyId: string, input: CreateGeneratedVideo, actor: GeneratedImageActor) => {
       const parsed = createGeneratedVideoSchema.parse(input);
@@ -332,7 +354,9 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
       const sourceImageId = parsed.sourceImageId ?? null;
+      const isAgent = actor.actorType === "agent";
       let provider: VideoGenerationProvider | null;
+      let picked: { provider: VideoGenerationProvider | null; plan: HiggsfieldPlan | null } = { provider: null, plan: null };
       if (model.provider === "local") {
         const local = localGpu ? await localGpu.status() : null;
         if (!localGpu || !local) {
@@ -345,9 +369,21 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
         }
         provider = localGpu.videoProvider();
       } else {
-        provider = resolveProvider();
+        let envProvider = resolveProvider();
         // Practice mode stands in for every model; a real service only for its own.
-        if (provider && provider.id !== "mock" && provider.id !== model.provider) provider = null;
+        if (envProvider && envProvider.id !== "mock" && envProvider.id !== model.provider) envProvider = null;
+        const requested = parsed.provider === "local" ? undefined : parsed.provider;
+        const plan = requested && requested !== "higgsfield_plan" ? null : await resolvePlan(companyId);
+        picked = pickStudioProvider({
+          requested,
+          envProvider,
+          plan,
+          planProvider: (connected) => createHiggsfieldPlanVideoProvider(connected.client),
+          isAgent,
+          kind: "video",
+        });
+        provider = picked.provider;
+        if (!provider && plan && isAgent) await assertPlanCanSpend(plan, isAgent, null);
       }
       if (!provider) {
         throw unprocessable("Video making is not set up yet. Ask your admin to add the Higgsfield key.", {
@@ -355,6 +391,13 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
         });
       }
       await assertLinksInCompany(companyId, { issueId, organisationId, sourceImageId });
+      if (picked.plan) {
+        const cost = await picked.plan.client.cost("generate_video", {
+          ...planVideoParams(model.id, parsed.duration ?? model.durations[0]),
+          prompt: "price check",
+        });
+        await assertPlanCanSpend(picked.plan, isAgent, cost);
+      }
       await failLostJobs(companyId);
       const [{ pending }] = await db
         .select({ pending: count() })

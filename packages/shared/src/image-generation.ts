@@ -4,6 +4,32 @@ import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from
 // Image generation: agents and board users ask for a picture from a written
 // description and GSAM keeps the result as a company image. The provider is
 // chosen by the server from its environment; nothing here names a key.
+// Higgsfield (your plan) is the exception: it runs through the company's own
+// Higgsfield app connection and spends that account's plan credits.
+
+export const HIGGSFIELD_PLAN_LABEL = "Higgsfield (your plan)";
+/** Below this many plan credits the studio warns that they are running low. */
+export const HIGGSFIELD_PLAN_LOW_CREDITS = 50;
+/** Where the account holder can upgrade or top up their Higgsfield plan. */
+export const HIGGSFIELD_PLAN_URL = "https://higgsfield.ai/pricing";
+
+/** The plan side of the studio status: only present while the Higgsfield app is connected. */
+export interface HiggsfieldPlanStatus {
+  connectionId: string;
+  /** Credits left on the plan; null when Higgsfield would not say. */
+  credits: number | null;
+  /** The plan name Higgsfield reports, such as "basic". */
+  planType: string | null;
+  lowCredits: boolean;
+  /** Whether agents may spend plan credits. People using the studio always can. */
+  agentsMaySpend: boolean;
+  planUrl: string;
+}
+
+/** Board setting: may agents spend the company's Higgsfield plan credits? */
+export const updateHiggsfieldPlanSettingsSchema = z.object({ agentsMaySpend: z.boolean() }).strict();
+export type UpdateHiggsfieldPlanSettings = z.infer<typeof updateHiggsfieldPlanSettingsSchema>;
+
 
 /** What people see for models that run on the GSAM machine's own graphics card. */
 export const LOCAL_GPU_LABEL = "This PC (local GPU)";
@@ -37,7 +63,7 @@ export interface LocalGpuStatus {
 /** Highest seed a request may name. */
 export const IMAGE_SEED_MAX = 4_294_967_295;
 
-export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock", "local"] as const;
+export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock", "local", "higgsfield_plan"] as const;
 export type ImageGenerationProviderId = (typeof IMAGE_GENERATION_PROVIDERS)[number];
 
 export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId, string> = {
@@ -45,6 +71,7 @@ export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId,
   openai: "OpenAI",
   mock: "Practice mode",
   local: LOCAL_GPU_LABEL,
+  higgsfield_plan: HIGGSFIELD_PLAN_LABEL,
 };
 
 /**
@@ -236,7 +263,11 @@ export const createGeneratedImageSchema = z.object({
   issueId: z.string().uuid().nullable().optional(),
   /** The client the image is for. */
   organisationId: z.string().uuid().nullable().optional(),
-  /** Which service makes it; left out, the server's default. "local" runs it on this PC. */
+  /**
+   * Which service makes it. Left out, the server picks: your Higgsfield plan
+   * when its app is connected, then the API key service, then this PC.
+   * "local" runs it on this PC.
+   */
   provider: z.enum(IMAGE_GENERATION_PROVIDERS).optional(),
   /** For provider "local": one of LOCAL_IMAGE_MODELS. */
   model: z.string().trim().max(100).optional(),
@@ -376,4 +407,8 @@ export interface ImageGenerationStatus {
   model: string | null;
   /** The local GPU, when it is answering. */
   local: LocalGpuStatus | null;
+  /** The Higgsfield plan, when its app is connected. The studio uses it by default. */
+  plan?: (HiggsfieldPlanStatus & { model: string; creditsPerImage: number | null }) | null;
+  /** The server's own image service, when the plan is the default and this can be picked instead. */
+  alsoAvailable?: { provider: ImageGenerationProviderId; providerLabel: string } | null;
 }

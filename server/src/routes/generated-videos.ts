@@ -4,7 +4,6 @@ import { createGeneratedVideoSchema, generatedVideosQuerySchema, updateGenerated
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
 import { generatedVideoService, type GeneratedVideoServiceOptions } from "../services/generated-videos.js";
-import { describeVideoGeneration } from "../services/video-generation/registry.js";
 import type { StorageService } from "../storage/types.js";
 import { notFound } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -20,8 +19,7 @@ export function generatedVideoRoutes(db: Db, storage: StorageService, options: G
   router.get("/companies/:companyId/video-generation", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const { provider, local } = await svc.status();
-    res.json(describeVideoGeneration(provider, local));
+    res.json(await svc.status(companyId));
   });
 
   router.get("/companies/:companyId/generated-videos", async (req, res) => {

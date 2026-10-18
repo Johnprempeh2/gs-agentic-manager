@@ -70,6 +70,7 @@ const REQUEST_BODIES: Record<string, unknown> = {
   "POST /api/companies/:companyId/ai-connections/local/check": loginIntent,
   "POST /api/companies/:companyId/ai-connections/local/attempts": loginIntent,
   "POST /api/agents/:id/skills/sync": { mode: "add", desiredSkills: [] },
+  "PATCH /api/companies/:companyId/higgsfield-plan": { agentsMaySpend: true },
 };
 
 // Path params that must name something real before the company check runs.

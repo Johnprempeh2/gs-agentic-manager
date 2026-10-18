@@ -5,6 +5,7 @@ import {
   GENERATED_IMAGE_PROMPT_MAX_LENGTH,
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
   HIGGSFIELD_API_KEYS_URL,
+  HIGGSFIELD_PLAN_LABEL,
   IMAGE_SEED_MAX,
   LOCAL_GPU_LABEL,
   LOCAL_IMAGE_MODELS,
@@ -85,6 +86,7 @@ import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCa
 import { StudioLookCompare } from "../components/StudioLookCompare";
 import { StudioLookPicker } from "../components/StudioLookPicker";
 import { StudioShotList } from "../components/StudioShotList";
+import { StudioPlanBar } from "../components/StudioPlanBar";
 import { VideoStudio } from "../components/VideoStudio";
 
 export { IMAGE_IDEA_STARTERS };
@@ -381,6 +383,8 @@ export function Images() {
         current ? { ...current, images: [...[...made].reverse(), ...current.images], total: current.total + made.length } : current,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
+      // Plan credits go down as pictures are made.
+      if (statusQuery.data?.plan) void queryClient.invalidateQueries({ queryKey: queryKeys.images.status(companyId) });
     },
     onError: (error) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
@@ -416,9 +420,17 @@ export function Images() {
   });
 
   const configured = statusQuery.data?.configured === true;
-  // The model picker: the paid service when one is set up, and this PC's models only while ComfyUI answers.
-  const cloudProvider = statusQuery.data?.provider && statusQuery.data.provider !== "local" ? statusQuery.data : null;
+  // The model picker, in default order: your Higgsfield plan while its app is
+  // connected, the API key service when one is set up, then this PC's models
+  // while ComfyUI answers.
+  const plan = statusQuery.data?.plan ?? null;
+  const cloudProvider = plan
+    ? statusQuery.data?.alsoAvailable ?? null
+    : statusQuery.data?.provider && statusQuery.data.provider !== "local"
+      ? statusQuery.data
+      : null;
   const engineChoices = [
+    ...(plan ? [{ key: "plan", label: HIGGSFIELD_PLAN_LABEL, hint: "Uses your Higgsfield plan credits" }] : []),
     ...(cloudProvider
       ? [{ key: "cloud", label: cloudProvider.providerLabel ?? "Image service", hint: `Uses ${cloudProvider.providerLabel ?? "its"} credits` }]
       : []),
@@ -439,15 +451,21 @@ export function Images() {
         ...(seedNumber !== undefined && seedValid ? { seed: seedNumber } : {}),
         ...(localModel.negativePrompt && negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
       }
-    : engine === "cloud" && cloudProvider?.provider
-      ? { provider: cloudProvider.provider }
-      : {};
+    : engine === "plan" && plan
+      ? { provider: "higgsfield_plan" as const }
+      : engine === "cloud" && cloudProvider?.provider
+        ? { provider: cloudProvider.provider }
+        : {};
+  const usingPlan = !!plan && pickedEngine?.key === "plan";
+  const planEmpty = usingPlan && plan.credits !== null && plan.credits <= 0;
   const trimmed = prompt.trim();
-  const canSubmit = configured && seedValid && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
+  const canSubmit = configured && seedValid && !planEmpty && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
 
   const shotLines = shots.map((shot) => shot.trim()).filter(Boolean);
   const storyboarding = shotLines.length >= 2;
   const comparing = !storyboarding && compareLookIds.length >= 2;
+  const takes = storyboarding ? shotLines.length : comparing ? compareLookIds.length : variations;
+  const planCost = plan?.creditsPerImage != null ? plan.creditsPerImage * takes : null;
   const submit = () => {
     if (!canSubmit) return;
     create.mutate(
@@ -516,7 +534,7 @@ export function Images() {
   const pickedClient = organisations?.find((organisation) => organisation.id === organisationId)?.name ?? null;
 
   const chips: StudioComposerChip[] = [
-    ...(engineChoices.some((choice) => choice.key.startsWith("local:"))
+    ...(engineChoices.length > 1
       ? [
           {
             id: "model",
@@ -803,6 +821,18 @@ export function Images() {
                     : statusQuery.data?.providerLabel
                       ? `Using ${statusQuery.data.providerLabel}`
                       : null
+              }
+              notice={
+                plan ? (
+                  <StudioPlanBar
+                    companyId={companyId}
+                    plan={plan}
+                    alsoAvailable={null}
+                    usingPlan={usingPlan}
+                    cost={planCost}
+                    onError={(error) => pushToast({ title: errorMessage(error), tone: "error" })}
+                  />
+                ) : null
               }
               chips={chips}
               openChip={openChip}

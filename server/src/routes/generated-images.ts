@@ -6,11 +6,12 @@ import {
   generatedImagesQuerySchema,
   updateGeneratedImageCoverSchema,
   updateGeneratedImageFavouriteSchema,
+  updateHiggsfieldPlanSettingsSchema,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
 import { generatedImageService, type GeneratedImageServiceOptions } from "../services/generated-images.js";
-import { describeImageGeneration } from "../services/image-generation/registry.js";
+import { setHiggsfieldPlanAgentsMaySpend } from "../services/image-generation/higgsfield-plan.js";
 import type { StorageService } from "../storage/types.js";
 import { notFound } from "../errors.js";
 import { assertBoard, assertCompanyAccess, getAccessibleResource, getActorInfo, hasCompanyAccess } from "./authz.js";
@@ -30,8 +31,28 @@ export function generatedImageRoutes(
   router.get("/companies/:companyId/image-generation", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
-    const { provider, local } = await svc.status();
-    res.json(describeImageGeneration(provider, local));
+    res.json(await svc.status(companyId));
+  });
+
+  // Board only: whether agents may spend the company's Higgsfield plan credits.
+  router.patch("/companies/:companyId/higgsfield-plan", validate(updateHiggsfieldPlanSettingsSchema), async (req, res) => {
+    assertBoard(req);
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const result = await setHiggsfieldPlanAgentsMaySpend(db, companyId, req.body.agentsMaySpend);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "higgsfield_plan.agents_spend_changed",
+      entityType: "company",
+      entityId: companyId,
+      details: result,
+    });
+    res.json(result);
   });
 
   router.get("/companies/:companyId/generated-images", async (req, res) => {
