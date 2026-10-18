@@ -33,6 +33,7 @@ function image(overrides: Partial<GeneratedImage> = {}): GeneratedImage {
     altText: "Rocket on a launch pad",
     issueCover: false,
     organisationCover: true,
+    favourite: false,
     createdAt: new Date().toISOString(),
     completedAt: new Date().toISOString(),
     ...overrides,

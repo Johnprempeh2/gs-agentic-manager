@@ -646,7 +646,7 @@ export const queryKeys = {
   images: {
     all: (companyId: string) => ["images", companyId] as const,
     status: (companyId: string) => ["images", companyId, "status"] as const,
-    list: (companyId: string, filters?: { q?: string; organisationId?: string }) =>
+    list: (companyId: string, filters?: { q?: string; organisationId?: string; favourite?: boolean }) =>
       filters ? (["images", companyId, "list", filters] as const) : (["images", companyId, "list"] as const),
     detail: (imageId: string) => ["images", "detail", imageId] as const,
     covers: (companyId: string) => ["images", companyId, "covers"] as const,

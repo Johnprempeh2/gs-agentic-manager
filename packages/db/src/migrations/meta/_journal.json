@@ -2619,6 +2619,13 @@
       "when": 1792290106610,
       "tag": "0375_sign_in_events",
       "breakpoints": true
+    },
+    {
+      "idx": 376,
+      "version": "7",
+      "when": 1792297503147,
+      "tag": "0376_studio_image_favourites",
+      "breakpoints": true
     }
   ]
 }

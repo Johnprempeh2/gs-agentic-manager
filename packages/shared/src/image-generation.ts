@@ -257,6 +257,8 @@ export const generatedImagesQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   issueId: z.string().uuid().optional(),
   organisationId: z.string().uuid().optional(),
+  /** "true" shows only starred favourites. */
+  favourite: z.union([z.boolean(), z.enum(["true", "false"]).transform((value) => value === "true")]).optional(),
 });
 export type GeneratedImagesQuery = z.infer<typeof generatedImagesQuerySchema>;
 
@@ -271,6 +273,10 @@ export const updateGeneratedImageCoverSchema = z
     message: "Say issueCover or organisationCover",
   });
 export type UpdateGeneratedImageCover = z.infer<typeof updateGeneratedImageCoverSchema>;
+
+/** Star (or unstar) an image as a favourite, a keeper worth using. */
+export const updateGeneratedImageFavouriteSchema = z.object({ favourite: z.boolean() }).strict();
+export type UpdateGeneratedImageFavourite = z.infer<typeof updateGeneratedImageFavouriteSchema>;
 
 /** Cover pictures by task id and by client id, each the image's contentPath and alt text. */
 export interface GeneratedImageCovers {
@@ -306,6 +312,8 @@ export interface GeneratedImage {
   issueCover: boolean;
   /** True when this image shows on its client's card. */
   organisationCover: boolean;
+  /** Starred as a keeper by the board or an agent. */
+  favourite: boolean;
   createdAt: string;
   completedAt: string | null;
 }

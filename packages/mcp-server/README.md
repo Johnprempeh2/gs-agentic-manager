@@ -45,6 +45,7 @@ Image studio tools:
 - `studio_list_looks`
 - `studio_save_look` (write)
 - `studio_attach_to_task` (write): attach a finished image or clip to a task as a file
+- `studio_favourite_image` (write): star or unstar a finished image as a favourite
 
 Run-scoped connection tools:
 

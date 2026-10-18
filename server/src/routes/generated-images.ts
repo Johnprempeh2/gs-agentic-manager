@@ -5,6 +5,7 @@ import {
   createGeneratedImageVariationsSchema,
   generatedImagesQuerySchema,
   updateGeneratedImageCoverSchema,
+  updateGeneratedImageFavouriteSchema,
 } from "@greatstone/shared";
 import { validate } from "../middleware/validate.js";
 import { logActivity } from "../services/activity-log.js";
@@ -86,6 +87,28 @@ export function generatedImageRoutes(
       entityType: "generated_image",
       entityId: row.id,
       details: { ...req.body, issueId: row.issueId, organisationId: row.organisationId },
+    });
+    res.json(await svc.toResponse(updated));
+  });
+
+  router.patch("/generated-images/:id/favourite", validate(updateGeneratedImageFavouriteSchema), async (req, res) => {
+    const row = await getAccessibleResource(req, res, svc.getById(req.params.id as string), "Image not found");
+    if (!row) return;
+    // Write path: the oracle guard wants the read gate named before the write check.
+    if (!hasCompanyAccess(req, row.companyId)) throw notFound("Image not found");
+    assertCompanyAccess(req, row.companyId);
+    const updated = await svc.setFavourite(row, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: row.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "generated_image.favourite_changed",
+      entityType: "generated_image",
+      entityId: row.id,
+      details: { favourite: updated.favourite },
     });
     res.json(await svc.toResponse(updated));
   });

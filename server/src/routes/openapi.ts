@@ -57,6 +57,7 @@ import {
   createGeneratedImageSchema,
   createGeneratedImageVariationsSchema,
   updateGeneratedImageCoverSchema,
+  updateGeneratedImageFavouriteSchema,
   generatedImagesQuerySchema,
   generatedVideosQuerySchema,
   createGeneratedVideoSchema,
@@ -4675,6 +4676,15 @@ registry.registerPath({
   tags: ["assets"],
   summary: "Show a finished image on the card of its linked task (issueCover) or client (organisationCover), or stop. Setting one clears that task's or client's previous cover. 422 when the image is not finished or has no such link",
   request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedImageCoverSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/generated-images/{id}/favourite",
+  tags: ["assets"],
+  summary: "Star (favourite true) or unstar a generated image as a keeper. List starred ones with ?favourite=true. 422 when starring an image that is not finished",
+  request: { params: z.object({ id: z.string() }), body: jsonBody(updateGeneratedImageFavouriteSchema) },
   responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 404: r.notFound, 422: r.unprocessable },
 });
 

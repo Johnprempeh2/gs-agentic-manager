@@ -48,6 +48,11 @@ interface ImageGenerateOptions extends BaseClientOptions {
 
 interface ImageListOptions extends BaseClientOptions {
   limit?: string;
+  favourites?: boolean;
+}
+
+interface ImageFavouriteOptions extends BaseClientOptions {
+  off?: boolean;
 }
 
 const SHAPE_HELP = IMAGE_SHAPE_OPTIONS.map((option) => `${option.cliName} (${option.value})`).join(", ");
@@ -222,11 +227,14 @@ export function registerImageCommands(program: Command): void {
       .command("list")
       .description("List images made for the company, newest first")
       .option("--limit <n>", "How many to show", "20")
+      .option("--favourites", "Show only images starred as favourites")
       .action(async (opts: ImageListOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const search = new URLSearchParams({ limit: opts.limit ?? "20" });
+          if (opts.favourites) search.set("favourite", "true");
           const response = await ctx.api.get<GeneratedImagesResponse>(
-            `${apiPath`/api/companies/${ctx.companyId}/generated-images`}?limit=${encodeURIComponent(opts.limit ?? "20")}`,
+            `${apiPath`/api/companies/${ctx.companyId}/generated-images`}?${search}`,
           );
           if (ctx.json) {
             printOutput(response, { json: true });
@@ -237,6 +245,7 @@ export function registerImageCommands(program: Command): void {
               id: item.id,
               status: item.status,
               shape: item.aspectRatio,
+              favourite: item.favourite ? "yes" : "",
               prompt: item.prompt.length > 60 ? `${item.prompt.slice(0, 57)}...` : item.prompt,
             })),
           );
@@ -245,6 +254,25 @@ export function registerImageCommands(program: Command): void {
         }
       }),
     { includeCompany: true },
+  );
+
+  addCommonClientOptions(
+    image
+      .command("favourite")
+      .description("Star a finished image as a favourite (a keeper), or unstar it with --off")
+      .argument("<imageId>", "Generated image ID")
+      .option("--off", "Remove the star")
+      .action(async (imageId: string, opts: ImageFavouriteOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          printOutput(
+            await ctx.api.patch<GeneratedImage>(apiPath`/api/generated-images/${imageId}/favourite`, { favourite: !opts.off }),
+            { json: ctx.json },
+          );
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
   );
 
   addCommonClientOptions(
