@@ -28,7 +28,7 @@ describeEmbeddedPostgres("reconcileAbandonedExecutionControl reports a genuine f
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("execution-control-reconciliation-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();
@@ -128,7 +128,7 @@ describeEmbeddedPostgres("native review execution reconciliation admission", () 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("execution-control-review-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
   afterAll(async () => { await tempDb?.cleanup(); });
 
   it.each([true, false])("only releases the exact admitted review (admitted=%s)", async (admitted) => {

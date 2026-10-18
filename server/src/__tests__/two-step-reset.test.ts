@@ -54,7 +54,7 @@ describeEmbeddedPostgres("who may reset two-step sign-in", () => {
     await addMember(companyId, "root", "operator");
     await addMember(companyId, "off", "operator");
     await db.insert(instanceUserRoles).values({ userId: "root", role: "instance_admin" });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await database?.cleanup();

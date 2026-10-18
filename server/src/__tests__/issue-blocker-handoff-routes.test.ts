@@ -77,7 +77,7 @@ describeEmbeddedPostgres("closing a blocker hands off its open dependents", () =
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-blocker-handoff-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();

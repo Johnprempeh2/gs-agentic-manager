@@ -72,7 +72,7 @@ describeEmbeddedPostgres("issue monitor scheduler", () => {
         testedAt: new Date().toISOString(),
       }),
     });
-  }, 20_000);
+  });
 
   async function waitForHeartbeatIdle(timeoutMs = 3_000) {
     const deadline = Date.now() + timeoutMs;

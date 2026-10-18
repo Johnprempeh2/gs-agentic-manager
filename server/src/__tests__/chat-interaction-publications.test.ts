@@ -47,7 +47,7 @@ describeEmbeddedPostgres(
         "paperclip-terminal-chat-interaction-",
       );
       db = createDb(tempDb.connectionString);
-    }, 20_000);
+    });
 
     afterAll(async () => {
       if (previousPublicUrl === undefined)

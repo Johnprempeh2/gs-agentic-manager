@@ -270,7 +270,7 @@ describe("PaperclipControlPlanePort conformance", () => {
       status: "pending",
       payload: { version: 1, prompt: "Approve completion?" },
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     if (temporary) {

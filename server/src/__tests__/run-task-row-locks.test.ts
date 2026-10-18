@@ -61,7 +61,7 @@ const support = await getEmbeddedPostgresTestSupport();
   beforeAll(async () => {
     database = await startEmbeddedPostgresTestDatabase("paperclip-run-task-row-locks-");
     db = createDb(database.connectionString);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await database?.cleanup();

@@ -50,7 +50,7 @@ describeEmbeddedPostgres("website view routes", () => {
     process.env.GSAM_SECRETS_MASTER_KEY_FILE = path.join(keyFolder, "master.key");
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-website-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     resetWebsiteServiceStateForTests();

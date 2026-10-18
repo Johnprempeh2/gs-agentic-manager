@@ -69,7 +69,7 @@ describeEmbeddedPostgres("external deliverables", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-deliverables-external-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     screenshot.mockClear();

@@ -62,7 +62,7 @@ describeEmbeddedPostgres("retiring the legacy local-board account", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-legacy-board-retire-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

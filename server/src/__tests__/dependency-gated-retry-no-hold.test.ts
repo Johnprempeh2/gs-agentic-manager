@@ -73,7 +73,7 @@ describeEmbeddedPostgres("dependency-gated scheduled retry does not hold the iss
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("gsam-dependency-gated-retry-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await heartbeatService(db).drainActiveRunExecutions();
@@ -97,7 +97,7 @@ describeEmbeddedPostgres("dependency-gated scheduled retry does not hold the iss
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   async function seed() {
     const companyId = randomUUID();

@@ -154,7 +154,7 @@ describeEmbeddedPostgres("plugin install route security floor", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-plugin-install-guard-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     vi.clearAllMocks();
@@ -172,7 +172,7 @@ describeEmbeddedPostgres("plugin install route security floor", () => {
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   describe("cloud-managed instances", () => {
     it("rejects npm installs outright", async () => {

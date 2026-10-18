@@ -37,7 +37,7 @@ describeEmbeddedPostgres("issueTreeControlService", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-tree-control-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueThreadInteractions);

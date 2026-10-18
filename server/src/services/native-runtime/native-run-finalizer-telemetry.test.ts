@@ -82,7 +82,7 @@ describeEmbeddedPostgres("native run finalizer / status decision committer — a
       adapterType: "codex_local",
       status: "running",
     });
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();

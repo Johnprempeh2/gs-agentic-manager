@@ -260,7 +260,7 @@ describe("P6-25 pre-result native session recovery", () => {
         leaseExpiresAt: new Date(0),
       })),
     ]);
-  }, 30_000);
+  });
 
   afterAll(async () => temporary?.cleanup());
 

@@ -82,7 +82,7 @@ describeEmbeddedPostgres("sweep restarts parked hand-off wakes", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-parked-handoff-restart-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await waitForCondition(async () => {

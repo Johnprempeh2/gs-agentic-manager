@@ -36,7 +36,7 @@ describeEmbeddedPostgres("organisations list: pipelines and stages (GRE-1540)", 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-organisations-pipeline-stages-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(async () => {
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });

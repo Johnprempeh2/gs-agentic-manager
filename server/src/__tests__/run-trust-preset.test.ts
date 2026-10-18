@@ -90,7 +90,7 @@ it("dispatch retains raw trust before workspace and broker setup", () => {
         "paperclip-run-trust-",
       );
       db = createDb(database.connectionString);
-    }, 30_000);
+    });
     afterAll(async () => {
       await database?.cleanup();
     }, 60_000);

@@ -78,7 +78,7 @@ describeEmbeddedPostgres("billing account record (GRE-1369)", () => {
     });
     app.use("/api", billingAccountRoutes(db, { now: () => clock }));
     app.use(errorHandler);
-  }, 30_000);
+  });
 
   beforeEach(async () => {
     await db.delete(activityLog);

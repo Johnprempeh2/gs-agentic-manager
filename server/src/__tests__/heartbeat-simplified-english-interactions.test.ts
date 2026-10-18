@@ -41,7 +41,7 @@ suite("Simplified English Interactions reaches every agent run", () => {
       await db.update(issues).set({ status: "done" }).where(eq(issues.id, input.context.issueId));
       return { exitCode: 0, signal: null, timedOut: false };
     });
-  }, 30_000);
+  });
   afterAll(async () => {
     if (db && heartbeat) await drainHeartbeatRunsToQuiescence(db, heartbeat);
     await db?.$client.end({ timeout: 5 });

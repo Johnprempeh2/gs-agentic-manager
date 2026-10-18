@@ -40,7 +40,7 @@ describeEmbeddedPostgres("one needs-me list for the board user (GRE-355)", () =>
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-needs-me-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await db.delete(issueComments);

@@ -79,7 +79,7 @@ describeEmbeddedPostgres("stale-lock sweep drains deferred wakes", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-stale-lock-drain-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await waitForCondition(async () => {

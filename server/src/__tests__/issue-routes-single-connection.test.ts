@@ -51,7 +51,7 @@ describeEmbeddedPostgres("issue routes on a single pooled connection", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-routes-single-connection-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await tempDb?.cleanup();

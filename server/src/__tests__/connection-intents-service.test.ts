@@ -147,7 +147,7 @@ describeEmbeddedPostgres("connectionIntentService", () => {
       exp: 2,
       instance_id: "test",
     };
-  }, 20_000);
+  });
 
   afterAll(async () => {
     await cleanup?.();

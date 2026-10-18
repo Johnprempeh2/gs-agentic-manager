@@ -56,7 +56,7 @@ describeEmbeddedPostgres("inbound task webhooks", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-inbound-hooks-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     stored.length = 0;

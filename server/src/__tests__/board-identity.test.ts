@@ -32,7 +32,7 @@ describeEmbeddedPostgres("local-board stands for the company's owners", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-board-identity-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     setBoardIdentityDeploymentMode("local_trusted");

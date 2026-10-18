@@ -128,7 +128,7 @@ describeEmbeddedPostgres("deliverable comments", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-deliverable-comments-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     wakeup.mockClear();

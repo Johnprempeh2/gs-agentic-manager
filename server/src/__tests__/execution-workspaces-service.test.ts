@@ -268,7 +268,7 @@ describeEmbeddedPostgres("executionWorkspaceService.getCloseReadiness", () => {
       // tests further down.
       workspaceReaperCooldownDays: 0,
     });
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(workspaceRuntimeServices);

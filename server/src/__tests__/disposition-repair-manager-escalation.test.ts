@@ -86,7 +86,7 @@ describeEmbeddedPostgres("disposition repair give-up routes to the assignee's ma
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-disposition-manager-escalation-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await heartbeatService(db).drainActiveRunExecutions();
@@ -114,7 +114,7 @@ describeEmbeddedPostgres("disposition repair give-up routes to the assignee's ma
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   async function seedExhaustedRepair(opts: { withManager: boolean }) {
     const companyId = randomUUID();

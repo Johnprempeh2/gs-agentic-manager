@@ -72,7 +72,7 @@ describeEmbeddedPostgres("hold at a budget hard stop (GRE-1365, AT-2.6)", () => 
       releaseHeldWorkForScope: (scope) =>
         heartbeat.releaseBudgetHeldWork({ companyId: scope.companyId }).then(() => undefined),
     });
-  }, 30_000);
+  });
 
   afterEach(async () => {
     memory = null;

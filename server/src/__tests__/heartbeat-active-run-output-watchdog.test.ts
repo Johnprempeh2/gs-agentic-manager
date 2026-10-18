@@ -73,7 +73,7 @@ describeEmbeddedPostgres("active-run output watchdog", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-active-run-output-watchdog-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     mockedAppendHeartbeatRunEvent.mockClear();

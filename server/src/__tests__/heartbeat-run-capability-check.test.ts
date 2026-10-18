@@ -57,7 +57,7 @@ describeEmbeddedPostgres("heartbeat required tools check at run start", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-run-capability-");
     db = createDb(tempDb.connectionString);
     heartbeat = heartbeatService(db, { runCapabilityProbe: (input) => probe(input) });
-  }, 20_000);
+  });
 
   afterEach(async () => {
     probe.mockReset();

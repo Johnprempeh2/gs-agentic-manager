@@ -38,7 +38,7 @@ describeEmbeddedPostgres("agent questions (routes + postgres)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-agent-questions-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   // Wakes are fire-and-forget and may land a run row just after a response,
   // so teardown is best-effort in foreign-key order.

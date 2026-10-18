@@ -136,7 +136,7 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
       res.json([]);
     });
     app.use(errorHandler);
-  }, 30_000);
+  });
 
   afterAll(async () => {
     await database?.cleanup();

@@ -31,7 +31,7 @@ describe("announcement routes and durable dismissals", () => {
     await db.insert(companies).values([{ id: companyId, name: "Test", issuePrefix: "ANN" }, { id: otherCompanyId, name: "Other", issuePrefix: "ANB" }]);
   }, 90_000);
   beforeEach(async () => { await db.delete(announcementDismissals); await db.delete(announcementPublications); await db.delete(activityLog); });
-  afterAll(async () => { await database?.cleanup(); }, 30_000);
+  afterAll(async () => { await database?.cleanup(); });
   it.each([200, 404])("returns a successful empty response for no remote announcement (HTTP %s)", async (status) => {
     const response = await request(app("alice", undefined, null, status)).get("/api/announcements/current");
     expect(response.status).toBe(200);

@@ -53,7 +53,7 @@ describeEmbeddedPostgres("heartbeat sweepOrphanedActiveLeases", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-orphaned-active-lease-sweep-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   beforeEach(() => {
     vi.mocked(logger.warn).mockClear();

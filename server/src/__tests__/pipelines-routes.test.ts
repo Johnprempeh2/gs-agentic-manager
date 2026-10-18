@@ -63,7 +63,7 @@ describeEmbeddedPostgres("pipeline routes", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-pipelines-routes-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   // GRE-1077: the pipelines API is gated on enablePipelines.
   beforeEach(async () => {

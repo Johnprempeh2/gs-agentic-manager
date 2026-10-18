@@ -60,7 +60,7 @@ describeEmbeddedPostgres("company pause and resume (GRE-1364)", () => {
     process.env.GSAM_IN_WORKTREE = "false";
     tempDb = await startEmbeddedPostgresTestDatabase("company-pause-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     for (let attempt = 1; ; attempt += 1) {

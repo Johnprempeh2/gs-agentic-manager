@@ -148,7 +148,7 @@ describeEmbeddedPostgres("silent-run stop timing and overload hold (GRE-181)", (
     process.env.GSAM_IN_WORKTREE = "false";
     tempDb = await startEmbeddedPostgresTestDatabase("heartbeat-run-silent-overload-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     // Retry runs queued by a test start in the background; a TRUNCATE can

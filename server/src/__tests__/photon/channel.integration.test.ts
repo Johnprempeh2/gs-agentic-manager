@@ -88,7 +88,7 @@ describe.sequential("iMessage Photon channel control plane", () => {
       secrets,
       "master.key",
     );
-  }, 30_000);
+  });
   afterEach(async () => {
     await Promise.all(services.splice(0).map((service) => service.shutdown()));
     for (const id of companyIds.splice(0))

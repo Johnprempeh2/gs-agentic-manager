@@ -53,7 +53,7 @@ describeEmbeddedPostgres("suppressed disposition repair does not hold the issue"
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("gsam-suppressed-repair-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await heartbeatService(db).drainActiveRunExecutions();
@@ -62,7 +62,7 @@ describeEmbeddedPostgres("suppressed disposition repair does not hold the issue"
 
   afterAll(async () => {
     await tempDb?.cleanup();
-  }, 30_000);
+  });
 
   async function seedQueuedRepair() {
     const companyId = randomUUID(), agentId = randomUUID(), issueId = randomUUID(), sourceRunId = randomUUID();

@@ -62,7 +62,7 @@ describeEmbeddedPostgres("company pause routes return pausedAt and pauseReason (
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("company-pause-routes-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     await db.execute(sql.raw(`TRUNCATE TABLE "companies" CASCADE`));

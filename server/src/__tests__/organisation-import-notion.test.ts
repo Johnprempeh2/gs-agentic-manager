@@ -83,7 +83,7 @@ describeEmbeddedPostgres("Notion import route", () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-notion-import-");
     db = createDb(tempDb.connectionString);
     await instanceSettingsService(db).updateExperimental({ enablePipelines: true });
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

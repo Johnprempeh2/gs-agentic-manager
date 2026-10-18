@@ -65,7 +65,7 @@ describeEmbeddedPostgres("company skill import with stripScripts (GRE-757)", () 
     home = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-skill-strip-home-"));
     process.env.GSAM_HOME = home;
     process.env.GSAM_INSTANCE_ID = "default";
-  }, 20_000);
+  });
 
   afterEach(async () => {
     vi.unstubAllGlobals();

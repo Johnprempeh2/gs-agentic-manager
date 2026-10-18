@@ -50,7 +50,7 @@ describeEmbeddedPostgres("issue create deduplication routes", () => {
     delete process.env.GSAM_INSTANCE_ID;
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-issue-create-deduplication-routes-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

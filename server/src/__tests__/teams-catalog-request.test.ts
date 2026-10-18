@@ -24,7 +24,7 @@ describeEmbeddedPostgres("Ask Greatstone to add a catalogue team (GRE-434)", () 
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-teams-catalog-request-");
     db = createDb(tempDb.connectionString);
-  }, 20_000);
+  });
 
   afterEach(async () => {
     await db.delete(activityLog);

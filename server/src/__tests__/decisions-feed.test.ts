@@ -75,7 +75,7 @@ describeEmbeddedPostgres("one Decisions feed (GRE-263)", () => {
   beforeAll(async () => {
     tempDb = await startEmbeddedPostgresTestDatabase("paperclip-decisions-feed-");
     db = createDb(tempDb.connectionString);
-  }, 30_000);
+  });
 
   afterEach(async () => {
     wakeup.mockClear();
