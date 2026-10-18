@@ -29,7 +29,7 @@ export const AGENT_DETAIL_NAVIGATION: ReadonlyArray<{
     ],
   },
   {
-    label: "Runtime",
+    label: "Setup",
     items: [
       { value: "runtime", label: "How it runs" },
       { value: "secrets", label: "Secrets" },
@@ -41,9 +41,9 @@ export const AGENT_DETAIL_NAVIGATION: ReadonlyArray<{
     label: "Governance",
     items: [
       { value: "permissions", label: "Permissions / Trust" },
-      { value: "api-keys", label: "API Keys" },
+      { value: "api-keys", label: "Access keys" },
       { value: "access", label: "Access" },
-      { value: "revisions", label: "Revisions" },
+      { value: "revisions", label: "Saved versions" },
     ],
   },
 ] as const;

@@ -202,6 +202,8 @@ import {
   taskDateGroupSeparator,
   type TaskDateGroup,
 } from "../lib/task-date-groups";
+import { useConfirm } from "@/context/ConfirmContext";
+import { adapterLabels } from "../components/agent-config-primitives";
 
 const INBOX_HEARTBEAT_RUN_LIMIT = 200;
 const INBOX_ISSUE_LIST_LIMIT = 500;
@@ -719,8 +721,8 @@ function JoinRequestInboxRow({
               {label}
             </span>
             <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-              <span>requested {timeAgo(joinRequest.createdAt)} from IP {joinRequest.requestIp}</span>
-              {joinRequest.adapterType && <span>adapter: {joinRequest.adapterType}</span>}
+              <span title={joinRequest.requestIp ? `Sent from ${joinRequest.requestIp}` : undefined}>Asked to join {timeAgo(joinRequest.createdAt)}</span>
+              {joinRequest.adapterType && <span>Runs on {adapterLabels[joinRequest.adapterType] ?? joinRequest.adapterType}</span>}
             </span>
           </span>
         </div>
@@ -806,6 +808,7 @@ function InboxCollectionToolbar({
 }
 
 export function Inbox() {
+  const confirmAction = useConfirm();
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { openNewIssue } = useDialogActions();
@@ -2046,6 +2049,9 @@ export function Inbox() {
     onSuccess: () => {
       invalidateInboxIssueQueryCaches();
     },
+    onError: () => {
+      pushToast({ title: "Could not mark as read", body: "Try again in a moment.", tone: "error" });
+    },
     onSettled: (_data, _error, id) => {
       setTimeout(() => {
         setFadingOutIssues((prev) => {
@@ -2070,6 +2076,9 @@ export function Inbox() {
     },
     onSuccess: () => {
       invalidateInboxIssueQueryCaches();
+    },
+    onError: () => {
+      pushToast({ title: "Could not mark everything as read", body: "Try again in a moment.", tone: "error" });
     },
     onSettled: (_data, _error, issueIds) => {
       setTimeout(() => {
@@ -3204,7 +3213,15 @@ export function Inbox() {
                           joinRequest={item.joinRequest}
                           selected={isSelected}
                           onApprove={() => approveJoinMutation.mutate(item.joinRequest)}
-                          onReject={() => rejectJoinMutation.mutate(item.joinRequest)}
+                          onReject={async () => {
+                            const confirmed = await confirmAction({
+                              title: `Turn down ${formatJoinRequestInboxLabel(item.joinRequest)}?`,
+                              description: "They are not added to your organisation. They would need to ask again to join.",
+                              confirmLabel: "Turn down",
+                              tone: "destructive",
+                            });
+                            if (confirmed) rejectJoinMutation.mutate(item.joinRequest);
+                          }}
                           isPending={approveJoinMutation.isPending || rejectJoinMutation.isPending}
                           unreadState={nonIssueUnreadState(joinKey)}
                           onMarkRead={() => handleMarkNonIssueRead(joinKey)}

@@ -10,6 +10,7 @@ import { issuesApi } from "@/api/issues";
 import { useCompanyLiveEvent } from "@/context/LiveUpdatesProvider";
 import { queryKeys } from "@/lib/queryKeys";
 import { cn } from "@/lib/utils";
+import { useConfirm } from "@/context/ConfirmContext";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -180,7 +181,18 @@ export function useRunnerGoalControl(issueId: string | null, agentId: string | n
 
 export type RunnerGoalControl = ReturnType<typeof useRunnerGoalControl>;
 
+const GOAL_STATUS_WORDS: Record<string, string> = {
+  active: "Active",
+  paused: "Paused",
+  blocked: "Stuck",
+  limited: "Paused: limit reached",
+  usage_limited: "Paused: usage limit reached",
+  budget_limited: "Paused: spending limit reached",
+  complete: "Done",
+};
+
 export function RunnerGoalWidget({ control }: { control: RunnerGoalControl }) {
+  const confirm = useConfirm();
   const projection = control.data;
   const goal = projection?.goal ?? null;
   const capability = projection?.capability;
@@ -200,17 +212,17 @@ export function RunnerGoalWidget({ control }: { control: RunnerGoalControl }) {
   return (
     <section
       className="rounded-xl border border-border/80 bg-card/95 px-3 py-2 shadow-sm"
-      aria-label="Agent session goal"
+      aria-label="Agent goal"
       data-testid="runner-goal-widget"
     >
       <div className="flex items-start gap-2">
         <Flag className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-semibold">Session goal</span>
+            <span className="text-xs font-semibold">Goal</span>
             {goal ? (
-              <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium capitalize" role="status">
-                {goal.status.replaceAll("_", " ")}
+              <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs font-medium" role="status">
+                {GOAL_STATUS_WORDS[goal.status] ?? goal.status.replaceAll("_", " ")}
               </span>
             ) : null}
             {goal?.workingNow ? (
@@ -262,7 +274,15 @@ export function RunnerGoalWidget({ control }: { control: RunnerGoalControl }) {
             </Button>
           ) : null}
           {goal && can("clear") ? (
-            <Button size="icon" variant="ghost" className={cn("h-7 w-7", "text-muted-foreground hover:text-destructive")} onClick={() => void control.executeAction("clear").catch(() => {})} aria-label="Clear goal">
+            <Button size="icon" variant="ghost" className={cn("h-7 w-7", "text-muted-foreground hover:text-destructive")} onClick={async () => {
+              const confirmed = await confirm({
+                title: "Clear this goal?",
+                description: "The agent stops working towards it. You can set a new goal with /goal.",
+                confirmLabel: "Clear goal",
+                tone: "destructive",
+              });
+              if (confirmed) void control.executeAction("clear").catch(() => {});
+            }} aria-label="Clear goal">
               <Trash2 className="h-3.5 w-3.5" aria-hidden />
             </Button>
           ) : null}

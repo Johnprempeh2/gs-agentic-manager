@@ -73,6 +73,10 @@ afterEach(async () => {
 });
 
 describe("session goal dialogs", () => {
+  beforeEach(() => {
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+  });
+
   it("hides the widget after an expanded goal is cleared", async () => {
     await click("Focus goal");
     vi.mocked(issuesApi.actOnRunnerGoal).mockResolvedValue({
