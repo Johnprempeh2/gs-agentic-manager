@@ -216,6 +216,19 @@ interface ReviewBulkOptions extends PipelineOptions {
   file: string;
 }
 
+export type DealsSummaryRow = {
+  pipelineId: string;
+  pipelineName: string;
+  open: number;
+  openValue: Record<string, number>;
+  weightedValue: Record<string, number>;
+  lateNextSteps: number;
+  noNextStep: number;
+  won90d: number;
+  lost90d: number;
+  winRate90d: number | null;
+};
+
 export type DealDue = {
   caseId: string;
   pipelineId: string;
@@ -264,6 +277,68 @@ export function selectDealsDue(
   }
   return due.sort((left, right) =>
     (left.nextActivityDate ?? "9999").localeCompare(right.nextActivityDate ?? "9999") || left.title.localeCompare(right.title));
+}
+
+function fieldAmount(fields: JsonObject, key: string): number | null {
+  const value = fields[key];
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : NaN;
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * One line per DevTools deal pipeline: open deals with their value and
+ * weighted value per currency, next steps that are late or missing, and
+ * deals won and lost in the 90 days to `today`, like the board header.
+ */
+export function summariseDeals(pipelines: Array<{ id: string; name: string; rows: CaseListRow[] }>, today: string): DealsSummaryRow[] {
+  const since = new Date(new Date(`${today}T00:00:00Z`).getTime() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  return pipelines.map((pipeline) => {
+    const row: DealsSummaryRow = {
+      pipelineId: pipeline.id,
+      pipelineName: pipeline.name,
+      open: 0,
+      openValue: {},
+      weightedValue: {},
+      lateNextSteps: 0,
+      noNextStep: 0,
+      won90d: 0,
+      lost90d: 0,
+      winRate90d: null,
+    };
+    for (const item of pipeline.rows) {
+      const fields = item.case.fields ?? null;
+      if (!fields || !("dealStatus" in fields)) continue;
+      const status = fieldString(fields, "dealStatus")?.toLowerCase();
+      if (status === "won" || status === "lost") {
+        const closedOn = fieldString(fields, status === "won" ? "wonOn" : "lostOn")?.slice(0, 10);
+        if (closedOn && closedOn >= since && closedOn <= today) {
+          if (status === "won") row.won90d += 1;
+          else row.lost90d += 1;
+        }
+        continue;
+      }
+      if (item.stage.kind === "done" || item.stage.kind === "cancelled") continue;
+      row.open += 1;
+      const value = fieldAmount(fields, "dealValue");
+      if (value != null) {
+        const currency = fieldString(fields, "dealCurrency")?.toUpperCase() ?? "";
+        row.openValue[currency] = (row.openValue[currency] ?? 0) + value;
+        const probability = fieldAmount(fields, "probability");
+        if (probability != null) row.weightedValue[currency] = (row.weightedValue[currency] ?? 0) + (value * probability) / 100;
+      }
+      const next = fieldString(fields, "nextActivityDate")?.slice(0, 10);
+      if (!next) row.noNextStep += 1;
+      else if (next < today) row.lateNextSteps += 1;
+    }
+    const closed = row.won90d + row.lost90d;
+    row.winRate90d = closed === 0 ? null : Math.round((row.won90d / closed) * 100);
+    return row;
+  });
+}
+
+function formatAmounts(amounts: Record<string, number>) {
+  const parts = Object.entries(amounts).map(([currency, total]) => `${Math.round(total)}${currency ? ` ${currency}` : ""}`);
+  return parts.length > 0 ? parts.join(" + ") : "0";
 }
 
 /**
@@ -552,6 +627,30 @@ export function registerPipelineCommands(program: Command): void {
         due.forEach((deal) => console.log(
           `${deal.nextActivityDate ?? "no next step"}  ${deal.title}${deal.nextActivitySubject ? `: ${deal.nextActivitySubject}` : ""}  ${pc.dim(`${deal.pipelineName} / ${deal.stage} / ${deal.caseId}`)}`,
         ));
+      })),
+  );
+
+  addPipelineOptions(
+    pipelines
+      .command("deals-summary")
+      .description("Summarise the open Pipedrive deals in each DevTools pipeline: value, weighted value, late next steps and 90 day win rate")
+      .action((opts: PipelineOptions) => withPipelineErrors(async () => {
+        const ctx = resolvePipelineContext(opts);
+        const all = await ctx.api.get<PipelineSummary[]>(apiPath`/api/companies/${ctx.companyId}/pipelines`) ?? [];
+        const dealPipelines = all.filter((pipeline) => pipeline.key.startsWith("pipedrive-") && pipeline.key !== "pipedrive-leads");
+        const loaded = await Promise.all(dealPipelines.map(async (pipeline) => ({
+          id: pipeline.id,
+          name: pipeline.name,
+          rows: await ctx.api.get<CaseListRow[]>(apiPath`/api/pipelines/${pipeline.id}/cases`) ?? [],
+        })));
+        const summary = summariseDeals(loaded, new Date().toISOString().slice(0, 10));
+        if (ctx.json) return printOutput(summary, { json: true });
+        if (summary.length === 0) return console.log("No Pipedrive deal pipelines.");
+        summary.forEach((row) => console.log([
+          `${row.pipelineName}: ${row.open} open, ${formatAmounts(row.openValue)} (${formatAmounts(row.weightedValue)} weighted)`,
+          `${row.lateNextSteps} late next steps, ${row.noNextStep} with none booked`,
+          row.winRate90d == null ? "no deals closed in 90 days" : `${row.winRate90d}% win rate in 90 days (${row.won90d} won, ${row.lost90d} lost)`,
+        ].join(" · ")));
       })),
   );
 

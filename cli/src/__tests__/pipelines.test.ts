@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyDealSettings, completeDealNextStep, registerPipelineCommands, selectDealsDue } from "../commands/pipelines.js";
+import { applyDealSettings, completeDealNextStep, registerPipelineCommands, selectDealsDue, summariseDeals } from "../commands/pipelines.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
@@ -272,5 +272,38 @@ describe("applyDealSettings", () => {
       expectedVersion: 4,
       fields: { dealStatus: "open", dealOwner: "Ann", probability: 60, nextActivityDate: "2026-10-25", nextActivitySubject: "Demo" },
     });
+  });
+});
+
+describe("summariseDeals", () => {
+  it("counts open value, weighted value, next steps and the 90 day win rate per pipeline", () => {
+    const row = (fields: Record<string, unknown>, kind = "working") => ({
+      case: { id: "c", title: "Deal", fields },
+      stage: { kind, name: "Stage" },
+    }) as never;
+    expect(summariseDeals([{
+      id: "p1",
+      name: "Sales",
+      rows: [
+        row({ dealStatus: "open", dealValue: 1000, dealCurrency: "gbp", probability: 50, nextActivityDate: "2026-10-10" }),
+        row({ dealStatus: "open", dealValue: "500", dealCurrency: "GBP", nextActivityDate: "2026-10-20" }),
+        row({ dealStatus: "open" }),
+        row({ dealStatus: "Won", wonOn: "2026-10-01" }, "done"),
+        row({ dealStatus: "Lost", lostOn: "2026-09-15" }, "cancelled"),
+        row({ dealStatus: "Lost", lostOn: "2026-01-01" }, "cancelled"),
+        row({ leadValue: 300 }),
+      ],
+    }], "2026-10-18")).toEqual([{
+      pipelineId: "p1",
+      pipelineName: "Sales",
+      open: 3,
+      openValue: { GBP: 1500 },
+      weightedValue: { GBP: 500 },
+      lateNextSteps: 1,
+      noNextStep: 1,
+      won90d: 1,
+      lost90d: 1,
+      winRate90d: 50,
+    }]);
   });
 });
