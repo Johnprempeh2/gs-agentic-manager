@@ -36,8 +36,8 @@ export function createRunCancelledStatusUpdateError(
 ): StopAndFinalizeRunError {
   const message =
     err instanceof Error
-      ? `Run was stopped, but updating the task failed: ${err.message}`
-      : "Run was stopped, but updating the task failed. Retry the task status update.";
+      ? `The agent was stopped, but the task status could not be updated: ${err.message}`
+      : "The agent was stopped, but the task status could not be updated. Try again in a moment.";
   const error = new Error(message) as StopAndFinalizeRunError;
   error.runCancelledBeforeStatusUpdateFailed = true;
   return error;
@@ -99,13 +99,13 @@ export const JUMP_TO_LATEST_MAX_COMMENT_PAGES = 10;
 export function treeControlPreviewErrorCopy(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 403)
-      return "Only board users can preview subtree controls.";
+      return "Only board members can do this.";
     if (error.status === 409)
-      return "Preview is stale because subtree hold state changed. Retry to refresh.";
+      return "Something changed while you were looking. Try again to refresh.";
     if (error.status === 422)
-      return "This subtree action is currently invalid for the selected tasks.";
+      return "This cannot be done for these tasks right now.";
   }
-  return error instanceof Error ? error.message : "Unable to load preview.";
+  return error instanceof Error ? error.message : "Could not load the preview.";
 }
 
 export function canBoardResolveRecoveryAction(

@@ -19,6 +19,8 @@ import { useDialogActions } from "../../context/DialogContext";
 import { repeatTaskDefaults } from "../../lib/repeat-task";
 import { issueToUpdate } from "../../lib/issues-text";
 import { useCopyToast } from "../../lib/use-copy-action";
+import { useConfirm } from "@/context/ConfirmContext";
+import { useOptionalToastActions } from "@/context/ToastContext";
 import { pickTextColorForPillBg } from "@/lib/color-contrast";
 import { Link } from "@/lib/router";
 import { cn } from "../../lib/utils";
@@ -157,6 +159,8 @@ export function IssueDetailHeader({
 }: IssueDetailHeaderProps) {
   const { openNewIssue } = useDialogActions();
   const copyText = useCopyToast();
+  const confirm = useConfirm();
+  const toastActions = useOptionalToastActions();
   const copyAsUpdate = () => {
     const responsible = issue.assigneeAgentId
       ? agentMap.get(issue.assigneeAgentId)?.name
@@ -414,7 +418,7 @@ export function IssueDetailHeader({
               size="icon-xs"
               onClick={() => setFileViewerPromptOpen(true)}
               title="Open file... (g f)"
-              aria-label="Open file in this issue"
+              aria-label="Open file in this task"
             >
               <FileCode2 className="h-4 w-4" />
             </Button>
@@ -591,12 +595,31 @@ export function IssueDetailHeader({
                 </button>
                 <button
                   className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
-                  onClick={() => {
+                  onClick={async () => {
+                    setMoreOpen(false);
+                    const ok = await confirm({
+                      title: "Hide this task?",
+                      description: "It will no longer show in task lists.",
+                      confirmLabel: "Hide task",
+                      tone: "destructive",
+                    });
+                    if (!ok) return;
                     updateIssue.mutate(
                       { hiddenAt: new Date().toISOString() },
-                      { onSuccess: () => navigate("/issues/all") },
+                      {
+                        onSuccess: () => {
+                          toastActions?.pushToast({
+                            title: "Task hidden",
+                            tone: "success",
+                            action: {
+                              label: "Undo",
+                              onClick: () => updateIssue.mutate({ hiddenAt: null }),
+                            },
+                          });
+                          navigate("/issues/all");
+                        },
+                      },
                     );
-                    setMoreOpen(false);
                   }}
                 >
                   <EyeOff className="h-3 w-3" />

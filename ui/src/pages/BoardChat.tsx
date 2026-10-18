@@ -784,7 +784,7 @@ export function BoardChat() {
                   ? `: your mission is "${missionText}".`
                   : ".";
                 const welcomeBody =
-                  `Welcome to **${companyName}**! I'm ${ceoName}, your team lead. I've read through what you shared in the wizard${missionLine}\n\n` +
+                  `Welcome to **${companyName}**! I'm ${ceoName}, your team lead. I've read through what you shared during setup${missionLine}\n\n` +
                   `Here are a few things I can help you put on paper right now. Pick one below and I'll draft it for you using everything you told us.`;
 
                 const userHasReplied = sortedComments.some(

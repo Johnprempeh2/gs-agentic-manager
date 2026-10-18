@@ -1001,7 +1001,7 @@ describe("IssueProperties", () => {
 
     // Live-run banner + grouped section headers are present.
     expect(container.querySelector("[data-testid='assignee-running-banner']")?.textContent).toContain(
-      "ClaudeCoder is running",
+      "ClaudeCoder is working on this",
     );
     expect(container.textContent).toContain("Agents");
     expect(container.textContent).toContain("Board users");

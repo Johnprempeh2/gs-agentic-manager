@@ -3121,7 +3121,7 @@ describe("IssueChatThread", () => {
 
     expect(container.textContent).toContain("Agent summary");
     expect(container.textContent).not.toContain(
-      "Chat renderer hit an internal state error.",
+      "Part of this conversation could not be shown.",
     );
 
     act(() => {

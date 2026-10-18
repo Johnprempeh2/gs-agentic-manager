@@ -76,9 +76,23 @@ export function useRecoveryActionHandlers({
         });
       }
     },
+    onError: (err) => {
+      pushToast({
+        title: "Could not resume the agent",
+        body:
+          err instanceof Error && err.message.trim()
+            ? err.message
+            : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
   const handleResumeAssignee = useCallback(async () => {
-    await resumeAssigneeAgent.mutateAsync();
+    try {
+      await resumeAssigneeAgent.mutateAsync();
+    } catch {
+      // The mutation's onError already told the person what went wrong.
+    }
   }, [resumeAssigneeAgent.mutateAsync]);
   const activeRecoveryActionId = issue?.activeRecoveryAction?.id;
   const handleResolveRecoveryAction = useCallback(
@@ -185,11 +199,11 @@ export function useRecoveryActionHandlers({
     },
     onError: (err) => {
       pushToast({
-        title: "Re-issue failed",
+        title: "Could not start a fresh copy of this task",
         body:
           err instanceof Error
             ? err.message
-            : "Unable to create an isolated re-issue.",
+            : "Try again in a moment.",
         tone: "error",
       });
     },
@@ -229,24 +243,24 @@ export function useRecoveryActionHandlers({
       pushToast(
         variables.mode === "quarantine_restore"
           ? {
-              title: "Workspace repaired",
-              body: "Dirty changes were quarantined onto a rescue branch and the recorded branch restored; the task will resume.",
+              title: "Work area fixed",
+              body: "Unsaved changes were set aside safely. The task will carry on.",
               tone: "success",
             }
           : {
-              title: "Workspace branch reconciled",
-              body: "The recorded branch now matches the live branch; the task will resume.",
+              title: "Work area brought up to date",
+              body: "The task will carry on.",
               tone: "success",
             },
       );
     },
     onError: (err) => {
       pushToast({
-        title: "Reconcile failed",
+        title: "Could not fix the work area",
         body:
           err instanceof Error
             ? err.message
-            : "Unable to reconcile the workspace branch.",
+            : "Try again in a moment.",
         tone: "error",
       });
     },
@@ -264,8 +278,8 @@ export function useRecoveryActionHandlers({
   const handleReconcileForwardRecoveryAction = useCallback(() => {
     if (!reconcileExecutionWorkspaceId) {
       pushToast({
-        title: "Reconcile failed",
-        body: "This task has no execution workspace to reconcile.",
+        title: "Could not fix the work area",
+        body: "This task has no work area to fix.",
         tone: "error",
       });
       return;
@@ -283,8 +297,8 @@ export function useRecoveryActionHandlers({
     (reason: string) => {
       if (!reconcileExecutionWorkspaceId) {
         pushToast({
-          title: "Reconcile failed",
-          body: "This task has no execution workspace to reconcile.",
+          title: "Could not fix the work area",
+          body: "This task has no work area to fix.",
           tone: "error",
         });
         return;
@@ -306,8 +320,8 @@ export function useRecoveryActionHandlers({
   const handleQuarantineRestoreRecoveryAction = useCallback(() => {
     if (!reconcileExecutionWorkspaceId) {
       pushToast({
-        title: "Repair failed",
-        body: "This task has no execution workspace to repair.",
+        title: "Could not fix the work area",
+        body: "This task has no work area to fix.",
         tone: "error",
       });
       return;

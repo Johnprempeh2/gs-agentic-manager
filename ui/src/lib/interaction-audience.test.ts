@@ -102,7 +102,7 @@ describe("describeInteractionAudience", () => {
     expect(audience.isOpen).toBe(false);
     expect(audience.label).toBe("Anyone except creator");
     expect(audience.narrowedBy).toBe("requested");
-    expect(audience.summary).toBe("Anyone in the organization except ClaudeCoder can respond.");
+    expect(audience.summary).toBe("Anyone in the organisation except ClaudeCoder can respond.");
     // An explicitly requested restriction needs no extra explanation.
     expect(audience.narrowedNote).toBeNull();
   });
@@ -128,7 +128,7 @@ describe("describeInteractionAudience", () => {
       }),
       creatorLabel: "You",
     });
-    expect(excluded.summary).toBe("Anyone in the organization except you can respond.");
+    expect(excluded.summary).toBe("Anyone in the organisation except you can respond.");
   });
 
   it("falls back to a generic creator phrase when the creator label is unknown", () => {
@@ -140,7 +140,7 @@ describe("describeInteractionAudience", () => {
       }),
     });
     expect(audience.summary).toBe(
-      "Anyone in the organization except the agent that created it can respond.",
+      "Anyone in the organisation except the agent that created it can respond.",
     );
   });
 
@@ -245,7 +245,7 @@ describe("describeInteractionAudience", () => {
     expect(audience.narrowedNote).toBe(
       "Created before Anyone became the default, so it stays restricted. A new card would be open.",
     );
-    expect(audience.summary).toBe("Anyone in the organization except ClaudeCoder can respond.");
+    expect(audience.summary).toBe("Anyone in the organisation except ClaudeCoder can respond.");
   });
 });
 

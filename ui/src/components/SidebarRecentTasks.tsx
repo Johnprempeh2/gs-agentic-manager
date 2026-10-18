@@ -148,8 +148,8 @@ function RecentTasksList({
       toastActions?.pushToast({ title: "Task renamed", tone: "success" });
     } catch (error) {
       toastActions?.pushToast({
-        title: "Task rename failed",
-        body: errorMessage(error, "Unable to rename this task."),
+        title: "Could not rename the task",
+        body: errorMessage(error, "Try again in a moment."),
         tone: "error",
       });
     } finally {
@@ -165,11 +165,34 @@ function RecentTasksList({
       await queryClient.invalidateQueries({
         queryKey: queryKeys.sidebarBadges(companyId),
       });
-      toastActions?.pushToast({ title: "Task archived from inbox", tone: "success" });
+      toastActions?.pushToast({
+        title: "Task archived from inbox",
+        tone: "success",
+        action: {
+          label: "Undo",
+          onClick: () => {
+            void (async () => {
+              try {
+                await issuesApi.unarchiveFromInbox(entry.id);
+                await refreshIssueQueries(entry.id);
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.sidebarBadges(companyId),
+                });
+              } catch (error) {
+                toastActions?.pushToast({
+                  title: "Could not undo the archive",
+                  body: errorMessage(error, "Try again in a moment."),
+                  tone: "error",
+                });
+              }
+            })();
+          },
+        },
+      });
     } catch (error) {
       toastActions?.pushToast({
-        title: "Task archive failed",
-        body: errorMessage(error, "Unable to archive this task from the inbox."),
+        title: "Could not archive the task",
+        body: errorMessage(error, "Try again in a moment."),
         tone: "error",
       });
     } finally {
@@ -199,7 +222,7 @@ function RecentTasksList({
             restartIssue.companyId,
           );
           if (!("id" in wakeResult)) {
-            throw new Error(wakeResult.message ?? "The assignee wake was skipped.");
+            throw new Error(wakeResult.message ?? "The agent could not be started. Try again in a moment.");
           }
         }
         setRestartWakeRetryPending(restartRetryStorageKey, entry.id, false);
@@ -220,7 +243,7 @@ function RecentTasksList({
             restartIssue.companyId,
           );
           if (!("id" in wakeResult)) {
-            throw new Error(wakeResult.message ?? "The assignee wake was skipped.");
+            throw new Error(wakeResult.message ?? "The agent could not be started. Try again in a moment.");
           }
         }
         setRestartWakeRetryPending(restartRetryStorageKey, entry.id, false);
@@ -238,8 +261,8 @@ function RecentTasksList({
       });
     } catch (error) {
       toastActions?.pushToast({
-        title: "Task pause update failed",
-        body: errorMessage(error, "Unable to pause or restart this task."),
+        title: "Could not pause or restart the task",
+        body: errorMessage(error, "Try again in a moment."),
         tone: "error",
       });
     } finally {
