@@ -12353,6 +12353,18 @@ export function issueService(db: Db) {
       return created;
     },
 
+    updateLabel: async (id: string, data: { name?: string; color?: string }) =>
+      db
+        .update(labels)
+        .set({
+          ...(data.name !== undefined ? { name: data.name.trim() } : {}),
+          ...(data.color !== undefined ? { color: data.color } : {}),
+          updatedAt: new Date(),
+        })
+        .where(eq(labels.id, id))
+        .returning()
+        .then((rows) => rows[0] ?? null),
+
     deleteLabel: async (id: string) =>
       db
         .delete(labels)

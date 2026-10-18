@@ -83,6 +83,7 @@ import {
   answerAgentQuestionSchema,
   createIssueWorkProductSchema,
   createIssueLabelSchema,
+  updateIssueLabelSchema,
   createAcceptedPlanDecompositionSchema,
   checkoutIssueSchema,
   createDocumentAnnotationCommentSchema,
@@ -9110,6 +9111,48 @@ export function issueRoutes(
       res.status(201).json(label);
     },
   );
+
+  router.patch("/labels/:labelId", validate(updateIssueLabelSchema), async (req, res) => {
+    const labelId = req.params.labelId as string;
+    const existing = await getAccessibleResource(
+      req,
+      res,
+      svc.getLabelById(labelId),
+      "Label not found",
+    );
+    if (!existing) return;
+    const nextName = typeof req.body.name === "string" ? req.body.name.trim() : undefined;
+    if (nextName !== undefined && nextName.toLowerCase() !== existing.name.toLowerCase()) {
+      const clash = (await svc.listLabels(existing.companyId)).find(
+        (label) => label.id !== existing.id && label.name.toLowerCase() === nextName.toLowerCase(),
+      );
+      if (clash) throw conflict(`A label called "${clash.name}" already exists`);
+    }
+    const updated = await svc.updateLabel(labelId, { name: nextName, color: req.body.color });
+    if (!updated) {
+      res.status(404).json({ error: "Label not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: updated.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      agentApiKeyId: actor.agentApiKeyId,
+      action: "label.updated",
+      entityType: "label",
+      entityId: updated.id,
+      details: {
+        name: updated.name,
+        color: updated.color,
+        previousName: existing.name,
+        previousColor: existing.color,
+      },
+    });
+    res.json(updated);
+  });
 
   router.delete("/labels/:labelId", async (req, res) => {
     const labelId = req.params.labelId as string;

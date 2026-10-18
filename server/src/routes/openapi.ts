@@ -5361,6 +5361,18 @@ registry.registerPath({
 });
 
 registry.registerPath({
+  method: "patch",
+  path: "/api/labels/{labelId}",
+  tags: ["issues"],
+  summary: "Rename or recolour a label",
+  request: {
+    params: z.object({ labelId: z.string() }),
+    body: { content: { "application/json": { schema: z.object({ name: z.string().optional(), color: z.string().optional() }) } } },
+  },
+  responses: { 200: r.ok(), 401: r.unauthorized, 409: r.conflict },
+});
+
+registry.registerPath({
   method: "delete",
   path: "/api/labels/{labelId}",
   tags: ["issues"],
@@ -5568,7 +5580,13 @@ registry.registerPath({
   path: "/api/companies/{companyId}/routines",
   tags: ["routines"],
   summary: "List routines in a company",
-  request: { params: z.object({ companyId: z.string() }) },
+  request: {
+    params: z.object({ companyId: z.string() }),
+    query: z.object({
+      projectId: z.string().optional(),
+      assigneeAgentId: z.string().optional().describe("Agent id, or me for the calling agent"),
+    }),
+  },
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 

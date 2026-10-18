@@ -39,6 +39,7 @@ describe("routine and plugin parity commands", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await run(["routine", "list", "--company-id", COMPANY_ID, "--project-id", "p1"]);
+    await run(["routine", "list", "--company-id", COMPANY_ID, "--agent", "me"]);
     await run(["routine", "create", "--company-id", COMPANY_ID, "--payload-json", "{}"]);
     await run(["routine", "get", ROUTINE_ID]);
     await run(["routine", "update", ROUTINE_ID, "--payload-json", "{}"]);
@@ -54,6 +55,7 @@ describe("routine and plugin parity commands", () => {
 
     expect(fetchMock.mock.calls.map((call) => [call[1]?.method ?? "GET", call[0]])).toEqual([
       ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/routines?projectId=p1`],
+      ["GET", `http://localhost:3100/api/companies/${COMPANY_ID}/routines?assigneeAgentId=me`],
       ["POST", `http://localhost:3100/api/companies/${COMPANY_ID}/routines`],
       ["GET", `http://localhost:3100/api/routines/${ROUTINE_ID}`],
       ["PATCH", `http://localhost:3100/api/routines/${ROUTINE_ID}`],
