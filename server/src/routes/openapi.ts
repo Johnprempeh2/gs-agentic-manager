@@ -8560,6 +8560,14 @@ registry.registerPath({
 
 registry.registerPath({
   method: "get",
+  path: "/api/instance/sign-in-activity",
+  tags: ["instance"],
+  summary: "Wrong passwords and passwords held at the two-step code across the instance, with counts for the last day (instance admins)",
+  responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "get",
   path: "/api/instance/system-memory",
   tags: ["instance"],
   summary: "Get read-only host memory for the run-cap suggestion",

@@ -47,6 +47,7 @@ import {
 import { readAiAccessRoute } from "../services/ai-access-route.js";
 import { applyAiRouteChange, logAiRouteChanged } from "../services/ai-route-change.js";
 import { clearTwoStepRequirementCache, needsTwoStepSetup } from "../auth/two-step-requirement.js";
+import { signInHistoryService } from "../auth/sign-in-history.js";
 
 function sameJsonValue(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -371,6 +372,27 @@ export function instanceSettingsRoutes(db: Db) {
   );
 
   // Read-only host memory for the run-cap suggestion on the Settings page.
+  // Settings > Security > Sign-in activity: wrong passwords and passwords
+  // held at the two-step code on any account, for the instance admin to spot
+  // someone guessing, plus counts for the last day.
+  router.get("/instance/sign-in-activity", async (req, res) => {
+    assertCanManageInstanceSettings(req);
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const { counts, events } = await signInHistoryService(db).unfinishedAcrossInstance(since);
+    res.json({
+      since: since.toISOString(),
+      counts,
+      events: events.map((row) => ({
+        id: row.id,
+        outcome: row.outcome,
+        ipAddress: row.ipAddress ?? null,
+        userAgent: row.userAgent ?? null,
+        at: row.createdAt.toISOString(),
+        user: { id: row.userId, email: row.email ?? null, name: row.name ?? null },
+      })),
+    });
+  });
+
   router.get("/instance/system-memory", async (req, res) => {
     assertBoardOrgAccess(req);
     res.json(await readInstanceSystemMemory(readSystemMemory));

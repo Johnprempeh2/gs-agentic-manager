@@ -761,6 +761,7 @@ export const queryKeys = {
     experimentalSettings: ["instance", "experimental-settings"] as const,
     entitlements: ["instance", "entitlements"] as const,
     systemMemory: ["instance", "system-memory"] as const,
+    signInActivity: ["instance", "sign-in-activity"] as const,
     runAdmissionRecommendation: ["instance", "run-admission-recommendation"] as const,
     billingAccount: ["instance", "billing-account"] as const,
     fleetInstances: ["instance", "fleet-instances"] as const,
