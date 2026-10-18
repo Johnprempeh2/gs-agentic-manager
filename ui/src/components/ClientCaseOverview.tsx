@@ -27,6 +27,7 @@ import { PipelineCaseEvidence } from "./PipelineCaseFiles";
 import { StatusBadge } from "./StatusBadge";
 import { DevtoolsDealOutcome } from "./DevtoolsDealOutcome";
 import { DevtoolsDealEditor, DevtoolsNextStepDone } from "./DevtoolsDealEditor";
+import { DevtoolsFollowUpEmail } from "./DevtoolsFollowUpEmail";
 import { getDealNextStepFlag, type DealNextStepFlag } from "../lib/client-card-flags";
 
 const CLOSED_ISSUE_STATUSES = new Set(["done", "cancelled"]);
@@ -243,6 +244,7 @@ export function ClientCaseOverview({
           <div className="flex flex-wrap gap-2 pt-3">
             {dealIsOpen && deal.nextActivity ? <DevtoolsNextStepDone key={`done-${detail.case.id}`} detail={detail} /> : null}
             <DevtoolsDealEditor detail={detail} label={dealNextStep ? "Schedule next step" : "Edit deal"} />
+            <DevtoolsFollowUpEmail detail={detail} />
           </div>
           <DevtoolsDealOutcome detail={detail} stages={stages} />
         </OverviewSection>
