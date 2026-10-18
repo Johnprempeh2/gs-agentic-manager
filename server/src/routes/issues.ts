@@ -16447,6 +16447,20 @@ export function issueRoutes(
 
       await queueTaskWatchdogEvaluation(issue, actor.runId);
       const changes = issueResponse.changes ?? {};
+      // Closing a parent leaves its open subtasks running; say so instead of refusing.
+      const openChildren = closingToStatus === "done"
+        ? await db
+          .select({ id: issueRows.id, identifier: issueRows.identifier, title: issueRows.title, status: issueRows.status })
+          .from(issueRows)
+          .where(and(
+            eq(issueRows.companyId, issue.companyId),
+            eq(issueRows.parentId, issue.id),
+            isNull(issueRows.hiddenAt),
+            notInArray(issueRows.status, ["done", "cancelled"]),
+          ))
+          .limit(20)
+        : [];
+      const warning = openChildren.length > 0 ? { openChildren } : {};
       if (prefersMinimalIssueUpdateResponse(req)) {
         res.setHeader("Preference-Applied", "return=minimal");
         res.json({
@@ -16455,10 +16469,11 @@ export function issueRoutes(
           updatedAt: issueResponse.updatedAt,
           changes,
           comment,
+          ...warning,
         });
         return;
       }
-      res.json({ ...issueResponse, changes, comment });
+      res.json({ ...issueResponse, changes, comment, ...warning });
     },
   );
 

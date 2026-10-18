@@ -20,7 +20,7 @@ if (!embeddedPostgresSupport.supported) {
   );
 }
 
-describeEmbeddedPostgres("issue list priority, creator and due date filters", () => {
+describeEmbeddedPostgres("issue deadline, priority and creator filters, and open subtask warning", () => {
   let db!: ReturnType<typeof createDb>;
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
@@ -147,5 +147,29 @@ describeEmbeddedPostgres("issue list priority, creator and due date filters", ()
     expect(titles(res.body)).toEqual(["Late and urgent", "Late but done"]);
     const board = await request(createApp(companyId)).get(`/api/companies/${companyId}/issues?createdByAgentId=me`);
     expect(board.status).toBe(400);
+  });
+
+  it("names open subtasks when a parent is marked done", async () => {
+    const { companyId } = await seed();
+    const parentId = randomUUID();
+    await db.insert(issues).values({ id: parentId, companyId, title: "Parent", status: "in_progress", priority: "medium" });
+    await db.insert(issues).values([
+      { companyId, parentId, title: "Child still open", status: "todo", priority: "medium" },
+      { companyId, parentId, title: "Child finished", status: "done", priority: "medium" },
+    ]);
+    const res = await request(createApp(companyId)).patch(`/api/issues/${parentId}`).send({ status: "done" });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.status).toBe("done");
+    expect(res.body.openChildren.map((child: { title: string }) => child.title)).toEqual(["Child still open"]);
+  });
+
+  it("adds no warning when a parent's subtasks are all finished", async () => {
+    const { companyId } = await seed();
+    const parentId = randomUUID();
+    await db.insert(issues).values({ id: parentId, companyId, title: "Parent", status: "in_progress", priority: "medium" });
+    await db.insert(issues).values({ companyId, parentId, title: "Child finished", status: "done", priority: "medium" });
+    const res = await request(createApp(companyId)).patch(`/api/issues/${parentId}`).send({ status: "done" });
+    expect(res.status, JSON.stringify(res.body)).toBe(200);
+    expect(res.body.openChildren).toBeUndefined();
   });
 });
