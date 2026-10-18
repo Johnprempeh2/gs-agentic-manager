@@ -1,5 +1,6 @@
 import { useWorkspaceIsolationControls } from "@/hooks/useWorkspaceIsolationControls";
 import { useOptionalToastActions } from "@/context/ToastContext";
+import { useConfirm } from "@/context/ConfirmContext";
 import { AgentIdentity } from "@/components/AgentIdentity";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { normalizeLegacyRunnerProvider } from "@greatstone/adapter-utils";
@@ -1138,6 +1139,7 @@ export function IssueProperties({
       setWatchdogOpen(false);
     },
   });
+  const confirmAction = useConfirm();
   const deleteWatchdog = useMutation({
     mutationFn: () => issuesApi.deleteWatchdog(issue.id),
     onSuccess: () => {
@@ -1155,8 +1157,15 @@ export function IssueProperties({
       instructions: watchdogInstructionsInput.trim() || null,
     });
   };
-  const removeWatchdog = () => {
+  const removeWatchdog = async () => {
     if (issue.watchdog) {
+      const ok = await confirmAction({
+        title: "Remove the watchdog?",
+        description: "The watchdog agent stops keeping an eye on this task, and its instructions are cleared.",
+        confirmLabel: "Remove watchdog",
+        tone: "destructive",
+      });
+      if (!ok) return;
       deleteWatchdog.mutate();
     } else {
       setWatchdogOpen(false);
@@ -1267,7 +1276,7 @@ export function IssueProperties({
           type="button"
           className="text-xs text-muted-foreground hover:text-destructive transition-colors disabled:opacity-50"
           disabled={deleteWatchdog.isPending || (!issue.watchdog && !watchdogAgentInput)}
-          onClick={removeWatchdog}
+          onClick={() => void removeWatchdog()}
         >
           {deleteWatchdog.isPending ? "Removing…" : "Remove"}
         </button>

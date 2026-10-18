@@ -317,7 +317,7 @@ export function UserProfile() {
             <span className="text-xs text-muted-foreground tabular-nums">{data.recentIssues.length}</span>
           </div>
           {data.recentIssues.length === 0 ? (
-            <div className="pt-4 text-sm text-muted-foreground">No touched tasks yet.</div>
+            <div className="pt-4 text-sm text-muted-foreground">No tasks yet. Tasks this person creates, comments on or is given show here.</div>
           ) : (
             <ul className="divide-y divide-border">
               {data.recentIssues.map((issue) => (
@@ -345,7 +345,7 @@ export function UserProfile() {
             <span className="text-xs text-muted-foreground tabular-nums">{data.recentActivity.length}</span>
           </div>
           {data.recentActivity.length === 0 ? (
-            <div className="pt-4 text-sm text-muted-foreground">No direct user actions recorded yet.</div>
+            <div className="pt-4 text-sm text-muted-foreground">Nothing recorded yet. Changes this person makes show here.</div>
           ) : (
             <ul className="divide-y divide-border">
               {data.recentActivity.map((event) => (

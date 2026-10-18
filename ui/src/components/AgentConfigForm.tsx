@@ -979,7 +979,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   const testEnvironment = useMutation({
     mutationFn: async () => {
       if (!selectedCompanyId) {
-        throw new Error("Choose an organisation to test adapter environment");
+        throw new Error("Choose an organisation before testing where this agent runs");
       }
       const flushedEnv = flushEnvironmentDraft();
       const adapterConfigPatch = flushedEnv ? { env: flushedEnv } : undefined;
@@ -1148,7 +1148,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     (!loginNeedsPty || providerSupportsLoginPty);
   const runEnvironmentTest = useCallback(async () => {
     if (!selectedCompanyId) {
-      throw new Error("Choose an organisation to test adapter environment");
+      throw new Error("Choose an organisation before testing where this agent runs");
     }
     setTestActionPending(true);
     setTestActionError(null);

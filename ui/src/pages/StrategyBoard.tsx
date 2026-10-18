@@ -237,7 +237,11 @@ export function StrategyBoard() {
               retrying={packsFetching}
             />
           ) : (
-            <p className="text-sm text-muted-foreground">No board pack yet.</p>
+            <p className="text-sm text-muted-foreground">
+              {rights.mayMakeBoardPack
+                ? "No board pack yet. Use Make board pack above to prepare one for your next meeting."
+                : "No board pack yet. Packs prepared for board meetings show here."}
+            </p>
           )}
         </section>
       </div>
