@@ -302,17 +302,10 @@ describe.sequential("cli auth routes", () => {
       "pcp_cli_auth_secret",
       "user-1",
     );
-    expect(mockLogActivity).toHaveBeenCalledTimes(1);
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-1",
-        action: "board_api_key.created",
-      }),
-    );
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it.sequential("logs approve activity for instance admins without company memberships", async () => {
+  it.sequential("delegates instance-admin approval and its audit to the service", async () => {
     mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
       status: "approved",
       challenge: {
@@ -337,15 +330,13 @@ describe.sequential("cli auth routes", () => {
       .send({ token: "pcp_cli_auth_secret" });
 
     expect(res.status).toBe(200);
-    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({
-      userId: "admin-1",
-      requestedCompanyId: null,
-      boardApiKeyId: "board-key-2",
-    });
-    expect(mockLogActivity).toHaveBeenCalledTimes(2);
+    expect(mockBoardAuthService.approveCliAuthChallenge).toHaveBeenCalledWith(
+      "12345678-1234-4123-8123-123456789def", "pcp_cli_auth_secret", "admin-1",
+    );
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
-  it.sequential("logs revoke activity with resolved audit company ids", async () => {
+  it.sequential("delegates CLI key revocation and its audit to the service", async () => {
     mockBoardAuthService.assertCurrentBoardKey.mockResolvedValue({
       id: "board-key-3",
       userId: "admin-2",
@@ -363,17 +354,10 @@ describe.sequential("cli auth routes", () => {
     const res = await request(app).post("/api/cli-auth/revoke-current").send({});
 
     expect(res.status).toBe(200);
-    expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({
-      userId: "admin-2",
-      boardApiKeyId: "board-key-3",
+    expect(mockBoardAuthService.revokeBoardApiKey).toHaveBeenCalledWith("board-key-3", {
+      userId: "admin-2", revokedVia: "cli_auth_logout",
     });
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-z",
-        action: "board_api_key.revoked",
-      }),
-    );
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it.sequential("creates a named board API key and logs audit activity", async () => {
@@ -468,13 +452,10 @@ describe.sequential("cli auth routes", () => {
     const revokeRes = await request(app).delete(`/api/board-api-keys/${keyId}`);
     expect(revokeRes.status).toBe(200);
     expect(revokeRes.body).toEqual({ ok: true, keyId });
-    expect(mockLogActivity).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        companyId: "company-1",
-        action: "board_api_key.revoked",
-      }),
-    );
+    expect(mockBoardAuthService.revokeBoardApiKey).toHaveBeenCalledWith(keyId, {
+      userId: "user-1", revokedVia: "board_api_key_lifecycle",
+    });
+    expect(mockLogActivity).not.toHaveBeenCalled();
   });
 
   it.sequential("rejects malformed board API key IDs before database lookup", async () => {
