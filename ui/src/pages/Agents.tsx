@@ -688,7 +688,7 @@ export function Agents({ initialView = "list" }: { initialView?: AgentsView } = 
 
       {view === "org" && orgTree && orgTree.length === 0 && (
         <p className="text-sm text-muted-foreground text-center py-8">
-          No organizational hierarchy defined.
+          No reporting lines yet. Set who each agent reports to on their page.
         </p>
       )}
       {teamsDialogOpen && (

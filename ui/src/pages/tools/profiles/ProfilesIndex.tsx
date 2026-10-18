@@ -289,7 +289,7 @@ export function ProfilesIndex({
                       <RowMenu
                         onEdit={open}
                         onDuplicate={() => duplicate.mutate(profile)}
-                        onArchive={() => archive.mutate(profile)}
+                        onArchive={() => setActionDialog({ kind: "archive", profile })}
                         onRestore={profile.status === "archived" ? () => setActionDialog({ kind: "restore", profile }) : undefined}
                         onDelete={() => setActionDialog({ kind: "delete", profile })}
                       />
@@ -306,7 +306,7 @@ export function ProfilesIndex({
       <ProfileActionDialog
         kind={actionDialog?.kind ?? null}
         profile={actionDialog?.profile ?? null}
-        pending={restore.isPending || remove.isPending}
+        pending={archive.isPending || restore.isPending || remove.isPending}
         onClose={() => setActionDialog(null)}
         onArchive={() => {
           if (!actionDialog) return;

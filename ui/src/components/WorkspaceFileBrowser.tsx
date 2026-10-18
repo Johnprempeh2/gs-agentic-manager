@@ -88,14 +88,14 @@ export function describeUnavailable(reason: string): { title: string; body: stri
     return {
       icon: <FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />,
       title: "No workspace yet",
-      body: "This issue does not have a workspace to browse. Files appear here once a run creates one.",
+      body: "This task has no files yet. They appear once an agent starts work on it.",
     };
   }
   if (lower.includes("archiv") || lower.includes("cleaned") || lower.includes("unavailable")) {
     return {
       icon: <FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />,
       title: "Workspace is no longer available",
-      body: "The isolated worktree for this issue has been cleaned up, so files cannot be previewed.",
+      body: "This task's work area has been cleared, so its files can no longer be opened.",
     };
   }
   return {

@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCompany } from "../context/CompanyContext";
 import { useDialogActions } from "../context/DialogContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { useCloudInstance } from "../hooks/useCloudInstance";
 import { companiesApi } from "../api/companies";
 import { queryKeys } from "../lib/queryKeys";
@@ -57,12 +58,20 @@ export function Companies() {
   const [editName, setEditName] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
+  const toastActions = useOptionalToastActions();
   const editMutation = useMutation({
     mutationFn: ({ id, newName }: { id: string; newName: string }) =>
       companiesApi.update(id, { name: newName }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       setEditingId(null);
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Could not rename the organisation",
+        body: error instanceof Error && error.message.trim() ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 
@@ -72,6 +81,13 @@ export function Companies() {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
       setConfirmDeleteId(null);
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Could not delete the organisation",
+        body: error instanceof Error && error.message.trim() ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 
@@ -86,10 +102,17 @@ export function Companies() {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.stats });
     },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Could not restore the organisation",
+        body: error instanceof Error && error.message.trim() ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
 
   useEffect(() => {
-    setBreadcrumbs([{ label: "Organizations" }]);
+    setBreadcrumbs([{ label: "Organisations" }]);
   }, [setBreadcrumbs]);
 
   function startEdit(companyId: string, currentName: string) {
@@ -113,13 +136,13 @@ export function Companies() {
         {isCloud ? null : (
           <Button size="sm" onClick={() => openOnboarding()}>
             <Plus className="h-3.5 w-3.5 mr-1.5" />
-            New Organization
+            New organisation
           </Button>
         )}
       </div>
 
       <div className="h-6">
-        {loading && <p className="text-sm text-muted-foreground">Loading organizations...</p>}
+        {loading && <p className="text-sm text-muted-foreground">Loading organisations…</p>}
         {error && <p className="text-sm text-destructive">{error.message}</p>}
       </div>
 
@@ -259,7 +282,7 @@ export function Companies() {
                         onClick={() => setConfirmDeleteId(company.id)}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
-                        Delete Organization
+                        Delete organisation
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

@@ -466,7 +466,7 @@ export function MobileFolderSheet({
             <>
               {model.my ? renderBranch(model.my, "My Skills") : null}
               <div className="px-2 pb-0.5 pt-2 text-(length:--text-micro) font-medium uppercase tracking-wide text-muted-foreground">
-                Organization
+                Organisation
               </div>
               {model.company.map((node) => renderBranch(node))}
               {model.projects ? renderBranch(model.projects, "Projects") : null}
@@ -637,7 +637,7 @@ export function FolderFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit folder" : "Create folder"}</DialogTitle>
           <DialogDescription>
-            {kind === "routine" ? "Organize routines in this organisation." : "Organize installed organization skills."}
+            {kind === "routine" ? "Sort your organisation's routines into folders." : "Sort your organisation's skills into folders."}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">

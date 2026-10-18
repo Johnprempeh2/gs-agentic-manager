@@ -1556,6 +1556,7 @@ describe("CompanyEnvironments — test provider button", () => {
       expect(findButton(dialog!, "Disable")).toBeTruthy();
     });
 
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => click(findButton(getEnvironmentFormPage()!, "Rollback")));
     await waitForAssertion(() => {
       expect(mockEnvironmentsApi.rollbackCustomImageTemplate).toHaveBeenCalledExactlyOnceWith("env-1", "company-1");

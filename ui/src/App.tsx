@@ -640,13 +640,13 @@ export function OnboardingRoutePage() {
   const title = matchedCompany
     ? `Add another agent to ${matchedCompany.name}`
     : companies.length > 0
-      ? "Create another organization"
-      : "Create your first organization";
+      ? "Create another organisation"
+      : "Create your first organisation";
   const description = matchedCompany
-    ? "Run onboarding again to add an agent and a starter task for this organization."
+    ? "Run onboarding again to add an agent and a starter task for this organisation."
     : companies.length > 0
-      ? "Run onboarding again to create another organization and seed its first agent."
-      : "Get started by creating an organization and your first agent.";
+      ? "Run onboarding again to create another organisation and seed its first agent."
+      : "Get started by creating an organisation and your first agent.";
 
   return (
     <div className="mx-auto max-w-xl py-10">
@@ -781,10 +781,10 @@ function NoCompaniesStartPage() {
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">
-          {t("app.noCompanies.title", { defaultValue: "Create your first organization" })}
+          {t("app.noCompanies.title", { defaultValue: "Create your first organisation" })}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          {t("app.noCompanies.description", { defaultValue: "Get started by creating an organization." })}
+          {t("app.noCompanies.description", { defaultValue: "Get started by creating an organisation." })}
         </p>
         <div className="mt-4">
           {/* Same as the onboarding route: no Cloud origin means nowhere to
@@ -804,7 +804,7 @@ function NoCompaniesStartPage() {
                   : openOnboarding()
               }
             >
-              {t("app.noCompanies.newCompany", { defaultValue: "New Organization" })}
+              {t("app.noCompanies.newCompany", { defaultValue: "New organisation" })}
             </Button>
           )}
         </div>

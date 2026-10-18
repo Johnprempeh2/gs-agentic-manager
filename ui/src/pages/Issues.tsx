@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useCallback, useRef, useState } from "react";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { useLocation, useSearchParams } from "@/lib/router";
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { issuesApi } from "../api/issues";
@@ -206,11 +207,19 @@ export function Issues() {
     });
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
+  const toastActions = useOptionalToastActions();
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
       issuesApi.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.issues.list(selectedCompanyId!) });
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Could not update the task",
+        body: error instanceof Error && error.message.trim() ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 

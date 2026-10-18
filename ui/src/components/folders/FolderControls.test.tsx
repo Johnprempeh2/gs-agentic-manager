@@ -426,8 +426,8 @@ describe("FolderControls", () => {
     });
 
     const body = document.body.textContent ?? "";
-    expect(body.indexOf("My Skills")).toBeLessThan(body.indexOf("Organization"));
-    expect(body.indexOf("Organization")).toBeLessThan(body.indexOf("Engineering"));
+    expect(body.indexOf("My Skills")).toBeLessThan(body.indexOf("Organisation"));
+    expect(body.indexOf("Organisation")).toBeLessThan(body.indexOf("Engineering"));
     expect(body.indexOf("Engineering")).toBeLessThan(body.indexOf("Code Review"));
     expect(body.indexOf("Code Review")).toBeLessThan(body.indexOf("Projects"));
     expect(body.indexOf("Projects")).toBeLessThan(body.indexOf("Bundled"));

@@ -271,7 +271,7 @@ describe("CompanyAccess", () => {
     });
     await flushReact();
 
-    expect(document.body.textContent).toContain("Update organization role and membership status");
+    expect(document.body.textContent).toContain("Change the role and access for");
     expect(document.body.textContent).not.toContain("Implicit grants from role");
     expect(document.body.textContent).not.toContain("permissionKey");
 
@@ -638,7 +638,7 @@ describe("CompanyAccess invites tab", () => {
 
     const tabLabels = [...container.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent);
     expect(tabLabels).toEqual(["Members", "Invites"]);
-    expect(container.textContent).toContain("Organization Members");
+    expect(container.textContent).toContain("Organisation members");
     expect(container.textContent).not.toContain("Invite a person");
     expect(container.textContent).not.toContain("Invite people");
     expect(listCloudStacksMock).not.toHaveBeenCalled();
@@ -668,7 +668,7 @@ describe("CompanyAccess invites tab", () => {
 
     expect(container.querySelectorAll('[role="tab"]')).toHaveLength(0);
     expect(container.textContent).not.toContain("Invite a person");
-    expect(container.textContent).toContain("Organization Members");
+    expect(container.textContent).toContain("Organisation members");
     expect(listInvitesMock).not.toHaveBeenCalled();
 
     await act(async () => {

@@ -16,13 +16,13 @@ function NoBoardAccessPage() {
   return (
     <div className="mx-auto max-w-xl py-10">
       <Card className="block p-6">
-        <h1 className="text-xl font-semibold">No organization access</h1>
+        <h1 className="text-xl font-semibold">You are not part of an organisation yet</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           This account is signed in, but it does not have an active organisation membership or instance-admin access on
           this GS Agentic Manager instance.
         </p>
         <p className="mt-2 text-sm text-muted-foreground">
-          Use an organization invite or sign in with an account that already belongs to this org.
+          Ask someone in your organisation to invite you, or sign in with the account you were invited on.
         </p>
       </Card>
     </div>
