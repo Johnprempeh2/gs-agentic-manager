@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import type { Goal } from "@greatstone/shared";
-import { createGoalSchema, updateGoalSchema } from "@greatstone/shared";
+import { createGoalCheckInSchema, createGoalSchema, updateGoalSchema } from "@greatstone/shared";
 import {
   addCommonClientOptions,
   apiPath,
@@ -169,6 +169,60 @@ export function registerGoalCommands(program: Command): void {
         }
       }),
   );
+
+  addCommonClientOptions(
+    goal
+      .command("check-in")
+      .description("Post a progress check-in on a goal you own")
+      .argument("<goalId>", "Goal ID")
+      .requiredOption("--body <text>", "What moved since the last check-in")
+      .option("--progress <percent>", "Progress from 0 to 100")
+      .option("--blocker <text>", "Something in the way; repeat for several", collectRepeated, [] as string[])
+      .action(async (goalId: string, opts: BaseClientOptions & { body: string; progress?: string; blocker?: string[] }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = createGoalCheckInSchema.parse({
+            body: opts.body,
+            progressPercent: opts.progress === undefined ? undefined : Number(opts.progress),
+            blockers: opts.blocker ?? [],
+          });
+          const created = await ctx.api.post(apiPath`/api/goals/${goalId}/check-ins`, payload);
+          printOutput(created, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    goal
+      .command("check-ins")
+      .description("List a goal's check-ins")
+      .argument("<goalId>", "Goal ID")
+      .action(async (goalId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const rows =
+            (await ctx.api.get<Array<{ id: string; body: string; progressPercent: number | null; createdAt: string }>>(
+              apiPath`/api/goals/${goalId}/check-ins`,
+            )) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(formatInlineRecord({ id: row.id, createdAt: row.createdAt, progress: row.progressPercent, body: row.body }));
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+}
+
+function collectRepeated(value: string, previous: string[]): string[] {
+  return [...previous, value];
 }
 
 function parseNullableString(value: string | undefined): string | null | undefined {

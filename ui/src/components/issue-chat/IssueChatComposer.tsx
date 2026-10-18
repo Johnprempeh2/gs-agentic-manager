@@ -37,6 +37,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { type MarkdownEditorRef, MarkdownEditor } from "../MarkdownEditor";
+import { ReplySnippetsButton } from "./ReplySnippetsButton";
 import { InlineEntitySelector } from "../InlineEntitySelector";
 import {
   type HandoffChipResolvers,
@@ -998,6 +999,14 @@ export const IssueChatComposer = forwardRef<
               </Button>
             </>
           ) : null}
+          <ReplySnippetsButton
+            currentBody={body}
+            disabled={!!uncertainSubmission}
+            onInsert={(text) => {
+              changeBody((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
+              requestAnimationFrame(() => editorRef.current?.focus());
+            }}
+          />
           {canToggleWorkMode ? (
             <Popover open={workModeMenuOpen} onOpenChange={setWorkModeMenuOpen}>
               <PopoverTrigger asChild>

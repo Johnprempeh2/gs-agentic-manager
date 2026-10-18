@@ -315,6 +315,118 @@ export function registerAgentCommands(program: Command): void {
 
   addCommonClientOptions(
     agent
+      .command("budget")
+      .description("Show the current agent's spend this month against its monthly budget")
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const me = await ctx.api.get<Agent>("/api/agents/me");
+          const summary = agentBudgetSummary(me?.budgetMonthlyCents ?? 0, me?.spentMonthlyCents ?? 0);
+          if (ctx.json) {
+            printOutput(summary, { json: true });
+            return;
+          }
+          console.log(summary.text);
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
+      .command("approvals")
+      .description("List approval requests the current agent filed that are still open, oldest first")
+      .option("--all", "Include approved, rejected and cancelled requests")
+      .action(async (opts: BaseClientOptions & { all?: boolean }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const rows =
+            (await ctx.api.get<Array<{ id: string; type: string; status: string; decisionNote: string | null; ageDays: number }>>(
+              `/api/agents/me/approvals${opts.all ? "?all=true" : ""}`,
+            )) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(
+              formatInlineRecord({ id: row.id, type: row.type, status: row.status, ageDays: row.ageDays, note: row.decisionNote }),
+            );
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
+      .command("waiting")
+      .description("List the current agent's tasks that other open tasks are waiting on, biggest chain first")
+      .action(async (opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const rows =
+            (await ctx.api.get<Array<{
+              issue: { id: string; identifier: string | null; title: string; status: string };
+              action: string | null;
+              waitingCount: number;
+            }>>("/api/agents/me/waiting-on-me")) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(
+              formatInlineRecord({
+                identifier: row.issue.identifier,
+                id: row.issue.id,
+                status: row.issue.status,
+                waiting: row.waitingCount,
+                title: row.issue.title,
+              }),
+            );
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
+      .command("failures")
+      .description("Show the current agent's last failed runs and their errors")
+      .option("--limit <n>", "How many to show (1 to 20)", "5")
+      .action(async (opts: AgentDoneOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const params = new URLSearchParams({ limit: opts.limit ?? "5" });
+          const rows =
+            (await ctx.api.get<Array<{ id: string; status: string; createdAt: string; errorCode: string | null; error: string | null }>>(
+              `/api/agents/me/failed-runs?${params.toString()}`,
+            )) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(
+              formatInlineRecord({ id: row.id, status: row.status, createdAt: row.createdAt, errorCode: row.errorCode, error: row.error }),
+            );
+          }
+          if (rows.length === 0) printOutput([], { json: false });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    agent
       .command("find")
       .description("Find colleagues who can help, ranked by their capabilities, title and role")
       .argument("<query>", "What you need help with, such as \"seo audit\"")
@@ -957,4 +1069,26 @@ function parseJson(value: string): unknown {
 function parseCsv(value: string | undefined): string[] {
   if (!value) return [];
   return value.split(",").map((part) => part.trim()).filter(Boolean);
+}
+
+function formatDollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+/** "Spent $12.40 of $50.00 this month (25%)"; a budget of 0 means no cap is set. */
+export function agentBudgetSummary(budgetMonthlyCents: number, spentMonthlyCents: number) {
+  const budget = Math.max(0, budgetMonthlyCents);
+  const spent = Math.max(0, spentMonthlyCents);
+  if (budget === 0) {
+    return { budgetMonthlyCents: 0, spentMonthlyCents: spent, remainingCents: null, percentUsed: null, text: `Spent ${formatDollars(spent)} this month. No monthly budget is set.` };
+  }
+  const remaining = Math.max(0, budget - spent);
+  const percent = Math.round((spent / budget) * 100);
+  return {
+    budgetMonthlyCents: budget,
+    spentMonthlyCents: spent,
+    remainingCents: remaining,
+    percentUsed: percent,
+    text: `Spent ${formatDollars(spent)} of ${formatDollars(budget)} this month (${percent}%). ${formatDollars(remaining)} left.`,
+  };
 }

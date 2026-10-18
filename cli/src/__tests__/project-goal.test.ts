@@ -158,4 +158,38 @@ describe("project and goal commands", () => {
     expect(fetchMock.mock.calls[3]?.[0]).toBe(`http://localhost:3100/api/goals/${GOAL_ID}`);
     expect(fetchMock.mock.calls[3]?.[1]?.method).toBe("DELETE");
   });
+
+  it("posts and lists goal check-ins", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "ci1", body: "Shipped the page" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ id: "ci1", body: "Shipped the page", progressPercent: 40, createdAt: "2026-10-18" }]), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await createProgram().parseAsync([
+      "goal", "check-in", GOAL_ID,
+      "--api-base", "http://localhost:3100",
+      "--api-key", "board-token",
+      "--body", "Shipped the page",
+      "--progress", "40",
+      "--blocker", "Waiting on copy",
+      "--blocker", "No budget for ads",
+    ], { from: "user" });
+
+    await createProgram().parseAsync([
+      "goal", "check-ins", GOAL_ID,
+      "--api-base", "http://localhost:3100",
+      "--api-key", "board-token",
+    ], { from: "user" });
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/goals/${GOAL_ID}/check-ins`);
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      body: "Shipped the page",
+      progressPercent: 40,
+      blockers: ["Waiting on copy", "No budget for ads"],
+    });
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`http://localhost:3100/api/goals/${GOAL_ID}/check-ins`);
+  });
 });

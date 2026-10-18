@@ -15,6 +15,19 @@ describe("buildProjectListMetricMaps", () => {
     expect(taskCountByProjectId.get("p2")).toBe(11);
   });
 
+  it("maps finished task counts, defaulting to zero", () => {
+    const { doneTaskCountByProjectId } = buildProjectListMetricMaps(
+      [
+        { projectId: "p1", count: 24, doneCount: 7 },
+        { projectId: "p2", count: 3 },
+      ],
+      [],
+    );
+
+    expect(doneTaskCountByProjectId.get("p1")).toBe(7);
+    expect(doneTaskCountByProjectId.get("p2")).toBe(0);
+  });
+
   it("ignores task-count rows with a null project id", () => {
     const { taskCountByProjectId } = buildProjectListMetricMaps(
       [{ projectId: null, count: 5 }],
