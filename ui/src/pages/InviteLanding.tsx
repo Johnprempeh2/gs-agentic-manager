@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AGENT_ADAPTER_TYPES } from "@greatstone/shared";
+import { AGENT_ADAPTER_TYPES, PASSWORD_RULE_HINT, passwordProblem } from "@greatstone/shared";
 import type { AgentAdapterType, JoinRequest } from "@greatstone/shared";
 import { Button } from "@/components/ui/button";
 import { CompanyPatternIcon } from "@/components/CompanyPatternIcon";
@@ -326,7 +326,7 @@ export function InviteLandingPage() {
   const authCanSubmit =
     email.trim().length > 0 &&
     password.trim().length > 0 &&
-    (authMode === "sign_in" || (name.trim().length > 0 && password.trim().length >= 8));
+    (authMode === "sign_in" || (name.trim().length > 0 && !passwordProblem(password, { email })));
 
   const acceptMutation = useMutation({
     mutationFn: async () => {
@@ -728,7 +728,8 @@ export function InviteLandingPage() {
                     event.preventDefault();
                     if (authMutation.isPending) return;
                     if (!authCanSubmit) {
-                      setAuthFeedback({ tone: "error", message: "Please fill in all required fields." });
+                      const weak = authMode === "sign_up" && password.length > 0 ? passwordProblem(password, { email }) : null;
+                      setAuthFeedback({ tone: "error", message: weak ?? "Please fill in all required fields." });
                       return;
                     }
                     authMutation.mutate();
@@ -792,9 +793,12 @@ export function InviteLandingPage() {
                       required
                       aria-required="true"
                       aria-invalid={authFeedback?.tone === "error" ? true : undefined}
-                      aria-describedby={authFeedback ? authErrorId : undefined}
+                      aria-describedby={[authFeedback ? authErrorId : null, authMode === "sign_up" ? "invite-password-rule" : null].filter(Boolean).join(" ") || undefined}
                     />
                   </label>
+                  {authMode === "sign_up" ? (
+                    <p id="invite-password-rule" className="-mt-2 text-xs text-muted-foreground">{PASSWORD_RULE_HINT}</p>
+                  ) : null}
                   {authFeedback ? (
                     <p
                       id={authErrorId}

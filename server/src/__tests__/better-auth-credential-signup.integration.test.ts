@@ -434,4 +434,40 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
     expect(afterRestart.status).toBe(429);
     expect(afterRestart.body?.code).toBe("SIGN_IN_LOCKED");
   });
+
+  it("refuses a weak new password at sign-up and at password change", async () => {
+    for (const [email, password, expected] of [
+      ["weak-short@example.com", "short-pass1", "at least 12"],
+      ["weak-common@example.com", "Password1234", "too well known"],
+      ["annabel.smith@example.com", "annabel.smith2026", "email address"],
+    ] as const) {
+      const res = await request(app)
+        .post("/api/auth/sign-up/email")
+        .set("origin", ORIGIN)
+        .send({ email, password, name: "Weak" });
+      expect(res.status, email).toBe(400);
+      expect(res.body?.code).toBe("WEAK_PASSWORD");
+      expect(res.body?.message).toContain(expected);
+      expect(await db.select().from(authUsers).where(eq(authUsers.email, email))).toHaveLength(0);
+    }
+
+    const signUp = await request(app)
+      .post("/api/auth/sign-up/email")
+      .set("origin", ORIGIN)
+      .send({ email: "changer@example.com", password: PASSWORD, name: "Changer" });
+    expect(signUp.status).toBe(200);
+    const change = await request(app)
+      .post("/api/auth/change-password")
+      .set("origin", ORIGIN)
+      .set("cookie", cookieHeader(signUp))
+      .send({ currentPassword: PASSWORD, newPassword: "qwerty123456" });
+    expect(change.status).toBe(400);
+    expect(change.body?.code).toBe("WEAK_PASSWORD");
+    const changed = await request(app)
+      .post("/api/auth/change-password")
+      .set("origin", ORIGIN)
+      .set("cookie", cookieHeader(signUp))
+      .send({ currentPassword: PASSWORD, newPassword: "a quiet morning by the sea" });
+    expect(changed.status, JSON.stringify(changed.body)).toBe(200);
+  });
 });

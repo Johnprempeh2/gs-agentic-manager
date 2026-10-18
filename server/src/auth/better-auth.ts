@@ -12,9 +12,11 @@ import {
   authUsers,
   authVerifications,
 } from "@greatstone/db";
+import { PASSWORD_MIN_LENGTH } from "@greatstone/shared";
 import type { Config } from "../config.js";
 import { resolvePaperclipInstanceId } from "../home-paths.js";
 import { inviteSignUpGatePlugin } from "./invite-sign-up-gate.js";
+import { passwordPolicyPlugin } from "./password-policy-plugin.js";
 import {
   DEFAULT_SIGN_IN_LOCKOUT,
   createSignInLockout,
@@ -308,6 +310,10 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     // create the account the invite landing page then accepts it with. Every
     // other sign-up gets Better Auth's usual "sign up is not enabled" refusal.
     ...(config.authDisableSignUp ? [inviteSignUpGatePlugin({ db })] : []),
+    // Every new password: 12 characters or more, not well known, not made
+    // from the email. After the invite gate, so a sign-up without an invite
+    // still gets the usual refusal.
+    ...(config.deploymentMode === "authenticated" ? [passwordPolicyPlugin()] : []),
     // Registered only for a managed workspace instance: the plugin is what makes
     // `Open workspace` password-independent, and a control-plane instance that
     // was never handed a workspace key must not expose the exchange at all.
@@ -347,6 +353,9 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins:
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
+      // `passwordPolicyPlugin` holds new passwords to the full rule; this is
+      // Better Auth's own floor behind it.
+      ...(config.deploymentMode === "authenticated" ? { minPasswordLength: PASSWORD_MIN_LENGTH } : {}),
       // Always false at the library level: when GSAM's `authDisableSignUp` is
       // set, `inviteSignUpGatePlugin` (above) is the gate and refuses every
       // sign-up that does not carry a valid human invite.

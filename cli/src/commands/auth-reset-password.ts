@@ -46,7 +46,7 @@ async function promptForPassword(): Promise<string | null> {
     p.log.error("No terminal to ask for the password. Use --password-stdin or --generate.");
     return null;
   }
-  const first = await p.password({ message: "New password (8+ characters)" });
+  const first = await p.password({ message: "New password (12+ characters)" });
   if (p.isCancel(first)) return null;
   const second = await p.password({ message: "Type it again" });
   if (p.isCancel(second)) return null;
