@@ -52,16 +52,23 @@ export function registerApprovalCommands(program: Command): void {
       .description("List approvals for a company")
       .requiredOption("-C, --company-id <id>", "Company ID")
       .option("--status <status>", "Status filter")
-      .action(async (opts: ApprovalListOptions) => {
+      .option("--older-than <days>", "Only approvals waiting at least this many days")
+      .action(async (opts: ApprovalListOptions & { olderThan?: string }) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
           const params = new URLSearchParams();
           if (opts.status) params.set("status", opts.status);
           const query = params.toString();
-          const rows =
+          const now = Date.now();
+          const minDays = opts.olderThan === undefined ? null : Number(opts.olderThan);
+          if (minDays !== null && (!Number.isFinite(minDays) || minDays < 0)) {
+            throw new Error("--older-than must be a number of days, such as 3");
+          }
+          const rows = (
             (await ctx.api.get<Approval[]>(
               `${apiPath`/api/companies/${ctx.companyId}/approvals`}${query ? `?${query}` : ""}`,
-            )) ?? [];
+            )) ?? []
+          ).filter((row) => minDays === null || approvalAgeDays(row.createdAt, now) >= minDays);
 
           if (ctx.json) {
             printOutput(rows, { json: true });
@@ -79,6 +86,7 @@ export function registerApprovalCommands(program: Command): void {
                 id: row.id,
                 type: row.type,
                 status: row.status,
+                ageDays: approvalAgeDays(row.createdAt, now),
                 requestedByAgentId: row.requestedByAgentId,
                 requestedByUserId: row.requestedByUserId,
               }),
@@ -101,6 +109,32 @@ export function registerApprovalCommands(program: Command): void {
           const ctx = resolveCommandContext(opts);
           const row = await ctx.api.get<Approval>(apiPath`/api/approvals/${approvalId}`);
           printOutput(row, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    approval
+      .command("issues")
+      .description("List the tasks linked to an approval")
+      .argument("<approvalId>", "Approval ID")
+      .action(async (approvalId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const rows =
+            (await ctx.api.get<Array<{ id: string; identifier: string | null; title: string; status: string }>>(
+              apiPath`/api/approvals/${approvalId}/issues`,
+            )) ?? [];
+          if (ctx.json) {
+            printOutput(rows, { json: true });
+            return;
+          }
+          for (const row of rows) {
+            console.log(formatInlineRecord({ identifier: row.identifier, id: row.id, status: row.status, title: row.title }));
+          }
+          if (rows.length === 0) printOutput([], { json: false });
         } catch (err) {
           handleCommandError(err);
         }
@@ -257,4 +291,11 @@ function parseJsonObject(value: string, name: string): Record<string, unknown> {
   } catch (err) {
     throw new Error(`Invalid ${name} JSON: ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+/** Whole days an approval has waited since it was filed. */
+export function approvalAgeDays(createdAt: string | Date, now: number = Date.now()): number {
+  const created = new Date(createdAt).getTime();
+  if (!Number.isFinite(created)) return 0;
+  return Math.max(0, Math.floor((now - created) / 86_400_000));
 }
