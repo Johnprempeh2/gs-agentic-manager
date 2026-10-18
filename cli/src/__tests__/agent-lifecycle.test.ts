@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { agentBudgetSummary, registerAgentCommands } from "../commands/client/agent.js";
+import { agentBudgetSummary, agentTodayDigest, registerAgentCommands } from "../commands/client/agent.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const AGENT_ID = "11111111-1111-4111-8111-111111111111";
@@ -157,6 +157,62 @@ describe("agent lifecycle commands", () => {
     expect(agentBudgetSummary(5000, 1240).text).toBe("Spent $12.40 of $50.00 this month (25%). $37.60 left.");
     expect(agentBudgetSummary(0, 300)).toMatchObject({ remainingCents: null, text: "Spent $3.00 this month. No monthly budget is set." });
     expect(agentBudgetSummary(1000, 1500)).toMatchObject({ remainingCents: 0, percentUsed: 150 });
+  });
+
+  it("builds the today summary, most pressing first", () => {
+    const digest = agentTodayDigest({
+      inbox: [
+        { id: "a", identifier: "GRE-1", title: "Late brief", status: "in_progress", priority: "high", dueDate: "2026-10-15" },
+        { id: "b", identifier: "GRE-2", title: "Call notes", status: "todo", priority: "medium", dueDate: "2026-10-18" },
+        { id: "c", identifier: "GRE-3", title: "Waiting on legal", status: "blocked", priority: "low", dueDate: null },
+      ],
+      waiting: [{ issue: { id: "a", identifier: "GRE-1", title: "Late brief" }, waitingCount: 3 }],
+      openApprovals: 1,
+      recentFailures: 2,
+      budgetMonthlyCents: 5000,
+      spentMonthlyCents: 1000,
+      today: "2026-10-18",
+    });
+    expect(digest.lines).toEqual([
+      "Open tasks: 1 in progress, 1 to do, 1 blocked.",
+      "Overdue since 2026-10-15: GRE-1 Late brief",
+      "Due today: GRE-2 Call notes",
+      "3 tasks wait on: GRE-1 Late brief",
+      "Blocked: GRE-3 Waiting on legal",
+      "1 approval request is still open (gsam agent approvals).",
+      "2 recent failed runs; read them before retrying (gsam agent failures).",
+      "Spent $10.00 of $50.00 this month (20%). $40.00 left.",
+    ]);
+    expect(digest.counts).toMatchObject({ overdue: 1, dueToday: 1, blocked: 1 });
+
+    const empty = agentTodayDigest({ inbox: [], waiting: [], openApprovals: 0, recentFailures: 0, budgetMonthlyCents: 0, spentMonthlyCents: 0, today: "2026-10-18" });
+    expect(empty.lines.at(-1)).toBe("Nothing is assigned to you right now.");
+  });
+
+  it("agent secrets lists names without values", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse({ secrets: [{ key: "NETLIFY_TOKEN", name: "Netlify", delivery: "env", description: null, resolvedVersion: 2 }] })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["agent", "secrets"]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://localhost:3100/api/agents/me/secrets");
+    const lines = (console.log as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((call) => String(call[0]));
+    expect(lines.some((line) => line.includes("NETLIFY_TOKEN") && line.includes("env"))).toBe(true);
+  });
+
+  it("agent today reads the agent's own endpoints", async () => {
+    const fetchMock = vi.fn((url: string) => Promise.resolve(jsonResponse(url.endsWith("/api/agents/me") ? { id: "agent-1", budgetMonthlyCents: 0, spentMonthlyCents: 0 } : [])));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["agent", "today"]);
+
+    expect(fetchMock.mock.calls.map((call) => call[0]).sort()).toEqual([
+      "http://localhost:3100/api/agents/me",
+      "http://localhost:3100/api/agents/me/approvals",
+      "http://localhost:3100/api/agents/me/failed-runs?limit=5",
+      "http://localhost:3100/api/agents/me/inbox-lite",
+      "http://localhost:3100/api/agents/me/waiting-on-me",
+    ]);
   });
 
   it("lists what waits on the agent and its last failures", async () => {

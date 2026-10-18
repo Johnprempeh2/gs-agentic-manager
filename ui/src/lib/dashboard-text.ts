@@ -22,7 +22,7 @@ export function dashboardNumbersText(data: DashboardSummary, now: Date = new Dat
   return [
     `Dashboard, ${formatShortDate(now)}`,
     `• Agents: ${enabled} on (${agents.running} running, ${agents.paused} paused, ${agents.error} with errors)`,
-    `• Tasks: ${tasks.inProgress} in progress, ${tasks.open} open, ${tasks.blocked} blocked`,
+    `• Tasks: ${tasks.inProgress} in progress, ${tasks.open} open, ${tasks.blocked} blocked${tasks.overdue ? `, ${tasks.overdue} overdue` : ""}`,
     `• Spend this month: ${formatCents(costs.monthSpendCents)}${budget}`,
     `• Approvals waiting: ${approvals}`,
   ].join("\n");

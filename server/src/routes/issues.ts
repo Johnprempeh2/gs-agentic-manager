@@ -158,6 +158,7 @@ import {
   issueWriteDenialResponse,
   type IssueWriteDenialCode,
   type IssueWriteDenialContext,
+  ISSUE_PRIORITIES,
 } from "@greatstone/shared";
 import { trackAgentTaskCompleted } from "@greatstone/shared/telemetry";
 import { getTelemetryClient } from "../telemetry.js";
@@ -8629,6 +8630,34 @@ export function issueRoutes(
     const includeLiveDescendantSummary = parseOptionalBooleanQuery(
       req.query.includeLiveDescendantSummary,
     );
+    const priorityRaw = req.query.priority as string | string[] | undefined;
+    const priorityFilter = (Array.isArray(priorityRaw) ? priorityRaw : priorityRaw === undefined ? [] : [priorityRaw])
+      .flatMap((entry) => (typeof entry === "string" ? entry.split(",") : []))
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (priorityFilter.some((value) => !(ISSUE_PRIORITIES as readonly string[]).includes(value))) {
+      res.status(400).json({ error: `priority must be one of ${ISSUE_PRIORITIES.join(", ")}` });
+      return;
+    }
+    const createdByAgentRaw = req.query.createdByAgentId as string | undefined;
+    // "me" lets an agent follow up on the tasks it handed out.
+    const createdByAgentId = createdByAgentRaw === "me"
+      ? (req.actor.type === "agent" ? req.actor.agentId : undefined)
+      : createdByAgentRaw;
+    if (createdByAgentRaw === "me" && !createdByAgentId) {
+      res.status(400).json({ error: "createdByAgentId=me needs an agent key" });
+      return;
+    }
+    if (createdByAgentId !== undefined && !isUuidLike(createdByAgentId)) {
+      res.status(400).json({ error: "createdByAgentId must be an agent id or me" });
+      return;
+    }
+    const dueBefore = req.query.dueBefore as string | undefined;
+    if (dueBefore !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(dueBefore)) {
+      res.status(400).json({ error: "dueBefore must be a date such as 2026-10-31" });
+      return;
+    }
+    const overdue = parseOptionalBooleanQuery(req.query.overdue) === true;
     const assigneeAgentFilterRaw = req.query.assigneeAgentId;
     let assigneeAgentId: string | null | undefined;
     const rawUpdatedSince = req.query.updatedSince as string | undefined;
@@ -8816,6 +8845,10 @@ export function issueRoutes(
       afterId: req.query.afterId as string | undefined,
       sortDir: sortDir === "asc" || sortDir === "desc" ? sortDir : undefined,
       updatedSince: rawUpdatedSince,
+      priority: priorityFilter.length > 0 ? priorityFilter : undefined,
+      createdByAgentId,
+      dueOnOrBefore: dueBefore,
+      overdue: overdue || undefined,
     };
     const requestKey = issueListRequestKey({
       req,
@@ -16417,6 +16450,27 @@ export function issueRoutes(
 
       await queueTaskWatchdogEvaluation(issue, actor.runId);
       const changes = issueResponse.changes ?? {};
+      // Closing a parent leaves its open subtasks running; say so instead of refusing.
+      // The update is already saved, so a failed lookup only drops the warning.
+      let openChildren: Array<{ id: string; identifier: string | null; title: string; status: string }> = [];
+      if (closingToStatus === "done") {
+        try {
+          const rows = await db
+            .select({ id: issueRows.id, identifier: issueRows.identifier, title: issueRows.title, status: issueRows.status })
+            .from(issueRows)
+            .where(and(
+              eq(issueRows.companyId, issue.companyId),
+              eq(issueRows.parentId, issue.id),
+              isNull(issueRows.hiddenAt),
+              notInArray(issueRows.status, ["done", "cancelled"]),
+            ))
+            .limit(20);
+          openChildren = Array.isArray(rows) ? rows : [];
+        } catch (err) {
+          logger.warn({ err, issueId: issue.id }, "failed to list open subtasks after closing a parent");
+        }
+      }
+      const warning = openChildren.length > 0 ? { openChildren } : {};
       if (prefersMinimalIssueUpdateResponse(req)) {
         res.setHeader("Preference-Applied", "return=minimal");
         res.json({
@@ -16425,10 +16479,11 @@ export function issueRoutes(
           updatedAt: issueResponse.updatedAt,
           changes,
           comment,
+          ...warning,
         });
         return;
       }
-      res.json({ ...issueResponse, changes, comment });
+      res.json({ ...issueResponse, changes, comment, ...warning });
     },
   );
 

@@ -67,6 +67,7 @@ import { cn } from "../lib/utils";
 import { AgentStatusHistory } from "../components/AgentStatusHistory";
 import { MoveOpenTasksBanner } from "../components/MoveOpenTasksBanner";
 import { budgetUseLabel } from "../lib/agents-export";
+import { agentWorkloadLine } from "../lib/agent-workload";
 import { agentMonthLine } from "../lib/spend-pace";
 import { describeRunRetryState } from "../lib/runRetryState";
 import { Button } from "@/components/ui/button";
@@ -1794,6 +1795,7 @@ export function AgentOverview({
   const lastRun = runs[0] ?? null;
   const budgetUse = budgetUseLabel(agent);
   const monthLine = agentMonthLine(agent);
+  const workloadLine = agentWorkloadLine(assignedIssues, agent.id);
 
   return (
     <div className="space-y-6">
@@ -1826,6 +1828,9 @@ export function AgentOverview({
               ) : <span className="text-sm">Board</span>}
             </SummaryRow>
             <SummaryRow label="Direct reports"><span className="text-sm tabular-nums">{directReportCount}</span></SummaryRow>
+            <SummaryRow label="Open tasks">
+              <span className="text-sm" data-testid="agent-workload-line">{workloadLine ?? "None right now"}</span>
+            </SummaryRow>
           </div>
         </section>
 

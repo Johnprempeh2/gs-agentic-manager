@@ -4294,6 +4294,7 @@ export function agentRoutes(
         projectId: issue.projectId,
         goalId: issue.goalId,
         parentId: issue.parentId,
+        dueDate: issue.dueDate ?? null,
         updatedAt: issue.updatedAt,
         activeRun: issue.activeRun,
         activeRecoveryAction: recoveryActionByIssue.get(issue.id) ?? null,

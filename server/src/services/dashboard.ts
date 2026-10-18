@@ -1,4 +1,4 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@greatstone/db";
 import { agents, approvals, companies, costEvents, heartbeatRuns, issues } from "@greatstone/db";
 import { notFound } from "../errors.js";
@@ -47,6 +47,18 @@ export function dashboardService(db: Db) {
         .where(and(eq(issues.companyId, companyId), executionIssueCondition()))
         .groupBy(issues.status);
 
+      const overdueTasks = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(issues)
+        .where(and(
+          eq(issues.companyId, companyId),
+          executionIssueCondition(),
+          isNotNull(issues.dueDate),
+          lt(issues.dueDate, formatUtcDateKey(new Date())),
+          notInArray(issues.status, ["done", "cancelled"]),
+        ))
+        .then((rows) => Number(rows[0]?.count ?? 0));
+
       const pendingApprovals = await db
         .select({ count: sql<number>`count(*)` })
         .from(approvals)
@@ -71,6 +83,7 @@ export function dashboardService(db: Db) {
         inProgress: 0,
         blocked: 0,
         done: 0,
+        overdue: overdueTasks,
       };
       for (const row of taskRows) {
         const count = Number(row.count);

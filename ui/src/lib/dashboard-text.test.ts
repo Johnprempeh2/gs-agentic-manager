@@ -26,6 +26,11 @@ describe("dashboardNumbersText", () => {
     );
   });
 
+  it("adds overdue tasks only when there are some", () => {
+    expect(dashboardNumbersText({ ...summary, tasks: { ...summary.tasks, overdue: 2 } })).toContain("1 blocked, 2 overdue");
+    expect(dashboardNumbersText({ ...summary, tasks: { ...summary.tasks, overdue: 0 } })).not.toContain("overdue");
+  });
+
   it("says when there is no budget limit", () => {
     const text = dashboardNumbersText({ ...summary, costs: { ...summary.costs, monthBudgetCents: 0 } });
     expect(text).toContain("no budget limit");

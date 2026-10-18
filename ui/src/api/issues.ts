@@ -1,4 +1,5 @@
 import type { ExecutionReconciliation, IssueWorkFilter } from "@greatstone/shared";
+import type { OpenChildSummary } from "../lib/open-children-warning";
 import type {
   AcceptedPlanDecompositionSummary,
   AskUserQuestionsAnswer,
@@ -74,6 +75,8 @@ export type IssueUpdateResponse = Issue & {
   comment?: IssueComment | null;
   changes: IssueChanges;
   blockedByIssueIds?: string[];
+  /** Set when the update marked a parent done while subtasks are still open. */
+  openChildren?: OpenChildSummary[];
 };
 
 export type ResolveRecoveryActionResponse = {

@@ -5,11 +5,15 @@ import {
   answerAgentQuestionSchema,
   createAgentQuestionSchema,
   createIssueDocumentLinkSchema,
+  createDeliverableSchema,
+  setIssueDocumentApprovedRevisionSchema,
+  setIssueDocumentMakerSchema,
   upsertIssueWatchdogSchema,
   acceptIssueThreadInteractionSchema,
   cancelIssueThreadInteractionSchema,
   checkoutIssueSchema,
   createChildIssueSchema,
+  createAcceptedPlanDecompositionSchema,
   createIssueLabelSchema,
   updateIssueLabelSchema,
   createIssueSchema,
@@ -54,6 +58,10 @@ interface IssueBaseOptions extends BaseClientOptions {
   assigneeAgentId?: string;
   projectId?: string;
   match?: string;
+  priority?: string;
+  createdBy?: string;
+  dueBefore?: string;
+  overdue?: boolean;
 }
 
 interface IssueCreateOptions extends BaseClientOptions {
@@ -67,6 +75,7 @@ interface IssueCreateOptions extends BaseClientOptions {
   parentId?: string;
   requestDepth?: string;
   billingCode?: string;
+  dueDate?: string;
 }
 
 interface IssueUpdateOptions extends BaseClientOptions {
@@ -82,6 +91,27 @@ interface IssueUpdateOptions extends BaseClientOptions {
   billingCode?: string;
   comment?: string;
   hiddenAt?: string;
+  dueDate?: string;
+}
+
+interface IssueDeliverableOptions extends BaseClientOptions {
+  title: string;
+  attachmentId?: string;
+  url?: string;
+  key?: string;
+  summary?: string;
+  kind?: string;
+  status?: string;
+  confidentiality?: string;
+}
+
+interface IssueBlockOptions extends BaseClientOptions {
+  action: string;
+  owner?: string;
+  waitingOn?: string;
+  expectedBy?: string;
+  blockedBy?: string[];
+  comment?: string;
 }
 
 interface IssueCommentOptions extends BaseClientOptions {
@@ -218,6 +248,10 @@ export function registerIssueCommands(program: Command): void {
       .option("--status <csv>", "Comma-separated statuses")
       .option("--assignee-agent-id <id>", "Filter by assignee agent ID")
       .option("--project-id <id>", "Filter by project ID")
+      .option("--priority <csv>", "Comma-separated priorities, e.g. critical,high")
+      .option("--created-by <id>", "Only issues this agent created; use me for the calling agent")
+      .option("--due-before <date>", "Only issues due on or before this date (YYYY-MM-DD)")
+      .option("--overdue", "Only open issues past their due date")
       .option("--match <text>", "Local text match on identifier/title/description")
       .action(async (opts: IssueBaseOptions) => {
         try {
@@ -226,6 +260,10 @@ export function registerIssueCommands(program: Command): void {
           if (opts.status) params.set("status", opts.status);
           if (opts.assigneeAgentId) params.set("assigneeAgentId", opts.assigneeAgentId);
           if (opts.projectId) params.set("projectId", opts.projectId);
+          if (opts.priority) params.set("priority", opts.priority);
+          if (opts.createdBy) params.set("createdByAgentId", opts.createdBy);
+          if (opts.dueBefore) params.set("dueBefore", opts.dueBefore);
+          if (opts.overdue) params.set("overdue", "true");
 
           const query = params.toString();
           const path = `${apiPath`/api/companies/${ctx.companyId}/issues`}${query ? `?${query}` : ""}`;
@@ -260,6 +298,167 @@ export function registerIssueCommands(program: Command): void {
         }
       }),
     { includeCompany: false },
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("block")
+      .description("Mark an issue blocked with who must act and what they must do, so the right person is woken when it clears")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--action <text>", "Exactly what must happen to unblock it")
+      .option("--owner <me|board|agentId>", "Who must act: me (the calling agent), board, or an agent ID", "me")
+      .option("--waiting-on <who>", "Waiting on someone outside: client, board or outside")
+      .option("--expected-by <date>", "Day you expect to hear back (YYYY-MM-DD); you are woken once when it passes")
+      .option("--blocked-by <issueIds...>", "Issues that must finish first")
+      .option("--comment <text>", "Optional comment to add")
+      .action(async (issueId: string, opts: IssueBlockOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const ownerInput = (opts.owner ?? "me").trim();
+          let owner: { agentId: string } | "board";
+          if (ownerInput === "board") {
+            owner = "board";
+          } else if (ownerInput === "me") {
+            const me = await ctx.api.get<{ id: string }>("/api/agents/me");
+            if (!me?.id) throw new Error("--owner me needs an agent key; pass --owner board or an agent ID");
+            owner = { agentId: me.id };
+          } else {
+            owner = { agentId: ownerInput };
+          }
+          const payload = updateIssueSchema.parse({
+            status: "blocked",
+            unblockDescriptor: {
+              owner,
+              action: opts.action,
+              ...(opts.waitingOn ? { waitingOn: opts.waitingOn } : {}),
+              ...(opts.expectedBy ? { expectedBy: opts.expectedBy } : {}),
+            },
+            ...(opts.blockedBy?.length ? { blockedByIssueIds: opts.blockedBy } : {}),
+            comment: opts.comment,
+          });
+          const updated = await ctx.api.patch<Issue>(apiPath`/api/issues/${issueId}`, payload);
+          printOutput(updated, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("unblock")
+      .description("Clear a blocked issue's blocker and move it back to work")
+      .argument("<issueId>", "Issue ID")
+      .option("--status <status>", "Status to move to", "todo")
+      .option("--clear-blockers", "Also remove the issues it was waiting on")
+      .option("--comment <text>", "Optional comment to add")
+      .action(async (issueId: string, opts: BaseClientOptions & { status?: string; clearBlockers?: boolean; comment?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = updateIssueSchema.parse({
+            status: opts.status ?? "todo",
+            unblockDescriptor: null,
+            ...(opts.clearBlockers ? { blockedByIssueIds: [] } : {}),
+            comment: opts.comment,
+          });
+          const updated = await ctx.api.patch<Issue>(apiPath`/api/issues/${issueId}`, payload);
+          printOutput(updated, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("deliverable:create")
+      .description("Register a deliverable on an issue (a stored file or a live https link); the same key makes the next version")
+      .argument("<issueId>", "Issue ID")
+      .requiredOption("--title <title>", "Deliverable title")
+      .option("--attachment-id <id>", "A file already uploaded to the issue (gsam issue attachment:upload)")
+      .option("--url <url>", "A live https link instead of a file")
+      .option("--key <key>", "Version key; reuse it to publish the next version")
+      .option("--summary <text>", "One line on what it is (280 characters at most)")
+      .option("--kind <kind>", "report, brief, plan, deck or other")
+      .option("--status <status>", "draft or final")
+      .option("--confidentiality <level>", "internal, client or public")
+      .action(async (issueId: string, opts: IssueDeliverableOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = createDeliverableSchema.parse({
+            title: opts.title,
+            attachmentId: opts.attachmentId,
+            url: opts.url,
+            key: opts.key,
+            summary: opts.summary,
+            kind: opts.kind,
+            status: opts.status,
+            confidentiality: opts.confidentiality,
+          });
+          const created = await ctx.api.post(apiPath`/api/issues/${issueId}/deliverables`, payload);
+          printOutput(created, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document:maker")
+      .description("Name the agent allowed to write an issue document, or 'null' to clear it")
+      .argument("<issueId>", "Issue ID")
+      .argument("<key>", "Document key")
+      .requiredOption("--agent <id|null>", "Maker agent ID, or literal 'null'")
+      .action(async (issueId: string, key: string, opts: BaseClientOptions & { agent: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = setIssueDocumentMakerSchema.parse({
+            makerAgentId: opts.agent.trim().toLowerCase() === "null" ? null : opts.agent.trim(),
+          });
+          const result = await ctx.api.put(apiPath`/api/issues/${issueId}/documents/${key}/maker`, payload);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("document:approve")
+      .description("Mark a revision as the current approved one of an issue document, or 'null' to clear it")
+      .argument("<issueId>", "Issue ID")
+      .argument("<key>", "Document key")
+      .requiredOption("--revision <id|null>", "Revision ID (see gsam issue document:revisions), or literal 'null'")
+      .action(async (issueId: string, key: string, opts: BaseClientOptions & { revision: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const payload = setIssueDocumentApprovedRevisionSchema.parse({
+            revisionId: opts.revision.trim().toLowerCase() === "null" ? null : opts.revision.trim(),
+          });
+          const result = await ctx.api.put(apiPath`/api/issues/${issueId}/documents/${key}/approved-revision`, payload);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("monitor:check-now")
+      .description("Run an issue's monitor check now instead of waiting for its next check")
+      .argument("<issueId>", "Issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const result = await ctx.api.post(apiPath`/api/issues/${issueId}/monitor/check-now`, {});
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
   );
 
   addCommonClientOptions(
@@ -376,6 +575,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--parent-id <id>", "Parent issue ID")
       .option("--request-depth <n>", "Request depth integer")
       .option("--billing-code <code>", "Billing code")
+      .option("--due-date <date>", "Due date (YYYY-MM-DD); only for tasks under a plan objective")
       .action(async (opts: IssueCreateOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
@@ -390,6 +590,7 @@ export function registerIssueCommands(program: Command): void {
             parentId: opts.parentId,
             requestDepth: parseOptionalInt(opts.requestDepth),
             billingCode: opts.billingCode,
+            dueDate: parseDueDate(opts.dueDate),
           });
 
           const created = await ctx.api.post<Issue>(apiPath`/api/companies/${ctx.companyId}/issues`, payload);
@@ -418,6 +619,7 @@ export function registerIssueCommands(program: Command): void {
       .option("--billing-code <code>", "Billing code")
       .option("--comment <text>", "Optional comment to add with update")
       .option("--hidden-at <iso8601|null>", "Set hiddenAt timestamp or literal 'null'")
+      .option("--due-date <date|null>", "Due date (YYYY-MM-DD), or literal 'null' to clear it; only for tasks under a plan objective")
       .action(async (issueId: string, opts: IssueUpdateOptions) => {
         try {
           const ctx = resolveCommandContext(opts);
@@ -434,6 +636,7 @@ export function registerIssueCommands(program: Command): void {
             billingCode: opts.billingCode,
             comment: opts.comment,
             hiddenAt: parseHiddenAt(opts.hiddenAt),
+            dueDate: parseDueDate(opts.dueDate),
           });
 
           const updated = await ctx.api.patch<Issue & { comment?: IssueComment | null }>(apiPath`/api/issues/${issueId}`, payload);
@@ -643,6 +846,49 @@ export function registerIssueCommands(program: Command): void {
           const payload = createChildIssueSchema.parse(parseJson(opts.payloadJson));
           const child = await ctx.api.post<Issue>(apiPath`/api/issues/${issueId}/children`, payload);
           printOutput(child, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("plan:decompose")
+      .description("Create child issues from an accepted plan revision in one step (at most 25)")
+      .argument("<issueId>", "Parent issue ID")
+      .requiredOption("--revision <id>", "The accepted plan revision ID")
+      .option("--children-json <json>", "JSON array of child issues")
+      .option("--children-file <path>", "File holding the JSON array of child issues")
+      .action(async (issueId: string, opts: BaseClientOptions & { revision: string; childrenJson?: string; childrenFile?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          if (!opts.childrenJson === !opts.childrenFile) {
+            throw new Error("Pass exactly one of --children-json or --children-file");
+          }
+          const raw = opts.childrenFile ? await readFile(opts.childrenFile, "utf8") : opts.childrenJson!;
+          const payload = createAcceptedPlanDecompositionSchema.parse({
+            acceptedPlanRevisionId: opts.revision,
+            children: parseJson(raw),
+          });
+          const result = await ctx.api.post(apiPath`/api/issues/${issueId}/accepted-plan-decompositions`, payload);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("plan:decompositions")
+      .description("List the child issues already created from accepted plan revisions")
+      .argument("<issueId>", "Parent issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const result = await ctx.api.get(apiPath`/api/issues/${issueId}/accepted-plan-decompositions`);
+          printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }
@@ -1668,6 +1914,12 @@ function parseOptionalInt(value: string | undefined): number | undefined {
     throw new Error(`Invalid integer value: ${value}`);
   }
   return parsed;
+}
+
+function parseDueDate(value: string | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value.trim().toLowerCase() === "null") return null;
+  return value.trim();
 }
 
 function parseHiddenAt(value: string | undefined): string | null | undefined {
