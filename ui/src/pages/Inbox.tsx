@@ -924,6 +924,7 @@ export function Inbox() {
     data: approvals,
     isLoading: isApprovalsLoading,
     error: approvalsError,
+    refetch: refetchApprovals,
   } = useQuery({
     queryKey: queryKeys.approvals.list(selectedCompanyId!),
     queryFn: () => approvalsApi.list(selectedCompanyId!),
@@ -2776,6 +2777,7 @@ export function Inbox() {
                           Cancel
                         </Button>
                         <Button
+                          disabled={markAllReadMutation.isPending}
                           onClick={() => {
                             setShowMarkAllReadConfirm(false);
                             markAllReadMutation.mutate(unreadIssueIds);
@@ -2799,7 +2801,7 @@ export function Inbox() {
         ) : null}
       />
 
-      {approvalsError && <p className="text-sm text-destructive">{approvalsError.message}</p>}
+      {approvalsError && <ErrorState error={approvalsError} title="Approvals did not load" onRetry={() => void refetchApprovals()} compact />}
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
 
       {tab === "mine" && needsMe ? <NeedsMeList needsMe={needsMe} includeDecisions /> : null}
@@ -2862,9 +2864,13 @@ export function Inbox() {
                 : "No inbox items match these filters."
           }
           description={
-            !searchQuery.trim() && tab === "mine"
+            searchQuery.trim()
+              ? undefined
+              : tab === "mine"
               ? "New activity on tasks you are part of lands here. Anything that needs your answer is in Decisions."
-              : undefined
+              : tab === "unread" || tab === "recent"
+                ? "You are all caught up. Anything that needs your answer is in Decisions."
+                : "Try a different filter, or look in Decisions for anything waiting on you."
           }
           action={searchQuery.trim() ? "Clear search" : undefined}
           onAction={searchQuery.trim() ? () => setSearchQuery("") : undefined}

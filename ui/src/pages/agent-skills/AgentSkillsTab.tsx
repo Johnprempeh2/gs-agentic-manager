@@ -463,7 +463,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
               className="flex items-center justify-between gap-3 border-b border-amber-300/40 bg-amber-50/60 px-3 py-2 text-xs text-amber-800 last:border-b-0 dark:border-amber-500/20 dark:bg-amber-950/20 dark:text-amber-200"
             >
               <span className="min-w-0 truncate">
-                <span className="font-medium">{key}</span> is enabled but missing from the organization library.
+                <span className="font-medium">{key}</span> is turned on but no longer in your organisation's skills.
               </span>
               <button
                 type="button"
@@ -502,7 +502,7 @@ export function AgentSkillsTab({ agent, companyId }: { agent: Agent; companyId?:
                 {search
                   ? "No available skills match your search."
                   : libraryEmpty
-                    ? "Import skills into the organization library to enable them here."
+                    ? "Add skills on the Skills page to turn them on here."
                     : "Every library skill is enabled on this agent."}
               </SectionEmpty>
             )}
@@ -615,9 +615,9 @@ function EmptyLibraryCard() {
     <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border px-6 py-10 text-center">
       <Store className="h-8 w-8 text-subtle-foreground" />
       <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">No skills in the organization library</p>
+        <p className="text-sm font-medium text-foreground">Your organisation has no skills yet</p>
         <p className="text-xs text-muted-foreground">
-          Install skills to the organization, then enable them on this agent.
+          Add skills from the Skills page, then turn them on for this agent.
         </p>
       </div>
       <Button asChild variant="outline" size="sm">

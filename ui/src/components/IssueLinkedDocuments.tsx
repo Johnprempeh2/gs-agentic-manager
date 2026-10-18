@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { IssueDocumentLink } from "@greatstone/shared";
 import { Link2, X } from "lucide-react";
 import { Link } from "@/lib/router";
+import { useConfirm } from "@/context/ConfirmContext";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { issueUrl } from "../lib/utils";
@@ -31,6 +32,7 @@ export function IssueLinkedDocuments({
   canRemoveLinks?: boolean;
 }) {
   const queryClient = useQueryClient();
+  const confirmAction = useConfirm();
   const { data: links, error } = useQuery({
     queryKey: queryKeys.issues.documentLinks(issueId),
     queryFn: () => issuesApi.listDocumentLinks(issueId),
@@ -72,7 +74,16 @@ export function IssueLinkedDocuments({
                   className="ml-auto text-muted-foreground"
                   title="Remove link"
                   aria-label={`Remove link to ${link.title || link.key}`}
-                  onClick={() => removeLink.mutate(link.id)}
+                  onClick={async () => {
+                    if (await confirmAction({
+                      title: `Remove ${link.title || link.key} from this task?`,
+                      description: "The document itself is kept. Only the link to this task is removed.",
+                      confirmLabel: "Remove link",
+                      tone: "destructive",
+                    })) {
+                      removeLink.mutate(link.id);
+                    }
+                  }}
                   disabled={removeLink.isPending}
                 >
                   <X className="h-3.5 w-3.5" />

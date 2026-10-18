@@ -1253,7 +1253,16 @@ function EnvironmentImageTemplatePanel({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => rollbackTemplateMutation.mutate()}
+              onClick={async () => {
+                if (await confirmAction({
+                  title: "Go back to the previous setup?",
+                  description: "Future runs in this environment use the previous setup.",
+                  confirmLabel: "Go back",
+                  tone: "destructive",
+                })) {
+                  rollbackTemplateMutation.mutate();
+                }
+              }}
               disabled={isMutating}
             >
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
@@ -1262,7 +1271,16 @@ function EnvironmentImageTemplatePanel({
             <Button
               size="sm"
               variant="ghost"
-              onClick={() => disableTemplateMutation.mutate()}
+              onClick={async () => {
+                if (await confirmAction({
+                  title: "Stop using this custom setup?",
+                  description: "Future runs go back to the standard setup.",
+                  confirmLabel: "Stop using",
+                  tone: "destructive",
+                })) {
+                  disableTemplateMutation.mutate();
+                }
+              }}
               disabled={isMutating}
             >
               <Trash2 className="mr-1.5 h-3.5 w-3.5" />

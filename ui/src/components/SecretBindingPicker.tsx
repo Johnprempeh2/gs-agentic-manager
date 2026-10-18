@@ -257,7 +257,7 @@ export function SecretBindingPicker({
       ) : crossCompanyHint ? (
         <p className="text-(length:--text-micro) text-muted-foreground flex items-center gap-1">
           <AlertCircle className="h-3 w-3" />
-          Owned by {crossCompanyHint.companyName ? `the ${crossCompanyHint.companyName} organization` : "another organization"}. The binding keeps working; selecting a secret from this list re-points it here.
+          Owned by {crossCompanyHint.companyName ? `the ${crossCompanyHint.companyName} organisation` : "another organisation"}. The binding keeps working; selecting a secret from this list re-points it here.
         </p>
       ) : missingHint ? (
         <p className="text-(length:--text-micro) text-destructive flex items-center gap-1">

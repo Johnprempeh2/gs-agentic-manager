@@ -265,7 +265,7 @@ export function BuiltInBundlePanel({
     adapterDetail = "Waiting on board hire approval before this coach can run.";
   } else if (!adapterReady) {
     adapterChip = "needs_setup";
-    adapterDetail = "Pick an adapter this coach can run on.";
+    adapterDetail = "Choose which AI this coach runs on.";
   }
 
   const skill = findResource(resources, "skill");

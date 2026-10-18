@@ -221,7 +221,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     enabled: !!companyId,
   });
 
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.issues.listByProject(companyId, projectId),
     queryFn: () => issuesApi.list(companyId, { projectId }),
     enabled: !!companyId,
@@ -243,6 +243,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       issues={issues ?? []}
       isLoading={isLoading}
       error={error as Error | null}
+      onRetry={() => void refetch()}
       agents={agents}
       projects={projects}
       liveIssueIds={liveIssueIds}
@@ -293,7 +294,7 @@ function ProjectPluginOperationsList({
     refetchInterval: sharedLiveRuns.refetchInterval,
   });
   usePublishSharedQueryData(sharedLiveRuns, liveRuns, liveRunsUpdatedAt);
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.issues.listPluginOperationsByProject(companyId, projectId, originKindPrefix),
     queryFn: () => issuesApi.list(companyId, { projectId, originKindPrefix }),
     enabled: !!companyId && !!projectId,
@@ -316,6 +317,7 @@ function ProjectPluginOperationsList({
       issues={issues ?? []}
       isLoading={isLoading}
       error={error as Error | null}
+      onRetry={() => void refetch()}
       agents={agents}
       projects={projects}
       liveIssueIds={liveIssueIds}
@@ -408,7 +410,7 @@ export function ProjectDetail() {
   const pluginTabDecisionLoaded = Boolean(resolvedCompanyId) && !pluginDetailSlotsLoading;
   const isolatedWorkspacesEnabled = experimentalSettingsQuery.data?.enableIsolatedWorkspaces === true;
   const workspaceTabProjectId = project?.id ?? null;
-  const { data: workspaceTabIssues = [], isLoading: isWorkspaceTabIssuesLoading, error: workspaceTabIssuesError } = useQuery({
+  const { data: workspaceTabIssues = [], isLoading: isWorkspaceTabIssuesLoading, error: workspaceTabIssuesError, refetch: refetchWorkspaceTabIssues } = useQuery({
     queryKey: workspaceTabProjectId && resolvedCompanyId
       ? queryKeys.issues.listByProject(resolvedCompanyId, workspaceTabProjectId)
       : ["issues", "__workspace-tab__", "disabled"],
@@ -419,6 +421,7 @@ export function ProjectDetail() {
     data: workspaceTabExecutionWorkspaces = [],
     isLoading: isWorkspaceTabExecutionWorkspacesLoading,
     error: workspaceTabExecutionWorkspacesError,
+    refetch: refetchWorkspaceTabExecutionWorkspaces,
   } = useQuery({
     queryKey: workspaceTabProjectId && resolvedCompanyId
       ? queryKeys.executionWorkspaces.list(resolvedCompanyId, { projectId: workspaceTabProjectId })
@@ -907,7 +910,15 @@ export function ProjectDetail() {
       {activeTab === "workspaces" ? (
         workspaceTabDecisionLoaded ? (
           workspaceTabError ? (
-            <p className="text-sm text-destructive">This tab did not load. Refresh the page to try again. ({workspaceTabError.message})</p>
+            <ErrorState
+              error={workspaceTabError}
+              title="This tab did not load"
+              onRetry={() => {
+                void refetchWorkspaceTabIssues();
+                void refetchWorkspaceTabExecutionWorkspaces();
+              }}
+              compact
+            />
           ) : (
             <ProjectWorkspacesContent
               companyId={resolvedCompanyId!}

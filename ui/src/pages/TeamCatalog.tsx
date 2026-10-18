@@ -2099,7 +2099,7 @@ export function ApplySuccess({
         <p className="text-base font-semibold">Team installed</p>
       </div>
       <p className="text-sm text-muted-foreground">
-        {team.name} was imported into your organization. Imported entities are stamped with catalog provenance.
+        {team.name} has been added to your organisation.
       </p>
       {result && (
         <ul className="divide-y divide-border/60 rounded-md border border-border px-3">

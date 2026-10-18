@@ -16,7 +16,7 @@ const inviteRoleOptions = [
   {
     value: "viewer",
     label: "Viewer",
-    description: "Can view organization work and follow along.",
+    description: "Can see your organisation's work and follow along.",
     gets: "View-only organisation membership.",
   },
   {
@@ -34,7 +34,7 @@ const inviteRoleOptions = [
   {
     value: "owner",
     label: "Owner",
-    description: "Full organization access, including membership management.",
+    description: "Full access, including who can join.",
     gets: "Everything in Admin, plus managing members.",
   },
 ] as const;
@@ -163,7 +163,7 @@ export function InvitesSection() {
   if (invitesQuery.error) {
     const message =
       invitesQuery.error instanceof ApiError && invitesQuery.error.status === 403
-        ? "You do not have permission to manage organization invites."
+        ? "Only organisation owners can send or cancel invites."
         : invitesQuery.error instanceof Error
           ? invitesQuery.error.message
           : "Failed to load invites.";

@@ -19,6 +19,7 @@ import { routinesScheduleText } from "../lib/routine-schedule";
 import { useCopyAction } from "../lib/use-copy-action";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
 import { getRecentProjectIds, trackRecentProject } from "../lib/recent-projects";
+import { ErrorState } from "@/components/ErrorState";
 import { EmptyState } from "../components/EmptyState";
 import { HelpTerm } from "../components/HelpTerm";
 import { PageSkeleton } from "../components/PageSkeleton";
@@ -31,7 +32,6 @@ import {
 } from "../components/RoutineRunVariablesDialog";
 import { RoutineVariablesEditor, RoutineVariablesHint } from "../components/RoutineVariablesEditor";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -376,7 +376,7 @@ export function Routines() {
     setRoutineViewState(getRoutineViewState(routineViewStateKey));
   }, [routineViewStateKey]);
 
-  const { data: routines, isLoading, error } = useQuery({
+  const { data: routines, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.routines.list(selectedCompanyId!),
     queryFn: () => routinesApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
@@ -1181,11 +1181,13 @@ export function Routines() {
       </Dialog>
 
       {error ? (
-        <Card>
-          <CardContent className="pt-6 text-sm text-destructive">
-            {error instanceof Error ? error.message : "Failed to load routines"}
-          </CardContent>
-        </Card>
+        <ErrorState
+          error={error}
+          title="Routines did not load"
+          onRetry={() => void refetch()}
+          retrying={isFetching}
+          compact={!!routines}
+        />
       ) : null}
 
       <div className={cn(showFolderRail && "flex gap-4")}>
@@ -1251,7 +1253,7 @@ export function Routines() {
               </Button>
             </div>
           ) : null}
-          {visibleRoutines.length === 0 ? (
+          {error && !routines ? null : visibleRoutines.length === 0 ? (
             <div className="py-12">
               <EmptyState
                 icon={Repeat}
@@ -1266,6 +1268,7 @@ export function Routines() {
               <EmptyState
                 icon={Repeat}
                 message={folderSelection === "all" ? "No routines match this view." : "This folder is empty."}
+                description={folderSelection === "all" ? "Change the filters above, or create a new routine." : undefined}
               />
               {folderSelection !== "all" ? (
                 <div className="mt-3 flex justify-center">

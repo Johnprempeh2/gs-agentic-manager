@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { UserPlus2 } from "lucide-react";
 import { accessApi } from "@/api/access";
@@ -68,9 +69,17 @@ export function JoinRequestQueue() {
     const message =
       requestsQuery.error instanceof ApiError && requestsQuery.error.status === 403
         ? "You do not have permission to review join requests for this organisation."
-        : requestsQuery.error instanceof Error
-          ? requestsQuery.error.message
-          : "Failed to load join requests.";
+        : null;
+    if (!message) {
+      return (
+        <ErrorState
+          error={requestsQuery.error}
+          title="Join requests did not load"
+          onRetry={() => void requestsQuery.refetch()}
+          retrying={requestsQuery.isFetching}
+        />
+      );
+    }
     return <div className="text-sm text-destructive">{message}</div>;
   }
 
