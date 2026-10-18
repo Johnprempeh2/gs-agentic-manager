@@ -662,8 +662,8 @@ export function useIssueMutations({
       pushToast({
         title:
           status === "done"
-            ? "Run stopped and task done"
-            : "Run stopped and task cancelled",
+            ? "Work stopped and task marked done"
+            : "Work stopped and task cancelled",
         tone: "success",
       });
     },

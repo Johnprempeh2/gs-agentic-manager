@@ -42,13 +42,13 @@ export function TaskTreeControlMenuItems({
       {canPause ? (
         <button disabled={pending} className={itemClass} onClick={onPause}>
           <PauseCircle className="h-3 w-3" />
-          {scope === "leaf" ? "Pause work" : "Pause subtree"}
+          {scope === "leaf" ? "Pause work" : "Pause task and sub-tasks"}
         </button>
       ) : null}
       {canResume ? (
         <button disabled={pending} className={itemClass} onClick={onResume}>
           <PlayCircle className="h-3 w-3" />
-          {scope === "leaf" ? "Resume work" : "Resume subtree"}
+          {scope === "leaf" ? "Resume work" : "Resume task and sub-tasks"}
         </button>
       ) : null}
       {canCancel ? (
@@ -58,13 +58,13 @@ export function TaskTreeControlMenuItems({
           onClick={onCancel}
         >
           <XCircle className="h-3 w-3" />
-          Cancel subtree...
+          Cancel task and sub-tasks...
         </button>
       ) : null}
       {canRestore ? (
         <button disabled={pending} className={itemClass} onClick={onRestore}>
           <Repeat className="h-3 w-3" />
-          Restore subtree...
+          Restore task and sub-tasks...
         </button>
       ) : null}
     </>
@@ -105,12 +105,12 @@ export function TaskTreeControlDialog({
   const cancel = mode === "cancel";
   const tasks = `${affectedCount} task${affectedCount === 1 ? "" : "s"}`;
   const title = cancel
-    ? "Cancel subtree?"
+    ? "Cancel this task and its sub-tasks?"
     : mode === "restore"
-      ? "Restore subtree"
+      ? "Restore task and sub-tasks"
       : scope === "leaf"
         ? "Resume work"
-        : "Resume subtree";
+        : "Resume task and sub-tasks";
   return (
     <Dialog
       open={open}
@@ -209,7 +209,7 @@ export function TaskPauseNotice({
       )}
     >
       <span>
-        {scope === "subtree" ? "Subtree is paused." : "Task is paused."}
+        {scope === "subtree" ? "This task and its sub-tasks are paused." : "Task is paused."}
       </span>
       {resumeLink ??
         (onResume ? (
@@ -219,7 +219,7 @@ export function TaskPauseNotice({
             disabled={pending}
             onClick={onResume}
           >
-            {scope === "subtree" ? "Resume subtree" : "Resume work"}
+            {scope === "subtree" ? "Resume task and sub-tasks" : "Resume work"}
           </Button>
         ) : null)}
     </div>

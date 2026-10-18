@@ -987,7 +987,7 @@ export function WorkspaceFileBrowser({
     body = (
       <StateMessage
         icon={<FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" />}
-        title="No organization selected"
+        title="No organisation selected"
         body="Choose an organization before browsing another project workspace."
       />
     );

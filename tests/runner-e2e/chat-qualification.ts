@@ -170,7 +170,7 @@ export async function runWorkerCrash(context: Context) {
       // the UI/API must not offer an attempt which cannot pass cleanup admission.
       await input.page.reload({ waitUntil: "domcontentloaded" });
       await expect(input.page.getByTestId("task-chat-composer-input")).toBeVisible();
-      await expect(input.page.getByRole("status", { name: "Task recovery" }).getByRole("link", { name: "Inspect run" })).toBeVisible();
+      await expect(input.page.getByRole("status", { name: "Task recovery" }).getByRole("link", { name: "See what went wrong" })).toBeVisible();
       await expect(input.page.getByRole("button", { name: /^(Retry|Try again)$/ })).toHaveCount(0);
       const refused = await input.api.request.post(`/api/agents/${input.fixtures.agent.id}/wakeup`, {
         data: { failedRunId: failed.id, reason: "retry_failed_run" },

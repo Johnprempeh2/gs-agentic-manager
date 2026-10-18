@@ -37,6 +37,7 @@ import {
   AlertDialogAction,
 } from "@/components/ui/alert-dialog";
 import { type MarkdownEditorRef, MarkdownEditor } from "../MarkdownEditor";
+import { ReplySnippetsButton } from "./ReplySnippetsButton";
 import { InlineEntitySelector } from "../InlineEntitySelector";
 import {
   type HandoffChipResolvers,
@@ -998,6 +999,14 @@ export const IssueChatComposer = forwardRef<
               </Button>
             </>
           ) : null}
+          <ReplySnippetsButton
+            currentBody={body}
+            disabled={!!uncertainSubmission}
+            onInsert={(text) => {
+              changeBody((current) => (current.trim() ? `${current.trimEnd()}\n\n${text}` : text));
+              requestAnimationFrame(() => editorRef.current?.focus());
+            }}
+          />
           {canToggleWorkMode ? (
             <Popover open={workModeMenuOpen} onOpenChange={setWorkModeMenuOpen}>
               <PopoverTrigger asChild>
@@ -1068,9 +1077,9 @@ export const IssueChatComposer = forwardRef<
             value={reassignTarget}
             options={reassignOptions}
             placeholder="Responsible"
-            noneLabel="No responsible"
-            searchPlaceholder="Search responsible..."
-            emptyMessage="No responsible found."
+            noneLabel="Nobody"
+            searchPlaceholder="Search people and agents..."
+            emptyMessage="Nobody found."
             onChange={setReassignTarget}
             className="h-8 text-xs"
             renderTriggerValue={(option) => {
@@ -1156,11 +1165,11 @@ export const IssueChatComposer = forwardRef<
           }}
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>No responsible selected</AlertDialogTitle>
+            <AlertDialogTitle>Nobody is responsible yet</AlertDialogTitle>
             <AlertDialogDescription>
-              This comment will be posted without an assignee, so no agent will
-              be woken to act on it. Go back to pick a responsible, or send
-              anyway.
+              This comment will be posted without anyone responsible, so no
+              agent will pick it up. Go back to choose who is responsible, or
+              send anyway.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

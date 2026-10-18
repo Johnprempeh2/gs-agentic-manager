@@ -4593,7 +4593,7 @@ describe("IssueDetail", () => {
       await flushReact();
 
       await waitForAssertion(() => {
-        expect(container.textContent).toContain("Subtree is paused.");
+        expect(container.textContent).toContain("This task and its sub-tasks are paused.");
       });
 
       expect(container.querySelector('[data-testid="paused-composer-takeover"]')).toBeTruthy();
@@ -4606,7 +4606,7 @@ describe("IssueDetail", () => {
 
       const resumeButton = Array.from(
         container.querySelectorAll("button"),
-      ).find((button) => button.textContent?.trim() === "Resume subtree");
+      ).find((button) => button.textContent?.trim() === "Resume task and sub-tasks");
       expect(resumeButton).toBeTruthy();
 
       await act(async () => {
@@ -4615,7 +4615,7 @@ describe("IssueDetail", () => {
       await flushReact();
 
       const applyResumeButton = Array.from(container.querySelectorAll("button"))
-        .filter((button) => button.textContent?.trim() === "Resume subtree")
+        .filter((button) => button.textContent?.trim() === "Resume task and sub-tasks")
         .at(-1);
       expect(applyResumeButton).toBeTruthy();
       expect(container.textContent).toContain("Wake affected agents (1)");
@@ -4643,7 +4643,7 @@ describe("IssueDetail", () => {
         }),
       );
       await waitForAssertion(() => {
-        expect(container.textContent).not.toContain("Subtree is paused.");
+        expect(container.textContent).not.toContain("This task and its sub-tasks are paused.");
       });
       if (wakeFailed)
         expect(
@@ -4712,7 +4712,7 @@ describe("IssueDetail", () => {
 
     const pauseMenuButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Pause subtree");
+    ).find((button) => button.textContent?.trim() === "Pause task and sub-tasks");
     expect(pauseMenuButton).toBeTruthy();
 
     await act(async () => {
@@ -5492,7 +5492,7 @@ describe("IssueDetail", () => {
     await waitForAssertion(() => {
       expect(container.textContent).toContain("Task is paused.");
       expect(container.textContent).toContain("in_review");
-      expect(container.textContent).not.toContain("Subtree is paused.");
+      expect(container.textContent).not.toContain("This task and its sub-tasks are paused.");
     });
 
     const resumeButton = Array.from(container.querySelectorAll("button")).find(
@@ -5603,7 +5603,7 @@ describe("IssueDetail", () => {
 
     const restoreMenuButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Restore subtree...");
+    ).find((button) => button.textContent?.trim() === "Restore task and sub-tasks...");
     expect(restoreMenuButton).toBeTruthy();
 
     await act(async () => {
@@ -5680,7 +5680,7 @@ describe("IssueDetail", () => {
     await flushReact();
     const cancelMenuButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent?.trim() === "Cancel subtree...");
+    ).find((button) => button.textContent?.trim() === "Cancel task and sub-tasks...");
     expect(cancelMenuButton).toBeTruthy();
 
     await act(async () => {
@@ -5698,7 +5698,7 @@ describe("IssueDetail", () => {
       '[data-slot="dialog-content"]',
     ) as HTMLDivElement | null;
     expect(dialogContent).toBeTruthy();
-    expect(dialogContent!.textContent).toContain("Cancel subtree?");
+    expect(dialogContent!.textContent).toContain("Cancel this task and its sub-tasks?");
     expect(dialogContent!.textContent).toContain("24 tasks will be cancelled.");
     expect(dialogContent!.textContent).toContain("Keep tasks");
     expect(

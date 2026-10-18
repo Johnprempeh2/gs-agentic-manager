@@ -4076,8 +4076,8 @@ describe("IssueChatThread", () => {
       '[data-testid="issue-chat-no-assignee-dialog"]',
     );
     expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain("No responsible selected");
-    expect(dialog?.textContent).toContain("no agent will be woken");
+    expect(dialog?.textContent).toContain("Nobody is responsible yet");
+    expect(dialog?.textContent).toContain("no agent will pick it up");
 
     const sendAnyway = document.querySelector(
       '[data-testid="issue-chat-no-assignee-send-anyway"]',
@@ -4220,7 +4220,7 @@ describe("IssueChatThread", () => {
     });
 
     expect(onAdd).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).not.toContain("No responsible selected");
+    expect(document.body.textContent).not.toContain("Nobody is responsible yet");
 
     act(() => {
       root.unmount();

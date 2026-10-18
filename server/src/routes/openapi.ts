@@ -3772,6 +3772,32 @@ registry.registerPath({
   responses: { 200: r.ok(), 401: r.unauthorized },
 });
 
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/failed-runs",
+  tags: ["agents"],
+  summary: "List the current agent's last failed or timed out runs with their errors",
+  request: { query: z.object({ limit: z.coerce.number().int().min(1).max(20).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/waiting-on-me",
+  tags: ["agents"],
+  summary: "List the current agent's tasks that other open tasks are waiting on",
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
+registry.registerPath({
+  method: "get",
+  path: "/api/agents/me/approvals",
+  tags: ["agents"],
+  summary: "List approval requests the current agent filed that are still open, oldest first",
+  request: { query: z.object({ all: z.enum(["true", "1"]).optional() }) },
+  responses: { 200: r.ok(), 401: r.unauthorized },
+});
+
 const AgentSecretListResponseSchema = z.object({
   secrets: z.array(
     z.object({

@@ -326,6 +326,7 @@ export function Calendar() {
               onClick: () =>
                 moveMany.mutate(originals, {
                   onSuccess: () => pushToast({ title: "Due dates put back", tone: "success" }),
+                  onError: () => pushToast({ title: "Could not put the due dates back", body: "Try again in a moment.", tone: "error" }),
                 }),
             },
           });

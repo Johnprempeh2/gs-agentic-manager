@@ -134,6 +134,8 @@ export interface Project {
    * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.
    */
   taskCount?: number;
+  /** Finished tasks in the project, alongside `taskCount` on the projects list. */
+  doneTaskCount?: number;
   /**
    * Active budget for the project, when set. Populated by the projects list
    * endpoint (IA Phase 4 — PAP-60); omitted on single-project payloads.
