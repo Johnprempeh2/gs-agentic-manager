@@ -6,6 +6,9 @@ import {
   answerDecide,
   answerHistory,
   answerPeople,
+  answerQuiet,
+  answerActivity,
+  quietDays,
   answerStuck,
   answerSubject,
   organisationAskContext,
@@ -70,6 +73,22 @@ describe("classifyQuestion", () => {
     expect(classifyQuestion("What did Mason do today?", agents)).toMatchObject({ kind: "agent" });
   });
 
+  it("spots questions about clients that have gone quiet", () => {
+    expect(classifyQuestion("Which clients have gone quiet?", agents)).toEqual({ kind: "quiet", days: 30 });
+    expect(classifyQuestion("Who haven't we spoken to in 2 weeks?", agents)).toEqual({ kind: "quiet", days: 14 });
+    expect(classifyQuestion("Which deals should we chase?", agents)).toEqual({ kind: "quiet", days: 30 });
+    expect(quietDays("not heard from in 3 months")).toBe(90);
+    expect(quietDays("gone quiet for a fortnight")).toBe(14);
+  });
+
+  it("spots questions about recent client calls and meetings with no client named", () => {
+    expect(classifyQuestion("What calls did we have this week?", agents)).toEqual({ kind: "activity", days: 7 });
+    expect(classifyQuestion("Any client meetings today?", agents)).toEqual({ kind: "activity", days: 1 });
+    expect(classifyQuestion("What did we discuss with Acme this week?", agents)).toEqual({ kind: "history", subject: "Acme" });
+    expect(intentWithContext({ kind: "history", subject: null }, null)).toEqual({ kind: "activity", days: 7 });
+    expect(intentWithContext({ kind: "activity", days: 7 }, { label: "Acme Ltd", summary: "", subject: "Acme Ltd" })).toEqual({ kind: "history", subject: "Acme Ltd" });
+  });
+
   it("spots questions about who we know at a client", () => {
     expect(classifyQuestion("Who is our contact at Acme?", agents)).toEqual({ kind: "people", subject: "Acme" });
     expect(classifyQuestion("Who do we know at Indago Mining?", agents)).toEqual({ kind: "people", subject: "Indago Mining" });
@@ -83,6 +102,35 @@ describe("classifyQuestion", () => {
 });
 
 describe("answers", () => {
+  it("sums up recent client contact by kind", () => {
+    const answer = answerActivity({
+      days: 7,
+      total: 3,
+      clientCount: 2,
+      byKind: [["Call", 2], ["Note", 1]],
+      activity: [{ id: "a1", kindLabel: "Call", title: "Pricing call", clientName: "Heron Ltd", ownerName: "Ama", occurredAt: new Date().toISOString(), href: "/GRE/organisations/o1" }],
+    });
+    expect(answer.headline).toBe("3 notes, calls and meetings with 2 clients this week: 2 calls, 1 note.");
+    expect(answer.lines[0]).toMatchObject({ text: "Pricing call", href: "/GRE/organisations/o1" });
+    expect(answer.lines[0]!.detail).toMatch(/^Call, Heron Ltd, Ama, /);
+    expect(answerActivity({ days: 1, total: 0, clientCount: 0, byKind: [], activity: [] }).headline).toBe("No notes, calls or meetings with clients today.");
+  });
+
+  it("lists quiet deals, quietest first, or says everyone is in touch", () => {
+    const answer = answerQuiet({
+      days: 30,
+      total: 3,
+      clients: [
+        { caseId: "c1", title: "Heron rollout", pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", organisationName: "Heron Ltd", lastTouchAt: "2026-08-29T09:00:00.000Z", lastTouchLabel: "Call: Pricing call", quietDays: 50, href: "/GRE/pipelines/p/items/c1" },
+        { caseId: "c2", title: "Wren lead", pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", organisationName: null, lastTouchAt: null, lastTouchLabel: null, quietDays: 47, href: "/GRE/pipelines/p/items/c2" },
+      ],
+    });
+    expect(answer.headline).toBe("3 open deals and leads had no note, call or meeting in 30 days. The quietest is Heron rollout (50 days).");
+    expect(answer.lines[0]).toEqual({ text: "Heron rollout", detail: "Proposal in Sales, last Call: Pricing call, 50 days ago", href: "/GRE/pipelines/p/items/c1" });
+    expect(answer.lines[1]!.detail).toBe("Proposal in Sales, no notes or calls yet, added 47 days ago");
+    expect(answerQuiet({ days: 30, total: 0, clients: [] }).headline).toBe("Every open deal and lead has had a note, call or meeting in the last 30 days.");
+  });
+
   it("names the one contact for a client, or lists several", () => {
     const person = (title: string, subtitle: string) => ({ id: title, type: "record", title, href: "/GRE/organisations/o1", record: { kind: "person", subtitle } }) as never;
     expect(answerPeople("Acme", [person("Ada Kestrel", "CFO at Acme Ltd")]).headline).toBe("Your contact for Acme is Ada Kestrel (CFO at Acme Ltd).");
@@ -276,7 +324,6 @@ describe("asking about a page", () => {
     expect(intentWithContext({ kind: "decide" }, context)).toEqual({ kind: "decide" });
     expect(intentWithContext({ kind: "overview" }, null)).toEqual({ kind: "overview" });
     expect(intentWithContext({ kind: "history", subject: null }, context)).toEqual({ kind: "history", subject: "Acme Ltd" });
-    expect(intentWithContext({ kind: "history", subject: null }, null)).toEqual({ kind: "overview" });
     expect(intentWithContext({ kind: "history", subject: "Indago" }, context)).toEqual({ kind: "history", subject: "Indago" });
   });
 

@@ -12096,6 +12096,16 @@ for (const route of [
   ],
   [
     "get",
+    "/api/companies/{companyId}/search/quiet-clients",
+    "List open deals and leads with no recent contact",
+  ],
+  [
+    "get",
+    "/api/companies/{companyId}/search/recent-client-activity",
+    "List recent client notes, calls, meetings and emails",
+  ],
+  [
+    "get",
     "/api/companies/{companyId}/issues/count",
     "Count issues in a company",
   ],

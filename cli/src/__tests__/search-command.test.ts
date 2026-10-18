@@ -80,4 +80,28 @@ describe("gsam search", () => {
     expect(url.searchParams.get("scope")).toBe("records");
     expect(url.searchParams.get("recordKind")).toBe("person,activity");
   });
+
+  it("lists quiet clients with stage, last contact and link", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        days: 14,
+        total: 2,
+        clients: [
+          { caseId: "c1", title: "Rollout", pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", organisationName: "Heron Ltd", lastTouchAt: "2026-08-29T09:00:00.000Z", lastTouchLabel: "Call: Pricing call", quietDays: 50, href: "/GRE/pipelines/p/items/c1" },
+          { caseId: "c2", title: "Wren lead", pipelineId: "p", pipelineName: "Sales", stageName: "Lead", organisationName: null, lastTouchAt: null, lastTouchLabel: null, quietDays: 1, href: "/GRE/pipelines/p/items/c2" },
+        ],
+      });
+    }));
+    await run(["quiet-clients", "--days", "14"]);
+    const url = new URL(urls[0]!);
+    expect(url.pathname).toBe(`/api/companies/${COMPANY_ID}/search/quiet-clients`);
+    expect(url.searchParams.get("days")).toBe("14");
+    expect(lines).toEqual([
+      "2 open deals and leads with no note, call or meeting in 14 days:",
+      "Rollout (Heron Ltd) | Proposal in Sales | last Call: Pricing call, 50 days ago  /GRE/pipelines/p/items/c1",
+      "Wren lead | Lead in Sales | no notes or calls yet, added 1 day ago  /GRE/pipelines/p/items/c2",
+    ]);
+  });
 });

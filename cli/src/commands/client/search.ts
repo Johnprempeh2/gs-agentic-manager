@@ -1,5 +1,12 @@
 import { Command } from "commander";
-import { COMPANY_SEARCH_RECORD_KINDS, COMPANY_SEARCH_SCOPES, type CompanySearchResponse, type CompanySearchResult } from "@greatstone/shared";
+import {
+  COMPANY_SEARCH_RECORD_KINDS,
+  COMPANY_SEARCH_SCOPES,
+  type CompanyQuietClient,
+  type CompanyQuietClientsResponse,
+  type CompanySearchResponse,
+  type CompanySearchResult,
+} from "@greatstone/shared";
 import {
   addCommonClientOptions,
   handleCommandError,
@@ -37,7 +44,58 @@ export function formatSearchResult(result: CompanySearchResult): string {
   return [`${head}  ${result.href}`, snippet ? `    ${snippet}` : null].filter(Boolean).join("\n");
 }
 
+/** One quiet deal: name, stage, how long since we last spoke, and its link. */
+export function formatQuietClient(client: CompanyQuietClient): string {
+  const days = `${client.quietDays} ${client.quietDays === 1 ? "day" : "days"}`;
+  const last = client.lastTouchAt ? `last ${client.lastTouchLabel ?? "contact"}, ${days} ago` : `no notes or calls yet, added ${days} ago`;
+  const name = client.organisationName && !client.title.includes(client.organisationName)
+    ? `${client.title} (${client.organisationName})`
+    : client.title;
+  return `${name} | ${client.stageName} in ${client.pipelineName} | ${last}  ${client.href}`;
+}
+
+interface QuietClientsOptions extends BaseClientOptions {
+  companyId?: string;
+  days?: string;
+  limit?: string;
+}
+
 export function registerSearchCommands(program: Command): void {
+  addCommonClientOptions(
+    program
+      .command("quiet-clients")
+      .description("Open deals and leads with no note, call, meeting or email for a while, quietest first")
+      .option("-C, --company-id <id>", "Company ID")
+      .option("--days <n>", "Days without contact (1 to 365)", "30")
+      .option("--limit <n>", "Most deals to list (1 to 50)", "10")
+      .action(async (opts: QuietClientsOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const days = Math.min(Math.max(Number.parseInt(opts.days ?? "30", 10) || 30, 1), 365);
+          const limit = Math.min(Math.max(Number.parseInt(opts.limit ?? "10", 10) || 10, 1), 50);
+          const params = new URLSearchParams({ days: String(days), limit: String(limit) });
+          const response = await ctx.api.get<CompanyQuietClientsResponse>(
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/quiet-clients?${params.toString()}`,
+          );
+          if (ctx.json) {
+            printOutput(response, { json: true });
+            return;
+          }
+          const clients = response?.clients ?? [];
+          if (clients.length === 0) {
+            console.log(`Every open deal and lead has had a note, call or meeting in the last ${days} days.`);
+            return;
+          }
+          console.log(`${response!.total} open deals and leads with no note, call or meeting in ${days} days:`);
+          for (const client of clients) console.log(formatQuietClient(client));
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
+
   addCommonClientOptions(
     program
       .command("search")
