@@ -103,6 +103,7 @@ import {
   averageDaysInStage,
   dealNextStepLabel,
   dealWinRate,
+  averageDaysToWin,
   dealsClosedThisMonth,
   forecastByCloseMonth,
   lostReasonBreakdown,
@@ -1798,6 +1799,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const nextStepFilterOn = nextStepFilterPipelineId === pipelineId && dealsNeedingNextStep > 0;
   const boardCases = nextStepFilterOn ? casesNeedingNextStep : visibleCases;
   const winRate = useMemo(() => dealWinRate(visibleCases), [visibleCases]);
+  const daysToWin = useMemo(() => averageDaysToWin(visibleCases), [visibleCases]);
   const lostReasons = useMemo(
     () => (pipeline && isDevtoolsCaseType(pipeline.key) ? lostReasonBreakdown(visibleCases) : []),
     [pipeline, visibleCases],
@@ -2111,6 +2113,11 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
             {winRate ? (
               <span data-testid="pipeline-win-rate" title={`${winRate.won} won and ${winRate.lost} lost in the last 90 days`}>
                 {" "}· {winRate.percent}% win rate (90 days)
+              </span>
+            ) : null}
+            {daysToWin ? (
+              <span data-testid="pipeline-days-to-win" title={`Average from deal added to won, over ${daysToWin.deals} ${daysToWin.deals === 1 ? "deal" : "deals"} won in the last 90 days`}>
+                {" "}· won in {daysToWin.days} {daysToWin.days === 1 ? "day" : "days"} on average
               </span>
             ) : null}
             {(["won", "lost"] as const).map((outcome) => {
