@@ -37,7 +37,7 @@ describe("approval commands", () => {
     const day = 86_400_000;
     const fetchMock = vi.fn().mockImplementation(() =>
       Promise.resolve(jsonResponse([
-        { id: "old", type: "hire_agent", status: "pending", createdAt: new Date(Date.now() - 5 * day).toISOString() },
+        { id: "old", type: "hire_agent", status: "pending", createdAt: new Date(Date.now() - 5.5 * day).toISOString() },
         { id: "new", type: "hire_agent", status: "pending", createdAt: new Date().toISOString() },
       ])),
     );
