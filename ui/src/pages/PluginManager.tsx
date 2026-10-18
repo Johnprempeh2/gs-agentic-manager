@@ -5,6 +5,7 @@
  * @see PLUGIN_SPEC.md §9 — Plugin Marketplace / Manager
  */
 import { useEffect, useMemo, useState } from "react";
+import { ErrorState } from "@/components/ErrorState";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { PluginRecord } from "@greatstone/shared";
 import { Link } from "@/lib/router";
@@ -105,7 +106,7 @@ export function PluginManager() {
     ]);
   }, [selectedCompany?.name, setBreadcrumbs]);
 
-  const { data: plugins, isLoading, error } = useQuery({
+  const { data: plugins, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: queryKeys.plugins.all,
     queryFn: () => pluginsApi.list(),
   });
@@ -186,7 +187,16 @@ export function PluginManager() {
   );
 
   if (isLoading) return <div className="p-4 text-sm text-muted-foreground">Loading plugins...</div>;
-  if (error) return <div className="p-4 text-sm text-destructive">Failed to load plugins.</div>;
+  if (error) {
+    return (
+      <ErrorState
+        error={error}
+        title="Could not load your plugins"
+        onRetry={() => void refetch()}
+        retrying={isFetching}
+      />
+    );
+  }
 
   return (
     <div className="max-w-6xl space-y-6">

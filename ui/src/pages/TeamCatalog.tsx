@@ -744,7 +744,7 @@ export function TeamDetailPane({
             <h2 className="text-base font-semibold">{team.name}</h2>
             <div className="flex flex-wrap items-center gap-1.5">
               <Badge variant={team.kind === "bundled" ? "secondary" : "outline"} className="text-(length:--text-nano) capitalize">
-                {team.kind}
+                {team.kind === "bundled" ? "Included" : "Optional"}
               </Badge>
               <span className="text-xs text-muted-foreground">{team.category}</span>
               <TrustChip level={team.trustLevel} />
@@ -1174,7 +1174,7 @@ function TeamInstallerDialog({
           selectableAdapterTypes,
         );
         if (!resolvedAdapterType) {
-          throw new Error("Enable a legacy adapter before installing this team.");
+          throw new Error("This team needs an AI engine that is not switched on yet. Ask your Greatstone contact to turn one on, then try again.");
         }
         overrides[slug] = {
           adapterType: resolvedAdapterType,
@@ -1188,7 +1188,7 @@ function TeamInstallerDialog({
         selectableAdapterTypes,
       );
       if (!adapterType) {
-        throw new Error("Enable a legacy adapter before installing this team.");
+        throw new Error("This team needs an AI engine that is not switched on yet. Ask your Greatstone contact to turn one on, then try again.");
       }
       if (adapterType !== agent.adapterType) {
         overrides[agent.slug] = { adapterType };
@@ -1384,7 +1384,7 @@ function TeamInstallerDialog({
                 <p className="font-medium">Install failed</p>
                 <p className="mt-0.5 text-xs">{applyError}</p>
                 <p className="mt-1 text-xs">
-                  Partial state is not rolled back. Review the organization activity log before retrying.
+                  Some parts may already be installed. Check Activity before you try again.
                 </p>
               </div>
             </div>
@@ -1497,7 +1497,7 @@ export function StepTargetManager({
         className="rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2.5 text-sm text-blue-700 dark:text-blue-300"
         id="target-manager-help"
       >
-        This team&apos;s root agents need a manager in your organization. Pick the agent who will become
+        This team&apos;s root agents need a manager in your organisation. Pick the agent who will become
         their parent. Internal team hierarchy is preserved.
       </div>
 
@@ -1551,7 +1551,7 @@ export function StepTargetManager({
             checked={fullCompany}
             onChange={(e) => onToggleFullCompany(e.target.checked)}
           />
-          Use this team as a full-organization package (no target manager)
+          Install as a whole organisation (no manager needed)
         </label>
       )}
     </div>

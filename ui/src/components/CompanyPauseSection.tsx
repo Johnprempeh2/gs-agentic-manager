@@ -102,14 +102,14 @@ export function CompanyPauseSection({ company }: { company: Company }) {
             page.
           </p>
           <Button size="sm" onClick={() => openDialog("resume")} disabled={busy}>
-            Resume organization
+            Resume organisation
           </Button>
         </div>
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             Pausing stops all running work, routines and connections straight away. Nothing runs
-            until someone resumes the organization.
+            until someone resumes the organisation.
           </p>
           <Button
             size="sm"
@@ -117,7 +117,7 @@ export function CompanyPauseSection({ company }: { company: Company }) {
             onClick={() => openDialog("pause")}
             disabled={busy || company.status === "archived"}
           >
-            Pause organization
+            Pause organisation
           </Button>
         </div>
       )}
@@ -149,7 +149,7 @@ export function CompanyPauseSection({ company }: { company: Company }) {
             </div>
             {pauseMutation.isError && (
               <p role="alert" className="text-xs text-destructive">
-                {errorMessage(pauseMutation.error, "Could not pause the organization.")}
+                {errorMessage(pauseMutation.error, "Could not pause the organisation.")}
               </p>
             )}
             <DialogFooter>
@@ -208,7 +208,7 @@ export function CompanyPauseSection({ company }: { company: Company }) {
             </div>
             {resumeMutation.isError && (
               <p role="alert" className="text-xs text-destructive">
-                {errorMessage(resumeMutation.error, "Could not resume the organization.")}
+                {errorMessage(resumeMutation.error, "Could not resume the organisation.")}
               </p>
             )}
             <DialogFooter>

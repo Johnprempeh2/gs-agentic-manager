@@ -84,6 +84,7 @@ describe("SignedInDevicesSection", () => {
     await act(async () => button("Sign out")[0]!.click());
     expect(auth.signOutDevice).toHaveBeenCalledWith("s-phone");
 
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     await act(async () => button("Sign out everywhere else")[0]!.click());
     expect(auth.signOutOtherDevices).toHaveBeenCalled();
     await vi.waitFor(() => expect(auth.listSessions.mock.calls.length).toBeGreaterThanOrEqual(3));

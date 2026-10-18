@@ -162,7 +162,7 @@ export function ConfigureBuiltInAgentModal({
             board.
           </InlineBanner>
 
-          <Field label="Adapter type">
+          <Field label="AI engine">
             <AdapterTypeDropdown
               value={adapterType}
               onChange={(next) => {

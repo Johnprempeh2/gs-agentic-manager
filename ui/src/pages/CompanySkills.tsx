@@ -1,4 +1,5 @@
 import { AgentIdentity } from "@/components/AgentIdentity";
+import { getAdapterLabel } from "@/adapters/adapter-display-registry";
 import { AgentAvatar } from "@/components/AgentAvatar";
 import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "@/lib/router";
@@ -2219,7 +2220,7 @@ export function InstallPreviewDialog({
                 }}
                 getDescription={(agent) => {
                   const option = agent as AttachAgentOption;
-                  return `${option.adapterType}${option.required ? " · required" : ""}${!option.supportsSkills ? " · skills not supported" : ""}`;
+                  return `${getAdapterLabel(option.adapterType)}${option.required ? " · always on" : ""}${!option.supportsSkills ? " · cannot use skills" : ""}`;
                 }}
               />
             </div>
@@ -2349,7 +2350,7 @@ function AttachAgentsPopover({
       }}
       getDescription={(agent) => {
         const option = agent as AttachAgentOption;
-        return `${option.adapterType}${option.required ? " · required" : ""}${!option.supportsSkills ? " · skills not supported" : ""}`;
+        return `${getAdapterLabel(option.adapterType)}${option.required ? " · always on" : ""}${!option.supportsSkills ? " · cannot use skills" : ""}`;
       }}
       renderNameSuffix={(agent) => (agent as AttachAgentOption).paused ? (
         <Badge variant="outline" className="[&>svg]:size-2.5 border-amber-500/30 bg-amber-500/10 px-1.5 text-(length:--text-nano) uppercase tracking-wide text-amber-500">

@@ -5,6 +5,7 @@ import { queryKeys } from "@/lib/queryKeys";
 import { relativeTime } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useConfirm } from "@/context/ConfirmContext";
 
 /** "Chrome on Windows" from a user agent; a plain fallback when it is unknown. */
 export function describeDevice(userAgent: string | null): string {
@@ -48,6 +49,16 @@ export function SignedInDevicesSection() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: queryKeys.auth.devices });
   const signOutOne = useMutation({ mutationFn: (id: string) => authApi.signOutDevice(id), onSuccess: refresh });
   const signOutOthers = useMutation({ mutationFn: () => authApi.signOutOtherDevices(), onSuccess: refresh });
+  const confirm = useConfirm();
+  const confirmSignOutOthers = async () => {
+    const ok = await confirm({
+      title: "Sign out every other device?",
+      description: "You stay signed in here. Anyone using your account on another device will need to sign in again.",
+      confirmLabel: "Sign them out",
+      tone: "destructive",
+    });
+    if (ok) signOutOthers.mutate();
+  };
 
   if (devices.isLoading) return null;
   const rows: SignedInDevice[] = devices.data ?? [];
@@ -70,7 +81,7 @@ export function SignedInDevicesSection() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => signOutOthers.mutate()}
+            onClick={() => void confirmSignOutOthers()}
             disabled={signOutOthers.isPending}
           >
             {signOutOthers.isPending ? <LoaderCircle className="size-4 animate-spin" /> : null}
