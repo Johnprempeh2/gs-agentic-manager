@@ -397,7 +397,8 @@ export function quietClientsService(db: Db) {
             WHEN jsonb_typeof(pc.fields->'leadValue') = 'number' THEN (pc.fields->>'leadValue')::numeric
           END AS value,
           nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency,
-          coalesce(nullif(trim(pc.fields->>'dealOwner'), ''), nullif(trim(pc.fields->>'leadOwner'), '')) AS owner
+          coalesce(nullif(trim(pc.fields->>'dealOwner'), ''), nullif(trim(pc.fields->>'leadOwner'), '')) AS owner,
+          pc.organisation_id, pc.created_at
         FROM pipeline_cases pc
         JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
         JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('working', 'review')
@@ -413,6 +414,26 @@ export function quietClientsService(db: Db) {
         FROM open_cases
         GROUP BY owner, currency
       `) as unknown as Array<{ owner: string | null; currency: string | null; count: number; value: number }>;
+      const missingRows = await db.execute(sql`
+        WITH open_cases AS (${open}),
+        flagged AS (
+          SELECT *, (close_date IS NULL) AS no_close, (value IS NULL) AS no_value, (owner IS NULL) AS no_owner,
+            (organisation_id IS NULL) AS no_org
+          FROM open_cases
+        )
+        SELECT 'count' AS row_kind, NULL AS "caseId", NULL AS title, NULL AS "pipelineId", NULL AS "pipelineName", NULL AS "stageName",
+          count(*) FILTER (WHERE no_close)::int AS no_close, count(*) FILTER (WHERE no_value)::int AS no_value,
+          count(*) FILTER (WHERE no_owner)::int AS no_owner, count(*) FILTER (WHERE no_org)::int AS no_org, NULL::timestamptz AS created_at
+        FROM flagged
+        UNION ALL
+        SELECT * FROM (
+          SELECT 'deal', id, title, pipeline_id, pipeline_name, stage_name,
+            no_close::int, no_value::int, no_owner::int, no_org::int, created_at
+          FROM flagged WHERE no_close OR no_value OR no_owner OR no_org
+          ORDER BY created_at ASC, id
+          LIMIT ${options.limit}
+        ) shown
+      `) as unknown as Array<{ row_kind: "count" | "deal"; caseId: string | null; title: string | null; pipelineId: string | null; pipelineName: string | null; stageName: string | null; no_close: number; no_value: number; no_owner: number; no_org: number }>;
       const stageRows = await db.execute(sql`
         WITH open_cases AS (${open})
         SELECT pipeline_id AS "pipelineId", pipeline_name AS "pipelineName", stage_name AS "stageName",
@@ -465,6 +486,25 @@ export function quietClientsService(db: Db) {
           .sort((a, b) => b.value - a.value),
         stages,
         topDeals,
+        missing: (() => {
+          const counts = missingRows.find((row) => row.row_kind === "count");
+          return {
+            closeDate: Number(counts?.no_close ?? 0),
+            value: Number(counts?.no_value ?? 0),
+            owner: Number(counts?.no_owner ?? 0),
+            organisation: Number(counts?.no_org ?? 0),
+            deals: missingRows.filter((row) => row.row_kind === "deal").map((row) => ({
+              caseId: row.caseId!,
+              title: row.title!,
+              pipelineName: row.pipelineName!,
+              stageName: row.stageName!,
+              missing: ([["closeDate", row.no_close], ["value", row.no_value], ["owner", row.no_owner], ["organisation", row.no_org]] as const)
+                .filter(([, flag]) => Number(flag) === 1)
+                .map(([key]) => key),
+              href: `/${prefix}/pipelines/${row.pipelineId}/items/${row.caseId}`,
+            })),
+          };
+        })(),
         owners: [...ownerRows.reduce((map, row) => {
           const entry = map.get(row.owner) ?? { owner: row.owner, count: 0, valueByCurrency: [] as Array<{ currency: string | null; value: number }> };
           entry.count += Number(row.count);

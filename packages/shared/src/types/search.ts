@@ -310,6 +310,14 @@ export interface CompanyPipelineSummaryResponse {
   topDeals: CompanyPipelineDeal[];
   /** Open deals per imported owner, most deals first; null owner when none was set. */
   owners: Array<{ owner: string | null; count: number; valueByCurrency: Array<{ currency: string | null; value: number }> }>;
+  /** How many open deals lack each key field, and up to `limit` of them, oldest first. */
+  missing: {
+    closeDate: number;
+    value: number;
+    owner: number;
+    organisation: number;
+    deals: Array<{ caseId: string; title: string; pipelineName: string; stageName: string; missing: Array<"closeDate" | "value" | "owner" | "organisation">; href: string }>;
+  };
 }
 
 export interface CompanyClosedDeal {
