@@ -14,6 +14,7 @@ import { Link, useSearchParams } from "@/lib/router";
 import { cn, formatCalendarDay } from "@/lib/utils";
 import { morningSummarySpeech, morningSummaryText } from "@/lib/morning-summary-text";
 import { ListenButton } from "../components/ListenButton";
+import { ShareTextButton } from "../components/ShareTextButton";
 import { useCopyAction } from "@/lib/use-copy-action";
 import { Button } from "@/components/ui/button";
 
@@ -177,6 +178,7 @@ export function MorningSummary() {
               {dayCopy.copied ? <Check className="size-3.5" /> : <ClipboardList className="size-3.5" />}
               {dayCopy.copied ? "Copied" : dayCopy.failed ? "Could not copy" : "Copy as an update"}
             </Button>
+            <ShareTextButton title={`Today, ${formatCalendarDay(localToday(now))}`} getText={() => morningSummaryText(data, localToday(now), since)} />
           </div>
         </div>
         <p className="text-sm text-muted-foreground">
