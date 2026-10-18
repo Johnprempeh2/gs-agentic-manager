@@ -166,3 +166,31 @@ export function weeklyReportPdf(report: WeeklyReport): string {
   lines.push({ text: `Made by GS Agentic Manager on ${formatShortDate(report.generatedAt)}.`, size: 8.5, muted: true, gapBefore: 18 });
   return buildPdf(lines, title);
 }
+
+/** "A, B and 2 more." from titles, for reading aloud. */
+function spokenTitles(titles: string[], total: number): string {
+  const parts = [...titles];
+  if (total > titles.length) parts.push(`${total - titles.length} more`);
+  return parts.length <= 1 ? `${parts[0] ?? ""}.` : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}.`;
+}
+
+/**
+ * "Listen" on This week: the report as a few spoken parts. The headline
+ * carries the numbers; then what needs you, who finished what and what is
+ * stuck, by name. Task numbers are left out because they sound like noise.
+ */
+export function weeklyReportSpeech(report: WeeklyReport): string[] {
+  const parts = [`This week at ${report.companyName || "the company"}.`, weeklyHeadline(report)];
+  if (report.needsYou.count > 0) {
+    parts.push(`Needs you: ${spokenTitles(report.needsYou.items.map((task) => task.title), report.needsYou.count)}`);
+  }
+  if (report.finished.agents.length > 0) {
+    const top = report.finished.agents.slice(0, 3).map((agent) => `${agent.name} finished ${plural(agent.finished, "task", "tasks")}`);
+    const rest = report.finished.agents.length - top.length;
+    parts.push(`${top.join(", ")}${rest > 0 ? `, and ${plural(rest, "other agent", "other agents")} finished work too` : ""}.`);
+  }
+  if (report.stuck.count > 0) {
+    parts.push(`Stuck: ${spokenTitles(report.stuck.items.slice(0, 3).map((task) => task.title), report.stuck.count)}`);
+  }
+  return parts;
+}
