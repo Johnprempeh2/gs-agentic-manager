@@ -55,6 +55,7 @@ import {
   createDeliverableSchema,
   markDeliverableSchema,
   createGeneratedImageSchema,
+  createGeneratedImageVariationsSchema,
   updateGeneratedImageCoverSchema,
   generatedImagesQuerySchema,
   generatedVideosQuerySchema,
@@ -1885,6 +1886,7 @@ const CREATED_OPERATIONS = new Set([
 
 const ACCEPTED_OPERATIONS = new Set([
   "POST /api/companies/{companyId}/generated-images",
+  "POST /api/companies/{companyId}/generated-images/variations",
   "POST /api/companies/{companyId}/generated-videos",
   "POST /api/companies/{companyId}/releases/release",
   "POST /api/companies/{companyId}/releases/rollback",
@@ -4620,6 +4622,15 @@ registry.registerPath({
   tags: ["assets"],
   summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). 422 code image_generation_not_configured when no image service key is set; 429 when 6 images are already being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageSchema) },
+  responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
+});
+
+registry.registerPath({
+  method: "post",
+  path: "/api/companies/{companyId}/generated-images/variations",
+  tags: ["assets"],
+  summary: "Make 2 to 4 takes on one description at once: count for copies of the same request, or lookIds to make one per house look and compare them. Answers 202 with { images } (all pending); poll each like a single image. 422 code studio_look_not_found when a look is not in this company; 429 when they would not all fit under the limit of 6 images being made",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageVariationsSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
 });
 

@@ -62,8 +62,8 @@ shots `large-format` + `clinical-sharp-prime` + 50 + `f11`; portraits
 `full-frame-cine` + `swirl-bokeh-portrait` + 85 + `f1.4`.
 
 Every version costs money; use `--count` above 1 only when the task wants a
-choice. With MCP, the same settings go to `studio_make_image` (with `count`),
-then poll `studio_get_image`.
+choice. Versions start together or not at all. With MCP, the same settings go
+to `studio_make_image` (with `count`), then poll `studio_get_image`.
 
 ### Video clips
 
@@ -93,6 +93,11 @@ generate`. Your own flags win over the look. Save a new one with
 `gsam look save --name "Acme product shots" --style photo --camera large-format
 --aperture f11 --words "navy and gold, soft morning light"`. With MCP:
 `studio_list_looks`, `studio_save_look`, and `lookId`.
+
+To let the board choose between looks, make the same picture in each:
+`gsam image generate --prompt "..." --compare "Warm, Cool"` (2 to 4 look
+names), or `lookIds` on `studio_make_image`. Link the results to the task so
+the board can pick one.
 
 ## With curl
 

@@ -23,7 +23,7 @@ const storage = {
   provider: "local_disk",
   putFile: async (input) => ({
     provider: "local_disk",
-    objectKey: `${input.companyId}/${input.originalFilename}`,
+    objectKey: `${input.companyId}/${crypto.randomUUID()}/${input.originalFilename}`,
     contentType: input.contentType,
     byteSize: input.body.length,
     sha256: "sha",
@@ -128,5 +128,50 @@ describeEmbeddedPostgres("studio looks routes", () => {
       .send({ prompt: "A red kite", lookId: theirLook.id });
     expect(borrowed.status).toBe(422);
     expect(borrowed.body.details.code).toBe("studio_look_not_found");
+  });
+
+  it("makes several takes at once, one per look, and refuses a batch that would not fit", async () => {
+    const { companyId, actor } = await seedCompanyWithBoardAccess(ctx.db, "Looks variations");
+    const other = await seedCompanyWithBoardAccess(ctx.db, "Looks variations other");
+    const seen: ImageGenerationInput[] = [];
+    const server = app(actor, seen);
+    const warm = (await request(server).post(`/api/companies/${companyId}/studio-looks`).send({ name: "Warm", words: "golden hour" })).body as StudioLook;
+    const cool = (await request(server).post(`/api/companies/${companyId}/studio-looks`).send({ name: "Cool", words: "blue dusk" })).body as StudioLook;
+    const theirs = (await request(app(other.actor)).post(`/api/companies/${other.companyId}/studio-looks`).send({ name: "Theirs" })).body as StudioLook;
+
+    const compared = await request(server)
+      .post(`/api/companies/${companyId}/generated-images/variations`)
+      .send({ prompt: "A lighthouse", lookIds: [warm.id, cool.id] });
+    expect(compared.status).toBe(202);
+    expect(compared.body.images.map((image: { prompt: string }) => image.prompt)).toEqual([
+      "A lighthouse, golden hour",
+      "A lighthouse, blue dusk",
+    ]);
+
+    const copies = await request(server).post(`/api/companies/${companyId}/generated-images/variations`).send({ prompt: "A fox", count: 3 });
+    expect(copies.status).toBe(202);
+    expect(copies.body.images).toHaveLength(3);
+    await waitForGeneratedImageJobs();
+    expect(seen).toHaveLength(5);
+
+    const both = await request(server)
+      .post(`/api/companies/${companyId}/generated-images/variations`)
+      .send({ prompt: "A fox", count: 2, lookIds: [warm.id, cool.id] });
+    expect(both.status).toBe(400);
+
+    const borrowed = await request(server)
+      .post(`/api/companies/${companyId}/generated-images/variations`)
+      .send({ prompt: "A fox", lookIds: [warm.id, theirs.id] });
+    expect(borrowed.status).toBe(422);
+    expect(borrowed.body.details.code).toBe("studio_look_not_found");
+
+    await ctx.db.insert(generatedImages).values(
+      Array.from({ length: 4 }, () => ({ companyId, prompt: "Busy", aspectRatio: "1:1", provider: "higgsfield", model: "soul", status: "pending" })),
+    );
+    const before = (await ctx.db.select().from(generatedImages)).length;
+    const crowded = await request(server).post(`/api/companies/${companyId}/generated-images/variations`).send({ prompt: "A fox", count: 3 });
+    expect(crowded.status).toBe(429);
+    expect(crowded.body.error).toContain("Only 2 more images can start now");
+    expect((await ctx.db.select().from(generatedImages)).length).toBe(before);
   });
 });

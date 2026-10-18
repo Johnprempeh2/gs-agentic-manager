@@ -455,7 +455,7 @@ describe("paperclip MCP tools", () => {
   });
 
   it("makes several studio images with camera picks for the default company", async () => {
-    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ id: "img", status: "pending" }, 202));
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ images: [{ id: "a" }, { id: "b" }] }, 202));
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await getTool("studio_make_image").execute({
@@ -465,16 +465,27 @@ describe("paperclip MCP tools", () => {
       count: 2,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/generated-images");
+    expect(String(url)).toBe("http://localhost:3100/api/companies/11111111-1111-1111-1111-111111111111/generated-images/variations");
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual({
       prompt: "A rooftop garden at dusk",
       aspectRatio: "16:9",
       camera: { lens: "classic-anamorphic", focalLength: 35 },
+      count: 2,
     });
     expect(JSON.parse(response.content[0]!.text).images).toHaveLength(2);
+  });
+
+  it("compares house looks in one studio request", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => mockJsonResponse({ images: [{ id: "a" }, { id: "b" }] }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+    const lookIds = ["33333333-3333-4333-8333-333333333331", "33333333-3333-4333-8333-333333333332"];
+    await getTool("studio_make_image").execute({ prompt: "A lighthouse", lookIds });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(String(url)).toMatch(/\/generated-images\/variations$/);
+    expect(JSON.parse(String(init.body))).toEqual({ prompt: "A lighthouse", aspectRatio: "1:1", lookIds });
   });
 
   it("refuses an unknown studio lens before calling the server", async () => {
