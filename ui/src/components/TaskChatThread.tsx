@@ -2469,8 +2469,8 @@ export function TaskChatThread(props: TaskChatThreadProps) {
         label:
           pendingRuntimeRequest.questionSet?.title ??
           (pendingRuntimeRequest.requestType === "permission"
-            ? "Runtime permission"
-            : "Runtime input"),
+            ? "The agent needs your permission"
+            : "The agent needs your answer"),
       });
     }
     const durable = (interactions ?? [])

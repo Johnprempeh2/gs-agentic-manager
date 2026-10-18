@@ -116,6 +116,7 @@ export function CompanySettings() {
     }) => companiesApi.update(selectedCompanyId!, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      toastActions?.pushToast({ title: "Organisation details saved", tone: "success" });
     }
   });
 
@@ -124,8 +125,19 @@ export function CompanySettings() {
       companiesApi.update(selectedCompanyId!, {
         requireBoardApprovalForNewAgents: requireApproval
       }),
-    onSuccess: () => {
+    onSuccess: (_company, requireApproval) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
+      toastActions?.pushToast({
+        title: requireApproval ? "New agents now need your approval" : "New agents no longer need approval",
+        tone: "success",
+      });
+    },
+    onError: (error) => {
+      toastActions?.pushToast({
+        title: "Your change was not saved",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     }
   });
 
@@ -139,6 +151,7 @@ export function CompanySettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
       queryClient.invalidateQueries({ queryKey: ["api-equivalent", selectedCompanyId] });
+      toastActions?.pushToast({ title: "Hourly wage saved", tone: "success" });
     }
   });
 
@@ -392,14 +405,11 @@ export function CompanySettings() {
               >
                 {generalMutation.isPending ? "Saving..." : "Save changes"}
               </Button>
-              {generalMutation.isSuccess && (
-                <span className="text-xs text-muted-foreground">Saved</span>
-              )}
               {generalMutation.isError && (
                 <span className="text-xs text-destructive">
                   {generalMutation.error instanceof Error
                       ? generalMutation.error.message
-                      : "Failed to save"}
+                      : "Your change was not saved. Try again."}
                 </span>
               )}
             </div>
@@ -457,7 +467,7 @@ export function CompanySettings() {
               )}
               {hourlyRateMutation.isError && (
                 <p className="mt-1 text-xs text-destructive">
-                  {hourlyRateMutation.error instanceof Error ? hourlyRateMutation.error.message : "Failed to save"}
+                  {hourlyRateMutation.error instanceof Error ? hourlyRateMutation.error.message : "Your change was not saved. Try again."}
                 </p>
               )}
             </Field>

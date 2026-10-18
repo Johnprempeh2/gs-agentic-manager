@@ -1071,7 +1071,7 @@ export function AgentDetail() {
       crumbs.push({ label: agentName, href: agentDetailHref(canonicalAgentRef) });
       if (urlRunId) {
         crumbs.push({ label: "Runs", href: agent?.id ? agentScopedAuditHref(agent.id, "runs") : undefined });
-        crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
+        crumbs.push({ label: "Work details" });
       } else {
         const item = AGENT_DETAIL_NAVIGATION
           .flatMap((section) => section.items)
@@ -1425,7 +1425,7 @@ export function AgentDetail() {
       {actionError && <p className="text-sm text-destructive">{actionError}</p>}
       {isPendingApproval && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/30 dark:text-amber-200">
-          <span>This agent is pending board approval and cannot be invoked yet.</span>
+          <span>This agent is waiting for approval and cannot start work yet.</span>
           <Button
             variant="outline"
             size="sm"
@@ -1729,7 +1729,7 @@ function LatestRunCard({
             </>
           ) : (
             <>
-              <span className="font-mono text-xs text-muted-foreground">{run.id.slice(0, 8)}</span>
+              <span className="text-xs text-muted-foreground">No task linked</span>
               <Badge variant="ghost" className={cn(
                 "px-1.5 text-(length:--text-nano)",
                 run.invocationSource === "timer" ? "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300"
@@ -1829,7 +1829,7 @@ export function AgentOverview({
           <div className="space-y-3">
             <SummaryRow label="Powered by"><span className="text-sm">{adapterLabels[agent.adapterType] ?? agent.adapterType}</span></SummaryRow>
             <SummaryRow label="Model"><span className="max-w-64 truncate text-sm font-mono">{configuredModel}</span></SummaryRow>
-            <SummaryRow label="Session"><span className="max-w-64 truncate text-sm font-mono">{runtimeState?.sessionDisplayId ?? runtimeState?.sessionId ?? "Starts fresh next time"}</span></SummaryRow>
+            <SummaryRow label="Memory"><span className="text-sm">{runtimeState?.sessionDisplayId || runtimeState?.sessionId ? "Remembers its last conversation" : "Starts fresh next time"}</span></SummaryRow>
             <SummaryRow label="Last worked">
               <span className="text-sm">{lastRun ? `${sentenceCaseStatus(lastRun.status)} · ${relativeTime(lastRun.createdAt)}` : "Has not worked yet"}</span>
             </SummaryRow>
@@ -1947,6 +1947,8 @@ export function AgentRevisionsTab({
 }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const confirmAction = useConfirm();
+  const { pushToast } = useToastActions();
 
   const { data: configRevisions } = useQuery({
     queryKey: queryKeys.agents.configRevisions(agent.id),
@@ -1961,25 +1963,31 @@ export function AgentRevisionsTab({
       if (!syncAgentRouteAfterRename(queryClient, navigate, agent, updated, "revisions")) {
         queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
       }
+      pushToast({ title: "Agent setup restored", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({
+        title: "Could not restore this version",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
     },
   });
 
   return (
     <div className="max-w-3xl space-y-3">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-medium">Configuration Revisions</h3>
+        <h3 className="text-sm font-medium">Saved versions</h3>
         <span className="text-xs text-muted-foreground">{configRevisions?.length ?? 0} total</span>
       </div>
       {(configRevisions ?? []).length === 0 ? (
-        <p className="text-sm text-muted-foreground">No configuration revisions yet.</p>
+        <p className="text-sm text-muted-foreground">No saved versions yet. A new one is kept each time you change this agent.</p>
       ) : (
         <div className="space-y-2">
           {(configRevisions ?? []).map((revision) => (
             <div key={revision.id} className="space-y-2 rounded-md border border-border p-3">
               <div className="flex items-center justify-between gap-3">
                 <div className="text-xs text-muted-foreground">
-                  <span className="font-mono">{revision.id.slice(0, 8)}</span>
-                  <span className="mx-1">·</span>
                   <span>{formatDate(revision.createdAt)}</span>
                   <span className="mx-1">·</span>
                   <span>{revision.source}</span>
@@ -1987,7 +1995,14 @@ export function AgentRevisionsTab({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => rollbackConfig.mutate(revision.id)}
+                  onClick={async () => {
+                    const confirmed = await confirmAction({
+                      title: "Go back to this version of the agent's setup?",
+                      description: "Its instructions, model and settings are replaced with this saved version. Your current setup is kept as a new version, so you can switch back.",
+                      confirmLabel: "Restore this version",
+                    });
+                    if (confirmed) rollbackConfig.mutate(revision.id);
+                  }}
                   disabled={rollbackConfig.isPending}
                 >
                   Restore
@@ -2150,7 +2165,7 @@ export function ConfigurationTab({
         environmentVariablesPlacement="configuration"
         compactTestFeedback
         sectionOrder={["identity", "adapter", "configuration", "environment", "environment-variables", "run-policy"]}
-        sectionTitles={{ adapter: "Adapter", configuration: "Configuration", identity: "Agent identity" }}
+        sectionTitles={{ adapter: "AI service", configuration: "Settings", identity: "Agent identity" }}
         canConfigureProviderTrace={canConfigureProviderTrace}
       /> : null}
 
@@ -2652,7 +2667,7 @@ export function PromptsTab({
     return (
       <div className="max-w-3xl">
         <p className="text-sm text-muted-foreground">
-          Instructions bundles are only available for local adapters.
+          This agent's instructions are managed by the service it runs on, so they cannot be edited here. To change how it works, open How it runs.
         </p>
       </div>
     );
@@ -2674,7 +2689,7 @@ export function PromptsTab({
         </div>
       )}
       {showSaveNotice && <p className="text-xs text-muted-foreground">
-        Saved instructions affect the next run. Active runs keep the instructions they started with, and instruction changes may start a fresh adapter session.
+        Saved instructions apply from the agent's next piece of work. Work already under way keeps the instructions it started with.
       </p>}
 
       <Collapsible defaultOpen={currentMode === "external"}>
@@ -3195,8 +3210,8 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
     >
       <div className="flex items-center gap-2">
         <StatusIcon className={cn("h-3.5 w-3.5 shrink-0", statusInfo.color, run.status === "running" && "animate-spin")} />
-        <span className="font-mono text-xs text-muted-foreground">
-          {run.id.slice(0, 8)}
+        <span className="text-xs text-muted-foreground">
+          {sentenceCaseStatus(run.status)}
         </span>
         <Badge variant="ghost" className={cn(
           "px-1.5 text-(length:--text-nano)",
@@ -3217,10 +3232,9 @@ function RunListItem({ run, isSelected, agentId }: { run: HeartbeatRun; isSelect
           {summary.slice(0, 60)}
         </span>
       )}
-      {(metrics.totalTokens > 0 || metrics.cost > 0) && (
+      {metrics.cost > 0 && (
         <div className="flex items-center gap-2 pl-5.5 text-(length:--text-micro) text-muted-foreground tabular-nums">
-          {metrics.totalTokens > 0 && <span>{formatTokens(metrics.totalTokens)} tok</span>}
-          {metrics.cost > 0 && <span>${metrics.cost.toFixed(3)}</span>}
+          <span>${metrics.cost.toFixed(3)}</span>
         </div>
       )}
     </Link>
@@ -3810,8 +3824,8 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
               onClick={() => setSessionOpen((v) => !v)}
             >
               <ChevronRight className={cn("h-3 w-3 transition-transform", sessionOpen && "rotate-90")} />
-              Session
-              {sessionChanged && <span className="text-yellow-400 ml-1">(changed)</span>}
+              Agent memory
+              {sessionChanged && <span className="text-yellow-400 ml-1">(started fresh)</span>}
             </button>
             {sessionOpen && (
               <div className="px-4 pb-3 space-y-1 text-xs">
@@ -3836,8 +3850,9 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                       onClick={async () => {
                         const issueCount = touchedIssueIds.length;
                         const confirmed = await confirmAction({
-                          title: `Clear the session for ${issueCount} issue${issueCount === 1 ? "" : "s"} touched by this run?`,
-                          confirmLabel: "Clear sessions",
+                          title: `Make the agent start fresh on ${issueCount} task${issueCount === 1 ? "" : "s"} from this work?`,
+                          description: "It forgets the earlier conversation on these tasks and starts again next time. The task history stays.",
+                          confirmLabel: "Start fresh",
                           tone: "destructive",
                         });
                         if (!confirmed) return;
@@ -3845,14 +3860,14 @@ function RunDetail({ run: initialRun, agentRouteId, adapterType, adapterConfig }
                       }}
                     >
                       {clearSessionsForTouchedIssues.isPending
-                        ? "clearing session..."
-                        : "clear session for these tasks"}
+                        ? "Starting fresh…"
+                        : "Start fresh on these tasks"}
                     </button>
                     {clearSessionsForTouchedIssues.isError && (
                       <p className="text-(length:--text-micro) text-destructive mt-1">
                         {clearSessionsForTouchedIssues.error instanceof Error
                           ? clearSessionsForTouchedIssues.error.message
-                          : "Failed to clear sessions"}
+                          : "Could not reset the agent's memory. Try again in a moment."}
                       </p>
                     )}
                   </div>
@@ -4672,10 +4687,10 @@ export function KeysTab({ agentId, companyId }: { agentId: string; companyId?: s
       <div className="border border-border rounded-lg p-4 space-y-3">
         <h3 className="text-xs font-medium text-muted-foreground flex items-center gap-2">
           <Key className="h-3.5 w-3.5" />
-          Create API Key
+          Make an access key
         </h3>
         <p className="text-xs text-muted-foreground">
-          API keys allow this agent to authenticate calls to the GS Agentic Manager server.
+          An access key lets another tool connect to GS Agentic Manager as this agent. Keep it private.
         </p>
         <div className="flex items-center gap-2">
           <Input

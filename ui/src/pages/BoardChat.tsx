@@ -701,7 +701,7 @@ export function BoardChat() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center max-w-sm">
-          <h2 className="text-lg font-semibold">No organization selected</h2>
+          <h2 className="text-lg font-semibold">No organisation selected</h2>
           <p className="text-sm text-muted-foreground mt-2">
             Choose an organisation to start chatting with your board concierge.
           </p>
@@ -1025,7 +1025,7 @@ export function BoardChat() {
               value={input}
               onChange={setInput}
               onSubmit={handleSend}
-              placeholder="Ask anything about your organization..."
+              placeholder="Ask anything about your organisation..."
               submitKey="enter"
               surface="translucent"
               submitting={sending}
