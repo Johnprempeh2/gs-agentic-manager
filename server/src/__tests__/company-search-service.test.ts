@@ -551,10 +551,10 @@ describeEmbeddedPostgres("companySearchService", () => {
       { id: done, companyId, pipelineId, key: "won", name: "Won", kind: "done", position: 2 },
     ]);
     await db.insert(pipelineCases).values([
-      { companyId, pipelineId, stageId: lead, caseKey: "p1", title: "Small lead", fields: { leadValue: 100, leadCurrency: "GBP" } },
+      { companyId, pipelineId, stageId: lead, caseKey: "p1", title: "Small lead", fields: { leadValue: 100, leadCurrency: "GBP", leadOwner: "Ama" } },
       { companyId, pipelineId, stageId: lead, caseKey: "p2", title: "Unpriced lead", fields: {} },
-      { companyId, pipelineId, stageId: proposal, caseKey: "p3", title: "Big proposal", fields: { dealValue: 9000, dealCurrency: "GBP", expectedCloseDate: "2026-11-01" } },
-      { companyId, pipelineId, stageId: proposal, caseKey: "p4", title: "Dollar proposal", fields: { dealValue: 3000, dealCurrency: "USD" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "p3", title: "Big proposal", fields: { dealValue: 9000, dealCurrency: "GBP", expectedCloseDate: "2026-11-01", dealOwner: "Kofi" } },
+      { companyId, pipelineId, stageId: proposal, caseKey: "p4", title: "Dollar proposal", fields: { dealValue: 3000, dealCurrency: "USD", dealOwner: "Kofi" } },
       { companyId, pipelineId, stageId: done, caseKey: "p5", title: "Already won", fields: { dealValue: 99999, dealCurrency: "GBP" } },
     ]);
 
@@ -572,6 +572,11 @@ describeEmbeddedPostgres("companySearchService", () => {
     ]);
     expect(summary.topDeals.map((deal) => deal.title)).toEqual(["Big proposal", "Dollar proposal"]);
     expect(summary.topDeals[0]).toMatchObject({ value: 9000, currency: "GBP", stageName: "Proposal", expectedCloseDate: "2026-11-01" });
+    expect(summary.owners).toEqual([
+      { owner: "Kofi", count: 2, valueByCurrency: [{ currency: "GBP", value: 9000 }, { currency: "USD", value: 3000 }] },
+      { owner: "Ama", count: 1, valueByCurrency: [{ currency: "GBP", value: 100 }] },
+      { owner: null, count: 1, valueByCurrency: [] },
+    ]);
   });
 
   it("lists deals won and lost in the window with value and lost reasons", async () => {

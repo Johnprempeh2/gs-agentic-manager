@@ -192,9 +192,11 @@ describe("answers", () => {
   });
 
   it("spots questions about the pipeline as a whole", () => {
-    expect(classifyQuestion("How is the pipeline looking?", agents)).toEqual({ kind: "pipeline" });
-    expect(classifyQuestion("What are our biggest deals?", agents)).toEqual({ kind: "pipeline" });
-    expect(classifyQuestion("How much is in the pipeline?", agents)).toEqual({ kind: "pipeline" });
+    expect(classifyQuestion("How is the pipeline looking?", agents)).toEqual({ kind: "pipeline", view: "stages" });
+    expect(classifyQuestion("What are our biggest deals?", agents)).toEqual({ kind: "pipeline", view: "stages" });
+    expect(classifyQuestion("How much is in the pipeline?", agents)).toEqual({ kind: "pipeline", view: "stages" });
+    expect(classifyQuestion("Who has the most deals?", agents)).toEqual({ kind: "pipeline", view: "owners" });
+    expect(classifyQuestion("Show me deals by owner", agents)).toEqual({ kind: "pipeline", view: "owners" });
   });
 
   it("sums up the pipeline by stage and names the largest deal", () => {
@@ -206,11 +208,18 @@ describe("answers", () => {
         { pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }, { currency: "USD", value: 3000 }] },
       ],
       topDeals: [{ caseId: "c1", title: "Big proposal", pipelineName: "Sales", stageName: "Proposal", organisationName: null, value: 9000, currency: "GBP", expectedCloseDate: "2026-11-01", href: "/GRE/pipelines/p/items/c1" }],
+      owners: [
+        { owner: "Kofi", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }] },
+        { owner: null, count: 1, valueByCurrency: [] },
+      ],
     });
     expect(answer.headline).toBe("4 open deals and leads worth GBP 9,100 and USD 3,000. Most are in Proposal (3); the largest is Big proposal at GBP 9,000.");
     expect(answer.lines[1]).toEqual({ text: "Proposal", detail: "3 open deals, GBP 9,000, USD 3,000", href: "/pipelines" });
     expect(answer.lines[2]).toEqual({ text: "Big proposal", detail: "GBP 9,000, Proposal in Sales, due 1 Nov", href: "/GRE/pipelines/p/items/c1" });
-    expect(answerPipeline({ total: 0, valueByCurrency: [], stages: [], topDeals: [] }).headline).toBe("There are no open deals or leads in any pipeline.");
+    const byOwner = answerPipeline({ total: 4, valueByCurrency: [], stages: [], topDeals: [], owners: [{ owner: "Kofi", count: 3, valueByCurrency: [{ currency: "GBP", value: 9000 }] }, { owner: null, count: 1, valueByCurrency: [] }] }, "owners");
+    expect(byOwner.headline).toBe("4 open deals and leads across 1 owner. Kofi has the most (3, GBP 9,000).");
+    expect(byOwner.lines.map((line) => [line.text, line.detail])).toEqual([["Kofi", "3 open deals, GBP 9,000"], ["No owner", "1 open deal"]]);
+    expect(answerPipeline({ total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] }).headline).toBe("There are no open deals or leads in any pipeline.");
   });
 
   it("lists deals by close date with value per currency, or says none are due", () => {

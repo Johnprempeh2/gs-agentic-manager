@@ -143,6 +143,7 @@ describe("gsam search", () => {
           { pipelineId: "p", pipelineName: "Sales", stageName: "Proposal", count: 1, valueByCurrency: [{ currency: "GBP", value: 9000 }] },
         ],
         topDeals: [{ caseId: "c1", title: "Big proposal", pipelineName: "Sales", stageName: "Proposal", organisationName: null, value: 9000, currency: "GBP", expectedCloseDate: null, href: "/GRE/pipelines/p/items/c1" }],
+        owners: [{ owner: "Kofi", count: 2, valueByCurrency: [] }, { owner: null, count: 1, valueByCurrency: [] }],
       });
     }));
     await run(["pipeline-summary", "--limit", "1"]);
@@ -153,6 +154,7 @@ describe("gsam search", () => {
       "3 open deals and leads (worth GBP 9100):",
       "Sales / Lead: 2, GBP 100",
       "Sales / Proposal: 1, GBP 9000",
+      "Owners: Kofi 2",
       "Largest:",
       "GBP 9000 | Big proposal | Proposal in Sales  /GRE/pipelines/p/items/c1",
     ]);

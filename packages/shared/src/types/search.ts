@@ -308,6 +308,8 @@ export interface CompanyPipelineSummaryResponse {
   stages: CompanyPipelineStageSummary[];
   /** The largest open deals by value (values are not converted between currencies). */
   topDeals: CompanyPipelineDeal[];
+  /** Open deals per imported owner, most deals first; null owner when none was set. */
+  owners: Array<{ owner: string | null; count: number; valueByCurrency: Array<{ currency: string | null; value: number }> }>;
 }
 
 export interface CompanyClosedDeal {

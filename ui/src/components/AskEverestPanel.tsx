@@ -688,7 +688,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     case "closing":
       return { value: answerClosing(closing.data!) };
     case "pipeline":
-      return { value: answerPipeline(pipeline.data!) };
+      return { value: answerPipeline(pipeline.data!, intent.view) };
     case "results":
       return { value: answerResults(results.data!) };
     case "people":

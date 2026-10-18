@@ -122,6 +122,10 @@ export function formatPipelineSummary(summary: CompanyPipelineSummaryResponse): 
   for (const stage of summary.stages) {
     lines.push(`${stage.pipelineName} / ${stage.stageName}: ${[`${stage.count}`, ...stage.valueByCurrency.map((entry) => amount(entry.value, entry.currency))].join(", ")}`);
   }
+  const owners = (summary.owners ?? []).filter((entry) => entry.owner !== null);
+  if (owners.length > 0) {
+    lines.push(`Owners: ${owners.map((entry) => `${entry.owner} ${entry.count}`).join(", ")}`);
+  }
   if (summary.topDeals.length > 0) {
     lines.push("Largest:");
     for (const deal of summary.topDeals) {
@@ -262,7 +266,7 @@ export function registerSearchCommands(program: Command): void {
             printOutput(response, { json: true });
             return;
           }
-          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [] })) console.log(line);
+          for (const line of formatPipelineSummary(response ?? { total: 0, valueByCurrency: [], stages: [], topDeals: [], owners: [] })) console.log(line);
         } catch (err) {
           handleCommandError(err);
         }

@@ -396,7 +396,8 @@ export function quietClientsService(db: Db) {
             WHEN jsonb_typeof(pc.fields->'dealValue') = 'number' THEN (pc.fields->>'dealValue')::numeric
             WHEN jsonb_typeof(pc.fields->'leadValue') = 'number' THEN (pc.fields->>'leadValue')::numeric
           END AS value,
-          nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency
+          nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency,
+          coalesce(nullif(trim(pc.fields->>'dealOwner'), ''), nullif(trim(pc.fields->>'leadOwner'), '')) AS owner
         FROM pipeline_cases pc
         JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
         JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('working', 'review')
@@ -406,6 +407,12 @@ export function quietClientsService(db: Db) {
           AND pc.terminal_at IS NULL
           AND pc.hidden_from_board_at IS NULL
       `;
+      const ownerRows = await db.execute(sql`
+        WITH open_cases AS (${open})
+        SELECT owner, currency, count(*)::int AS count, coalesce(sum(value), 0)::float8 AS value
+        FROM open_cases
+        GROUP BY owner, currency
+      `) as unknown as Array<{ owner: string | null; currency: string | null; count: number; value: number }>;
       const stageRows = await db.execute(sql`
         WITH open_cases AS (${open})
         SELECT pipeline_id AS "pipelineId", pipeline_name AS "pipelineName", stage_name AS "stageName",
@@ -458,6 +465,14 @@ export function quietClientsService(db: Db) {
           .sort((a, b) => b.value - a.value),
         stages,
         topDeals,
+        owners: [...ownerRows.reduce((map, row) => {
+          const entry = map.get(row.owner) ?? { owner: row.owner, count: 0, valueByCurrency: [] as Array<{ currency: string | null; value: number }> };
+          entry.count += Number(row.count);
+          if (Number(row.value) > 0) entry.valueByCurrency.push({ currency: row.currency, value: Number(row.value) });
+          return map.set(row.owner, entry);
+        }, new Map<string | null, CompanyPipelineSummaryResponse["owners"][number]>()).values()]
+          .map((entry) => ({ ...entry, valueByCurrency: entry.valueByCurrency.sort((a, b) => b.value - a.value) }))
+          .sort((a, b) => b.count - a.count || (a.owner === null ? 1 : b.owner === null ? -1 : a.owner.localeCompare(b.owner))),
       };
     },
 
