@@ -86,7 +86,7 @@ export function GoalPropertiesToggleButton({
 export function GoalDetail() {
   const { goalId } = useParams<{ goalId: string }>();
   const { selectedCompanyId, setSelectedCompanyId } = useCompany();
-  const { openNewGoal } = useDialogActions();
+  const { openNewGoal, openNewProject } = useDialogActions();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
   const queryClient = useQueryClient();
@@ -490,9 +490,15 @@ export function GoalDetail() {
           )}
         </TabsContent>
 
-        <TabsContent value="projects" className="mt-4">
+        <TabsContent value="projects" className="mt-4 space-y-3">
+          <div className="flex items-center justify-start">
+            <Button size="sm" variant="outline" onClick={() => openNewProject({ goalId })}>
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              New project
+            </Button>
+          </div>
           {linkedProjects.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No projects are linked to this goal yet.</p>
+            <p className="text-sm text-muted-foreground">No projects are linked to this goal yet. Create one here and it is linked for you.</p>
           ) : (
             <div className="border border-border">
               {linkedProjects.map((project) => (

@@ -33,6 +33,7 @@ import { useIsPhone } from "../../hooks/useIsPhone";
 import { attachmentThumbnailSrc } from "../../lib/issue-attachments";
 import { DeliverableDocumentView } from "../deliverables/DeliverableDocument";
 import { ReviewWorkEvidence, reviewDetailOf } from "../ReviewDecisionSummary";
+import { useToastActions } from "../../context/ToastContext";
 
 export const DECISION_KIND_LABEL: Record<DecisionCardKind, string> = {
   question: "Question",
@@ -129,6 +130,8 @@ export interface DecisionFeedCardProps {
   embedded?: boolean;
   /** Called after any action, answer, question or Not now. */
   onActed?: () => void;
+  /** Focus moves to the next card on its own, so it skips the "done" toast. */
+  quietSuccess?: boolean;
   className?: string;
 }
 
@@ -146,9 +149,11 @@ export function DecisionFeedCard({
   hideInlineResolver = false,
   embedded = false,
   onActed,
+  quietSuccess = false,
   className,
 }: DecisionFeedCardProps) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
   const taskId = decisionCardTaskId(card);
   const taskIdentifier = card.task?.identifier ?? null;
   const taskHref = card.task?.href ?? null;
@@ -167,9 +172,10 @@ export function DecisionFeedCard({
   const actionMutation = useMutation({
     mutationFn: ({ action, value }: { action: DecisionCardAction; value?: string | null }) =>
       runDecisionCardAction(action, value),
-    onSuccess: () => {
+    onSuccess: (_result, { action }) => {
       setOpenActionId(null);
       refresh();
+      if (!quietSuccess) pushToast({ title: `${action.label}: done`, body: card.title, tone: "success" });
     },
   });
 

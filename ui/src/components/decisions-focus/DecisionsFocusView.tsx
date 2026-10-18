@@ -263,6 +263,7 @@ export function DecisionsFocusView({
               hideInlineResolver
               embedded
               onActed={() => handleActed(current.id)}
+              quietSuccess
             />
           )}
         </FocusQuestionCard>
@@ -276,6 +277,7 @@ export function DecisionsFocusView({
             agentMap={agentMap}
             currentUserId={currentUserId}
             onActed={() => handleActed(current.id)}
+            quietSuccess
           />
           <div className="flex justify-end gap-2">
             <Button type="button" size="sm" variant="ghost" onClick={() => handleStep(-1)}>

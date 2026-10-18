@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CheckCircle2, ChevronRight, Sparkles } from "lucide-react";
 import type { ApprovalComment } from "@greatstone/shared";
 import { MarkdownBody } from "../components/MarkdownBody";
+import { ApprovalNoteDialog, type ApprovalNoteRequest } from "../components/ApprovalNoteDialog";
 
 export function ApprovalDetail() {
   const { approvalId } = useParams<{ approvalId: string }>();
@@ -31,6 +32,7 @@ export function ApprovalDetail() {
   const [commentBody, setCommentBody] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showRawPayload, setShowRawPayload] = useState(false);
+  const [noteAction, setNoteAction] = useState<"reject" | "revision" | null>(null);
 
   const { data: approval, isLoading } = useQuery({
     queryKey: queryKeys.approvals.detail(approvalId!),
@@ -71,7 +73,7 @@ export function ApprovalDetail() {
   useEffect(() => {
     setBreadcrumbs([
       { label: "Approvals", href: "/approvals" },
-      { label: approval?.id?.slice(0, 8) ?? approvalId ?? "Approval" },
+      { label: approval ? approvalLabel(approval.type, approval.payload as Record<string, unknown> | null) : "Approval" },
     ]);
   }, [setBreadcrumbs, approval, approvalId]);
 
@@ -100,21 +102,29 @@ export function ApprovalDetail() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: () => approvalsApi.reject(approvalId!),
+    mutationFn: (note?: string) => approvalsApi.reject(approvalId!, note),
     onSuccess: () => {
       setError(null);
+      setNoteAction(null);
       refresh();
     },
-    onError: (err) => setError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`),
+    onError: (err) => {
+      setNoteAction(null);
+      setError(`We could not reject this. Please try again. (${err instanceof Error ? err.message : "no details"})`);
+    },
   });
 
   const revisionMutation = useMutation({
-    mutationFn: () => approvalsApi.requestRevision(approvalId!),
+    mutationFn: (note?: string) => approvalsApi.requestRevision(approvalId!, note),
     onSuccess: () => {
       setError(null);
+      setNoteAction(null);
       refresh();
     },
-    onError: (err) => setError(`We could not ask for changes. Please try again. (${err instanceof Error ? err.message : "no details"})`),
+    onError: (err) => {
+      setNoteAction(null);
+      setError(`We could not ask for changes. Please try again. (${err instanceof Error ? err.message : "no details"})`);
+    },
   });
 
   const resubmitMutation = useMutation({
@@ -161,6 +171,27 @@ export function ApprovalDetail() {
   // GRE-601: a missing-permission request is only granted or denied.
   const isPermissionGrant = approval.type === "permission_grant";
   const TypeIcon = typeIcon[approval.type] ?? defaultTypeIcon;
+  const requesterName = approval.requestedByAgentId ? agentNameById.get(approval.requestedByAgentId) ?? null : null;
+  const noteRequest: ApprovalNoteRequest | null =
+    noteAction === "reject"
+      ? {
+          title: isPermissionGrant ? "Deny this permission?" : "Reject this request?",
+          description: "The agent is told no and will not go ahead.",
+          label: "Tell the agent why (optional)",
+          placeholder: "For example: not this month, or try a cheaper option",
+          confirmLabel: isPermissionGrant ? "Deny" : "Reject",
+          destructive: true,
+        }
+      : noteAction === "revision"
+        ? {
+            title: "Ask for changes",
+            description: "The agent gets your note, makes the changes and asks you again.",
+            label: "What should change?",
+            placeholder: "For example: lower the budget to 200 a month",
+            confirmLabel: "Send to the agent",
+            required: true,
+          }
+        : null;
   const showApprovedBanner = searchParams.get("resolved") === "approved" && approval.status === "approved";
   const primaryLinkedIssue = linkedIssues?.[0] ?? null;
   const resolvedCta =
@@ -193,9 +224,9 @@ export function ApprovalDetail() {
                 <Sparkles className="h-3 w-3 text-green-500 dark:text-green-200 absolute -right-2 -top-1 animate-pulse" />
               </div>
               <div>
-                <p className="text-sm text-green-800 dark:text-green-100 font-medium">Approval confirmed</p>
+                <p className="text-sm text-green-800 dark:text-green-100 font-medium">Approved</p>
                 <p className="text-xs text-green-700 dark:text-green-200/90">
-                  Requesting agent was notified to review this approval and linked tasks.
+                  {requesterName ? `${requesterName} has been told and will carry on.` : "The agent has been told and will carry on."}
                 </p>
               </div>
             </div>
@@ -263,9 +294,9 @@ export function ApprovalDetail() {
                   to={`/issues/${issue.identifier ?? issue.id}`}
                   className="block text-xs rounded border border-border/70 px-2 py-1.5 hover:bg-accent/20"
                 >
-                  <span className="font-mono text-muted-foreground mr-2">
-                    {issue.identifier ?? issue.id.slice(0, 8)}
-                  </span>
+                  {issue.identifier ? (
+                    <span className="font-mono text-muted-foreground mr-2">{issue.identifier}</span>
+                  ) : null}
                   <span>{issue.title}</span>
                 </Link>
               ))}
@@ -289,15 +320,7 @@ export function ApprovalDetail() {
               <Button
                 variant="destructive"
                 size="sm"
-                onClick={async () => {
-                  const confirmed = await confirmAction({
-                    title: isPermissionGrant ? "Deny this permission?" : "Reject this request?",
-                    description: "The agent is told no and will not go ahead.",
-                    confirmLabel: isPermissionGrant ? "Deny" : "Reject",
-                    tone: "destructive",
-                  });
-                  if (confirmed) rejectMutation.mutate();
-                }}
+                onClick={() => setNoteAction("reject")}
                 disabled={rejectMutation.isPending}
               >
                 {isPermissionGrant ? "Deny" : "Reject"}
@@ -313,10 +336,10 @@ export function ApprovalDetail() {
             <Button
               size="sm"
               variant="outline"
-              onClick={() => revisionMutation.mutate()}
+              onClick={() => setNoteAction("revision")}
               disabled={revisionMutation.isPending}
             >
-              Request revision
+              Ask for changes
             </Button>
           )}
           {approval.status === "revision_requested" && (
@@ -326,7 +349,7 @@ export function ApprovalDetail() {
               onClick={() => resubmitMutation.mutate()}
               disabled={resubmitMutation.isPending}
             >
-              Mark resubmitted
+              Changes made, review again
             </Button>
           )}
           {approval.status === "rejected" && approval.type === "hire_agent" && linkedAgentId && (
@@ -386,6 +409,15 @@ export function ApprovalDetail() {
           </Button>
         </div>
       </div>
+      <ApprovalNoteDialog
+        request={noteRequest}
+        pending={rejectMutation.isPending || revisionMutation.isPending}
+        onCancel={() => setNoteAction(null)}
+        onSubmit={(note) => {
+          if (noteAction === "reject") rejectMutation.mutate(note);
+          else if (noteAction === "revision") revisionMutation.mutate(note);
+        }}
+      />
     </div>
   );
 }
