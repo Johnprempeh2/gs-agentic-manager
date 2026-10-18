@@ -218,7 +218,7 @@ export function DeliverableCard({
           {deliverable.createdByAgent ? (
             <AgentAvatar agent={deliverable.createdByAgent} size={20} label={deliverable.createdByAgent.name} />
           ) : null}
-          <span className="truncate">{deliverable.createdByAgent?.name ?? "Board"}</span>
+          <span className="truncate">{deliverable.createdByAgent?.name ?? "A person"}</span>
           <span aria-hidden="true">·</span>
           <Link
             to={deliverable.href}

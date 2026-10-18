@@ -84,7 +84,7 @@ export function ProfileSettings() {
   }
 
   function resolveProfileName() {
-    return name.trim() || sessionQuery.data?.user.name || "Board";
+    return name.trim() || sessionQuery.data?.user.name || "You";
   }
 
   const updateMutation = useMutation({
@@ -148,13 +148,13 @@ export function ProfileSettings() {
     );
   }
 
-  const currentName = name.trim() || sessionQuery.data.user.name || "Board";
+  const currentName = name.trim() || sessionQuery.data.user.name || "You";
   const currentImage = image.trim() || null;
   const initials = deriveInitials(currentName);
   const isSavingProfile = updateMutation.isPending || uploadAvatarMutation.isPending || removeAvatarMutation.isPending;
   const uploadHint = selectedCompany
-    ? `Stored in GS Agentic Manager file storage for ${selectedCompany.name}.`
-    : "Choose an organisation to upload an avatar into GS Agentic Manager storage.";
+    ? `Your photo is saved with ${selectedCompany.name}.`
+    : "Choose an organisation before adding a photo.";
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -266,7 +266,7 @@ export function ProfileSettings() {
               value={name}
               onChange={(event) => setName(event.target.value)}
               maxLength={120}
-              placeholder="Board"
+              placeholder="Your name"
             />
             <p className="text-xs text-muted-foreground">
               Shown in the sidebar account footer and comment author surfaces.
@@ -300,7 +300,7 @@ export function ProfileSettings() {
               <h2 className="text-sm font-semibold">Keyboard shortcuts</h2>
               <p className="max-w-2xl text-sm text-muted-foreground">
                 Enable app keyboard shortcuts, including inbox navigation and global shortcuts like creating tasks or
-                toggling panels. This applies only to your account, across all organizations and devices. Off by default.
+                toggling panels. This applies only to your account, across all organisations and devices. Off by default.
               </p>
             </div>
             <ToggleSwitch

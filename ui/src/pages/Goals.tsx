@@ -159,7 +159,7 @@ export function Goals() {
                 onClick={() => createStrategicPlan.mutate()}
               >
                 <Network className="size-3.5" />
-                {createStrategicPlan.isPending ? "Adding…" : STRATEGIC_PLAN_TEMPLATE_NAME}
+                {createStrategicPlan.isPending ? "Adding…" : `Add a ${STRATEGIC_PLAN_TEMPLATE_NAME.charAt(0).toLowerCase()}${STRATEGIC_PLAN_TEMPLATE_NAME.slice(1)}`}
               </Button>
             ) : null}
             {canFilterAttention ? (

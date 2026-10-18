@@ -19,12 +19,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { MarkdownBody } from "../components/MarkdownBody";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import { Activity, ArrowDown, History, MessageSquarePlus, X } from "lucide-react";
+import { Activity, ArrowDown, X } from "lucide-react";
 import { ActivityFeed } from "../components/ActivityFeed";
 import { MakeImageButton } from "../components/MakeImageDialog";
 import { ChatComposer, type ChatComposerAttachment, type ChatComposerHandle } from "../components/ChatComposer";
@@ -738,38 +733,10 @@ export function BoardChat() {
                 {ceoAgent?.name ?? "Conference Room"}
               </h3>
               <p className="text-xs text-muted-foreground">
-                {selectedCompany?.name ?? "Your organization"}
+                {selectedCompany?.name ?? "Your organisation"}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-0.5">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="chat history"
-                  >
-                    <History className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">chat history</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="text-muted-foreground"
-                    aria-label="new chat"
-                  >
-                    <MessageSquarePlus className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">new chat</TooltipContent>
-              </Tooltip>
               {/* Phone: the agent feed opens from the header, not a floating
                   button that covered the send button. */}
               <Button
@@ -814,8 +781,8 @@ export function BoardChat() {
 
                 const chips: Array<{ label: string; prompt: string }> = [
                   {
-                    label: "Draft an Organization Brief",
-                    prompt: `Draft a one-page Organization Brief for ${companyName}, with our mission, team roster and first priorities.`,
+                    label: "Draft an organisation brief",
+                    prompt: `Draft a one-page organisation brief for ${companyName}, with our mission, team roster and first priorities.`,
                   },
                   {
                     label: "Create a hiring plan",

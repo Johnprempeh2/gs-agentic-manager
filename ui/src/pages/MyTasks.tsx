@@ -300,6 +300,13 @@ export function MyTasks() {
   const updateIssue = useMutation({
     mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => issuesApi.update(id, data),
     onSuccess: (_issue, { id }) => refreshMyTasks(id),
+    onError: (error) => {
+      pushToast({
+        title: "Could not update the task",
+        body: error instanceof Error ? error.message : "Try again in a moment.",
+        tone: "error",
+      });
+    },
   });
 
   const setStatus = useMutation({

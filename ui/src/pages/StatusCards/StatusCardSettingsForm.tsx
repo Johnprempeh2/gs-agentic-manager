@@ -35,7 +35,7 @@ type TriggerKey = keyof StatusCardRefreshPolicy["triggers"];
 
 const TRIGGER_ROWS: { key: TriggerKey; label: string; noisy?: boolean }[] = [
   { key: "statusTransitions", label: "Became blocked / needs review / done / cancelled" },
-  { key: "membershipChanges", label: "New issue matches the query · issue leaves the query" },
+  { key: "membershipChanges", label: "A new task matches, or a task stops matching" },
   { key: "humanComments", label: "Human comments" },
   { key: "assigneeChanges", label: "Assignee changes" },
   { key: "anyUpdate", label: "Any update at all (noisy, includes in-progress churn)", noisy: true },
@@ -194,7 +194,7 @@ export function StatusCardSettingsForm({
       </section>
 
       {/*
-        Change triggers, active hours, and the daily token cap only apply to
+        Change triggers, active hours, and the daily AI usage limit only apply to
         automatic updates, so they are hidden entirely in Manual mode and tucked
         under a collapsed "Advanced" disclosure otherwise.
       */}
@@ -255,7 +255,7 @@ export function StatusCardSettingsForm({
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="w-32 shrink-0">Daily token cap</span>
+                <span className="w-32 shrink-0">Daily AI usage limit</span>
                 <Input
                   type="number"
                   min={0}
@@ -267,7 +267,7 @@ export function StatusCardSettingsForm({
                   }}
                   className="h-8 w-36"
                   placeholder="no cap"
-                  aria-label="Daily token cap"
+                  aria-label="Daily AI usage limit"
                 />
               </div>
             </section>

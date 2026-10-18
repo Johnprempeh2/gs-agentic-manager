@@ -658,6 +658,7 @@ export function Secrets() {
   const { selectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToastActions();
+  const confirmAction = useConfirm();
   const [activeTab, setActiveTab] = useState<SecretsTab>("secrets");
   // Operator-hidden sub-tabs (UI-only; the secrets APIs stay live for agents).
   const { hidden: hiddenSettings } = useHiddenSettings();
@@ -2098,7 +2099,7 @@ export function Secrets() {
                             <div className="mt-1">
                               {row.kind === "company" ? (
                                 <MetaChip>
-                                  <ShieldCheck className="h-3 w-3" /> Organization
+                                  <ShieldCheck className="h-3 w-3" /> Organisation
                                 </MetaChip>
                               ) : (
                                 <UserSecretChip label="Each user" />
@@ -2163,7 +2164,7 @@ export function Secrets() {
                           {row.kind === "company" ? (
                             <>
                               <MetaChip>
-                                <ShieldCheck className="h-3 w-3" /> Organization
+                                <ShieldCheck className="h-3 w-3" /> Organisation
                               </MetaChip>
                               <SecretProviderIndicator
                                 secret={row.secret}
@@ -2219,7 +2220,16 @@ export function Secrets() {
             onRetry={() => providerConfigsQuery.refetch()}
             onCreate={openCreateVault}
             onEdit={openEditVault}
-            onDisable={(config) => disableVaultMutation.mutate(config.id)}
+            onDisable={async (config) => {
+                if (await confirmAction({
+                  title: `Turn off ${config.displayName}?`,
+                  description: "Agents that use secrets from this vault cannot read them until you turn it back on.",
+                  confirmLabel: "Turn off",
+                  tone: "destructive",
+                })) {
+                  disableVaultMutation.mutate(config.id);
+                }
+              }}
             onRemove={(config) => setRemoveVaultConfirm(config)}
             onSetDefault={(config) => defaultVaultMutation.mutate(config.id)}
             onHealthCheck={(config) => healthVaultMutation.mutate(config.id)}
@@ -2279,7 +2289,7 @@ export function Secrets() {
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   <MetaChip>
-                    <ShieldCheck className="h-3 w-3" /> Organization
+                    <ShieldCheck className="h-3 w-3" /> Organisation
                   </MetaChip>
                   <MetaChip>{modeLabel(selectedSecret.managedMode)}</MetaChip>
                   <MetaChip>{providerLabel(providers, selectedSecret.provider)}</MetaChip>
@@ -2611,12 +2621,12 @@ export function Secrets() {
                   }}
                 >
                   <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="company">Organization</TabsTrigger>
+                    <TabsTrigger value="company">Organisation</TabsTrigger>
                     <TabsTrigger value="user">Each user</TabsTrigger>
                   </TabsList>
                 </Tabs>
                 <p className="text-(length:--text-micro) text-muted-foreground">
-                  Organization stores one shared value. Each user lets every member supply their own value under My secrets.
+                  Organisation stores one shared value. Each user lets every member supply their own value under My secrets.
                 </p>
               </div>
             ) : null}
@@ -3182,7 +3192,7 @@ export function Secrets() {
           <DialogHeader>
             <DialogTitle>Delete secret</DialogTitle>
             <DialogDescription>
-              Permanently removes <strong>{deleteConfirm?.name}</strong>. Active bindings will fail until you remap them.
+              Permanently removes <strong>{deleteConfirm?.name}</strong>. Anything that uses this secret stops working until you pick a new one.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -3207,7 +3217,7 @@ export function Secrets() {
           <DialogHeader>
             <DialogTitle>Delete user-provided secret</DialogTitle>
             <DialogDescription>
-              Permanently removes <strong>{definitionDeleteConfirm?.name}</strong> for the whole organization.
+              Permanently removes <strong>{definitionDeleteConfirm?.name}</strong> for the whole organisation.
               Existing member values become unreferenced and active bindings must be remapped.
             </DialogDescription>
           </DialogHeader>
@@ -3376,7 +3386,7 @@ function SecretsFiltersPopover({
               <div className="space-y-0.5">
                 {[
                   { value: "all" as const, label: "All sources" },
-                  { value: "company" as const, label: "Organization" },
+                  { value: "company" as const, label: "Organisation" },
                   { value: "user" as const, label: "Each user" },
                 ].map((option) => (
                   <label key={option.value} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
@@ -3740,7 +3750,7 @@ function ProviderVaultCard({
           disabled={pending || config.status === "disabled"}
         >
           <Ban className="h-3.5 w-3.5 mr-1" />
-          Disable
+          Turn off
         </Button>
         <Button
           variant="outline"
@@ -4660,7 +4670,7 @@ function SecretDetailsTab({
       <DetailRow label="Description">
         <span>{secret.description ?? <span className="text-muted-foreground">None</span>}</span>
       </DetailRow>
-      <DetailRow label="Provided by">Organization</DetailRow>
+      <DetailRow label="Provided by">Organisation</DetailRow>
       <DetailRow label="Custody">{modeLabel(secret.managedMode)}</DetailRow>
       <DetailRow label="Provider">{providerLabel(providers, secret.provider)}</DetailRow>
       <DetailRow label="Provider vault">{providerVaultLabel(providerConfigs, secret.providerConfigId)}</DetailRow>

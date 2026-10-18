@@ -559,10 +559,10 @@ function TestAsHeader({
 
 const CHECK_REASON_LABEL: Record<ToolConnectionAgentCheckReason, string> = {
   no_access: "No access",
-  no_grant: "No grant",
-  expired_token: "Expired token",
-  scope_missing: "Scope missing",
-  service_error: "Service error",
+  no_grant: "No account linked for this agent",
+  expired_token: "Sign-in expired",
+  scope_missing: "Missing a permission",
+  service_error: "The app had a problem",
 };
 
 /**

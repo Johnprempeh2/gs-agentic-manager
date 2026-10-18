@@ -163,7 +163,7 @@ export function StatusCards() {
         <EmptyState
           icon={FlaskConical}
           title="No status cards yet"
-          message="Create a card to keep a living summary of the issues you care about."
+          message="Create a card to keep a living summary of the tasks you care about."
           action={selectedCompanyId ? "New card" : undefined}
           onAction={() => setCreateOpen(true)}
         />

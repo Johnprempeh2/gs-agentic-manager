@@ -170,7 +170,7 @@ describe("StatusCardTile lifecycle rendering", () => {
   it("renders paused (budget) with a paused banner", () => {
     render(tile(baseCard({ state: "paused_budget" })));
     expect(container.querySelector('[data-lifecycle="paused_budget"]')).toBeTruthy();
-    expect(container.textContent).toContain("Daily token cap reached");
+    expect(container.textContent).toContain("Daily AI usage limit reached");
   });
 
   it("renders paused (hours)", () => {

@@ -599,9 +599,9 @@ describe("TestPanel connection check (GRE-341)", () => {
     await clickByText("Check connection as ClaudeCoder");
 
     const text = container.querySelector('[data-testid="connection-check"]')?.textContent ?? "";
-    expect(text).toContain("Expired token.");
+    expect(text).toContain("Sign-in expired.");
     expect(text).toContain("OAuth authorization expired. Reconnect this app to continue.");
-    expect(text).not.toContain("Expired token: ");
+    expect(text).not.toContain("Sign-in expired: ");
   });
 });
 

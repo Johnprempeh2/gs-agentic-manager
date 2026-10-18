@@ -7,7 +7,7 @@ import { heartbeatsApi } from "@/api/heartbeats";
 import { issuesApi } from "@/api/issues";
 import { routinesApi } from "@/api/routines";
 import { EmptyState } from "@/components/EmptyState";
-import { StatusBadge } from "@/components/StatusBadge";
+import { StatusBadge, sentenceCaseStatus } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -46,8 +46,15 @@ function runDuration(run: HeartbeatRun) {
   return `${minutes}m ${seconds % 60}s`;
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  timer: "Scheduled",
+  assignment: "Task assigned",
+  on_demand: "Started by hand",
+  automation: "Automation",
+};
+
 function readableSource(source: string) {
-  return source.replaceAll("_", " ");
+  return SOURCE_LABELS[source] ?? source.replaceAll("_", " ");
 }
 
 function routineRunTitle(run: RoutineRunSummary) {
@@ -231,8 +238,8 @@ export function AuditRuns({ companyId, routineId }: { companyId: string; routine
       <div>
         <h2 className="text-lg font-semibold text-foreground">Runs</h2>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Recent agent executions across the organization. Open a run to inspect its transcript,
-          output, and task context.
+          Recent work by your agents across the organisation. Open a run to see what the agent
+          did, what it produced and which task it was for.
         </p>
       </div>
 
@@ -263,7 +270,7 @@ export function AuditRuns({ companyId, routineId }: { companyId: string; routine
               <SelectItem value={ALL}>All statuses</SelectItem>
               {statuses.map((value) => (
                 <SelectItem key={value} value={value}>
-                  {readableSource(value)}
+                  {sentenceCaseStatus(value)}
                 </SelectItem>
               ))}
             </SelectContent>

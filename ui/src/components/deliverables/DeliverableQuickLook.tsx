@@ -251,7 +251,7 @@ export function DeliverableQuickLook({
                 {shown.createdByAgent ? (
                   <AgentAvatar agent={shown.createdByAgent} size={20} />
                 ) : null}
-                {shown.createdByAgent?.name ?? "Board"}
+                {shown.createdByAgent?.name ?? "A person"}
               </span>
             </PanelRow>
             <PanelRow label="Created">

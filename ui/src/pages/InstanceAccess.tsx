@@ -9,6 +9,7 @@ import { useBreadcrumbs } from "@/context/BreadcrumbContext";
 import { Card } from "@/components/ui/card";
 import { companyDirectoryQueryOptions, useAccountIdentity } from "@/api/companies-query";
 import { useToast } from "@/context/ToastContext";
+import { useConfirm } from "@/context/ConfirmContext";
 import { queryKeys } from "@/lib/queryKeys";
 import { noContactAutofill } from "@/lib/no-contact-autofill";
 
@@ -16,6 +17,7 @@ export function InstanceAccess() {
   const { userId: accountUserId, settled: accountSettled } = useAccountIdentity();
   const { setBreadcrumbs } = useBreadcrumbs();
   const { pushToast } = useToast();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -74,7 +76,10 @@ export function InstanceAccess() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.userCompanyAccess(selectedUserId!) });
       await queryClient.invalidateQueries({ queryKey: queryKeys.access.adminUsers(search) });
       await queryClient.invalidateQueries({ queryKey: queryKeys.companies.all });
-      pushToast({ title: "Organization access updated", tone: "success" });
+      pushToast({ title: "Organisation access updated", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({ title: "Their access was not changed", body: error instanceof Error ? error.message : "Try again in a moment.", tone: "error" });
     },
   });
 
@@ -90,6 +95,9 @@ export function InstanceAccess() {
         await queryClient.invalidateQueries({ queryKey: queryKeys.access.userCompanyAccess(selectedUserId) });
       }
       pushToast({ title: "Instance role updated", tone: "success" });
+    },
+    onError: (error) => {
+      pushToast({ title: "Their admin role was not changed", body: error instanceof Error ? error.message : "Try again in a moment.", tone: "error" });
     },
   });
 
@@ -110,7 +118,7 @@ export function InstanceAccess() {
   if (companiesQuery.error) {
     return (
       <div className="space-y-3">
-        <p className="text-sm text-destructive">Failed to load organizations. Try again before changing access.</p>
+        <p className="text-sm text-destructive">Organisations did not load. Try again before changing access.</p>
         <Button onClick={() => void companiesQuery.refetch()}>Try again</Button>
       </div>
     );
@@ -124,7 +132,7 @@ export function InstanceAccess() {
           <h1 className="text-lg font-semibold">Instance Access</h1>
         </div>
         <p className="max-w-3xl text-sm text-muted-foreground">
-          Search users, manage instance-admin status, and control which organizations they can access.
+          Search users, manage instance-admin status, and control which organisations they can access.
         </p>
       </div>
 
@@ -191,7 +199,19 @@ export function InstanceAccess() {
                 </div>
                 <Button
                   variant={selectedUser?.isInstanceAdmin ? "outline" : "default"}
-                  onClick={() => setAdminMutation.mutate(!(selectedUser?.isInstanceAdmin ?? false))}
+                  onClick={async () => {
+                    const makeAdmin = !(selectedUser?.isInstanceAdmin ?? false);
+                    if (!makeAdmin) {
+                      const confirmed = await confirm({
+                        title: `Remove admin rights from ${selectedUser?.name || selectedUser?.email || "this person"}?`,
+                        description: "They can no longer manage this installation. Their organisation access stays as it is.",
+                        confirmLabel: "Remove admin rights",
+                        tone: "destructive",
+                      });
+                      if (!confirmed) return;
+                    }
+                    setAdminMutation.mutate(makeAdmin);
+                  }}
                   disabled={setAdminMutation.isPending}
                 >
                   {selectedUser?.isInstanceAdmin ? "Remove instance admin" : "Promote to instance admin"}
@@ -200,7 +220,7 @@ export function InstanceAccess() {
 
               <div className="space-y-3">
                 <div>
-                  <h2 className="text-sm font-semibold">Organization access</h2>
+                  <h2 className="text-sm font-semibold">Organisation access</h2>
                   <p className="text-sm text-muted-foreground">
                     Toggle organisation membership for this user. New access defaults to an active operator membership.
                   </p>
@@ -234,7 +254,7 @@ export function InstanceAccess() {
                     onClick={() => updateCompanyAccessMutation.mutate()}
                     disabled={updateCompanyAccessMutation.isPending}
                   >
-                    {updateCompanyAccessMutation.isPending ? "Saving…" : "Save organization access"}
+                    {updateCompanyAccessMutation.isPending ? "Saving…" : "Save organisation access"}
                   </Button>
                 </div>
               </div>

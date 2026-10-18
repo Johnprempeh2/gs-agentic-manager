@@ -78,7 +78,7 @@ describe("Goals page and the Strategy module (GRE-1382)", () => {
     expect(text).toContain("Ship the website");
     expect(text).not.toContain("Trusted brand");
     expect(text).not.toContain("Net promoter score");
-    expect(text).not.toContain("One-page strategic plan");
+    expect(text).not.toContain("ne-page strategic plan");
   });
 
   it("shows the KPI cascade while Strategy is on", async () => {
@@ -94,7 +94,7 @@ describe("Goals page and the Strategy module (GRE-1382)", () => {
     api.goals.mockResolvedValue([makeGoal({ id: "plain", title: "Ship the website" })]);
     api.settings.mockResolvedValue({ enableStrategy: true });
     await render();
-    expect(container.textContent).toContain("One-page strategic plan");
+    expect(container.textContent).toContain("Add a one-page strategic plan");
   });
 
   it("filters to the goals that need attention, and back", async () => {
