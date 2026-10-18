@@ -94,4 +94,55 @@ describe("Approvals", () => {
       await vi.waitFor(() => expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ title: "Rejected" })));
     });
   });
+
+  it("approves several ticked requests together", async () => {
+    const now = new Date().toISOString();
+    const pending = (id: string) => ({
+      id,
+      companyId: "company-1",
+      type: "request_board_approval",
+      status: "pending",
+      payload: { title: `Request ${id}` },
+      requestedByAgentId: null,
+      requestedByUserId: null,
+      decisionNote: null,
+      decidedByUserId: null,
+      decidedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    vi.mocked(approvalsApi.list).mockResolvedValueOnce([pending("a1"), pending("a2"), pending("a3")] as never);
+    vi.mocked(approvalsApi.approve).mockResolvedValue({} as never);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    await act(async () => {
+      root?.render(
+        <QueryClientProvider client={queryClient}>
+          <Approvals />
+        </QueryClientProvider>,
+      );
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(container?.querySelector('[data-testid="approvals-select-bar"]')).toBeTruthy());
+    });
+    const tick = (id: string) => container!.querySelector(`[data-approval-select="${id}"]`) as HTMLButtonElement;
+    await act(async () => {
+      tick("a1").click();
+    });
+    await act(async () => {
+      tick("a3").click();
+    });
+    const approveButton = [...container!.querySelectorAll("button")].find((button) => button.textContent === "Approve selected")!;
+    expect(approveButton.disabled).toBe(false);
+    await act(async () => {
+      approveButton.click();
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(approvalsApi.approve).toHaveBeenCalledTimes(2));
+    });
+    expect(vi.mocked(approvalsApi.approve).mock.calls.map((call) => call[0])).toEqual(["a1", "a3"]);
+  });
 });

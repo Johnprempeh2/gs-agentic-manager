@@ -23,6 +23,7 @@ import { pendingListText, pendingSummary } from "../lib/approval-wait";
 import { useCopyAction } from "../lib/use-copy-action";
 import { applyCompanyPrefix } from "../lib/company-routes";
 import { approvalLabel } from "../components/ApprovalPayload";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type StatusFilter = "pending" | "all";
 
@@ -35,6 +36,7 @@ export function Approvals() {
   const pathSegment = location.pathname.split("/").pop() ?? "pending";
   const statusFilter: StatusFilter = pathSegment === "all" ? "all" : "pending";
   const [actionError, setActionError] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Approvals" }]);
@@ -93,6 +95,39 @@ export function Approvals() {
     },
   });
 
+  // Approve several pending sign-offs in one go. Each goes through the same
+  // approve call as its card, one at a time, so a refusal on one does not stop the rest.
+  const approveSelectedMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      let approved = 0;
+      let failed = 0;
+      for (const id of ids) {
+        try {
+          await approvalsApi.approve(id);
+          approved += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+      return { approved, failed };
+    },
+    onSuccess: ({ approved, failed }) => {
+      setActionError(null);
+      setSelectedIds([]);
+      pushToast({
+        tone: failed > 0 ? "warn" : "success",
+        title: `${approved} ${approved === 1 ? "request" : "requests"} approved`,
+        body: failed > 0 ? `${failed} could not be approved. Open them to see why.` : undefined,
+      });
+    },
+    onError: (err) => {
+      setActionError(`We could not approve these. Please try again. (${err instanceof Error ? err.message : "no details"})`);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.approvals.list(selectedCompanyId!) });
+    },
+  });
+
   const listCopy = useCopyAction();
   const companyPrefix = useActiveCompanyPrefix();
 
@@ -107,6 +142,23 @@ export function Approvals() {
         : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
   const waitingSummary = statusFilter === "pending" ? pendingSummary(data ?? []) : null;
+
+  const selectable = statusFilter === "pending"
+    ? filtered.filter((approval) => approval.status === "pending")
+    : [];
+  const selectedApprovals = selectable.filter((approval) => selectedIds.includes(approval.id));
+  const requestLabel = (approval: (typeof filtered)[number]) =>
+    approvalLabel(approval.type, approval.payload as Record<string, unknown> | null);
+  const approveSelected = async () => {
+    const count = selectedApprovals.length;
+    if (count === 0) return;
+    const confirmed = await confirm({
+      title: `Approve ${count} ${count === 1 ? "request" : "requests"}?`,
+      description: `${selectedApprovals.map(requestLabel).join(", ")}. Each agent is told yes and goes ahead.`,
+      confirmLabel: "Approve",
+    });
+    if (confirmed) approveSelectedMutation.mutate(selectedApprovals.map((approval) => approval.id));
+  };
 
   const pendingCount = (data ?? []).filter(
     (a) => a.status === "pending" || a.status === "revision_requested",
@@ -189,9 +241,37 @@ export function Approvals() {
         />
       )}
 
+      {selectable.length > 1 && (
+        <div
+          className="flex flex-wrap items-center gap-2 rounded-md border border-border px-3 py-2"
+          data-testid="approvals-select-bar"
+        >
+          <span className="inline-flex size-6 shrink-0 items-center justify-center">
+            <Checkbox
+              checked={selectedApprovals.length === selectable.length ? true : selectedApprovals.length > 0 ? "indeterminate" : false}
+              onCheckedChange={(value) => setSelectedIds(value === true ? selectable.map((approval) => approval.id) : [])}
+              aria-label="Select every pending request"
+            />
+          </span>
+          <span className="mr-auto text-sm text-muted-foreground">
+            {selectedApprovals.length === 0
+              ? "Tick the requests you are happy with to approve them together"
+              : `${selectedApprovals.length} selected`}
+          </span>
+          <Button
+            size="sm"
+            disabled={selectedApprovals.length === 0 || approveSelectedMutation.isPending}
+            onClick={() => void approveSelected()}
+          >
+            {approveSelectedMutation.isPending ? "Approving" : "Approve selected"}
+          </Button>
+        </div>
+      )}
+
       {filtered.length > 0 && (
         <div className="grid gap-3">
-          {filtered.map((approval) => (
+          {filtered.map((approval) => {
+            const card = (
             <ApprovalCard
               key={approval.id}
               approval={approval}
@@ -204,7 +284,26 @@ export function Approvals() {
                 approveMutation.isPending ? "approve" : rejectMutation.isPending ? "reject" : null
               }
             />
-          ))}
+            );
+            if (selectable.length < 2 || approval.status !== "pending") return card;
+            return (
+              <div key={approval.id} className="flex items-start gap-2">
+                <span className="mt-4 inline-flex size-6 shrink-0 items-center justify-center">
+                  <Checkbox
+                    data-approval-select={approval.id}
+                    checked={selectedIds.includes(approval.id)}
+                    onCheckedChange={(value) =>
+                      setSelectedIds((current) =>
+                        value === true ? [...current.filter((id) => id !== approval.id), approval.id] : current.filter((id) => id !== approval.id),
+                      )
+                    }
+                    aria-label={`Select ${requestLabel(approval)}`}
+                  />
+                </span>
+                <div className="min-w-0 flex-1">{card}</div>
+              </div>
+            );
+          })}
         </div>
       )}
 
