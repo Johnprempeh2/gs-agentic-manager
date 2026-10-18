@@ -25,7 +25,14 @@ const svc = vi.hoisted(() => ({
   isReleaseManagerAgent: vi.fn(),
   findRun: vi.fn(),
   promote: vi.fn(),
+  releaseOffReason: vi.fn(),
+  releaseRepo: vi.fn(),
 }));
+// POST /release adds to the release queue (scripts/greatstone-release-queue.mjs).
+const queue = vi.hoisted(() => ({ view: vi.fn(), enqueue: vi.fn(), cancel: vi.fn() }));
+const queueItem = { id: "rq-abc123", ref: "rc-2026-09-28.1", status: "queued" };
+/** Releases asked for (the queue) plus rollbacks started. */
+const started = () => svc.start.mock.calls.length + queue.enqueue.mock.calls.length;
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 const GOOD = "sandbox-test-pass";
@@ -34,6 +41,10 @@ let reauth: import("../services/release-reauth.js").ReleaseReauth;
 async function createApp(actor: Record<string, unknown>) {
   vi.doMock("../services/live-release.js", () => ({ liveReleaseService: () => svc }));
   vi.doMock("../services/index.js", () => ({ logActivity: mockLogActivity }));
+  vi.doMock("../services/release-queue.js", async () => ({
+    ...(await vi.importActual<typeof import("../services/release-queue.js")>("../services/release-queue.js")),
+    releaseQueueService: () => queue,
+  }));
   const [{ releaseRoutes }, { errorHandler }, { createReleaseReauth }] = await Promise.all([
     vi.importActual<typeof import("../routes/releases.js")>("../routes/releases.js"),
     vi.importActual<typeof import("../middleware/index.js")>("../middleware/index.js"),
@@ -95,6 +106,10 @@ describe("release routes", () => {
     svc.setRunFlag.mockResolvedValue({ ok: true, flag: { runId } });
     svc.isReleaseManagerAgent.mockImplementation(async (_c: string, id: string) => id === keystoneId);
     svc.promote.mockResolvedValue({ ok: true, stable: { tag: "stable-2026-09-29.1", commit: "abc", liveTag: "live-2026-09-20.1" } });
+    svc.releaseOffReason.mockReturnValue(null);
+    svc.releaseRepo.mockReturnValue("/repo");
+    queue.view.mockReturnValue({ running: null, queued: [queueItem], recent: [], main: null, workerSeenAt: null });
+    queue.enqueue.mockImplementation(async (_repo: string, input: { ref: string }) => ({ ok: true, item: { ...queueItem, ref: input.ref } }));
     svc.findRun.mockImplementation(async (id: string) => (id === runId || id === otherRunId ? { companyId, agentId, status: "running" } : null));
   });
 
@@ -112,24 +127,29 @@ describe("release routes", () => {
       const res = await (request(app) as any)[method](url).send(body ?? {});
       expect(res.status).toBe(403);
     }
-    expect(svc.start).not.toHaveBeenCalled();
+    expect(started()).toBe(0);
     expect(svc.cancel).not.toHaveBeenCalled();
     expect(svc.override).not.toHaveBeenCalled();
     expect(svc.overview).not.toHaveBeenCalled();
     expect(svc.promote).not.toHaveBeenCalled();
   });
 
-  it("the board reads, releases, rolls back, cancels and overrides", async () => {
+  it("the board reads, asks for releases through the queue, rolls back, cancels and overrides", async () => {
     const app = await createApp(board);
     expect((await request(app).get(base)).status).toBe(200);
 
+    // POST /release no longer releases from the server: it adds to the release queue
+    // (gate, preview, then release) and answers with the queue item.
     const release = await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "rc-2026-09-28.1" });
     expect(release.status).toBe(202);
-    expect(release.body).toEqual({ progress });
-    expect(svc.start).toHaveBeenLastCalledWith({ kind: "release", tag: "rc-2026-09-28.1", title: null, actor: { actorType: "user", actorId: "john" } });
+    expect(release.body.item).toEqual(queueItem);
+    expect(release.body.queue.queued).toEqual([queueItem]);
+    expect(queue.enqueue).toHaveBeenLastCalledWith("/repo", { ref: "rc-2026-09-28.1", title: null, by: "user:john" });
 
     await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ title: "From main" });
-    expect(svc.start).toHaveBeenLastCalledWith({ kind: "release", tag: null, title: "From main", actor: { actorType: "user", actorId: "john" } });
+    expect(queue.enqueue).toHaveBeenLastCalledWith("/repo", { ref: "main", title: "From main", by: "user:john" });
+    expect(svc.start).not.toHaveBeenCalledWith(expect.objectContaining({ kind: "release" }));
+    expect((await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "main; rm" })).status).toBe(422);
 
     expect((await request(app).post(`${base}/rollback`).set(REAUTH, await token("rollback")).send({ tag: "live-2026-09-20.1" })).status).toBe(202);
     expect(svc.start).toHaveBeenLastCalledWith({ kind: "rollback", tag: "live-2026-09-20.1", actor: { actorType: "user", actorId: "john" } });
@@ -150,7 +170,7 @@ describe("release routes", () => {
     ] as const;
 
     function expectNothingStarted() {
-      expect(svc.start).not.toHaveBeenCalled();
+      expect(started()).toBe(0);
       expect(svc.promote).not.toHaveBeenCalled();
       expect(svc.cancel).not.toHaveBeenCalled();
       expect(svc.override).not.toHaveBeenCalled();
@@ -219,12 +239,17 @@ describe("release routes", () => {
     });
   });
 
-  it("returns a pre-flight failure as { error } with its status", async () => {
-    svc.start.mockResolvedValue({ ok: false, status: 409, error: "the release repo /dev has local changes (x.ts); commit or discard them first" });
+  it("returns a refusal as { error } with its status", async () => {
+    svc.releaseOffReason.mockReturnValue("release is off on this server: it does not run from /live");
     const app = await createApp(board);
-    const res = await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "rc-2026-09-28.1" });
-    expect(res.status).toBe(409);
-    expect(res.body).toEqual({ error: "the release repo /dev has local changes (x.ts); commit or discard them first" });
+    const off = await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "rc-2026-09-28.1" });
+    expect(off.status).toBe(409);
+    expect(off.body).toEqual({ error: "release is off on this server: it does not run from /live" });
+    svc.releaseOffReason.mockReturnValue(null);
+    queue.enqueue.mockResolvedValue({ ok: false, status: 422, error: "unknown tag rc-2026-09-28.1" });
+    const refused = await request(app).post(`${base}/release`).set(REAUTH, await token("release")).send({ tag: "rc-2026-09-28.1" });
+    expect(refused.status).toBe(422);
+    expect(refused.body).toEqual({ error: "unknown tag rc-2026-09-28.1" });
   });
 
   describe("password re-check (login mode)", () => {
@@ -236,7 +261,7 @@ describe("release routes", () => {
       const res = await request(app).post(`${base}/${action}`).send(body);
       expect(res.status).toBe(403);
       expect(res.body.code).toBe("reauth_required");
-      expect(svc.start).not.toHaveBeenCalled();
+      expect(started()).toBe(0);
     });
 
     it.each([
@@ -249,14 +274,14 @@ describe("release routes", () => {
       const again = await request(app).post(`${base}/${action}`).set(REAUTH, t).send(body);
       expect(again.status).toBe(403);
       expect(again.body.code).toBe("reauth_required");
-      expect(svc.start).toHaveBeenCalledTimes(1);
+      expect(started()).toBe(1);
     });
 
     it("a release token does not pass a rollback", async () => {
       const app = await createApp(board);
       const res = await request(app).post(`${base}/rollback`).set(REAUTH, await token("release")).send({ tag: "live-2026-09-20.1" });
       expect(res.status).toBe(403);
-      expect(svc.start).not.toHaveBeenCalled();
+      expect(started()).toBe(0);
     });
 
     it("a board user of another company is refused before the re-check, even with a token", async () => {
@@ -264,7 +289,7 @@ describe("release routes", () => {
       const res = await request(app).post(`${base}/release`).set(REAUTH, await token("release", "stranger")).send({});
       expect(res.status).toBe(403);
       expect(res.body.code).not.toBe("reauth_required");
-      expect(svc.start).not.toHaveBeenCalled();
+      expect(started()).toBe(0);
     });
 
     it("local_trusted releases and rolls back with no password", async () => {

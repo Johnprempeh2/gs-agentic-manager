@@ -26,6 +26,7 @@ let clock: Date;
 let runningRuns: Set<string>;
 let acpRuns: Set<string>;
 let comments: string[];
+let enqueued: Array<{ repo: string; ref: string; title: string | null; by: string }>;
 let holds: Array<{ startedAt: Date; expiresAt: Date }>;
 let lifted: Date[];
 let launches: Array<{ jobDir: string; tag: string }>;
@@ -69,6 +70,10 @@ function deps(overrides: Partial<LiveReleaseDeps> = {}): LiveReleaseDeps {
       comments.push(body);
     },
     mayReleaseFromCard: async ({ actor }) => cardReleasers.has(actor.actorId),
+    enqueueRelease: async (repo, input) => {
+      enqueued.push({ repo, ...input });
+      return { ok: true, item: { id: "rq-abc123", ref: input.ref, status: "queued" } as never };
+    },
     applyHold: (hold) => holds.push(hold),
     liftHold: (startedAt) => lifted.push(startedAt),
     startLauncher: ({ jobDir, tag }) => {
@@ -165,6 +170,7 @@ beforeEach(() => {
   runningRuns = new Set(["run-unflagged"]);
   acpRuns = new Set();
   comments = [];
+  enqueued = [];
   holds = [];
   lifted = [];
   launches = [];
@@ -255,21 +261,29 @@ describe("\"Update live?\" card", () => {
     fs.mkdirSync(path.join(root, "worktree"));
     const svc = createLiveReleaseService(deps({ serverRepoRoot: path.join(root, "worktree") }));
     await svc.onConfirmationAccepted(accepted());
+    expect(enqueued).toEqual([]);
     expect(holds).toEqual([]);
     expect(launches).toEqual([]);
     expect(comments[0]).toMatch(/release is off on this server/);
   });
 
-  it("goes through start(), the same path as the Releases page", async () => {
+  it("adds the tag to the release queue, like Release now, and never releases without the preview itself", async () => {
     const svc = createLiveReleaseService(deps());
-    const job = await svc.onConfirmationAccepted(accepted());
-    expect(job).toMatchObject({ kind: "release", tag: "rc-2026-09-27.2", issueId: "issue-1", interactionId: "interaction-1", startedBy: "john" });
-    expect(targetChecks).toEqual([{ kind: "release", tag: "rc-2026-09-27.2" }]);
-    // A card after it is refused with the same reason the page gets.
-    const page = await svc.start({ kind: "release", tag: "rc-2026-09-27.3", actor: JOHN });
-    await svc.onConfirmationAccepted({ ...accepted("live-release:rc-2026-09-27.3"), interaction: { ...accepted().interaction, id: "interaction-2", idempotencyKey: "live-release:rc-2026-09-27.3" } });
-    expect(page).toMatchObject({ ok: false, status: 409 });
-    expect(comments.at(-1)).toBe(`Not released: ${(page as { error: string }).error}. Live is unchanged.`);
+    const item = await svc.onConfirmationAccepted(accepted());
+    expect(item).toMatchObject({ id: "rq-abc123", ref: "rc-2026-09-27.2" });
+    expect(enqueued).toEqual([{ repo: path.join(root, "dev"), ref: "rc-2026-09-27.2", title: null, by: "user:john" }]);
+    // Nothing is held, checked or launched here: the queue's worker does that after the gate and the preview.
+    expect(targetChecks).toEqual([]);
+    expect(holds).toEqual([]);
+    expect(launches).toEqual([]);
+    expect(svc.listJobs()).toEqual([]);
+    expect(comments.at(-1)).toMatch(/^Added rc-2026-09-27\.2 to the release queue as rq-abc123\. It runs the full test suite .* a preview on a copy of the live data, then the release\./);
+  });
+
+  it("says on the issue when the queue refuses it", async () => {
+    const svc = createLiveReleaseService(deps({ enqueueRelease: async () => ({ ok: false, status: 422, error: "unknown tag" }) }));
+    expect(await svc.onConfirmationAccepted(accepted())).toBeNull();
+    expect(comments.at(-1)).toBe("Not released: the release queue refused it (unknown tag). Live is unchanged.");
   });
 });
 
@@ -354,7 +368,7 @@ describe("holding: hot restart, flagged runs, cancel, override", () => {
   it("waits up to 5 min for running ACP runs, which a hot restart cannot keep (GRE-746)", async () => {
     acpRuns.add("run-acp");
     const svc = createLiveReleaseService(deps());
-    const job = await svc.onConfirmationAccepted(accepted());
+    const { job } = (await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN, issueId: "issue-1", interactionId: "interaction-1" })) as { job: unknown };
     expect(job).toMatchObject({ state: "holding", waitingForAcpRuns: 1 });
     expect(svc.listJobs()[0]).toMatchObject({ waitingForAcpRuns: 1 });
     expect(comments.at(-1)).toMatch(/running ACP runs.*\(1 now, at most 5 min\)/);
@@ -373,7 +387,7 @@ describe("holding: hot restart, flagged runs, cancel, override", () => {
   it("restarts after 5 min with ACP runs still running: they are checkpointed and retried (GRE-746)", async () => {
     acpRuns.add("run-acp");
     const svc = createLiveReleaseService(deps());
-    await svc.onConfirmationAccepted(accepted());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN, issueId: "issue-1", interactionId: "interaction-1" });
     advance(LIVE_RELEASE_WAIT_FOR_ACP_RUNS_MS - 1);
     await svc.tick();
     expect(launches).toEqual([]);
@@ -578,7 +592,7 @@ describe("progress after the switch", () => {
 
   it("reports rolled_back with the reason and the backup path", async () => {
     const svc = createLiveReleaseService(deps());
-    await svc.onConfirmationAccepted(accepted());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN, issueId: "issue-1", interactionId: "interaction-1" });
     const { jobDir } = launches[0];
     writeResult(jobDir, {
       outcome: "rolled_back",
@@ -662,7 +676,7 @@ describe("progress after the switch", () => {
   it("reports a lost launcher and lifts the hold", async () => {
     let alive = true;
     const svc = createLiveReleaseService(deps({ isProcessAlive: () => alive }));
-    await svc.onConfirmationAccepted(accepted());
+    await svc.start({ kind: "release", tag: "rc-2026-09-27.2", actor: JOHN, issueId: "issue-1", interactionId: "interaction-1" });
     advance(2 * 60 * 1000);
     await svc.tick();
     expect(lifted).toEqual([]);

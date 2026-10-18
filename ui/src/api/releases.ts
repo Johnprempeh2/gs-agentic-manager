@@ -188,10 +188,13 @@ export const releasesApi = {
     api.post<{ item: ReleaseQueueItem; queue: ReleaseQueueView }>(`/companies/${companyId}/releases/queue`, body, options),
   cancelQueued: (companyId: string, id: string) =>
     api.post<{ item: ReleaseQueueItem; queue: ReleaseQueueView }>(`/companies/${companyId}/releases/queue/${id}/cancel`, {}),
-  /** Cuts the next rc-* from origin/main and releases it, without the queue (the page no longer uses it). */
-  /** `options.headers` carries the one-use `X-GSAM-Reauth` token in login mode. */
+  /**
+   * The older release endpoint, kept for compatibility: like `enqueue`, it adds
+   * main (or `tag`) to the release queue and answers with the queue item. The
+   * page uses `enqueue`. `options.headers` carries the `X-GSAM-Reauth` token.
+   */
   releaseNow: (companyId: string, options?: RequestOptions) =>
-    api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/release`, {}, options),
+    api.post<{ item: ReleaseQueueItem; queue: ReleaseQueueView }>(`/companies/${companyId}/releases/release`, {}, options),
   rollback: (companyId: string, tag: string, options?: RequestOptions) =>
     api.post<{ progress: ReleaseProgress }>(`/companies/${companyId}/releases/rollback`, { tag }, options),
   /** Tags a live-* release as stable-*; `notes` (the client notes) are the tag message. */

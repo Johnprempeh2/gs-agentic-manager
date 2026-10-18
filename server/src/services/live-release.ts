@@ -1,6 +1,9 @@
-// One-click release (GRE-39, GRE-121). John releases or rolls back from the
-// Releases page, or accepts an "Update live?" card (a request_confirmation
-// whose idempotencyKey is `live-release:<rc-tag>`). Both call start():
+// One-click rollback, and the release machinery (GRE-39, GRE-121). A release
+// request (Release now on the page, POST /releases/release, or an accepted
+// "Update live?" card: a request_confirmation whose idempotencyKey is
+// `live-release:<rc-tag>`) goes to the release queue
+// (scripts/greatstone-release-queue.mjs), which runs the gate and the preview
+// first. Rollbacks from the page call start():
 //
 //   0. checking: pre-flight (release-repo.ts), before any run is held. It
 //      answers in seconds; a failure changes nothing. A release with no tag
@@ -78,6 +81,7 @@ import {
   type ReleaseTagInfo,
 } from "./release-repo.js";
 import { createRunUpdateFlagStore, type RunUpdateFlag } from "./run-update-flags.js";
+import { releaseQueueService, type QueueActionResult } from "./release-queue.js";
 
 export const LIVE_RELEASE_KEY_PREFIX = "live-release:";
 /** What an agent may ask about: a commit SHA, or an rc-* / live-* tag. */
@@ -305,6 +309,8 @@ export interface LiveReleaseDeps {
   applyHold(hold: { startedAt: Date; expiresAt: Date }): void;
   /** Lifts the task drain only if it is still the one this release started. */
   liftHold(startedAt: Date): void;
+  /** Adds a release request to the release queue (scripts/greatstone-release-queue.mjs). */
+  enqueueRelease(repo: string, input: { ref: string; title: string | null; by: string }): Promise<QueueActionResult>;
   /** Starts the launcher; it detaches itself and returns at once. */
   startLauncher(input: { launcher: string; jobDir: string; tag: string; releaseRepo: string }): void;
   isProcessAlive(pid: number): boolean;
@@ -829,7 +835,9 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
 
   /**
    * Called after a request_confirmation is accepted. Does nothing unless the
-   * card is an "Update live?" card. Uses start(), the same path as the page.
+   * card is an "Update live?" card. Like Release now on the page, it adds the
+   * tag to the release queue, which runs the test gate, the preview and the
+   * release; it never releases from here, so nothing skips the preview.
    */
   const onConfirmationAccepted = async (input: {
     issueId: string;
@@ -840,17 +848,27 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     if (interaction.kind !== "request_confirmation" || interaction.status !== "accepted") return null;
     const rcTag = parseLiveReleaseKey(interaction.idempotencyKey);
     if (!rcTag) return null;
-    // A person must be an owner or admin; start() refuses agents itself.
-    if (input.actor.actorType === "user" && !(await deps.mayReleaseFromCard({ issueId: input.issueId, actor: input.actor }))) {
+    const refuse = async (reason: string) => {
+      await deps.postComment(input.issueId, `Not released: ${reason}. Live is unchanged.`);
+      return null;
+    };
+    if (input.actor.actorType !== "user") return refuse("only a person can release or roll back");
+    // A person must be an owner or admin.
+    if (!(await deps.mayReleaseFromCard({ issueId: input.issueId, actor: input.actor }))) {
       await deps.postComment(input.issueId, RELEASE_CARD_OWNER_OR_ADMIN_COMMENT);
       return null;
     }
-    const result = await start({ kind: "release", tag: rcTag, actor: input.actor, issueId: input.issueId, interactionId: interaction.id });
-    if (!result.ok) {
-      await deps.postComment(input.issueId, `Not released: ${result.error}. Live is unchanged.`);
-      return null;
-    }
-    return result.job;
+    const off = enabledProblem();
+    if (off) return refuse(off);
+    const repo = deps.resolveReleaseRepo();
+    if (!repo) return refuse("release is off on this server: no release repo (GSAM_RELEASE_REPO or ~/GSAM/release.conf)");
+    const queued = await deps.enqueueRelease(repo, { ref: rcTag, title: null, by: `user:${input.actor.actorId}` });
+    if (!queued.ok) return refuse(`the release queue refused it (${queued.error})`);
+    await deps.postComment(
+      input.issueId,
+      `Added ${rcTag} to the release queue as ${queued.item.id}. It runs the full test suite (skipped if that commit already passed), a preview on a copy of the live data, then the release. New agent runs pause only while it releases. Follow it on the Releases page.`,
+    );
+    return queued.item;
   };
 
   /** Advances every open release. Runs on an interval and once at start. */
@@ -1243,6 +1261,7 @@ function defaultDeps(db: Db, env: NodeJS.ProcessEnv = process.env): LiveReleaseD
     liftHold: (startedAt) => {
       if (getTaskDrainStatus().startedAt?.getTime() === startedAt.getTime()) stopTaskDrain();
     },
+    enqueueRelease: (repo, input) => releaseQueueService(env).enqueue(repo, input),
     startLauncher: ({ launcher, jobDir, tag, releaseRepo }) => {
       // detached: a new session, so the live server's restart does not stop it.
       const child = spawn("bash", [launcher, jobDir, tag, releaseRepo], {

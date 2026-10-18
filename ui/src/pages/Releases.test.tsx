@@ -20,6 +20,7 @@ import { Releases, ReleasesView } from "./Releases";
 const mockReleasesApi = vi.hoisted(() => ({
   overview: vi.fn(),
   enqueue: vi.fn(),
+  releaseNow: vi.fn(),
   queue: vi.fn(),
   cancelQueued: vi.fn(),
   rollback: vi.fn(),
@@ -383,6 +384,8 @@ describe("Release now confirm", () => {
 
     await click([...dialog!.querySelectorAll("button")].find((b) => b.textContent === "Release now"));
     expect(mockReleasesApi.enqueue).toHaveBeenCalledWith("company-1", { ref: "main", title: "Release from the app" }, undefined);
+    // Nothing on the page releases from the server, which would skip the gate and the preview.
+    expect(mockReleasesApi.releaseNow).not.toHaveBeenCalled();
     expect(document.querySelector('[data-testid="release-queue-queued"]')?.textContent).toContain("Release from the app (main)");
   });
 

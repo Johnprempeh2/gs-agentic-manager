@@ -3390,7 +3390,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/releases/release",
   tags: ["releases"],
-  summary: "Release live: an rc-* tag, or with no tag cut one from origin/main (Fork CI must be green)",
+  summary: "Ask for a release through the release queue (kept for older callers): an rc-* tag, or main with no tag; answers with the queue item",
   request: {
     params: releaseCompanyParams,
     body: jsonBody(z.object({ tag: z.string().optional(), title: z.string().optional() })),

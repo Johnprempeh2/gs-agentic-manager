@@ -9,8 +9,9 @@
 // overview (GET) stays open to every member of the company, since it only
 // reads.
 //
-// Every action goes through liveReleaseService, the same service the
-// "Update live?" card uses; nothing here repeats release logic.
+// A release request (Release now, POST /release, the "Update live?" card) goes
+// to the release queue; rollback, cancel and override go through
+// liveReleaseService. Nothing here repeats release logic.
 //
 // Release, rollback and promote also ask for the password again in login mode
 // (GRE-133, wired by GRE-136): the company, board and role checks run first,
@@ -76,15 +77,28 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
     res.json(await svc.overview(companyId));
   });
 
+  // Kept for older callers: it no longer releases from the server (that path
+  // skipped the preview). Like Release now, it adds the tag, or main when there
+  // is none, to the release queue and answers with the queue item.
   router.post("/companies/:companyId/releases/release", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertReleaserFor(req, companyId);
     assertReleaseReauth(req, "release", reauth);
     const tag = typeof req.body?.tag === "string" && req.body.tag.trim() ? req.body.tag.trim() : null;
-    const title = typeof req.body?.title === "string" ? req.body.title : null;
-    const result = await svc.start({ kind: "release", tag, title, actor: userActor(req) });
-    if (result.ok) await log(req, companyId, "release.started", { tag: result.job.tag, fromMain: tag === null });
-    send(res, result.ok ? { ok: true, progress: result.progress } : result, 202);
+    const title = typeof req.body?.title === "string" && req.body.title.trim() ? req.body.title.trim() : null;
+    if (tag !== null && !/^rc-\d{4}-\d{2}-\d{2}\.\d+$/.test(tag)) {
+      res.status(422).json({ error: "a release needs an rc-YYYY-MM-DD.N tag, or no tag for main" });
+      return;
+    }
+    const repo = queueTarget(res);
+    if (!repo) return;
+    const result = await queue.enqueue(repo, { ref: tag ?? "main", title, by: `user:${getActorInfo(req).actorId}` });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    await log(req, companyId, "release.queued", { tag: result.item.ref, queueId: result.item.id });
+    res.status(202).json({ item: result.item, queue: queue.view() });
   });
 
   router.post("/companies/:companyId/releases/rollback", async (req, res) => {

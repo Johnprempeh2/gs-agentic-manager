@@ -425,9 +425,11 @@ Merging does not change the live app. A version goes live in these steps.
    changelog, and Fork CI on that commit), the release queue, the history, and
    the progress of a rollback. **Release now** adds a request for main to the
    queue with the proposed title; it no longer cuts and releases a tag itself,
-   so it never skips the gate or the preview.
-   `POST /api/companies/:companyId/releases/release` still cuts and releases
-   from the server (the "Update live?" card uses it), but the page does not. Keystone may edit the proposed title
+   so it never skips the gate or the preview. The same holds for the older
+   `POST /api/companies/:companyId/releases/release` (kept for older callers;
+   `{"tag": "rc-..."}` or no tag for main, it answers with the queue item) and
+   for an accepted "Update live?" card: both add to the queue, and the card's
+   issue gets a comment with the queue id. Keystone may edit the proposed title
    (`PATCH /api/companies/:companyId/releases/next`); nothing else. The
    "Update live?" card (a `request_confirmation` with `idempotencyKey`
    `live-release:rc-YYYY-MM-DD.N`) still works and calls the same service, but
@@ -477,7 +479,13 @@ Merging does not change the live app. A version goes live in these steps.
    ```
 
    It does the same checks and steps and prints the rollback command and the
-   backup file. The new `live-*` tag gets the rc tag's title and changelog. The
+   backup file. One release at a time: it holds the release lock
+   (`~/GSAM/locks/release.lock`, with the holder's pid and command) from its
+   first check until live is healthy or the release has failed. A second
+   release, by hand or from the queue, says "another release runs (...)" and
+   changes nothing; the queue's worker waits for the lock before it pauses any
+   agent run. On 18 Oct 2026 two releases ran at once and made two live tags on
+   one commit. A lock whose holder no longer runs is taken over. The new `live-*` tag gets the rc tag's title and changelog. The
    script refuses to run when its release scripts are older than origin/main;
    pull first. It also refuses an rc tag that does not contain the live commit
    (an older candidate), so a release never goes backwards; to go back, roll
@@ -570,7 +578,9 @@ tests, the database backup before the switch, and the rollback command.
    drain is lifted, runs go on, and it tries again in 10 minutes, three times,
    then ends the request with "nothing was released". The page says
    "Releasing: new agent runs paused" while this lasts.
-6. **Releasing:** `scripts/greatstone-release.sh <rc-tag>`, the same command
+6. **Releasing:** the worker takes the release lock before step 5 (it waits
+   while a release by hand holds it, with no run paused) and keeps it to the
+   end, then runs `scripts/greatstone-release.sh <rc-tag>`, the same command
    as by hand: test gate and preview checks, backup, `live-*` tag, switch, hot
    restart, health check, automatic rollback if live does not come up. Then the
    drain is lifted, also when the release failed. The result keeps the
