@@ -17,7 +17,7 @@ vi.mock("../api/issues", () => ({
 vi.mock("../api/agents", () => ({ agentsApi: { list: () => listAgents() } }));
 vi.mock("@/context/ConfirmContext", () => ({ useConfirm: () => async () => true }));
 const pushToast = vi.fn();
-vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast }) }));
+vi.mock("../context/ToastContext", () => ({ useOptionalToastActions: () => ({ pushToast }) }));
 
 import { MoveOpenTasksBanner } from "./MoveOpenTasksBanner";
 

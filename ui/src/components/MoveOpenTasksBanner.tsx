@@ -4,7 +4,7 @@ import { agentsApi } from "../api/agents";
 import { issuesApi } from "../api/issues";
 import { queryKeys } from "../lib/queryKeys";
 import { useConfirm } from "@/context/ConfirmContext";
-import { useToastActions } from "../context/ToastContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { InlineBanner } from "./InlineBanner";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
@@ -27,7 +27,7 @@ interface MoveOpenTasksBannerProps {
 export function MoveOpenTasksBanner({ companyId, agent }: MoveOpenTasksBannerProps) {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const { pushToast } = useToastActions();
+  const toasts = useOptionalToastActions();
   const stopped = STOPPED_STATUSES.has(agent.status);
   const [targetId, setTargetId] = useState("");
 
@@ -57,14 +57,14 @@ export function MoveOpenTasksBanner({ companyId, agent }: MoveOpenTasksBannerPro
       return { moved, failed: failed.length };
     },
     onSuccess: ({ moved, failed }) => {
-      pushToast({
+      toasts?.pushToast({
         tone: failed > 0 ? "warn" : "success",
         title: `${moved} ${moved === 1 ? "task" : "tasks"} moved`,
         body: failed > 0 ? `${failed} could not be moved. Open them to see why.` : undefined,
       });
     },
     onError: (error) => {
-      pushToast({ tone: "error", title: "Could not move the tasks", body: error instanceof Error ? error.message : undefined });
+      toasts?.pushToast({ tone: "error", title: "Could not move the tasks", body: error instanceof Error ? error.message : undefined });
     },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["agent-open-tasks", companyId, agent.id] });
