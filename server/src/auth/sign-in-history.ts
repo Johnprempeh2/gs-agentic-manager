@@ -10,7 +10,7 @@
 
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
-import { and, desc, eq, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne, sql } from "drizzle-orm";
 import { authSignInEvents, authUsers, type Db } from "@greatstone/db";
 import { logger } from "../middleware/logger.js";
 
@@ -82,6 +82,47 @@ export function signInHistoryService(db: Db) {
         .where(eq(authSignInEvents.userId, userId))
         .orderBy(desc(authSignInEvents.createdAt))
         .limit(limit);
+    },
+
+    /**
+     * Instance-wide attempts that did not finish (wrong passwords and
+     * passwords held at the two-step code), newest first, with whose account
+     * they were on, plus counts of each outcome since `since`. For instance
+     * admins only.
+     */
+    async unfinishedAcrossInstance(since: Date, limit = 50) {
+      const [events, counts] = await Promise.all([
+        db
+          .select({
+            id: authSignInEvents.id,
+            outcome: authSignInEvents.outcome,
+            ipAddress: authSignInEvents.ipAddress,
+            userAgent: authSignInEvents.userAgent,
+            createdAt: authSignInEvents.createdAt,
+            userId: authSignInEvents.userId,
+            email: authUsers.email,
+            name: authUsers.name,
+          })
+          .from(authSignInEvents)
+          .innerJoin(authUsers, eq(authUsers.id, authSignInEvents.userId))
+          .where(ne(authSignInEvents.outcome, "signed_in"))
+          .orderBy(desc(authSignInEvents.createdAt))
+          .limit(limit),
+        db
+          .select({ outcome: authSignInEvents.outcome, count: sql<number>`count(*)::int` })
+          .from(authSignInEvents)
+          .where(gte(authSignInEvents.createdAt, since))
+          .groupBy(authSignInEvents.outcome),
+      ]);
+      const counted = Object.fromEntries(counts.map((row) => [row.outcome, Number(row.count)]));
+      return {
+        counts: {
+          signedIn: counted.signed_in ?? 0,
+          wrongPassword: counted.wrong_password ?? 0,
+          codeNeeded: counted.code_needed ?? 0,
+        },
+        events,
+      };
     },
   };
 }

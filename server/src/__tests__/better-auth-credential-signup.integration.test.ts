@@ -18,7 +18,7 @@ import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { authAccounts, authSignInLockouts, authTwoFactors, authUsers, createDb } from "@greatstone/db";
+import { authAccounts, authSignInLockouts, authTwoFactors, authUsers, createDb, instanceUserRoles } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -35,6 +35,7 @@ import { errorHandler } from "../middleware/error-handler.js";
 import { boardAuthService } from "../services/board-auth.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { authRoutes } from "../routes/auth.js";
+import { instanceSettingsRoutes } from "../routes/instance-settings.js";
 import type { Config } from "../config.js";
 
 const ORIGIN = "http://127.0.0.1:41999";
@@ -125,6 +126,7 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
     app.use(twoStepRequiredGuard(db));
     app.use("/api/auth", authRoutes(db));
     app.all("/api/auth/{*authPath}", createBetterAuthHandler(auth));
+    app.use("/api", express.json(), instanceSettingsRoutes(db));
     // Stands in for every other board route.
     app.get("/api/companies", (req, res) => {
       if (req.actor.type !== "board") {
@@ -280,6 +282,23 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
       "code_needed",
     ]);
     expect(JSON.stringify(history.body)).not.toContain("nobody@example.com");
+
+    // Settings > Security > Sign-in activity is for instance admins only, and
+    // lists the unfinished attempts with whose account they were on.
+    const activity = () => request(app).get("/api/instance/sign-in-activity").set("cookie", cookieHeader(backup));
+    expect((await activity()).status).toBe(403);
+    const [owner] = await db.select({ id: authUsers.id }).from(authUsers).where(eq(authUsers.email, email));
+    await db.insert(instanceUserRoles).values({ userId: owner!.id, role: "instance_admin" });
+    const asAdmin = await activity();
+    expect(asAdmin.status, JSON.stringify(asAdmin.body)).toBe(200);
+    expect(asAdmin.body.events.map((event: { outcome: string }) => event.outcome)).toEqual([
+      "wrong_password",
+      "code_needed",
+      "code_needed",
+    ]);
+    expect(asAdmin.body.events[0].user.email).toBe(email);
+    expect(asAdmin.body.counts).toMatchObject({ wrongPassword: 1, codeNeeded: 2 });
+    await db.delete(instanceUserRoles).where(eq(instanceUserRoles.userId, owner!.id));
   });
 
   it("holds a password-only session at setup while two-step sign-in is required, and a reset clears it", async () => {

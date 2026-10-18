@@ -35,6 +35,7 @@ import {
   ToggleField,
 } from "../components/agent-config-primitives";
 import { InstanceGeneralSettings, type InstanceGeneralSection } from "./InstanceGeneralSettings";
+import { SignInActivitySection } from "../components/SignInActivitySection";
 import { hourlyRateInputValue, parseHourlyRateInput } from "../lib/minimum-wage";
 
 const SECURITY_SECTIONS: readonly InstanceGeneralSection[] = ["deploymentStatus", "requireTwoStepSignIn", "censorUsernameInLogs"];
@@ -542,6 +543,7 @@ export function CompanySettings() {
 
         <TabsContent value="security" className="space-y-8">
           <InstanceGeneralSettings embedded sections={SECURITY_SECTIONS} />
+          <SignInActivitySection />
         </TabsContent>
 
         <TabsContent value="backups" className="space-y-8">

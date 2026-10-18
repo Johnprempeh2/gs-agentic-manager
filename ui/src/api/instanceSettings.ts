@@ -23,6 +23,20 @@ export interface RunAdmissionRecommendation {
   };
 }
 
+/** GET /instance/sign-in-activity: attempts that did not finish, across the instance. Instance admins only. */
+export interface InstanceSignInActivity {
+  since: string;
+  counts: { signedIn: number; wrongPassword: number; codeNeeded: number };
+  events: Array<{
+    id: string;
+    outcome: "wrong_password" | "code_needed";
+    ipAddress: string | null;
+    userAgent: string | null;
+    at: string;
+    user: { id: string; email: string | null; name: string | null };
+  }>;
+}
+
 export const instanceSettingsApi = {
   get: () =>
     api.get<InstanceSettings>("/instance/settings"),
@@ -49,4 +63,6 @@ export const instanceSettingsApi = {
     api.get<InstanceSystemMemory>("/instance/system-memory"),
   getRunAdmissionRecommendation: () =>
     api.get<RunAdmissionRecommendation>("/instance/run-admission/recommendation"),
+  getSignInActivity: () =>
+    api.get<InstanceSignInActivity>("/instance/sign-in-activity"),
 };
