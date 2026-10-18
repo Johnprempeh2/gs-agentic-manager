@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImageCoverControls } from "../components/ImageCoverControls";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  GENERATED_IMAGE_PROMPT_MAX_LENGTH,
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
   HIGGSFIELD_API_KEYS_URL,
   imageShapeLabel,
@@ -16,17 +17,27 @@ import {
   type StudioCameraSettings,
 } from "@greatstone/shared";
 import {
-  AlertCircle,
+  Bookmark,
+  Building2,
+  Camera,
   Clapperboard,
+  Columns2,
+  Copy,
   Download,
   ExternalLink,
+  Film,
   ImageIcon,
   Loader2,
+  Palette,
+  Plus,
+  Proportions,
   RotateCcw,
   Search,
+  Sparkles,
   Star,
   Trash2,
   Wand2,
+  type LucideIcon,
 } from "lucide-react";
 import { imagesApi } from "../api/images";
 import { agentsApi } from "../api/agents";
@@ -42,6 +53,7 @@ import { ErrorState } from "../components/ErrorState";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Link } from "@/lib/router";
 import {
@@ -53,7 +65,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { relativeTime } from "@/lib/utils";
-import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImagePromptFields } from "../components/ImagePromptFields";
+import { IMAGE_ASPECT_STYLE, IMAGE_IDEA_STARTERS, ImageShapePicker, ImageStylePicker } from "../components/ImagePromptFields";
+import { STUDIO_GENERATE_CLASS, STUDIO_PROMPT_CLASS, StudioComposer, type StudioComposerChip } from "../components/StudioComposer";
+import {
+  STUDIO_GALLERY_CLASS,
+  STUDIO_MEDIA_CLASS,
+  StudioEmptyGallery,
+  StudioMediaAction,
+  StudioMediaCard,
+} from "../components/StudioMediaCard";
+import { StudioModeTile } from "../components/StudioModeTile";
 import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCameraFields";
 import { StudioLookCompare } from "../components/StudioLookCompare";
 import { StudioLookPicker } from "../components/StudioLookPicker";
@@ -137,6 +158,8 @@ function ImageCard({
   onOpen,
   onRetry,
   onFavourite,
+  onReuse,
+  onAnimate,
   retrying,
 }: {
   image: GeneratedImage;
@@ -144,56 +167,64 @@ function ImageCard({
   onOpen: () => void;
   onRetry: () => void;
   onFavourite: (favourite: boolean) => void;
+  onReuse: () => void;
+  onAnimate: () => void;
   retrying: boolean;
 }) {
+  const finished = image.status === "completed" && !!image.contentPath;
   return (
-    <figure className="gs-glass-card group flex flex-col overflow-hidden rounded-lg border bg-card" data-testid="generated-image-card">
-      <div className="relative w-full overflow-hidden bg-muted" style={{ aspectRatio: ASPECT_STYLE[image.aspectRatio] ?? "1 / 1" }}>
-        {image.status === "completed" && image.contentPath ? (
-          <button type="button" onClick={onOpen} className="block h-full w-full" aria-label={`Open image: ${image.prompt}`}>
-            <img
-              src={image.contentPath}
-              alt={image.altText}
-              loading="lazy"
-              className="h-full w-full object-cover transition-transform motion-safe:duration-300 group-hover:scale-105"
-            />
-          </button>
-        ) : null}
-        {image.status === "completed" && image.contentPath ? (
-          <FavouriteButton
-            image={image}
-            onToggle={onFavourite}
-            className="absolute right-2 top-2 rounded-full bg-background/80 p-1.5 text-foreground shadow-sm hover:bg-background"
+    <StudioMediaCard
+      data-testid="generated-image-card"
+      aspectRatio={ASPECT_STYLE[image.aspectRatio] ?? "1 / 1"}
+      status={finished ? "completed" : image.status === "pending" ? "pending" : "failed"}
+      pendingLabel="Making your image..."
+      media={
+        <button type="button" onClick={onOpen} className="block h-full w-full outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-inset focus-visible:ring-ring" aria-label={`Open image: ${image.prompt}`}>
+          <img src={image.contentPath ?? undefined} alt={image.altText} loading="lazy" className={STUDIO_MEDIA_CLASS} />
+        </button>
+      }
+      failure={{
+        message: "This image could not be made. Try different words, or try again in a few minutes.",
+        detail: image.error,
+        onRetry,
+        retrying,
+      }}
+      badges={
+        image.favourite ? (
+          <span className="grid size-8 place-items-center rounded-full bg-background/80 text-primary shadow-sm" aria-hidden="true">
+            <Star className="h-4 w-4 fill-current" />
+          </span>
+        ) : null
+      }
+      actions={
+        <>
+          <StudioMediaAction
+            icon={Star}
+            label={image.favourite ? "Remove from favourites" : "Add to favourites"}
+            pressed={image.favourite}
+            onClick={() => onFavourite(!image.favourite)}
+            iconClassName={image.favourite ? "fill-current text-primary" : undefined}
+            data-testid="image-favourite"
           />
-        ) : image.status === "pending" ? (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-muted-foreground motion-safe:animate-pulse" role="status">
-            <Loader2 className="h-6 w-6 motion-safe:animate-spin" aria-hidden="true" />
-            <span className="text-xs">Making your image...</span>
-          </div>
-        ) : (
-          <div className="flex h-full w-full flex-col items-center justify-center gap-2 p-4 text-center">
-            <AlertCircle className="h-5 w-5 text-destructive" aria-hidden="true" />
-            <p className="text-xs text-muted-foreground">This image could not be made. Try different words, or try again in a few minutes.</p>
-            {image.error ? <p className="line-clamp-2 text-xs text-muted-foreground" title={image.error}>{image.error}</p> : null}
-            <Button size="sm" variant="outline" onClick={onRetry} disabled={retrying}>
-              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-              Try again
-            </Button>
-          </div>
-        )}
-      </div>
-      <figcaption className="space-y-1 p-3">
-        <p className="line-clamp-2 text-sm text-foreground" title={image.prompt}>
-          {image.prompt}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {[imageStyleLabel(image.style), imageShapeLabel(image.aspectRatio), studioCameraLabel(image.camera), makerName, relativeTime(image.createdAt)]
-            .filter(Boolean)
-            .join(" · ")}
-        </p>
-        <ImageLinks image={image} />
-      </figcaption>
-    </figure>
+          <StudioMediaAction icon={RotateCcw} label="Make another like this" onClick={onReuse} data-testid="image-card-reuse" />
+          <StudioMediaAction icon={Clapperboard} label="Animate this image" onClick={onAnimate} data-testid="image-card-animate" />
+          <StudioMediaAction icon={Download} label="Download" href={image.contentPath ?? undefined} download={downloadName(image)} data-testid="image-card-download" />
+        </>
+      }
+      caption={
+        <>
+          <p className="line-clamp-2 text-sm text-foreground" title={image.prompt}>
+            {image.prompt}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {[imageStyleLabel(image.style), imageShapeLabel(image.aspectRatio), studioCameraLabel(image.camera), makerName, relativeTime(image.createdAt)]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          <ImageLinks image={image} />
+        </>
+      }
+    />
   );
 }
 
@@ -235,6 +266,8 @@ export function Images() {
   const [style, setStyle] = useState<ImageStylePresetId | null>(null);
   const [camera, setCamera] = useState<StudioCameraSettings>({});
   const [lookId, setLookId] = useState<string | null>(null);
+  const [lookName, setLookName] = useState<string | null>(null);
+  const [openChip, setOpenChip] = useState<string | null>(null);
   const [variations, setVariations] = useState<number>(1);
   const [compareLookIds, setCompareLookIds] = useState<string[]>([]);
   const [shots, setShots] = useState<string[]>([]);
@@ -406,9 +439,10 @@ export function Images() {
     // The description already carries the look's words, so do not add them twice.
     setLookId(null);
     setOrganisationId(image.organisation?.id ?? "");
+    setLookName(null);
     setOpenId(null);
     promptRef.current?.focus();
-    promptRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    promptRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
   };
 
   if (!selectedCompanyId) {
@@ -423,81 +457,51 @@ export function Images() {
   const opened = images.find((image) => image.id === openId) ?? null;
   const toDelete = images.find((image) => image.id === confirmDeleteId) ?? null;
 
-  return (
-    <div className="w-full max-w-7xl space-y-6">
-      <header className="space-y-1">
-        <h1 className="text-xl font-bold">Image studio</h1>
-        <p className="text-sm text-muted-foreground">
-          Describe a picture or a short video and GSAM makes it for you. Your agents can make them for their tasks too.
-        </p>
-      </header>
+  const focusPrompt = () => {
+    promptRef.current?.focus();
+    promptRef.current?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  };
+  const pickStarter = (starter: (typeof IMAGE_IDEA_STARTERS)[number]) => {
+    setPrompt(starter.prompt);
+    setAspectRatio(starter.aspectRatio);
+    promptRef.current?.focus();
+  };
+  const openMode = (mode: "images" | "videos", chip: string | null = null) => {
+    setTab(mode);
+    setOpenChip(chip);
+    if (mode === "images") requestAnimationFrame(focusPrompt);
+  };
+  const starterChips = IMAGE_IDEA_STARTERS.map((starter) => ({ label: starter.label, onPick: () => pickStarter(starter) }));
+  const pickedClient = organisations?.find((organisation) => organisation.id === organisationId)?.name ?? null;
 
-      <div className="inline-flex rounded-lg bg-muted p-1" role="tablist" aria-label="Studio">
-        {(["images", "videos"] as const).map((value) => (
-          <button
-            key={value}
-            type="button"
-            role="tab"
-            aria-selected={tab === value}
-            onClick={() => setTab(value)}
-            className={
-              tab === value
-                ? "rounded-md bg-background px-4 py-1.5 text-sm font-medium text-foreground shadow-sm"
-                : "rounded-md px-4 py-1.5 text-sm text-muted-foreground hover:text-foreground"
-            }
-            data-testid={`studio-tab-${value}`}
-          >
-            {value === "images" ? "Images" : "Videos"}
-          </button>
-        ))}
-      </div>
-
-      {tab === "videos" ? (
-        <VideoStudio
-          companyId={companyId}
-          sourceImage={animateImage}
-          onClearSourceImage={() => setAnimateImage(null)}
-          onError={(message) => pushToast({ title: message, tone: "error" })}
-          onDeleted={() => pushToast({ title: "Video deleted", tone: "success", ttlMs: 2500 })}
-        />
-      ) : (
-      <>
-
-      <section
-        className="gs-glass-card space-y-4 rounded-xl border bg-card p-4 sm:p-5"
-        aria-labelledby="images-composer-title"
-        data-tour="images-composer"
-      >
-        <div className="flex items-center gap-2">
-          <Wand2 className="h-4 w-4 text-primary" aria-hidden="true" />
-          <h2 id="images-composer-title" className="text-sm font-semibold">Make an image</h2>
-          {statusQuery.data?.providerLabel ? (
-            <span className="ml-auto text-xs text-muted-foreground">Using {statusQuery.data.providerLabel}</span>
-          ) : null}
-        </div>
-
-        {!configured ? <NotSetUp provider={statusQuery.data?.provider} /> : null}
-
-        <ImagePromptFields
-          ref={promptRef}
-          idPrefix="image"
-          prompt={prompt}
-          onPromptChange={setPrompt}
-          aspectRatio={aspectRatio}
-          onAspectRatioChange={setAspectRatio}
-          style={style}
-          onStyleChange={setStyle}
-          onSubmitShortcut={submit}
-          disabled={!configured}
-        />
-
-        <StudioPromptBoosters prompt={prompt} onPromptChange={setPrompt} disabled={!configured} />
+  const chips: StudioComposerChip[] = [
+    {
+      id: "shape",
+      icon: Proportions,
+      label: "Shape",
+      value: imageShapeLabel(aspectRatio),
+      panel: <ImageShapePicker aspectRatio={aspectRatio} onAspectRatioChange={setAspectRatio} disabled={!configured} />,
+    },
+    {
+      id: "style",
+      icon: Palette,
+      label: "Style",
+      value: imageStyleLabel(style),
+      panel: <ImageStylePicker style={style} onStyleChange={setStyle} onAspectRatioChange={setAspectRatio} disabled={!configured} />,
+    },
+    {
+      id: "look",
+      icon: Bookmark,
+      label: "House look",
+      value: lookId ? lookName : null,
+      panel: (
         <StudioLookPicker
           companyId={companyId}
           idPrefix="image"
           lookId={lookId}
           onPick={(look) => {
             setLookId(look?.id ?? null);
+            setLookName(look?.name ?? null);
             if (look) {
               setStyle(look.style);
               setCamera(look.camera ?? {});
@@ -506,15 +510,48 @@ export function Images() {
           current={{ style, camera }}
           disabled={!configured}
         />
+      ),
+    },
+    {
+      id: "camera",
+      icon: Camera,
+      label: "Camera",
+      value: studioCameraLabel(camera),
+      panel: <StudioCameraFields idPrefix="image" camera={camera} onCameraChange={setCamera} disabled={!configured} />,
+    },
+    {
+      id: "touches",
+      icon: Plus,
+      label: "Finishing touches",
+      panel: <StudioPromptBoosters prompt={prompt} onPromptChange={setPrompt} disabled={!configured} />,
+    },
+    {
+      id: "storyboard",
+      icon: Clapperboard,
+      label: "Storyboard",
+      value: shotLines.length > 0 ? `${shotLines.length} shots` : null,
+      panel: <StudioShotList shots={shots} onChange={setShots} disabled={!configured} />,
+    },
+    {
+      id: "compare",
+      icon: Columns2,
+      label: "Compare looks",
+      value: compareLookIds.length >= 2 ? `${compareLookIds.length} looks` : null,
+      panel: (
         <StudioLookCompare
           companyId={companyId}
           selected={compareLookIds}
           onChange={setCompareLookIds}
           disabled={!configured || storyboarding}
         />
-        <StudioShotList shots={shots} onChange={setShots} disabled={!configured} />
-        <StudioCameraFields idPrefix="image" camera={camera} onCameraChange={setCamera} disabled={!configured} />
-
+      ),
+    },
+    {
+      id: "versions",
+      icon: Copy,
+      label: "Versions",
+      value: variations > 1 ? `${variations} versions` : "1 version",
+      panel: (
         <fieldset className="space-y-2" disabled={!configured || comparing || storyboarding}>
           <legend className="text-sm font-medium">How many versions?</legend>
           <div className="flex gap-2" role="radiogroup" aria-label="How many versions" data-testid="image-variations">
@@ -528,7 +565,7 @@ export function Images() {
                 className={
                   variations === count
                     ? "min-w-10 rounded-md border border-primary bg-primary/10 px-3 py-1.5 text-sm ring-1 ring-primary"
-                    : "min-w-10 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent/40 disabled:cursor-not-allowed disabled:opacity-60"
+                    : "min-w-10 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-accent/40 disabled:cursor-not-allowed disabled:text-subtle-foreground"
                 }
               >
                 {count}
@@ -539,136 +576,249 @@ export function Images() {
             More versions give you more to choose from. Each one costs the same as a single image.
           </p>
         </fieldset>
-
-        {organisations && organisations.length > 0 ? (
-          <div className="space-y-2">
-            <label htmlFor="image-client" className="text-sm font-medium">
-              Who is it for? <span className="font-normal text-muted-foreground">(optional)</span>
-            </label>
-            <NativeSelect
-              id="image-client"
-              value={organisationId}
-              onChange={(event) => setOrganisationId(event.target.value)}
+      ),
+    },
+    ...(organisations && organisations.length > 0
+      ? [
+          {
+            id: "client",
+            icon: Building2,
+            label: "Client",
+            value: pickedClient,
+            panel: (
+              <div className="space-y-2">
+                <label htmlFor="image-client" className="text-sm font-medium">
+                  Who is it for? <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <NativeSelect
+                  id="image-client"
+                  value={organisationId}
+                  onChange={(event) => setOrganisationId(event.target.value)}
+                  disabled={!configured}
+                  className="sm:w-72"
+                  data-testid="image-client"
+                >
+                  <option value="">No particular client</option>
+                  {organisations.map((organisation) => (
+                    <option key={organisation.id} value={organisation.id}>
+                      {organisation.name}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "ideas",
+      icon: Sparkles,
+      label: "Ideas",
+      panel: (
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Ready-made ideas">
+          {IMAGE_IDEA_STARTERS.map((starter) => (
+            <button
+              key={starter.label}
+              type="button"
               disabled={!configured}
-              className="sm:w-72"
-              data-testid="image-client"
+              onClick={() => pickStarter(starter)}
+              className="rounded-full border border-border px-3 py-1 text-xs text-foreground transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:text-subtle-foreground"
             >
-              <option value="">No particular client</option>
-              {organisations.map((organisation) => (
-                <option key={organisation.id} value={organisation.id}>
-                  {organisation.name}
-                </option>
-              ))}
-            </NativeSelect>
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-muted-foreground">
-            Usually ready in under a minute. You can leave this page; it keeps going.
-          </p>
-          <Button onClick={submit} disabled={!canSubmit} data-testid="make-image" data-tour="images-make">
-            {create.isPending ? (
-              <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
-            ) : (
-              <Wand2 className="h-4 w-4" aria-hidden="true" />
-            )}
-            {storyboarding
-              ? `Make storyboard (${shotLines.length} shots)`
-              : comparing
-              ? `Compare ${compareLookIds.length} looks`
-              : variations > 1
-                ? `Make ${variations} images`
-                : "Make image"}
-          </Button>
+              {starter.label}
+            </button>
+          ))}
         </div>
-      </section>
+      ),
+    },
+  ];
 
-      <div className="space-y-4" data-tour="images-gallery">
-        {images.length > 0 || filtering ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <div className="relative sm:w-80">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-              <Input
-                aria-label="Search images"
-                placeholder="Search by what the image shows"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="pl-8"
-                data-testid="image-search"
-              />
-            </div>
-            {organisations && organisations.length > 0 ? (
-              <NativeSelect
-                aria-label="Show images for a client"
-                value={clientFilter}
-                onChange={(event) => setClientFilter(event.target.value)}
-                className="sm:w-56"
-              >
-                <option value="">All clients</option>
-                {organisations.map((organisation) => (
-                  <option key={organisation.id} value={organisation.id}>
-                    {organisation.name}
-                  </option>
-                ))}
-              </NativeSelect>
-            ) : null}
-            <Button
-              variant={favouritesOnly ? "default" : "outline"}
-              aria-pressed={favouritesOnly}
-              onClick={() => setFavouritesOnly((value) => !value)}
-              data-testid="image-favourites-filter"
+  const modes: Array<{ id: string; icon: LucideIcon; title: string; description: string; badge?: string; onClick: () => void; selected?: boolean }> = [
+    { id: "images", icon: ImageIcon, title: "Image", description: "Pictures from a few words", selected: tab === "images", onClick: () => openMode("images") },
+    { id: "videos", icon: Film, title: "Video", description: "Short clips, or bring an image to life", selected: tab === "videos", onClick: () => openMode("videos") },
+    { id: "storyboard", icon: Clapperboard, title: "Storyboard", description: "Two to four shots that belong together", badge: "New", onClick: () => openMode("images", "storyboard") },
+    { id: "compare", icon: Columns2, title: "Compare looks", description: "The same picture in each house look", badge: "New", onClick: () => openMode("images", "compare") },
+    { id: "looks", icon: Bookmark, title: "House looks", description: "Your saved client styles, one pick away", onClick: () => openMode("images", "look") },
+    { id: "camera", icon: Camera, title: "Camera", description: "Shoot it like a film: lens and focus", onClick: () => openMode("images", "camera") },
+  ];
+
+  return (
+    <div className="w-full max-w-7xl space-y-6">
+      <header className="space-y-2">
+        <h1 className="text-2xl font-extrabold uppercase tracking-tight">{tab === "videos" ? "Video studio" : "Image studio"}</h1>
+        <p className="max-w-2xl text-sm text-muted-foreground">
+          Describe a picture or a short video and GSAM makes it for you. Your agents can make them for their tasks too.
+        </p>
+      </header>
+
+      <nav aria-label="Studio modes" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {modes.map((mode) => (
+          <StudioModeTile
+            key={mode.id}
+            icon={mode.icon}
+            title={mode.title}
+            description={mode.description}
+            badge={mode.badge}
+            selected={mode.selected}
+            onClick={mode.onClick}
+            data-testid={mode.id === "images" || mode.id === "videos" ? `studio-tab-${mode.id}` : `studio-mode-${mode.id}`}
+          />
+        ))}
+      </nav>
+
+      {tab === "videos" ? (
+        <VideoStudio
+          companyId={companyId}
+          sourceImage={animateImage}
+          onClearSourceImage={() => setAnimateImage(null)}
+          onError={(message) => pushToast({ title: message, tone: "error" })}
+          onDeleted={() => pushToast({ title: "Video deleted", tone: "success", ttlMs: 2500 })}
+        />
+      ) : (
+        <>
+          {!configured ? <NotSetUp provider={statusQuery.data?.provider} /> : null}
+          <div className="flex flex-col gap-6">
+            <StudioComposer
+              title="Make an image"
+              aside={statusQuery.data?.providerLabel ? `Using ${statusQuery.data.providerLabel}` : null}
+              chips={chips}
+              openChip={openChip}
+              onOpenChipChange={setOpenChip}
+              data-tour="images-composer"
+              footnote="Usually ready in under a minute. You can leave this page; it keeps going."
+              action={
+                <Button onClick={submit} disabled={!canSubmit} className={STUDIO_GENERATE_CLASS} data-testid="make-image" data-tour="images-make">
+                  {create.isPending ? (
+                    <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Wand2 className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {storyboarding
+                    ? `Make storyboard (${shotLines.length} shots)`
+                    : comparing
+                      ? `Compare ${compareLookIds.length} looks`
+                      : variations > 1
+                        ? `Make ${variations} images`
+                        : "Make image"}
+                </Button>
+              }
             >
-              <Star className={favouritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} aria-hidden="true" />
-              Favourites
-            </Button>
-          </div>
-        ) : null}
-
-        {images.length === 0 ? (
-          favouritesOnly && !filters.q && !filters.organisationId ? (
-            <EmptyState icon={Star} title="No favourites yet" message="Tap the star on an image to keep it here." />
-          ) : filtering ? (
-            <EmptyState icon={Search} title="No images match" message="Try other words, or show all clients and images." />
-          ) : (
-            <EmptyState
-              icon={ImageIcon}
-              title="No images yet"
-              message="Images you and your agents make will appear here, ready to download or reuse."
-              action="Make your first image"
-              onAction={() => {
-                promptRef.current?.focus();
-                promptRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-              }}
-            />
-          )
-        ) : (
-          <section aria-label="Your images" className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {images.map((image) => (
-              <ImageCard
-                key={image.id}
-                image={image}
-                makerName={makerName(image)}
-                onOpen={() => setOpenId(image.id)}
-                onRetry={() =>
-                  create.mutate({
-                    prompt: image.prompt,
-                    aspectRatio: image.aspectRatio,
-                    style: image.style,
-                    ...(image.camera ? { camera: image.camera } : {}),
-                    organisationId: image.organisation?.id ?? null,
-                    issueId: image.issue?.id ?? null,
-                  })
-                }
-                onFavourite={(value) => favourite.mutate({ id: image.id, favourite: value })}
-                retrying={create.isPending || !configured}
+              <label htmlFor="image-prompt" className="sr-only">
+                What should the image show?
+              </label>
+              <Textarea
+                id="image-prompt"
+                ref={promptRef}
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    event.preventDefault();
+                    submit();
+                  }
+                }}
+                placeholder="Describe the image you want. For example: a watercolour of a busy London street market at dusk, soft warm light, no text"
+                maxLength={GENERATED_IMAGE_PROMPT_MAX_LENGTH}
+                rows={2}
+                disabled={!configured}
+                className={STUDIO_PROMPT_CLASS}
+                data-testid="image-prompt"
               />
-            ))}
-          </section>
-        )}
-      </div>
+            </StudioComposer>
 
-      </>
+            <div className="space-y-4" data-tour="images-gallery">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <h2 className="text-lg font-bold uppercase tracking-tight">
+                  {favouritesOnly ? "Favourites" : "Your images"}
+                  {images.length > 0 ? <span className="ml-2 text-sm font-medium text-muted-foreground">{images.length}</span> : null}
+                </h2>
+                {images.length > 0 || filtering ? (
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <div className="relative sm:w-72">
+                      <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        aria-label="Search images"
+                        placeholder="Search by what the image shows"
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        className="rounded-full pl-8"
+                        data-testid="image-search"
+                      />
+                    </div>
+                    {organisations && organisations.length > 0 ? (
+                      <NativeSelect
+                        aria-label="Show images for a client"
+                        value={clientFilter}
+                        onChange={(event) => setClientFilter(event.target.value)}
+                        className="sm:w-48"
+                      >
+                        <option value="">All clients</option>
+                        {organisations.map((organisation) => (
+                          <option key={organisation.id} value={organisation.id}>
+                            {organisation.name}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    ) : null}
+                    <Button
+                      variant={favouritesOnly ? "default" : "outline"}
+                      aria-pressed={favouritesOnly}
+                      onClick={() => setFavouritesOnly((value) => !value)}
+                      className="rounded-full"
+                      data-testid="image-favourites-filter"
+                    >
+                      <Star className={favouritesOnly ? "h-4 w-4 fill-current" : "h-4 w-4"} aria-hidden="true" />
+                      Favourites
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+
+              {images.length === 0 ? (
+                favouritesOnly && !filters.q && !filters.organisationId ? (
+                  <StudioEmptyGallery icon={Star} title="No favourites yet" message="Tap the star on an image to keep it here." />
+                ) : filtering ? (
+                  <StudioEmptyGallery icon={Search} title="No images match" message="Try other words, or show all clients and images." />
+                ) : (
+                  <StudioEmptyGallery
+                    icon={ImageIcon}
+                    title="No images yet"
+                    message="Images you and your agents make will appear here, ready to download or reuse. Start with an idea:"
+                    suggestions={starterChips}
+                    disabled={!configured}
+                  />
+                )
+              ) : (
+                <section aria-label="Your images" className={STUDIO_GALLERY_CLASS}>
+                  {images.map((image) => (
+                    <ImageCard
+                      key={image.id}
+                      image={image}
+                      makerName={makerName(image)}
+                      onOpen={() => setOpenId(image.id)}
+                      onRetry={() =>
+                        create.mutate({
+                          prompt: image.prompt,
+                          aspectRatio: image.aspectRatio,
+                          style: image.style,
+                          ...(image.camera ? { camera: image.camera } : {}),
+                          organisationId: image.organisation?.id ?? null,
+                          issueId: image.issue?.id ?? null,
+                        })
+                      }
+                      onFavourite={(value) => favourite.mutate({ id: image.id, favourite: value })}
+                      onReuse={() => reuse(image)}
+                      onAnimate={() => {
+                        setAnimateImage(image);
+                        setTab("videos");
+                      }}
+                      retrying={create.isPending || !configured}
+                    />
+                  ))}
+                </section>
+              )}
+            </div>
+          </div>
+        </>
       )}
 
       <Dialog open={!!opened} onOpenChange={(open) => (!open ? setOpenId(null) : undefined)}>
