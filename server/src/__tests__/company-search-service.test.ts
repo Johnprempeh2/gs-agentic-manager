@@ -483,7 +483,7 @@ describeEmbeddedPostgres("companySearchService", () => {
     ]);
     const caseId = randomUUID();
     await db.insert(pipelineCases).values([
-      { id: caseId, companyId, pipelineId, stageId: working, caseKey: "g1", title: "Grebe expansion", organisationId: orgId },
+      { id: caseId, companyId, pipelineId, stageId: working, caseKey: "g1", title: "Grebe expansion", organisationId: orgId, fields: { dealValue: 12000, dealCurrency: "GBP", expectedCloseDate: "2026-11-30" } },
       { companyId, pipelineId, stageId: done, caseKey: "g0", title: "Grebe pilot", organisationId: orgId },
     ]);
     await db.insert(crmTimelineEntries).values([
@@ -496,7 +496,7 @@ describeEmbeddedPostgres("companySearchService", () => {
     expect(brief).toMatchObject({
       organisation: { id: orgId, name: "Grebe", status: "client", industry: "Mining", country: "Ghana" },
       peopleCount: 2,
-      openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales" }],
+      openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", value: 12000, currency: "GBP", expectedCloseDate: "2026-11-30" }],
       lastTouch: { label: "Meeting: Quarterly review" },
       quietDays: 10,
     });

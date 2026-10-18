@@ -267,7 +267,13 @@ export function quietClientsService(db: Db) {
           LIMIT 3
         `) as unknown as Promise<Array<{ name: string; role: string | null; email: string | null; total: number }>>,
         db.execute(sql`
-          SELECT pc.id, pc.title, pc.pipeline_id AS "pipelineId", st.name AS "stageName", p.name AS "pipelineName"
+          SELECT pc.id, pc.title, pc.pipeline_id AS "pipelineId", st.name AS "stageName", p.name AS "pipelineName",
+            CASE
+              WHEN jsonb_typeof(pc.fields->'dealValue') = 'number' THEN (pc.fields->>'dealValue')::float8
+              WHEN jsonb_typeof(pc.fields->'leadValue') = 'number' THEN (pc.fields->>'leadValue')::float8
+            END AS value,
+            nullif(trim(coalesce(pc.fields->>'dealCurrency', pc.fields->>'leadCurrency')), '') AS currency,
+            CASE WHEN pc.fields->>'expectedCloseDate' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN pc.fields->>'expectedCloseDate' END AS "closeDate"
           FROM pipeline_cases pc
           JOIN pipelines p ON p.id = pc.pipeline_id AND p.archived_at IS NULL
           JOIN pipeline_stages st ON st.id = pc.stage_id AND st.kind IN ('working', 'review')
@@ -275,7 +281,7 @@ export function quietClientsService(db: Db) {
             AND pc.retired_at IS NULL AND pc.terminal_at IS NULL AND pc.hidden_from_board_at IS NULL
           ORDER BY pc.created_at DESC
           LIMIT 5
-        `) as unknown as Promise<Array<{ id: string; title: string; pipelineId: string; stageName: string; pipelineName: string }>>,
+        `) as unknown as Promise<Array<{ id: string; title: string; pipelineId: string; stageName: string; pipelineName: string; value: number | null; currency: string | null; closeDate: string | null }>>,
         db.execute(sql`
           SELECT coalesce(te.occurred_at, te.created_at) AS at, coalesce(te.activity_type, te.kind) AS kind,
             coalesce(nullif(te.subject, ''), te.body) AS subject
@@ -299,6 +305,9 @@ export function quietClientsService(db: Db) {
             title: deal.title,
             stageName: deal.stageName,
             pipelineName: deal.pipelineName,
+            value: deal.value === null ? null : Number(deal.value),
+            currency: deal.currency,
+            expectedCloseDate: deal.closeDate,
             href: `/${prefix}/pipelines/${deal.pipelineId}/items/${deal.id}`,
           })),
           lastTouch: touch && lastTouchAt ? { at: lastTouchAt, label: touchLabel(touch.kind, touch.subject) ?? "Contact" } : null,

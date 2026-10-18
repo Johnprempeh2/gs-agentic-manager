@@ -596,7 +596,15 @@ export function answerBrief(subject: string, brief: CompanyClientBrief | null): 
     ? `last contact ${plural(brief.quietDays ?? 0, "day")} ago (${brief.lastTouch.label})`
     : "no notes or calls yet";
   const lines: AnswerLine[] = [
-    ...brief.openDeals.map((deal) => ({ text: deal.title, detail: `Open deal: ${deal.stageName} in ${deal.pipelineName}`, href: deal.href })),
+    ...brief.openDeals.map((deal) => ({
+      text: deal.title,
+      detail: [
+        `Open deal: ${deal.stageName} in ${deal.pipelineName}`,
+        deal.value != null ? money(deal.value, deal.currency) : null,
+        deal.expectedCloseDate ? `due ${formatShortDate(`${deal.expectedCloseDate}T12:00:00Z`)}` : null,
+      ].filter(Boolean).join(", "),
+      href: deal.href,
+    })),
     ...brief.people.map((person) => ({ text: person.name, detail: [person.role, person.email].filter(Boolean).join(", ") || "Person", href: org.href })),
   ];
   return {

@@ -79,7 +79,7 @@ export function formatClientBrief(response: CompanyClientBriefResponse, name: st
   return [
     `${org.name} (${about})  ${org.href}`,
     contact,
-    `Open deals: ${brief.openDeals.length === 0 ? "none" : brief.openDeals.map((deal) => `${deal.title} (${deal.stageName} in ${deal.pipelineName})`).join("; ")}`,
+    `Open deals: ${brief.openDeals.length === 0 ? "none" : brief.openDeals.map((deal) => `${deal.title} (${[`${deal.stageName} in ${deal.pipelineName}`, deal.value != null ? amount(deal.value, deal.currency) : null, deal.expectedCloseDate ? `due ${deal.expectedCloseDate}` : null].filter(Boolean).join(", ")})`).join("; ")}`,
     `People (${brief.peopleCount}): ${brief.people.length === 0 ? "none" : brief.people.map((person) => [person.name, person.role, person.email].filter(Boolean).join(", ")).join("; ")}`,
   ];
 }
