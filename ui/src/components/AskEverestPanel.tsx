@@ -19,6 +19,7 @@ import { useAgentChatEnabled } from "../hooks/useAgentChatEnabled";
 import { useDictation } from "../hooks/useDictation";
 import { useFileIntake } from "../hooks/useFileIntake";
 import {
+  SALES_QUESTIONS,
   SUGGESTED_QUESTIONS,
   answerAgent,
   answerAway,
@@ -203,6 +204,7 @@ function AskEverestBody({
   const suggestions = context?.suggestions?.length
     ? context.suggestions
     : [...SUGGESTED_QUESTIONS, ...(exampleAgent ? [`What did ${exampleAgent.name} do today?`] : [])];
+  const salesSuggestions: readonly string[] = context?.suggestions?.length ? [] : SALES_QUESTIONS;
   const lastTurn = turns[turns.length - 1] ?? null;
 
   // A question like "and which of those are overdue?" narrows the last answer's tasks.
@@ -286,6 +288,23 @@ function AskEverestBody({
                 </button>
               ))}
             </div>
+            {salesSuggestions.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">About clients and deals:</p>
+                <div className="flex flex-wrap gap-2" data-testid="ask-everest-sales-suggestions">
+                  {salesSuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => ask(suggestion)}
+                      className="rounded-full border border-border bg-background px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-(length:--rad-3) focus-visible:ring-ring"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </div>
         )}
       </div>

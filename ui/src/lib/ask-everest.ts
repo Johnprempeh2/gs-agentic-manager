@@ -66,6 +66,14 @@ export const SUGGESTED_QUESTIONS = [
   "How is the team doing this week?",
 ] as const;
 
+/** Client and deal questions, offered as a second row of chips. */
+export const SALES_QUESTIONS = [
+  "Which deals are closing this month?",
+  "How is the pipeline looking?",
+  "What did we win this month?",
+  "Who has the most deals?",
+] as const;
+
 const STOP_WORDS = new Set([
   "a", "an", "the", "is", "are", "was", "were", "be", "been", "am", "what", "whats", "what's", "which", "who",
   "how", "why", "when", "where", "do", "does", "did", "done", "doing", "i", "me", "my", "we", "us", "our", "you",

@@ -10,6 +10,7 @@ import {
   answerClosing,
   answerPipeline,
   answerResults,
+  SALES_QUESTIONS,
   closingDays,
   answerActivity,
   answerBrief,
@@ -170,6 +171,10 @@ describe("answers", () => {
     expect(classifyQuestion("Which leads are past their close date?", agents)).toEqual({ kind: "closing", days: 0 });
     expect(closingDays("expected to close in 2 weeks")).toBe(14);
     expect(classifyQuestion("What is Mason closing today?", agents).kind).toBe("agent");
+  });
+
+  it("answers every client and deal chip with its own intent", () => {
+    expect(SALES_QUESTIONS.map((question) => classifyQuestion(question, agents).kind)).toEqual(["closing", "pipeline", "results", "pipeline"]);
   });
 
   it("spots questions about deals won and lost", () => {
