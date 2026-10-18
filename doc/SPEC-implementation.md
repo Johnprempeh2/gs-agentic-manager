@@ -1182,7 +1182,8 @@ The current app also exposes V1-supporting surfaces for:
 - `GET /companies/:companyId/search/closing-deals?days=30&limit=10` lists open deals and leads by imported expected
   close date (overdue first) with value per currency; Ask Everest uses it for "Which deals are closing this month?"
 - `GET /companies/:companyId/search/pipeline-summary?limit=5` returns open deals per stage with value per currency and
-  the largest deals; Ask Everest uses it for "How is the pipeline looking?" and agents use `gsam pipeline-summary`
+  the largest deals (`owner=<name>` narrows it to one owner by full, first or last name); Ask Everest uses it for
+  "How is the pipeline looking?" and "Show me Sarah's deals", and agents use `gsam pipeline-summary`
 - `GET /companies/:companyId/search/won-lost?days=30&limit=5` lists deals won and lost in the window with value per
   currency and top lost reasons; Ask Everest uses it for "What did we win this month?" and agents use `gsam won-lost`
 - execution workspaces, project workspaces, workspace runtime services, and workspace operations. Workspace reads

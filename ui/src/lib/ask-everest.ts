@@ -27,7 +27,7 @@ export type AskIntent =
   /** "Which deals are closing this month?": open deals by expected close date within `days` (0 means only those past their date). */
   | { kind: "closing"; days: number }
   /** "How is the pipeline looking?": open deals per stage, value and the largest deals. */
-  | { kind: "pipeline"; view: "stages" | "owners" | "missing" }
+  | { kind: "pipeline"; view: "stages" | "owners" | "missing" | "owner"; owner?: string }
   /** "What did we win this month?": deals won and lost in the last `days` days. */
   | { kind: "results"; days: number }
   /** "Tell me about Acme": a one-glance brief on an organisation. */
@@ -105,6 +105,34 @@ const CLOSING_RE = /\b(closing|close (this|next|by|in|soon|before|within)|due to
 const RESULTS_RE = /\b(what (did|have) we (win|won|lose|lost)|(deals?|leads?) (did )?we (won|lost|win|lose)|(won|lost|win|lose) (this|last) (week|month|quarter|year)|(our|any|recent) (wins|losses)|lost (deals|leads|reasons?)|won (deals|leads)|why (are|did|have) we (losing|lose|lost)|win rate|what (have we|did we) close[d]?)\b/i;
 const MISSING_RE = /\b(missing (a |an )?(close dates?|values?|owners?|organisations?)|(no|without (a |an )?) (close date|value|owner|organisation)|(pipeline|crm|deal|data) (hygiene|clean ?up|gaps|quality)|what('s| is) missing (from|in) (the |our )?(pipeline|crm|deals))\b/i;
 const OWNERS_RE = /\b((deals|leads|pipeline) (by|per) (owner|rep|salesperson|person)|by owner|per owner|who (owns|has) the most (deals|leads)|whose deals|who owns (which|what) deals)\b/i;
+const NOT_A_NAME = new Set(["our", "my", "your", "their", "his", "her", "its", "the", "a", "an", "all", "open", "which", "what", "whose", "who", "each", "every", "this", "that", "today", "week", "month", "quarter", "year", "everyone", "anyone", "someone", "me", "us", "them", "i", "we", "you", "they", "team", "company", "client", "clients", "customer", "customers", "now", "currently", "at", "in", "on", "for", "and", "or", "deals", "leads"]);
+const OWNED_BY_RE = /\b(?:deals|leads|opportunities|pipeline)(?: that| which)?(?: are| is)? (?:owned by|belonging to|assigned to|run by|looked after by) ([a-z][a-z'-]*)(?: ([a-z][a-z'-]*))?/i;
+const DOES_OWN_RE = /\bwhat (?:deals |leads )?(?:does|is) ([a-z][a-z'-]*)(?: ([a-z][a-z'-]*))? (?:own|owning|working on|handling)\b/i;
+const POSSESSIVE_RE = /(?:\b([a-z][a-z-]*) )?\b([a-z][a-z-]*)(?:'s|') (?:deals|leads|pipeline|opportunities)\b/i;
+
+function titleCase(name: string): string {
+  return name.replace(/(^|[ '-])([a-z])/g, (_, lead: string, char: string) => lead + char.toUpperCase());
+}
+
+function isName(word: string | undefined): word is string {
+  return Boolean(word) && !NOT_A_NAME.has(word!.toLowerCase());
+}
+
+/** The owner named in "Sarah's deals", "deals owned by Sarah Jones" or "what does Sarah own". */
+export function ownerInQuestion(question: string): string | null {
+  const named = OWNED_BY_RE.exec(question) ?? DOES_OWN_RE.exec(question);
+  if (named) {
+    if (!isName(named[1])) return null;
+    return titleCase(isName(named[2]) ? `${named[1]} ${named[2]}` : named[1]);
+  }
+  const possessive = POSSESSIVE_RE.exec(question);
+  if (!possessive || !isName(possessive[2])) return null;
+  // "Sarah Jones's deals": keep a capitalised first name, but not the question's opening word ("List Sarah's deals").
+  const first = possessive[1];
+  const keepFirst = isName(first) && /^[A-Z]/.test(first) && possessive.index > 0;
+  return titleCase(keepFirst ? `${first} ${possessive[2]}` : possessive[2]!);
+}
+
 const PIPELINE_RE = /\b(how('s| is| does) (the |our |my )?pipeline|pipeline (looking|look|summary|overview|health|value|worth|total)|how much is in (the |our |my )?pipeline|what('s| is) in (the |our |my )?pipeline|(biggest|largest|top|most valuable) (deals|leads|opportunities)|deals by stage|how many (open )?deals)\b/i;
 const PAST_CLOSE_RE = /\b(past (their |the )?close( date)?|slipp(ed|ing)|missed (their |the )?close)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
@@ -187,6 +215,8 @@ export function classifyQuestion(question: string, agents: readonly AskAgentRef[
   if (RESULTS_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) return { kind: "results", days: resultsDays(trimmed) };
   if (CLOSING_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) return { kind: "closing", days: closingDays(trimmed) };
   if (OWNERS_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) return { kind: "pipeline", view: "owners" };
+  const owner = mentionedAgent(trimmed, agents) ? null : ownerInQuestion(trimmed);
+  if (owner) return { kind: "pipeline", view: "owner", owner };
   if (PIPELINE_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
     const timed = windowDays(trimmed, 0) > 0 || /\b(this|next|the) (quarter|year)\b/i.test(trimmed);
     return timed ? { kind: "closing", days: closingDays(trimmed) } : { kind: "pipeline", view: "stages" };
@@ -471,9 +501,26 @@ export function answerClosing(result: CompanyClosingDealsResponse): AskAnswer {
 /** Open deals per stage with value, then the largest deals. */
 const MISSING_LABELS = { closeDate: "close date", value: "value", owner: "owner", organisation: "organisation" } as const;
 
-export function answerPipeline(result: CompanyPipelineSummaryResponse, view: "stages" | "owners" | "missing" = "stages"): AskAnswer {
+export function answerPipeline(result: CompanyPipelineSummaryResponse, view: "stages" | "owners" | "missing" | "owner" = "stages"): AskAnswer {
   const { total, valueByCurrency, stages, topDeals } = result;
   const more = { label: "Open the pipelines", href: "/pipelines" };
+  if (view === "owner") {
+    const asked = result.ownerFilter ?? "that person";
+    if (total === 0) return { headline: `No open deals or leads are owned by ${asked}.`, lines: [], more };
+    const names = (result.owners ?? []).map((entry) => entry.owner).filter((name): name is string => name !== null);
+    const who = names.length === 1 ? names[0]! : asked;
+    const ownerWorth = valueByCurrency.filter((entry) => entry.value > 0).slice(0, 3).map((entry) => money(entry.value, entry.currency)).join(" and ");
+    const soonest = topDeals.filter((deal) => deal.expectedCloseDate).sort((a, b) => a.expectedCloseDate!.localeCompare(b.expectedCloseDate!))[0];
+    return {
+      headline: `${who} owns ${plural(total, "open deal or lead", "open deals and leads")}${ownerWorth ? ` worth ${ownerWorth}` : ""}.${names.length > 1 ? ` That covers ${names.join(", ")}.` : ""}${soonest ? ` Next due to close: ${soonest.title} on ${formatShortDate(`${soonest.expectedCloseDate}T12:00:00Z`)}.` : ""}`,
+      lines: topDeals.map((deal) => ({
+        text: deal.title,
+        detail: [deal.value !== null ? money(deal.value, deal.currency) : "No value", `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${formatShortDate(`${deal.expectedCloseDate}T12:00:00Z`)}` : null].filter(Boolean).join(", "),
+        href: deal.href,
+      })),
+      more,
+    };
+  }
   if (total === 0) return { headline: "There are no open deals or leads in any pipeline.", lines: [], more };
   const worth = valueByCurrency.filter((entry) => entry.value > 0).slice(0, 3).map((entry) => money(entry.value, entry.currency)).join(" and ");
   if (view === "missing") {
@@ -514,7 +561,7 @@ export function answerPipeline(result: CompanyPipelineSummaryResponse, view: "st
     };
   }
   const busiest = [...stages].sort((a, b) => b.count - a.count)[0]!;
-  const largest = topDeals[0];
+  const largest = topDeals.find((deal) => deal.value !== null);
   const lines: AnswerLine[] = [
     ...stages.slice(0, 6).map((stage) => ({
       text: stages.some((other) => other.pipelineId !== stage.pipelineId) ? `${stage.stageName} in ${stage.pipelineName}` : stage.stageName,
@@ -523,12 +570,12 @@ export function answerPipeline(result: CompanyPipelineSummaryResponse, view: "st
     })),
     ...topDeals.map((deal) => ({
       text: deal.title,
-      detail: [money(deal.value, deal.currency), `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${formatShortDate(`${deal.expectedCloseDate}T12:00:00Z`)}` : null].filter(Boolean).join(", "),
+      detail: [deal.value !== null ? money(deal.value, deal.currency) : null, `${deal.stageName} in ${deal.pipelineName}`, deal.expectedCloseDate ? `due ${formatShortDate(`${deal.expectedCloseDate}T12:00:00Z`)}` : null].filter(Boolean).join(", "),
       href: deal.href,
     })),
   ];
   return {
-    headline: `${plural(total, "open deal or lead", "open deals and leads")}${worth ? ` worth ${worth}` : ""}. Most are in ${busiest.stageName} (${busiest.count})${largest ? `; the largest is ${largest.title} at ${money(largest.value, largest.currency)}` : ""}.`,
+    headline: `${plural(total, "open deal or lead", "open deals and leads")}${worth ? ` worth ${worth}` : ""}. Most are in ${busiest.stageName} (${busiest.count})${largest ? `; the largest is ${largest.title} at ${money(largest.value ?? 0, largest.currency)}` : ""}.`,
     lines,
     more,
   };

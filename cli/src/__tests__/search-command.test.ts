@@ -160,6 +160,30 @@ describe("gsam search", () => {
     ]);
   });
 
+  it("narrows the pipeline summary to one owner", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        ownerFilter: "Sarah Jones",
+        total: 1,
+        valueByCurrency: [{ currency: null, value: 0, count: 1 }],
+        stages: [{ pipelineId: "p", pipelineName: "Sales", stageName: "Lead", count: 1, valueByCurrency: [] }],
+        topDeals: [{ caseId: "c2", title: "Unpriced lead", pipelineName: "Sales", stageName: "Lead", organisationName: null, value: null, currency: null, expectedCloseDate: "2026-11-02", href: "/GRE/pipelines/p/items/c2" }],
+        owners: [{ owner: "Sarah Jones", count: 1, valueByCurrency: [] }],
+      });
+    }));
+    await run(["pipeline-summary", "--owner", "Sarah Jones"]);
+    expect(new URL(urls[0]!).searchParams.get("owner")).toBe("Sarah Jones");
+    expect(lines).toEqual([
+      "1 open deal or lead owned by Sarah Jones:",
+      "Sales / Lead: 1",
+      "Owners: Sarah Jones 1",
+      "Deals:",
+      "no value | Unpriced lead | Lead in Sales | due 2026-11-02  /GRE/pipelines/p/items/c2",
+    ]);
+  });
+
   it("prints deals won and lost with lost reasons", async () => {
     const urls: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {

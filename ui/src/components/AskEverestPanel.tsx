@@ -633,8 +633,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     retry: false,
   });
   const pipeline = useQuery({
-    queryKey: ["ask-everest", companyId, "pipeline-summary"],
-    queryFn: () => searchApi.pipelineSummary(companyId, { limit: 3 }),
+    queryKey: ["ask-everest", companyId, "pipeline-summary", intent.kind === "pipeline" ? intent.owner ?? null : null],
+    queryFn: () => searchApi.pipelineSummary(companyId, intent.kind === "pipeline" && intent.owner ? { limit: 8, owner: intent.owner } : { limit: 3 }),
     enabled: active && intent.kind === "pipeline",
     retry: false,
   });

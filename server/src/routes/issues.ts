@@ -8492,7 +8492,12 @@ export function issueRoutes(
       res.status(400).json({ error: "limit must be a whole number from 1 to 50" });
       return;
     }
-    res.json(await quietClientsService(db).pipelineSummary(companyId, { limit }));
+    const owner = typeof req.query.owner === "string" ? req.query.owner.trim() : "";
+    if (req.query.owner !== undefined && (typeof req.query.owner !== "string" || owner.length > 120)) {
+      res.status(400).json({ error: "owner must be a name of up to 120 characters" });
+      return;
+    }
+    res.json(await quietClientsService(db).pipelineSummary(companyId, { limit, owner: owner || null }));
   });
 
   // Deals won and lost lately, with value and lost reasons (Ask Everest: "What did we win this month?").
