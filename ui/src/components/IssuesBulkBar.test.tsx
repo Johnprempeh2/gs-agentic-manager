@@ -12,7 +12,7 @@ vi.mock("../api/issues", () => ({
 const confirm = vi.fn(async (..._args: unknown[]) => true);
 vi.mock("@/context/ConfirmContext", () => ({ useConfirm: () => confirm }));
 const pushToast = vi.fn();
-vi.mock("../context/ToastContext", () => ({ useToastActions: () => ({ pushToast }) }));
+vi.mock("../context/ToastContext", () => ({ useOptionalToastActions: () => ({ pushToast }) }));
 
 import { IssuesBulkBar } from "./IssuesBulkBar";
 

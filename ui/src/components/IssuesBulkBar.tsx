@@ -10,7 +10,7 @@ import {
   taskCount,
 } from "../lib/bulk-issue-change";
 import { useConfirm } from "@/context/ConfirmContext";
-import { useToastActions } from "../context/ToastContext";
+import { useOptionalToastActions } from "../context/ToastContext";
 import { Button } from "@/components/ui/button";
 import { NativeSelect } from "@/components/ui/native-select";
 
@@ -32,7 +32,7 @@ interface IssuesBulkBarProps {
 export function IssuesBulkBar({ companyId, agents, selectedIds, onClear, onDone }: IssuesBulkBarProps) {
   const queryClient = useQueryClient();
   const confirm = useConfirm();
-  const { pushToast } = useToastActions();
+  const toasts = useOptionalToastActions();
   const [choice, setChoice] = useState("");
   const workingAgents = (agents ?? []).filter((agent) => !STOPPED_AGENT_STATUSES.has(agent.status));
 
@@ -51,7 +51,7 @@ export function IssuesBulkBar({ companyId, agents, selectedIds, onClear, onDone 
       return { changed, failed };
     },
     onSuccess: ({ changed, failed }) => {
-      pushToast({
+      toasts?.pushToast({
         tone: failed > 0 ? "warn" : "success",
         title: `${taskCount(changed)} changed`,
         body: failed > 0 ? `${taskCount(failed)} could not be changed. Open them to see why.` : undefined,
@@ -59,7 +59,7 @@ export function IssuesBulkBar({ companyId, agents, selectedIds, onClear, onDone 
       if (failed === 0) onClear();
     },
     onError: (error) => {
-      pushToast({ tone: "error", title: "Could not change the tasks", body: error instanceof Error ? error.message : undefined });
+      toasts?.pushToast({ tone: "error", title: "Could not change the tasks", body: error instanceof Error ? error.message : undefined });
     },
     onSettled: () => {
       setChoice("");
