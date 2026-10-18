@@ -13,6 +13,7 @@ import {
   cancelIssueThreadInteractionSchema,
   checkoutIssueSchema,
   createChildIssueSchema,
+  createAcceptedPlanDecompositionSchema,
   createIssueLabelSchema,
   updateIssueLabelSchema,
   createIssueSchema,
@@ -845,6 +846,49 @@ export function registerIssueCommands(program: Command): void {
           const payload = createChildIssueSchema.parse(parseJson(opts.payloadJson));
           const child = await ctx.api.post<Issue>(apiPath`/api/issues/${issueId}/children`, payload);
           printOutput(child, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("plan:decompose")
+      .description("Create child issues from an accepted plan revision in one step (at most 25)")
+      .argument("<issueId>", "Parent issue ID")
+      .requiredOption("--revision <id>", "The accepted plan revision ID")
+      .option("--children-json <json>", "JSON array of child issues")
+      .option("--children-file <path>", "File holding the JSON array of child issues")
+      .action(async (issueId: string, opts: BaseClientOptions & { revision: string; childrenJson?: string; childrenFile?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          if (!opts.childrenJson === !opts.childrenFile) {
+            throw new Error("Pass exactly one of --children-json or --children-file");
+          }
+          const raw = opts.childrenFile ? await readFile(opts.childrenFile, "utf8") : opts.childrenJson!;
+          const payload = createAcceptedPlanDecompositionSchema.parse({
+            acceptedPlanRevisionId: opts.revision,
+            children: parseJson(raw),
+          });
+          const result = await ctx.api.post(apiPath`/api/issues/${issueId}/accepted-plan-decompositions`, payload);
+          printOutput(result, { json: ctx.json });
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+  );
+
+  addCommonClientOptions(
+    issue
+      .command("plan:decompositions")
+      .description("List the child issues already created from accepted plan revisions")
+      .argument("<issueId>", "Parent issue ID")
+      .action(async (issueId: string, opts: BaseClientOptions) => {
+        try {
+          const ctx = resolveCommandContext(opts);
+          const result = await ctx.api.get(apiPath`/api/issues/${issueId}/accepted-plan-decompositions`);
+          printOutput(result, { json: ctx.json });
         } catch (err) {
           handleCommandError(err);
         }

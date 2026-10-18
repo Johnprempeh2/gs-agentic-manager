@@ -180,6 +180,22 @@ describe("issue subresource commands", () => {
     await expect(run(["issue", "deliverable:create", ISSUE_ID, "--title", "No file"])).rejects.toThrow();
   });
 
+  it("decomposes an accepted plan into child issues", async () => {
+    const REVISION_ID = "66666666-6666-4666-8666-666666666666";
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["issue", "plan:decompose", ISSUE_ID, "--revision", REVISION_ID, "--children-json", JSON.stringify([{ title: "Draft brief" }, { title: "Book interviews" }])]);
+    await run(["issue", "plan:decompositions", ISSUE_ID]);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(`http://localhost:3100/api/issues/${ISSUE_ID}/accepted-plan-decompositions`);
+    const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(body.acceptedPlanRevisionId).toBe(REVISION_ID);
+    expect(body.children.map((child: { title: string }) => child.title)).toEqual(["Draft brief", "Book interviews"]);
+    expect(fetchMock.mock.calls[1]?.[1]?.method ?? "GET").toBe("GET");
+    await expect(run(["issue", "plan:decompose", ISSUE_ID, "--revision", REVISION_ID])).rejects.toThrow();
+  });
+
   it("sets and clears a due date on create and update", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(jsonResponse()));
     vi.stubGlobal("fetch", fetchMock);
