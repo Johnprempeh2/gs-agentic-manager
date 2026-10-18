@@ -314,7 +314,6 @@ import {
   ISSUE_WAKE_DIAGNOSTICS_LOOKBACK_DAYS,
   ISSUE_WAKE_DIAGNOSTICS_MAX_ACTIVITY_RECORDS,
   ISSUE_WAKE_DIAGNOSTICS_MAX_WAKE_REQUESTS,
-  parseStatusFilter,
   readAcceptedPlanConfirmationTarget,
   type IssuePostCommitAction,
 } from "../services/issues.js";
@@ -8631,7 +8630,11 @@ export function issueRoutes(
     const includeLiveDescendantSummary = parseOptionalBooleanQuery(
       req.query.includeLiveDescendantSummary,
     );
-    const priorityFilter = parseStatusFilter(req.query.priority as string | string[] | undefined);
+    const priorityRaw = req.query.priority as string | string[] | undefined;
+    const priorityFilter = (Array.isArray(priorityRaw) ? priorityRaw : priorityRaw === undefined ? [] : [priorityRaw])
+      .flatMap((entry) => (typeof entry === "string" ? entry.split(",") : []))
+      .map((value) => value.trim())
+      .filter(Boolean);
     if (priorityFilter.some((value) => !(ISSUE_PRIORITIES as readonly string[]).includes(value))) {
       res.status(400).json({ error: `priority must be one of ${ISSUE_PRIORITIES.join(", ")}` });
       return;
