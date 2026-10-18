@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WEEKLY_REPORT_FIXTURE as report } from "./weekly-report.fixture";
-import { pipelineSummary, stuckForLabel, weeklyHeadline, weeklyReportFileName, weeklyReportPdf, weeklyReportSections } from "./weekly-report";
+import { pipelineSummary, stuckForLabel, weeklyHeadline, weeklyReportFileName, weeklyReportPdf, weeklyReportSections, weeklyReportSpeech } from "./weekly-report";
 
 describe("weekly report wording", () => {
   it("sums the week up in plain sentences", () => {
@@ -70,5 +70,25 @@ describe("weekly report PDF", () => {
     for (const text of ["This week at Greatstone", "Needs you", "What is stuck", "Cost by agent"]) {
       expect(pdf).toContain(hex(text));
     }
+  });
+});
+
+describe("weeklyReportSpeech", () => {
+  it("reads the headline, then names, without task numbers", () => {
+    const parts = weeklyReportSpeech(report);
+    expect(parts[0]).toBe(`This week at ${report.companyName}.`);
+    expect(parts[1]).toBe(weeklyHeadline(report));
+    expect(parts.join(" ")).not.toMatch(/[A-Z]{2,}-\d+/);
+    if (report.finished.agents[0]) expect(parts.join(" ")).toContain(`${report.finished.agents[0].name} finished`);
+  });
+
+  it("keeps a quiet week to the headline", () => {
+    const quiet = {
+      ...report,
+      needsYou: { count: 0, items: [] },
+      finished: { count: 0, agents: [] },
+      stuck: { count: 0, items: [] },
+    };
+    expect(weeklyReportSpeech(quiet)).toEqual([`This week at ${report.companyName}.`, weeklyHeadline(quiet)]);
   });
 });

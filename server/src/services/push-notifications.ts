@@ -25,6 +25,8 @@ export interface DecisionPushMessage {
   url: string;
   tag: string;
   badge?: number;
+  /** Lets the phone offer "Pause for an hour" on the notification itself. Set by `deliver`. */
+  companyId?: string;
 }
 
 /**
@@ -276,7 +278,7 @@ export function pushNotificationService(
     for (const target of targets) {
       let result: PushSendResult;
       try {
-        result = await send(target, message);
+        result = await send(target, message.tag === "push-test" ? message : { ...message, companyId });
       } catch (error) {
         logger.warn({ err: error, subscriptionId: target.id }, "web push delivery failed");
         result = { ok: false, status: 0, gone: false };

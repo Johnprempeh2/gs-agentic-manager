@@ -7536,8 +7536,8 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/morning-summary",
   tags: ["inbox"],
-  summary: "The caller's morning summary: what needs them, what finished in the last 24 hours, what is stuck",
-  request: { params: z.object({ companyId: z.string() }) },
+  summary: "The caller's morning summary: what needs them, what finished in the last 24 hours (or since the start of their day with window=day), what is stuck",
+  request: { params: z.object({ companyId: z.string() }), query: z.object({ window: z.enum(["24h", "day"]).optional() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
 });
 

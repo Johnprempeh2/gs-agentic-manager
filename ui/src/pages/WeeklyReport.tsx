@@ -23,7 +23,9 @@ import {
   weeklyReportFileName,
   weeklyReportPdf,
   weeklyReportSections,
+  weeklyReportSpeech,
 } from "../lib/weekly-report";
+import { ListenButton } from "../components/ListenButton";
 import { downloadTextFile } from "../lib/issues-csv";
 import { setFirstWeekMark } from "../lib/first-week";
 import { Button } from "@/components/ui/button";
@@ -315,6 +317,7 @@ export function WeeklyReport() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 print:hidden" data-tour="weekly-report-share">
+          {data ? <ListenButton getParts={() => weeklyReportSpeech(data)} /> : null}
           <Button
             size="sm"
             variant="outline"

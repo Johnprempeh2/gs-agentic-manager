@@ -11,8 +11,9 @@ import { formatCalendarDay } from "./utils";
  *   • GRE-12 Approve the hire
  */
 export function morningSummaryText(
-  summary: Pick<MorningSummary, "needsYou" | "finished" | "stuck"> & { dueToday?: MorningSummary["dueToday"] },
+  summary: Pick<MorningSummary, "needsYou" | "finished" | "stuck"> & { dueToday?: MorningSummary["dueToday"]; dueTomorrow?: MorningSummary["dueTomorrow"] },
   today: string,
+  since = "since yesterday",
 ): string {
   const lines = [`Today, ${formatCalendarDay(today)}`];
   const section = (title: string, part: { count: number; items: MorningSummaryTask[] } | undefined, empty: string) => {
@@ -26,8 +27,9 @@ export function morningSummaryText(
   };
   section("Needs me", summary.needsYou, "nothing");
   section("Due today", summary.dueToday, "nothing");
-  section("Finished since yesterday", summary.finished, "nothing yet");
+  section(`Finished ${since}`, summary.finished, "nothing yet");
   section("Stuck", summary.stuck, "nothing");
+  if (summary.dueTomorrow) section("Due tomorrow", summary.dueTomorrow, "nothing");
   return lines.join("\n");
 }
 
@@ -47,7 +49,7 @@ function spokenList(part: { count: number; items: MorningSummaryTask[] }, today?
  * section, in the order the page shows them. Task numbers are left out
  * because they sound like noise.
  */
-export function morningSummarySpeech(summary: MorningSummary, today: string, greeting: string): string[] {
+export function morningSummarySpeech(summary: MorningSummary, today: string, greeting: string, since = "since yesterday"): string[] {
   const needs = summary.needsYou.count;
   const parts = [`${greeting}. ${needs === 0 ? "Nothing needs you right now." : `${count(needs, "thing needs", "things need")} you.`}`];
   if (needs > 0) parts.push(`Needs you: ${spokenList(summary.needsYou)}`);
@@ -56,8 +58,8 @@ export function morningSummarySpeech(summary: MorningSummary, today: string, gre
   if (summary.workingNow?.count) parts.push(`Working now: ${spokenList(summary.workingNow)}`);
   parts.push(
     summary.finished.count === 0
-      ? "No tasks finished since yesterday."
-      : `${count(summary.finished.count, "task", "tasks")} finished since yesterday: ${spokenList(summary.finished)}`,
+      ? `No tasks finished ${since}.`
+      : `${count(summary.finished.count, "task", "tasks")} finished ${since}: ${spokenList(summary.finished)}`,
   );
   const deals = summary.deals;
   if (deals && deals.won + deals.lost > 0) {
@@ -65,8 +67,9 @@ export function morningSummarySpeech(summary: MorningSummary, today: string, gre
     const tally = [deals.won > 0 ? count(deals.won, "deal", "deals") + " won" : "", deals.lost > 0 ? count(deals.lost, "deal", "deals") + " lost" : ""]
       .filter(Boolean)
       .join(" and ");
-    parts.push(`${tally} since yesterday.${won.length > 0 ? ` Won: ${won.join(", ")}.` : ""}`);
+    parts.push(`${tally} ${since}.${won.length > 0 ? ` Won: ${won.join(", ")}.` : ""}`);
   }
   parts.push(summary.stuck.count === 0 ? "Nothing is stuck." : `Stuck: ${spokenList(summary.stuck)}`);
+  if (summary.dueTomorrow?.count) parts.push(`Due tomorrow: ${spokenList(summary.dueTomorrow)}`);
   return parts;
 }

@@ -38,11 +38,12 @@ export function pushRoutes(db: Db, service = pushNotificationService(db)) {
   const morningSummaries = morningSummaryService(db);
 
   // The morning summary as a page: what needs you, what got done, what is stuck.
+  // `?window=day` counts from the start of the person's day (the evening wrap-up).
   router.get("/companies/:companyId/morning-summary", async (req, res) => {
     const companyId = req.params.companyId as string;
     const userId = boardUserId(req, res, companyId);
     if (!userId) return;
-    res.json(await morningSummaries.build(companyId, userId));
+    res.json(await morningSummaries.build(companyId, userId, new Date(), req.query.window === "day" ? "day" : "24h"));
   });
 
   // What this person wants to hear about, and when. Their own choices only.

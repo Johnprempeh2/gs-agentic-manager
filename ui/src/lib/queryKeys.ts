@@ -804,7 +804,7 @@ export const queryKeys = {
   teamScorecard: (companyId: string, days: number) => ["team-scorecard", companyId, days] as const,
   notificationPreferences: (companyId: string) => ["notification-preferences", companyId] as const,
   recentNotifications: (companyId: string) => ["recent-notifications", companyId] as const,
-  morningSummary: (companyId: string) => ["morning-summary", companyId] as const,
+  morningSummary: (companyId: string, window: "24h" | "day" = "24h") => ["morning-summary", companyId, window] as const,
   weeklyReport: (companyId: string) => ["weekly-report", companyId] as const,
   agentDailyDigests: (companyId: string, from: string, to: string) => ["agent-daily-digests", companyId, from, to] as const,
   attention: (companyId: string) => ["attention", companyId] as const,
