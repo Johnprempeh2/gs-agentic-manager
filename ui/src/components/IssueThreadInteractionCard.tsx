@@ -3914,7 +3914,7 @@ export function IssueThreadInteractionCard({
                     </Badge>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" className="max-w-xs text-xs">
-                    Directed to {addresseeLabel}. Agent-addressed interactions are owned by that agent and are kept out of the open organization attention feed.
+                    Directed to {addresseeLabel}. Agent-addressed interactions are owned by that agent and are kept out of the organisation's shared list of things needing attention.
                   </TooltipContent>
                 </Tooltip>
               ) : null}

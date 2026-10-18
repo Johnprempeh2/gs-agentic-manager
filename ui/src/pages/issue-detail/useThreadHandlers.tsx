@@ -141,7 +141,7 @@ export function useThreadHandlers({
         body:
           error instanceof Error
             ? error.message
-            : "Unable to copy task markdown",
+            : "Could not copy the task text",
         tone: "error",
       });
     }

@@ -1,7 +1,6 @@
 import {
   ORGANISATION_STATUS_LABELS,
   type Issue,
-  type IssueStatus,
   type OrganisationListItem,
   type WeeklyReport,
 } from "@greatstone/shared";
@@ -164,15 +163,7 @@ export function clientsSheet(rows: readonly OrganisationListItem[]): Sheet {
   };
 }
 
-export const TASK_STATUS_LABELS: Record<IssueStatus, string> = {
-  backlog: "Backlog",
-  todo: "Todo",
-  in_progress: "In progress",
-  in_review: "In review",
-  done: "Done",
-  blocked: "Blocked",
-  cancelled: "Cancelled",
-};
+export { TASK_STATUS_LABELS } from "./task-status-labels";
 
 export function tasksSheet(issues: readonly Issue[], lookups: IssuesCsvLookups): Sheet {
   return { name: "Tasks", headers: [...ISSUES_CSV_HEADERS], rows: issuesToRows(issues, lookups) };

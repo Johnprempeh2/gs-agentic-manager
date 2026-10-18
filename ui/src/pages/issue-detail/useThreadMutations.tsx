@@ -167,7 +167,7 @@ export function useThreadMutations({
           variables.action === "approve"
             ? "Could not approve"
             : "Could not reject",
-        body: err instanceof Error ? err.message : "Unable to update approval",
+        body: err instanceof Error ? err.message : "Could not update the approval",
         tone: "error",
       });
     },
@@ -258,7 +258,7 @@ export function useThreadMutations({
             body:
               err instanceof Error
                 ? err.message
-                : "Unable to cancel the queued comment",
+                : "Could not cancel the queued comment",
             tone: "error",
           });
         }
@@ -323,7 +323,7 @@ export function useThreadMutations({
           err instanceof CommentSubmissionUnknownError
             ? "We are not sure your comment was saved"
             : "Your comment was not posted",
-        body: err instanceof Error ? err.message : "Unable to post comment",
+        body: err instanceof Error ? err.message : "Could not post your comment",
         tone: "error",
       });
     },
@@ -410,7 +410,7 @@ export function useThreadMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to accept the suggested tasks",
+            : "Could not accept the suggested tasks",
         tone: "error",
       });
     },
@@ -441,7 +441,7 @@ export function useThreadMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to reject the suggested tasks",
+            : "Could not reject the suggested tasks",
         tone: "error",
       });
     },
@@ -466,7 +466,7 @@ export function useThreadMutations({
     onError: (err) => {
       pushToast({
         title: "Your answers were not sent",
-        body: err instanceof Error ? err.message : "Unable to submit answers",
+        body: err instanceof Error ? err.message : "Could not send your answers",
         tone: "error",
       });
     },
@@ -505,7 +505,7 @@ export function useThreadMutations({
       pushToast({
         title: "Could not apply your choices",
         body:
-          err instanceof Error ? err.message : "Unable to apply the verdicts",
+          err instanceof Error ? err.message : "Could not save your decisions",
         tone: "error",
       });
     },
@@ -530,7 +530,7 @@ export function useThreadMutations({
       pushToast({
         title: "Could not cancel",
         body:
-          err instanceof Error ? err.message : "Unable to cancel the question",
+          err instanceof Error ? err.message : "Could not cancel the question",
         tone: "error",
       });
     },
@@ -548,7 +548,7 @@ export function useThreadMutations({
       pushToast({
         title: "Could not skip",
         body:
-          err instanceof Error ? err.message : "Unable to skip this request",
+          err instanceof Error ? err.message : "Could not skip this request",
         tone: "error",
       });
     },
@@ -659,7 +659,7 @@ export function useThreadMutations({
             body:
               err instanceof Error
                 ? err.message
-                : "Unable to cancel the queued comment",
+                : "Could not cancel the queued comment",
             tone: "error",
           });
         }
@@ -721,7 +721,7 @@ export function useThreadMutations({
           err instanceof CommentSubmissionUnknownError
             ? "We are not sure your comment was saved"
             : "Your comment was not posted",
-        body: err instanceof Error ? err.message : "Unable to post comment",
+        body: err instanceof Error ? err.message : "Could not post your comment",
         tone: "error",
       });
     },
@@ -794,7 +794,7 @@ export function useThreadMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to cancel the queued comment",
+            : "Could not cancel the queued comment",
         tone: "error",
       });
     },
@@ -820,7 +820,7 @@ export function useThreadMutations({
       pushToast({
         title: "Could not delete",
         body:
-          err instanceof Error ? err.message : "Unable to delete the comment",
+          err instanceof Error ? err.message : "Could not delete the comment",
         tone: "error",
       });
     },
@@ -1048,7 +1048,7 @@ export function useThreadMutations({
         body:
           err instanceof Error
             ? err.message
-            : "Unable to archive this task from the inbox",
+            : "Could not archive this task from the inbox",
         tone: "error",
       });
     },

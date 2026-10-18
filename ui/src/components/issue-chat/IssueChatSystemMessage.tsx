@@ -537,7 +537,7 @@ function SystemNoticeCommentContent({
           body:
             error instanceof Error
               ? error.message
-              : "Unable to copy system notice",
+              : "Could not copy this note",
           tone: "error",
         });
       });
@@ -557,7 +557,7 @@ function SystemNoticeCommentContent({
           body:
             error instanceof Error
               ? error.message
-              : "Unable to copy system notice link",
+              : "Could not copy the link",
           tone: "error",
         });
       });

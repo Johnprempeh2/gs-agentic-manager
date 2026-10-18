@@ -24,6 +24,7 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { MarkdownBody } from "./MarkdownBody";
 import { useFileIntake } from "../hooks/useFileIntake";
+import { taskStatusLabel } from "../lib/task-status-labels";
 
 /**
  * Presentational card for a single Decisions-v1 decision (PAP-14966 / PAP-14939
@@ -73,7 +74,7 @@ export interface DecisionCardProps {
 
 function humanStatus(status: string | null | undefined): string {
   if (!status) return "unknown";
-  return status.replaceAll("_", " ");
+  return taskStatusLabel(status);
 }
 
 function issueLabel(ref: DecisionIssueRef | null, fallbackId: string): string {
@@ -114,7 +115,7 @@ function effectSummary(
       return `Create issue “${effect.draft.title}” under ${parent}`;
     }
     case "update_issue_status":
-      return `Set ${target} to ${humanStatus(effect.status)}`;
+      return `Set ${target} to ${humanStatus(effect.status).toLowerCase()}`;
     case "assign_issue":
       return `Reassign ${target}`;
     case "resolve_blocker":
@@ -175,7 +176,7 @@ function executionRow(
       };
     }
     case "update_issue_status":
-      return { key: execution.id, status: "executed", summary: `Set ${target} to ${humanStatus(typeof result.status === "string" ? result.status : null)}`, link: targetRef };
+      return { key: execution.id, status: "executed", summary: `Set ${target} to ${humanStatus(typeof result.status === "string" ? result.status : null).toLowerCase()}`, link: targetRef };
     case "assign_issue":
       return { key: execution.id, status: "executed", summary: `Reassigned ${target}`, link: targetRef };
     case "resolve_blocker": {

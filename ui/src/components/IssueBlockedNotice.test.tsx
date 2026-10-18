@@ -504,7 +504,7 @@ describe("IssueBlockedNotice", () => {
 
     const runningStep = node.querySelectorAll('[data-testid="issue-blocked-notice-steps"] a')[2];
     if (!runningStep) throw new Error("Expected a running live-work step.");
-    expect(runningStep.querySelector('svg[aria-label="In Progress status"]')).not.toBeNull();
+    expect(runningStep.querySelector('svg[aria-label="In progress status"]')).not.toBeNull();
     expect(node.querySelector('[data-testid="issue-blocked-notice-now-running"]')).toBeNull();
   });
 
@@ -533,7 +533,7 @@ describe("IssueBlockedNotice", () => {
     expect(suppressed).not.toBeNull();
     expect(suppressed!.textContent).toContain("Still blocked by");
     expect(suppressed!.textContent).toContain("PAP-500");
-    expect(suppressed!.textContent).toContain("(in progress)");
+    expect(suppressed!.textContent).toContain("(In progress)");
   });
 
   it("names the deepest unresolved terminal leaf, not the direct blocker (Rule C)", () => {

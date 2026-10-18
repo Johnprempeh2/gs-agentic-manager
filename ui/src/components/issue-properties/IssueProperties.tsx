@@ -672,7 +672,7 @@ export function IssueProperties({
     },
     onError: (error) => {
       setRuntimeActionMessage(null);
-      setRuntimeActionErrorMessage(error instanceof Error ? error.message : "Failed to control workspace commands.");
+      setRuntimeActionErrorMessage(error instanceof Error ? error.message : "Could not run that workspace command.");
     },
   });
   const pendingWorkspaceRuntimeAction = controlWorkspaceRuntime.isPending ? controlWorkspaceRuntime.variables ?? null : null;
@@ -2952,7 +2952,7 @@ export function IssueProperties({
                     {reusableExecutionWorkspacesLoading ? (
                       <div className="px-2 py-2 text-xs text-muted-foreground">Loading workspaces...</div>
                     ) : reusableExecutionWorkspacesError ? (
-                      <div className="px-2 py-2 text-xs text-destructive">Failed to load workspaces.</div>
+                      <div className="px-2 py-2 text-xs text-destructive">Could not load workspaces.</div>
                     ) : reusableWorkspaceOptions.length === 0 ? (
                       <div className="px-2 py-2 text-xs text-muted-foreground">No matching workspaces.</div>
                     ) : reusableWorkspaceOptions.map((group) => (

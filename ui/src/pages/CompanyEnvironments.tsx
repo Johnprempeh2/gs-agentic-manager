@@ -930,7 +930,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to start setup",
+        title: "Could not start setup",
         body: error instanceof Error ? error.message : "Setup session could not be started.",
         tone: "error",
       });
@@ -955,7 +955,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to capture template",
+        title: "Could not capture template",
         body: error instanceof Error ? error.message : "Template capture failed.",
         tone: "error",
       });
@@ -981,7 +981,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to cancel setup",
+        title: "Could not cancel setup",
         body: error instanceof Error ? error.message : "Setup session could not be cancelled.",
         tone: "error",
       });
@@ -1005,7 +1005,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to roll back template",
+        title: "Could not roll back template",
         body: error instanceof Error ? error.message : "Rollback failed.",
         tone: "error",
       });
@@ -1049,7 +1049,7 @@ function EnvironmentImageTemplatePanel({
     onError: (error) => {
       if (error instanceof RelinkConfirmationDeclined) return;
       pushToast({
-        title: "Failed to relink template",
+        title: "Could not relink template",
         body: error instanceof Error ? error.message : "Relink failed.",
         tone: "error",
       });
@@ -1073,7 +1073,7 @@ function EnvironmentImageTemplatePanel({
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to disable template",
+        title: "Could not disable template",
         body: error instanceof Error ? error.message : "Disable failed.",
         tone: "error",
       });
@@ -1478,7 +1478,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to save environment variables",
+        title: "Could not save environment variables",
         body: error instanceof Error ? error.message : "Environment variables save failed.",
         tone: "error",
       });
@@ -1535,7 +1535,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to save environment",
+        title: "Could not save environment",
         body: error instanceof Error ? error.message : "Environment save failed.",
         tone: "error",
       });
@@ -1555,7 +1555,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
     },
     onError: (error) => {
       pushToast({
-        title: "Failed to update default environment",
+        title: "Could not update default environment",
         body: error instanceof Error ? error.message : "Default environment update failed.",
         tone: "error",
       });
@@ -1617,7 +1617,7 @@ export function CompanyEnvironments({ mode = "list" }: CompanyEnvironmentsProps)
         queryKey: ["environment-delete-blast-radius", input.environment.id],
       });
       pushToast({
-        title: "Failed to delete environment",
+        title: "Could not delete environment",
         body: error instanceof Error ? error.message : "Environment delete failed.",
         tone: "error",
       });

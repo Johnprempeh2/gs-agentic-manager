@@ -254,7 +254,7 @@ export function IssueChatUserMessage({
                       body:
                         error instanceof Error
                           ? error.message
-                          : "Unable to copy message",
+                          : "Could not copy the message",
                       tone: "error",
                     });
                   });
