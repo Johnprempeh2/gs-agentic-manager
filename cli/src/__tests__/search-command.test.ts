@@ -104,4 +104,29 @@ describe("gsam search", () => {
       "Wren lead | Lead in Sales | no notes or calls yet, added 1 day ago  /GRE/pipelines/p/items/c2",
     ]);
   });
+
+  it("prints a client brief", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      urls.push(url);
+      return json({
+        brief: {
+          organisation: { id: "o1", name: "Grebe", status: "client", industry: "Mining", country: "Ghana", href: "/GRE/organisations/o1" },
+          people: [{ name: "Yaw Darko", role: "CFO", email: null }],
+          peopleCount: 1,
+          openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", href: "/GRE/pipelines/p/items/c1" }],
+          lastTouch: { at: "2026-10-08T09:00:00.000Z", label: "Meeting: Quarterly review" },
+          quietDays: 10,
+        },
+      });
+    }));
+    await run(["client-brief", "grebe"]);
+    expect(new URL(urls[0]!).searchParams.get("q")).toBe("grebe");
+    expect(lines).toEqual([
+      "Grebe (client, Mining, Ghana)  /GRE/organisations/o1",
+      "Last contact: Meeting: Quarterly review, 10 days ago",
+      "Open deals: Grebe expansion (Proposal in Sales)",
+      "People (1): Yaw Darko, CFO",
+    ]);
+  });
 });

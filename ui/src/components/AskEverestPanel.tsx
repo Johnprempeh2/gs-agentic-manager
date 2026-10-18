@@ -29,6 +29,7 @@ import {
   answerPeople,
   answerQuiet,
   answerActivity,
+  answerBrief,
   answerSubject,
   answerFollowUp,
   classifyQuestion,
@@ -591,6 +592,12 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     enabled: active && awaySince !== null,
     retry: false,
   });
+  const brief = useQuery({
+    queryKey: ["ask-everest", companyId, "client-brief", intent.kind === "brief" ? intent.subject : null],
+    queryFn: () => searchApi.clientBrief(companyId, intent.kind === "brief" ? intent.subject ?? "" : ""),
+    enabled: active && intent.kind === "brief" && !!intent.subject,
+    retry: false,
+  });
   const recentActivity = useQuery({
     queryKey: ["ask-everest", companyId, "recent-client-activity", intent.kind === "activity" ? intent.days : null],
     queryFn: () => searchApi.recentClientActivity(companyId, { days: intent.kind === "activity" ? intent.days : 7, limit: 8 }),
@@ -610,6 +617,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || (recordQuery !== null && records.isPending && !records.isError)
     || (intent.kind === "quiet" && quiet.isPending)
     || (intent.kind === "activity" && recentActivity.isPending)
+    || (intent.kind === "brief" && brief.isPending)
     || (intent.kind === "away" && digest.isPending)
     || (awaySince !== null && awayContact.isPending);
   const error = (needsNeedsMe && intent.kind === "decide" && needsMe.error)
@@ -617,6 +625,7 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
     || ((intent.kind === "history" || intent.kind === "people") && records.error)
     || (intent.kind === "quiet" && quiet.error)
     || (intent.kind === "activity" && recentActivity.error)
+    || (intent.kind === "brief" && brief.error)
     || issues.error;
   if (!active) return { loading: true };
   if (pending) return { loading: true as const };
@@ -643,6 +652,8 @@ function useInstantAnswer(companyId: string, intent: AskIntent, agents: readonly
       return { value: answerSubject(intent.subject, issues.data ?? [], records.data?.results ?? []), set };
     case "history":
       return { value: answerHistory(intent.subject ?? "", records.data?.results ?? []) };
+    case "brief":
+      return { value: answerBrief(intent.subject ?? "", brief.data?.brief ?? null) };
     case "activity":
       return { value: answerActivity(recentActivity.data!) };
     case "quiet":

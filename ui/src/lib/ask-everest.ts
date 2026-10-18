@@ -4,7 +4,8 @@
  * history). This is the instant answer; the panel can also pass the
  * question to Everest itself, whose reply arrives in its chat.
  */
-import type { AgentWorkDigest, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import type { AgentWorkDigest, CompanyClientBrief, CompanyQuietClientsResponse, CompanyRecentClientActivityResponse, CompanySearchResult, Issue, NeedsMe, TeamScorecard } from "@greatstone/shared";
+import { ORGANISATION_STATUS_LABELS, type OrganisationStatus } from "@greatstone/shared";
 import { timeAgo } from "./timeAgo";
 import { plainTaskStatus } from "./global-search";
 
@@ -22,6 +23,8 @@ export type AskIntent =
   | { kind: "people"; subject: string | null }
   /** "Which clients have gone quiet?": open deals with no contact for `days` days. */
   | { kind: "quiet"; days: number }
+  /** "Tell me about Acme": a one-glance brief on an organisation. */
+  | { kind: "brief"; subject: string | null }
   /** "What calls did we have this week?": recent notes, calls and meetings across clients. */
   | { kind: "activity"; days: number }
   | { kind: "overview" };
@@ -80,6 +83,8 @@ const HISTORY_WORDS = [
 const HISTORY_RE = /\b(discuss(ed|ing)?|talk(ed|ing)?|spoke|spoken|speak|call(ed|s)?|meetings?|met|notes?|contacted|emailed|emails?|heard from|hear from|conversations?|history|what did (we|they) (say|agree))\b/i;
 const PEOPLE_WORDS = ["who", "whom", "contact", "contacts", "people", "person", "know", "speak", "talk", "call", "email", "address", "phone", "number", "main", "key", "decision", "maker", "makers", "should", "best"];
 const PEOPLE_RE = /\b(who do we know|who should (i|we) (speak|talk) to|who (do|should) (i|we) (call|email|contact)|contacts? (at|for)|people at|our contact|main contact|decision makers?|email (address )?for|phone (number )?for)\b/i;
+const BRIEF_WORDS = ["tell", "brief", "catch", "know", "background", "summary", "summarise", "summarize", "overview", "profile"];
+const BRIEF_RE = /\b(tell me about|brief me (on|about)|catch me up on|what do we know (about|on)|background on|(give me )?(a |an )?(summary|overview|profile) of|summari[sz]e)\b/i;
 const QUIET_RE = /\b(gone (quiet|cold|silent)|went (quiet|cold)|going (quiet|cold)|(have not|haven't|not) (we |i )?(heard from|spoken to|spoken with|talked to|contacted)|no contact|neglected|cold (clients|deals|leads)|(who|which (clients|deals|leads)) (should|do|must) (i|we) (chase|follow up)|need(s)? chasing|chase up|to chase|follow[- ]ups? due)\b/i;
 const WEEK_RE = /\b(week|7 days|seven days|lately|recently)\b/i;
 
@@ -142,6 +147,9 @@ export function classifyQuestion(question: string, agents: readonly AskAgentRef[
   const trimmed = question.trim();
   if (AWAY_RE.test(trimmed)) return { kind: "away" };
   if (QUIET_RE.test(trimmed)) return { kind: "quiet", days: quietDays(trimmed) };
+  if (BRIEF_RE.test(trimmed) && !STUCK_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
+    return { kind: "brief", subject: questionSubject(trimmed, BRIEF_WORDS) };
+  }
   if (PEOPLE_RE.test(trimmed) && !STUCK_RE.test(trimmed) && !mentionedAgent(trimmed, agents)) {
     return { kind: "people", subject: questionSubject(trimmed, PEOPLE_WORDS) };
   }
@@ -397,6 +405,32 @@ export function answerActivity(result: CompanyRecentClientActivityResponse): Ask
       href: entry.href,
     })),
     more: { label: "Open the pipelines", href: "/pipelines" },
+  };
+}
+
+/** A one-glance brief: who they are, open deals, people and when we last spoke. */
+export function answerBrief(subject: string, brief: CompanyClientBrief | null): AskAnswer {
+  if (!brief) {
+    return {
+      headline: `I could not find an organisation called ${subject}.`,
+      lines: [],
+      more: { label: `Search for ${subject}`, href: `/search?q=${encodeURIComponent(subject)}&scope=records` },
+    };
+  }
+  const org = brief.organisation;
+  const status = ORGANISATION_STATUS_LABELS[org.status as OrganisationStatus] ?? org.status;
+  const about = [status.toLowerCase(), org.industry, org.country].filter(Boolean).join(", ");
+  const contact = brief.lastTouch
+    ? `last contact ${plural(brief.quietDays ?? 0, "day")} ago (${brief.lastTouch.label})`
+    : "no notes or calls yet";
+  const lines: AnswerLine[] = [
+    ...brief.openDeals.map((deal) => ({ text: deal.title, detail: `Open deal: ${deal.stageName} in ${deal.pipelineName}`, href: deal.href })),
+    ...brief.people.map((person) => ({ text: person.name, detail: [person.role, person.email].filter(Boolean).join(", ") || "Person", href: org.href })),
+  ];
+  return {
+    headline: `${org.name}: ${about}. ${plural(brief.openDeals.length, "open deal")}, ${plural(brief.peopleCount, "person", "people")}, ${contact}.`,
+    lines,
+    more: { label: `Open ${org.name}`, href: org.href },
   };
 }
 
@@ -663,12 +697,13 @@ export interface AskContext {
 /** Point an instant answer at the page's subject when the question does not name one. */
 export function intentWithContext(intent: AskIntent, context: AskContext | null): AskIntent {
   const subject = context?.subject?.trim();
+  if (intent.kind === "brief" && !intent.subject) return subject ? { kind: "brief", subject } : { kind: "overview" };
   if ((intent.kind === "history" || intent.kind === "people") && !intent.subject) {
     if (subject) return { kind: intent.kind, subject };
     return intent.kind === "history" ? { kind: "activity", days: 7 } : { kind: "overview" };
   }
   if (intent.kind === "activity" && subject) return { kind: "history", subject };
-  if (!subject) return intent;
+  if (!subject) return intent.kind === "brief" && !intent.subject ? { kind: "overview" } : intent;
   if (intent.kind === "stuck" && !intent.subject) return { kind: "stuck", subject };
   if (intent.kind === "subject" || intent.kind === "overview") return { kind: "subject", subject };
   return intent;

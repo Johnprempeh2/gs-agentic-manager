@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   uploadAttachment: vi.fn(),
   search: vi.fn(async () => ({ results: [] })),
   quietClients: vi.fn(),
+  clientBrief: vi.fn(async () => ({ brief: null })),
   recentClientActivity: vi.fn(async () => ({ days: 1, total: 0, clientCount: 0, byKind: [], activity: [] })),
 }));
 
@@ -32,7 +33,7 @@ vi.mock("../api/teamScorecard", () => ({ teamScorecardApi: { get: mocks.scorecar
 vi.mock("../api/issues", () => ({
   issuesApi: { list: mocks.issuesList, addComment: mocks.addComment, listComments: mocks.listComments, uploadAttachment: mocks.uploadAttachment },
 }));
-vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients, recentClientActivity: mocks.recentClientActivity } }));
+vi.mock("../api/search", () => ({ searchApi: { search: mocks.search, quietClients: mocks.quietClients, clientBrief: mocks.clientBrief, recentClientActivity: mocks.recentClientActivity } }));
 vi.mock("../api/agentChats", () => ({ agentChatsApi: { ensure: mocks.ensureChat } }));
 vi.mock("../api/instanceSettings", () => ({ instanceSettingsApi: { getExperimental: mocks.experimental } }));
 vi.mock("@/lib/router", () => ({
@@ -157,6 +158,12 @@ describe("AskEverestPanel", () => {
     act(() => openAskEverest("Which clients have gone quiet for 2 weeks?"));
     await waitFor(() => expect(container.textContent).toContain("1 open deal or lead had no note, call or meeting in 14 days."));
     expect(mocks.quietClients).toHaveBeenCalledWith("company-1", { days: 14, limit: 8 });
+  });
+
+  it("briefs on an organisation", async () => {
+    act(() => openAskEverest("Tell me about Grebe"));
+    await waitFor(() => expect(container.textContent).toContain("I could not find an organisation called Grebe."));
+    expect(mocks.clientBrief).toHaveBeenCalledWith("company-1", "Grebe");
   });
 
   it("shows suggestions before a question is asked", async () => {

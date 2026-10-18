@@ -161,6 +161,13 @@ client instead. Pass `since` (an ISO time) instead of `days` to count from a mom
 such as the last visit: "What happened since I was last here?" adds the client
 notes and calls since then.
 
+`GET /api/companies/:companyId/search/client-brief?q=<name>` returns a brief on
+the organisation that best matches the name (exact name first, then names that
+start with it, then names that contain it): status, industry, country, up to
+three people (key contacts first) and the total, open deals, and the last note,
+call or meeting with days since. Ask Everest answers "Tell me about Acme" and
+"What do we know about Acme?" from it; agents use `gsam client-brief <name>`.
+
 ## Reproduce the evaluation
 
 ```sh

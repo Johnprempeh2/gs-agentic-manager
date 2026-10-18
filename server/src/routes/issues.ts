@@ -8426,6 +8426,27 @@ export function issueRoutes(
     res.json(await quietClientsService(db).recentActivity(companyId, { days, limit, since }));
   });
 
+  // A one-glance brief on the organisation that best matches a name (Ask Everest: "Tell me about Acme").
+  router.get("/companies/:companyId/search/client-brief", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const companyScopeDecision = await access.decide({
+      actor: req.actor,
+      action: "company_scope:read",
+      resource: { type: "company", companyId },
+    });
+    if (!companyScopeDecision.allowed) {
+      res.status(403).json({ error: "Company search is outside this actor's authorization boundary" });
+      return;
+    }
+    const name = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    if (!name || name.length > 200) {
+      res.status(400).json({ error: "q must be a name of 1 to 200 characters" });
+      return;
+    }
+    res.json(await quietClientsService(db).clientBrief(companyId, name));
+  });
+
   router.get("/companies/:companyId/search", async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);

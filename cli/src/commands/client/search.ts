@@ -2,6 +2,7 @@ import { Command } from "commander";
 import {
   COMPANY_SEARCH_RECORD_KINDS,
   COMPANY_SEARCH_SCOPES,
+  type CompanyClientBriefResponse,
   type CompanyQuietClient,
   type CompanyQuietClientsResponse,
   type CompanySearchResponse,
@@ -60,7 +61,49 @@ interface QuietClientsOptions extends BaseClientOptions {
   limit?: string;
 }
 
+/** A client brief as a few short lines for an agent to read. */
+export function formatClientBrief(response: CompanyClientBriefResponse, name: string): string[] {
+  const brief = response.brief;
+  if (!brief) return [`No organisation called "${name}".`];
+  const org = brief.organisation;
+  const about = [org.status, org.industry, org.country].filter(Boolean).join(", ");
+  const contact = brief.lastTouch
+    ? `Last contact: ${brief.lastTouch.label}, ${brief.quietDays} ${brief.quietDays === 1 ? "day" : "days"} ago`
+    : "Last contact: none recorded";
+  return [
+    `${org.name} (${about})  ${org.href}`,
+    contact,
+    `Open deals: ${brief.openDeals.length === 0 ? "none" : brief.openDeals.map((deal) => `${deal.title} (${deal.stageName} in ${deal.pipelineName})`).join("; ")}`,
+    `People (${brief.peopleCount}): ${brief.people.length === 0 ? "none" : brief.people.map((person) => [person.name, person.role, person.email].filter(Boolean).join(", ")).join("; ")}`,
+  ];
+}
+
 export function registerSearchCommands(program: Command): void {
+  addCommonClientOptions(
+    program
+      .command("client-brief")
+      .description("One-glance brief on an organisation: status, open deals, people and last contact")
+      .argument("<name...>", "Organisation name, or part of it")
+      .option("-C, --company-id <id>", "Company ID")
+      .action(async (words: string[], opts: BaseClientOptions & { companyId?: string }) => {
+        try {
+          const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const name = words.join(" ");
+          const response = await ctx.api.get<CompanyClientBriefResponse>(
+            `/api/companies/${encodeURIComponent(ctx.companyId!)}/search/client-brief?${new URLSearchParams({ q: name }).toString()}`,
+          );
+          if (ctx.json) {
+            printOutput(response, { json: true });
+            return;
+          }
+          for (const line of formatClientBrief(response ?? { brief: null }, name)) console.log(line);
+        } catch (err) {
+          handleCommandError(err);
+        }
+      }),
+    { includeCompany: false },
+  );
+
   addCommonClientOptions(
     program
       .command("quiet-clients")

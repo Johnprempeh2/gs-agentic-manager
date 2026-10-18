@@ -1177,6 +1177,8 @@ The current app also exposes V1-supporting surfaces for:
   quietest first; stage changes do not count as contact. Ask Everest uses it for "Which clients have gone quiet?"
 - `GET /companies/:companyId/search/recent-client-activity?days=7&limit=10` lists recent imported notes, calls,
   meetings and emails with their client, plus totals by kind; Ask Everest uses it for "What calls did we have this week?"
+- `GET /companies/:companyId/search/client-brief?q=<name>` returns a brief on the best-matching organisation (people,
+  open deals, last contact); Ask Everest uses it for "Tell me about Acme" and agents use `gsam client-brief`
 - execution workspaces, project workspaces, workspace runtime services, and workspace operations. Workspace reads
   derive `deliveryState` as `merged_via_pr | merged_by_ancestry | unmerged | unknown`; terminal issue trees with a
   merged delivery and no active checkout run become cleanup-eligible with reason `issue_terminal` and are archived

@@ -8,6 +8,7 @@ import {
   answerPeople,
   answerQuiet,
   answerActivity,
+  answerBrief,
   quietDays,
   answerStuck,
   answerSubject,
@@ -89,6 +90,14 @@ describe("classifyQuestion", () => {
     expect(intentWithContext({ kind: "activity", days: 7 }, { label: "Acme Ltd", summary: "", subject: "Acme Ltd" })).toEqual({ kind: "history", subject: "Acme Ltd" });
   });
 
+  it("spots requests for a brief on an organisation", () => {
+    expect(classifyQuestion("Tell me about Grebe", agents)).toEqual({ kind: "brief", subject: "Grebe" });
+    expect(classifyQuestion("What do we know about Indago Mining?", agents)).toEqual({ kind: "brief", subject: "Indago Mining" });
+    expect(classifyQuestion("Tell me about Mason", agents)).toMatchObject({ kind: "agent" });
+    expect(intentWithContext({ kind: "brief", subject: null }, { label: "Acme Ltd", summary: "", subject: "Acme Ltd" })).toEqual({ kind: "brief", subject: "Acme Ltd" });
+    expect(intentWithContext({ kind: "brief", subject: null }, null)).toEqual({ kind: "overview" });
+  });
+
   it("spots questions about who we know at a client", () => {
     expect(classifyQuestion("Who is our contact at Acme?", agents)).toEqual({ kind: "people", subject: "Acme" });
     expect(classifyQuestion("Who do we know at Indago Mining?", agents)).toEqual({ kind: "people", subject: "Indago Mining" });
@@ -102,6 +111,24 @@ describe("classifyQuestion", () => {
 });
 
 describe("answers", () => {
+  it("briefs on an organisation in one line, then deals and people", () => {
+    const answer = answerBrief("grebe", {
+      organisation: { id: "o1", name: "Grebe", status: "client", industry: "Mining", country: "Ghana", href: "/GRE/organisations/o1" },
+      people: [{ name: "Yaw Darko", role: "CFO", email: "yaw@example.com" }],
+      peopleCount: 2,
+      openDeals: [{ title: "Grebe expansion", stageName: "Proposal", pipelineName: "Sales", href: "/GRE/pipelines/p/items/c1" }],
+      lastTouch: { at: "2026-10-08T09:00:00.000Z", label: "Meeting: Quarterly review" },
+      quietDays: 10,
+    });
+    expect(answer.headline).toBe("Grebe: client, Mining, Ghana. 1 open deal, 2 people, last contact 10 days ago (Meeting: Quarterly review).");
+    expect(answer.lines).toEqual([
+      { text: "Grebe expansion", detail: "Open deal: Proposal in Sales", href: "/GRE/pipelines/p/items/c1" },
+      { text: "Yaw Darko", detail: "CFO, yaw@example.com", href: "/GRE/organisations/o1" },
+    ]);
+    expect(answer.more).toEqual({ label: "Open Grebe", href: "/GRE/organisations/o1" });
+    expect(answerBrief("Nobody", null).headline).toBe("I could not find an organisation called Nobody.");
+  });
+
   it("sums up recent client contact by kind", () => {
     const answer = answerActivity({
       days: 7,
