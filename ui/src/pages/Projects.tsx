@@ -14,9 +14,10 @@ import { MembershipAction } from "../components/MembershipAction";
 import { StarToggle } from "../components/StarToggle";
 import { EmptyState } from "../components/EmptyState";
 import { PageSkeleton } from "../components/PageSkeleton";
-import { formatDate, formatNumber, formatProjectBudget, projectUrl } from "../lib/utils";
+import { formatDate, formatProjectBudget, projectUrl } from "../lib/utils";
 import { isProjectLate, projectTargetLabel, projectsForUpdate, projectsToCsv, projectsUpdateText } from "../lib/projects-text";
 import { downloadTextFile } from "../lib/issues-csv";
+import { projectProgress } from "../lib/project-progress";
 import { exportFileName, localToday } from "../lib/spreadsheet-export";
 import { useCopyAction } from "../lib/use-copy-action";
 import {
@@ -291,12 +292,7 @@ export function Projects() {
                         className={state === "left" ? "group text-muted-foreground" : "group"}
                         trailing={
                           <div className="flex items-center gap-3">
-                            <span
-                              className="hidden text-xs text-muted-foreground tabular-nums sm:inline"
-                              title={`${formatNumber(project.taskCount ?? 0)} task${(project.taskCount ?? 0) === 1 ? "" : "s"}`}
-                            >
-                              {formatNumber(project.taskCount ?? 0)} task{(project.taskCount ?? 0) === 1 ? "" : "s"}
-                            </span>
+                            <ProjectProgressCell project={project} />
                             {project.budget && (
                               <span className="hidden text-xs text-muted-foreground tabular-nums sm:inline">
                                 {formatProjectBudget(project.budget)}
@@ -353,5 +349,26 @@ export function Projects() {
         </div>
       )}
     </div>
+  );
+}
+
+function ProjectProgressCell({ project }: { project: { taskCount?: number; doneTaskCount?: number } }) {
+  const progress = projectProgress(project);
+  return (
+    <span className="hidden items-center gap-2 text-xs text-muted-foreground tabular-nums sm:inline-flex" title={progress.label}>
+      {progress.percent !== null ? (
+        <span
+          className="h-1 w-10 overflow-hidden rounded-full bg-muted"
+          role="progressbar"
+          aria-label="Tasks done"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress.percent}
+        >
+          <span className="block h-full rounded-full bg-primary" style={{ width: `${progress.percent}%` }} />
+        </span>
+      ) : null}
+      {progress.label}
+    </span>
   );
 }
