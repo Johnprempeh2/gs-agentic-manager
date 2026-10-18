@@ -21,6 +21,7 @@ import { isUuidLike } from "@greatstone/shared";
 import { badRequest, forbidden, notFound } from "../errors.js";
 import { logActivity } from "../services/index.js";
 import { liveReleaseService } from "../services/live-release.js";
+import { QUEUE_ITEM_ID_RE, QUEUE_REF_RE, releaseQueueService } from "../services/release-queue.js";
 import { assertReleaseReauth, releaseReauth, type ReleaseReauth } from "../services/release-reauth.js";
 import { assertBoard, assertCompanyAccess, assertCompanyOwnerOrAdmin, getActorInfo, hasCompanyAccess } from "./authz.js";
 
@@ -31,6 +32,7 @@ type ActionResult =
 export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db)) {
   const router = Router();
   const svc = liveReleaseService(db);
+  const queue = releaseQueueService();
 
   /** Read only: any board member of the company. */
   function assertBoardFor(req: Request, companyId: string) {
@@ -151,6 +153,80 @@ export function releaseRoutes(db: Db, reauth: ReleaseReauth = releaseReauth(db))
     }
     await log(req, companyId, "release.next_title_edited", { title: (req.body.title as string).trim() });
     res.json({ next: result.next });
+  });
+
+  // The release queue (scripts/greatstone-release-queue.mjs): the board and
+  // the release manager agent read it and add to it; only an owner or admin
+  // cancels. A request goes through the full test gate, the preview and the
+  // release script on the PC; nothing here releases.
+  async function assertBoardOrReleaseManager(req: Request, companyId: string) {
+    if (req.actor.type !== "none" && !hasCompanyAccess(req, companyId)) throw notFound("Company not found");
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type === "board") return;
+    const agentId = req.actor.type === "agent" ? req.actor.agentId : null;
+    if (!agentId || !(await svc.isReleaseManagerAgent(companyId, agentId))) {
+      throw forbidden("Only the board or the release manager can use the release queue");
+    }
+  }
+
+  function queueTarget(res: Response): string | null {
+    const off = svc.releaseOffReason();
+    const repo = off ? null : svc.releaseRepo();
+    if (!repo) {
+      res.status(409).json({ error: off ?? "release is off on this server: no release repo (GSAM_RELEASE_REPO or ~/GSAM/release.conf)" });
+      return null;
+    }
+    return repo;
+  }
+
+  router.get("/companies/:companyId/releases/queue", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await assertBoardOrReleaseManager(req, companyId);
+    res.json(queue.view());
+  });
+
+  router.post("/companies/:companyId/releases/queue", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    await assertBoardOrReleaseManager(req, companyId);
+    if (req.actor.type === "board") {
+      assertReleaserFor(req, companyId);
+      assertReleaseReauth(req, "release", reauth);
+    }
+    const extra = Object.keys(req.body ?? {}).filter((key) => key !== "ref" && key !== "title");
+    const ref = req.body?.ref ?? "main";
+    const title = req.body?.title ?? null;
+    if (extra.length > 0 || typeof ref !== "string" || !QUEUE_REF_RE.test(ref) || (title !== null && typeof title !== "string")) {
+      res.status(422).json({ error: "send { ref?: \"main\" | rc-YYYY-MM-DD.N | commit sha, title?: string }" });
+      return;
+    }
+    const repo = queueTarget(res);
+    if (!repo) return;
+    const actor = getActorInfo(req);
+    const result = await queue.enqueue(repo, { ref, title: title?.trim() || null, by: `${actor.actorType}:${actor.actorId}` });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    await log(req, companyId, "release.queued", { tag: result.item.ref, queueId: result.item.id });
+    res.status(202).json({ item: result.item, queue: queue.view() });
+  });
+
+  router.post("/companies/:companyId/releases/queue/:itemId/cancel", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    if (req.actor.type !== "none" && !hasCompanyAccess(req, companyId)) throw notFound("Company not found");
+    assertReleaserFor(req, companyId);
+    const itemId = req.params.itemId as string;
+    if (!QUEUE_ITEM_ID_RE.test(itemId)) throw notFound("No such request in the release queue");
+    const repo = queueTarget(res);
+    if (!repo) return;
+    const actor = getActorInfo(req);
+    const result = await queue.cancel(repo, { id: itemId, by: `${actor.actorType}:${actor.actorId}` });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    await log(req, companyId, "release.queue_cancelled", { tag: result.item.ref, queueId: itemId });
+    res.json({ item: result.item, queue: queue.view() });
   });
 
   // An agent on its own running run, or the board on any run of its company.

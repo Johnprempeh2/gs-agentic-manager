@@ -1145,6 +1145,9 @@ export function createLiveReleaseService(deps: LiveReleaseDeps) {
     recordLiveStart,
     lastLiveStart,
     isLive,
+    /** Why release is off on this server (it does not run from the live checkout), or null. */
+    releaseOffReason: enabledProblem,
+    releaseRepo: () => deps.resolveReleaseRepo(),
   };
 }
 
