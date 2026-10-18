@@ -29,7 +29,16 @@ import { logger } from "../middleware/logger.js";
 import type { StorageService } from "../storage/types.js";
 import { logActivity } from "./activity-log.js";
 import { applyStudioLook } from "./studio-looks.js";
-import { resolveImageGenerationProvider } from "./image-generation/registry.js";
+import { describeImageGeneration, resolveImageGenerationProvider } from "./image-generation/registry.js";
+import {
+  assertPlanCanSpend,
+  createHiggsfieldPlanImageProvider,
+  describeHiggsfieldPlan,
+  higgsfieldPlanResolver,
+  pickStudioProvider,
+  type HiggsfieldPlan,
+  type ResolveHiggsfieldPlan,
+} from "./image-generation/higgsfield-plan.js";
 import { ImageGenerationError, type ImageGenerationProvider } from "./image-generation/types.js";
 
 // Image generation. A request is saved as a pending row and answered at once;
@@ -53,7 +62,14 @@ export interface GeneratedImageActor {
 export interface GeneratedImageServiceOptions {
   /** Defaults to reading the server environment on each request. */
   resolveProvider?: () => ImageGenerationProvider | null;
+  /** The company's connected Higgsfield plan; defaults to looking up its app connection. */
+  resolvePlan?: ResolveHiggsfieldPlan;
   now?: () => Date;
+}
+
+/** The plan's price check for one picture; the price does not depend on the words. */
+function planImageCost(plan: HiggsfieldPlan, provider: ImageGenerationProvider, aspectRatio: ImageAspectRatio) {
+  return plan.client.cost("generate_image", { model: provider.model, prompt: "price check", aspect_ratio: aspectRatio });
 }
 
 export interface GeneratedImageLinks {
@@ -128,6 +144,7 @@ function drain() {
 
 export function generatedImageService(db: Db, storage: StorageService, options: GeneratedImageServiceOptions = {}) {
   const resolveProvider = options.resolveProvider ?? (() => resolveImageGenerationProvider());
+  const resolvePlan = options.resolvePlan ?? higgsfieldPlanResolver(db);
   const now = options.now ?? (() => new Date());
 
   async function finish(id: string, patch: Partial<typeof generatedImages.$inferInsert>) {
@@ -294,7 +311,20 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
   }
 
   const service = {
-    status: () => resolveProvider(),
+    status: async (companyId: string) => {
+      const envProvider = resolveProvider();
+      const plan = await resolvePlan(companyId).catch((error) => {
+        logger.warn({ err: error, companyId }, "could not read the Higgsfield plan connection");
+        return null;
+      });
+      if (!plan) return describeImageGeneration(envProvider);
+      const provider = createHiggsfieldPlanImageProvider(plan.client);
+      const [described, creditsPerImage] = await Promise.all([
+        describeHiggsfieldPlan(plan),
+        planImageCost(plan, provider, "1:1"),
+      ]);
+      return describeImageGeneration(envProvider, { ...described, model: provider.model, creditsPerImage });
+    },
 
     create: async (companyId: string, input: CreateGeneratedImage, actor: GeneratedImageActor) => {
       const parsed = createGeneratedImageSchema.parse(input);
@@ -302,13 +332,25 @@ export function generatedImageService(db: Db, storage: StorageService, options: 
       if (look) Object.assign(parsed, { prompt: look.prompt, style: look.style, camera: look.camera });
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
-      const provider = resolveProvider();
+      const isAgent = actor.actorType === "agent";
+      const picked = pickStudioProvider({
+        requested: parsed.provider,
+        envProvider: resolveProvider(),
+        plan: parsed.provider && parsed.provider !== "higgsfield_plan" ? null : await resolvePlan(companyId),
+        planProvider: (plan) => createHiggsfieldPlanImageProvider(plan.client),
+        isAgent,
+        kind: "image",
+      });
+      const provider = picked.provider;
       if (!provider) {
         throw unprocessable("Image generation is not set up yet. Ask your admin to add an image service key.", {
           code: "image_generation_not_configured",
         });
       }
       await assertLinksInCompany(companyId, issueId, organisationId);
+      if (picked.plan) {
+        await assertPlanCanSpend(picked.plan, isAgent, await planImageCost(picked.plan, provider, parsed.aspectRatio));
+      }
       await failLostJobs(companyId);
       const [{ pending }] = await db
         .select({ pending: count() })

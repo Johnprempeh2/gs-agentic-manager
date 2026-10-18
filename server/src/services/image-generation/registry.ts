@@ -8,6 +8,8 @@ import { createMockImageProvider } from "./mock.js";
 import { createOpenAiImageProvider } from "./openai.js";
 import type { ImageGenerationProvider } from "./types.js";
 
+export { createHiggsfieldPlanImageProvider, higgsfieldPlanResolver } from "./higgsfield-plan.js";
+
 /**
  * Picks the image service from the server environment.
  *
@@ -41,7 +43,21 @@ export function resolveImageGenerationProvider(env: NodeJS.ProcessEnv = process.
   return null;
 }
 
-export function describeImageGeneration(provider: ImageGenerationProvider | null): ImageGenerationStatus {
+/** The studio's image status. A connected Higgsfield plan is the default service when it is there. */
+export function describeImageGeneration(
+  provider: ImageGenerationProvider | null,
+  plan?: ImageGenerationStatus["plan"],
+): ImageGenerationStatus {
+  if (plan) {
+    return {
+      configured: true,
+      provider: "higgsfield_plan",
+      providerLabel: IMAGE_GENERATION_PROVIDER_LABELS.higgsfield_plan,
+      model: plan.model,
+      plan,
+      alsoAvailable: provider ? { provider: provider.id, providerLabel: IMAGE_GENERATION_PROVIDER_LABELS[provider.id] } : null,
+    };
+  }
   if (!provider) return { configured: false, provider: null, providerLabel: null, model: null };
   return {
     configured: true,

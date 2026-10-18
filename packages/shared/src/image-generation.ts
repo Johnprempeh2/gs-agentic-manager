@@ -4,14 +4,40 @@ import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from
 // Image generation: agents and board users ask for a picture from a written
 // description and GSAM keeps the result as a company image. The provider is
 // chosen by the server from its environment; nothing here names a key.
+// Higgsfield (your plan) is the exception: it runs through the company's own
+// Higgsfield app connection and spends that account's plan credits.
 
-export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock"] as const;
+export const HIGGSFIELD_PLAN_LABEL = "Higgsfield (your plan)";
+/** Below this many plan credits the studio warns that they are running low. */
+export const HIGGSFIELD_PLAN_LOW_CREDITS = 50;
+/** Where the account holder can upgrade or top up their Higgsfield plan. */
+export const HIGGSFIELD_PLAN_URL = "https://higgsfield.ai/pricing";
+
+/** The plan side of the studio status: only present while the Higgsfield app is connected. */
+export interface HiggsfieldPlanStatus {
+  connectionId: string;
+  /** Credits left on the plan; null when Higgsfield would not say. */
+  credits: number | null;
+  /** The plan name Higgsfield reports, such as "basic". */
+  planType: string | null;
+  lowCredits: boolean;
+  /** Whether agents may spend plan credits. People using the studio always can. */
+  agentsMaySpend: boolean;
+  planUrl: string;
+}
+
+/** Board setting: may agents spend the company's Higgsfield plan credits? */
+export const updateHiggsfieldPlanSettingsSchema = z.object({ agentsMaySpend: z.boolean() }).strict();
+export type UpdateHiggsfieldPlanSettings = z.infer<typeof updateHiggsfieldPlanSettingsSchema>;
+
+export const IMAGE_GENERATION_PROVIDERS = ["higgsfield", "openai", "mock", "higgsfield_plan"] as const;
 export type ImageGenerationProviderId = (typeof IMAGE_GENERATION_PROVIDERS)[number];
 
 export const IMAGE_GENERATION_PROVIDER_LABELS: Record<ImageGenerationProviderId, string> = {
   higgsfield: "Higgsfield",
   openai: "OpenAI",
   mock: "Practice mode",
+  higgsfield_plan: HIGGSFIELD_PLAN_LABEL,
 };
 
 /**
@@ -194,6 +220,8 @@ export const createGeneratedImageSchema = z.object({
     .min(GENERATED_IMAGE_PROMPT_MIN_LENGTH, "Describe the image in a few words")
     .max(GENERATED_IMAGE_PROMPT_MAX_LENGTH, `Keep the description under ${GENERATED_IMAGE_PROMPT_MAX_LENGTH} characters`),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS).default(DEFAULT_IMAGE_ASPECT_RATIO),
+  /** Which image service to use. Left out, the server picks: your Higgsfield plan when it is connected. */
+  provider: z.enum(IMAGE_GENERATION_PROVIDERS).optional(),
   style: z.enum(IMAGE_STYLE_IDS).nullable().optional(),
   /** Cinema camera picks (camera, lens, focal length, aperture); their wording is added to the prompt. */
   camera: studioCameraSchema.nullable().optional(),
@@ -333,4 +361,8 @@ export interface ImageGenerationStatus {
   provider: ImageGenerationProviderId | null;
   providerLabel: string | null;
   model: string | null;
+  /** The Higgsfield plan, when its app is connected. The studio uses it by default. */
+  plan?: (HiggsfieldPlanStatus & { model: string; creditsPerImage: number | null }) | null;
+  /** The server's own image service, when the plan is the default and this can be picked instead. */
+  alsoAvailable?: { provider: ImageGenerationProviderId; providerLabel: string } | null;
 }

@@ -59,6 +59,7 @@ import {
   updateGeneratedImageCoverSchema,
   updateGeneratedImageFavouriteSchema,
   updateGeneratedVideoFavouriteSchema,
+  updateHiggsfieldPlanSettingsSchema,
   generatedImagesQuerySchema,
   generatedVideosQuerySchema,
   createGeneratedVideoSchema,
@@ -1499,6 +1500,7 @@ const BOARD_ONLY_PREFIXES = [
 const BOARD_ONLY_OPERATIONS = new Set([
   "DELETE /api/generated-images/{id}",
   "DELETE /api/generated-videos/{id}",
+  "PATCH /api/companies/{companyId}/higgsfield-plan",
   "POST /api/companies/{companyId}/pause",
   "POST /api/companies/{companyId}/resume",
   "PUT /api/companies/{companyId}/memory/stewards/{scopeId}",
@@ -4630,9 +4632,18 @@ registry.registerPath({
   method: "get",
   path: "/api/companies/{companyId}/image-generation",
   tags: ["assets"],
-  summary: "Whether image generation is set up, and which image service the server uses (Higgsfield, OpenAI or practice mode)",
+  summary: "Whether image generation is set up, and which image service the server uses (Higgsfield, OpenAI or practice mode). When the Higgsfield app is connected, plan describes Higgsfield (your plan): credits left, lowCredits under 50, agentsMaySpend and creditsPerImage, and it is the default; alsoAvailable names the API key service",
   request: { params: z.object({ companyId: z.string() }) },
   responses: { 200: r.ok(), 401: r.unauthorized, 403: r.forbidden },
+});
+
+registry.registerPath({
+  method: "patch",
+  path: "/api/companies/{companyId}/higgsfield-plan",
+  tags: ["assets"],
+  summary: "Board only: allow or stop agents spending the company's Higgsfield plan credits (agentsMaySpend, off by default). People using the studio can always use the plan. 422 code higgsfield_plan_not_connected when the Higgsfield app is not connected",
+  request: { params: z.object({ companyId: z.string() }), body: jsonBody(updateHiggsfieldPlanSettingsSchema) },
+  responses: { 200: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable },
 });
 
 registry.registerPath({
@@ -4648,7 +4659,7 @@ registry.registerPath({
   method: "post",
   path: "/api/companies/{companyId}/generated-images",
   tags: ["assets"],
-  summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). 422 code image_generation_not_configured when no image service key is set; 429 when 6 images are already being made",
+  summary: "Make an image from a description. Answers 202 with a pending image; poll GET /api/generated-images/{id} until status is completed (contentPath set) or failed (error explains why). 422 code image_generation_not_configured when no image service key is set, higgsfield_plan_agents_off when an agent asks for the plan without the board's leave, higgsfield_plan_no_credits (with planUrl) when the plan is out of credits; 429 when 6 images are already being made",
   request: { params: z.object({ companyId: z.string() }), body: jsonBody(createGeneratedImageSchema) },
   responses: { 202: r.ok(), 400: r.badRequest, 401: r.unauthorized, 403: r.forbidden, 422: r.unprocessable, 429: r.tooManyRequests },
 });

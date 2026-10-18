@@ -5,6 +5,7 @@ import {
   GENERATED_IMAGE_PROMPT_MAX_LENGTH,
   GENERATED_IMAGE_PROMPT_MIN_LENGTH,
   HIGGSFIELD_API_KEYS_URL,
+  HIGGSFIELD_PLAN_LABEL,
   imageShapeLabel,
   imageStyleLabel,
   hasStudioCamera,
@@ -13,6 +14,7 @@ import {
   type GeneratedImage,
   type GeneratedImagesResponse,
   type ImageAspectRatio,
+  type ImageGenerationProviderId,
   type ImageStylePresetId,
   type StudioCameraSettings,
 } from "@greatstone/shared";
@@ -79,6 +81,7 @@ import { StudioCameraFields, StudioPromptBoosters } from "../components/StudioCa
 import { StudioLookCompare } from "../components/StudioLookCompare";
 import { StudioLookPicker } from "../components/StudioLookPicker";
 import { StudioShotList } from "../components/StudioShotList";
+import { StudioPlanBar } from "../components/StudioPlanBar";
 import { VideoStudio } from "../components/VideoStudio";
 
 export { IMAGE_IDEA_STARTERS };
@@ -280,6 +283,8 @@ export function Images() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [tab, setTab] = useState<"images" | "videos">("images");
   const [animateImage, setAnimateImage] = useState<GeneratedImage | null>(null);
+  // With both Higgsfield services there, the studio uses the plan unless the person switches.
+  const [preferPlan, setPreferPlan] = useState(true);
 
   useEffect(() => {
     setBreadcrumbs([{ label: "Images" }]);
@@ -349,6 +354,7 @@ export function Images() {
       count?: number;
       lookIds?: string[];
       shots?: string[];
+      provider?: ImageGenerationProviderId;
     }) => {
       const { count = 1, lookIds, shots: storyboard, ...body } = input;
       if (storyboard && storyboard.length >= 2) {
@@ -367,6 +373,8 @@ export function Images() {
         current ? { ...current, images: [...[...made].reverse(), ...current.images], total: current.total + made.length } : current,
       );
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
+      // Plan credits go down as pictures are made.
+      if (statusQuery.data?.plan) void queryClient.invalidateQueries({ queryKey: queryKeys.images.status(companyId) });
     },
     onError: (error) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.images.list(companyId) });
@@ -402,12 +410,18 @@ export function Images() {
   });
 
   const configured = statusQuery.data?.configured === true;
+  const plan = statusQuery.data?.plan ?? null;
+  const alsoAvailable = statusQuery.data?.alsoAvailable ?? null;
+  const usingPlan = !!plan && (preferPlan || !alsoAvailable);
+  const planEmpty = usingPlan && plan.credits !== null && plan.credits <= 0;
   const trimmed = prompt.trim();
-  const canSubmit = configured && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
+  const canSubmit = configured && !planEmpty && trimmed.length >= GENERATED_IMAGE_PROMPT_MIN_LENGTH && !create.isPending;
 
   const shotLines = shots.map((shot) => shot.trim()).filter(Boolean);
   const storyboarding = shotLines.length >= 2;
   const comparing = !storyboarding && compareLookIds.length >= 2;
+  const takes = storyboarding ? shotLines.length : comparing ? compareLookIds.length : variations;
+  const planCost = plan?.creditsPerImage != null ? plan.creditsPerImage * takes : null;
   const submit = () => {
     if (!canSubmit) return;
     create.mutate(
@@ -421,6 +435,7 @@ export function Images() {
         count: variations,
         ...(comparing ? { lookIds: compareLookIds } : {}),
         ...(storyboarding ? { shots: shotLines } : {}),
+        ...(plan ? { provider: usingPlan ? "higgsfield_plan" : alsoAvailable?.provider } : {}),
       },
       {
         onSuccess: () => {
@@ -679,7 +694,26 @@ export function Images() {
           <div className="flex flex-col gap-6">
             <StudioComposer
               title="Make an image"
-              aside={statusQuery.data?.providerLabel ? `Using ${statusQuery.data.providerLabel}` : null}
+              aside={
+                plan
+                  ? `Using ${usingPlan ? HIGGSFIELD_PLAN_LABEL : alsoAvailable?.providerLabel}`
+                  : statusQuery.data?.providerLabel
+                    ? `Using ${statusQuery.data.providerLabel}`
+                    : null
+              }
+              notice={
+                plan ? (
+                  <StudioPlanBar
+                    companyId={companyId}
+                    plan={plan}
+                    alsoAvailable={alsoAvailable}
+                    usingPlan={usingPlan}
+                    onUsingPlanChange={setPreferPlan}
+                    cost={planCost}
+                    onError={(error) => pushToast({ title: errorMessage(error), tone: "error" })}
+                  />
+                ) : null
+              }
               chips={chips}
               openChip={openChip}
               onOpenChipChange={setOpenChip}

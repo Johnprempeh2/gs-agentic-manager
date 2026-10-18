@@ -26,7 +26,15 @@ import type { StorageService } from "../storage/types.js";
 import { logActivity } from "./activity-log.js";
 import { applyStudioLook } from "./studio-looks.js";
 import type { GeneratedImageActor } from "./generated-images.js";
-import { resolveVideoGenerationProvider } from "./video-generation/registry.js";
+import { describeVideoGeneration, resolveVideoGenerationProvider } from "./video-generation/registry.js";
+import {
+  assertPlanCanSpend,
+  describeHiggsfieldPlan,
+  higgsfieldPlanResolver,
+  pickStudioProvider,
+  type ResolveHiggsfieldPlan,
+} from "./image-generation/higgsfield-plan.js";
+import { createHiggsfieldPlanVideoProvider, planClipCosts, planVideoParams } from "./video-generation/higgsfield-plan.js";
 import { VideoGenerationError, type VideoGenerationProvider } from "./video-generation/types.js";
 
 // Studio clips. As with images, a request is saved as a pending row and
@@ -42,6 +50,8 @@ type GeneratedVideoRow = typeof generatedVideos.$inferSelect;
 
 export interface GeneratedVideoServiceOptions {
   resolveProvider?: () => VideoGenerationProvider | null;
+  /** The company's connected Higgsfield plan; defaults to looking up its app connection. */
+  resolvePlan?: ResolveHiggsfieldPlan;
   now?: () => Date;
 }
 
@@ -121,6 +131,7 @@ function drain() {
 
 export function generatedVideoService(db: Db, storage: StorageService, options: GeneratedVideoServiceOptions = {}) {
   const resolveProvider = options.resolveProvider ?? (() => resolveVideoGenerationProvider());
+  const resolvePlan = options.resolvePlan ?? higgsfieldPlanResolver(db);
   const now = options.now ?? (() => new Date());
 
   async function finish(id: string, patch: Partial<typeof generatedVideos.$inferInsert>) {
@@ -310,7 +321,16 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
   }
 
   return {
-    status: () => resolveProvider(),
+    status: async (companyId: string) => {
+      const envProvider = resolveProvider();
+      const plan = await resolvePlan(companyId).catch((error) => {
+        logger.warn({ err: error, companyId }, "could not read the Higgsfield plan connection");
+        return null;
+      });
+      if (!plan) return describeVideoGeneration(envProvider);
+      const [described, creditsPerClip] = await Promise.all([describeHiggsfieldPlan(plan), planClipCosts(plan.client)]);
+      return describeVideoGeneration(envProvider, { ...described, creditsPerClip });
+    },
 
     create: async (companyId: string, input: CreateGeneratedVideo, actor: GeneratedImageActor) => {
       const parsed = createGeneratedVideoSchema.parse(input);
@@ -320,13 +340,29 @@ export function generatedVideoService(db: Db, storage: StorageService, options: 
       const issueId = parsed.issueId ?? null;
       const organisationId = parsed.organisationId ?? null;
       const sourceImageId = parsed.sourceImageId ?? null;
-      const provider = resolveProvider();
+      const isAgent = actor.actorType === "agent";
+      const picked = pickStudioProvider({
+        requested: parsed.provider,
+        envProvider: resolveProvider(),
+        plan: parsed.provider && parsed.provider !== "higgsfield_plan" ? null : await resolvePlan(companyId),
+        planProvider: (plan) => createHiggsfieldPlanVideoProvider(plan.client),
+        isAgent,
+        kind: "video",
+      });
+      const provider = picked.provider;
       if (!provider) {
         throw unprocessable("Video making is not set up yet. Ask your admin to add the Higgsfield key.", {
           code: "video_generation_not_configured",
         });
       }
       await assertLinksInCompany(companyId, { issueId, organisationId, sourceImageId });
+      if (picked.plan) {
+        const cost = await picked.plan.client.cost("generate_video", {
+          ...planVideoParams(model.id, parsed.duration ?? model.durations[0]),
+          prompt: "price check",
+        });
+        await assertPlanCanSpend(picked.plan, isAgent, cost);
+      }
       await failLostJobs(companyId);
       const [{ pending }] = await db
         .select({ pending: count() })

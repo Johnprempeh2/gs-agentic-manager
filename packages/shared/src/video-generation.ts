@@ -1,17 +1,19 @@
 import { z } from "zod";
 import { studioCameraSchema, studioCameraWords, type StudioCameraSettings } from "./studio/camera.js";
+import { HIGGSFIELD_PLAN_LABEL, type HiggsfieldPlanStatus } from "./image-generation.js";
 
 // Video generation: the image studio's moving-picture side. A clip is made
 // from a written description (text to video) or by animating a finished
 // studio image (image to video). The server picks the service from its
 // environment, as it does for images; nothing here names a key.
 
-export const VIDEO_GENERATION_PROVIDERS = ["higgsfield", "mock"] as const;
+export const VIDEO_GENERATION_PROVIDERS = ["higgsfield", "mock", "higgsfield_plan"] as const;
 export type VideoGenerationProviderId = (typeof VIDEO_GENERATION_PROVIDERS)[number];
 
 export const VIDEO_GENERATION_PROVIDER_LABELS: Record<VideoGenerationProviderId, string> = {
   higgsfield: "Higgsfield",
   mock: "Practice mode",
+  higgsfield_plan: HIGGSFIELD_PLAN_LABEL,
 };
 
 /**
@@ -116,6 +118,8 @@ export const createGeneratedVideoSchema = z
       .min(GENERATED_VIDEO_PROMPT_MIN_LENGTH, "Describe the clip in a few words")
       .max(GENERATED_VIDEO_PROMPT_MAX_LENGTH, `Keep the description under ${GENERATED_VIDEO_PROMPT_MAX_LENGTH} characters`),
     model: z.enum(VIDEO_MODEL_IDS).default(DEFAULT_VIDEO_MODEL),
+    /** Which video service to use. Left out, the server picks: your Higgsfield plan when it is connected. */
+    provider: z.enum(VIDEO_GENERATION_PROVIDERS).optional(),
     /** Seconds; must be one the model offers. Defaults to the model's shortest. */
     duration: z.number().int().positive().optional(),
     /** A finished studio image to animate. Without it the clip is made from the words alone. */
@@ -197,4 +201,11 @@ export interface VideoGenerationStatus {
   configured: boolean;
   provider: VideoGenerationProviderId | null;
   providerLabel: string | null;
+  /**
+   * The Higgsfield plan, when its app is connected. creditsPerClip is keyed
+   * by studio model id, then by length in seconds (text to video price).
+   */
+  plan?: (HiggsfieldPlanStatus & { creditsPerClip: Partial<Record<VideoModelId, Record<number, number | null>>> }) | null;
+  /** The server's own video service, when the plan is the default and this can be picked instead. */
+  alsoAvailable?: { provider: VideoGenerationProviderId; providerLabel: string } | null;
 }

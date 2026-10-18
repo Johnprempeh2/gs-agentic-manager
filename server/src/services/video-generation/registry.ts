@@ -4,6 +4,8 @@ import { PRACTICE_VIDEO_MP4_BASE64 } from "./practice-video.js";
 import { createHiggsfieldVideoProvider } from "./higgsfield.js";
 import type { VideoGenerationProvider } from "./types.js";
 
+export { createHiggsfieldPlanVideoProvider } from "./higgsfield-plan.js";
+
 /** Practice mode: returns a short labelled clip, with no service and no cost. */
 export function createMockVideoProvider(options: { delayMs?: number } = {}): VideoGenerationProvider {
   return {
@@ -32,7 +34,20 @@ export function resolveVideoGenerationProvider(env: NodeJS.ProcessEnv = process.
   return null;
 }
 
-export function describeVideoGeneration(provider: VideoGenerationProvider | null): VideoGenerationStatus {
+/** The studio's clip status. A connected Higgsfield plan is the default service when it is there. */
+export function describeVideoGeneration(
+  provider: VideoGenerationProvider | null,
+  plan?: VideoGenerationStatus["plan"],
+): VideoGenerationStatus {
+  if (plan) {
+    return {
+      configured: true,
+      provider: "higgsfield_plan",
+      providerLabel: VIDEO_GENERATION_PROVIDER_LABELS.higgsfield_plan,
+      plan,
+      alsoAvailable: provider ? { provider: provider.id, providerLabel: VIDEO_GENERATION_PROVIDER_LABELS[provider.id] } : null,
+    };
+  }
   if (!provider) return { configured: false, provider: null, providerLabel: null };
   return { configured: true, provider: provider.id, providerLabel: VIDEO_GENERATION_PROVIDER_LABELS[provider.id] };
 }

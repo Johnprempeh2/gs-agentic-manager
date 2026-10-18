@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   GENERATED_VIDEO_PROMPT_MAX_LENGTH,
   GENERATED_VIDEO_PROMPT_MIN_LENGTH,
+  HIGGSFIELD_PLAN_LABEL,
   hasStudioCamera,
   studioCameraLabel,
   VIDEO_MODELS,
@@ -23,6 +24,7 @@ import { ApiError } from "../api/client";
 import { queryKeys } from "../lib/queryKeys";
 import { StudioCameraFields } from "./StudioCameraFields";
 import { StudioLookPicker } from "./StudioLookPicker";
+import { StudioPlanBar } from "./StudioPlanBar";
 import { STUDIO_GENERATE_CLASS, STUDIO_PROMPT_CLASS, StudioComposer, type StudioComposerChip } from "./StudioComposer";
 import { STUDIO_GALLERY_CLASS, StudioEmptyGallery, StudioMediaAction, StudioMediaCard } from "./StudioMediaCard";
 import { Button } from "@/components/ui/button";
@@ -78,6 +80,8 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [favouritesOnly, setFavouritesOnly] = useState(false);
+  // With both Higgsfield services there, the studio uses the plan unless the person switches.
+  const [preferPlan, setPreferPlan] = useState(true);
   const filters = favouritesOnly ? { favourite: true } : {};
 
   const statusQuery = useQuery({
@@ -96,6 +100,14 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   const usableModels = VIDEO_MODELS.filter((item) => sourceImage || item.textPath);
   const effectiveModel = usableModels.some((item) => item.id === modelId) ? model : videoModel(usableModels[0]!.id)!;
   const effectiveDuration = duration && (effectiveModel.durations as readonly number[]).includes(duration) ? duration : effectiveModel.durations[0];
+  const plan = statusQuery.data?.plan ?? null;
+  const alsoAvailable = statusQuery.data?.alsoAvailable ?? null;
+  const usingPlan = !!plan && (preferPlan || !alsoAvailable);
+  const planEmpty = usingPlan && plan.credits !== null && plan.credits <= 0;
+  const provider = plan ? (usingPlan ? ("higgsfield_plan" as const) : alsoAvailable?.provider) : undefined;
+  const refreshPlan = () => {
+    if (plan) void queryClient.invalidateQueries({ queryKey: queryKeys.videos.status(companyId) });
+  };
 
   const create = useMutation({
     mutationFn: () =>
@@ -109,10 +121,12 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
         ...(sourceImage ? { sourceImageId: sourceImage.id } : {}),
         ...(sourceImage?.issue ? { issueId: sourceImage.issue.id } : {}),
         ...(sourceImage?.organisation ? { organisationId: sourceImage.organisation.id } : {}),
+        ...(provider ? { provider } : {}),
       }),
     onSuccess: () => {
       setPrompt("");
       void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) });
+      refreshPlan();
     },
     onError: (error) => onError(errorMessage(error)),
   });
@@ -126,8 +140,12 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
         ...(video.motion ? { motion: video.motion } : {}),
         ...(video.camera ? { camera: video.camera } : {}),
         ...(video.sourceImage ? { sourceImageId: video.sourceImage.id } : {}),
+        ...(provider ? { provider } : {}),
       }),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.videos.list(companyId) });
+      refreshPlan();
+    },
     onError: (error) => onError(errorMessage(error)),
   });
 
@@ -156,7 +174,7 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
   });
 
   const configured = statusQuery.data?.configured === true;
-  const canSubmit = configured && prompt.trim().length >= GENERATED_VIDEO_PROMPT_MIN_LENGTH && !create.isPending;
+  const canSubmit = configured && !planEmpty && prompt.trim().length >= GENERATED_VIDEO_PROMPT_MIN_LENGTH && !create.isPending;
   const videos = listQuery.data?.videos ?? [];
 
   const pickedModelLabel = videoModelLabel(effectiveModel.id);
@@ -287,23 +305,42 @@ export function VideoStudio({ companyId, sourceImage, onClearSourceImage, onErro
       <div className="flex flex-col gap-6">
         <StudioComposer
           title={sourceImage ? "Bring an image to life" : "Make a video"}
-          aside={statusQuery.data?.providerLabel ? `Using ${statusQuery.data.providerLabel}` : null}
+          aside={
+            plan
+              ? `Using ${usingPlan ? HIGGSFIELD_PLAN_LABEL : alsoAvailable?.providerLabel}`
+              : statusQuery.data?.providerLabel
+                ? `Using ${statusQuery.data.providerLabel}`
+                : null
+          }
           chips={chips}
           openChip={openChip}
           onOpenChipChange={setOpenChip}
           footnote="Clips usually take a few minutes. You can leave this page; it keeps going."
           notice={
-            sourceImage ? (
-              <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-2" data-testid="video-source-image">
-                {sourceImage.contentPath ? (
-                  <img src={sourceImage.contentPath} alt={sourceImage.altText} className="h-12 w-16 shrink-0 rounded-md object-cover" />
-                ) : null}
-                <p className="min-w-0 flex-1 truncate text-sm">{sourceImage.prompt}</p>
-                <Button variant="ghost" size="sm" onClick={onClearSourceImage} aria-label="Stop using this image">
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </Button>
-              </div>
-            ) : null
+            <>
+              {plan ? (
+                <StudioPlanBar
+                  companyId={companyId}
+                  plan={plan}
+                  alsoAvailable={alsoAvailable}
+                  usingPlan={usingPlan}
+                  onUsingPlanChange={setPreferPlan}
+                  cost={plan.creditsPerClip[effectiveModel.id]?.[effectiveDuration] ?? null}
+                  onError={(error) => onError(errorMessage(error))}
+                />
+              ) : null}
+              {sourceImage ? (
+                <div className="flex items-center gap-3 rounded-lg border border-border bg-background p-2" data-testid="video-source-image">
+                  {sourceImage.contentPath ? (
+                    <img src={sourceImage.contentPath} alt={sourceImage.altText} className="h-12 w-16 shrink-0 rounded-md object-cover" />
+                  ) : null}
+                  <p className="min-w-0 flex-1 truncate text-sm">{sourceImage.prompt}</p>
+                  <Button variant="ghost" size="sm" onClick={onClearSourceImage} aria-label="Stop using this image">
+                    <X className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              ) : null}
+            </>
           }
           action={
             <Button onClick={() => create.mutate()} disabled={!canSubmit} className={STUDIO_GENERATE_CLASS} data-testid="make-video">
