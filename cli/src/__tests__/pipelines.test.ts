@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerPipelineCommands } from "../commands/pipelines.js";
+import { registerPipelineCommands, selectDealsDue } from "../commands/pipelines.js";
 
 const COMPANY_ID = "22222222-2222-4222-8222-222222222222";
 const CASE_ID = "11111111-1111-4111-8111-111111111111";
@@ -124,3 +124,69 @@ describe("pipeline CLI commands", () => {
 function jsonResponse(body: unknown = { ok: true }, init: ResponseInit = { status: 200 }): Response {
   return new Response(JSON.stringify(body), init);
 }
+
+describe("selectDealsDue", () => {
+  const stage = (kind: string) => ({ id: kind, key: kind, name: kind === "done" ? "Won" : "Qualified", kind, position: 0 });
+  const row = (title: string, fields: Record<string, unknown> | null, kind = "working") => ({
+    case: { id: title, caseKey: title, title, pipelineId: "p", stageId: kind, version: 1, fields },
+    stage: stage(kind),
+  });
+
+  it("lists open deals due by the given day, oldest first, and unscheduled ones on request", () => {
+    const pipelines = [{
+      id: "p",
+      name: "DevTools",
+      rows: [
+        row("Acme", { dealStatus: "Open", nextActivityDate: "2026-10-17", nextActivitySubject: "Demo" }),
+        row("Globex", { dealStatus: "Open", nextActivityDate: "2026-10-12" }),
+        row("Initech", { dealStatus: "Open", nextActivityDate: "2026-10-30" }),
+        row("Hooli", { dealStatus: "Open" }),
+        row("Umbrella", { dealStatus: "Lost", nextActivityDate: "2026-10-01" }),
+        row("Won deal", { dealStatus: "Open", nextActivityDate: "2026-10-01" }, "done"),
+        row("Client card", { nextActivityDate: "2026-10-01" }),
+      ],
+    }];
+    expect(selectDealsDue(pipelines, "2026-10-17").map((deal) => [deal.title, deal.nextActivityDate, deal.nextActivitySubject])).toEqual([
+      ["Globex", "2026-10-12", null],
+      ["Acme", "2026-10-17", "Demo"],
+    ]);
+    expect(selectDealsDue(pipelines, "2026-10-17", true).map((deal) => deal.title)).toEqual(["Globex", "Acme", "Hooli"]);
+  });
+});
+
+describe("pipelines deals-due", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    delete process.env.GSAM_API_KEY;
+    delete process.env.GSAM_API_URL;
+  });
+
+  it("reads only the Pipedrive deal pipelines and prints the deals due", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith(`/companies/${COMPANY_ID}/pipelines`)) {
+        return jsonResponse([
+          { id: "pd", key: "pipedrive-1", name: "DevTools" },
+          { id: "leads", key: "pipedrive-leads", name: "Leads" },
+          { id: "dx", key: "client", name: "Client journey" },
+        ]);
+      }
+      return jsonResponse([
+        {
+          case: { id: CASE_ID, caseKey: "acme", title: "Acme", pipelineId: "pd", stageId: "s", version: 1, fields: { dealStatus: "Open", nextActivityDate: "2020-01-01", nextActivitySubject: "Call" } },
+          stage: { id: "s", key: "s", name: "Qualified", kind: "working", position: 0 },
+        },
+      ]);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await run(["pipelines", "deals-due"]);
+
+    expect(fetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
+      `http://localhost:3100/api/companies/${COMPANY_ID}/pipelines`,
+      "http://localhost:3100/api/pipelines/pd/cases",
+    ]);
+    expect(String(log.mock.calls[0]?.[0])).toContain("2020-01-01  Acme: Call");
+  });
+});
+

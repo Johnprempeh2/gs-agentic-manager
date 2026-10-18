@@ -91,6 +91,7 @@ import { PipelineCaseProjects } from "../components/PipelineCaseProjects";
 import { ClientCaseOverview } from "../components/ClientCaseOverview";
 import { PipelineExportButton } from "../components/DataExport";
 import { DealForecast } from "../components/DealForecast";
+import { DealsList } from "../components/DealsList";
 import { PipelineCaseCrmSync } from "../components/PipelineCaseCrmSync";
 import { PipelineCaseCrmHistory } from "../components/PipelineCaseCrmHistory";
 import { CrmSyncConflictQueue } from "../components/CrmSyncConflictQueue";
@@ -98,6 +99,9 @@ import {
   CLIENT_CASE_TYPE,
   CLIENT_RECORD_FIELD_KEYS,
   DEVTOOLS_DEAL_FIELD_KEYS,
+  averageDaysInStage,
+  dealNextStepLabel,
+  dealWinRate,
   dealsClosedThisMonth,
   forecastByCloseMonth,
   weightedDealValues,
@@ -152,7 +156,7 @@ import { keepPreviousDataForSameQueryTail } from "../lib/query-placeholder-data"
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { usePipelineAdminRights } from "../hooks/usePipelineAccess";
 import { shouldDisableRerunForPermission, type LivenessRetryKind } from "../lib/pipeline-liveness";
-import { cn, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
+import { cn, formatCalendarDay, formatNumber, formatShortDate as formatUkShortDate, relativeTime } from "../lib/utils";
 import { issueStatusText, issueStatusTextDefault } from "../lib/status-colors";
 import { formatBytes } from "../lib/issue-output";
 import { createIssueDetailPath, withIssueDetailHeaderSeed } from "../lib/issueDetailBreadcrumb";
@@ -1416,7 +1420,9 @@ function PipelineCaseCard({
   const hasChangedNotice = hasThisChanged(caseItem);
   const childrenSummary = getChildrenSummaryCount(caseItem);
   const liveDownstreamCount = descendantActiveWorkCount(caseItem);
-  const { owner, nextAction } = readCardSummary(caseItem.fields);
+  const { owner, nextAction: clientNextAction } = readCardSummary(caseItem.fields);
+  // A Pipedrive deal's next step stands in for the client journey's next action.
+  const nextAction = clientNextAction ?? (caseItem.terminalKind ? null : dealNextStepLabel(caseItem.fields, formatCalendarDay));
   const dealValue = formatDealTotals(sumDealValues([caseItem]));
   const daysLabel = caseItem.terminalKind ? null : formatDaysInStage(daysInStage(caseItem.stageEnteredAt));
   const covers = useImageCovers(caseItem.companyId);
@@ -1553,6 +1559,8 @@ function PipelineBoardColumn({
   const sortableCaseIds = caseGroups.flatMap((group) => group.cases.map((entry) => entry.id));
   // Deal values from a Pipedrive import, summed per stage as Pipedrive shows them.
   const stageValue = formatDealTotals(sumDealValues(cases));
+  // Pipedrive's deal ageing: how long the deals in an open stage have sat there.
+  const averageDays = stageValue && stage.kind !== "done" && stage.kind !== "cancelled" ? averageDaysInStage(cases) : null;
 
   return (
     <div
@@ -1581,6 +1589,11 @@ function PipelineBoardColumn({
         <span className="ml-2 flex shrink-0 items-center gap-2 text-xs">
           <span>{cases.length} item{cases.length === 1 ? "" : "s"}</span>
           {stageValue ? <span className="font-normal text-muted-foreground" data-testid="stage-deal-value">{stageValue}</span> : null}
+          {averageDays != null ? (
+            <span className="font-normal text-muted-foreground" data-testid="stage-average-days" title="Average days the deals here have been in this stage">
+              avg {averageDays}d
+            </span>
+          ) : null}
           {warningCount ? (
             <span className="inline-flex items-center gap-1 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-3.5 w-3.5" />
@@ -1668,6 +1681,8 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const [ownerFilter, setOwnerFilter] = useState<{ pipelineId: string; owner: string }>({ pipelineId, owner: ALL_OWNERS });
   // "Deals need a next step" in the header doubles as a filter, like Pipedrive's red deals.
   const [nextStepFilterPipelineId, setNextStepFilterPipelineId] = useState<string | null>(null);
+  // Pipedrive's list view for DevTools deals, per pipeline.
+  const [listViewPipelineId, setListViewPipelineId] = useState<string | null>(null);
   const [groupByState, setGroupByState] = useState<{ pipelineId: string; value: PipelineBoardGroupBy }>(() => ({
     pipelineId,
     value: readStoredPipelineBoardGroupBy(pipelineId),
@@ -1756,6 +1771,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
   const dealsNeedingNextStep = casesNeedingNextStep.length;
   const nextStepFilterOn = nextStepFilterPipelineId === pipelineId && dealsNeedingNextStep > 0;
   const boardCases = nextStepFilterOn ? casesNeedingNextStep : visibleCases;
+  const winRate = useMemo(() => dealWinRate(visibleCases), [visibleCases]);
   const closedThisMonth = useMemo(
     () => ({ won: dealsClosedThisMonth(visibleCases, "won"), lost: dealsClosedThisMonth(visibleCases, "lost") }),
     [visibleCases],
@@ -2057,6 +2073,11 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
                 ) : null}
               </span>
             ) : null}
+            {winRate ? (
+              <span data-testid="pipeline-win-rate" title={`${winRate.won} won and ${winRate.lost} lost in the last 90 days`}>
+                {" "}· {winRate.percent}% win rate (90 days)
+              </span>
+            ) : null}
             {(["won", "lost"] as const).map((outcome) => {
               const { count, totals } = closedThisMonth[outcome];
               if (count === 0) return null;
@@ -2110,6 +2131,30 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
               <SelectItem value="builtFor">Built for</SelectItem>
             </SelectContent>
           </Select>
+          {isDevtoolsCaseType(pipeline.key) ? (
+            <div className="inline-flex rounded-md border border-border" role="group" aria-label="View">
+              <Button
+                type="button"
+                variant={listViewPipelineId === pipelineId ? "ghost" : "secondary"}
+                size="sm"
+                aria-pressed={listViewPipelineId !== pipelineId}
+                onClick={() => setListViewPipelineId(null)}
+              >
+                <Layers className="h-4 w-4" />
+                Board
+              </Button>
+              <Button
+                type="button"
+                variant={listViewPipelineId === pipelineId ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={listViewPipelineId === pipelineId}
+                onClick={() => setListViewPipelineId(pipelineId)}
+              >
+                <List className="h-4 w-4" />
+                List
+              </Button>
+            </div>
+          ) : null}
           <PipelineExportButton
             name={pipeline.name}
             pipelineId={pipelineId}
@@ -2137,6 +2182,9 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
         onSelectStage={(stageId) => navigate(`/pipelines/${pipelineId}/settings?stage=${stageId}`)}
       />
 
+      {listViewPipelineId === pipelineId && isDevtoolsCaseType(pipeline.key) ? (
+        <DealsList cases={boardCases} stages={orderedStages} />
+      ) : (
       <DndContext
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -2194,6 +2242,7 @@ function PipelineBoard({ pipelineId }: { pipelineId: string }) {
           {activeCase ? <PipelineCaseCard caseItem={activeCase} isOverlay /> : null}
         </DragOverlay>
       </DndContext>
+      )}
 
       <Dialog
         open={Boolean(pendingMove)}

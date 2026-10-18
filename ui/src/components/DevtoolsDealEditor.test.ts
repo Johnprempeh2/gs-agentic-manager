@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyDealDraft, draftFromFields } from "./DevtoolsDealEditor";
+import { applyDealDraft, completeNextStep, draftFromFields } from "./DevtoolsDealEditor";
 
 describe("DevTools deal editor", () => {
   it("reads a Pipedrive deal into the form", () => {
@@ -53,5 +53,23 @@ describe("DevTools deal editor", () => {
     expect(applyDealDraft({}, { ...draftFromFields({}), nextActivitySubject: "Call" })).toEqual({});
     expect(() => applyDealDraft({}, { ...draftFromFields({}), value: "lots" })).toThrow("Value must be a number");
     expect(() => applyDealDraft({}, { ...draftFromFields({}), probability: "140" })).toThrow("Probability must be between 0 and 100");
+  });
+
+  it("marks the next step done, keeps what happened and books the follow-up", () => {
+    const now = new Date(2026, 9, 18, 10, 0);
+    const fields = { dealValue: 900, nextActivityDate: "2026-10-17", nextActivitySubject: "Demo", lastActivityNote: "old" };
+    expect(completeNextStep(fields, { note: " Liked it ", nextActivityDate: "2026-10-24", nextActivitySubject: "Send proposal" }, now)).toEqual({
+      dealValue: 900,
+      lastActivityDate: "2026-10-18",
+      lastActivitySubject: "Demo",
+      lastActivityNote: "Liked it",
+      nextActivityDate: "2026-10-24",
+      nextActivitySubject: "Send proposal",
+    });
+    expect(completeNextStep(fields, { note: "", nextActivityDate: "", nextActivitySubject: "ignored" }, now)).toEqual({
+      dealValue: 900,
+      lastActivityDate: "2026-10-18",
+      lastActivitySubject: "Demo",
+    });
   });
 });

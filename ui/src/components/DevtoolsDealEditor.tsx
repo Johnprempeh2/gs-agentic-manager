@@ -144,3 +144,113 @@ export function DevtoolsDealEditor({ detail, label = "Edit deal" }: { detail: Pi
     </form>
   );
 }
+
+/** Today on this device as YYYY-MM-DD. */
+function localDay(now: Date) {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Pipedrive's "mark as done" on a deal's next activity: it becomes the last
+ * activity (with what happened), and the next step is the follow-up, if any.
+ */
+export function completeNextStep(
+  fields: Record<string, unknown> | null | undefined,
+  input: { note: string; nextActivityDate: string; nextActivitySubject: string },
+  now: Date = new Date(),
+) {
+  const next: Record<string, unknown> = { ...(fields ?? {}) };
+  const done = text(next.nextActivitySubject).trim();
+  next.lastActivityDate = localDay(now);
+  if (done) next.lastActivitySubject = done;
+  else delete next.lastActivitySubject;
+  if (input.note.trim()) next.lastActivityNote = input.note.trim();
+  else delete next.lastActivityNote;
+  if (input.nextActivityDate) {
+    next.nextActivityDate = input.nextActivityDate;
+    if (input.nextActivitySubject.trim()) next.nextActivitySubject = input.nextActivitySubject.trim();
+    else delete next.nextActivitySubject;
+  } else {
+    delete next.nextActivityDate;
+    delete next.nextActivitySubject;
+  }
+  return next;
+}
+
+export function DevtoolsNextStepDone({ detail }: { detail: PipelineCaseDetail }) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToastActions();
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState("");
+  const [nextActivityDate, setNextActivityDate] = useState("");
+  const [nextActivitySubject, setNextActivitySubject] = useState("");
+
+  const save = useMutation({
+    mutationFn: async () =>
+      pipelinesApi.updateCase(detail.case.id, {
+        fields: completeNextStep(detail.case.fields, { note, nextActivityDate, nextActivitySubject }),
+      }),
+    onSuccess: async () => {
+      setOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseDetail(detail.case.id) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.cases(detail.case.pipelineId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.pipelines.caseEvents(detail.case.id) }),
+      ]);
+      pushToast({ title: nextActivityDate ? "Done, and the follow-up is booked" : "Next step marked done", tone: "success" });
+    },
+    onError: (error) => pushToast({ title: error instanceof Error ? error.message : "Could not save", tone: "error" }),
+  });
+
+  if (!open) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => {
+          setNote("");
+          setNextActivityDate("");
+          setNextActivitySubject("");
+          setOpen(true);
+        }}
+      >
+        Mark next step done
+      </Button>
+    );
+  }
+
+  return (
+    <form
+      className="space-y-3 py-3"
+      aria-label="Mark next step done"
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <div className="space-y-1">
+        <Label htmlFor="deal-done-note">What happened?</Label>
+        <Input id="deal-done-note" value={note} placeholder="Agreed a pilot for January" onChange={(event) => setNote(event.target.value)} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <Label htmlFor="deal-done-next-date">Follow-up on</Label>
+          <Input id="deal-done-next-date" type="date" value={nextActivityDate} onChange={(event) => setNextActivityDate(event.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="deal-done-next-subject">Follow-up</Label>
+          <Input
+            id="deal-done-next-subject"
+            value={nextActivitySubject}
+            placeholder="Send the pilot proposal"
+            onChange={(event) => setNextActivitySubject(event.target.value)}
+          />
+        </div>
+      </div>
+      <div className="flex justify-between gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+        <Button type="submit" size="sm" disabled={save.isPending}>{save.isPending ? "Saving…" : "Save"}</Button>
+      </div>
+    </form>
+  );
+}
