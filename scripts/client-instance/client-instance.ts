@@ -93,6 +93,15 @@ import {
   type ResumeRecord,
   type UsageCounts,
 } from "./lifecycle.js";
+import {
+  configChecks,
+  envChecks,
+  hstsCheck,
+  httpRedirectCheck,
+  privateFileCheck,
+  publicAddress,
+  securityHeaderChecks,
+} from "./hardening.js";
 import { choosePorts, siblingPortClaims } from "./ports.js";
 import { defaultReleasesDir, isStableTag, pickReleaseTag, releaseDirFor, releaseFolderLines, releaseFolders } from "./releases.js";
 import {
@@ -816,6 +825,7 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   });
   check(signUp.status >= 400, `new sign-ups are refused (-> ${signUp.status})`);
 
+  for (const r of await hardeningChecks(root, state)) results.push(r);
 
   const failed = results.filter((r) => !r.ok);
   for (const r of results) say(`${r.ok ? "PASS" : "FAIL"} ${r.line}`);
@@ -825,6 +835,56 @@ async function verifyInstance(root: string, state: InstanceState, operator: Sess
   fresh.lastVerify = { ok: failed.length === 0, tag: fresh.release?.tag ?? null, failed: failed.map((r) => r.line), at: new Date().toISOString() };
   writeState(root, fresh);
   return failed.length === 0;
+}
+
+/**
+ * The lines of the per-client security checklist (doc/CLIENT-PUBLIC-SECURITY.md)
+ * a script can answer: mode, loopback, auth secret, rate limit, file modes,
+ * response headers, and, once public-url.sh has run, HTTPS, HSTS and the
+ * HTTP redirect as a visitor sees them.
+ */
+async function hardeningChecks(root: string, state: InstanceState): Promise<CheckResult[]> {
+  const results: CheckResult[] = [];
+  const dir = instanceDir(root);
+  const modeOf = (file: string) => (existsSync(file) ? lstatSync(file).mode : null);
+  let config: unknown = null;
+  try {
+    config = JSON.parse(readFileSync(configPath(root), "utf8"));
+  } catch {
+    results.push({ ok: false, line: "config.json can be read" });
+  }
+  const address = publicAddress(config);
+  results.push(...configChecks(config));
+  const envFile = path.join(dir, ".env");
+  results.push(...envChecks(existsSync(envFile) ? readFileSync(envFile, "utf8") : "", address.baseUrl !== null));
+  results.push(privateFileCheck("instance .env", modeOf(envFile)));
+  results.push(privateFileCheck("config.json", modeOf(configPath(root))));
+  results.push(privateFileCheck("secrets master key", modeOf(path.join(dir, "secrets", "master.key")), { madeOnFirstUse: true }));
+
+  try {
+    const local = await fetch(`${baseUrl(state)}/api/health`, { signal: AbortSignal.timeout(5000) });
+    results.push(...securityHeaderChecks(local.headers, "loopback"));
+  } catch (err) {
+    results.push({ ok: false, line: `loopback headers could be read (${err instanceof Error ? err.message : String(err)})` });
+  }
+
+  if (address.baseUrl && address.host) {
+    try {
+      const pub = await fetch(`${address.baseUrl}/api/health`, { signal: AbortSignal.timeout(10_000) });
+      results.push({ ok: pub.ok, line: `${address.baseUrl}/api/health answers over HTTPS (-> ${pub.status})` });
+      results.push(...securityHeaderChecks(pub.headers, "public"));
+      results.push(hstsCheck(pub.headers, "public"));
+    } catch (err) {
+      results.push({ ok: false, line: `${address.baseUrl}/api/health answers over HTTPS (${err instanceof Error ? err.message : String(err)})` });
+    }
+    try {
+      const plain = await fetch(`http://${address.host}/`, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+      results.push(httpRedirectCheck(plain.status, plain.headers.get("location"), address.host));
+    } catch {
+      results.push(httpRedirectCheck(null, null, address.host));
+    }
+  }
+  return results;
 }
 
 // ---------------------------------------------------------------- backup

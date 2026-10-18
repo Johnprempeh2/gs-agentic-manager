@@ -13,9 +13,9 @@ each new client server, and the record of what the app itself does.
 | Sign-in | The existing email and password sign-in (Better Auth). Sign-up is closed; a person joins only through an invite. |
 | Rate limit | Better Auth limits sign-in per client address (3 tries every 10 seconds). The address comes from Express's `req.ip`, which follows `TRUST_PROXY`, so a client cannot dodge the limit by sending a made-up `X-Forwarded-For`. |
 | Two-step sign-in | Each person can turn it on in Profile: after the password, sign-in asks for a 6-digit code from an authenticator app, or one of ten single-use backup codes. "Do not ask again on this device" lasts 30 days. Wrong codes lock the code step. Turning it off needs the password. |
-| Required two-step | An instance admin can require it for everyone (Settings, Security, "Require two-step sign-in for everyone"). A person without it then reaches only sign-in, their own setup and invite links until they turn it on, and nobody can turn it off. The admin must have it on before they can require it. Emails in `GSAM_TWO_STEP_EXEMPT_EMAILS` are left out; `client-instance.sh` puts only the operator log-in there. |
+| Required two-step | An instance admin can require it for everyone (Settings, Security, "Require two-step sign-in for everyone"). A person without it then reaches only sign-in, their own setup and invite links until they turn it on, and nobody can turn it off. The admin must have it on before they can require it. CLI keys count as the person who made them, so a key made earlier stops working too until its owner turns two-step sign-in on. Emails in `GSAM_TWO_STEP_EXEMPT_EMAILS` are left out; `client-instance.sh` puts only the operator log-in there. |
 | Lost phone | An owner or admin resets it for someone below their role under Members ("Reset two-step"), when that person belongs to no other organisation; an instance admin for anyone but themselves. The person is signed out everywhere. On the host, `gsam auth reset-two-step --email <email>` does the same for anyone. |
-| Lockout | 10 wrong passwords for one account inside 15 minutes lock that account's sign-in for 15 minutes, even with the right password. A good sign-in clears the count. The refusal is the same for real and made-up emails. |
+| Lockout | 10 wrong passwords for one account inside 15 minutes lock that account's sign-in for 15 minutes, even with the right password. A good sign-in clears the count. The refusal is the same for real and made-up emails. Counts are kept in the database, keyed by a hash of the email, so a restart does not clear them. |
 | Hostnames | In `private` exposure the app answers only its allowed hostnames (403 otherwise). `X-Forwarded-Host` counts only from a trusted proxy, so a direct client cannot claim to be `localhost`. |
 | CSRF | Board changes made with a browser session need a same-origin `Origin` or `Referer`. Sign-in cookies are `SameSite=Lax`, `HttpOnly`, and `Secure` on HTTPS. Better Auth checks the origin of every sign-in call. |
 | Headers | Every response: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Content-Security-Policy: frame-ancestors 'self'`, `Referrer-Policy: strict-origin-when-cross-origin`, no `X-Powered-By`. `Strict-Transport-Security` when the public address is HTTPS. |
@@ -45,24 +45,27 @@ so a route without a check is public.
 
 ## Checklist for each new client server
 
-Run in order. Tick each line on the client's issue.
+Run in order. Tick each line on the client's issue. Lines marked
+**(verify)** are checked by `client-instance.sh verify`, which prints a PASS
+or FAIL line for each; run it after `public-url.sh` so the HTTPS lines are
+checked too.
 
 ### Server
 
 - [ ] Server made from `doc/CLIENT-HOSTING.md` ("Set up a server"), in the EU, with provider backups on.
 - [ ] `setup-host.sh` ran: firewall allows only SSH, 80 and 443; SSH by key only, no root password; daily security updates on.
-- [ ] Nothing else listens publicly: `ss -tlnp` shows the app and its database on 127.0.0.1 only.
+- [ ] Nothing else listens publicly: `ss -tlnp` shows the app and its database on 127.0.0.1 only. **(verify** checks the app's own config listens on loopback.**)**
 - [ ] The instance runs as user `gsam`, never root.
 
 ### Instance
 
 - [ ] Made with `client-instance.sh create --edition managed` (or `managed-plus`), never `internal`.
-- [ ] Mode is `authenticated`: `curl -s https://<host>/api/health` shows `"deploymentMode":"authenticated"`.
-- [ ] `public-url.sh <code> <host>` ran: HTTPS through Caddy, the hostname allowed, `TRUST_PROXY=loopback` in the instance `.env`.
-- [ ] `curl -sI http://<host>/` redirects to HTTPS, and `curl -sI https://<host>/` shows `strict-transport-security`.
+- [ ] Mode is `authenticated`: `curl -s https://<host>/api/health` shows `"deploymentMode":"authenticated"`. **(verify)**
+- [ ] `public-url.sh <code> <host>` ran: HTTPS through Caddy, the hostname allowed, `TRUST_PROXY=loopback` in the instance `.env`. **(verify:** HTTPS address, only that hostname and loopback allowed, `TRUST_PROXY`.**)**
+- [ ] `curl -sI http://<host>/` redirects to HTTPS, and `curl -sI https://<host>/` shows `strict-transport-security`. **(verify:** also the frame, type and `X-Powered-By` headers, from loopback and from the public address.**)**
 - [ ] A request with another hostname is refused: `curl -sk -H 'Host: other.example' https://<server ip>/api/health` gives 403 (or Caddy's own refusal).
-- [ ] Sign-up is closed: `verify` passes ("closed sign-up").
-- [ ] `GSAM_AUTH_RATE_LIMIT_ENABLED` is not set to `false` anywhere.
+- [ ] Sign-up is closed: `verify` passes ("new sign-ups are refused"). **(verify)**
+- [ ] `GSAM_AUTH_RATE_LIMIT_ENABLED` is not set to `false` anywhere. **(verify** reads the instance `.env`; check the systemd unit by hand.**)**
 
 ### People and passwords
 
@@ -77,7 +80,7 @@ Run in order. Tick each line on the client's issue.
 
 - [ ] No key, token or password in this repo, an issue, a pull request or a log.
 - [ ] Provider keys (AI, Pipedrive, email) entered in the app's secrets, so they are stored encrypted.
-- [ ] The instance `.env` and secrets key file are mode 600, owner `gsam`.
+- [ ] The instance `.env` and secrets key file are mode 600, owner `gsam`. **(verify** checks the mode of `.env`, `config.json` and the secrets key, and that the auth secret is the instance's own.**)**
 
 ### Backups
 
@@ -93,6 +96,4 @@ Run in order. Tick each line on the client's issue.
 
 ## Known gaps
 
-- Lockout counts are kept in memory, so a restart clears them.
-- Requiring two-step sign-in covers password sign-in. CLI and board keys made earlier keep working; a person without two-step sign-in cannot make or approve new ones while it is required.
 - `GET /api/health` shows the exact commit; fine while only Greatstone runs instances, worth trimming before any self-hosted public release.

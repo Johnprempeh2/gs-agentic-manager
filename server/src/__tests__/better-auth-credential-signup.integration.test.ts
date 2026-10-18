@@ -18,7 +18,7 @@ import express from "express";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { authAccounts, authTwoFactors, authUsers, createDb } from "@greatstone/db";
+import { authAccounts, authSignInLockouts, authTwoFactors, authUsers, createDb } from "@greatstone/db";
 import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
@@ -32,6 +32,7 @@ import { resetTwoStepSignIn } from "../auth/reset-password.js";
 import { clearTwoStepRequirementCache, twoStepRequiredGuard } from "../auth/two-step-requirement.js";
 import { actorMiddleware } from "../middleware/auth.js";
 import { errorHandler } from "../middleware/error-handler.js";
+import { boardAuthService } from "../services/board-auth.js";
 import { instanceSettingsService } from "../services/instance-settings.js";
 import { authRoutes } from "../routes/auth.js";
 import type { Config } from "../config.js";
@@ -273,6 +274,11 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
       .send({ email: "required-off@example.com", password: PASSWORD, name: "No Two Step" });
     const plain = cookieHeader(plainSignUp);
     expect((await request(app).get("/api/companies").set("cookie", plain)).status).toBe(200);
+    // CLI keys made before the setting is turned on.
+    const plainKey = await boardAuthService(db).createNamedBoardApiKey({ userId: plainSignUp.body.user.id, name: "cli" });
+    const twoStepKey = await boardAuthService(db).createNamedBoardApiKey({ userId: withTwoStep.userId, name: "cli" });
+    const withKey = (token: string) => request(app).get("/api/companies").set("authorization", `Bearer ${token}`);
+    expect((await withKey(plainKey.token)).status).toBe(200);
 
     await instanceSettingsService(db).updateGeneral({ requireTwoStepSignIn: true });
     clearTwoStepRequirementCache();
@@ -280,6 +286,11 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
       const blocked = await request(app).get("/api/companies").set("cookie", plain);
       expect(blocked.status).toBe(403);
       expect(blocked.body?.details?.code).toBe("TWO_STEP_SETUP_REQUIRED");
+      // An older CLI key counts as its owner: held too, until they turn it on.
+      const keyBlocked = await withKey(plainKey.token);
+      expect(keyBlocked.status).toBe(403);
+      expect(keyBlocked.body?.details?.code).toBe("TWO_STEP_SETUP_REQUIRED");
+      expect((await withKey(twoStepKey.token)).status).toBe(200);
       // Setup itself stays reachable.
       const enable = await request(app)
         .post("/api/auth/two-factor/enable")
@@ -373,5 +384,19 @@ describeEmbeddedPostgres("Better Auth credential sign-up against the real schema
     expect(locked.status).toBe(429);
     expect(locked.body?.code).toBe("SIGN_IN_LOCKED");
     expect(sessionCookies(locked)).toHaveLength(0);
+
+    // The count is in the database, keyed by a hash rather than the email, so
+    // a restarted server (a fresh Better Auth instance) keeps the lock.
+    const rows = await db.select().from(authSignInLockouts);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(JSON.stringify(rows)).not.toContain(EMAIL);
+    const restarted = express();
+    restarted.all("/api/auth/{*authPath}", createBetterAuthHandler(createBetterAuthInstance(db, testConfig(), [ORIGIN])));
+    const afterRestart = await request(restarted)
+      .post("/api/auth/sign-in/email")
+      .set("origin", ORIGIN)
+      .send({ email: EMAIL, password: PASSWORD });
+    expect(afterRestart.status).toBe(429);
+    expect(afterRestart.body?.code).toBe("SIGN_IN_LOCKED");
   });
 });

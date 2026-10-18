@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 
 export const authUsers = pgTable("user", {
   id: text("id").primaryKey(),
@@ -91,5 +91,25 @@ export const authTwoFactors = pgTable(
   (table) => ({
     userIdIdx: index("two_factor_user_id_idx").on(table.userId),
     secretIdx: index("two_factor_secret_idx").on(table.secret),
+  }),
+);
+
+/**
+ * Wrong-password counts for the per-account sign-in lockout
+ * (server/src/auth/sign-in-lockout.ts), kept here so a restart does not clear
+ * them. Instance-wide like the rest of sign-in. The key is a SHA-256 of the
+ * normalised email, so emails people try that have no account are not stored.
+ */
+export const authSignInLockouts = pgTable(
+  "sign_in_lockout",
+  {
+    accountKey: text("account_key").primaryKey(),
+    /** Epoch milliseconds of each wrong password inside the current window. */
+    failureTimes: jsonb("failure_times").$type<number[]>().notNull().default([]),
+    lockedUntil: timestamp("locked_until", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    updatedAtIdx: index("sign_in_lockout_updated_at_idx").on(table.updatedAt),
   }),
 );
