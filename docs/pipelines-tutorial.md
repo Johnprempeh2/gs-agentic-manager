@@ -674,3 +674,16 @@ gsam pipelines case next-step-done <caseId> --note "Spoke to Sam, wants a propos
 The step becomes the deal's last activity, dated today with the note, and the
 follow-up becomes its next step. Leave out `--next-date` to close the step with
 no follow-up. The change is saved in GSAM only; nothing is written to Pipedrive.
+
+To change a deal's details, use `case set-deal` with only the options you want
+to change:
+
+```sh
+gsam pipelines case set-deal <caseId> --owner "Ben" --value 5000 --currency GBP \
+  --expected-close 2026-11-30 --probability 60 \
+  --next-date 2026-10-25 --next-subject "Send proposal"
+```
+
+An empty string removes a field, for example `--probability ""`, and
+`--next-date ""` removes the next step. A Pipedrive lead keeps its lead fields.
+Like "Edit deal" on the deal page, this saves in GSAM only.
